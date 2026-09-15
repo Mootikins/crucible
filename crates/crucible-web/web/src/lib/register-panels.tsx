@@ -1,5 +1,4 @@
 import { getGlobalRegistry } from './panel-registry';
-import { SettingsPanel } from '@/components/SettingsPanel';
 import { ChatPanel } from '@/components/ChatPanel';
 import { CenterComposer } from '@/components/CenterComposer';
 import { ActivityPanel } from '@/components/ActivityPanel';
@@ -36,7 +35,10 @@ export function registerPanels(): void {
   // focuses an existing tab wherever the user docked it, and opens a new one
   // in the center, where results have room.
   registry.register('search', 'Search', SearchPanel, 'center');
-  registry.register('settings', 'Settings', SettingsPanel, 'center');
+  // Settings is NOT registered. It is a DIALOG — the gear, the palette and
+  // the phone's More sheet all open `SettingsModal`. A registration would put
+  // a second settings surface in a centre tab, and `migrateV8toV9` drops the
+  // `settings` tabs that saved layouts still carry.
   registry.register('chat', 'Chat', ChatPanel, 'center');
   registry.register('chat-draft', 'New Session', CenterComposer, 'center');
   registry.register('inbox', 'Inbox', InboxPanel, 'center');

@@ -216,14 +216,14 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('cross-zone DnD still works after reorder implementation (regression)', async ({ page }) => {
-    // The center pane starts EMPTY (no landing page) — open a Settings tab
+    // The center pane starts EMPTY (no landing page) — open a Search tab
     // so the drop-point helper has a center tab to anchor on.
     await page.evaluate(async () => {
       const { openPanelTab } = await import('/src/lib/panel-actions.ts');
-      openPanelTab('settings');
+      openPanelTab('search');
     });
     await page
-      .locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])')
+      .locator('[data-tab-id="tab-search"]:not([data-testid^="edge-tab-"])')
       .waitFor({ state: 'visible', timeout: 3000 });
     const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
     const to = await getCenterPaneDropPoint(page);

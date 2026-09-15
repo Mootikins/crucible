@@ -2,12 +2,11 @@
 //
 // The row/section scaffolding shared by every settings subsection.
 //
-// Extracted from SettingsPanel.tsx so a second file can build sections without
-// importing from the panel that renders it — SettingsPanel imports
-// AdvancedSessionSettings, so the primitives living in SettingsPanel would have
-// made that a module cycle. Solid components are plain functions, so the cycle
-// would probably have resolved at render time; "probably" is not a reason to
-// keep one.
+// Its own file so that every section file reads the scaffolding from one leaf
+// module. A section that also builds another section would otherwise import
+// from a sibling that imports it back, and Solid components are plain
+// functions, so such a cycle would probably resolve at render time.
+// "Probably" is not a reason to keep one.
 import { Component, Show, createContext, useContext, type JSX } from 'solid-js';
 
 export type IconComponent = Component<{ class?: string }>;
@@ -19,10 +18,10 @@ export type IconComponent = Component<{ class?: string }>;
 /**
  * Whether a section should draw its own heading.
  *
- * The stacked TAB needs one per section — it is the only thing separating nine
- * sections in one scroll. The MODAL does not: its own header already names the
- * section the left list has selected, and drawing it twice put "Appearance"
- * directly above "APPEARANCE".
+ * A section drawn on its own needs one, which is why the default is `true`.
+ * The dialog and the phone sheet do NOT: each already names the section the
+ * user selected, and a second heading put "Appearance" directly above
+ * "APPEARANCE".
  *
  * A context rather than a prop, because the sections are rendered from a
  * registry through `<Dynamic>` — threading a prop would mean every section
@@ -156,8 +155,4 @@ export const SettingsSectionState: Component<{
     </Show>
   </>
 );
-
-// =============================================================================
-// Model Settings Section
-// =============================================================================
 

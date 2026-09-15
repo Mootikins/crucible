@@ -33,7 +33,7 @@ vi.mock('@/contexts/SessionContext', () => ({
   }),
 }));
 
-import { ModelSettingsSection } from '../SettingsPanel';
+import { ModelSettingsSection } from '../ModelSettings';
 
 /** What the daemon answers for a session that has every setting. */
 const ALL_SUPPORTED = {

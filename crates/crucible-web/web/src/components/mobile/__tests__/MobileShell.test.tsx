@@ -57,7 +57,6 @@ beforeEach(() => {
   resetGlobalRegistry();
   const registry = getGlobalRegistry();
   registry.register('search', 'Search', Stub, 'center');
-  registry.register('settings', 'Settings', Stub, 'center');
   registry.register('terminal', 'Terminal', Stub, 'right');
   registry.register('canvas', 'Canvas', Stub, 'center');
   registry.register('files', 'Files', Stub, 'right');
@@ -142,9 +141,28 @@ describe('MobileShell overflow menu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More' }));
     const labels = screen.getAllByRole('button').map((b) => b.textContent);
     expect(labels).toContain('Search');
-    expect(labels).toContain('Settings');
     expect(labels).not.toContain('Terminal');
     expect(labels).not.toContain('Canvas');
+  });
+
+  // Settings is a DIALOG, and the registry holds only panels. The row is the
+  // menu's own, so the phone keeps the doorway the desktop gear has. While the
+  // page was registered, this row opened a centre tab of stacked sections
+  // instead of the drill-down that replaced it.
+  it('opens the settings dialog, without a tab behind it', () => {
+    const opened: Event[] = [];
+    const listen = (e: Event) => opened.push(e);
+    window.addEventListener('crucible:open-settings', listen);
+    try {
+      render(() => <MobileShell />);
+      fireEvent.click(screen.getByRole('button', { name: 'More' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+      expect(opened).toHaveLength(1);
+      expect(tabStackActions.activeTab()?.contentType).not.toBe('settings');
+    } finally {
+      window.removeEventListener('crucible:open-settings', listen);
+    }
   });
 
   // A phone has no rail to park a count in, so the one menu a thumb reaches

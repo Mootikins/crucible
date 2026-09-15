@@ -55,15 +55,15 @@ async function getCenterPaneDropPoint(page: Page): Promise<{ x: number; y: numbe
   return { x: box!.x + box!.width / 2, y: box!.y + box!.height + 40 };
 }
 
-/** The center pane starts EMPTY (no landing page) — open the Settings tab
+/** The center pane starts EMPTY (no landing page) — open the Search tab
  * when a test needs a real center tab to drag or anchor on. */
-async function openSettingsCenterTab(page: Page) {
+async function openSearchCenterTab(page: Page) {
   await page.evaluate(async () => {
     const { openPanelTab } = await import('/src/lib/panel-actions.ts');
-    openPanelTab('settings');
+    openPanelTab('search');
   });
   await page
-    .locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])')
+    .locator('[data-tab-id="tab-search"]:not([data-testid^="edge-tab-"])')
     .waitFor({ state: 'visible', timeout: 3000 });
 }
 
@@ -90,7 +90,7 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag edge tab from expanded left panel to center pane', async ({ page }) => {
-    await openSettingsCenterTab(page);
+    await openSearchCenterTab(page);
     const from = await getCenter(page, '[data-testid="edge-tab-left-beta-tab"]');
     const to = await getCenterPaneDropPoint(page);
 
@@ -101,17 +101,17 @@ test.describe('Cross-zone tab drag and drop', () => {
   });
 
   test('drag center tab to left edge panel', async ({ page }) => {
-    // Sessions live in the right edge panel, so drag a center Settings tab.
-    await openSettingsCenterTab(page);
-    const centerTab = page.locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])');
+    // Sessions live in the right edge panel, so drag a center Search tab.
+    await openSearchCenterTab(page);
+    const centerTab = page.locator('[data-tab-id="tab-search"]:not([data-testid^="edge-tab-"])');
     const from = await getCenterOf(page, centerTab);
     const to = await getCenter(page, '[data-testid="edge-tabbar-left"]');
 
     await pointerDrag(page, from, to, 30);
 
-    const edgeTab = page.locator('[data-testid="edge-tab-left-tab-settings"]');
+    const edgeTab = page.locator('[data-testid="edge-tab-left-tab-search"]');
     await expect(edgeTab).toBeVisible({ timeout: 2000 });
-    const tabInCenter = page.locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])');
+    const tabInCenter = page.locator('[data-tab-id="tab-search"]:not([data-testid^="edge-tab-"])');
     await expect(tabInCenter).not.toBeVisible({ timeout: 2000 });
   });
 

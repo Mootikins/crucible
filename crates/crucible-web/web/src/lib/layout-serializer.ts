@@ -108,7 +108,7 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 8,
+    version: 9,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -371,6 +371,91 @@ function migrateV7toV8(v7: SerializedLayout): SerializedLayout {
   return { ...v7, version: 8, edgePanels };
 }
 
+// Settings is a DIALOG, not a pane. `registerPanels` no longer registers a
+// `settings` content type, so a layout saved while the settings PAGE existed
+// carries a tab that nothing can render: the strip draws "Unknown content
+// type", and the always-on prune below cannot collapse what it empties.
+//
+// The tab leaves the way tab close takes it. The group drops it, a group the
+// drop empties goes, and a pane that named that group collapses out of the
+// tree. A tree that would collapse to nothing keeps ONE pane with no group,
+// which is the legitimate "Nothing open" state. A floating window over an
+// emptied group closes with it, because an empty floating window is a shell
+// the user cannot reach.
+function migrateV8toV9(v8: SerializedLayout): SerializedLayout {
+  const tabGroups: Record<string, SerializedTabGroup> = {};
+  const emptied = new Set<string>();
+  for (const [id, group] of Object.entries(v8.tabGroups)) {
+    const tabs = group.tabs.filter((t) => (t.contentType as string) !== 'settings');
+    if (tabs.length === group.tabs.length) {
+      tabGroups[id] = group;
+    } else if (tabs.length === 0) {
+      emptied.add(id);
+    } else {
+      tabGroups[id] = {
+        id: group.id,
+        tabs,
+        activeTabId: tabs.some((t) => t.id === group.activeTabId)
+          ? group.activeTabId
+          : (tabs[0]?.id ?? null),
+      };
+    }
+  }
+  if (emptied.size === 0) return { ...v8, version: 9, tabGroups };
+
+  const layout = dropPanesForGroups(v8.layout, emptied);
+  // A partial payload reaches this migration whole: a layout STORED at v8 skips
+  // every migration above, so nothing here may assume a complete shape. The
+  // deserializer below rebuilds an absent panel.
+  const edgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
+  for (const [pos, panel] of Object.entries(v8.edgePanels ?? {})) {
+    edgePanels[pos as EdgePanelPosition] = panel.layout
+      ? { ...panel, layout: dropPanesForGroups(panel.layout, emptied) }
+      : panel;
+  }
+
+  return {
+    ...v8,
+    version: 9,
+    layout,
+    tabGroups,
+    edgePanels,
+    floatingWindows: (v8.floatingWindows ?? []).filter(
+      (w) => !emptied.has((w as { tabGroupId: string }).tabGroupId),
+    ),
+  };
+}
+
+/**
+ * Drop every pane that names one of `groups`, and collapse the splits that
+ * lose a child.
+ *
+ * The root always survives: a tree with no pane is a shell with nothing to
+ * render, so a root that loses everything comes back as one pane with no tab
+ * group. That is the same shape `collapseEmptyNodes` leaves behind.
+ */
+function dropPanesForGroups(node: LayoutNode, groups: Set<string>): LayoutNode {
+  const drop = (n: LayoutNode): LayoutNode | null => {
+    if (n.type === 'pane') {
+      return n.tabGroupId && groups.has(n.tabGroupId) ? null : n;
+    }
+    const first = drop(n.first);
+    const second = drop(n.second);
+    if (first && second) return { ...n, first, second };
+    return first ?? second;
+  };
+  const pruned = drop(node);
+  if (pruned) return pruned;
+  const root = firstPaneOf(node);
+  return { id: root?.id ?? node.id, type: 'pane', tabGroupId: null };
+}
+
+/** The first leaf pane of a serialized tree, for its id. */
+function firstPaneOf(node: LayoutNode): PaneNode | undefined {
+  if (node.type === 'pane') return node;
+  return firstPaneOf(node.first) ?? firstPaneOf(node.second);
+}
+
 /** Leaf panes of a serialized panel tree, in order. */
 function panelPanes(node: LayoutNode | undefined): PaneNode[] {
   if (!node) return [];
@@ -486,7 +571,8 @@ export function deserializeLayout(json: SerializedLayout): {
   // panel width) → v5 (edge panels carry layout trees) → v6 (the Navigator
   // splits into Sessions / Search / Files) → v7 (the bottom dock goes; the
   // terminal moves into the file rail) → v8 (rail panes collapse on their
-  // own; the terminal ships collapsed).
+  // own; the terminal ships collapsed) → v9 (the settings PAGE is gone; its
+  // tabs go, and the panes they empty go with them).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -510,7 +596,10 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 7) {
     layout = migrateV7toV8(layout);
   }
-  if (layout.version !== 8) {
+  if (layout.version === 8) {
+    layout = migrateV8toV9(layout);
+  }
+  if (layout.version !== 9) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 

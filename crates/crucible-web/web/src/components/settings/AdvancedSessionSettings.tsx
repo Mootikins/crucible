@@ -3,8 +3,8 @@
 // The session config knobs the daemon advertises that do not belong in the
 // model panel: the context strategy.
 //
-// Its own file rather than a tenth section inside SettingsPanel.tsx, which was
-// already 961 lines — the same reason the Rust routes became
+// Its own file rather than a tenth section inside one settings module, which
+// was already 961 lines — the same reason the Rust routes became
 // `routes/session_config/`.
 //
 // Gate A2e (`crucible-cli/tests/architecture_tests.rs`) proves each knob has a

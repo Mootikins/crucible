@@ -84,7 +84,7 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(8);
+    expect(serialized.version).toBe(9);
 
     expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
     expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
@@ -230,7 +230,7 @@ describe('layout-serializer', () => {
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(8);
+    expect(serialized2.version).toBe(9);
     expect(panelGroupId(serialized2.edgePanels.left)).toBe(panelGroupId(serialized1.edgePanels.left));
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();

@@ -37,8 +37,14 @@ describe('registerPanels', () => {
 
   it('registers every panel openPanelTab is wired to', () => {
     const registry = getGlobalRegistry();
-    expect(registry.get('settings')?.defaultZone).toBe('center');
     expect(registry.get('plugins')?.defaultZone).toBe('left');
     expect(registry.get('skills')?.defaultZone).toBe('left');
+  });
+
+  // Settings is a DIALOG. While it was also registered as a centre panel, the
+  // palette and the phone's More sheet could open the page beside the dialog,
+  // and a saved layout kept the page's tab in the centre strip.
+  it('retires the settings page', () => {
+    expect(getGlobalRegistry().get('settings')).toBeUndefined();
   });
 });

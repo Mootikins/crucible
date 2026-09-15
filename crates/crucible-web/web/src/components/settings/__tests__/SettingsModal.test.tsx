@@ -4,9 +4,9 @@ import { settingsSections, settingsGroups } from '../sections';
 describe('the settings section registry', () => {
   it('builds without touching a partially-initialised module', () => {
     // A regression gate with real history. This table used to be a top-level
-    // `const` array, and it imports its section components from
-    // SettingsPanel.tsx, which imports the table back to render the stacked
-    // tab. The array evaluated those bindings mid-initialisation and threw
+    // `const` array, and it imports its section components from modules that
+    // could import the table back. The array evaluated those bindings
+    // mid-initialisation and threw
     // `ReferenceError: Cannot access 'AppearanceSettingsSection' before
     // initialization` at boot — with every unit test green, because none of
     // them imported both modules in that order. Importing this module ALONE

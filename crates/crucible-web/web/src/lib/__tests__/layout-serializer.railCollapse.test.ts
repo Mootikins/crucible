@@ -111,9 +111,11 @@ describe('migrateV7toV8 — the terminal ships collapsed', () => {
     expect(panes(right.layout)[1].collapsed).not.toBe(true);
   });
 
-  it('rewrites the stored version to 8', () => {
+  // The rewrite is what makes the migration run ONCE per stored layout: the
+  // next load reads the current version and skips it.
+  it('rewrites the stored version to the current one', () => {
     const restored = deserializeLayout(v7());
-    expect(serializeLayout(restored).version).toBe(8);
+    expect(serializeLayout(restored).version).toBe(9);
   });
 });
 

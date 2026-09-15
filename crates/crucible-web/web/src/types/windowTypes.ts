@@ -6,6 +6,9 @@ export type TabContentType =
   | 'file'
   | 'tool'
   | 'terminal'
+  // LEGACY. Settings is a dialog, and `registerPanels` registers no panel for
+  // it, so a tab of this type renders nothing. The name survives for the
+  // layouts that still carry one; `migrateV8toV9` drops them on restore.
   | 'settings'
   | 'chat'
   | 'chat-draft'

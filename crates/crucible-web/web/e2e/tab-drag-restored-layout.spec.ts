@@ -15,7 +15,7 @@ const RESTORED_LAYOUT = JSON.stringify({
     'restored-group-1': {
       id: 'restored-group-1',
       tabs: [
-        { id: 'tab-settings', title: 'Settings', contentType: 'settings' },
+        { id: 'tab-search', title: 'Search', contentType: 'search' },
         { id: 'tab-inbox', title: 'Inbox', contentType: 'inbox' },
       ],
       activeTabId: 'tab-inbox',
@@ -97,7 +97,7 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
   );
   await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(1);
 
-  const homeTab = page.locator('[data-tab-id="tab-settings"]');
+  const homeTab = page.locator('[data-tab-id="tab-search"]');
   const homeBox = (await homeTab.boundingBox())!;
   box = (await inboxTab.boundingBox())!;
   await pointerDragUntil(

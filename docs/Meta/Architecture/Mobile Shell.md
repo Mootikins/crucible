@@ -520,8 +520,8 @@ interface EditorSettings {
 
 Default `vimModeCompact: false`.
 
-**Show both toggles in `EditorSettingsSection`** (`SettingsPanel.tsx:351`, not
-`settings/sections.tsx`, which only lists the sections), labelled for the shell
+**Show both toggles in `EditorSettingsSection`** (`settings/EditorSettings.tsx:12`,
+not `settings/sections.tsx`, which only lists the sections), labelled for the shell
 they govern — "Vim mode (desktop)" and "Vim mode (phone)". One unlabelled toggle
 would change whichever key the current shell reads, and a user on a phone would
 see a desktop-only switch that seems to do nothing.
@@ -1695,7 +1695,7 @@ web/src/App.tsx
 web/src/components/CenterComposer.tsx
 web/src/components/FileViewerPanel.tsx
 web/src/components/SessionsPanel.tsx
-web/src/components/SettingsPanel.tsx
+web/src/components/settings/EditorSettings.tsx
 web/src/components/__tests__/FileViewerPanel.refcount.test.tsx
 web/src/components/__tests__/FileViewerPanel.test.tsx
 web/src/components/editor/EditorWithPreview.tsx

@@ -52,7 +52,7 @@ const simpleLayout = (paneId: string, groupId: string): LayoutNode => ({
 beforeEach(() => {
   resetGlobalRegistry();
   const registry = getGlobalRegistry();
-  registry.register('settings', 'Settings', StubComponent, 'center');
+  registry.register('search', 'Search', StubComponent, 'center');
   registry.register('skills', 'Skills', StubComponent, 'left');
   registry.register('plugins', 'Plugins', StubComponent, 'left');
   registry.register('files', 'Files', StubComponent, 'left');
@@ -78,14 +78,14 @@ beforeEach(() => {
 
 describe('openPanelTab', () => {
   it('opens a center-zone panel as an active tab in the first center group', () => {
-    openPanelTab('settings');
+    openPanelTab('search');
 
     const group = windowStore.tabGroups['center-group'];
-    const tab = group.tabs.find((t) => t.contentType === 'settings');
+    const tab = group.tabs.find((t) => t.contentType === 'search');
     expect(tab).toBeDefined();
-    expect(tab?.id).toBe('tab-settings');
-    expect(tab?.title).toBe('Settings');
-    expect(group.activeTabId).toBe('tab-settings');
+    expect(tab?.id).toBe('tab-search');
+    expect(tab?.title).toBe('Search');
+    expect(group.activeTabId).toBe('tab-search');
   });
 
   it('opens an edge-zone panel in its edge group and expands the collapsed panel', () => {
@@ -121,13 +121,13 @@ describe('openPanelTab', () => {
   });
 
   it('focuses an existing center tab found by content type', () => {
-    openPanelTab('settings');
+    openPanelTab('search');
     setStore(produce((s) => { s.tabGroups['center-group'].activeTabId = 'tab-chat-x'; }));
 
-    openPanelTab('settings');
+    openPanelTab('search');
 
-    expect(windowStore.tabGroups['center-group'].activeTabId).toBe('tab-settings');
-    expect(windowStore.tabGroups['center-group'].tabs.filter((t) => t.contentType === 'settings')).toHaveLength(1);
+    expect(windowStore.tabGroups['center-group'].activeTabId).toBe('tab-search');
+    expect(windowStore.tabGroups['center-group'].tabs.filter((t) => t.contentType === 'search')).toHaveLength(1);
   });
 
   it('is a safe no-op for an unregistered content type', () => {
@@ -141,7 +141,7 @@ describe('openPanelTab', () => {
 describe('findTabByContentType', () => {
   it('finds tabs across groups', () => {
     expect(findTabByContentType('sessions')?.groupId).toBe('left-group');
-    expect(findTabByContentType('settings')).toBeNull();
+    expect(findTabByContentType('search')).toBeNull();
   });
 });
 

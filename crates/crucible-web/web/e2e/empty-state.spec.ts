@@ -45,10 +45,10 @@ test('an emptied center pane holds its affordance and nothing else', async ({ pa
   // Put a tab in the CENTER (the New Session tab docks right), then empty it.
   await page.evaluate(async () => {
     const { openPanelTab } = await import('/src/lib/panel-actions.ts');
-    openPanelTab('settings');
+    openPanelTab('search');
   });
   await expect(
-    page.locator('[data-tab-id="tab-settings"]:not([data-testid^="edge-tab-"])'),
+    page.locator('[data-tab-id="tab-search"]:not([data-testid^="edge-tab-"])'),
   ).toBeVisible({ timeout: 10000 });
 
   await closeAllCenterTabs(page);

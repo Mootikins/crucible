@@ -37,10 +37,9 @@ function focusChatInput(): void {
 
 /** Content types that only make sense with a target (a specific file or
  * session) — they get no generic "Open …" palette command. */
-// 'settings' joins them: it is a DIALOG now, not a pane, so a generic
-// "Open the settings tab" row would open a second, stacked settings UI beside
-// the one the gear opens. It gets an explicit command below instead.
-const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft', 'settings']);
+// Settings is absent because it is not a panel at all: the registry never
+// holds it, and the explicit "Settings" command below opens the dialog.
+const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft']);
 
 /** Panel-specific palette descriptions; anything unlisted gets a generic one. */
 const PANEL_COMMAND_DESCRIPTIONS: Record<string, string> = {

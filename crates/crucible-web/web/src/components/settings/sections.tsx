@@ -12,16 +12,14 @@ import {
   Plug,
   Terminal,
 } from '@/lib/icons';
-import {
-  ApiAccessSection,
-  AppearanceSettingsSection,
-  EditorSettingsSection,
-  McpStatusSection,
-  ModelSettingsSection,
-  PluginsSection,
-  TerminalSettingsSection,
-  TranscriptionSettingsSection,
-} from '@/components/SettingsPanel';
+import { ApiAccessSection } from './ApiAccess';
+import { AppearanceSettingsSection } from './AppearanceSettings';
+import { EditorSettingsSection } from './EditorSettings';
+import { McpStatusSection } from './McpStatus';
+import { ModelSettingsSection } from './ModelSettings';
+import { PluginsSection } from './PluginsSection';
+import { TerminalSettingsSection } from './TerminalSettings';
+import { TranscriptionSettingsSection } from './TranscriptionSettings';
 import { AdvancedSessionSettingsSection } from './AdvancedSessionSettings';
 import { AppConfigSettingsSection } from './AppConfigSettings';
 import { PluginSettings } from '@/components/PluginSettings';
@@ -62,24 +60,19 @@ let cached: SettingsSection[] | null = null;
 /**
  * Every settings section, in the order the left list shows them.
  *
- * ONE table, and it is the only place a section is declared. Both doorways
- * read it — the modal renders one section at a time, and the legacy settings
- * TAB renders all of them stacked — so a new section appears in both without
- * being written twice, and the two can never drift into showing different
- * settings.
+ * ONE table, and it is the only place a section is declared. The modal renders
+ * one entry of it at a time, so a new section reaches the user through the
+ * left list without a second list to keep in step.
  *
  * Grouped the way the user's own mental model runs: what the app looks like,
  * what the agent does, what it is connected to, and the workspace itself.
  *
- * A FUNCTION, not a module-level array, and that is load-bearing. This module
- * imports its section components from `SettingsPanel.tsx`, which imports this
- * table back to render the stacked tab. A top-level array evaluates those
- * `const` bindings while the other module is still initialising, so whichever
- * side the bundler happened to evaluate first threw
+ * A FUNCTION, not a module-level array. A top-level array reads each `const`
+ * binding while the section modules are still initialising, and an import
+ * cycle through any of them then throws
  * `ReferenceError: Cannot access 'AppearanceSettingsSection' before
- * initialization` — and took the whole app down at boot, with every unit test
- * still green, because no test imports both modules in that order. Building
- * on first CALL moves the reads past both modules' initialisation.
+ * initialization` at boot, with every unit test still green. A build on first
+ * CALL moves the reads past module initialisation.
  */
 function builtins(): SettingsSection[] {
   if (cached) return cached;
@@ -121,8 +114,8 @@ function builtins(): SettingsSection[] {
  * Plugins that declare an EMPTY tree are dropped rather than given an entry
  * that opens onto nothing.
  *
- * `trees` is optional so the stacked tab and every test can call this with no
- * daemon behind them.
+ * `trees` is optional so that every test can call this with no daemon behind
+ * it.
  */
 export function settingsSections(trees?: PluginTrees, onChanged?: () => void | Promise<unknown>): SettingsSection[] {
   const plugins = Object.entries(trees ?? {})
