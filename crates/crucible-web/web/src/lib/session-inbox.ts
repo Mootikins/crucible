@@ -1,36 +1,30 @@
 import type { Session } from '@/lib/types';
-import { sessionStatus, type SessionStatus } from '@/lib/session-status';
 
-/** How long a session stays in the Inbox after its last message. */
-export const INBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** How many sessions the Inbox lists. */
+export const INBOX_SIZE = 5;
+
+/** Milliseconds since the epoch of a session's last message, 0 when unreadable. */
+export const touchedAt = (s: Session): number => Date.parse(s.last_activity ?? s.started_at) || 0;
+
+/** Newest first. */
+export const byRecency = (a: Session, b: Session) => touchedAt(b) - touchedAt(a);
 
 /**
- * The Inbox: sessions doing something, freshest first.
+ * The Inbox: the last few sessions the user touched, freshest first.
  *
- * Membership is "not idle AND touched in the last day". The staleness rule is
- * what keeps it an inbox rather than a second session list — an agent that has
- * been blocked on a question since last week is not news, and left in, it would
- * sit at the top forever. It stays reachable in the tree below.
+ * Recency alone decides membership. The rule used to be "not idle AND touched
+ * in the last day", which made the section a status filter: it was empty on
+ * a quiet morning and it dropped the session the user was in a minute ago as
+ * soon as the agent went idle. An inbox answers "where was I", so it lists
+ * the newest `INBOX_SIZE` and leaves the rest to the project tree below,
+ * which does not repeat them.
  *
- * One definition, because both shells draw an Inbox and two copies would drift.
- * `statusOf` is a parameter so a test can state the status the attention store
- * would otherwise supply.
+ * Archived sessions and plugin passes have sections of their own. One
+ * definition, because both shells draw an Inbox and two copies would drift.
  */
-export function inboxSessions(
-  sessions: readonly Session[],
-  now: number = Date.now(),
-  statusOf: (session: Session) => SessionStatus = sessionStatus,
-): Session[] {
+export function inboxSessions(sessions: readonly Session[]): Session[] {
   return sessions
-    .filter((s) => {
-      if (s.archived) return false;
-      if (statusOf(s) === 'idle') return false;
-      const touched = Date.parse(s.last_activity ?? s.started_at);
-      return !Number.isNaN(touched) && now - touched < INBOX_MAX_AGE_MS;
-    })
-    .sort(
-      (a, b) =>
-        (Date.parse(b.last_activity ?? b.started_at) || 0) -
-        (Date.parse(a.last_activity ?? a.started_at) || 0),
-    );
+    .filter((s) => !s.archived && s.session_type !== 'plugin')
+    .sort(byRecency)
+    .slice(0, INBOX_SIZE);
 }

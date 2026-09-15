@@ -11,6 +11,7 @@ import { TreeSection } from '@/components/tree/TreeSection';
 import { shouldUseNativeMenu } from '@/lib/context-menu';
 import { terseAge } from '@/lib/format-time';
 import { sessionStatus } from '@/lib/session-status';
+import { byRecency, touchedAt } from '@/lib/session-inbox';
 import { SessionStatusDot } from '@/components/shell/SessionStatusDot';
 
 export const SessionRow: Component<{
@@ -21,6 +22,13 @@ export const SessionRow: Component<{
   /** True when this row's kiln differs from its group's usual one — see
    * `oddKiln`. A kiln every sibling shares distinguishes nothing. */
   showKiln?: boolean;
+  /**
+   * The project's name, for a row drawn OUTSIDE its project group — the
+   * Inbox. Leaving the group is exactly when a row loses its project, so
+   * that is the row that carries it; under a header it would repeat the
+   * header. Such a row is not indented either: it has no parent to sit under.
+   */
+  projectLabel?: string | null;
   onSelect: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -48,7 +56,9 @@ export const SessionRow: Component<{
        * column had no beat to chunk on. Indent carries the tier here, the way
        * every file explorer does it.
        */
-      class={`group relative flex items-center gap-2 w-full h-(--cru-row-sm) pl-6 pr-2 rounded transition-colors cursor-pointer ${
+      class={`group relative flex items-center gap-2 w-full h-(--cru-row-sm) ${
+        props.projectLabel === undefined ? 'pl-6' : 'pl-2.5'
+      } pr-2 rounded transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
@@ -58,6 +68,16 @@ export const SessionRow: Component<{
     >
       <SessionStatusDot status={sessionStatus(props.session)} />
       <span class="text-reading flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
+
+      {/* Plain muted text, not a chip: the branch chip below is already the
+          one box on the row, and the project is a place, not a state. */}
+      <Show when={props.projectLabel} keyed>
+        {(name) => (
+          <span class="shrink-0 truncate max-w-[96px] text-floor text-muted-dark" title={`project · ${name}`}>
+            {name}
+          </span>
+        )}
+      </Show>
 
       {/* Only when it says something the group row does not. */}
       <Show when={props.showKiln && props.kilnLabel} keyed>
@@ -128,7 +148,10 @@ interface SessionGroup {
   name: string;
   /** The path selecting this group selects as the current project ('' = none). */
   projectPath: string;
+  /** Every session of the group, Inbox members included. */
   sessions: Session[];
+  /** The rows this tree draws: `sessions` minus what the Inbox shows above. */
+  rows: Session[];
   lastActivity: number;
 }
 
@@ -154,9 +177,24 @@ function loadCollapsed(): Set<string> {
  * repo's group (`repository.root`), with the branch shown as a row chip
  * instead of a tree level (branch is a FILTER, not a hierarchy: user call).
  * Groups collapse; recency ordering inside each group and between groups.
+ *
+ * A project with no session is not drawn. It used to sit behind a counted
+ * "No sessions" fold, but a detected directory is not a place the user works
+ * yet, and a registry of twenty of them is mostly noise. It appears the
+ * moment a session starts in it.
  */
 export const SessionTree: Component<{
   sessions: Session[];
+  /**
+   * The Inbox: the sessions drawn ABOVE the project tier, flat, freshest
+   * first — see `lib/session-inbox.ts`. The tree draws them here, not the
+   * panel, so the one context menu and the one click handler reach an inbox
+   * row as they reach a tree row. The tier below does not repeat them: a row
+   * drawn twice on one rail is one row too many. Their project still shows,
+   * so New Session stays reachable there — without a chevron when nothing is
+   * left under it to unfold.
+   */
+  inbox?: Session[];
   currentSessionId?: string;
   projects: Project[];
   currentProjectPath?: string;
@@ -176,6 +214,10 @@ export const SessionTree: Component<{
   kilnName: (path: string) => string | null;
 }> = (props) => {
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed(), { equals: false });
+  const [inboxOpen, setInboxOpen] = createSignal(true);
+  const inbox = () => props.inbox ?? [];
+  const shownAbove = createMemo(() => new Set(inbox().map((s) => s.id)));
+  const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   /**
    * The project row the open context menu acts on.
    *
@@ -201,6 +243,15 @@ export const SessionTree: Component<{
     return workspace ? props.branchOf(workspace) : null;
   };
 
+  /**
+   * A group that holds the open session is never collapsed, whatever the
+   * saved state says. Selected from the palette, a session inside a group
+   * collapsed last week was on screen nowhere. The saved state stays as it
+   * was; the exception lasts as long as the selection does.
+   */
+  const isCollapsed = (g: SessionGroup) =>
+    collapsed().has(g.key) && !g.rows.some((s) => s.id === props.currentSessionId);
+
   const toggle = (key: string) => {
     setCollapsed((prev) => {
       if (prev.has(key)) prev.delete(key);
@@ -219,11 +270,12 @@ export const SessionTree: Component<{
    *
    * A kiln every sibling has distinguishes nothing — the rail rendered
    * "docs"/"crucible-kiln" down a whole column and said the same thing on
-   * every row. Only the odd one out earns the pixels.
+   * every row. Only the odd one out earns the pixels. Counted over the rows
+   * drawn here, since those are the siblings the eye compares.
    */
   const dominantKiln = (g: SessionGroup): string | null => {
     const counts = new Map<string, number>();
-    for (const s of g.sessions) {
+    for (const s of g.rows) {
       const kiln = kilnNameOf(s);
       if (kiln) counts.set(kiln, (counts.get(kiln) ?? 0) + 1);
     }
@@ -257,6 +309,7 @@ export const SessionTree: Component<{
           name: isMain ? p.name : (key.split('/').pop() ?? p.name),
           projectPath: p.path,
           sessions: [],
+          rows: [],
           lastActivity: 0,
         });
       } else if (isMain) {
@@ -271,6 +324,7 @@ export const SessionTree: Component<{
       name: 'Session folders',
       projectPath: '',
       sessions: [],
+      rows: [],
       lastActivity: 0,
     };
 
@@ -294,30 +348,26 @@ export const SessionTree: Component<{
       const workspace = sessionWorkspace(s);
       const g = workspace ? groupFor(workspace) : none;
       g.sessions.push(s);
-      const t = Date.parse(s.last_activity ?? s.started_at) || 0;
-      if (t > g.lastActivity) g.lastActivity = t;
+      g.lastActivity = Math.max(g.lastActivity, touchedAt(s));
     }
 
-    const all = [...byKey.values()];
+    const all = [...byKey.values(), none];
     for (const g of all) {
-      g.sessions.sort(
-        (a, b) =>
-          (Date.parse(b.last_activity ?? b.started_at) || 0) -
-          (Date.parse(a.last_activity ?? a.started_at) || 0),
-      );
+      g.sessions.sort(byRecency);
+      g.rows = g.sessions.filter((s) => !shownAbove().has(s.id));
     }
-    none.sessions.sort(
-      (a, b) =>
-        (Date.parse(b.last_activity ?? b.started_at) || 0) -
-        (Date.parse(a.last_activity ?? a.started_at) || 0),
-    );
-    return none.sessions.length ? [...all, none] : all;
+    // A group with no session at all is not a place the user works yet.
+    return all.filter((g) => g.sessions.length > 0);
   });
 
+  /** The project an inbox row names: the group its workspace falls in. */
+  const projectLabelOf = (s: Session): string | null => {
+    const g = allGroups().find((x) => x.sessions.some((m) => m.id === s.id));
+    return g?.projectPath ? g.name : null;
+  };
+
   const live = createMemo<SessionGroup[]>(() =>
-    allGroups()
-      .filter((g) => g.sessions.length || !g.projectPath)
-      .sort((a, b) => b.lastActivity - a.lastActivity),
+    [...allGroups()].sort((a, b) => b.lastActivity - a.lastActivity),
   );
 
   /** True when the pinned project actually has a group to scope to. */
@@ -337,22 +387,23 @@ export const SessionTree: Component<{
   );
 
   /**
-   * Everything the body left out, folded and COUNTED: other projects' sessions
-   * and projects with nothing running, in one section.
+   * Everything the pin left out, folded and COUNTED: the other projects that
+   * have sessions.
    *
-   * One fold rather than two. A registry of twenty projects is mostly projects
-   * you are not working in today, and each cost a row that pushed the ones you
-   * ARE working in off the screen — but a filter you cannot see is worse than
-   * the rows were, so the count states how much is hidden and one click shows
-   * it. They stay fully usable when open: a folded project is the same header
-   * row as a pinned one, so New Session and the context menu work there too.
+   * A filter you cannot see is worse than the rows it saves, so the count
+   * states how much is hidden and one click shows it. They stay fully usable
+   * when open: a folded project is the same header row as a pinned one, so
+   * New Session and the context menu work there too.
    */
   const offScope = createMemo<SessionGroup[]>(() => {
     const shown = new Set(groups().map((g) => g.key));
-    return allGroups()
-      .filter((g) => !shown.has(g.key))
-      .sort((a, b) => b.sessions.length - a.sessions.length || a.name.localeCompare(b.name));
+    return live().filter((g) => !shown.has(g.key));
   });
+
+  /** The fold, like a group, does not hide the open session. */
+  const foldOpen = () =>
+    idleOpen() ||
+    offScope().some((g) => g.rows.some((s) => s.id === props.currentSessionId));
 
   /**
    * Capture-phase router for the single hoisted context trigger.
@@ -379,9 +430,9 @@ export const SessionTree: Component<{
         }
       }
       const key = target?.closest('[data-group-key]')?.getAttribute('data-group-key');
-      // ALL groups, not just the drawn ones: a project in the folded "No
-      // sessions" section renders the same header row, and searching only the
-      // live list vetoed its menu.
+      // ALL groups, not just the pinned ones: a project in the folded "Other
+      // projects" section renders the same header row, and searching only
+      // the scoped list vetoed its menu.
       const g = allGroups().find((x) => x.key === key) ?? null;
       setMenuTarget(g?.projectPath ? { kind: 'group', group: g } : null);
       return !!g?.projectPath;
@@ -418,9 +469,14 @@ export const SessionTree: Component<{
   /**
    * One project header — chevron, icon, name, count, and its New Session.
    *
-   * Shared by the live list and the folded "No sessions" section, so a quiet
-   * project is the same row as a busy one and starting work in it is the same
-   * gesture.
+   * Shared by the pinned list and the folded "Other projects" section, so a
+   * folded project is the same row as a pinned one and starting work in it
+   * is the same gesture.
+   *
+   * The chevron and the count only when there is a row to unfold. A project
+   * whose every session sits in the Inbox above keeps its header, because
+   * New Session belongs there, but a ">" over nothing promises a fold that
+   * opens on air.
    */
   const groupHeader = (g: SessionGroup) => (
     <div
@@ -436,13 +492,19 @@ export const SessionTree: Component<{
               <button
                 type="button"
                 class={`${treeGroupRow} flex-1 min-w-0 h-full text-shell-ink hover:bg-transparent`}
-                aria-expanded={!collapsed().has(g.key)}
+                aria-expanded={g.rows.length ? !isCollapsed(g) : undefined}
                 data-testid={`session-group-${g.key}`}
-                onClick={() => toggle(g.key)}
+                onClick={() => g.rows.length && toggle(g.key)}
               >
-                <ChevronRight
-                  class={`${treeChevron} ${collapsed().has(g.key) ? '' : 'rotate-90'}`}
-                />
+                <Show
+                  when={g.rows.length}
+                  fallback={<span class={`${treeChevron} inline-block`} aria-hidden="true" />}
+                >
+                  <ChevronRight
+                    data-testid="session-group-chevron"
+                    class={`${treeChevron} ${isCollapsed(g) ? '' : 'rotate-90'}`}
+                  />
+                </Show>
                 <FolderGit2
                   classList={{
                     'w-3.5 h-3.5 shrink-0': true,
@@ -451,7 +513,9 @@ export const SessionTree: Component<{
                   }}
                 />
                 <span class="truncate">{g.name}</span>
-                <span class="text-muted-dark font-normal tabular-nums">{g.sessions.length}</span>
+                <Show when={g.rows.length}>
+                  <span class="text-muted-dark font-normal tabular-nums">{g.rows.length}</span>
+                </Show>
               </button>
               {/* Per-project New Session. On the PROJECT row because a session
                   belongs to exactly one project, and the panel-wide button it
@@ -478,7 +542,34 @@ export const SessionTree: Component<{
     <Menu.ContextTrigger
       asChild={(triggerProps) => (
         <div {...triggerProps({ class: 'contents' })}>
-    <div data-testid="session-list">
+    <div data-testid="session-tree">
+      {/* Above the project tier, because it is where you were. The waiting
+          count rides its header in the accent. */}
+      <TreeSection
+        label="Inbox"
+        count={inbox().length}
+        open={inboxOpen()}
+        onToggle={() => setInboxOpen((v) => !v)}
+        testid="inbox-section"
+        urgent={waitingCount() > 0}
+      >
+        <div class="flex flex-col">
+          <For each={inbox()}>
+            {(s) => (
+              <SessionRow
+                session={s}
+                selected={props.currentSessionId === s.id}
+                branch={branchOfSession(s)}
+                kilnLabel={kilnNameOf(s)}
+                projectLabel={projectLabelOf(s)}
+                onSelect={() => props.onSelectSession(s.id)}
+                onArchive={() => props.onArchiveSession(s.id)}
+                onDelete={() => props.onDeleteSession(s.id)}
+              />
+            )}
+          </For>
+        </div>
+      </TreeSection>
       <For each={groups()}>
         {(g) => (
           <div class="mb-0.5">
@@ -486,9 +577,9 @@ export const SessionTree: Component<{
                 header otherwise leaves nothing on screen saying which project
                 you are reading. */}
             {groupHeader(g)}
-            <Show when={!collapsed().has(g.key) && g.sessions.length > 0}>
+            <Show when={!isCollapsed(g) && g.rows.length > 0}>
               <div class="flex flex-col">
-              <For each={g.sessions}>
+              <For each={g.rows}>
                 {(s) => (
                   <SessionRow
                     session={s}
@@ -508,13 +599,13 @@ export const SessionTree: Component<{
         )}
       </For>
 
-      {/* Projects with nothing running. Collapsed by default and counted, so
-          a quiet registry states its size without spending a row on each
-          member. */}
+      {/* The projects the pin scopes out. Collapsed by default and counted,
+          so the rail states what it hides without spending a row on each
+          member. Empty when nothing is pinned: every project is above. */}
       <TreeSection
-        label={scoped() ? 'Other projects' : 'No sessions'}
+        label="Other projects"
         count={offScope().length}
-        open={idleOpen()}
+        open={foldOpen()}
         onToggle={() => setIdleOpen((v) => !v)}
         testid="idle-projects-toggle"
       >
@@ -522,9 +613,9 @@ export const SessionTree: Component<{
           {(g) => (
             <div class="mb-0.5">
               {groupHeader(g)}
-              <Show when={!collapsed().has(g.key) && g.sessions.length > 0}>
+              <Show when={!isCollapsed(g) && g.rows.length > 0}>
                 <div class="flex flex-col">
-                  <For each={g.sessions}>
+                  <For each={g.rows}>
                     {(sn) => (
                       <SessionRow
                         session={sn}

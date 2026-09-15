@@ -47,23 +47,17 @@ test.describe('Session list', () => {
     await expect(page.getByTestId('session-item-archived-001')).toHaveCount(0);
   });
 
-  test('says a registered project is empty on the project row itself', async ({ page }) => {
+  test('hides a registered project until a session starts in it', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [] });
     await page.goto('/');
     await openSessionsList(page);
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
 
-    // The rail is two tiers now, and an empty project states its emptiness as
-    // a COUNT on its own row — beside the New Session button that fixes it.
-    // The old "No sessions" body cost two rows per empty project, which with
-    // twenty registered projects was thirty rows of nothing.
-    // A project with nothing running is behind the counted fold — the rail
-    // scopes to what you are working in, and states how much it hides.
-    await page.getByTestId('idle-projects-toggle').click();
-    const group = page.getByTestId('session-group-/home/user/project');
-    await expect(group).toBeVisible();
-    await expect(group).toContainText('0');
-    await expect(page.getByTestId('session-group-new-/home/user/project')).toBeAttached();
+    // A detected directory is not a place the user works yet. It used to sit
+    // behind a counted "No sessions" fold, one row per empty project; now it
+    // takes no row and no fold, and the panel says what there is to do.
+    await expect(page.getByTestId('session-group-/home/user/project')).toHaveCount(0);
+    await expect(page.getByTestId('idle-projects-toggle')).toHaveCount(0);
+    await expect(page.getByText('No sessions yet')).toBeVisible();
   });
 
   test('falls back to a panel-wide empty state with no projects either', async ({ page }) => {

@@ -17,7 +17,16 @@ import { openSessionsList } from './helpers/nav';
  */
 test.describe('New Session lives on the project row', () => {
   test('the project header carries New Session, above its sessions', async ({ page }) => {
-    await setupBasicMocks(page, { sessions: [MOCK_SESSION, MOCK_SESSION_2] });
+    // Five newer sessions fill the Inbox, so MOCK_SESSION is a row under
+    // its project header rather than an inbox row above every header.
+    const fillers = Array.from({ length: 5 }, (_, i) => ({
+      ...MOCK_SESSION,
+      session_id: `filler-${i}`,
+      title: `Filler ${i}`,
+      started_at: `2026-06-0${i + 1}T00:00:00Z`,
+      last_activity: `2026-06-0${i + 1}T00:00:00Z`,
+    }));
+    await setupBasicMocks(page, { sessions: [...fillers, MOCK_SESSION, MOCK_SESSION_2] });
 
     await page.goto('/');
     await openSessionsList(page);

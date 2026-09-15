@@ -6,18 +6,14 @@ import type { Session } from '@/lib/types';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { PanelShell } from './PanelShell';
 import { TreeSection } from '@/components/tree/TreeSection';
-import { sessionStatus } from '@/lib/session-status';
-import { inboxSessions } from '@/lib/session-inbox';
+import { byRecency, inboxSessions } from '@/lib/session-inbox';
 import { reflectionSessions } from '@/lib/session-reflections';
 import { SessionRow, SessionTree } from './SessionTree';
 import { EmptyState } from '@/components/ui/EmptyState';
 
-const byRecency = (a: Session, b: Session) =>
-  (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
-
 /**
- * The sessions rail — two tiers, project over session, with an Archived
- * collapsible below.
+ * The sessions rail — an Inbox of the last few sessions, then two tiers,
+ * project over session, with Reflections and Archived collapsibles below.
  *
  * Its own panel, NOT a scope of the file tree. The Navigator made the two
  * mutually exclusive, so reading a file hid the session list and switching
@@ -37,7 +33,6 @@ export const SessionsPanel: Component = () => {
 
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
   const [showArchived, setShowArchived] = createSignal(false);
-  const [inboxOpen, setInboxOpen] = createSignal(true);
   const [reflectionsOpen, setReflectionsOpen] = createSignal(false);
 
   onMount(() => {
@@ -94,14 +89,12 @@ export const SessionsPanel: Component = () => {
   /**
    * The Inbox — see `lib/session-inbox.ts`, which both shells share.
    *
-   * Membership is "not idle AND touched in the last day". The staleness rule
-   * is what keeps it an inbox rather than a second session list — an agent
-   * that has been blocked on a question since last week is not news, and left
-   * in, it would sit at the top of the rail forever. It stays reachable in the
-   * tree below, under its own project.
+   * The last few sessions the user touched, whatever their project. The tree
+   * draws it above its project tier and does not repeat its rows, so one
+   * session has one row on the rail; it moves down into its project when
+   * newer work pushes it out.
    */
   const inbox = createMemo(() => inboxSessions(activeList()));
-  const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));
 
   /**
@@ -114,7 +107,11 @@ export const SessionsPanel: Component = () => {
    */
   const reflections = createMemo(() => reflectionSessions(sessions()));
 
-  /** The tree below leaves the passes to that section, so neither repeats. */
+  /**
+   * The tree below leaves the passes to that section, so neither repeats.
+   * Inbox members stay in this list: the tree needs them to know which
+   * projects have sessions, and it draws them once, in its Inbox.
+   */
   const treeList = createMemo(() => activeList().filter((s) => s.session_type !== 'plugin'));
 
   const row = (s: Session) => (
@@ -141,23 +138,12 @@ export const SessionsPanel: Component = () => {
           top of a list of sessions — its one unique offer was a GLOBAL
           "active" group, and the Inbox below is that group, in the open,
           without a click. The waiting count rides the Inbox header instead. */}
-      <div class="flex-1 overflow-y-auto px-1 py-1.5">
-        {/* Above the tree, because it is what you came to look at. */}
-        <TreeSection
-          label="Inbox"
-          count={inbox().length}
-          open={inboxOpen()}
-          onToggle={() => setInboxOpen((v) => !v)}
-          testid="inbox-section"
-          urgent={waitingCount() > 0}
-        >
-          <div class="flex flex-col">
-            <For each={inbox()}>{row}</For>
-          </div>
-        </TreeSection>
-
+      {/* The whole rail is the session list: Inbox, tree, Reflections and
+          Archived are its sections. */}
+      <div class="flex-1 overflow-y-auto px-1 py-1.5" data-testid="session-list">
         <SessionTree
           sessions={treeList()}
+          inbox={inbox()}
           currentSessionId={currentSession()?.id}
           projects={projects()}
           currentProjectPath={currentProject()?.path}
@@ -169,7 +155,10 @@ export const SessionsPanel: Component = () => {
           branchOf={branchOf}
           kilnName={kilnName}
         />
-        <Show when={!projects().length && !treeList().length}>
+        {/* Projects alone put nothing on the rail now — a project shows once
+            a session starts in it — so no session is the empty state, whether
+            or not the registry has entries. */}
+        <Show when={!treeList().length}>
           <EmptyState
             title="No sessions yet"
             body="Start one to give an agent a workspace and a kiln."

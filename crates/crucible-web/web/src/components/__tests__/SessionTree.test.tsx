@@ -51,10 +51,6 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-/** Unfold the "No sessions" section — projects with nothing running. */
-const openIdleProjects = (get: (id: string) => HTMLElement) =>
-  fireEvent.click(get('idle-projects-toggle'));
-
 describe('SessionTree', () => {
   it('groups sessions by project and folds worktree sessions into the repo group', () => {
     const projects = [
@@ -71,12 +67,12 @@ describe('SessionTree', () => {
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
 
-    // ONE group for the repo (main + worktree), one empty 'other', one session-folders bucket.
+    // ONE group for the repo (main + worktree), one session-folders bucket.
+    // 'other' has no session, so it takes no row.
     const repoGroup = getByTestId('session-group-/repo');
     expect(repoGroup).toBeTruthy();
     expect(repoGroup.textContent).toContain('2');
-    openIdleProjects(getByTestId);
-    expect(getByTestId('session-group-/other')).toBeTruthy();
+    expect(queryByTestId('session-group-/other')).toBeNull();
     expect(getByTestId('session-group-::none')).toBeTruthy();
     expect(queryByTestId('session-group-x')).toBeNull(); // worktree never a group
 
@@ -130,7 +126,7 @@ describe('SessionTree', () => {
     const { getByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
-    const list = getByTestId('session-list');
+    const list = getByTestId('session-tree');
     const ids = [...list.querySelectorAll('[data-testid^="session-item-"]')].map((el) =>
       el.getAttribute('data-testid'),
     );
@@ -171,6 +167,7 @@ describe('SessionTree — New Session belongs to the project', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
   const sessions = [
     session({ id: 's-main', workspace: '/repo' }),
+    session({ id: 's-other', workspace: '/other' }),
     session({ id: 's-loose', workspace: '/kilns/main' }), // no project
   ];
 
@@ -185,7 +182,6 @@ describe('SessionTree — New Session belongs to the project', () => {
       />
     ));
 
-    openIdleProjects(getByTestId);
     fireEvent.click(getByTestId('session-group-new-/other'));
     // The path, not the name: the draft opens aimed at a directory.
     expect(onNewSession).toHaveBeenCalledWith('/other');
@@ -197,11 +193,14 @@ describe('SessionTree — New Session belongs to the project', () => {
     // display name collides on the common case, not the exotic one.
     const onNewSession = vi.fn();
     const dupes = [project('/work/api', 'api'), project('/oss/api', 'api')];
+    const twice = [
+      session({ id: 's-work', workspace: '/work/api' }),
+      session({ id: 's-oss', workspace: '/oss/api' }),
+    ];
     const { getByTestId } = render(() => (
-      <SessionTree sessions={[]} projects={dupes} {...baseProps} onNewSession={onNewSession} />
+      <SessionTree sessions={twice} projects={dupes} {...baseProps} onNewSession={onNewSession} />
     ));
 
-    openIdleProjects(getByTestId);
     expect(getByTestId('session-group-/work/api')).toBeTruthy();
     expect(getByTestId('session-group-/oss/api')).toBeTruthy();
     fireEvent.click(getByTestId('session-group-new-/oss/api'));
@@ -234,7 +233,10 @@ describe('SessionTree — New Session belongs to the project', () => {
 
 describe('SessionTree — the project row context menu', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
-  const sessions = [session({ id: 's-main', workspace: '/repo' })];
+  const sessions = [
+    session({ id: 's-main', workspace: '/repo' }),
+    session({ id: 's-other', workspace: '/other' }),
+  ];
 
   // The menu renders through a Portal, so it lives on `document`, not inside
   // the render container. Scope to the OPEN content: ark keeps the closed
@@ -263,7 +265,6 @@ describe('SessionTree — the project row context menu', () => {
       />
     ));
 
-    openIdleProjects(getByTestId);
     fireEvent.contextMenu(getByTestId('session-group-/other'));
     await waitFor(() => expect(menuLabels()).toContain('New session here'));
     chooseMenuItem('New session here');
@@ -284,7 +285,6 @@ describe('SessionTree — the project row context menu', () => {
 
     // One hoisted trigger serves every row, so a stale target is the defect
     // hoisting can introduce: open on one project, then on another.
-    openIdleProjects(getByTestId);
     fireEvent.contextMenu(getByTestId('session-group-/other'));
     await waitFor(() => expect(menuLabels()).toContain('Pin project'));
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -381,7 +381,7 @@ describe('SessionTree — the project row context menu', () => {
   });
 });
 
-describe('SessionTree — quiet projects fold away', () => {
+describe('SessionTree — a project with no sessions is not there', () => {
   const projects = [
     project('/repo', 'crucible'),
     project('/other', 'other'),
@@ -389,49 +389,21 @@ describe('SessionTree — quiet projects fold away', () => {
   ];
   const sessions = [session({ id: 's-main', workspace: '/repo' })];
 
-  it('hides projects with nothing running, and counts them', () => {
+  it('hides a project until it has a session', () => {
     const { getByTestId, queryByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
 
-    // A registry of twenty projects is mostly ones you are not working in
-    // today, and each cost a row that pushed the busy ones off the screen.
+    // A detected project is not a place the user works yet. It used to sit
+    // behind a counted "No sessions" fold; now it takes no row at all until
+    // a session is started in it.
     expect(getByTestId('session-group-/repo')).toBeTruthy();
     expect(queryByTestId('session-group-/other')).toBeNull();
-    expect(getByTestId('idle-projects-toggle').textContent).toContain('2');
-  });
-
-  it('opens them on demand, New Session and all', () => {
-    const onNewSession = vi.fn();
-    const { getByTestId } = render(() => (
-      <SessionTree
-        sessions={sessions}
-        projects={projects}
-        {...baseProps}
-        onNewSession={onNewSession}
-      />
-    ));
-
-    openIdleProjects(getByTestId);
-    // Starting work in a quiet project is exactly what the fold must not
-    // block, so a folded project is the SAME row as a busy one.
-    fireEvent.click(getByTestId('session-group-new-/third'));
-    expect(onNewSession).toHaveBeenCalledWith('/third');
-  });
-
-  it('offers no fold when every project is busy', () => {
-    const { queryByTestId } = render(() => (
-      <SessionTree
-        sessions={[session({ id: 's-main', workspace: '/repo' })]}
-        projects={[project('/repo', 'crucible')]}
-        {...baseProps}
-      />
-    ));
-    // A control that does nothing must not take a row.
+    expect(queryByTestId('session-group-/third')).toBeNull();
     expect(queryByTestId('idle-projects-toggle')).toBeNull();
   });
 
-  it('keeps the project-less bucket in the main list, not the fold', () => {
+  it('keeps the project-less bucket in the main list', () => {
     const { getByTestId } = render(() => (
       <SessionTree
         sessions={[...sessions, session({ id: 's-loose', workspace: '/kilns/main' })]}
@@ -439,7 +411,108 @@ describe('SessionTree — quiet projects fold away', () => {
         {...baseProps}
       />
     ));
-    // It HAS sessions — it is quiet projects that fold, not homeless ones.
+    // It HAS sessions — it is empty projects that hide, not homeless ones.
     expect(getByTestId('session-group-::none')).toBeTruthy();
+  });
+});
+
+describe('SessionTree — the open session is never hidden', () => {
+  const projects = [project('/repo', 'crucible'), project('/other', 'other')];
+  const sessions = [
+    session({ id: 's-main', workspace: '/repo' }),
+    session({ id: 's-other', workspace: '/other' }),
+  ];
+
+  it('opens a collapsed group that holds the current session', () => {
+    localStorage.setItem('crucible:sessionTree.collapsed', JSON.stringify(['/repo']));
+    const { getByTestId } = render(() => (
+      <SessionTree sessions={sessions} projects={projects} currentSessionId="s-main" {...baseProps} />
+    ));
+    // Selected from the palette, a session in a group collapsed last week
+    // was on screen nowhere. The group that holds the open session opens.
+    expect(getByTestId('session-item-s-main')).toBeTruthy();
+  });
+
+  it('opens the Other projects fold that holds the current session', () => {
+    const { getByTestId } = render(() => (
+      <SessionTree
+        sessions={sessions}
+        projects={projects}
+        currentProjectPath="/repo"
+        currentSessionId="s-other"
+        {...baseProps}
+      />
+    ));
+    expect(getByTestId('session-item-s-other')).toBeTruthy();
+  });
+});
+
+describe('SessionTree — the Inbox above the project tier', () => {
+  const projects = [project('/repo', 'crucible'), project('/other', 'other')];
+  const inboxed = session({ id: 's-inbox', workspace: '/repo' });
+  const onlyInbox = session({ id: 's-only-inbox', workspace: '/other' });
+  const sessions = [
+    inboxed,
+    session({ id: 's-tree', workspace: '/repo', last_activity: '2026-07-21T10:00:00Z' }),
+    onlyInbox,
+  ];
+  const draw = (over: Record<string, unknown> = {}) =>
+    render(() => (
+      <SessionTree
+        sessions={sessions}
+        projects={projects}
+        inbox={[inboxed, onlyInbox]}
+        {...baseProps}
+        {...over}
+      />
+    ));
+
+  it('draws an inbox row once, in the Inbox, with its project named', () => {
+    const { getAllByTestId, getByTestId } = draw();
+    expect(getAllByTestId('session-item-s-inbox')).toHaveLength(1);
+    const section = getByTestId('inbox-section');
+    // The row follows the section header; the tree's rows come after.
+    expect(section.compareDocumentPosition(getByTestId('session-item-s-inbox')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Out of its group, so the project rides the row.
+    expect(getByTestId('session-item-s-only-inbox').textContent).toContain('other');
+    expect(getByTestId('session-item-s-tree')).toBeTruthy();
+  });
+
+  it('keeps a project whose every session is in the Inbox, without a chevron', () => {
+    const { getByTestId, queryByTestId } = draw();
+    // The project is real and New Session must stay reachable on its row,
+    // but there is nothing under it to unfold, so no ">" says there is.
+    const header = getByTestId('session-group-/other');
+    expect(header.querySelector('[data-testid="session-group-chevron"]')).toBeNull();
+    expect(header.getAttribute('aria-expanded')).toBeNull();
+    expect(getByTestId('session-group-new-/other')).toBeTruthy();
+    expect(queryByTestId('session-item-s-only-inbox')).toBeTruthy();
+    // The busy project keeps its chevron: it has a row to fold.
+    expect(getByTestId('session-group-/repo').querySelector('[data-testid="session-group-chevron"]')).toBeTruthy();
+  });
+
+  it('counts only the rows the tier draws', () => {
+    const { getByTestId } = draw();
+    expect(getByTestId('session-group-/repo').textContent).toContain('1');
+    expect(getByTestId('session-group-/other').textContent).not.toMatch(/\d/);
+  });
+
+  // The Inbox used to be drawn by the panel, outside the tree, so its rows
+  // had no context menu — and with the newest sessions living only there,
+  // Delete was unreachable for exactly the sessions in use.
+  it('gives an inbox row the session context menu', async () => {
+    const onDeleteSession = vi.fn();
+    const { getByTestId } = draw({ onDeleteSession });
+    fireEvent.contextMenu(getByTestId('session-item-s-inbox'));
+    const item = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(
+        '[data-scope="menu"][data-part="content"][data-state="open"] [data-testid="session-group-menu-delete-session"]',
+      );
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.pointerDown(item);
+    fireEvent.click(item);
+    await waitFor(() => expect(onDeleteSession).toHaveBeenCalledWith('s-inbox'));
   });
 });

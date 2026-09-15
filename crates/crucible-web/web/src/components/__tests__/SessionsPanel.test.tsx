@@ -34,6 +34,7 @@ vi.mock('@/contexts/ProjectContext', () => ({
 
 import { SessionsPanel } from '../SessionsPanel';
 import { attentionActions } from '@/stores/attentionStore';
+import { INBOX_SIZE } from '@/lib/session-inbox';
 
 const project = (path: string, name: string): Project => ({
   path,
@@ -42,7 +43,9 @@ const project = (path: string, name: string): Project => ({
   last_accessed: '2026-01-01T00:00:00Z',
 });
 
-const session = (id: string, title: string, workspace: string | null): Session => ({
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+
+const session = (id: string, title: string, workspace: string | null, ageMinutes = 5): Session => ({
   id,
   session_type: 'chat',
   kilns: [],
@@ -51,13 +54,19 @@ const session = (id: string, title: string, workspace: string | null): Session =
   title,
   agent_model: null,
   agent_mode: null,
-  // RECENT by default. The Inbox drops anything untouched for a day, so a
-  // fixed date in the past silently emptied it — a fixture that ages out.
-  started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
-  last_activity: new Date(Date.now() - 5 * 60_000).toISOString(),
+  started_at: minutesAgo(ageMinutes),
+  last_activity: minutesAgo(ageMinutes),
   event_count: 0,
   archived: false,
 });
+
+/**
+ * Enough recent sessions to fill the Inbox, so that what comes after them
+ * lands in the tree. The Inbox takes the newest `INBOX_SIZE`; these are
+ * newer than anything a test adds with the default age.
+ */
+const inboxFillers = (workspace: string): Session[] =>
+  Array.from({ length: INBOX_SIZE }, (_, i) => session(`f${i}`, `filler-${i}`, workspace, i + 1));
 
 describe('SessionsPanel — two tiers, project over session', () => {
   beforeEach(() => {
@@ -65,8 +74,9 @@ describe('SessionsPanel — two tiers, project over session', () => {
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
     pinnedProject = projectList[0];
     sessionList = [
-      session('s1', 'netcode-spike', '/home/me/crucible'),
-      session('s2', 'atlas-migration', '/home/me/atlas'),
+      ...inboxFillers('/home/me/crucible'),
+      session('s1', 'netcode-spike', '/home/me/crucible', 60),
+      session('s2', 'atlas-migration', '/home/me/atlas', 90),
     ];
   });
 
@@ -109,6 +119,16 @@ describe('SessionsPanel — two tiers, project over session', () => {
     window.removeEventListener('crucible:new-session', listener);
     expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });
+
+  it('hides a detected project until a session starts in it', () => {
+    pinnedProject = null;
+    projectList = [...projectList, project('/home/me/quiet', 'quiet')];
+    render(() => <SessionsPanel />);
+    // No row, no chevron, no fold: a directory the user never worked in is
+    // not a place on the rail yet.
+    expect(screen.queryByTestId('session-group-/home/me/quiet')).toBeNull();
+    expect(screen.queryByTestId('idle-projects-toggle')).toBeNull();
+  });
 });
 
 describe('SessionsPanel — nothing yet', () => {
@@ -134,65 +154,96 @@ describe('SessionsPanel — nothing yet', () => {
     // No workspace: there is no project to name, so the draft asks for one.
     expect(started).toEqual([null]);
   });
+
+  it('shows the empty state, not an empty Inbox, when only projects exist', () => {
+    projectList = [project('/home/me/crucible', 'crucible')];
+    render(() => <SessionsPanel />);
+    expect(screen.getByTestId('sessions-empty')).toBeTruthy();
+    expect(screen.queryByTestId('inbox-section')).toBeNull();
+  });
 });
 
 describe('SessionsPanel — the Inbox', () => {
   const ASK = { id: 'r1', kind: 'ask' as const, question: 'Proceed?' };
-  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
   beforeEach(() => {
     localStorage.clear();
     for (const id of ['s1', 's2', 's3']) attentionActions.clear(id);
-    projectList = [project('/home/me/crucible', 'crucible')];
-    pinnedProject = projectList[0];
+    projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
+    pinnedProject = null;
     sessionList = [
-      session('s1', 'netcode-spike', '/home/me/crucible'),
-      session('s2', 'docs-pass', '/home/me/crucible'),
-      { ...session('s3', 'ancient', '/home/me/crucible'), last_activity: minutesAgo(60 * 30) },
+      session('s1', 'netcode-spike', '/home/me/crucible', 5),
+      session('s2', 'atlas-migration', '/home/me/atlas', 10),
+      session('s3', 'ancient', '/home/me/crucible', 60 * 30),
     ];
   });
 
-  it('lists what is doing something, above the tree', () => {
-    attentionActions.report('s1', { pendingInteraction: ASK });
+  it('lists the last few sessions, above the tree, whatever they are doing', () => {
     const { container } = render(() => <SessionsPanel />);
 
     const section = screen.getByTestId('inbox-section');
     expect(section.textContent).toContain('Inbox');
-    // Above the project tree — it is what you came to look at.
+    // Nothing here is working or waiting. The Inbox is "where was I", not a
+    // status filter, so an idle session still has its place.
+    expect(section.textContent).toContain('3');
+    // Above the project tree.
     const order = [...container.querySelectorAll('[data-testid="inbox-section"], [data-testid^="session-group-"]')];
     expect(order[0]).toBe(section);
   });
 
-  it('drops a session whose last message is over a day old', () => {
-    // The staleness rule is what keeps this an inbox rather than a second
-    // session list: an agent blocked since last week is not news, and would
-    // otherwise sit at the top of the rail forever.
-    attentionActions.report('s3', { pendingInteraction: ASK });
+  it('draws a session once: in the Inbox, not again in the tree', () => {
     render(() => <SessionsPanel />);
-    expect(screen.queryByTestId('inbox-section')).toBeNull();
+    expect(screen.getAllByTestId('session-item-s1')).toHaveLength(1);
+    // Its project stays, because New Session lives there — but with nothing
+    // to unfold, so no chevron.
+    const header = screen.getByTestId('session-group-/home/me/atlas');
+    expect(header.querySelector('[data-testid="session-group-chevron"]')).toBeNull();
+    expect(screen.getByTestId('session-group-new-/home/me/atlas')).toBeTruthy();
   });
 
-  it('offers no Inbox when nothing is doing anything', () => {
+  it('stops at the newest few and leaves the rest to the tree', () => {
+    sessionList = [...inboxFillers('/home/me/crucible'), ...sessionList];
     render(() => <SessionsPanel />);
-    expect(screen.queryByTestId('inbox-section')).toBeNull();
+    expect(screen.getByTestId('inbox-section').textContent).toContain(String(INBOX_SIZE));
+    // The fillers are newer than s1, so s1 and its siblings are tree rows,
+    // under their project header; a filler sits above it, in the Inbox, once.
+    const header = screen.getByTestId('session-group-/home/me/crucible');
+    const after = (id: string) =>
+      !!(header.compareDocumentPosition(screen.getByTestId(id)) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(after('session-item-s1')).toBe(true);
+    expect(after('session-item-s3')).toBe(true);
+    expect(after('session-item-f0')).toBe(false);
+    expect(screen.getAllByTestId('session-item-f0')).toHaveLength(1);
+    expect(header.textContent).toContain('2');
   });
 
-  it('keeps an inbox session in the tree below as well', () => {
+  it('names the project on an inbox row, and does not indent it', () => {
+    render(() => <SessionsPanel />);
+    // An inbox row is out of its project's group. That is exactly when the
+    // project must ride the row; a tree row has the header above it.
+    const inboxRow = screen.getByTestId('inbox-section').parentElement!.querySelector(
+      '[data-testid="session-item-s2"]',
+    )!;
+    expect(inboxRow.textContent).toContain('atlas');
+    expect(inboxRow.className).not.toMatch(/\bpl-6\b/);
+  });
+
+  it('counts what is waiting on you in the accent', () => {
     attentionActions.report('s1', { pendingInteraction: ASK });
     render(() => <SessionsPanel />);
-    // It leaves the Inbox when it goes stale; the tree is where it lives.
-    expect(screen.getByTestId('session-group-/home/me/crucible')).toBeTruthy();
+    const count = screen.getByTestId('inbox-section').querySelector('.tabular-nums')!;
+    expect(count.className).toContain('text-attention');
   });
 });
 
 describe('SessionsPanel — one section vocabulary', () => {
-  it('gives Inbox, No sessions and Archived the same header shape', () => {
+  it('gives Inbox, Other projects and Archived the same header shape', () => {
     localStorage.clear();
-    attentionActions.report('s1', { pendingInteraction: { id: 'r', kind: 'ask', question: 'q' } });
-    projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/quiet', 'quiet')];
+    projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
     pinnedProject = projectList[0];
     sessionList = [
       session('s1', 'netcode-spike', '/home/me/crucible'),
+      session('s2', 'atlas-migration', '/home/me/atlas', 30),
       { ...session('s9', 'old', '/home/me/crucible'), archived: true },
     ];
     render(() => <SessionsPanel />);
@@ -203,7 +254,6 @@ describe('SessionsPanel — one section vocabulary', () => {
       (id) => screen.getByTestId(id).className,
     );
     expect(new Set(classes).size).toBe(1);
-    attentionActions.clear('s1');
   });
 });
 
@@ -213,8 +263,9 @@ describe('SessionsPanel — the tree is scoped to the pinned project', () => {
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
     pinnedProject = projectList[0];
     sessionList = [
-      session('s1', 'netcode-spike', '/home/me/crucible'),
-      session('s2', 'atlas-migration', '/home/me/atlas'),
+      ...inboxFillers('/home/me/crucible'),
+      session('s1', 'netcode-spike', '/home/me/crucible', 60),
+      session('s2', 'atlas-migration', '/home/me/atlas', 90),
     ];
   });
 
@@ -237,6 +288,7 @@ describe('SessionsPanel — the tree is scoped to the pinned project', () => {
     render(() => <SessionsPanel />);
     expect(screen.getByTestId('session-group-/home/me/crucible')).toBeTruthy();
     expect(screen.getByTestId('session-group-/home/me/atlas')).toBeTruthy();
+    expect(screen.queryByTestId('idle-projects-toggle')).toBeNull();
   });
 
   it('keeps a folded project fully usable', () => {

@@ -35,18 +35,28 @@ vi.mock('@/lib/session-status', () => ({
 }));
 
 import { SessionsTab } from '@/components/mobile/SessionsTab';
+import { INBOX_SIZE } from '@/lib/session-inbox';
 
-const session = (id: string, workspace: string, title: string): Session =>
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+
+const session = (id: string, workspace: string, title: string, ageMinutes = 60): Session =>
   ({
     id,
     title,
-    started_at: new Date().toISOString(),
-    last_activity: new Date().toISOString(),
+    started_at: minutesAgo(ageMinutes),
+    last_activity: minutesAgo(ageMinutes),
     archived: false,
     kilns: [],
     metadata: { workspace },
     workspace,
   }) as unknown as Session;
+
+/**
+ * Enough recent sessions to fill the Inbox, so that the sessions a test names
+ * land in the project list below it. Titles no assertion looks for.
+ */
+const inboxFillers = (workspace: string): Session[] =>
+  Array.from({ length: INBOX_SIZE }, (_, i) => session(`f${i}`, workspace, `filler ${i}`, i + 1));
 
 beforeEach(() => {
   state.projects = [
@@ -55,6 +65,7 @@ beforeEach(() => {
   ];
   state.currentProject = state.projects[0];
   state.sessions = [
+    ...inboxFillers('/work/alpha'),
     session('a1', '/work/alpha', 'Alpha one'),
     session('b1', '/work/beta', 'Beta one'),
   ];
@@ -86,12 +97,20 @@ describe('SessionsTab', () => {
     expect(screen.queryByText('Beta one')).toBeTruthy();
   });
 
-  // A session waiting on the user matters whatever project is on screen.
+  // The session the user touched last matters whatever project is on screen.
   it('keeps the Inbox across projects', () => {
-    state.waiting = ['b1'];
+    state.sessions = [...state.sessions, session('b2', '/work/beta', 'Beta two', 0)];
     render(() => <SessionsTab />);
     const inbox = screen.getByTestId('compact-inbox');
-    expect(inbox.textContent).toContain('Beta one');
+    expect(inbox.textContent).toContain('Beta two');
+  });
+
+  it('draws a session once: in the Inbox, not again in the project list', () => {
+    render(() => <SessionsTab />);
+    expect(screen.getAllByText('filler 0')).toHaveLength(1);
+    expect(screen.getByTestId('compact-inbox').textContent).toContain('filler 0');
+    // alpha is not empty — its newest rows are above — so no empty text.
+    expect(screen.queryByText('No sessions here yet.')).toBeNull();
   });
 
   /**

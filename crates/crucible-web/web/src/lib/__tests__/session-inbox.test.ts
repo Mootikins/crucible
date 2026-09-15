@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { INBOX_MAX_AGE_MS, inboxSessions } from '@/lib/session-inbox';
+import { INBOX_SIZE, inboxSessions } from '@/lib/session-inbox';
 import type { Session } from '@/lib/types';
-import type { SessionStatus } from '@/lib/session-status';
 
 const now = Date.parse('2026-09-11T12:00:00Z');
 const session = (over: Partial<Session>): Session =>
   ({
     id: 'x',
+    session_type: 'chat',
     started_at: new Date(now).toISOString(),
     last_activity: new Date(now).toISOString(),
     archived: false,
@@ -14,38 +14,45 @@ const session = (over: Partial<Session>): Session =>
     ...over,
   }) as Session;
 
-/** Status comes from the attention store in the app; a test states it. */
-const statusOf = (busy: string[]) => (s: Session): SessionStatus =>
-  busy.includes(s.id) ? 'working' : 'idle';
+const minutesAgo = (m: number) => new Date(now - m * 60_000).toISOString();
 
 describe('inboxSessions', () => {
-  it('keeps a session that is doing something', () => {
-    const busy = session({ id: 'busy' });
-    expect(inboxSessions([busy], now, statusOf(['busy'])).map((s) => s.id)).toEqual(['busy']);
-  });
-
-  it('leaves out an idle session', () => {
-    expect(inboxSessions([session({ id: 'idle' })], now, statusOf([]))).toEqual([]);
-  });
-
-  // An agent blocked since last week is not news. It stays in the tree below.
-  it('leaves out a session nobody has touched for a day', () => {
-    const stale = session({
-      id: 'stale',
-      last_activity: new Date(now - INBOX_MAX_AGE_MS - 1000).toISOString(),
-    });
-    expect(inboxSessions([stale], now, statusOf(['stale']))).toEqual([]);
-  });
-
-  it('puts the freshest first', () => {
-    const older = session({ id: 'older', last_activity: new Date(now - 60_000).toISOString() });
+  it('lists the sessions the user touched last, freshest first', () => {
+    const older = session({ id: 'older', last_activity: minutesAgo(1) });
     const newer = session({ id: 'newer' });
-    const got = inboxSessions([older, newer], now, statusOf(['older', 'newer']));
-    expect(got.map((s) => s.id)).toEqual(['newer', 'older']);
+    expect(inboxSessions([older, newer]).map((s) => s.id)).toEqual(['newer', 'older']);
   });
 
-  it('ignores a session whose timestamps make no sense', () => {
+  // Recency alone decides. A session that does nothing is still the one the
+  // user was in a minute ago, and that is what an inbox of "where was I"
+  // must show.
+  it('keeps an idle session', () => {
+    expect(inboxSessions([session({ id: 'idle' })]).map((s) => s.id)).toEqual(['idle']);
+  });
+
+  it(`stops at ${INBOX_SIZE}`, () => {
+    const many = Array.from({ length: INBOX_SIZE + 3 }, (_, i) =>
+      session({ id: `s${i}`, last_activity: minutesAgo(i) }),
+    );
+    const got = inboxSessions(many).map((s) => s.id);
+    expect(got).toHaveLength(INBOX_SIZE);
+    expect(got[0]).toBe('s0');
+    expect(got).not.toContain(`s${INBOX_SIZE}`);
+  });
+
+  it('leaves out an archived session', () => {
+    expect(inboxSessions([session({ id: 'gone', archived: true })])).toEqual([]);
+  });
+
+  // A pass a plugin ran for itself has its own section; see
+  // `session-reflections.ts`.
+  it('leaves out a plugin session', () => {
+    expect(inboxSessions([session({ id: 'pass', session_type: 'plugin' })])).toEqual([]);
+  });
+
+  it('puts a session whose timestamps make no sense last', () => {
     const broken = session({ id: 'broken', last_activity: 'not a date' });
-    expect(inboxSessions([broken], now, statusOf(['broken']))).toEqual([]);
+    const fine = session({ id: 'fine', last_activity: minutesAgo(600) });
+    expect(inboxSessions([broken, fine]).map((s) => s.id)).toEqual(['fine', 'broken']);
   });
 });
