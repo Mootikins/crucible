@@ -1,20 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { MOCK_SESSION } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
 /**
  * E2E: Session + File Tab Integration
  *
  * Verifies that session (chat) and file tabs coexist in the center pane,
- * ended sessions show the "Continue as new session" button, and clicking
- * that button creates a new session via POST.
+ * without either replacing the other.
  */
-
-const ENDED_SESSION = {
-  ...MOCK_SESSION,
-  state: 'ended' as const,
-};
 
 /** Helper: open a file tab (same approach as file-tab.spec.ts). */
 async function openFile(page: import('@playwright/test').Page, path: string, name: string) {
@@ -66,61 +59,4 @@ test.describe('Session and file tab integration', () => {
     await expect(fileTab).toHaveCount(1);
   });
 
-  test('ended session shows chat input (no continue button)', async ({ page }) => {
-    await setupBasicMocks(page, { sessions: [ENDED_SESSION] });
-
-    // Override specific session GET to return ended state (LIFO priority over wildcard)
-    await page.route('**/api/session/test-session-001', (route) => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({ json: ENDED_SESSION });
-      } else {
-        route.continue();
-      }
-    });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Wait for session list and click the ended session
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
-    // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-item-test-session-001').click();
-
-    // Positive load signal FIRST: chat input is shown regardless of state.
-    // The absence checks below are only meaningful once the panel is loaded.
-    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
-
-    // Assert: no 'Continue as new session' button (removed in lifecycle redesign)
-    await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
-
-    // Assert: 'This session has ended' text is NOT visible (removed in lifecycle redesign)
-    await expect(page.getByText('This session has ended')).toHaveCount(0);
-  });
-
-  test('ended session does not show continue button (lifecycle redesign)', async ({ page }) => {
-    await setupBasicMocks(page, { sessions: [ENDED_SESSION] });
-
-    // Override specific session GET to return ended state
-    await page.route('**/api/session/test-session-001', (route) => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({ json: ENDED_SESSION });
-      } else {
-        route.continue();
-      }
-    });
-
-    await page.goto('/');
-    await openSessionsList(page);
-
-    // Open the ended session
-    await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
-    // Switch to 'all' filter so ended sessions are visible
-    await page.getByTestId('session-item-test-session-001').click();
-
-    // Assert: 'Continue as new session' button is NOT present
-    await expect(page.getByRole('button', { name: /Continue as new session/ })).toHaveCount(0);
-
-    // Assert: chat input IS visible (always shown)
-    await expect(page.getByTestId('chat-input')).toBeVisible({ timeout: 5000 });
-  });
 });

@@ -69,7 +69,10 @@ impl TestServer {
 
     async fn shutdown(self) {
         let _ = self.shutdown_handle.send(());
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::timeout(Duration::from_secs(5), self._server_handle)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
 
@@ -94,233 +97,58 @@ async fn wait_until_indexed(client: &DaemonClient, kiln: &Path, name: &str) {
 }
 
 #[tokio::test]
-async fn text_search_matches_words_in_note_bodies() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
-    // The sentinel appears ONLY in the body — not in the title, not in the
-    // filename. That is the whole point: the old implementation matched names
-    // and titles, so a test whose sentinel appeared in either would pass
-    // against it.
-    std::fs::write(
-        kiln_dir.path().join("meeting.md"),
-        "# Meeting\n\nzqxjvbn is the distinctive body word.\n",
-    )
-    .expect("failed to write note");
-    wait_until_indexed(&client, kiln_dir.path(), "meeting").await;
-
-    let hits = client
-        .search_text(kiln_dir.path(), "zqxjvbn", 20)
-        .await
-        .expect("search_text RPC failed");
-
-    assert!(
-        hits.iter().any(|h| h.path.contains("meeting")),
-        "a word in a note's body must be findable; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
-    server.shutdown().await;
-}
-
-/// A `.txt` in a kiln is full-text searchable.
-///
-/// This is the whole of the intent behind `KilnFileKind::PlainText`: plain text
-/// gets an index row and an FTS entry so `cru search` can see inside it, while
-/// staying out of everything that assumes markdown. The sentinel appears only in
-/// the body, so matching the filename or the title cannot make this pass.
-#[tokio::test]
-async fn text_search_matches_words_inside_plain_text_files() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
-    std::fs::write(
-        kiln_dir.path().join("scratch.txt"),
-        "no frontmatter, no headings, no wikilinks.\nqfmzlrt is the distinctive body word.\n",
-    )
-    .expect("failed to write plain text file");
-    wait_until_indexed(&client, kiln_dir.path(), "scratch").await;
-
-    let hits = client
-        .search_text(kiln_dir.path(), "qfmzlrt", 20)
-        .await
-        .expect("search_text RPC failed");
-
-    assert!(
-        hits.iter().any(|h| h.path.contains("scratch")),
-        "a word inside a .txt must be findable; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
-    server.shutdown().await;
-}
-
-/// An asset stays invisible to search. The plain-text tier widened what gets
-/// indexed, and this is the edge of that widening — if `.png` starts being read
-/// as text, the tier has grown past what it claims.
-#[tokio::test]
-async fn text_search_ignores_assets() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
-    // Written as text so that a wrongly-widened predicate would actually find
-    // it, rather than the assertion passing because the bytes were unreadable.
-    std::fs::write(
-        kiln_dir.path().join("diagram.png"),
-        "wbtqkdh should never be indexed.\n",
-    )
-    .expect("failed to write asset");
-    std::fs::write(
-        kiln_dir.path().join("anchor.txt"),
-        "this file exists so the test can wait for indexing to have happened.\n",
-    )
-    .expect("failed to write anchor");
-    wait_until_indexed(&client, kiln_dir.path(), "anchor").await;
-
-    let hits = client
-        .search_text(kiln_dir.path(), "wbtqkdh", 20)
-        .await
-        .expect("search_text RPC failed");
-
-    assert!(
-        hits.is_empty(),
-        "an asset must not be indexed; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
-    server.shutdown().await;
-}
-
-/// Title matches must keep working — they are the half that was never broken,
-/// and FTS5 indexes the title column too.
-#[tokio::test]
-async fn text_search_still_matches_titles() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
-    std::fs::write(
-        kiln_dir.path().join("architecture.md"),
-        "---\ntitle: Wikilink Resolution\n---\n\nbody text\n",
-    )
-    .expect("failed to write note");
-    wait_until_indexed(&client, kiln_dir.path(), "architecture").await;
-
-    let hits = client
-        .search_text(kiln_dir.path(), "Wikilink", 20)
-        .await
-        .expect("search_text RPC failed");
-
-    assert!(
-        hits.iter().any(|h| h.path.contains("architecture")),
-        "a word in the title must still be findable; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
-    server.shutdown().await;
-}
-
-/// A user's query is words, not FTS5 syntax. `foo-bar` and a stray quote are
-/// both valid input and both are MATCH syntax errors unquoted — which would
-/// surface as "search failed" for ordinary typing.
-#[tokio::test]
-async fn punctuation_in_a_query_does_not_error() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
+async fn text_search_preserves_body_title_file_kind_and_query_semantics() {
+    let server = TestServer::start().await.unwrap();
+    let kiln = tempfile::tempdir().unwrap();
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    client.kiln_open(kiln.path()).await.unwrap();
+    for (name, content) in [
+        (
+            "meeting.md",
+            "# Meeting\n\nzqxjvbn is the distinctive body word.\n",
+        ),
+        (
+            "scratch.txt",
+            "no headings. qfmzlrt is the distinctive body word.\n",
+        ),
+        ("diagram.png", "assetonlytoken should never be indexed.\n"),
+        (
+            "architecture.md",
+            "---\ntitle: Wikilink Resolution\n---\n\nbody text\n",
+        ),
+        (
+            "spread.md",
+            "# Spread\n\nzqxjvbn appears here, and much later wbtqkdh does too.\n",
+        ),
+    ] {
+        std::fs::write(kiln.path().join(name), content).unwrap();
+    }
+    for name in ["meeting", "scratch", "architecture", "spread"] {
+        wait_until_indexed(&client, kiln.path(), name).await;
+    }
+    for (query, expected) in [
+        ("zqxjvbn", Some("meeting")),
+        ("qfmzlrt", Some("scratch")),
+        ("Wikilink", Some("architecture")),
+        ("zqxjvbn wbtqkdh", Some("spread")),
+        ("\"zqxjvbn wbtqkdh\"", None),
+        ("assetonlytoken", None),
+    ] {
+        let hits = client.search_text(kiln.path(), query, 20).await.unwrap();
+        assert!(
+            match expected {
+                Some(name) => hits.iter().any(|hit| hit.path.contains(name)),
+                None => hits.is_empty(),
+            },
+            "query {query:?}: expected {expected:?}, got {hits:?}"
+        );
+    }
     for query in ["foo-bar", "what\"s this", "AND", "*", "a OR b"] {
         client
-            .search_text(kiln_dir.path(), query, 20)
+            .search_text(kiln.path(), query, 20)
             .await
             .unwrap_or_else(|e| panic!("query {query:?} should not error: {e:#}"));
     }
-
-    server.shutdown().await;
-}
-
-/// A multi-word query means "all words somewhere in the note", not "these
-/// words adjacent". The old handler quoted the whole query as one FTS5
-/// phrase, so `zqxjvbn wbtqkdh` found nothing unless the words happened to
-/// sit next to each other. User quotes still force adjacency.
-#[tokio::test]
-async fn multi_word_query_matches_words_that_are_not_adjacent() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln_open failed");
-
-    std::fs::write(
-        kiln_dir.path().join("spread.md"),
-        "# Spread\n\nzqxjvbn appears here, and much later wbtqkdh does too.\n",
-    )
-    .expect("failed to write note");
-    wait_until_indexed(&client, kiln_dir.path(), "spread").await;
-
-    let hits = client
-        .search_text(kiln_dir.path(), "zqxjvbn wbtqkdh", 20)
-        .await
-        .expect("search_text RPC failed");
-    assert!(
-        hits.iter().any(|h| h.path.contains("spread")),
-        "non-adjacent words must both count; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
-    // Quotes still mean adjacency: this exact phrase appears nowhere.
-    let hits = client
-        .search_text(kiln_dir.path(), "\"zqxjvbn wbtqkdh\"", 20)
-        .await
-        .expect("search_text RPC failed");
-    assert!(
-        hits.is_empty(),
-        "a user-quoted phrase must stay adjacency-only; got {:?}",
-        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
-    );
-
+    drop(client);
     server.shutdown().await;
 }

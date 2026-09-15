@@ -10,6 +10,7 @@ use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::render_frame;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::TestRuntime;
+use std::cell::OnceCell;
 
 /// Find a byte subsequence in a byte slice. Returns the start position.
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -28,6 +29,8 @@ pub struct Vt100TestRuntime {
     tall_vt: vt100::Parser,
     /// Raw bytes from the last render_frame call (captured before feeding to vt100).
     last_frame_bytes: Vec<u8>,
+    history_text: OnceCell<String>,
+    screen_text: OnceCell<String>,
 }
 
 impl Vt100TestRuntime {
@@ -39,6 +42,8 @@ impl Vt100TestRuntime {
             vt: vt100::Parser::new(height, width, scrollback),
             tall_vt: vt100::Parser::new(1000, width, 0),
             last_frame_bytes: Vec::new(),
+            history_text: OnceCell::new(),
+            screen_text: OnceCell::new(),
         }
     }
 
@@ -62,6 +67,8 @@ impl Vt100TestRuntime {
     /// and non-sync content incrementally. This models real terminal behavior.
     /// Also feeds all bytes to the tall parser for scrollback inspection.
     fn feed_bytes_respecting_sync(&mut self, bytes: &[u8]) {
+        self.history_text.take();
+        self.screen_text.take();
         // Tall parser gets all bytes (for scrollback content inspection)
         self.tall_vt.process(bytes);
         let begin = b"\x1b[?2026h";
@@ -103,7 +110,9 @@ impl Vt100TestRuntime {
 
     /// Get the full screen contents (visible area) as plain text.
     pub fn screen_contents(&self) -> String {
-        self.vt.screen().contents()
+        self.screen_text
+            .get_or_init(|| self.vt.screen().contents())
+            .clone()
     }
 
     /// Get the screen contents with ANSI escape codes preserved.
@@ -127,17 +136,19 @@ impl Vt100TestRuntime {
         // Use the tall parser — nothing scrolls off in a 1000-row terminal,
         // so contents() shows the full history. Extract the scrollback portion
         // by subtracting the normal parser's visible screen.
-        let tall_contents = self.tall_vt.screen().contents();
-        let screen_contents = self.vt.screen().contents();
-
-        let tall_lines: Vec<&str> = tall_contents.lines().collect();
-        let screen_lines: Vec<&str> = screen_contents.lines().collect();
-
-        let scrollback_count = tall_lines.len().saturating_sub(screen_lines.len());
-        if scrollback_count > 0 {
-            tall_lines[..scrollback_count].join("\n")
-        } else {
-            String::new()
+        let tall = self
+            .history_text
+            .get_or_init(|| self.tall_vt.screen().contents());
+        let visible = self.screen_text.get_or_init(|| self.vt.screen().contents());
+        let count = tall.lines().count().saturating_sub(visible.lines().count());
+        // Slice the existing text instead of allocating two line vectors and
+        // joining the history again. Keep str::lines' trailing-newline semantics.
+        match tall.lines().take(count).last() {
+            Some(last) => {
+                let end = last.as_ptr() as usize - tall.as_ptr() as usize + last.len();
+                tall[..end].to_owned()
+            }
+            None => String::new(),
         }
     }
 
@@ -145,7 +156,9 @@ impl Vt100TestRuntime {
     /// Since the tall parser has 1000 rows, nothing scrolls off — this
     /// captures everything the terminal has ever displayed.
     pub fn full_history(&self) -> String {
-        self.tall_vt.screen().contents()
+        self.history_text
+            .get_or_init(|| self.tall_vt.screen().contents())
+            .clone()
     }
 
     /// Assert no spinner characters appear in scrollback content.
@@ -176,5 +189,28 @@ impl Vt100TestRuntime {
     /// update boundaries.
     pub fn last_frame_bytes(&self) -> &[u8] {
         &self.last_frame_bytes
+    }
+}
+
+#[test]
+fn cached_history_matches_the_terminal_after_updates_and_clears() {
+    let mut vt = Vt100TestRuntime::new(12, 3);
+    for bytes in [
+        b"hello".as_slice(),
+        "\r\nwide: \u{754c}\r\nthree\r\nfour".as_bytes(),
+        b"\x1b[2J\x1b[Hcleared",
+        b"\x1b[?2026h\r\nnew\x1b[?2026l",
+    ] {
+        // Populate caches before the next update: stale invalidation must fail.
+        let _ = vt.full_history();
+        let _ = vt.screen_contents();
+        vt.feed_bytes_respecting_sync(bytes);
+        let history = vt.tall_vt.screen().contents();
+        let screen = vt.vt.screen().contents();
+        assert_eq!(vt.full_history(), history);
+        assert_eq!(vt.screen_contents(), screen);
+        let lines: Vec<_> = history.lines().collect();
+        let count = lines.len().saturating_sub(screen.lines().count());
+        assert_eq!(vt.scrollback_contents(), lines[..count].join("\n"));
     }
 }

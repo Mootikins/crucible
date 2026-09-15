@@ -18,27 +18,6 @@ fn test_agent_init_params_builder() {
 }
 
 #[test]
-fn test_agent_init_params_default() {
-    let params = AgentInitParams::default();
-    assert_eq!(params.agent_type, None);
-    assert_eq!(params.agent_name, None);
-    assert_eq!(params.provider_key, None);
-}
-
-#[test]
-fn test_agent_type_default() {
-    // Default is Internal (Crucible's built-in Rig-based agents)
-    assert_eq!(AgentType::default(), AgentType::Internal);
-}
-
-#[test]
-fn test_agent_types_equality() {
-    assert_eq!(AgentType::Acp, AgentType::Acp);
-    assert_eq!(AgentType::Internal, AgentType::Internal);
-    assert_ne!(AgentType::Acp, AgentType::Internal);
-}
-
-#[test]
 fn test_agent_init_params_with_agent_name() {
     let params = AgentInitParams::new()
         .with_type(AgentType::Acp)

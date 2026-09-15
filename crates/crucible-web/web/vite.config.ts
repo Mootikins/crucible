@@ -89,7 +89,7 @@ export default defineConfig(({ mode }) => ({
     },
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'json-summary'],
+      reporter: ['text', 'html', 'json', 'json-summary'],
       reportsDirectory: './coverage',
       exclude: [
         'e2e/**',

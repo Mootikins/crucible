@@ -47,23 +47,8 @@ jobs:
       - uses: ./.github/actions/rust-prereqs
       - run: just lint docs
 
-  # Typecheck every shipped plugin against the `cru.*` declarations the host
-  # generates.
-  #
-  # This job is why the declarations mean anything. `cru plugin check` reports
-  # its typecheck as SKIPPED when no checker is installed, so without a pinned
-  # `luau-lsp` here the typed-plugin story would be true only on the machine
-  # of whoever last installed one. The declarations file is generated from the
-  # real plugin VM in the same run — checking against a committed copy would
-  # pass while the host had moved.
-  plugin-types:
-    name: Plugin Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/rust-prereqs
-      - run: just plugin-check
-
+  # Shipped plugin types and Lua suites run in the workspace tier.
+  # plugin_cli_contract retains the author-facing CLI/RPC boundary.
   # The install path a new user actually takes: clone, cargo build, no bun and so
   # no web/dist. The absence of a bun step is the thing under test.
   build-from-clean-clone:
@@ -147,25 +132,14 @@ jobs:
         run: just luau-lsp
       - name: Run tests with nextest
         run: just test ci
-      # Oil's serde JSON contract (consumed by the web UI) and the Lua
-      # stub-staleness check — feature-gated off the default build, so
-      # `test ci` never compiles them.
-      - name: Run feature-gated suites
+      # The workspace graph exercises Oil serde/test-utils; this separately
+      # checks the isolated crate feature graph without rerunning its tests.
+      - name: Check minimal Oil feature graph
         run: just test features
       # nextest does not execute doctests, so every example in a doc comment
       # was unverified until this step existed — they had rotted to 62 failures.
       - name: Run doctests
         run: just test doc
-
-  test-plugins:
-    name: Lua Plugin Suites
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/rust-prereqs
-      - name: Install the pinned Luau checker
-        run: just luau-lsp
-      - run: just test plugins
 
   test-gated:
     # `just test gated` is designed as a blocking gate — its selection is
@@ -205,7 +179,7 @@ jobs:
       - name: Typecheck
         run: just lint types
       - name: Run Vitest unit tests
-        run: just web-test unit
+        run: just web-test coverage
 
   test-web-live:
     # Its own job, not a step in `test-web`: this tier needs a Rust toolchain

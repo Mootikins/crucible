@@ -320,7 +320,7 @@ async fn test_verbose_without_flag_is_quiet() -> Result<()> {
 
 #[tokio::test]
 #[serial]
-async fn test_verbose_shows_phase_timings() -> Result<()> {
+async fn verbose_processing_succeeds() -> Result<()> {
     let _server = TestServer::start().await?;
     // GIVEN: Test kiln with files
     let temp_dir = create_test_kiln()?;
@@ -334,29 +334,7 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
     // WHEN: Processing with --verbose
     let result = process::execute(config, None, false, false, true, false, false).await;
 
-    // THEN: Should succeed and show timing information
-    assert!(result.is_ok());
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
-async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
-    let _server = TestServer::start().await?;
-    // GIVEN: Note with wikilinks, tags, callouts
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path, db_path);
-
-    // WHEN: Processing with --verbose
-    let result = process::execute(config, None, false, false, true, false, false).await;
-
-    // THEN: Should show parse details
+    // Verbose mode must preserve successful processing.
     assert!(result.is_ok());
 
     Ok(())
@@ -389,50 +367,6 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     let result = process::execute(config2, None, false, false, true, false, false).await;
 
     // THEN: Should show Merkle diff details
-    assert!(result.is_ok());
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
-async fn test_verbose_shows_enrichment_progress() -> Result<()> {
-    let _server = TestServer::start().await?;
-    // GIVEN: Files requiring embeddings
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path, db_path);
-
-    // WHEN: Processing with --verbose
-    let result = process::execute(config, None, false, false, true, false, false).await;
-
-    // THEN: Should show enrichment details
-    assert!(result.is_ok());
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
-async fn test_verbose_shows_storage_operations() -> Result<()> {
-    let _server = TestServer::start().await?;
-    // GIVEN: Processing files
-    let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().to_path_buf();
-
-    let db_dir = TempDir::new()?;
-    let db_path = db_dir.path().join("test.db");
-
-    let config = create_process_test_config(kiln_path, db_path);
-
-    // WHEN: Running with --verbose
-    let result = process::execute(config, None, false, false, true, false, false).await;
-
-    // THEN: Should show storage details
     assert!(result.is_ok());
 
     Ok(())

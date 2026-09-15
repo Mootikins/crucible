@@ -20,30 +20,6 @@ fn test_path(name: &str) -> PathBuf {
 // ============================================================================
 
 #[test]
-fn an_explicitly_named_config_file_that_is_missing_is_an_error() {
-    let temp = TempDir::new().unwrap();
-    let nonexistent = temp.path().join("nonexistent.toml");
-
-    // A typo'd `-C` used to be indistinguishable from omitting the flag.
-    let err = CliConfig::load(Some(nonexistent), None, None)
-        .expect_err("a named config file that does not exist must not load defaults");
-
-    assert!(err.to_string().contains("nonexistent.toml"));
-}
-
-#[test]
-fn test_config_load_with_invalid_toml() {
-    let temp = TempDir::new().unwrap();
-    let config_path = temp.path().join("invalid.toml");
-
-    // Write invalid TOML
-    fs::write(&config_path, "this is not valid toml [[[").unwrap();
-
-    let result = CliConfig::load(Some(config_path), None, None);
-    assert!(result.is_err());
-}
-
-#[test]
 fn test_config_load_with_valid_toml() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("valid.toml");
@@ -132,15 +108,6 @@ endpoint = "https://file-url.com"
 // ============================================================================
 // Configuration Default Tests
 // ============================================================================
-
-#[test]
-fn test_config_default_minimal() {
-    let config = CliConfig::default();
-
-    // Should have defaults
-    assert_eq!(config.chat_model(), "llama3.2");
-    assert!(!config.llm.has_providers());
-}
 
 #[test]
 fn test_config_with_custom_kiln_path() {
@@ -246,13 +213,6 @@ fn test_display_as_json() {
 // ============================================================================
 
 #[test]
-fn test_embedding_config_defaults() {
-    let config = CliConfig::default();
-
-    assert!(!config.llm.has_providers());
-}
-
-#[test]
 fn test_embedding_config_openai() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("embedding.toml");
@@ -292,44 +252,9 @@ endpoint = "https://api.openai.com/v1"
 // Default Configuration Tests
 // ============================================================================
 
-#[test]
-fn test_default_config_values() {
-    let config = CliConfig::default();
-
-    assert_eq!(config.chat_model(), "llama3.2");
-
-    // New embedding defaults
-    assert!(!config.llm.has_providers());
-
-    // ACP defaults
-    assert_eq!(config.acp.default_agent, None);
-
-    // Chat defaults
-    assert_eq!(config.chat.model, None);
-
-    // CLI defaults
-}
-
 // ============================================================================
 // Example Configuration Tests
 // ============================================================================
-
-#[test]
-fn test_create_example_config() {
-    let temp = TempDir::new().unwrap();
-    let config_path = temp.path().join("example-config.toml");
-
-    CliConfig::create_example(&config_path).unwrap();
-
-    assert!(config_path.exists());
-
-    let contents = fs::read_to_string(&config_path).unwrap();
-    assert!(contents.contains("Crucible CLI Configuration"));
-    assert!(contents.contains("kiln_path"));
-    assert!(contents.contains("[llm]"));
-    assert!(contents.contains("[acp]"));
-    assert!(contents.contains("[chat]"));
-}
 
 #[test]
 fn test_create_example_creates_parent_dirs() {

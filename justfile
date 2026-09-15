@@ -19,16 +19,11 @@ export CARGO_BUILD_JOBS := env_var_or_default("CARGO_BUILD_JOBS", "6")
 # `.max(N)` floors still apply. CI raises it to 256 via the workflow `env:`.
 export CRUCIBLE_PROPTEST_CASES := env_var_or_default("CRUCIBLE_PROPTEST_CASES", "64")
 
-# Default recipe - show help
+# Show available commands
 default:
     @just --list
 
-# === Setup ===
-
-# Idempotent. bun is reported, not installed: its package name
-# differs per platform and guessing wrong is worse than saying so.
-#
-# Install everything `just ci` needs beyond a Rust toolchain
+# Install CI prerequisites (bun, jq and ripgrep must already be on PATH)
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -82,21 +77,7 @@ setup:
     echo
     echo "Setup complete. Run \`just ci\` to verify."
 
-# === Build & Check ===
-
-# Two reasons this is a build-and-copy rather than `cargo install --path`.
-#
-# `cargo install` ignores `Cargo.lock` unless you pass `--locked`, and a fresh
-# resolve picks `jaq-std 3.0.1` against `jaq-json 2.0.0-alpha`, which do not
-# compile together; the lock pins `jaq-std 3.0.0-beta`. So `--locked` is
-# mandatory, not optional. And `cargo install` builds in its own target dir, so
-# it would redo the whole LTO link instead of reusing the release build below.
-#
-# The frontend has to exist first either way: `crucible-web` embeds `web/dist`
-# with rust-embed, and `allow_missing = true` means a build without it succeeds
-# and silently serves a placeholder rather than failing.
-
-# Install the shipping build to ~/.cargo/bin
+# Build the frontend and locked shipping binary, then install to ~/.cargo/bin
 install:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -106,13 +87,8 @@ install:
         | jq -r .target_directory)/release/cru" "$dest"
     echo "installed $("$dest" --version) to $dest"
 
-
-# Don't build `release` unless you are installing — LTO takes 5-10 minutes.
-# `release-web` is the shipping build: it builds the frontend first because
-# rust-embed bakes `web/dist` into the binary at compile time. `fixtures`
-# builds the mock ACP agent that the acp_smoke tests spawn.
-#
-# Build the workspace: debug (default) | cli | release | release-web | fixtures
+# Release uses LTO; reserve it for installation. release-web embeds a fresh frontend.
+# Build: debug (default) | cli | release | release-web | fixtures
 build target="debug":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -124,7 +100,12 @@ build target="debug":
             just web-build
             cargo build -p crucible-cli --release
             ;;
-        fixtures) cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent ;;
+        fixtures)
+            # Separate graphs: enabling test-utils on the daemon in the cru
+            # build needlessly invalidates the ordinary web/live binary later.
+            cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
+            cargo build -p crucible-cli --bin cru
+            ;;
         *)
             echo "Unknown build target: $1"
             echo "Valid targets: debug cli release release-web fixtures"
@@ -132,91 +113,49 @@ build target="debug":
             ;;
     esac
 
-# `--workspace` is mandatory: `default-members` is crucible-cli alone, so a bare
-# `--all-targets` silently skips daemon/core/lua/oil/web. The second line covers
-# oil's feature-gated test files, which `--all-targets` alone never compiles.
-#
-# Check compilation without building
+# Check every crate and test target (default-members contains only the CLI)
 check:
     cargo check --workspace --all-targets
-    cargo check -p crucible-oil --all-targets --features serde,test-utils
 
-# Format code
+# Format Rust code
 fmt:
     cargo fmt
 
-# Every gate that reads code without running it. Notes on the non-obvious ones:
-#
-# - `clippy` lints the feature-gated surface separately, because `--all-targets`
-#   covers target kinds, not feature combinations — it pairs 1:1 with
-#   `test features`.
-# - `docs` validates the `docs/` kiln (parser, frontmatter, wikilinks, code
-#   refs, config). The tests are `CARGO_MANIFEST_DIR`-anchored to this repo's
-#   `docs/`, so a failure has to be reproduced by editing `docs/` in place, not
-#   a copy.
-# - `types` is the only target that needs no Rust toolchain — the web-unit CI
-#   job runs it with bun alone.
-#
-# - `dead` checks frontend imports, exports and dependencies, including CSS.
-#   It runs in `all` so CI cannot accumulate another unused-export backlog.
-#
 # Lint: all (default) | fmt | clippy | docs | license | types | dead
 lint what="all":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    lint_fmt()    { cargo fmt --all -- --check; }
-    lint_clippy() {
-        cargo clippy --workspace --all-targets -- -D warnings
-        cargo clippy -p crucible-oil --all-targets --features serde,test-utils -- -D warnings
-    }
-    lint_docs()    { cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored; cargo test -p crucible-lua --test docs_lua_config -- --include-ignored; }
-    lint_license() { cargo deny --all-features check licenses; }
-    # The node_modules check is not hygiene, it is a wrong-answer guard. With
-    # an empty node_modules, `bunx` silently falls back to a CACHED tsc from
-    # some other project — 5.9.3 was seen here — which rejects this tsconfig's
-    # `"ignoreDeprecations": "6.0"` as `TS5103: Invalid value`. The error names
-    # a compiler option, so the reader edits tsconfig, and tsconfig is correct.
-    # A fresh `git worktree` has no node_modules (worktrees do not share it),
-    # so this fires exactly when someone is least expecting it.
-    lint_types()   {
-        local web=crates/crucible-web/web
-        if [ ! -d "$web/node_modules/typescript" ]; then
-            echo "ERROR: $web/node_modules is missing or has no typescript."
-            echo "  bunx would fall back to a cached tsc and report a"
-            echo "  misleading TS5103 against a correct tsconfig."
-            echo "  Fix: (cd $web && bun install)"
-            return 1
-        fi
-        (cd "$web" && bunx tsc --noEmit -p tsconfig.json)
-    }
-    # Import-dead frontend code: unused files, exports and dependencies. Run it
-    # WITHOUT `--production`: that mode drops test files from the graph and then
-    # reports three dozen lazy-loaded dependencies as unused, which is noise, not
-    # a finding. Note the limit — knip sees imports, so a component that IS
-    # imported and rendered behind a condition that is always false (the
-    # `FilesPanel` root dropdown under `embedded`) is invisible to it. That class
-    # needs a reachability test, not a linter.
-    lint_dead()    { (cd crates/crucible-web/web && bunx knip --no-progress); }
-
     case "$1" in
-        all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_types; lint_dead ;;
-        fmt|clippy|docs|license|types|dead) "lint_$1" ;;
-        *)
-            echo "Unknown lint target: $1"
-            echo "Valid targets: all fmt clippy docs license types dead"
-            exit 1
+        all)
+            for target in fmt clippy docs license types dead; do just lint "$target"; done
             ;;
+        fmt) cargo fmt --all -- --check ;;
+        clippy) cargo clippy --workspace --all-targets -- -D warnings ;;
+        docs)
+            cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored
+            cargo test -p crucible-lua --test docs_lua_config -- --ignored
+            ;;
+        license) cargo deny --all-features check licenses ;;
+        types)
+            # bunx otherwise falls back to a cached, incompatible TypeScript.
+            cd crates/crucible-web/web
+            test -d node_modules/typescript || {
+                echo "Missing frontend dependencies; run just setup." >&2
+                exit 1
+            }
+            bunx tsc --noEmit -p tsconfig.json
+            ;;
+        dead)
+            # Include tests: --production misclassifies lazy-loaded dependencies.
+            cd crates/crucible-web/web
+            bunx knip --no-progress
+            ;;
+        *) echo "Valid lint targets: all fmt clippy docs license types dead" >&2; exit 1 ;;
     esac
 
-# Report symbols nothing reads, from a rust-analyzer SCIP index.
-#
-# A REPORT, never a gate. "Never read" is not "dead": the index cannot see
-# serde wire names, Lua, the SolidJS frontend, JSON-RPC payloads or macros.
-# It found `[embedding.fastembed] cache_dir` being deserialized and then
-# overwritten with a hardcoded `None`.
-#
-# `refs` needs an index; build one with `just refs index` (~160s, 69MB).
+# Reports only: the index cannot see dynamic Lua, serde or RPC uses.
+# Inspect a rust-analyzer SCIP index: unread (default) | index | symbol | check | orphans
 refs what="unread" *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -233,67 +172,23 @@ refs what="unread" *args:
             ;;
     esac
 
-# === Test ===
-
-# Slow/external tests are gated with #[ignore], not cargo features; each ignore
-# reason names its prerequisite in a closed vocabulary, enforced by gate A5
-# (`crates/crucible-daemon/tests/architecture_tests.rs`).
-# `quick`/`ignored`/`full` differ only in which of those they run.
-#
-# `gated` and `external` split `ignored` along that vocabulary: `gated` is
-# everything whose prerequisites this repo can satisfy by building itself,
-# `external` is everything needing a network, a model, a container runtime or a
-# human. 98 of the 106 ignored tests ran in NO pre-commit tier before these
-# existed — the whole process-boundary surface was outside `ci`.
-#
-# The rest are the CI tiers, and each exists because the one before it is blind
-# to something: `ci` builds every crate with its DEFAULT features, so `features`
-# covers what a non-default flag gates; nextest cannot execute doctests, so
-# `doc` covers the examples in doc comments (they had rotted to 62 failures
-# before it existed). The shipped Lua suites are NOT a tier of their own any
-# more: `oci` decides which environment to build and whether config is
-# trustworthy, so a regression there is a sandbox regression no Rust suite
-# covers — but `shipped_plugin_lua_suite_passes` now runs every plugin's suite
-# in-process under `test ci`, so `test plugins` was running them a second time
-# through a daemon for no added signal. It remains as a manual recipe for the
-# process-boundary path; see the comment on that arm.
-#
-# Anything unrecognised that starts with `-` is passed straight to nextest, so
-# `just test -p crucible-core -E 'test(parser)'` scopes a run without a recipe.
-#
-# Test: quick (default) | ignored | gated | external | full | ci | tiers | features | doc | plugin <dir> | plugins
-# The Luau checker is a DEPENDENCY, not a nicety. Without it the shipped-Lua
-# gates panic with "no Luau type checker" before they check anything, and that
-# panic masked a real PROFILES failure for four agents in a row — a missing
-# binary read as a broken gate rather than as a missing binary. The recipe is
-# a no-op once installed, so the cost is one `--version` call.
+# Flags pass through, e.g. just test quick -p crucible-core -E 'test(parser)'.
+# Nextest setup builds process fixtures; profiles only change timeouts/retries.
+# The pinned checker is needed by the shipped-Luau gates.
+# Rust tests: quick (default) | ci | gated | external | ignored | full | features | doc | tiers | plugin <dir> | plugins
 test tier="quick" *args: luau-lsp
     #!/usr/bin/env bash
     set -euo pipefail
     tier="$1"; shift
 
-    # `--workspace` beats a `-p` rather than combining with it: cargo selects
-    # every crate and the package flag is silently ignored, so a scoped run
-    # turns into the full 8000-test one and looks merely slow. Naming a package
-    # is therefore what drops `--workspace`. (`-E` still needs it — a filter
-    # with no package means "across the workspace".)
+    # -p must replace --workspace: cargo otherwise silently ignores the package.
     scope="--workspace"
     for arg in "$@"; do
         case "$arg" in -p|-p=*|--package|--package=*) scope="" ;; esac
     done
 
-    # An `-E` filterset matching exactly the tests in assets/test-tiers/external.txt.
-    # The list is GENERATED from the #[ignore] reason strings (`just test tiers`)
-    # and gated by A5, because a hand-written filter here is precisely what
-    # drifts: the reasons move, the filter does not, and the mismatch is silent
-    # in both directions.
-    # `test(name)`, not `test(=name)`: a nextest test name is MODULE-QUALIFIED
-    # (`chat::chat_ctrl_c_exits`, `embeddings::test_ollama_basic`), while the
-    # generated list holds bare fn names because A5 derives it from source
-    # without a build. Exact match therefore silenced 26 of the 35 entries —
-    # they matched nothing and stayed in the blocking gate. Substring match is
-    # safe because A5 also proves each name is unique among all test fns and is
-    # not a substring of another one.
+    # Generated from ignore reasons and checked by architecture gate A5.
+    # Bare names need substring matching against module-qualified test names.
     external_filter() {
         sed -e 's/#.*//' -e '/^[[:space:]]*$/d' assets/test-tiers/external.txt \
             | sed 's/^/test(/; s/$/)/' | paste -sd'+' -
@@ -304,53 +199,30 @@ test tier="quick" *args: luau-lsp
         ignored) cargo nextest run $scope --run-ignored ignored-only "$@" ;;
         full)    cargo nextest run $scope --run-ignored all "$@" ;;
         gated)
-            # The ignored tests whose prerequisites are hermetic: a built `cru`,
-            # `mock-acp-agent`, ripgrep, this repo's docs/ kiln, or wall-clock
-            # time. Selection is NEGATIVE — everything ignored except the
-            # generated external list — so a NEWLY ADDED ignored test lands in
-            # this blocking gate by default. That is deliberate (fail-closed)
-            # and it will surprise someone once; when it does, A5 has already
-            # run in `test ci` and told them either "unknown prerequisite" or
-            # "regenerate the tier file", with the fix in the message.
-            just build fixtures
-            cargo build -p crucible-cli --bin cru
-            # The PTY harness gives the child a hermetic HOME with no kiln, so
-            # `ensure_valid_kiln` falls back to ascending to the git root. A
-            # working tree usually has a `.crucible/` there and a fresh clone
-            # never does (it is gitignored), so without this the PTY tests hit
-            # the interactive "No kiln found" wizard and every wait_for_* times
-            # out. Doing it here rather than in the CI job keeps local and CI on
-            # the same path — a prerequisite only CI satisfies is how a tier
-            # starts passing in one place and failing in the other.
+            # Fail closed: new ignored tests run here unless classified external.
+            # Docs have their own lint gate. PTY children need a kiln marker.
             mkdir -p .crucible
             cargo nextest run --profile ci $scope --run-ignored ignored-only \
-                -E "not ($(external_filter))" "$@"
+                -E "not ($(external_filter)) and not (binary(=dev_kiln) + binary(=docs_config) + binary(=docs_lua_config))" "$@"
             ;;
         external)
-            # Needs a network, a model download, a live LLM, a container
-            # runtime, a real DB, the Playwright harness, or a human reading
-            # numbers. NOT a blocking gate — run it when you have the
-            # prerequisites.
-            just build fixtures
-            cargo build -p crucible-cli --bin cru
+            # Requires external services, models, containers or a human.
             cargo nextest run --profile ci $scope --run-ignored ignored-only \
                 -E "$(external_filter)" "$@"
             ;;
         tiers)
-            # Regenerate assets/test-tiers/external.txt from the #[ignore]
-            # reason strings. Same test that checks the file, so generation and
-            # checking share one parser and cannot disagree.
+            # Regeneration and validation share the architecture gate's parser.
             CRUCIBLE_WRITE_TEST_TIERS=1 cargo nextest run -p crucible-daemon \
                 --test architecture_tests --no-capture \
                 -E 'test(external_test_tier_file_matches_the_ignore_reasons)'
             ;;
         ci)
-            just build fixtures
             cargo nextest run --profile ci $scope "$@"
             ;;
         features)
-            cargo nextest run --profile ci -p crucible-oil --features serde,test-utils
-            cargo nextest run --profile ci -p crucible-lua -E 'test(stubs)' --no-capture
+            # Oil's dev-dependency enables test features in the main run.
+            # Separately prove the production library needs neither feature.
+            cargo check -p crucible-oil --lib --no-default-features
             ;;
         doc) cargo test --workspace --doc ;;
         plugin)
@@ -362,25 +234,8 @@ test tier="quick" *args: luau-lsp
             "$cru" plugin test "$1"
             ;;
         plugins)
-            # NOT in `just ci` — the nextest gate
-            # `shipped_plugin_lua_suite_passes` runs the same suites through the
-            # same handler, in-process, needing neither a built binary nor a
-            # live daemon, and `every_shipped_plugin_with_a_suite_is_gated`
-            # proves it covers every plugin that has one. What this recipe adds
-            # over that is the process boundary: `cru plugin test` -> RPC ->
-            # daemon. Worth running by hand when you touch that path.
-            #
-            # Both extensions. This globbed `*.lua` and `*.fnl` — Fennel has
-            # been gone for months, and renaming the suites to `.luau` left the
-            # glob matching NOTHING, so the recipe printed no output and exited
-            # 0 with nine suites unrun.
-            #
-            # Hence the count: a selector that matches nothing must fail, not
-            # report a clean run of no tests.
-            #
-            # A scratch socket and data root, so the daemon this recipe starts
-            # is its own and never reaches a developer's running daemon. The
-            # trap stops that daemon on every exit path.
+            # Optional full process-path run; CI uses exhaustive in-process
+            # suites plus one CLI/RPC contract. Isolate from the user's daemon.
             cargo build -q -p crucible-cli --bin cru
             cru="$(cargo metadata --format-version 1 --no-deps --offline | jq -r .target_directory)/debug/cru"
             scratch="$(mktemp -d)"
@@ -393,7 +248,7 @@ test tier="quick" *args: luau-lsp
                 if compgen -G "${dir}tests/*.luau" > /dev/null \
                     || compgen -G "${dir}tests/*.lua" > /dev/null; then
                     echo "== ${dir}"
-                    just test plugin "${dir%/}"
+                    "$cru" plugin test "${dir%/}"
                     ran=$((ran + 1))
                 fi
             done
@@ -412,35 +267,7 @@ test tier="quick" *args: luau-lsp
             ;;
     esac
 
-# === Web ===
-
-# `--standalone` is NOT optional: a debug `cru` on the shared socket detects the
-# git-SHA mismatch and shuts the installed daemon down to respawn its own.
-#
-# `web-static` binds every interface by default so a headless box is reachable;
-# pass a host to narrow it (`just web-static 3000 127.0.0.1` for localhost-only).
-# Any name or address a LAN client reaches it by works with no configuration —
-# those clients authenticate with the key from `cru web key`. `just web` binds
-# the API to localhost instead: Vite is the LAN-facing surface there, and it
-# already accepts any Host header.
-#
-# `--static-dir` is what makes this recipe's `web-build` dependency take effect:
-# the binary's own assets are embedded at COMPILE time, so without the flag a
-# `bun run build` would change nothing until the Rust crate was rebuilt too.
-# TWO processes, one recipe: Vite serves the app and rebuilds on save, `cru web`
-# supplies /api behind it. Neither is useful alone — the dev server without the
-# API gives an app whose every request fails, and `cru web` alone is what this
-# recipe used to be: no hot reload, and a full `bun run build` before every
-# run just to see a one-line change.
-#
-# The API port is passed to Vite so its proxy follows it; the dev server's own
-# port is Vite's (5273, or CRUCIBLE_WEB_PORT). `just web-static` is the other
-# path — the built bundle served by the binary, which is the only way to see
-# the real response headers (CSP, nosniff, Content-Disposition).
-#
-#     just web / just web 3001 / just web 3000 127.0.0.1
-#
-# Frontend with hot reload, plus the API behind it
+# Run the frontend with hot reload and a standalone API (never replace the installed daemon)
 web api_port="3000" host="127.0.0.1":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -454,54 +281,31 @@ web api_port="3000" host="127.0.0.1":
     bun install
     CRUCIBLE_API_PORT={{api_port}} exec bun run dev
 
-# `off` disables the PWA service worker — see web-build.
-#
-# Build the frontend and serve it from the binary (default 0.0.0.0:3000)
+# Serve a fresh frontend bundle from cru (PWA disabled to avoid stale local caches)
 web-static port="3000" host="0.0.0.0": (web-build "off")
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
-# `off` disables the PWA service worker, which otherwise serves stale assets
-# from its cache and makes a rebuild look like it did nothing — always what you
-# want locally, never what you want in a release.
-#
-# Build the SolidJS frontend
+# Build the frontend; pass off to disable the PWA for local development
 web-build pwa="on":
     cd crates/crucible-web/web && bun install && {{ if pwa == "off" { "VITE_DISABLE_PWA=1" } else { "" } }} bun run build
 
-# The tiers, and why they are not interchangeable:
-#
-# - `unit` — Vitest/jsdom. `bun install` first so a fresh clone or a pulled
-#   lockfile bump fails on the tests, not on a missing vitest.
-# - `e2e` — Playwright against the Vite dev server. Always runs in a private
-#   output dir: two concurrent runs otherwise share `test-results/` and wipe
-#   each other's traces mid-run, which reads exactly like a flake.
-# - `live` — the ONLY tier that exercises real HTTP responses from `cru web`
-#   (CSP, nosniff, Content-Disposition, host validation, file serving); the
-#   dev server sends none of those headers. It builds `cru` and `web/dist`
-#   rather than skipping without them: the suite skips *green* when the binary
-#   is absent, so as a CI gate an unbuilt `cru` would report success while
-#   asserting nothing. Both are prerequisites: the setup starts `cru web` with
-#   `--static-dir <web>/dist`, because rust-embed bakes the bundle in at COMPILE
-#   time and `cru` is built here before the frontend is.
-# - `hero` — the cross-surface flow (TUI -> web -> TUI, one session), made
-#   deterministic by a fake Ollama server.
-#
-# Args pass through: `just web-test e2e cross-zone-dnd.spec.ts --project=chromium`.
-#
-# Web tests: e2e (default) | unit | live | stories | hero
 # Prove the test suite writes nothing under the developer's own directories
 test-hermetic tier="quick":
     @scripts/check-test-hermeticity.sh {{tier}}
 
+# Args pass through. live covers real server headers; e2e uses Vite.
+# Web tests: e2e (default) | unit | coverage | live | stories | hero
 web-test tier="e2e" *args:
     #!/usr/bin/env bash
     set -euo pipefail
     tier="$1"; shift
     web=crates/crucible-web/web
     case "$tier" in
-        unit)
-            cd "$web" && bun install && bunx vitest run "$@"
+        unit|coverage)
+            extra=()
+            if [ "$tier" = coverage ]; then extra=(--coverage); fi
+            cd "$web" && bun install && bunx vitest run "${extra[@]}" "$@"
             ;;
         e2e)
             out="$(mktemp -d /tmp/crucible-pw-XXXXXX)"
@@ -526,43 +330,25 @@ web-test tier="e2e" *args:
             ;;
         *)
             echo "Unknown web test tier: $tier"
-            echo "Valid tiers: unit e2e stories live hero"
+            echo "Valid tiers: unit coverage e2e stories live hero"
             exit 1
             ;;
     esac
 
-# === CI ===
-
-# Every job in .github/workflows/ci.yml invokes one of these targets, so the two
-# cannot drift. CI-only: `build-from-clean-clone` (needs a tree with no
-# web/dist) and the sharded Playwright matrix.
-#
-# `test gated` runs LAST and deliberately: it is the only target that spawns
-# real processes (37 PTY tests, 12 daemon-spawning ones), so it is the slowest
-# to fail and the most useful to see after everything cheap has passed. It was
-# added once its cost was measured — 72 tests in 31–56s across four consecutive
-# green runs on a loaded box. `test ci` precedes it so gate A5 reports an
-# unparseable `#[ignore]` reason before the tier derived from those reasons runs.
-#
-# Run every gate GitHub runs — do this before committing
-ci: luau-lsp (lint "all") (test "ci") (test "features") (test "doc") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
+# Keep Rust tiers before web builds; clean-clone packaging/sharding are workflow-specific.
+# Run all local CI gates before committing; GitHub uses the same recipes
+ci: luau-lsp (lint "all") (test "ci") (test "gated") (test "features") (test "doc") (web-test "coverage") (web-test "e2e") (web-test "live")
     @echo "CI checks passed!"
 
-# The Luau typechecker, pinned. `cru plugin check` reports SKIPPED without
-# one, so a gate that does not install it proves nothing.
-#
-# `luau-lsp`, not upstream `luau-analyze`: only luau-lsp's CLI can load a
-# definitions file, and the definitions are the point — they are what makes a
-# `cru.*` call checkable rather than an unknown global.
+# Keep this in sync with the checker required by the shipped-Lua gates.
 LUAU_LSP_VERSION := "1.69.0"
 
-# Install the pinned luau-lsp into target/tools, if it is not already there.
+# Install the pinned Luau checker into target/tools (idempotent)
 luau-lsp:
     #!/usr/bin/env bash
     set -euo pipefail
     dest="target/tools/luau-lsp"
     if [ -x "$dest" ] && "$dest" --version 2>/dev/null | grep -q "{{LUAU_LSP_VERSION}}"; then
-        echo "luau-lsp {{LUAU_LSP_VERSION}} already installed"
         exit 0
     fi
     case "$(uname -s)-$(uname -m)" in
@@ -581,75 +367,20 @@ luau-lsp:
     chmod +x "$dest"
     "$dest" --version
 
-# Typecheck every shipped plugin against the generated `cru.*` declarations.
-#
-# Generates the declarations from the real plugin VM first: checking against a
-# stale file would pass while the host has moved.
+# Typecheck all shipped Lua against generated declarations for its VM profile
 plugin-check: luau-lsp
-    #!/usr/bin/env bash
-    set -euo pipefail
-    stubs=$(mktemp -d)
-    trap 'rm -rf "$stubs"' EXIT
-    cargo run -q -p crucible-cli -- plugin stubs --offline --output "$stubs"
-    # No CRUCIBLE_LUAU_ANALYZE here on purpose. `cru plugin check` reads the
-    # pinned `target/tools/luau-lsp` that the `luau-lsp` recipe above just
-    # fetched, so this recipe proves the lookup the documentation describes.
-    # Exporting the variable checked the binary and proved nothing about how
-    # an author's own run would find it.
-    failed=0
-    for plugin in runtime/plugins/*/; do
-        # Captured, not piped: `grep -q` exits on its first match and the
-        # SIGPIPE that follows would fail the whole pipeline under `pipefail`.
-        if out=$(cargo run -q -p crucible-cli -- plugin check "$plugin" \
-            --definitions "$stubs/cru.d.luau"); then
-            printf '%s\n' "$out"
-            # A SKIPPED typecheck exits 0. Reporting that as a pass is the
-            # failure this recipe exists to prevent, so the output has to SAY
-            # the check ran.
-            if ! printf '%s\n' "$out" | grep -q '^typecheck: ran'; then
-                echo "$plugin: no typecheck ran" >&2
-                failed=1
-            fi
-        else
-            printf '%s\n' "$out"
-            failed=1
-        fi
-    done
-    # The loop above walks `runtime/plugins/` only. Crucible ships more Lua
-    # outside it — the shipped defaults, the themes, the statusline, the help
-    # plugin, the `cru plugin new` scaffold and the Oil example — and they do
-    # not all run on the same VM, so each needs the definitions for ITS
-    # profile. That mapping, and the assertion that it covers every Lua file in
-    # the repository, live in `every_shipped_lua_file_typechecks`.
-    #
-    # `--exact`, and the output is checked for one PASS: a cargo test name
-    # filter that matches nothing still exits 0, so renaming or deleting the
-    # test would leave this recipe reporting a green run of no tests at all.
-    if ! cargo test -q -p crucible-daemon --lib \
-        server::lua_plugin_suite::shipped_plugin_tests::every_shipped_lua_file_typechecks \
-        -- --exact \
-        | tee /dev/stderr | grep -q '1 passed'; then
-        echo "the whole-repo Lua typecheck did not run (renamed? deleted?)" >&2
-        failed=1
-    fi
-    exit $failed
+    just test quick -p crucible-daemon --lib -E 'test(=server::lua_plugin_suite::shipped_plugin_tests::every_shipped_lua_file_typechecks) | test(=server::lua_plugin_suite::shipped_plugin_tests::every_shipped_plugin_typechecks)'
 
-# === Daemon & tooling ===
-
-# Build and restart daemon (kills stale daemon so next cru auto-spawns fresh)
+# Build and restart the development daemon
 dev:
     -pkill -f "cru daemon serve" 2>/dev/null
     cargo build
 
-# Start the MCP server on port 3847; args pass through (`just mcp -v`)
+# Start the MCP server on port 3847; args pass through
 mcp *args:
     cargo run --release -p crucible-cli -- mcp --port 3847 "$@"
 
-# === Demos & fixtures ===
-
-# `all` re-renders every tape and copies the two GIFs the docs site serves.
-#
-# Render demo GIFs from replay fixtures: all (default) | <fixture name>
+# Render replay GIFs: all (default) | <fixture name>
 demo name="all" speed="3":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -668,10 +399,8 @@ demo name="all" speed="3":
         render "$1"
     fi
 
-# REQUIRES the agent binary on PATH and logged in. Diff the result before
-# committing and update the case table in acp_fixture_replay.rs to match.
-#
-# Re-record the ACP wire fixture replayed by tests/acp_fixture_replay.rs
+# Review the capture for secrets and update the replay case table before committing.
+# Re-record an ACP wire fixture; requires the authenticated agent binary
 record-acp-fixture agent prompt="say hello in exactly 3 words":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -690,9 +419,6 @@ record-acp-fixture agent prompt="say hello in exactly 3 words":
     sed "s|$HOME|<HOME>|g" "$capture" > "$dest"
     echo "Wrote $dest — review it (secrets, absolute paths) before committing."
 
-# Needs the web tree's node_modules present: font and icon notices are read from
-# the packages themselves rather than transcribed.
-#
-# Regenerate THIRD-PARTY-NOTICES.md from the dependency graph that ships
+# Regenerate third-party notices (requires frontend node_modules)
 notices:
     python3 scripts/gen-third-party-notices.py

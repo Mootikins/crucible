@@ -65,7 +65,7 @@ slow-timeout = { period = "30s", terminate-after = 1 }
 # they had the stale-binary trap above with nothing to catch it. One script
 # builds both binaries, so widening the filter costs nothing.
 [scripts.setup.build-test-fixtures]
-command = 'cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent -p crucible-cli --bin cru'
+command = 'just build fixtures'
 
 [[profile.default.scripts]]
 filter = 'package(crucible-daemon) + package(crucible-cli)'

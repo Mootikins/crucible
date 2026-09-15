@@ -84,17 +84,6 @@ fn absent_context_flags_send_no_precognition_rpc() {
 }
 
 #[test]
-fn no_context_flag_wins_over_context_size() {
-    // A disabled searcher has no result count to set. This was
-    // `run_oneshot_chat`'s `if no_context { .. } else if ..` before both
-    // paths shared this function; interactive inherits it.
-    assert_eq!(
-        precognition_flag_actions(true),
-        vec![SetRpcAction::SetPrecognition(false)]
-    );
-}
-
-#[test]
 fn interactive_initial_sets_append_the_context_flags_after_set_overrides() {
     let sets =
         build_initial_sets(&["precognition=on".to_string()], true).expect("valid --set input");

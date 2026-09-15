@@ -7,6 +7,7 @@
 //! check.
 
 use super::*;
+use crate::DaemonClient;
 
 /// Bind a server with the idle timer armed to `window`, on an isolated root.
 async fn bind_idle_server(tmp: &TempDir, window: std::time::Duration) -> (PathBuf, Server) {
@@ -34,6 +35,7 @@ async fn a_daemon_nobody_uses_ends_itself() {
     let tmp = TempDir::new().unwrap();
     let (_sock, server) = bind_idle_server(&tmp, std::time::Duration::from_millis(200)).await;
 
+    tokio::time::pause();
     let task = tokio::spawn(server.run());
 
     let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), task).await;
@@ -51,7 +53,9 @@ async fn a_connected_client_holds_the_daemon_open() {
     let (sock_path, server) = bind_idle_server(&tmp, std::time::Duration::from_millis(200)).await;
 
     let mut task = tokio::spawn(server.run());
-    let client = UnixStream::connect(&sock_path).await.unwrap();
+    let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+    client.ping().await.unwrap();
+    tokio::time::pause();
 
     // Several probe periods with the connection open and idle. The daemon has
     // no traffic to serve; only the connection itself keeps it here.
@@ -82,6 +86,7 @@ async fn a_daemon_whose_socket_is_gone_exits_at_once() {
     // (a quarter of it) fires quickly.
     let (sock_path, server) = bind_idle_server(&tmp, std::time::Duration::from_secs(8)).await;
 
+    tokio::time::pause();
     let task = tokio::spawn(server.run());
     std::fs::remove_file(&sock_path).unwrap();
 
@@ -219,6 +224,7 @@ async fn an_in_flight_turn_holds_the_daemon_open_with_no_client() {
         .await
         .unwrap();
 
+    tokio::time::pause();
     let mut task = tokio::spawn(server.run());
 
     // Many probe periods with a turn in flight and zero connections.

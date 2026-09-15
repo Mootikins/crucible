@@ -36,6 +36,7 @@ use common::docs_kiln::{
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use walkdir::WalkDir;
 
 /// Workspace-relative roots that make up the docs kiln.
@@ -52,15 +53,21 @@ const DEV_KILN_ROOTS: &[&str] = &["docs"];
 /// - Wikilinks that span multiple lines (malformed)
 fn extract_wikilinks(content: &str) -> Vec<String> {
     // Remove fenced code blocks first
-    let fenced_re = regex::Regex::new(r"```[\s\S]*?```").unwrap();
+    static FENCED_RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"```[\s\S]*?```").unwrap());
+    let fenced_re = &*FENCED_RE;
     let without_fenced = fenced_re.replace_all(content, "");
 
     // Remove inline code
-    let inline_re = regex::Regex::new(r"`[^`]+`").unwrap();
+    static INLINE_RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"`[^`]+`").unwrap());
+    let inline_re = &*INLINE_RE;
     let without_code = inline_re.replace_all(&without_fenced, "");
 
     // Match wikilinks (single line only - no newlines in target)
-    let wikilink_re = regex::Regex::new(r"!?\[\[([^\]\n]+)\]\]").unwrap();
+    static WIKILINK_RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"!?\[\[([^\]\n]+)\]\]").unwrap());
+    let wikilink_re = &*WIKILINK_RE;
 
     wikilink_re
         .captures_iter(&without_code)
@@ -105,7 +112,9 @@ fn extract_code_references(content: &str) -> Vec<CodeRef> {
     // (`D["Path: crates/…/lib.rs"]`) is a legitimate citation, and without
     // these the trailing `"]` became part of the path and the file "did not
     // exist".
-    let re = regex::Regex::new(r#"crates/[a-zA-Z0-9_-]+/[^\s)`"\]]+"#).unwrap();
+    static RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"crates/[a-zA-Z0-9_-]+/[^\s)`"\]]+"#).unwrap());
+    let re = &*RE;
 
     re.find_iter(content)
         .map(|m| {
@@ -181,64 +190,65 @@ fn code_reference_failures(
 /// back to any `Title.md`. Names are *not* unique in this kiln — there are eight
 /// `Index.md`s — so this returns all candidates rather than the first the
 /// directory walk happens to reach.
-fn resolve_wikilink_candidates(target: &str, dev_kiln_root: &Path) -> Vec<PathBuf> {
-    let wanted = target.to_lowercase();
-    let filename_part = wanted.rsplit('/').next().unwrap_or(&wanted).to_string();
+struct KilnLinkIndex {
+    by_name: HashMap<String, Vec<PathBuf>>,
+}
 
-    // Try common extensions: .md (notes), .lua/.fnl (Lua/Fennel scripts)
-    for ext in [".md", ".lua", ".fnl"] {
-        let target_filename = format!("{filename_part}{ext}");
-
-        let matches: Vec<PathBuf> = WalkDir::new(dev_kiln_root)
-            .into_iter()
-            .flatten()
-            .filter(|e| e.file_type().is_file())
-            .filter(|e| is_authored(e.path()))
-            // A link may only resolve to something a commit contains. Both
-            // directions have to agree on what the kiln IS, or an untracked
-            // file sitting in the tree silently satisfies a link that the
-            // repository does not.
-            .filter(|e| is_committable(e.path()))
-            .filter(|e| {
-                e.path()
-                    .file_name()
-                    .is_some_and(|f| f.to_string_lossy().to_lowercase() == target_filename)
-            })
-            .map(|e| e.path().to_path_buf())
-            .collect();
-
-        if matches.is_empty() {
-            continue;
-        }
-
-        if wanted.contains('/') {
-            let suffix = format!("{wanted}{ext}");
-            let hinted: Vec<PathBuf> = matches
-                .iter()
-                .filter(|p| p.to_string_lossy().to_lowercase().ends_with(&suffix))
-                .cloned()
-                .collect();
-            if !hinted.is_empty() {
-                return hinted;
+impl KilnLinkIndex {
+    fn new(root: &Path) -> Self {
+        let mut by_name: HashMap<String, Vec<PathBuf>> = HashMap::new();
+        for entry in WalkDir::new(root).into_iter().flatten() {
+            if entry.file_type().is_file()
+                && is_authored(entry.path())
+                && is_committable(entry.path())
+            {
+                by_name
+                    .entry(entry.file_name().to_string_lossy().to_lowercase())
+                    .or_default()
+                    .push(entry.into_path());
             }
         }
-
-        return matches;
+        Self { by_name }
     }
 
-    Vec::new()
+    fn resolve(&self, target: &str) -> Vec<PathBuf> {
+        let wanted = target.to_lowercase();
+        let filename_part = wanted.rsplit('/').next().unwrap_or(&wanted).to_string();
+
+        // Try common extensions: .md (notes), .lua/.fnl (Lua/Fennel scripts)
+        for ext in [".md", ".lua", ".fnl"] {
+            let target_filename = format!("{filename_part}{ext}");
+
+            let matches = self
+                .by_name
+                .get(&target_filename)
+                .cloned()
+                .unwrap_or_default();
+
+            if matches.is_empty() {
+                continue;
+            }
+
+            if wanted.contains('/') {
+                let suffix = format!("{wanted}{ext}");
+                let hinted: Vec<PathBuf> = matches
+                    .iter()
+                    .filter(|p| p.to_string_lossy().to_lowercase().ends_with(&suffix))
+                    .cloned()
+                    .collect();
+                if !hinted.is_empty() {
+                    return hinted;
+                }
+            }
+
+            return matches;
+        }
+
+        Vec::new()
+    }
 }
 
-/// Whether a wikilink target names a file that exists.
-fn resolve_wikilink(target: &str, dev_kiln_root: &Path) -> Option<PathBuf> {
-    resolve_wikilink_candidates(target, dev_kiln_root)
-        .into_iter()
-        .next()
-}
-
-/// Parse frontmatter from markdown content
-///
-/// Returns None if no frontmatter exists, or the raw YAML content
+/// Extract the YAML frontmatter, if present.
 fn extract_frontmatter(content: &str) -> Option<String> {
     let lines: Vec<&str> = content.lines().collect();
 
@@ -528,6 +538,7 @@ fn is_example_link(target: &str) -> bool {
 #[ignore = "requires: dev kiln — parses every markdown file in docs/"]
 async fn dev_kiln_all_wikilinks_resolve() {
     let dev_kiln_root = docs_root();
+    let index = KilnLinkIndex::new(&dev_kiln_root);
     let md_files = markdown_files(DEV_KILN_ROOTS);
 
     let mut all_broken_links = Vec::new();
@@ -564,7 +575,7 @@ async fn dev_kiln_all_wikilinks_resolve() {
             }
 
             // Try to resolve
-            if resolve_wikilink(&link, &dev_kiln_root).is_some() {
+            if !index.resolve(&link).is_empty() {
                 resolved_links += 1;
             } else {
                 all_broken_links.push(format!(
@@ -609,6 +620,7 @@ async fn dev_kiln_all_wikilinks_resolve() {
 #[ignore = "requires: dev kiln — resolves every wikilink in docs/"]
 async fn dev_kiln_every_help_note_is_reachable() {
     let dev_kiln_root = docs_root();
+    let index = KilnLinkIndex::new(&dev_kiln_root);
     let md_files = markdown_files(DEV_KILN_ROOTS);
 
     let mut linked: HashSet<PathBuf> = HashSet::new();
@@ -625,7 +637,7 @@ async fn dev_kiln_every_help_note_is_reachable() {
             // An ambiguous link (`[[Index]]`) counts as reaching every
             // candidate: which one a reader lands on is a resolution detail,
             // and calling the others orphans would be a lie.
-            for target in resolve_wikilink_candidates(&link, &dev_kiln_root) {
+            for target in index.resolve(&link) {
                 // A note linking to itself does not make it reachable.
                 if &target != file_path {
                     linked.insert(target);
@@ -898,10 +910,11 @@ fn a_path_hint_picks_between_notes_that_share_a_name() {
         std::fs::write(kiln.path().join(dir).join("Canvas.md"), "").unwrap();
     }
 
-    let hinted = resolve_wikilink_candidates("Meta/Analysis/Canvas", kiln.path());
+    let index = KilnLinkIndex::new(kiln.path());
+    let hinted = index.resolve("Meta/Analysis/Canvas");
     assert_eq!(hinted, vec![kiln.path().join("Meta/Analysis/Canvas.md")]);
 
-    let mut ambiguous = resolve_wikilink_candidates("Canvas", kiln.path());
+    let mut ambiguous = index.resolve("Canvas");
     ambiguous.sort();
     assert_eq!(
         ambiguous,
@@ -1062,4 +1075,34 @@ fn product_map_proof_tests_exist() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+}
+
+#[test]
+fn the_link_index_preserves_case_extension_precedence_and_missing_hints() {
+    let kiln = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(kiln.path().join(".crucible")).unwrap();
+    for name in [
+        "Mixed.md",
+        "Mixed.lua",
+        "script.lua",
+        "legacy.fnl",
+        ".crucible/hidden.md",
+    ] {
+        std::fs::write(kiln.path().join(name), "").unwrap();
+    }
+    let index = KilnLinkIndex::new(kiln.path());
+    for (target, expected) in [
+        ("mIxEd", Some("Mixed.md")),
+        ("missing/folder/MIXED", Some("Mixed.md")),
+        ("script", Some("script.lua")),
+        ("legacy", Some("legacy.fnl")),
+        ("hidden", None),
+        ("absent", None),
+    ] {
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|name| kiln.path().join(name))
+            .collect();
+        assert_eq!(index.resolve(target), expected, "{target}");
+    }
 }

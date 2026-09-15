@@ -30,42 +30,20 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('WindowManager renders with all layout regions', async ({ page }) => {
+test('the shell boots without errors and preserves its regions when toggled', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && !/Failed to load resource|ECONNREFUSED|http proxy error/.test(msg.text())) {
+      errors.push(msg.text());
+    }
+  });
   await page.goto('/');
-
-  // Root container: flex flex-col h-screen
-  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
-  await expect(rootContainer).toBeVisible();
-
-  // Ribbon is up (no header bar). Gated on the rail's own toggle, the one
-  // element every ribbon renders unconditionally.
-  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
-
-  // Main content area between the ribbons (nested wrappers share the class
-  // combo — the outermost is the center column).
-  const mainContent = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
-  await expect(mainContent).toBeVisible();
-});
-
-test('Left edge panel toggles open and closed via its ribbon', async ({ page }) => {
-  await page.goto('/');
-
-  const toggleButton = page.getByTestId('ribbon-toggle-left');
-  await expect(toggleButton).toBeVisible();
-
-  // Panel starts open — the toggle offers to collapse it.
-  await expect(toggleButton).toHaveAttribute('title', 'Collapse panel');
-
-  await toggleButton.click();
-  await expect(toggleButton).toHaveAttribute('title', 'Expand panel');
-
-  await toggleButton.click();
-  await expect(toggleButton).toHaveAttribute('title', 'Collapse panel');
-});
-
-test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
-  await page.goto('/');
-
+  const root = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
+  const center = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
+  const toggle = page.getByTestId('ribbon-toggle-left');
+  await expect(root).toBeVisible();
+  await expect(center).toBeVisible();
+  expect(await page.locator('div.flex-1').count()).toBeGreaterThan(0);
   // Left ribbon's bottom cluster: the three toggles that act on the whole
   // shell. The palette bolt and the new-session plus are deliberately gone —
   // each was a third doorway to an action with a shorter one (Ctrl+P,
@@ -78,7 +56,6 @@ test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
 
   // Both edges expose their own toggle. There is no third: the bottom dock is
   // gone, and the terminal it held is a pane under the file tree.
-  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
   await expect(page.getByTestId('ribbon-toggle-right')).toBeVisible();
   await expect(page.getByTestId('ribbon-toggle-bottom')).toHaveCount(0);
 
@@ -93,68 +70,15 @@ test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
   const paletteHints = page.locator('kbd:has-text("Ctrl+P")');
   const affordanceHints = page.locator('[data-testid="empty-pane"] kbd:has-text("Ctrl+P")');
   expect(await paletteHints.count()).toBe(await affordanceHints.count());
-});
 
-test('Center tiling area is visible and interactive', async ({ page }) => {
-  await page.goto('/');
-
-  // The center tiling area should be visible
-  const centerArea = page.locator('div.flex-1.flex.flex-col.overflow-hidden').first();
-  await expect(centerArea).toBeVisible();
-
-  // There should be at least one pane in the center area
-  // (The exact structure depends on the layout, but there should be content)
-  const content = page.locator('div.flex-1');
-  const count = await content.count();
-  expect(count).toBeGreaterThan(0);
-});
-
-test('Layout structure remains stable after interaction', async ({ page }) => {
-  await page.goto('/');
-
-  // Get initial structure
-  const rootContainer = page.locator('div.flex.flex-col.h-screen.bg-shell-bg');
-  await expect(rootContainer).toBeVisible();
-
-  // Collapse the left panel
-  const toggleButton = page.getByTestId('ribbon-toggle-left');
-  await toggleButton.click();
-
-  // Root container should still be visible and stable
-  await expect(rootContainer).toBeVisible();
-
-  // Ribbon should still be visible
-  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
-
-  // Expand the left panel again
-  await toggleButton.click();
-
-  // Everything should still be visible
-  await expect(rootContainer).toBeVisible();
-  await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
-});
-
-test('No critical console errors on initial load', async ({ page }) => {
-  const errors: string[] = [];
-  
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      // Filter out expected API errors (backend not running in test environment)
-      const text = msg.text();
-      if (!text.includes('Failed to load resource') && 
-          !text.includes('ECONNREFUSED') &&
-          !text.includes('http proxy error')) {
-        errors.push(text);
-      }
-    }
-  });
-
-  await page.goto('/');
-  
-  // Wait a moment for any async operations
-  await page.waitForLoadState('domcontentloaded');
-
-  // There should be no critical console errors (excluding expected API errors)
+  await expect(toggle).toHaveAttribute('title', 'Collapse panel');
+  for (const title of ['Expand panel', 'Collapse panel']) {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('title', title);
+    await expect(root).toBeVisible();
+    await expect(center).toBeVisible();
+    await expect(toggle).toBeVisible();
+  }
   expect(errors).toEqual([]);
 });
 

@@ -282,3 +282,12 @@ describe('NotificationCenter — formatTime', () => {
     expect(screen.getByText('07:05')).toBeInTheDocument();
   });
 });
+
+it('runs a notification action and then dismisses that notification', () => {
+  const run = vi.fn();
+  mockState.notifications = [makeNotif({ id: 'action', action: { label: 'Retry save', run } })];
+  render(() => <NotificationCenter open={true} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry save' }));
+  expect(run).toHaveBeenCalledOnce();
+  expect(dismissMock).toHaveBeenCalledWith('action');
+});

@@ -10,37 +10,6 @@ use super::tui_e2e_harness::{Key, TuiTestConfig, TuiTestSession};
 // Oil Runner Tests
 // =============================================================================
 
-/// Test that oil runner stays responsive during extended use
-#[test]
-#[ignore = "requires: cru binary"]
-fn oil_runner_does_not_freeze() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(3));
-
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
-
-    let start = std::time::Instant::now();
-
-    session.wait_for_ready().expect("TUI ready");
-
-    for i in 0..20 {
-        if session.send("x").is_err() {
-            panic!("Send failed at iteration {}", i);
-        }
-        session.settle();
-
-        if session.send_key(Key::Backspace).is_err() {
-            panic!("Backspace failed at iteration {}", i);
-        }
-        session.settle();
-    }
-
-    eprintln!("Input test passed after {:?}", start.elapsed());
-
-    session.send(":quit\r").ok();
-}
-
 /// Test that :quit REPL command causes exit.
 /// :quit is a REPL command (colon prefix), not a slash command.
 /// /quit would be forwarded to the agent as a slash command.
@@ -67,78 +36,6 @@ fn oil_quit_with_repl_command() {
             panic!(":quit command did not exit: {:?}", e);
         }
     }
-}
-
-/// Test that typing and Enter works - check output for echo
-#[test]
-#[ignore = "requires: cru binary"]
-fn oil_verify_pty_works() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
-        .with_timeout(Duration::from_secs(10));
-
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
-
-    session.wait_for_ready().expect("TUI ready");
-
-    eprintln!("Checking for initial prompt...");
-    let screen = session.capture_screen().unwrap_or_default();
-    eprintln!("Initial screen: {:?}", screen);
-
-    eprintln!("Typing hello...");
-    session.send("hello").expect("Failed to send hello");
-    session.settle();
-
-    let screen2 = session.capture_screen().unwrap_or_default();
-    eprintln!("Screen after 'hello': {:?}", screen2);
-
-    eprintln!("Sending Enter...");
-    session.send("\r").expect("Failed to send Enter");
-    session.settle();
-
-    let screen3 = session.capture_screen().unwrap_or_default();
-    eprintln!("Screen after Enter: {:?}", screen3);
-
-    session.send_control('c').ok();
-}
-
-/// Test oil runner stays responsive for extended period
-#[test]
-#[ignore = "requires: cru binary"]
-fn oil_runner_stays_responsive_10s() {
-    let config = TuiTestConfig::new("chat")
-        .with_env("RUST_LOG", "warn")
-        .with_timeout(Duration::from_secs(20));
-
-    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat");
-
-    session.wait_for_ready().expect("TUI ready");
-
-    let start = std::time::Instant::now();
-    let mut last_responsive = start;
-
-    while start.elapsed() < Duration::from_secs(10) {
-        session.send("a").unwrap_or_else(|_| {
-            panic!(
-                "Send failed after {:?}, last responsive {:?} ago",
-                start.elapsed(),
-                last_responsive.elapsed()
-            )
-        });
-
-        session.settle();
-
-        session
-            .send_key(Key::Backspace)
-            .unwrap_or_else(|_| panic!("Backspace failed after {:?}", start.elapsed()));
-
-        last_responsive = std::time::Instant::now();
-        session.settle();
-    }
-
-    session
-        .send_control('c')
-        .expect("Ctrl+C failed after 10s test");
 }
 
 // =============================================================================
@@ -366,4 +263,39 @@ fn oil_explicit_mode_commands() {
 
     session.send_control('c').ok();
     session.send_control('c').ok();
+}
+
+#[test]
+#[ignore = "requires: cru binary"]
+fn typing_and_backspace_render_before_the_runner_exits() {
+    let config = TuiTestConfig::new("chat").with_env("RUST_LOG", "warn");
+    let mut session = TuiTestSession::spawn(config).expect("spawn chat");
+    session.wait_for_ready().expect("ready");
+    for text in ["zqx_one", "zqx_two", "zqx_three"] {
+        session.send(text).expect("type");
+        session
+            .wait_for_text(text, Duration::from_secs(3))
+            .expect("input rendered");
+        session.send_key(Key::Backspace).expect("backspace");
+        let shorter = &text[..text.len() - 1];
+        session
+            .wait_until(
+                |screen| {
+                    let s = screen.contents();
+                    s.contains(shorter) && !s.contains(text)
+                },
+                Duration::from_secs(3),
+            )
+            .expect("backspace rendered");
+        // Ctrl+U clears the input, leaving the next iteration independent.
+        session.send_control('u').expect("clear");
+        session
+            .wait_until(
+                |screen| !screen.contents().contains(shorter),
+                Duration::from_secs(3),
+            )
+            .expect("clear rendered");
+    }
+    session.send(":quit\r").expect("quit");
+    session.expect_eof().expect("runner exited");
 }

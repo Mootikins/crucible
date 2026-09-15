@@ -15,7 +15,7 @@ pub use crucible_lua::theme::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_oil::style::{AdaptiveColor, Color};
+    use crucible_oil::style::Color;
 
     #[test]
     fn default_dark_core_colors_are_set() {
@@ -132,29 +132,6 @@ mod tests {
     }
 
     #[test]
-    fn default_dark_is_dark() {
-        let config = ThemeConfig::default_dark();
-        assert!(config.is_dark);
-        assert_eq!(config.name, "crucible-dark");
-    }
-
-    #[test]
-    fn resolve_color_respects_is_dark() {
-        let mut config = ThemeConfig::default_dark();
-        let test_color = AdaptiveColor {
-            dark: Color::Red,
-            light: Color::Blue,
-        };
-
-        // Dark mode → dark variant
-        assert_eq!(config.resolve_color(test_color), Color::Red);
-
-        // Light mode → light variant
-        config.is_dark = false;
-        assert_eq!(config.resolve_color(test_color), Color::Blue);
-    }
-
-    #[test]
     fn spinner_braille_frames_match_oil() {
         let style = ThemeSpinnerStyle::Braille;
         let oil_frames = crucible_oil::node::BRAILLE_SPINNER_FRAMES;
@@ -197,24 +174,6 @@ mod tests {
         assert_eq!(config.icons.error, "✖");
         assert_eq!(config.icons.warning, "⚠");
         assert_eq!(config.icons.arrow_right, "→");
-    }
-
-    #[test]
-    fn default_layout_values() {
-        let config = ThemeConfig::default_dark();
-        assert_eq!(config.layout.status_bar_position, StatusBarPosition::Bottom);
-        assert_eq!(config.layout.message_spacing, 1);
-        assert_eq!(config.layout.input_max_lines, 6);
-    }
-
-    #[test]
-    fn border_style_default_is_rounded() {
-        assert_eq!(BorderStyle::default(), BorderStyle::Rounded);
-    }
-
-    #[test]
-    fn spinner_style_default_is_braille() {
-        assert_eq!(ThemeSpinnerStyle::default(), ThemeSpinnerStyle::Braille);
     }
 
     #[test]

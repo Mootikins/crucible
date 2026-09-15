@@ -654,7 +654,10 @@ impl Server {
             .local_addr()
             .ok()
             .and_then(|addr| addr.as_pathname().map(Path::to_path_buf));
-        let mut idle_timer = idle_window.map(|window| IdleTimer::new(window, Instant::now()));
+        // The observation clock must be the clock driving the probe interval.
+        // Converting preserves IdleTimer's clock-free policy API.
+        let mut idle_timer = idle_window
+            .map(|window| IdleTimer::new(window, tokio::time::Instant::now().into_std()));
         let mut idle_probe = idle_window.map(|window| {
             let mut probe = tokio::time::interval(IdleTimer::probe_period(window));
             // The first tick of a tokio interval completes immediately, and a
@@ -1164,7 +1167,7 @@ impl Server {
                     };
                     let expired = idle_timer
                         .as_mut()
-                        .is_some_and(|timer| timer.observe(Instant::now(), snapshot));
+                        .is_some_and(|timer| timer.observe(tokio::time::Instant::now().into_std(), snapshot));
                     if !snapshot.is_idle() {
                         // Why the daemon is staying, at debug: the leak this
                         // policy exists to stop looks exactly like a kind of

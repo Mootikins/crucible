@@ -24,6 +24,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Every test run covers serde and the property-test harness, independently
+# of which other workspace crates happen to be selected.
+crucible-oil = { path = ".", features = ["serde", "test-utils"] }
 insta = { version = "1.47", features = ["filters"] }
 serde_json = { workspace = true }
 test-case = "3.3"

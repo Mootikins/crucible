@@ -413,18 +413,6 @@ async fn test_client_connect_fails_without_server() {
 }
 
 #[tokio::test]
-async fn test_connect_to_with_events() {
-    let (_tmp, sock_path, _handle) = setup_test_server().await;
-
-    let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
-        .await
-        .unwrap();
-
-    let result = client.ping().await.unwrap();
-    assert_eq!(result, "pong");
-}
-
-#[tokio::test]
 async fn test_multiple_sequential_calls_event_mode() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 

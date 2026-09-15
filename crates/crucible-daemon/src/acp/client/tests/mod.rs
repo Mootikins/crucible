@@ -47,23 +47,3 @@ pub(super) fn get_cat_command() -> (PathBuf, Option<Vec<String>>) {
         (PathBuf::from("cat"), None)
     }
 }
-
-// Helper to get a command that sleeps (for timeout tests)
-pub(super) fn get_sleep_command() -> (PathBuf, Option<Vec<String>>) {
-    #[cfg(windows)]
-    {
-        // Use ping hack for sleep to avoid heavy PowerShell startup
-        // -n 6 pinging localhost approximates 5 seconds sleep
-        (
-            PathBuf::from("cmd"),
-            Some(vec![
-                "/C".to_string(),
-                "ping 127.0.0.1 -n 6 > nul".to_string(),
-            ]),
-        )
-    }
-    #[cfg(not(windows))]
-    {
-        (PathBuf::from("sleep"), Some(vec!["5".to_string()]))
-    }
-}

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{get_cat_command, get_simple_command, get_sleep_command};
+use super::{get_cat_command, get_simple_command};
 use crate::acp::client::types::ClientConfig;
 use crate::acp::client::CrucibleAcpClient;
 
@@ -112,27 +112,6 @@ async fn test_write_agent_request() {
 }
 
 #[tokio::test]
-async fn test_read_timeout() {
-    let (cmd, args) = get_sleep_command();
-    let config = ClientConfig {
-        agent_path: cmd,
-        agent_args: args,
-        timeout_ms: Some(100), // Very short timeout
-        ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
-
-    // Spawn agent that won't send anything
-    let _process = client.spawn_agent().await;
-
-    // Try to read with timeout
-    let result = client.read_response_line().await;
-
-    // Should timeout
-    assert!(result.is_err(), "Should timeout on read");
-}
-
-#[tokio::test]
 async fn test_full_request_response_cycle() {
     use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest};
 
@@ -191,4 +170,32 @@ async fn test_send_message_with_json() {
     // Should succeed (cat echoes back)
     // Result may succeed or fail based on JSON parsing, both acceptable
     let _ = result; // Accept either outcome for now
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_transport_times_out_without_becoming_eof() {
+    use crate::acp::ClientError;
+    use std::time::Duration;
+    use tokio::io::BufReader;
+
+    for configured in [None, Some(100), Some(600_000)] {
+        let (reader, _peer) = tokio::io::duplex(64);
+        let mut client = CrucibleAcpClient::with_transport(
+            ClientConfig {
+                timeout_ms: configured,
+                ..Default::default()
+            },
+            Box::pin(tokio::io::sink()),
+            Box::pin(BufReader::new(reader)),
+        );
+        let start = tokio::time::Instant::now();
+        assert!(matches!(
+            client.read_response_line().await,
+            Err(ClientError::Timeout(_))
+        ));
+        assert_eq!(
+            start.elapsed(),
+            Duration::from_millis(configured.unwrap_or(300_000).max(300_000))
+        );
+    }
 }

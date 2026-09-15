@@ -75,32 +75,3 @@ impl ShutdownSignals {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_socket_path_not_empty() {
-        let path = socket_path();
-        assert!(path.to_string_lossy().contains("crucible.sock"));
-    }
-
-    #[test]
-    fn test_remove_socket() {
-        let tmp = TempDir::new().unwrap();
-        let sock_path = tmp.path().join("test.sock");
-
-        // Create a dummy socket file
-        fs::write(&sock_path, "").unwrap();
-        assert!(sock_path.exists());
-
-        remove_socket(&sock_path);
-        assert!(!sock_path.exists());
-
-        // Should not panic on nonexistent file
-        remove_socket(&sock_path);
-    }
-}

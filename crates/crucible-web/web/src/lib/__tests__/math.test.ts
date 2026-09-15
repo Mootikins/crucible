@@ -63,3 +63,10 @@ describe('KaTeX math rendering', () => {
     expect(typeof html).toBe('string');
   });
 });
+
+it('keeps an unclosed dollar literal even while scanning a link label', () => {
+  const html = renderMarkdown('[price $x](https://example.com)');
+  expect(html).toContain('price $x');
+  expect(html).toContain('href="https://example.com"');
+  expect(html).not.toContain('class="katex"');
+});
