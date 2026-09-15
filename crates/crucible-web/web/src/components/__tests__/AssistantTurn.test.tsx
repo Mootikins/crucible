@@ -382,3 +382,23 @@ describe('AssistantTurn — data-kiln', () => {
     expect(container.querySelector('[data-kiln]')).toBeNull();
   });
 });
+
+describe('AssistantTurn — the footer is always there', () => {
+  it('shows the actions without a hover', () => {
+    messagesAccessor = () => [textMsg('a1', 'done', { usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } })];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const copy = screen.getByTitle('Copy response');
+    expect(copy.parentElement!.className).not.toContain('opacity-0');
+  });
+
+  it('shows how long the turn took when the daemon stamped its end', async () => {
+    const start = Date.now() - 60_000;
+    messagesAccessor = () => [
+      textMsg('a1', 'done', { timestamp: start, completedAt: start + 4_200 }),
+    ];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    expect(screen.getByText('4.2 s')).toBeInTheDocument();
+    const { formatAbsoluteTime } = await import('@/lib/format-time');
+    expect(screen.queryByText(formatAbsoluteTime(start))).toBeNull();
+  });
+});

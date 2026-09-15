@@ -140,6 +140,26 @@ describe('FilesPanel — one always-visible root selector', () => {
     expect(trigger.textContent).toContain('No roots');
   });
 
+  it('offers the root dropdown from the empty state', async () => {
+    // A dead end was the bug: the panel said there was nothing to browse and
+    // gave no way to pick one. The action opens the dropdown the panel
+    // already owns, rather than holding a second copy of its open flag.
+    currentSessionValue = null;
+    projectRoots = [];
+    listKilnsMock.mockResolvedValue([]);
+    const { findByTestId } = render(() => <FilesPanel />);
+
+    const empty = await findByTestId('files-empty');
+    expect(empty.textContent).toContain('No project or kiln to browse');
+    const trigger = await findByTestId('root-dropdown');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(empty.querySelector('[data-testid="empty-state-action"]')!);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    // The list itself renders through a Portal, outside this container.
+    expect(document.querySelector('[data-testid="root-dropdown-popout"]')).not.toBeNull();
+  });
+
   it('names the browsed root on the trigger', async () => {
     const { findByTestId } = render(() => <FilesPanel />);
     const trigger = await findByTestId('root-dropdown');

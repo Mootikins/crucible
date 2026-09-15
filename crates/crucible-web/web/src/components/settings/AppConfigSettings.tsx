@@ -36,7 +36,7 @@ import { SettingsNavRow } from './MobileSettings';
 
 const inputClass =
   'w-56 max-w-full px-2 py-1 rounded border border-hairline bg-control text-shell-ink ' +
-  'text-sm focus:outline-none focus:border-primary disabled:opacity-50';
+  'text-sm focus-ring focus:border-primary disabled:opacity-50';
 
 /** The value at a dot-joined path, or undefined when no layer set it. */
 function valueAt(config: Record<string, unknown> | undefined, path: string): unknown {

@@ -138,7 +138,7 @@ export const PluginBlockPanel: Component = () => {
                         says so, because a badge that reads as a guarantee is
                         the failure mode the plan names. */}
                     <span
-                      class={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase ${
+                      class={`shrink-0 rounded border px-1.5 py-0.5 text-floor uppercase ${
                         command.effect === 'read'
                           ? 'text-muted border-hairline'
                           : 'text-attention border-attention/50'

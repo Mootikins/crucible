@@ -168,7 +168,7 @@ const InboxPanel: Component = () => {
           class="flex-1 min-w-0 text-left cursor-pointer"
           onClick={() => openSession(session.id)}
         >
-          <span class="block text-[12.5px] font-semibold truncate">
+          <span class="block text-reading font-semibold truncate">
             {sessionDisplayTitle(session)}
           </span>
           <span class="block text-floor text-muted-dark truncate">
@@ -215,7 +215,7 @@ const InboxPanel: Component = () => {
     <div class="h-full overflow-y-auto bg-shell-bg text-shell-ink">
       <div class="max-w-[660px] mx-auto px-6 py-5">
         <div class="text-base font-bold mb-1">Inbox</div>
-        <div class="font-mono text-[10.5px] text-muted-dark mb-4">
+        <div class="font-mono text-floor text-muted-dark mb-4">
           {attentionStore.attentionCount()} pending · {recentSessions().length} recent sessions
         </div>
 
@@ -224,7 +224,7 @@ const InboxPanel: Component = () => {
             <div class="bg-attention/5 border border-attention/40 rounded-lg px-3.5 py-3 mb-2.5">
               <div class="flex items-center gap-2 mb-2">
                 <SessionStatusDot status="waiting" labelled />
-                <span class="text-[12.5px] font-semibold">{titleFor(entry)}</span>
+                <span class="text-reading font-semibold">{titleFor(entry)}</span>
                 <span class="flex-1" />
                 <button
                   type="button"
@@ -243,7 +243,7 @@ const InboxPanel: Component = () => {
         </For>
 
         <Show when={waiting().length === 0}>
-          <div class="flex items-center gap-2.5 bg-ok/5 border border-ok/30 rounded-lg px-3.5 py-2.5 mb-2.5 text-ok text-[12.5px]">
+          <div class="flex items-center gap-2.5 bg-ok/5 border border-ok/30 rounded-lg px-3.5 py-2.5 mb-2.5 text-ok text-reading">
             ✓ all clear — nothing waiting on you
           </div>
         </Show>

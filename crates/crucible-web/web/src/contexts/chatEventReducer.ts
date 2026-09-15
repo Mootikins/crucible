@@ -1,5 +1,11 @@
 import { statusBarActions } from '@/stores/statusBarStore';
-import { generateMessageId, turnResponseId, turnSegmentId, stripFrozenPrefix } from '@/lib/api';
+import {
+  generateMessageId,
+  turnResponseId,
+  turnSegmentId,
+  turnThinkingId,
+  stripFrozenPrefix,
+} from '@/lib/api';
 import type {
   Message,
   ChatEvent,
@@ -67,7 +73,8 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
     const existing = deps.currentStreamingMessageId();
     if (existing) return existing;
     const id = generateMessageId();
-    deps.addMessage({ id, role: 'assistant', content: '', timestamp: Date.now() });
+    deps.addMessage({ id, role: 'assistant', content: '',
+          placeholder: true, timestamp: Date.now() });
     deps.setCurrentStreamingMessageId(id);
     deps.setIsStreaming(true);
     return id;
@@ -289,7 +296,27 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // Segmented turns (text → tool → text) may have consumed the
         // response id on an earlier segment; later segments keep their own.
         const responseId = turnResponseId(event.id);
-        const idTaken = deps.messages().some((m) => m.id === responseId && m.id !== messageId);
+        // Who else holds the id the answer must carry? Only two bubbles can:
+        // a spent placeholder of THIS turn, or a bubble history already
+        // reconstructed for it.
+        const holder = deps.messages().find((m) => m.id === responseId && m.id !== messageId);
+        // A spent placeholder carries no text — the turn reasoned, went
+        // straight to a tool, and the reducer closed that bubble, while
+        // dispatchTurn had already renamed it to the canonical id. It is not
+        // the answer, so it gives the id up: history reconstruction derives
+        // the SAME id for the answer and the merge dedupes by id alone, so an
+        // answer left under a client-minted id renders a second time the
+        // moment history loads over it.
+        // Provenance, not emptiness: a history bubble that answered with no
+        // text and only tool calls has the same shape as a placeholder.
+        const spentPlaceholder = holder?.role === 'assistant' && holder.placeholder === true && holder.content === '';
+        if (holder && spentPlaceholder) {
+          deps.updateMessage(holder.id, { id: turnThinkingId(event.id) });
+        }
+        // A holder that DOES carry text is the turn's answer already (history,
+        // or a replayed completion). Leave it alone rather than collide two
+        // messages onto one id.
+        const idTaken = holder !== undefined && !spentPlaceholder;
         // event.content is the ENTIRE turn's accumulated text. Segments frozen
         // before earlier tool calls already render as their own bubbles, so the
         // final bubble must carry only the trailing text. stripFrozenPrefix is
@@ -302,6 +329,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             ...(idTaken ? {} : { id: responseId }),
             content: finalContent,
             usage,
+            completedAt: Date.now(),
             ...(thinkingData ? {
               thinking: {
                 content: thinkingData.content,
@@ -322,6 +350,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             content: finalContent,
             timestamp: Date.now(),
             usage,
+            completedAt: Date.now(),
           });
         } else if (usage && frozenPrefix !== '') {
           // Segments covered the whole turn, so there is no trailing bubble to

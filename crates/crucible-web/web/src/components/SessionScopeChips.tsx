@@ -167,7 +167,9 @@ export const SessionScopeChips: Component = () => {
 
   return (
     <Show when={session()}>
-      <div class="flex items-center gap-1 flex-wrap mt-2" data-testid="context-chips">
+      {/* No margin of its own: this sits inside the composer's control row,
+          which owns the spacing for everything on it. */}
+      <div class="contents" data-testid="context-chips">
         <ChipSelect
           name="project"
           icon={FolderGit2}

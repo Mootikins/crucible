@@ -235,22 +235,24 @@ const conflictTheme = EditorView.baseTheme({
   '.cm-conflict-region': {
     margin: '4px 0',
     padding: '4px 6px',
-    borderRadius: '4px',
-    border: '1px solid var(--color-attention, #d4a72c)',
+    borderRadius: 'var(--cru-radius-md)',
+    border: '1px solid var(--color-attention)',
     backgroundColor: 'color-mix(in srgb, var(--color-attention) 8%, transparent)',
-    fontSize: '11px',
+    fontSize: 'var(--cru-font-floor)',
   },
   '.cm-conflict-side': { display: 'flex', gap: '6px', alignItems: 'baseline' },
   '.cm-conflict-name': {
     flex: '0 0 auto',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
-    color: 'var(--color-muted, #928d99)',
+    color: 'var(--color-muted)',
   },
   '.cm-conflict-text': { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   '.cm-conflict-word': {
     backgroundColor: 'color-mix(in srgb, var(--color-attention) 30%, transparent)',
-    borderRadius: '2px',
+    // 3px, from the token. The literal here was 2px and named no step in the
+    // scale, so one word wash rounded differently from every other chip.
+    borderRadius: 'var(--cru-radius-sm)',
   },
   '.cm-conflict-controls': { display: 'flex', gap: '6px', marginTop: '4px' },
 });

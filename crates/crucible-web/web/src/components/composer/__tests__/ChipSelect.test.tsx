@@ -274,3 +274,60 @@ describe('ChipSelect — one scroll container', () => {
     expect(list.contains(screen.getByTestId('run-on-action'))).toBe(false);
   });
 });
+
+/**
+ * A chip states the axis it sets and the value it holds.
+ *
+ * "crucible-docs" and "crucible" sat side by side with nothing to say that one
+ * was a kiln and the other a project, and "Auto" named neither. The role is
+ * muted, so the value still reads first.
+ */
+describe('ChipSelect — role and value', () => {
+  it('draws the role before the value', () => {
+    render(() => (
+      <ChipSelect
+        name="model"
+        role="Model"
+        testid="model"
+        options={[{ value: 'glm-4.7', label: 'GLM-4.7' }]}
+        value="glm-4.7"
+        onSelect={vi.fn()}
+      />
+    ));
+
+    expect(screen.getByTestId('model').textContent).toContain('Model · GLM-4.7');
+  });
+
+  it('draws the value alone when the caller names no role', () => {
+    render(() => (
+      <ChipSelect
+        name="model"
+        testid="bare"
+        options={[{ value: 'glm-4.7', label: 'GLM-4.7' }]}
+        value="glm-4.7"
+        onSelect={vi.fn()}
+      />
+    ));
+
+    const chip = screen.getByTestId('bare');
+    expect(chip.textContent).toContain('GLM-4.7');
+    expect(chip.textContent).not.toContain('·');
+  });
+
+  it('mutes the role and leaves the value at body strength', () => {
+    render(() => (
+      <ChipSelect
+        name="kiln"
+        role="Kiln"
+        testid="kiln"
+        options={[{ value: 'docs', label: 'crucible-docs' }]}
+        value="docs"
+        onSelect={vi.fn()}
+      />
+    ));
+
+    const muted = screen.getByTestId('kiln').querySelector('.text-muted-dark');
+    expect(muted?.textContent).toContain('Kiln');
+    expect(muted?.textContent).not.toContain('crucible-docs');
+  });
+});

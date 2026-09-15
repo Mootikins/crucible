@@ -48,6 +48,15 @@ export interface ChipOption {
 export const ChipSelect: Component<{
   /** Leading static label, e.g. "kiln". Screen-reader name for the trigger. */
   name: string;
+  /**
+   * The axis the chip sets, drawn before the value as `Model · GLM-4.7`.
+   *
+   * A bare value is only readable to somebody who already knows the row.
+   * "crucible-docs" and "crucible" sat side by side with nothing to say that
+   * one was a kiln and the other a project, and "Auto" named neither. The
+   * role is muted and the value is not, so the pair still reads value-first.
+   */
+  role?: string;
   options: ChipOption[];
   value: string;
   onSelect: (value: string) => void;
@@ -425,7 +434,12 @@ export const ChipSelect: Component<{
         <Show when={props.icon} keyed>
           {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
         </Show>
-        <span class="truncate">{display()}</span>
+        <span class="truncate">
+          <Show when={props.role}>
+            <span class="text-muted-dark">{props.role} · </span>
+          </Show>
+          {display()}
+        </span>
         {/* Quiet at rest, full strength once the pointer or the popout is on
             it. The chip is a control, so the caret has to be findable — but a
             composer row carries several of these at once, and at full contrast
@@ -581,7 +595,7 @@ export const ChipSelect: Component<{
                     }}
                     placeholder={props.action!.placeholder}
                     aria-label={props.action!.label}
-                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted rounded border border-hairline focus:border-primary outline-none px-2 py-1"
+                    class="flex-1 min-w-0 bg-control text-xs text-shell-ink placeholder-muted rounded border border-hairline focus:border-primary focus-ring px-2 py-1"
                     data-testid={props.testid ? `${props.testid}-action-input` : undefined}
                   />
                   <button

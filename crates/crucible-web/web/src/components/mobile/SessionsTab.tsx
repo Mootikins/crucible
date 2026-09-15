@@ -10,7 +10,7 @@ import { inboxSessions } from '@/lib/session-inbox';
 import { reflectionSessions } from '@/lib/session-reflections';
 import { terseAge } from '@/lib/format-time';
 import { ChevronDown, GitBranch, Plus } from '@/lib/icons';
-import { treeChevron, treeSectionHeader } from '@/components/tree/tree-style';
+import { treeChevron, treeRow, treeSectionHeader } from '@/components/tree/tree-style';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import type { Session } from '@/lib/types';
 
@@ -77,7 +77,7 @@ export const SessionsTab: Component = () => {
   const Row = (props: { session: Session; showProject?: boolean }) => (
     <button
       type="button"
-      class={`w-full h-11 px-3 flex items-center gap-2 rounded text-left transition-colors focus-ring ${
+      class={`${treeRow} w-full h-11 px-3 flex items-center gap-2 rounded text-left transition-colors focus-ring ${
         currentSession()?.id === props.session.id
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
@@ -86,9 +86,9 @@ export const SessionsTab: Component = () => {
       onClick={() => void selectSession(props.session.id)}
     >
       <SessionStatusDot status={sessionStatus(props.session)} />
-      <span class="text-reading flex-1 min-w-0 truncate">
-        {sessionDisplayTitle(props.session)}
-      </span>
+      {/* No text size here: the row takes it from the density attribute, so
+          the phone gets the touch size and the file tree gets the same one. */}
+      <span class="flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
       <Show when={sessionDefaultKiln(props.session)} keyed>
         {(kilnName) => (
           <span class="shrink-0 truncate max-w-[80px] text-floor text-muted-dark">{kilnName}</span>
@@ -112,7 +112,7 @@ export const SessionsTab: Component = () => {
   );
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col">
+    <div class="flex-1 min-h-0 flex flex-col" data-density="touch">
       <div class="shrink-0 flex items-center gap-1 px-2 py-1 border-b border-hairline">
         <button
           type="button"

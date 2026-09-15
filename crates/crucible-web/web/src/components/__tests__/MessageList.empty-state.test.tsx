@@ -9,8 +9,12 @@ import type { InteractionRequest, Message, Session } from '@/lib/types';
  * A permission request can arrive before the transcript holds a single
  * message — the agent's first act of a turn can be a write it must ask for.
  * The empty state used to gate on `messages().length === 0` alone, so the
- * Allow/Deny card rendered with "Start a conversation…" floating under it, at
- * the exact moment the user decides whether the agent may touch the disk.
+ * record rendered with "Start a conversation…" floating under it, at the
+ * exact moment the user decides whether the agent may touch the disk.
+ *
+ * The transcript holds the RECORD of the request, one line at the point the
+ * agent stopped. The card that answers it is docked on the composer, so the
+ * control the session is parked on cannot scroll out of sight.
  */
 
 const [messages, setMessages] = createSignal<Message[]>([]);
@@ -88,9 +92,12 @@ describe('MessageList empty state', () => {
     setPending(permission());
     render(() => <MessageList />);
 
-    // The consent gate is what the pane is for at this moment.
-    expect(screen.getByText('Permission Required')).toBeInTheDocument();
-    expect(screen.getByText('Allow')).toBeInTheDocument();
+    // The record, not the card: the card is ChatInput's.
+    const record = screen.getByTestId('interaction-record');
+    expect(record.textContent).toContain('Asked to run rm -rf build');
+    expect(record.textContent).toContain('waiting');
+    expect(screen.queryByText('Permission Required')).toBeNull();
+    expect(screen.queryByTestId('perm-allow')).toBeNull();
     // ...and nothing invites the user to "start a conversation" underneath it.
     expect(screen.queryByTestId('message-list-empty')).toBeNull();
     expect(
@@ -102,7 +109,7 @@ describe('MessageList empty state', () => {
     setPending(permission());
     render(() => <MessageList />);
 
-    expect(screen.getByText('Permission Required')).toBeInTheDocument();
+    expect(screen.getByTestId('interaction-record')).toBeInTheDocument();
     expect(screen.queryByTestId('message-list-empty')).toBeNull();
     expect(screen.queryByText('Select or create a session to start chatting')).toBeNull();
   });
@@ -115,5 +122,51 @@ describe('MessageList empty state', () => {
 
     setPending(null);
     expect(screen.getByTestId('message-list-empty')).toBeInTheDocument();
+  });
+});
+
+describe('MessageList interaction record', () => {
+  it('names the file a write asked for', () => {
+    setSession(activeSession());
+    setPending({
+      kind: 'permission',
+      id: 'perm-2',
+      action_type: 'write',
+      tokens: ['docs/Meta/Product.md'],
+    });
+    render(() => <MessageList />);
+
+    expect(screen.getByTestId('interaction-record').textContent).toContain(
+      'Asked to write docs/Meta/Product.md',
+    );
+  });
+
+  it('quotes the question an ask asked', () => {
+    setSession(activeSession());
+    setPending({
+      kind: 'ask',
+      id: 'ask-1',
+      question: 'Which branch should I use?',
+    } as InteractionRequest);
+    render(() => <MessageList />);
+
+    const record = screen.getByTestId('interaction-record');
+    expect(record.textContent).toContain('Asked: Which branch should I use?');
+    expect(record.textContent).toContain('waiting');
+  });
+
+  it('draws nothing while no request is open', () => {
+    setSession(activeSession());
+    setMessages([
+      {
+        id: 'm1',
+        role: 'user',
+        content: 'hi',
+        timestamp: Date.now(),
+      } as Message,
+    ]);
+    render(() => <MessageList />);
+
+    expect(screen.queryByTestId('interaction-record')).toBeNull();
   });
 });

@@ -1609,7 +1609,7 @@ const EdgeToolbar: Component<{
           </Show>
           <Show when={labelOpen()}>
             <input
-              class="ml-1 w-36 rounded border border-hairline bg-shell-panel px-1.5 py-0.5 text-xs text-shell-ink outline-none focus:border-primary"
+              class="ml-1 w-36 rounded border border-hairline bg-shell-panel px-1.5 py-0.5 text-xs text-shell-ink focus-ring focus:border-primary"
               placeholder="Label…"
               value={edge()!.label ?? ''}
               data-testid="canvas-edge-label-input"

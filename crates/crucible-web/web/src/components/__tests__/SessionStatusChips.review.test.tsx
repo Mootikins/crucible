@@ -74,8 +74,10 @@ describe('SessionStatusChips — effective review policy', () => {
     modes('ask', mode('ask', 'pre_write'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
-    const chip = await waitFor(() => screen.getByTestId('session-review-policy'));
-    expect(chip.textContent).toBe('gated');
+    // The policy is no longer a chip a reader must decode; it rides the
+    // wrapper as data for tests and plugins.
+    const wrap = await waitFor(() => screen.getByTestId('session-status'));
+    await waitFor(() => expect(wrap.dataset.reviewPolicy).toBe('pre_write'));
   });
 
   it('an ACP session in normal mode reads "review at turn end", not "gated"', async () => {
@@ -86,8 +88,8 @@ describe('SessionStatusChips — effective review policy', () => {
     modes('ask', mode('ask', 'post_turn'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
-    const chip = await waitFor(() => screen.getByTestId('session-review-policy'));
-    expect(chip.textContent).toBe('review at turn end');
+    const wrap = await waitFor(() => screen.getByTestId('session-status'));
+    await waitFor(() => expect(wrap.dataset.reviewPolicy).toBe('post_turn'));
   });
 
   it('a mode with no gate gets no chip', async () => {
@@ -110,12 +112,12 @@ describe('SessionStatusChips — effective review policy', () => {
     modes('ask', mode('ask', 'pre_write'));
     setCurrentSession(session('s1'));
     render(() => <SessionStatusChips />);
-    await waitFor(() => expect(screen.getByTestId('session-review-policy')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('session-status').dataset.reviewPolicy).toBeDefined());
 
     let release: (v: unknown) => void = () => {};
     listModes.mockImplementation(() => new Promise((r) => (release = r as (v: unknown) => void)));
     setCurrentSession(session('s2'));
-    await waitFor(() => expect(screen.queryByTestId('session-review-policy')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('session-status')?.dataset.reviewPolicy).toBeUndefined());
     release({ current_mode_id: 'plan', modes: [mode('plan', 'none')] });
   });
 });

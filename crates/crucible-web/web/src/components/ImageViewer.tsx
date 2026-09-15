@@ -226,7 +226,7 @@ export const ImageViewer: Component<ImageViewerProps> = (props) => {
       </div>
       <div
         ref={scroller}
-        class="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+        class="relative min-h-0 flex-1 overflow-auto focus-ring"
         classList={{
           'cursor-grab': !panning() && isPannable(geometry(), scale()),
           'cursor-grabbing': panning(),

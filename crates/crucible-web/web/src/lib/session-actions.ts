@@ -1,6 +1,6 @@
-import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
+import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { findFirstCenterPaneGroupId, firstCenterPaneId } from './panel-actions';
+import { findFirstCenterPaneGroupId, edgeCenterPane, sessionsSide } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { tabHost } from './tab-host';
 
@@ -21,21 +21,27 @@ const SESSION_CONTENT = new Set(['chat', 'chat-draft']);
  * session to; this only decides where a session with no home goes.
  */
 export function sessionPane(): { groupId: string } | null {
-  for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
-    if (findEdgePanelForGroup(groupId)) continue; // centre only
-    if (group.tabs.some((t) => SESSION_CONTENT.has(t.contentType))) return { groupId };
+  // The pane next to the sessions rail, when it is a conversation pane or
+  // empty. A session pane that was dragged elsewhere is not the default.
+  const edge = edgeCenterPane(sessionsSide());
+  if (edge?.groupId) {
+    const group = windowStore.tabGroups[edge.groupId];
+    const tabs = group?.tabs ?? [];
+    // A pane that mixes a chat with a file is an editor pane with a stray
+    // chat in it, not the session pane: a session gets its own pane beside it.
+    const sessionsOnly = tabs.length > 0 && tabs.every((t) => SESSION_CONTENT.has(t.contentType));
+    if (sessionsOnly || tabs.length === 0) return { groupId: edge.groupId };
   }
   return null;
 }
 
 /**
- * Put a session beside the editor, splitting the centre if it has no session
- * pane yet.
+ * Put a session in the centre pane beside the SESSIONS RAIL, splitting the
+ * centre if that pane holds an editor.
  *
- * LEFT of the editor, matching the agents-window arrangement: the conversation
- * is what you read and steer from, the file it changes sits to its right.
- * Falls back to adding a tab to the first centre group when the layout has no
- * pane to split (a shell with nothing open).
+ * The side follows the rail, so a swap flips it. Falls back to adding a tab
+ * to the first centre group when the layout has no pane to split (a shell
+ * with nothing open).
  */
 export function openTabBesideEditor(tab: Tab): boolean {
   const existing = sessionPane();
@@ -45,8 +51,9 @@ export function openTabBesideEditor(tab: Tab): boolean {
     return true;
   }
 
-  const editorPaneId = firstCenterPaneId();
-  if (editorPaneId) return windowActions.openTabInNewPane(editorPaneId, 'left', tab) !== null;
+  // The edge pane holds editor content: split it, new pane on the rail side.
+  const edge = edgeCenterPane(sessionsSide());
+  if (edge) return windowActions.openTabInNewPane(edge.paneId, sessionsSide(), tab) !== null;
 
   const groupId = findFirstCenterPaneGroupId();
   if (!groupId) return false;
@@ -59,7 +66,31 @@ export function openSessionInChat(sessionId: string, sessionTitle: string): void
   const host = tabHost();
   const existing = host.find((t) => t.metadata?.sessionId === sessionId);
   if (existing) {
-    host.activate(existing.id);
+    // A session ALWAYS reads beside the sessions rail. One that was dragged
+    // elsewhere (a rail, the editor pane) moves back on reopen; the phone
+    // stack has no panes, so there it only comes to the front. The move
+    // remounts the transcript, which a deliberate reopen can afford.
+    const group = Object.entries(windowStore.tabGroups).find(([, g]) =>
+      g.tabs.some((t) => t.id === existing.id),
+    )?.[0];
+    const target = sessionPane();
+    if (!group || (target && group === target.groupId)) {
+      host.activate(existing.id);
+      return;
+    }
+    // Remove, then open; when the open fails, the tab goes back where it
+    // was, so a reopen can never lose a session.
+    const tab: Tab = { ...existing };
+    windowActions.removeTab(group, existing.id);
+    if (openTabBesideEditor(tab)) {
+      host.activate(tab.id);
+      return;
+    }
+    const fallback = windowStore.tabGroups[group] ? group : findFirstCenterPaneGroupId();
+    if (fallback) {
+      windowActions.addTab(fallback, tab);
+      windowActions.setActiveTab(fallback, tab.id);
+    }
     return;
   }
 

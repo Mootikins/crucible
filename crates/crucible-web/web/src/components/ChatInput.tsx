@@ -12,6 +12,7 @@ import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import { ArrowUp, X } from '@/lib/icons';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
+import { InteractionHandler } from '@/components/interactions';
 
 /**
  * The commit button's geometry, shared by send and cancel.
@@ -24,7 +25,7 @@ const SEND_BASE =
   'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors';
 
 export const ChatInput: Component = () => {
-  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, connectionStatus, retryConnection, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
+  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, connectionStatus, retryConnection, chatMode, availableModes, switchMode, addSystemMessage, clearMessages, pendingInteraction, respondToInteraction } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
   let formRef: HTMLFormElement | undefined;
@@ -160,15 +161,23 @@ export const ChatInput: Component = () => {
           the full empty state above; repeating it in the input strip read
           as two stacked prompts. */}
 
-      {/* Whatever the session's plugins have to say about it, rendered
-          generically from their keyed slots — ABOVE the field, because a chip
-          that says the agent is parked waiting on your review is a thing to
-          read BEFORE you type, not a footnote under the send button. It
-          renders nothing at all when no plugin published a slot, so an empty
-          strip costs no space. */}
-      <SessionStatusChips />
+      {/* The gate, docked ON the prompt.
+          A permission used to be drawn where the agent hit it, in the middle
+          of the transcript — which scrolls. The one control the session is
+          parked on could therefore be off-screen, and the composer below it
+          looked ready to take a message it would not send. The card now sits
+          against the prompt, which never scrolls away, and the transcript
+          keeps a one-line record at the point of the request instead. */}
+      <Show when={pendingInteraction()}>
+        {(request) => (
+          <div class="composer-dock" data-testid="composer-dock">
+            <InteractionHandler request={request()} onRespond={respondToInteraction} />
+          </div>
+        )}
+      </Show>
 
       <ComposerCard
+        docked={!!pendingInteraction()}
         value={input}
         setValue={setInput}
         // `[[note]]` completion needs the DIRECTORY; the session carries a
@@ -196,6 +205,25 @@ export const ChatInput: Component = () => {
               optionTestidPrefix="model-option"
             />
             <ChatModeControl />
+          </>
+        }
+        // Session scope shares the row with the pickers: the kilns the session
+        // knows and the workspace it acts in — attach/detach mid-session
+        // (Crucible Shell design 4a/5a).
+        //
+        // LAST on the row, and deliberately borderless. It is the quietest
+        // thing in the strip so the prompt stays the loudest, which is the
+        // whole reason the reference surfaces leave their branch and machine
+        // chips bare.
+        // The plugin status chips (review policy and the like) sit FIRST on
+        // the row, because a chip that says the agent waits on your review is
+        // a thing to read before you type. They used to sit above the prompt,
+        // which put them between the transcript and the docked permission
+        // card. The scope chips stay last: they are the quietest thing here.
+        trailing={
+          <>
+            <SessionStatusChips />
+            <SessionScopeChips />
           </>
         }
         action={
@@ -237,16 +265,6 @@ export const ChatInput: Component = () => {
         }
       />
 
-      {/* Session scope directly BELOW the field: the kilns the session knows
-          and the workspace it acts in — attach/detach mid-session (Crucible
-          Shell design 4a/5a).
-
-          Deliberately borderless and unfilled. It is the quietest thing in
-          the strip so the field stays the loudest, which is the whole reason
-          the reference surfaces leave their branch and machine chips bare. */}
-      <div class="mt-1.5">
-        <SessionScopeChips />
-      </div>
       </div>
     </form>
   );

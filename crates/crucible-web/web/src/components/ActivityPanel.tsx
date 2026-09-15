@@ -3,6 +3,7 @@ import { Bot, ArrowRightLeft, Check, X, Activity } from 'lucide-solid';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { SubagentEvent } from '@/lib/types';
 
 
@@ -219,13 +220,12 @@ export const ActivityPanel: Component = () => {
         <Show
           when={events().length > 0}
           fallback={
-            <div class="flex flex-col items-center justify-center h-full px-4 text-center">
-              <Activity class="w-8 h-8 text-muted-dark mb-3" />
-              <p class="text-sm text-muted-dark">No background tasks</p>
-              <p class="text-xs text-muted-dark mt-1">
-                Subagent and delegation tasks will appear here
-              </p>
-            </div>
+            <EmptyState
+              class="h-full"
+              title="No background tasks"
+              body="Subagent and delegation tasks appear here."
+              testid="activity-empty"
+            />
           }
         >
           <div class="p-2 space-y-1.5">

@@ -80,7 +80,7 @@ export const PluginInstallRows: Component<{
               data-testid="plugin-install-url"
               placeholder="user/repo"
               class="w-56 max-w-full rounded border border-hairline bg-control px-2 py-1 text-sm
-                     text-shell-ink focus:border-primary focus:outline-none disabled:opacity-50"
+                     text-shell-ink focus:border-primary focus-ring disabled:opacity-50"
               value={url()}
               disabled={busy()}
               onInput={(e) => setUrl(e.currentTarget.value)}

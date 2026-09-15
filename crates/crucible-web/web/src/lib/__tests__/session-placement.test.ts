@@ -94,7 +94,7 @@ describe('session placement (a pane beside the editor)', () => {
     expect(pane.activeTabId).toBe('tab-chat-s1');
   });
 
-  it('honours a session the user dragged into the editor pane', () => {
+  it('moves a session the user dragged into the editor pane back beside the rail', () => {
     resetLayout(
       { id: 'pane-editor', type: 'pane', tabGroupId: 'g-editor' },
       {
@@ -110,9 +110,19 @@ describe('session placement (a pane beside the editor)', () => {
     );
 
     openSessionInChat('s1', 'One');
-    // Focused where the user put it; the centre is NOT split behind their back.
-    expect(windowStore.layout.type).toBe('pane');
-    expect(windowStore.tabGroups['g-editor'].activeTabId).toBe('tab-chat-s1');
+    // The owner's rule (2026-09-15): a session ALWAYS reads beside the
+    // sessions rail. Reopening it splits the centre and moves it there; the
+    // editor keeps its file.
+    expect(windowStore.layout.type).toBe('split');
+    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
+    if (windowStore.layout.type === 'split') {
+      expect(windowStore.layout.direction).toBe('horizontal');
+      const first = windowStore.layout.first;
+      expect(first.type).toBe('pane');
+      if (first.type === 'pane') {
+        expect(windowStore.tabGroups[first.tabGroupId!].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+      }
+    }
   });
 
   it('adds to an existing session pane rather than splitting again', () => {

@@ -1,3 +1,4 @@
+import { edgeCenterPane, filesSide } from './panel-actions';
 import { isCompact } from '@/stores/deviceStore';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
 import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
@@ -75,7 +76,13 @@ const windowTabHost: TabHost = {
     }
     if (placement === 'zone') return openInDefaultZone(tab);
     const groupId = editorGroup();
-    if (!groupId) return false;
+    if (!groupId) {
+      // The centre holds only conversations. A file gets its own pane on the
+      // files side of the pane at that edge, never a tab on top of a chat.
+      const edge = edgeCenterPane(filesSide());
+      if (!edge) return false;
+      return windowActions.openTabInNewPane(edge.paneId, filesSide(), tab) !== null;
+    }
     windowActions.addTab(groupId, tab);
     windowActions.setActiveTab(groupId, tab.id);
     return true;
@@ -105,9 +112,10 @@ const windowTabHost: TabHost = {
   },
 };
 
-/** The centre group the editor lives in. */
+/** The centre group the editor lives in, or null when the centre is all
+ * conversations (the caller then opens a new pane on the files side). */
 function editorGroup(): string | null {
-  return editorGroupId() ?? findFirstCenterPaneGroupId();
+  return editorGroupId();
 }
 
 /** Left of the editor, where a conversation belongs. */

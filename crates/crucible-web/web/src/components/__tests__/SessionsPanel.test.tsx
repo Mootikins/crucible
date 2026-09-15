@@ -111,6 +111,31 @@ describe('SessionsPanel — two tiers, project over session', () => {
   });
 });
 
+describe('SessionsPanel — nothing yet', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    projectList = [];
+    pinnedProject = null;
+    sessionList = [];
+  });
+
+  it('offers a first session from the empty state', () => {
+    const started: unknown[] = [];
+    const listener = (e: Event) => started.push((e as CustomEvent).detail);
+    window.addEventListener('crucible:new-session', listener);
+
+    render(() => <SessionsPanel />);
+    const empty = screen.getByTestId('sessions-empty');
+    expect(empty.textContent).toContain('No sessions yet');
+    expect(empty.getAttribute('data-tone')).toBe('empty');
+
+    fireEvent.click(empty.querySelector('[data-testid="empty-state-action"]')!);
+    window.removeEventListener('crucible:new-session', listener);
+    // No workspace: there is no project to name, so the draft asks for one.
+    expect(started).toEqual([null]);
+  });
+});
+
 describe('SessionsPanel — the Inbox', () => {
   const ASK = { id: 'r1', kind: 'ask' as const, question: 'Proceed?' };
   const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();

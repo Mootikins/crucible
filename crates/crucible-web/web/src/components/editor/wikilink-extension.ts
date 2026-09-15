@@ -80,17 +80,25 @@ const wikilinkHighlighter = ViewPlugin.fromClass(
  * a span inside a link.
  */
 const wikilinkTheme = EditorView.baseTheme({
+  // `textDecoration: none` on BOTH selectors, for the same reason the colour
+  // needs both. The light theme tags `[[Note]]` as a link and underlines it,
+  // and that underline is drawn by the descendant syntax span — an ancestor
+  // cannot erase a line a descendant draws. The dark theme drew no line, so
+  // the two themes disagreed about a wikilink at rest.
   '.cm-wikilink, .cm-wikilink span': {
     color: 'var(--color-primary)',
+    textDecoration: 'none',
   },
   '.cm-wikilink': {
     backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-    borderRadius: '3px',
+    borderRadius: 'var(--cru-radius-sm)',
     cursor: 'pointer',
   },
-  '.cm-wikilink:hover': {
+  '.cm-wikilink:hover, .cm-wikilink:hover span': {
     textDecoration: 'underline',
     textUnderlineOffset: '3px',
+  },
+  '.cm-wikilink:hover': {
     backgroundColor: 'color-mix(in srgb, var(--color-primary) 18%, transparent)',
   },
 });

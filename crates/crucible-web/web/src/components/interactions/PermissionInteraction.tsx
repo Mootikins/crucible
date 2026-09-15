@@ -18,7 +18,8 @@ const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
   bash: { label: 'Execute', chip: 'bg-attention/15 text-attention border border-attention/50' },
   read: { label: 'Read', chip: 'bg-primary/15 text-primary border border-primary/50' },
   write: { label: 'Write', chip: 'bg-attention/15 text-attention border border-attention/50' },
-  tool: { label: 'Tool', chip: 'bg-precog/15 text-precog border border-precog/50' },
+  // Neutral: a tool name is a category, and precog means precognition only.
+  tool: { label: 'Tool', chip: 'bg-surface-elevated text-muted border border-hairline-strong' },
 };
 
 /** Extract file path from a write permission request's tokens */
@@ -136,8 +137,11 @@ export const PermissionInteraction: Component<Props> = (props) => {
   };
 
   return (
-    <div class="bg-surface-elevated rounded-lg p-4 mb-4 border border-hairline">
-      <div class="flex items-center gap-2 mb-3">
+    // Type sits at the transcript sizes: `text-floor` for the argument
+    // listing (mono reads a step wider than prose), `text-xs` for the rest.
+    // The card used to read a size above the turn it interrupts.
+    <div class="bg-surface-elevated rounded-lg p-3 mb-4 border border-hairline">
+      <div class="flex items-center gap-2 mb-2">
         <span
           class={`px-2 py-0.5 text-floor font-medium rounded-md ${actionInfo().chip} ${isNamedTool() ? 'font-mono' : ''}`}
           data-testid="perm-action-chip"
@@ -152,7 +156,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
       {/* Full tool arguments — everything being approved must be visible */}
       <Show when={toolArgPairs(props.request).length > 0}>
         <div
-          class="bg-surface-base rounded-md p-3 mb-4 font-mono text-xs text-shell-ink"
+          class="bg-surface-base rounded-md p-2 mb-3 max-h-40 overflow-y-auto font-mono text-floor leading-4 text-shell-ink"
           data-testid="perm-tool-args"
         >
           {toolArgPairs(props.request).map(([key, value]) => (
@@ -166,7 +170,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
 
       {/* File path display for write actions */}
       <Show when={props.request.action_type === 'write' && filePath()}>
-        <p class="text-shell-body mb-2 text-sm">
+        <p class="text-shell-body mb-2 text-xs">
           File: <span class="text-shell-ink font-mono">{filePath()}</span>
         </p>
       </Show>
@@ -187,11 +191,17 @@ export const PermissionInteraction: Component<Props> = (props) => {
             {showDiff() ? 'Hide changes' : 'Show changes'}
           </button>
           <Show when={showDiff()}>
-            <DiffViewer
-              oldContent={oldContent() ?? ''}
-              newContent={newContent()!}
-              fileName={filePath() ?? undefined}
-            />
+            {/* The diff is the only unbounded thing on the card, and the card
+                now docks on the composer. A 500-line write must not push the
+                Allow/Deny row off the bottom of the screen, so the preview
+                scrolls and the decision stays where the user can reach it. */}
+            <div class="max-h-64 overflow-y-auto">
+              <DiffViewer
+                oldContent={oldContent() ?? ''}
+                newContent={newContent()!}
+                fileName={filePath() ?? undefined}
+              />
+            </div>
           </Show>
         </div>
       </Show>
@@ -207,7 +217,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
       {/* Fallback: show raw command text when neither a diff nor the
           tool-args block already covers the request */}
       <Show when={!hasDiff() && (commandDisplay() !== '' || toolArgPairs(props.request).length === 0)}>
-        <div class="bg-surface-base rounded-md p-3 mb-4 font-mono text-xs text-shell-ink overflow-x-auto">
+        <div class="bg-surface-base rounded-md p-2 mb-3 font-mono text-floor leading-4 text-shell-ink overflow-x-auto">
           {commandDisplay() || '(no arguments)'}
         </div>
       </Show>

@@ -43,6 +43,9 @@ export const ChatModeControl: Component = () => {
     <Show when={options().length > 0}>
       <ChipSelect
         name="mode"
+        // The chip states its axis as well as its value ("Mode · Ask"): the
+        // composer row carries several chips, and a bare "Ask" beside a bare
+        // model id says nothing about which one sets what.
         // Without this the trigger falls back to the literal string "mode"
         // whenever the current mode is absent from the options.
         placeholder={chatMode()}

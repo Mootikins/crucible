@@ -11,6 +11,13 @@
  * edited into something wrong, and it can never go red for the reason it was
  * written. The contrast, elevation, canvas and wikilink gates all read the
  * stylesheet through here, so there is one parser and no copy to drift.
+ *
+ * THE STYLESHEET HAS TWO LEVELS SINCE THE `--cru-*` CONTRACT LANDED.
+ * `@layer cru-theme` holds the values, once per theme. `@theme` holds only
+ * aliases, each reading a `--cru-*` name, and Tailwind generates the utilities
+ * from those. `darkTokens` and `lightTokens` merge both levels, so a caller
+ * that asks for `--color-primary` or for `--cru-color-primary` gets an answer
+ * either way and `resolveToken` walks the chain to the literal.
  */
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
@@ -19,9 +26,10 @@ import { resolve as resolvePath } from 'node:path';
  *  from the project root that the config already anchors. */
 const CSS = readFileSync(resolvePath(process.cwd(), 'src/index.css'), 'utf8');
 
-/** Pull one brace-balanced block out of the stylesheet by its selector text. */
-function block(selector: string): string {
-  const start = CSS.indexOf(selector);
+/** Pull one brace-balanced block out of the stylesheet by its selector text,
+ *  starting the search at `from`. */
+function block(selector: string, from = 0): string {
+  const start = CSS.indexOf(selector, from);
   if (start < 0) throw new Error(`no such block in index.css: ${selector}`);
   let depth = 0;
   for (let i = CSS.indexOf('{', start); i < CSS.length; i++) {
@@ -42,12 +50,47 @@ function declarations(source: string): Map<string, string> {
   return out;
 }
 
-/** Every `--*` the dark theme declares. */
-export const darkTokens: Map<string, string> = declarations(block('@theme'));
+/** The layer that holds every default, for both themes. */
+const CRU_THEME = block('@layer cru-theme {');
 
-/** Every `--*` the light theme re-declares. */
-export const lightTokens: Map<string, string> = declarations(
-  block(":root[data-theme='light']"),
+/** `:root` is a PREFIX of `:root[data-theme='light']` and appears earlier in
+ *  the file besides, so the dark block is located inside the layer rather than
+ *  by its selector alone. */
+const CRU_THEME_START = CSS.indexOf(CRU_THEME);
+
+/** The `--cru-*` contract, dark. */
+export const contractDark: Map<string, string> = declarations(
+  block(':root {', CRU_THEME_START),
+);
+
+/** The `--cru-*` contract, light. */
+export const contractLight: Map<string, string> = declarations(
+  block(":root[data-theme='light']", CRU_THEME_START),
+);
+
+/** The `@theme` block: the Tailwind-namespace aliases, and nothing else.
+ *  Anchored on the newline and the brace, because the word `@theme` also
+ *  appears in the comments that explain why the block holds no literal. */
+export const themeAliases: Map<string, string> = declarations(block('\n@theme {'));
+
+const merge = (...maps: Map<string, string>[]) =>
+  new Map<string, string>(maps.flatMap((m) => [...m]));
+
+/** Every token a dark-theme element resolves against: the contract plus the
+ *  aliases that point into it. */
+export const darkTokens: Map<string, string> = merge(themeAliases, contractDark);
+
+/** Every token a light-theme element resolves against.
+ *
+ *  The light block OVERRIDES; it does not replace. `:root[data-theme='light']`
+ *  re-declares the tokens that change with the theme and nothing else, so a
+ *  radius or a type size still comes from `:root`. Layering the light block
+ *  over the dark one is what the browser does, and a map built from the light
+ *  block alone would report a radius as undeclared. */
+export const lightTokens: Map<string, string> = merge(
+  themeAliases,
+  contractDark,
+  contractLight,
 );
 
 /** Follow `var(--other)` to the value it ultimately names. Throws when the

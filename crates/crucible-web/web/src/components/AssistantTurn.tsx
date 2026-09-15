@@ -21,7 +21,7 @@ import type { Message as MessageType, TokenUsage } from '@/lib/types';
 import { renderMarkdown, renderMarkdownChatAsync, proseClass } from '@/lib/markdown';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { formatAbsoluteTime } from '@/lib/format-time';
+import { formatAbsoluteTime, formatDuration } from '@/lib/format-time';
 
 export type TurnPartSpec =
   | { kind: 'text'; id: string }
@@ -175,6 +175,20 @@ export const AssistantTurn: Component<{
 
   const turnInFlight = () => chat.isStreaming() && props.isLast;
 
+  /** Start of the first segment to the daemon's completion stamp. */
+  const turnDuration = (): string | null => {
+    const start = firstMessage()?.timestamp;
+    let end: number | undefined;
+    for (let i = props.parts.length - 1; i >= 0; i--) {
+      const part = props.parts[i];
+      if (part.kind !== 'text') continue;
+      end = byId(part.id)?.completedAt;
+      if (end) break;
+    }
+    if (!start || !end || end < start) return null;
+    return formatDuration(end - start);
+  };
+
   const endsWithEmptyText = () => {
     const last = props.parts[props.parts.length - 1];
     return last?.kind === 'text' && (byId(last.id)?.content ?? '') === '';
@@ -209,7 +223,8 @@ export const AssistantTurn: Component<{
 
   return (
     <div
-      class="group relative mb-6"
+      // `pb-5` reserves the room the always-visible footer takes at `-bottom-5`.
+      class="group relative mb-6 pb-5"
       data-testid="assistant-turn"
       data-role="assistant-turn"
       // Same kiln the click handler uses, declared for the document-level
@@ -266,9 +281,11 @@ export const AssistantTurn: Component<{
         </div>
       </Show>
 
-      {/* Hover actions for the whole turn */}
+      {/* Actions for the whole turn. Always visible: a row that appears on
+          hover is a row a reader cannot find, and on a phone there is no
+          hover at all. */}
       <Show when={!turnInFlight()}>
-        <div class="absolute left-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
+        <div class="absolute left-0 -bottom-5 flex items-center gap-0.5">
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
@@ -289,12 +306,15 @@ export const AssistantTurn: Component<{
               <RefreshCw size={14} />
             </button>
           </Show>
+          {/* How long the turn took, when the daemon told us when it ended.
+              A turn rebuilt from history has no end, so it keeps the clock
+              time; the tooltip carries the full date either way. */}
           <Show when={firstMessage()?.timestamp}>
             <span
               class="ml-1 text-floor leading-none text-muted-dark"
               title={new Date(firstMessage()!.timestamp).toLocaleString()}
             >
-              {formatAbsoluteTime(firstMessage()!.timestamp)}
+              {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
             </span>
           </Show>
         </div>

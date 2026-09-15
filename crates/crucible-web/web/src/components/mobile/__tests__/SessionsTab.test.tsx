@@ -94,6 +94,21 @@ describe('SessionsTab', () => {
     expect(inbox.textContent).toContain('Beta one');
   });
 
+  /**
+   * The phone list and the phone file tree take their metrics from the same
+   * attribute. A row must not carry a `text-*` class of its own: such a class
+   * pins the size and the attribute stops reaching the row.
+   */
+  it('asks for touch metrics and lets the rows inherit them', () => {
+    const { container } = render(() => <SessionsTab />);
+    const wrapper = container.querySelector('[data-density="touch"]');
+    expect(wrapper).not.toBeNull();
+    const row = container.querySelector('[data-session-id="a1"]')!;
+    expect(row.classList.contains('tree-row')).toBe(true);
+    expect(wrapper!.contains(row)).toBe(true);
+    expect(row.querySelector('.text-reading')).toBeNull();
+  });
+
   it('opens a session when a row is tapped', () => {
     render(() => <SessionsTab />);
     fireEvent.click(screen.getByText('Alpha one'));

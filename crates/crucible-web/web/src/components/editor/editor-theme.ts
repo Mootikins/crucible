@@ -1,6 +1,7 @@
 import { EditorView } from '@codemirror/view';
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { tags } from '@lezer/highlight';
 import type { Extension } from '@codemirror/state';
 import type { Theme } from '@/lib/theme';
 
@@ -36,6 +37,26 @@ const crucibleEditorChromeDark = chrome(true);
 const crucibleEditorChromeLight = chrome(false);
 
 /**
+ * The light syntax colors, with the heading underline removed.
+ *
+ * `defaultHighlightStyle` underlines `tags.heading`; One Dark does not. The
+ * two themes therefore drew a markdown heading differently, and the shell
+ * promises one geometry in both. The rule is dropped here rather than
+ * overridden in CSS, because CodeMirror compiles a highlight style into
+ * opaque class names that no stylesheet can name.
+ *
+ * `tags.link` keeps its underline. One Dark underlines it too, so the two
+ * themes agree, and an external link must read as a link. A `[[wikilink]]`
+ * also carries that tag; `wikilink-extension.ts` clears the decoration on
+ * the wikilink spans, which outrank the highlight class on specificity.
+ */
+const lightHighlightStyle = HighlightStyle.define(
+  defaultHighlightStyle.specs.map((spec) =>
+    spec.tag === tags.heading ? { ...spec, textDecoration: 'none' } : spec,
+  ),
+);
+
+/**
  * Chrome plus syntax colors for one theme.
  *
  * Light uses CodeMirror's own `defaultHighlightStyle` rather than a hand-mixed
@@ -48,6 +69,6 @@ const crucibleEditorChromeLight = chrome(false);
  */
 export function editorThemeExtension(theme: Theme): Extension {
   return theme === 'light'
-    ? [crucibleEditorChromeLight, syntaxHighlighting(defaultHighlightStyle)]
+    ? [crucibleEditorChromeLight, syntaxHighlighting(lightHighlightStyle)]
     : [crucibleEditorChromeDark, oneDark];
 }

@@ -48,9 +48,18 @@ interface OmniItem {
   action: () => void;
 }
 
+// ── Badge colour rule ────────────────────────────────────────────────────
+// One meaning for each colour:
+//   amber    — the app waits for you, or it counts the things that wait.
+//   precog   — precognition only.
+//   green    — a task runs, or a task is complete.
+//   neutral  — a category label. It carries no state.
+// A kind badge names a category. Both kinds stay neutral. The CMD badge was
+// precog, which promised precognition and gave the eye a second amber-class
+// signal to read in a list.
 const KIND_STYLE: Record<OmniKind, string> = {
   NOTE: 'text-muted border-muted/60',
-  CMD: 'text-precog border-precog/60',
+  CMD: 'text-muted border-muted/60',
 };
 
 /** Untyped list caps. Commands are few — show them all; notes cap at a
@@ -181,10 +190,10 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                     item.action();
                     props.onOpenChange(false);
                   }}
-                  class="focus-ring group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body aria-selected:bg-primary/15 aria-selected:text-shell-ink aria-selected:outline aria-selected:outline-1 aria-selected:-outline-offset-1 aria-selected:outline-primary/70 data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink data-[selected=true]:outline data-[selected=true]:outline-1 data-[selected=true]:-outline-offset-1 data-[selected=true]:outline-primary/70"
+                  class="cru-palette-row focus-ring group flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-shell-body aria-selected:bg-primary/15 aria-selected:text-shell-ink aria-selected:outline aria-selected:outline-1 aria-selected:-outline-offset-1 aria-selected:outline-primary/70 data-[selected=true]:bg-primary/15 data-[selected=true]:text-shell-ink data-[selected=true]:outline data-[selected=true]:outline-1 data-[selected=true]:-outline-offset-1 data-[selected=true]:outline-primary/70"
                 >
                   <span
-                    class={`font-mono text-floor font-medium border rounded-[3px] px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
+                    class={`font-mono text-floor font-medium border rounded-sm px-1 py-px w-[54px] text-center flex-none opacity-85 ${KIND_STYLE[item.kind]}`}
                   >
                     {item.kind}
                   </span>
@@ -206,7 +215,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         </Show>
       </Command.List>
 
-      <div class="flex gap-3.5 border-t border-hairline bg-shell-panel px-4 py-2 font-mono text-[10.5px] text-muted-dark">
+      <div class="flex gap-3.5 border-t border-hairline bg-shell-panel px-4 py-2 font-mono text-floor text-muted-dark">
         <span><span class="text-primary">&gt;</span> command</span>
         <span><span class="text-primary">[[</span> note</span>
         <span class="ml-auto">Ctrl+P commands · Ctrl+O notes</span>

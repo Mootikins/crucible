@@ -1,9 +1,9 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Message } from './Message';
 import { AssistantTurn, type TurnPartSpec } from './AssistantTurn';
-import { InteractionHandler } from './interactions';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
+import type { InteractionRequest } from '@/lib/types';
 
 /**
  * Transcript row. A TURN groups everything the agent did for one prompt —
@@ -36,8 +36,48 @@ const ChatBubbleMark: Component<{ ring: string; glyph: string }> = (props) => (
   </div>
 );
 
+/**
+ * What the transcript says where the agent stopped to ask.
+ *
+ * One line, past tense, naming the thing asked for — the record of an event,
+ * which is what a transcript holds. The card that answers it is docked on the
+ * composer (see `ChatInput`), because a control the session is parked on must
+ * not be able to scroll out of sight.
+ */
+function interactionRecord(request: InteractionRequest): string {
+  switch (request.kind) {
+    case 'permission': {
+      const subject = request.tokens.join(' ') || request.tool_name || 'a tool';
+      switch (request.action_type) {
+        case 'write':
+          return `Asked to write ${subject}`;
+        case 'read':
+          return `Asked to read ${subject}`;
+        case 'bash':
+          return `Asked to run ${subject}`;
+        case 'tool':
+          return `Asked to use ${request.tool_name || subject}`;
+      }
+      break;
+    }
+    case 'ask':
+      return `Asked: ${request.question}`;
+    case 'ask_batch':
+      return `Asked ${request.questions.length} questions`;
+    case 'edit':
+      return 'Asked you to edit a document';
+    case 'show':
+      return `Showed ${request.title || 'a document'}`;
+    case 'popup':
+      return `Asked: ${request.title}`;
+    case 'panel':
+      return `Asked: ${request.header}`;
+  }
+  return 'Asked for your answer';
+}
+
 export const MessageList: Component = () => {
-  const { messages, pendingInteraction, respondToInteraction } = useChatSafe();
+  const { messages, pendingInteraction } = useChatSafe();
   const { currentSession } = useSessionSafe();
   let containerRef: HTMLDivElement | undefined;
   let bottomRef: HTMLDivElement | undefined;
@@ -193,11 +233,17 @@ export const MessageList: Component = () => {
         }}
       </For>
 
-      {/* Permission/ask prompts appear inline at the point in the
-          conversation where the agent is blocked, like other agent UIs. */}
+      {/* The record, at the point in the conversation where the agent stopped.
+          The card that answers it is docked on the composer. */}
       <Show when={pendingInteraction()}>
         {(request) => (
-          <InteractionHandler request={request()} onRespond={respondToInteraction} />
+          <div
+            class="flex items-baseline gap-1.5 py-1 text-sm text-muted"
+            data-testid="interaction-record"
+          >
+            <span class="min-w-0 truncate">{interactionRecord(request())}</span>
+            <span class="shrink-0 text-attention">· waiting</span>
+          </div>
         )}
       </Show>
       <div ref={bottomRef} class="h-px" />
@@ -217,7 +263,7 @@ export const MessageList: Component = () => {
             fallback={
               <>
                 <ChatBubbleMark ring="bg-surface-elevated" glyph="text-muted-dark" />
-                <p class="max-w-[22rem] text-balance px-4 text-center text-muted-dark">
+                <p class="max-w-(--cru-measure-empty) text-balance px-4 text-center text-muted-dark">
                   Select or create a session to start chatting
                 </p>
               </>
@@ -228,7 +274,7 @@ export const MessageList: Component = () => {
               {/* `max-w` + `text-balance`: this line used to wrap to one word
                   per line in a narrow pane, which is the worst setting of the
                   first sentence a new user reads. */}
-              <p class="max-w-[22rem] text-balance px-4 text-center text-muted">
+              <p class="max-w-(--cru-measure-empty) text-balance px-4 text-center text-muted">
                 Start a conversation by typing a message or using voice input
               </p>
               <Show when={session()?.agent_model}>

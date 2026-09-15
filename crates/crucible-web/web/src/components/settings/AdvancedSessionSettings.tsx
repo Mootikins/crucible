@@ -23,7 +23,7 @@ import {
 import { SettingRow, SettingsSectionState } from './primitives';
 
 const inputClass =
-  'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
+  'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring';
 
 /**
  * The strategy names offered in the dropdown.

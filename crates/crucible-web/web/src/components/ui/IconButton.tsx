@@ -10,6 +10,11 @@ import { Component, JSX, splitProps } from 'solid-js';
  *        md = 28px box (headers, toolbars). Icons are always w-4.
  * The ribbon keeps its own fixed Obsidian-style slots (w-10) — it is
  * a layout element, not a chrome button.
+ *
+ * The box the pointer hits is 4px wider and taller than the box the eye
+ * sees: `hit-32` draws an invisible pseudo-element 2px outside every edge
+ * (styles/refine-touch.css). Padding would have grown the button and moved
+ * its neighbours; the pseudo-element takes the clicks and moves nothing.
  */
 export const IconButton: Component<
   JSX.ButtonHTMLAttributes<HTMLButtonElement> & { size?: 'sm' | 'md' }
@@ -18,7 +23,7 @@ export const IconButton: Component<
   return (
     <button
       type="button"
-      class={`${local.size === 'sm' ? 'w-6 h-6' : 'w-7 h-7'} flex items-center justify-center flex-shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${local.class ?? ''}`}
+      class={`${local.size === 'sm' ? 'w-6 h-6' : 'w-7 h-7'} hit-32 relative flex items-center justify-center flex-shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors focus-ring ${local.class ?? ''}`}
       {...rest}
     >
       {local.children}

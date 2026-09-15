@@ -82,7 +82,7 @@ export const ModelSettingsSection: Component = () => {
 
   onMount(loadSettings);
 
-  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
+  const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring';
 
   /**
    * Send one of the agent's own settings back to it.
@@ -647,7 +647,7 @@ export const ApiAccessSection: Component = () => {
             value={draft()}
             onInput={(e) => setDraft(e.currentTarget.value)}
             placeholder="Paste API key"
-            class="bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none w-56"
+            class="bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring w-56"
             data-testid="settings-api-token-input"
           />
           <button
@@ -697,7 +697,7 @@ export const TranscriptionSettingsSection: Component = () => {
   };
 
   const inputClass =
-    'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus:outline-none';
+    'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring';
   const selectClass = `cru-select ${inputClass} cursor-pointer`;
   const labelClass = 'text-shell-body text-sm';
 

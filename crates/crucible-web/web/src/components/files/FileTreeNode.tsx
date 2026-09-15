@@ -11,6 +11,7 @@ import {
 } from '@/lib/file-dnd';
 import { fileIconFor } from '@/lib/file-icons';
 import { ChevronRight } from '@/lib/icons';
+import { treeIconSlot, treeRow } from '@/components/tree/tree-style';
 
 /** Colored filetype icon, resolved by full filename — slightly smaller than
  * the folder chevron so files read as lighter than folders. */
@@ -28,10 +29,17 @@ const FileIcon: Component<{ name: string }> = (props) => {
 const IndentGuides: Component<{ depth: number }> = (props) => (
   <Index each={Array.from({ length: Math.max(0, props.depth - 1) })}>
     {() => (
-      <span aria-hidden="true" class="shrink-0 self-stretch" style={{ width: '1rem' }}>
+      // One indent step per level. The step and the guide offset read the
+      // density custom properties, so a touch tree indents further and its
+      // guides stay under the parent chevron.
+      <span aria-hidden="true" class="shrink-0 self-stretch" style={{ width: 'var(--tree-indent, 1rem)' }}>
         <span
           class="block h-full"
-          style={{ width: '1px', 'margin-left': '0.5rem', background: 'var(--color-hairline)' }}
+          style={{
+            width: '1px',
+            'margin-left': 'calc(var(--tree-icon-slot, 1rem) / 2)',
+            background: 'var(--color-hairline)',
+          }}
         />
       </span>
     )}
@@ -54,10 +62,10 @@ const AUTO_EXPAND_MS = 700;
 /** Shared row skin: full-height flex so indent guides run edge-to-edge.
  * `group` drives the fade-scroll marquee on the name when the row is hovered. */
 const ROW =
-  'group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-reading';
+  `group flex items-stretch pr-2 rounded cursor-pointer hover:bg-hover-wash text-shell-body ${treeRow}`;
 /** Fixed icon column — the chevron (folders) and filetype icon (files) share
  * it, so names align at a level regardless of node kind. */
-const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
+const ICON_SLOT = `${treeIconSlot} py-1 flex items-center justify-center shrink-0`;
 
 /**
  * Recursive branch/leaf renderer built on ark-ui `TreeView`. The machine emits

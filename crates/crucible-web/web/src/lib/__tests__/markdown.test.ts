@@ -47,6 +47,71 @@ describe('markdown renderer', () => {
     expect(renderMarkdown('[[My Note#^block-id]]')).toContain('data-note="My Note"');
   });
 
+  /**
+   * A note filename is not a URL.
+   *
+   * markdown-it fuzzy-links a bare `word.tld`, and linkify-it's TLD table ends
+   * with every two-letter country code — `md` is Moldova and `ai` is Anguilla.
+   * So a transcript that said `Getting Started.md` rendered as the text
+   * "Getting " plus an anchor to `http://Started.md`, and `Z.AI Setup.md`
+   * broke into two anchors. The wikilink itself never split; the false
+   * external anchor is also what made the transcript show ember UNDERLINED
+   * text where a note shows the wikilink pill.
+   *
+   * The anchors are COUNTED off a parsed document, not grepped: "one link"
+   * and "the whole title" are both claims about the element tree.
+   */
+  const anchorsIn = (html: string) => [
+    ...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a'),
+  ];
+
+  it('gives each [[link]] one anchor, titled without the extension', () => {
+    const cases = [
+      ['[[Getting Started.md]]', 'Getting Started'],
+      ['[[Z.AI Setup.md]]', 'Z.AI Setup'],
+      ['[[Reading List.markdown]]', 'Reading List'],
+    ] as const;
+
+    for (const [source, title] of cases) {
+      const links = anchorsIn(renderMarkdown(source));
+      expect(links).toHaveLength(1);
+      expect(links[0].className).toBe('wikilink');
+      expect(links[0].textContent).toBe(title);
+      // The extension stays on the resolution target.
+      expect(links[0].getAttribute('data-note')).toBe(source.slice(2, -2));
+    }
+  });
+
+  it('leaves a bare filename in prose as text', () => {
+    const html = renderMarkdown('Files in Guides:\n\n- Z.AI Setup.md\n- Getting Started.md\n');
+    expect(anchorsIn(html)).toEqual([]);
+    expect(html).toContain('Getting Started.md');
+  });
+
+  it('still links a real URL, with a scheme or without one', () => {
+    expect(anchorsIn(renderMarkdown('https://example.md')).map((a) => a.getAttribute('href'))).toEqual([
+      'https://example.md',
+    ]);
+    expect(anchorsIn(renderMarkdown('example.com')).map((a) => a.getAttribute('href'))).toEqual([
+      'http://example.com',
+    ]);
+  });
+
+  it('shows an alias and a fragment as the author wrote them', () => {
+    expect(anchorsIn(renderMarkdown('[[Getting Started.md|start here]]'))[0].textContent).toBe(
+      'start here',
+    );
+    expect(anchorsIn(renderMarkdown('[[Getting Started.md#Install]]'))[0].textContent).toBe(
+      'Getting Started#Install',
+    );
+  });
+
+  it('titles a user bubble wikilink the same way', () => {
+    const links = anchorsIn(renderPlainWithWikilinks('see [[Getting Started.md]] please'));
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe('Getting Started');
+  });
+
   it('renders heading markdown', () => {
     const html = renderMarkdown('# Hello');
     expect(html).toContain('<h1>Hello</h1>');

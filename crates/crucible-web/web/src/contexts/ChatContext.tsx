@@ -21,6 +21,7 @@ import type {
 import type { ChatContextValue } from '@/lib/types/context';
 import {
   listModes,
+  listPendingInteractions,
   setSessionMode,
   sendChatMessage,
   subscribeToEvents,
@@ -54,6 +55,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isLoading, setIsLoading] = createSignal(false);
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
   const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
+  /** Request ids this client answered; the pending aggregate may still list them. */
+  const resolvedRequestIds = new Set<string>();
   const [error, setError] = createSignal<string | null>(null);
   // Transport health, held apart from `error`: the error line also carries
   // daemon failures ("Failed to send: …"), and a "retry the connection"
@@ -468,6 +471,28 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       loadHistory,
     });
 
+    // The stream carries only NEW interaction requests. A request the daemon
+    // still holds from before a reload never arrives on it, so the composer
+    // showed no card while the daemon waited and every send answered 422. Ask
+    // the pending aggregate once on bind. A request that arrived on the stream
+    // in the meantime wins, so this never overwrites a live one.
+    // `Promise.resolve().then` keeps a synchronous throw (a test double with
+    // no such function) on the rejection path instead of inside the effect.
+    void Promise.resolve()
+      .then(() => listPendingInteractions())
+      .then((entries) => {
+        if (abortController.signal.aborted || props.sessionId !== newSessionId) return;
+        const held = entries.find((e) => e.session_id === newSessionId);
+        // A request answered while the fetch was in flight must not come
+        // back; the daemon's aggregate can lag the answer by one poll.
+        if (held && !pendingInteraction() && !resolvedRequestIds.has(held.request_id)) {
+          setPendingInteraction(held.request);
+        }
+      })
+      .catch(() => {
+        /* The aggregate is a courtesy; the stream still delivers new requests. */
+      });
+
     // Resolves when the SSE stream is open (daemon subscribed). Sending
     // before that drops the response's first tokens — the turn then looks
     // frozen until message_complete backfills the full text.
@@ -560,7 +585,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const tempUserId = generateMessageId();
     addMessage({ id: tempUserId, role: 'user', content: trimmed, timestamp: Date.now() });
     const tempResponseId = generateMessageId();
-    addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now() });
+    addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now(), placeholder: true });
     currentStreamingMessageId = tempResponseId;
     return { tempUserId, tempResponseId };
   };
@@ -633,6 +658,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setPendingInteraction(null);
 
     try {
+      resolvedRequestIds.add(request.id);
       await apiRespondToInteraction(props.sessionId, request.id, response);
     } catch (err) {
       console.error('Failed to send interaction response:', err);

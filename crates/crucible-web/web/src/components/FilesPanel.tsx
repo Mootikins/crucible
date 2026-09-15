@@ -30,12 +30,13 @@ import {
   reconcileMount,
   type RootMount,
 } from '@/lib/file-tree/reconcile';
-import { FileTreeView, cssId } from './files/FileTreeView';
+import { FileTreeView, cssId, type TreeDensity } from './files/FileTreeView';
 import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
 import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus, Link2 } from '@/lib/icons';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
@@ -85,7 +86,10 @@ function fsEntryToNode(e: FsEntry, rootPath: string): Node {
   };
 }
 
-export const FilesPanel: Component = () => {
+export const FilesPanel: Component<{
+  /** Row metrics for the tree. The phone shell passes `touch`. */
+  density?: TreeDensity;
+}> = (props) => {
   const { projects } = useProjectSafe();
   const { applySessionScope, currentSession } = useSessionSafe();
 
@@ -567,6 +571,20 @@ export const FilesPanel: Component = () => {
     }
   });
 
+  /**
+   * Open the Browse root dropdown from the empty state.
+   *
+   * The dropdown owns its open flag, so the empty state clicks its trigger
+   * instead of holding a second copy of that state. The click is scoped to
+   * the header row this panel renders, so it can never reach another panel's
+   * dropdown. `RootDropdown` always renders its trigger, including with an
+   * empty roster — that is the Clone door — so this never misses.
+   */
+  let rootBarRef: HTMLDivElement | undefined;
+  const openRootDropdown = () => {
+    rootBarRef?.querySelector<HTMLButtonElement>('[data-testid="root-dropdown"]')?.click();
+  };
+
   onMount(() => {
     const onToggleHidden = () => toggleHidden();
     window.addEventListener('crucible:toggle-hidden-files', onToggleHidden);
@@ -590,7 +608,7 @@ export const FilesPanel: Component = () => {
       {/* No "Files" heading — the panel tab already names it. The dropdown
           leads so the browsed root reads as the panel's title. */}
       <div class="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-hairline">
-        <div class="flex items-center gap-1 min-w-0 flex-1">
+        <div class="flex items-center gap-1 min-w-0 flex-1" ref={rootBarRef}>
           <RootDropdown
             own={ownRoots()}
             groups={roster()}
@@ -690,9 +708,12 @@ export const FilesPanel: Component = () => {
           <div class="px-3 py-2 text-muted-dark text-sm">Loading…</div>
         </Show>
         <Show when={!activeRoot()}>
-          <div class="px-3 py-8 text-center text-muted-dark text-sm">
-            No project or kiln to browse
-          </div>
+          <EmptyState
+            title="No project or kiln to browse"
+            body="Pick a root, or clone a repository from the same menu."
+            action={{ label: 'Choose a project', onClick: openRootDropdown }}
+            testid="files-empty"
+          />
         </Show>
         {/* NOT `keyed`. Keyed, every lazily loaded folder rebuilt the entire
             tree: `onLoadedTree` -> `setRawRoot` -> new `collection` identity ->
@@ -715,6 +736,7 @@ export const FilesPanel: Component = () => {
               <FileTreeView
                 collection={col()}
                 rootKind={root.kind}
+                density={props.density}
                 openFilePath={openFilePath()}
                 defaultExpandedValue={expandedFor(root)}
                 loadChildren={root.kind === 'project' ? loadChildren(root) : undefined}

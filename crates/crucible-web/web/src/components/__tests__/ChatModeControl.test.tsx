@@ -32,6 +32,15 @@ beforeEach(() => {
 // The control is now the launchpad's ChipSelect dropdown (popout renders
 // through a Portal into document.body — query via screen).
 describe('ChatModeControl', () => {
+  // The composer row carries several chips at once, so each states the axis
+  // it sets as well as the value it holds.
+  it('carries the value only; the icon and the tooltip name the axis', () => {
+    render(() => <ChatModeControl />);
+    const text = screen.getByTestId('chat-mode').textContent ?? '';
+    expect(text).toContain('Ask');
+    expect(text).not.toContain('Mode ·');
+  });
+
   // A delegated (ACP) session reports the AGENT's modes, not Crucible's:
   // claude-agent-acp declares five camelCase ids, codex-acp three hyphenated
   // ones. The control renders `m.name`, so the dropdown must show the

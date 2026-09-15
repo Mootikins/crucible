@@ -111,3 +111,230 @@ describe('motion primitives on structural surfaces', () => {
     }
   });
 });
+
+describe('one focus treatment (R6)', () => {
+  /**
+   * `focus-ring` is the ONE focus utility (index.css). A line that writes
+   * `outline-none` or `focus:outline-none` without it removes the only
+   * affordance a keyboard user has, or builds a second ring by hand.
+   *
+   * ONE exception, and index.css documents it: a control whose focus the
+   * CONTAINER draws. The composer textarea sits in a card that takes
+   * `focus-within:border-primary`, so its own offset ring would put two
+   * ember treatments 2px apart on one control.
+   */
+  const CONTAINER_DRAWN_FOCUS = new Set(['components/composer/ComposerCard.tsx']);
+
+  it('every outline-none carries the focus-ring utility', () => {
+    const offenders: string[] = [];
+    for (const file of walk(SRC)) {
+      const rel = file.slice(SRC.length + 1);
+      if (CONTAINER_DRAWN_FOCUS.has(rel)) continue;
+      readFileSync(file, 'utf-8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (!/\boutline-none\b/.test(line)) return;
+          if (/\bfocus-ring\b/.test(line)) return;
+          offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('type floor (R6)', () => {
+  /**
+   * The scale has three sizes and `text-floor` (11px) is the bottom of it.
+   * An arbitrary `text-[10px]` or `text-[10.5px]` goes below the floor.
+   *
+   * The test reads the NUMBER instead of a list of bad literals. A list
+   * catches `text-[10px]` and lets `text-[10.5px]` through, which is how
+   * the palette footer stayed under the floor.
+   */
+  const FLOOR_PX = 11;
+  const ARBITRARY_PX = /text-\[(\d+(?:\.\d+)?)px\]/g;
+
+  it('no component sets a size below the 11px floor', () => {
+    const offenders: string[] = [];
+    for (const file of walk(SRC)) {
+      readFileSync(file, 'utf-8')
+        .split('\n')
+        .forEach((line, i) => {
+          for (const m of line.matchAll(ARBITRARY_PX)) {
+            if (parseFloat(m[1]) < FLOOR_PX) {
+              offenders.push(`${file.slice(SRC.length + 1)}:${i + 1}: ${line.trim()}`);
+              break;
+            }
+          }
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('index.css import order', () => {
+  // Tailwind v4 drops an @import that follows any other at-rule, and it does
+  // so without an error. The four lane stylesheets vanished from the bundle
+  // once because they sat below @plugin. Every @import must come first.
+  it('every @import precedes the first @plugin or @theme', () => {
+    const css = readFileSync(join(SRC, 'index.css'), 'utf-8');
+    const lines = css.split('\n');
+    // A bare `@layer a, b;` STATEMENT may precede imports (it fixes the
+    // layer order); a `@layer x {` block may not.
+    const firstOther = lines.findIndex((l) => /^\s*@(plugin|theme|custom-variant)\b/.test(l) || /^\s*@layer\b[^;]*\{/.test(l));
+    const lateImports = lines
+      .map((l, i) => ({ l, i }))
+      .filter(({ l, i }) => /^\s*@import\b/.test(l) && i > firstOther);
+    expect(lateImports.map(({ i, l }) => `${i + 1}: ${l.trim()}`)).toEqual([]);
+  });
+});
+
+describe('no raw visual value in a component (token contract)', () => {
+  /**
+   * A web UI plugin restyles the app by setting `--cru-*` custom properties
+   * (docs/Help/Extending/Web Theme Tokens.md). That only works while the app
+   * itself reads those properties. One `text-[13px]` or one `'#e0653a'` is a
+   * value the plugin cannot reach, and the plugin author has no way to find
+   * out which one it was.
+   *
+   * THE GATE COVERS WHAT THE CONTRACT PROMISES, and no more. The contract
+   * publishes colour, radius, type size, row height, elevation and three
+   * measures. It publishes NO layout: it says so in as many words, and it
+   * publishes no spacing family either, because the app spends space through
+   * Tailwind's own `p-2` scale. So a `max-w-[140px]` that clamps a truncating
+   * label is not an offender — there is no token it could read, and inventing
+   * thirty of them would publish thirty names a plugin must never set.
+   *
+   * `vh`, `vw`, `%`, `ch` and `em` are absent from every pattern for the same
+   * reason in a different shape: each is relative to something the token
+   * already sets, so an `em` heading step already follows the type token.
+   */
+
+  /** An arbitrary value on a utility that carries visual IDENTITY.
+   *  The lookbehind rejects a HYPHEN as well as a word character, so `h-[…]`
+   *  does not match inside `min-h-[…]`: a minimum height is a layout floor,
+   *  and `h-[…]` on its own is a row height, which the contract publishes. */
+  const IDENTITY_UTILITY =
+    /(?<![\w-])(?:text|rounded|leading|h|tracking|p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y)-\[-?[0-9.]+(?:px|rem)\]/;
+
+  /** A colour, written anywhere at all. */
+  const ANY_COLOR = /\[(?:#[0-9a-fA-F]{3,8}|rgba?\([^\]]*\))\]|['"`]#[0-9a-fA-F]{3,8}['"`]/;
+
+  /** CodeMirror takes a style OBJECT, so its identity values are properties
+   *  rather than classes. The same two families, the same floor. */
+  const CSS_IN_JS_IDENTITY =
+    /\b(?:fontSize|borderRadius|lineHeight)\s*:\s*['"`]-?[0-9.]+(?:px|rem)['"`]/;
+
+  /**
+   * A file whose raw values are GEOMETRY, not identity. A plugin that changed
+   * one would break the layout rather than restyle it. Every entry carries
+   * its reason, because a bare list of paths rots into a list of excuses.
+   */
+  const RAW_VALUE_ALLOWED = new Map<string, string>([
+    // A canvas cannot follow a custom property: xterm and the graph both
+    // paint literal colours. Each reads the token with getComputedStyle and
+    // keeps the literal only as the fallback. `fallback sits beside its
+    // token` below proves that pairing rather than trusting it.
+    ['components/TerminalPanel.tsx', 'xterm canvas: token read with a fallback'],
+    ['components/graph/GraphPanel.tsx', 'graph canvas: token read with a fallback'],
+    ['lib/canvas-types.ts', 'canvas slots: var() with a fallback, pinned by canvas-viewport.test.ts'],
+
+    // Language identity, not app theme. Go blue and Rust ochre are the same
+    // colour in every theme and in every editor that draws them.
+    ['lib/file-icons.ts', 'language brand colours'],
+
+    // A JSON web-app manifest. The browser reads it before any CSS loads, so
+    // a custom property cannot reach it.
+    ['pwa-options.ts', 'PWA manifest colours'],
+
+    // Window geometry: the grab strip around an edge, and the ribbon and
+    // header that a maximized window has to clear.
+    ['components/windowing/FloatingWindow.tsx', 'resize handle and maximize insets'],
+    // A first-open panel size that the user then drags.
+    ['components/windowing/EdgePanel.tsx', 'default panel width and height'],
+    // The minimum a pointer can hit on a split drop zone.
+    ['components/windowing/Pane.tsx', 'drop zone minimum'],
+
+    // One device pixel.
+    ['components/files/FileTreeNode.tsx', 'one-pixel indent guide'],
+    ['components/shell/SessionStatusDot.tsx', 'one-pixel dot border'],
+
+    // A prop default that the caller overrides.
+    ['components/editor/MarkdownPreview.tsx', 'max-width prop default'],
+  ]);
+
+  it('every allow-list entry names a file that exists', () => {
+    // An entry for a deleted file is a hole nobody can see.
+    const present = new Set(walk(SRC).map((f) => f.slice(SRC.length + 1)));
+    expect([...RAW_VALUE_ALLOWED.keys()].filter((k) => !present.has(k))).toEqual([]);
+  });
+
+  it('no component hard-codes a colour, a radius, a type size or a row height', () => {
+    const offenders: string[] = [];
+    for (const file of walk(SRC)) {
+      const rel = file.slice(SRC.length + 1);
+      if (RAW_VALUE_ALLOWED.has(rel)) continue;
+      readFileSync(file, 'utf-8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;
+          if (IDENTITY_UTILITY.test(line) || ANY_COLOR.test(line) || CSS_IN_JS_IDENTITY.test(line)) {
+            offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+          }
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('every canvas colour literal is paired with the token it falls back to', () => {
+    /**
+     * The allow-list entry for a canvas file is a PROMISE that every literal
+     * there is a fallback, never a value. Test the promise, by KEY.
+     *
+     * A line-level test is not enough. `TerminalPanel` writes the read and the
+     * fallback on one line, but `GraphPanel` keeps the literals in a
+     * `GRAPH_COLOR_FALLBACK` record and the token names in `readGraphColors`,
+     * two lines apart. An exemption broad enough to admit the record also
+     * admits `red: '#e8746e'` with no token anywhere, which is the failure
+     * this test exists to produce. So: collect the keys that carry a hex, and
+     * collect the keys that name a `--cru-` token, and require the first set
+     * to be inside the second.
+     */
+    const KEYED_HEX = /^\s*(\w+):\s*[^\n]*['"`]#[0-9a-fA-F]{3,8}['"`]/;
+    const KEYED_TOKEN = /^\s*(\w+):\s*[^\n]*(--cru-[a-z0-9-]+)/;
+    const offenders: string[] = [];
+    for (const rel of ['components/TerminalPanel.tsx', 'components/graph/GraphPanel.tsx']) {
+      const lines = read(rel).split('\n').filter((l) => {
+        const t = l.trimStart();
+        return !t.startsWith('*') && !t.startsWith('//');
+      });
+      const tokened = new Set(lines.map((l) => KEYED_TOKEN.exec(l)?.[1]).filter(Boolean));
+      for (const line of lines) {
+        const key = KEYED_HEX.exec(line)?.[1];
+        if (key && !tokened.has(key)) offenders.push(`${rel}: ${line.trim()}`);
+      }
+      expect(tokened.size, `${rel} names no --cru-* token at all`).toBeGreaterThan(0);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('no component keeps a hex fallback inside a var()', () => {
+    // `var(--color-muted, #928d99)` is a SECOND copy of the value, and four of
+    // them had already drifted from the token they shadow: muted was #9f9ba5
+    // and hairline-strong was #322f38. The stylesheet always loads before a
+    // component mounts, so the fallback buys nothing and can only lie.
+    const offenders: string[] = [];
+    for (const file of walk(SRC)) {
+      const rel = file.slice(SRC.length + 1);
+      if (rel === 'lib/canvas-types.ts') continue; // pinned by canvas-viewport.test.ts
+      readFileSync(file, 'utf-8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (/var\(\s*--[a-z0-9-]+\s*,\s*#[0-9a-fA-F]{3,8}\s*\)/.test(line)) {
+            offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+          }
+        });
+    }
+    expect(offenders).toEqual([]);
+  });
+});

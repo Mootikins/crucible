@@ -210,4 +210,25 @@ describe('MobileShell tabs', () => {
     window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     expect(screen.getByRole('heading').textContent).toBe('Note A');
   });
+  it('offers a way out of the empty surface', () => {
+    const started: Event[] = [];
+    const listener = (e: Event) => started.push(e);
+    window.addEventListener('crucible:new-session', listener);
+    render(() => <MobileShell />);
+
+    const empty = screen.getByTestId('mobile-empty');
+    expect(empty.textContent).toContain('No note is open');
+    const actions = screen.getAllByTestId('empty-state-action');
+    expect(actions.map((b) => b.textContent)).toEqual(['Open a note', 'Start a session']);
+
+    // "Open a note" opens the left drawer, which holds the file tree.
+    fireEvent.click(actions[0]);
+    expect(
+      screen.getByRole('button', { name: 'Sessions and files' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+
+    fireEvent.click(actions[1]);
+    window.removeEventListener('crucible:new-session', listener);
+    expect(started).toHaveLength(1);
+  });
 });

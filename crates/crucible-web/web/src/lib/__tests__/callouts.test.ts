@@ -3,6 +3,7 @@ import { renderMarkdown } from '../markdown';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { CALLOUT_KINDS, CALLOUT_RGB, resolveCalloutKind } from '../callouts';
+import { darkTokens, resolveToken, tokenReferenceIn } from '@/test-utils/css-tokens';
 
 describe('callout rendering (through the full sanitized pipeline)', () => {
   it('renders a titled callout with icon, title, and body', () => {
@@ -94,23 +95,33 @@ describe('resolveCalloutKind', () => {
 });
 
 describe('CALLOUT_RGB mirrors index.css', () => {
-  // index.css owns the rendered colour via `--callout-rgb`; CALLOUT_RGB is the
-  // same table in TS, for callers that need the accent as data rather than as
-  // a cascading custom property. The CSS comment says "keep in sync" and
-  // nothing enforced it — this does. Without it the duplicate silently drifts,
-  // and a drifted mirror is worse than no mirror.
+  // index.css owns the rendered colour; CALLOUT_RGB is the same table in TS,
+  // for callers that need the accent as data rather than as a cascading
+  // custom property. The CSS comment says "keep in sync" and nothing enforced
+  // it — this does. Without it the duplicate silently drifts, and a drifted
+  // mirror is worse than no mirror.
+  //
+  // The rules no longer carry the triple. `--callout-rgb` reads
+  // `--cru-color-callout-<kind>`, the public token a plugin overrides, so the
+  // lookup follows that reference into the contract before it compares. The
+  // `--cru-*` names hold an `r, g, b` TRIPLE rather than a hex, because the
+  // rules wrap them in `rgb()` and `rgba()` to build a border, a wash and an
+  // icon mask from one value.
   const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
 
   /** The `--callout-rgb` a kind actually resolves to: its own override if it
-   * declares one, otherwise the base `.callout` value it inherits. */
+   * declares one, otherwise the base `.callout` value it inherits. A `var()`
+   * is followed into the dark contract, which is where the value lives. */
   const cssRgbFor = (kind: string): string => {
     const override = new RegExp(
       `\\.callout\\[data-callout='${kind}'\\][^{]*\\{([^}]*)\\}`,
       's',
     ).exec(css);
     const own = override && /--callout-rgb:\s*([^;]+);/.exec(override[1]);
-    if (own) return own[1].trim();
-    return /\.callout \{[^}]*?--callout-rgb:\s*([^;]+);/s.exec(css)![1].trim();
+    const raw = own
+      ? own[1].trim()
+      : /\.callout \{[^}]*?--callout-rgb:\s*([^;]+);/s.exec(css)![1].trim();
+    return resolveToken(darkTokens, tokenReferenceIn(raw) ?? '') || raw;
   };
 
   it.each(CALLOUT_KINDS)('%s has the same accent in both files', (kind) => {

@@ -6,378 +6,582 @@
  * references, so the woff2 assets were never emitted into dist and every
  * font request 404'd in production (silent system-ui fallback). JS imports
  * let vite process each fontsource css with proper asset emission. */
+/* Layer order. Tailwind's own import declares theme, base, components and
+   utilities; the FIRST statement fixes the order, so the contract layer must
+   be named before that import or it lands after utilities. */
+@layer cru-theme, theme, base, components, utilities;
 @import "tailwindcss";
+/* Refinement lanes (2026-09-15). One file per lane so the lanes never edit
+   the same block. Tailwind v4 inlines these; they hold no url() assets. An
+   @import must come before every other at-rule, so these sit above @plugin;
+   a later position drops them from the bundle without an error. */
+@import "./styles/refine-composer.css";
+@import "./styles/refine-states.css";
+@import "./styles/refine-touch.css";
+@import "./styles/refine-system.css";
 @plugin "@tailwindcss/typography";
 
+
+/* ── The public token contract ──────────────────────────────────────────
+ * Every colour, radius, row height, type size and measure the app paints
+ * lives here under a `--cru-` name. The names are PUBLIC: a web UI plugin
+ * ships one stylesheet that re-values them and the whole app follows.
+ * docs/Help/Extending/Web Theme Tokens.md is the published table.
+ *
+ * THREE THINGS MAKE AN OVERRIDE WIN WITH NO `!important`.
+ *
+ * 1. The defaults sit in a LAYER. An unlayered rule beats a layered rule at
+ *    any specificity, and a plugin author writes plain CSS, so a plugin's
+ *    rules are unlayered and win. Before this layer existed the light block
+ *    was unlayered too, and a plugin's `:root` lost to
+ *    `:root[data-theme='light']` on specificity alone — (0,1,1) over
+ *    (0,1,0) — so an override worked in dark and silently failed in light.
+ *    Inside one layer specificity still decides, so light still beats dark.
+ *
+ * 2. The contract is HAND-WRITTEN, not `@theme`. Tailwind emits only the
+ *    theme variables something references and drops the rest: `--radius-3xl`
+ *    was declared and absent from the built `:root` while its five siblings
+ *    survived. A contract that loses the names nobody uses yet is not a
+ *    contract, and those are the names a plugin most wants.
+ *
+ * 3. `@theme` below holds ALIASES ONLY. Every alias reads a `--cru-` name,
+ *    so `.bg-primary` resolves through two hops at paint time. Never use
+ *    `@theme inline` here: `inline` substitutes at build time and would bake
+ *    the hex into every utility, which is the failure this prevents. */
+@layer cru-theme {
+  :root {
+
+    /* ── Faces ────────────────────────────────────────────────────────────
+     * Geist and Geist Mono, both VARIABLE (`wght` 100-900). The suffix is part
+     * of the family name fontsource declares — 'Geist' alone matches nothing
+     * and falls through to system-ui silently.
+     *
+     * One family, two halves, drawn together. They share a skeleton and, more
+     * usefully here, they share figure widths: a token count that streams up
+     * from 900 to 1,000 does not change width, and neither does a timestamp
+     * that ticks. The previous pair (IBM Plex Sans with IBM Plex Mono) was
+     * also one family, but a humanist one — it set wide, which cost a narrow
+     * chat panel about a line per paragraph at the reading size. */
+    --cru-font-ui: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --cru-font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* ── Type scale ───────────────────────────────────────────────────────
+     * FOUR sizes: floor 11px, reading 13px, title 14px, and Tailwind's
+     * `text-sm` at 14px for the prompt. The scale moved up one pixel on
+     * 2026-09-15 at the owner's request; the empty-state title is the
+     * fourth size and its reason.
+     *
+     *   text    12px — reading text: transcript prose, note prose, the user
+     *                  quote, tool rows, chips, code blocks. Body and chrome
+     *                  deliberately land on ONE size; the old scale split them
+     *                  13/12 for no reason a reader could see.
+     *   small   11px — the functional floor: timestamps, token counts, kiln
+     *                  names, tool arguments, counts. Never lower. Fifty
+     *                  `text-[10px]` labels were lifted to this floor and it
+     *                  does not move back down.
+     *   lead    1.6  — one leading for every block of running text.
+     *
+     * Hierarchy above `text` moves on WEIGHT, not on size — which is what the
+     * variable `wght` axis bought. Headings still scale in `em` off the prose
+     * root (see PROSE_CLASS in lib/markdown.ts). */
+    --cru-font-reading: 13px;
+    --cru-font-floor: 11px;
+    /* Line height for the reading step; `text-xs` reads it. */
+    --cru-font-reading-leading: 1.5;
+    --cru-leading-reading: 1.6;
+
+    /* ── The chat column's measure ────────────────────────────────────────
+     * A session is width-controlled and centred: the transcript, the composer
+     * and the scope row all stop at the same edge, and the pane's leftover
+     * width becomes gutter rather than line length.
+     *
+     * 46rem is ~736px, which is ~95 characters at the reading size — wider
+     * than the 65-75ch prose ideal on purpose, because a transcript is not
+     * an essay: it carries code blocks, tables and tool rows that a 65ch
+     * column would force to scroll. Prose still wraps well short of the edge.
+     *
+     * The SCROLLER stays full width. Centring the scroll container instead
+     * would pull the scrollbar in off the pane edge, which reads as a second
+     * inner panel. */
+    /* 64rem, up from 46rem: a wide chat pane kept adding empty margins past
+     * 736px while the editor beside it took the width. Was too small. */
+    --cru-measure-chat: 64rem;
+    /* Three row heights (R6): desktop list rows, palette rows, touch rows. */
+    --cru-row-sm: 28px;
+    --cru-row-md: 36px;
+    --cru-row-touch: 44px;
+
+    --cru-color-primary: #e0653a;
+    --cru-color-primary-hover: #f08a5e;
+    --cru-color-primary-active: #c4552e;
+
+    /* The ink that sits ON a solid ember fill. `text-white` on #e0653a is 3.45:1
+     * and fails AA; the ember is a brand constant, so the FOREGROUND moves. On a
+     * dark field the ember is the lighter half of the pair, so its ink is the
+     * canvas near-black (5.62:1 at rest, 7.84:1 on hover). On a light field the
+     * ember darkens to #b04823 and the ink inverts to white (5.53:1 / 7.09:1). */
+    --cru-color-on-primary: #0e0d11;
+
+    /* ONE focus treatment for the whole app — see the `focus-ring` utility near
+     * the end of this file. Ember, because it is the only colour the UI already
+     * uses to mean "this is the one you are on", and it clears the 3:1 non-text
+     * floor on every surface in both themes (4.62:1 at worst). */
+    --cru-color-focus-ring: var(--cru-color-primary);
+
+    /* ── Neutral ramp ─────────────────────────────────────────────────────
+     * An even, low-chroma near-black stack, IDE-native: each step is a small,
+     * deliberate lift from the one below, so depth reads without heavy fills.
+     *   shell-bg   — deepest canvas, behind every panel
+     *   surface-base/shell-panel — a panel's own surface
+     *   surface-elevated — raised rows, cards, inputs at rest
+     *   surface-overlay  — popovers, menus, floating windows
+     *   control    — the resting fill of a solid control (button/slider track) */
+    --cru-color-surface-base: #141318;
+    --cru-color-surface-elevated: #1c1b22;
+    --cru-color-surface-overlay: #232128;
+    --cru-color-control: #302e38;
+
+    --cru-color-shell-bg: #0e0d11;
+    --cru-color-shell-panel: #141318;
+
+    /* ── Ink ──────────────────────────────────────────────────────────────
+     * Four weights, high → faint. Metadata lives on muted-dark; it should read
+     * as present-but-quiet, never competing with body text.
+     *
+     * ALL FOUR ARE TEXT, so all four clear WCAG 2.1 AA (4.5:1) against every
+     * PANEL surface — shell-bg, shell-panel, surface-base, surface-elevated and
+     * surface-overlay. The floor is set by surface-overlay, the lightest of the
+     * five: a step that reads on the deep canvas can still fail inside a popover.
+     * muted-dark was #656069, which is 3.16:1 on the canvas and 2.60:1 in a
+     * popover, and it carries timestamps, counts and kiln names — text a user
+     * reads. Lifting it to the floor pushed muted up with it, or the bottom two
+     * steps would have collapsed into one shade.
+     *
+     * `--cru-color-control` is NOT in that set. It is a control FILL, and it is light
+     * enough that muted-dark cannot clear 4.5:1 on it. Text on a control starts
+     * at `muted` — including a placeholder, which is text. */
+    --cru-color-ink: #e7e4df;
+    --cru-color-body: #c4c0ba;
+    --cru-color-muted: #9f9ba5;
+    --cru-color-muted-dark: #8d8990;
+
+    /* ── Separators ───────────────────────────────────────────────────────
+     * Barely-there by design (Cursor's language): a hairline is a hint of an
+     * edge, ~6% lift over the panel, not a drawn line. hairline-strong is only
+     * for surfaces that float free of the panel (popovers, windows) and need a
+     * readable outline against whatever sits behind them. */
+    --cru-color-hairline: #211f26;
+    --cru-color-hairline-strong: #322f38;
+
+    /* Translucent hover fill that reads on any surface — kept faint so a hover
+     * is felt, not announced. */
+    --cru-color-hover-wash: rgba(255, 255, 255, 0.05);
+
+    --cru-color-error: #ef4444;
+    --cru-color-error-dark: #991b1b;
+
+    /* ── Status ───────────────────────────────────────────────────────────
+     * One colour, one meaning, and no near-duplicates. A `--cru-color-session`
+     * brass (#c9954a) briefly lived beside `attention` (#d4a72c) to mark the
+     * bound session; two ambers a shade apart cannot read as two meanings at
+     * 7px, which is the same argument `SessionStatusDot` makes against two
+     * brass tones. The three axes are now:
+     *   attention — something is waiting on YOU
+     *   ok        — the machine is busy, and it is fine
+     *   primary   — this is the one you are on (selection and binding) */
+    --cru-color-attention: #d4a72c;
+    --cru-color-ok: #7bc47f;
+    --cru-color-precog: #a78bda;
+
+    /* ── Terminal ANSI palette ────────────────────────────────────────────
+     * A deliberate 16-color ramp for xterm, NOT the UI semantic tokens above
+     * (those are tuned for chrome legibility, not as a balanced terminal
+     * palette — mapping error/ok/attention onto ANSI slots produced a
+     * mismatched mix of loud and washed colors). One HSL envelope, warmed
+     * toward the ember identity; brights are the same hues lifted ~8-10 L.
+     * TerminalPanel reads these at mount (xterm can't consume CSS vars), so
+     * a future theme system restyles the terminal by overriding them. */
+    --cru-color-term-black: #2b2933;
+    --cru-color-term-red: #e8746e;
+    --cru-color-term-green: #9dcf85;
+    --cru-color-term-yellow: #e0b24c;
+    --cru-color-term-blue: #7fa7e0;
+    --cru-color-term-magenta: #bd93e0;
+    --cru-color-term-cyan: #79c9c4;
+    --cru-color-term-white: #c9c5bf;
+    --cru-color-term-bright-black: #6b6673;
+    --cru-color-term-bright-red: #f2938c;
+    --cru-color-term-bright-green: #b7e0a1;
+    --cru-color-term-bright-yellow: #ecc76e;
+    --cru-color-term-bright-blue: #a0c0ee;
+    --cru-color-term-bright-magenta: #d0b0ee;
+    --cru-color-term-bright-cyan: #9adcd7;
+    --cru-color-term-bright-white: #e7e4df;
+
+    /* ── Canvas preset colours ────────────────────────────────────────────
+     * The six slots JSON Canvas numbers 1-6, which a user picks per card
+     * (`src/lib/canvas-types.ts`). CATEGORICAL, not semantic: slot 4 means
+     * "the green one", never "ok". So this ramp is tuned for one job only —
+     * telling six cards apart at a glance — and it must not read as a second
+     * brand accent.
+     *
+     * Two rules shape it. First, EVERY SLOT IS QUIETER THAN THE EMBER: the
+     * loudest here is S60 against the ember's S73, so a coloured card sits
+     * behind the one accent that means "act on this". Second, THE EMBER OWNS
+     * ITS OWN HUE: the ramp opens at H2 and its next step is H34, leaving the
+     * ember's H16 a ~16-degree berth on each side, and the orange slot is an
+     * ochre (S56, L54) rather than a second #e0653a.
+     *
+     * The hues are the terminal ramp's, minus blue and plus orange, so the app
+     * speaks one colour vocabulary. The VALUES are separate: an ANSI slot is
+     * text on a panel, a canvas colour is a card border, a 10% wash, a minimap
+     * rect, an edge stroke AND the file-node header text, so it owes 4.5:1 on
+     * every dark surface including `surface-overlay`, the lightest. The floor
+     * measured here is 5.40:1.
+     *
+     * `canvas-types.ts` repeats these six values as `var()` fallbacks. Change
+     * one here and change it there; `canvas-viewport.test.ts` fails otherwise. */
+    --cru-color-canvas-red: #dd7a76;
+    --cru-color-canvas-orange: #cb9147;
+    --cru-color-canvas-yellow: #cdb75f;
+    --cru-color-canvas-green: #8fc47f;
+    --cru-color-canvas-cyan: #6bbfbb;
+    --cru-color-canvas-purple: #ae90d6;
+
+    /* ── Radii ────────────────────────────────────────────────────────────
+     * Tight and consistent, the way an editor rounds its chrome. Overrides
+     * Tailwind's defaults so every `rounded-*` in the app tightens at once —
+     * no more xl/2xl bubbles. */
+    --cru-radius-sm: 3px;
+    --cru-radius-md: 4px;
+    --cru-radius-lg: 6px;
+    --cru-radius-xl: 8px;
+    --cru-radius-2xl: 10px;
+    --cru-radius-3xl: 14px;
+    /* ── Role radii (2026-09-15 refinement, R6) ──────────────────────────
+     * One radius per control class. `rounded-control` for inputs, chips and
+     * buttons; `rounded-card` for cards, popovers and menus; `rounded-composer`
+     * for the prompt field, fixed so it does not change between one line and
+     * many. Circles stay for icon buttons only. */
+    --cru-radius-control: 6px;
+    --cru-radius-card: 10px;
+    --cru-radius-composer: 18px;
+
+    /* ── Elevation ────────────────────────────────────────────────────────
+     * Quiet on a near-black canvas: a soft, mostly-vertical shadow that lifts a
+     * floating surface just enough. The border does most of the separating. */
+    --cru-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --cru-shadow-md: 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --cru-shadow-lg: 0 6px 20px -6px rgba(0, 0, 0, 0.5);
+    --cru-shadow-xl: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
+    --cru-shadow-2xl: 0 18px 46px -10px rgba(0, 0, 0, 0.6);
+
+  /* ── Names the contract adds ──────────────────────────────────────────
+   * Each replaced a literal that a component carried. `font-title` was
+   * `text-[13px]` in EmptyState; `measure-empty` was `36ch` in EmptyState
+   * and `22rem` in MessageList, which disagreed; `measure-tab` was
+   * `max-w-[200px]` in TabBar, the cap R6 names.
+   *
+   * There is no `--cru-font-prose`. PROSE_CLASS in lib/markdown.ts already
+   * takes `text-reading` as its root and scales the headings from it in
+   * `em`, so a second name for the same 12px would only invite drift. */
+  --cru-font-title: 14px;
+  --cru-measure-empty: 36ch;
+  --cru-measure-tab: 200px;
+
+  /* ── Callout hues ─────────────────────────────────────────────────────
+   * An `r, g, b` TRIPLE, not a hex: the callout rules wrap these in
+   * `rgb()` and `rgba()` to build a border, a 8% wash and an icon mask
+   * from one value, and `callouts.ts` mirrors the same triples. A hex
+   * would force all nine consumption sites and the TypeScript mirror to
+   * change at once for no gain a reader could see. */
+  --cru-color-callout-note: 96, 165, 250;
+  --cru-color-callout-abstract: 45, 212, 191;
+  --cru-color-callout-info: var(--cru-color-callout-note);
+  --cru-color-callout-todo: var(--cru-color-callout-note);
+  --cru-color-callout-tip: 45, 212, 191;
+  --cru-color-callout-success: 123, 196, 127;
+  --cru-color-callout-question: 212, 167, 44;
+  --cru-color-callout-warning: 237, 137, 54;
+  --cru-color-callout-failure: 239, 68, 68;
+  --cru-color-callout-danger: 239, 68, 68;
+  --cru-color-callout-bug: 239, 68, 68;
+  --cru-color-callout-example: 167, 139, 218;
+  --cru-color-callout-quote: 152, 147, 158;
+  }
+  /* ── Light theme ────────────────────────────────────────────────────────
+   * The SAME token names, re-declared. Every `bg-shell-bg`, `text-muted` and
+   * inline `var(--color-…)` in the app follows with no change; a `dark:` variant
+   * per class would have meant touching every file and would still have missed
+   * the inline uses.
+   *
+   * SLIGHTLY COOL, not neutral and never warm. The first attempt made these
+   * greys warm (B-R of -7), which put the surfaces at OKLCH hue ~88 while the
+   * dark surfaces AND these light inks both sit near hue ~296 — a 208-degree
+   * conflict, and cool violet text on warm cream is the pairing that reads
+   * muddy. These are generated at the dark theme's own hue, so both themes and
+   * both halves of this one agree.
+   *
+   * The field backs the direction: of ten sourced light themes, nine are neutral
+   * or slightly cool (Primer #f6f8fa is +4, IntelliJ #F7F8FA is +3, VS Code
+   * Light Modern and Obsidian are flat neutral). Solarized Light is the one
+   * deliberate warm theme, and it is warm by -26, not by a little. Catppuccin
+   * Latte is cool-grey with warm ACCENTS — the same shape used here, where the
+   * ember stays the only warm thing in either theme.
+   *
+   * The four ink steps are chosen by CONTRAST, not by hex: each targets its dark
+   * counterpart's ratio on shell-bg (15.3 / 10.7 / 7.1 / 5.6), so a token carries
+   * the same visual weight in both themes. The bottom two numbers moved when the
+   * dark ramp was lifted to clear WCAG AA; both halves moved together.
+   *
+   * The accents all darken. #e0653a over white is 3.45:1 and #c4552e is 4.48:1 —
+   * both fail as text and as a button fill. Never reuse a dark accent on a light
+   * ground. */
+  :root[data-theme='light'] {
+
+    --cru-color-surface-base: #f5f4f8;
+    --cru-color-surface-elevated: #ffffff;
+    --cru-color-surface-overlay: #ffffff;
+    --cru-color-control: #e0dee6;
+
+    --cru-color-shell-bg: #edecf2;
+    --cru-color-shell-panel: #f5f4f8;
+
+    --cru-color-ink: #17161c;
+    --cru-color-body: #34323c;
+    --cru-color-muted: #4f4d57;
+    /* Was #6d6b75, which the same comment claimed cleared the text floor and did
+     * not: 4.46:1 on shell-bg by an in-page check, 4.51:1 by this file's own
+     * formula, and under 4.5 either way. It carries timestamps, counts and kiln
+     * names — text a user reads — so it now clears with margin (4.90:1). The
+     * light steps still track their dark counterparts by RATIO, not by hex. */
+    --cru-color-muted-dark: #66656e;
+
+    --cru-color-hairline: #dedde4;
+    --cru-color-hairline-strong: #c7c5ce;
+
+    --cru-color-hover-wash: rgba(23, 22, 28, 0.055);
+
+    --cru-color-primary: #b04823;
+    --cru-color-primary-hover: #963c1c;
+    --cru-color-primary-active: #7d3116;
+
+    /* Inverted from the dark theme, and for the same reason: the ink is whatever
+     * half of the pair the ember is not. */
+    --cru-color-on-primary: #ffffff;
+    --cru-color-focus-ring: var(--cru-color-primary);
+
+    --cru-color-error: #c02626;
+    --cru-color-error-dark: #8a1b1b;
+
+    --cru-color-attention: #866400;
+    --cru-color-ok: #3a763f;
+    --cru-color-precog: #6d51a8;
+
+    /* ── Terminal ANSI palette, light ──────────────────────────────────────
+     * The BRIGHT half is DARKER than the normal half here, which inverts the
+     * usual convention and is what every light terminal theme does: "bright"
+     * means more emphasis, and on a light ground emphasis is weight, not
+     * luminance. A literal lift would put bright yellow at #ecc76e on #f5f4f8,
+     * which is 1.4:1 — invisible. Same six hues as the dark ramp, darkened until
+     * each clears 4.5:1 on the panel (4.8 to 8.3).
+     *
+     * Two slots are not text and do not follow that floor, in either theme:
+     * `black` is the slot a program picks to draw ON the foreground, and
+     * `bright-black` is the comment/dim slot, 3.8:1 here against 3.5:1 in the
+     * dark ramp — deliberately faint, and the same faintness in both. */
+    --cru-color-term-black: #3a3843;
+    --cru-color-term-red: #c02626;
+    --cru-color-term-green: #3a763f;
+    --cru-color-term-yellow: #866400;
+    --cru-color-term-blue: #2a5db0;
+    --cru-color-term-magenta: #7c3fa8;
+    --cru-color-term-cyan: #12717a;
+    --cru-color-term-white: #6d6b75;
+    --cru-color-term-bright-black: #7d7a85;
+    --cru-color-term-bright-red: #9d1f1f;
+    --cru-color-term-bright-green: #2b5c2f;
+    --cru-color-term-bright-yellow: #6a4f00;
+    --cru-color-term-bright-blue: #1f4a91;
+    --cru-color-term-bright-magenta: #63308a;
+    --cru-color-term-bright-cyan: #0d585f;
+    --cru-color-term-bright-white: #17161c;
+
+    /* ── Canvas preset colours, light ──────────────────────────────────────
+     * The same six hues, darkened until each clears 4.5:1 on white — which is
+     * `surface-elevated` and `surface-overlay` here, so it is the floor for a
+     * card body, the swatch popover and the minimap alike. The floor measured
+     * is 5.40:1.
+     *
+     * Saturation RISES against the dark half (S38-78 against S37-60) and that
+     * is deliberate, for the reason the light ANSI ramp gives: on a light
+     * ground a dark accent loses its hue before it loses its weight, so the
+     * chroma has to hold. The "quieter than the ember" rule survives it — the
+     * light ember is #b04823 at L41, and the ochre orange sits at L31, ten
+     * steps darker at a 20-degree remove, so the two never trade places. */
+    --cru-color-canvas-red: #b32d2d;
+    --cru-color-canvas-orange: #8a5a14;
+    --cru-color-canvas-yellow: #6f5b0f;
+    --cru-color-canvas-green: #33713b;
+    --cru-color-canvas-cyan: #0e6b73;
+    --cru-color-canvas-purple: #6f3fa0;
+
+    /* ── Elevation, light ─────────────────────────────────────────────────
+     * The dark ramp is near-black at alpha 0.30–0.60. It has to be: a shadow on
+     * a #0e0d11 canvas has almost nowhere left to darken, so it buys separation
+     * with opacity. Painted unchanged on #edecf2 the same values are a grey
+     * smear under every menu, and these tokens WERE unchanged — declared once,
+     * in `@theme`, and never re-declared here.
+     *
+     * The geometry is identical, step for step; only the ink changes. Each light
+     * alpha is about a third of its dark counterpart, which holds the ramp's
+     * proportions while landing inside the range light themes actually use
+     * (Primer 0.04–0.16, Material 3 0.15, IntelliJ 0.10–0.20).
+     *
+     * The ink is #17161c — the light theme's own `shell-ink`, not pure black.
+     * These neutrals were generated at the dark theme's hue on purpose, and a
+     * neutral-black shadow under them reads a half-step warmer than the surface
+     * it falls on. */
+    --cru-shadow-sm: 0 1px 2px rgba(23, 22, 28, 0.08);
+    --cru-shadow-md: 0 2px 8px -2px rgba(23, 22, 28, 0.11);
+    --cru-shadow-lg: 0 6px 20px -6px rgba(23, 22, 28, 0.14);
+    --cru-shadow-xl: 0 12px 32px -8px rgba(23, 22, 28, 0.17);
+    --cru-shadow-2xl: 0 18px 46px -10px rgba(23, 22, 28, 0.2);
+
+  /* The names the contract adds. Type sizes and measures do not change with
+   * the theme, so only the callout hues are re-declared here. They darken
+   * for the same reason every accent darkens: a light ground needs a darker
+   * ink to hold its ratio. */
+  --cru-color-callout-note: 37, 99, 235;
+  --cru-color-callout-abstract: 13, 148, 136;
+  --cru-color-callout-info: var(--cru-color-callout-note);
+  --cru-color-callout-todo: var(--cru-color-callout-note);
+  --cru-color-callout-tip: 13, 148, 136;
+  --cru-color-callout-success: 58, 118, 63;
+  --cru-color-callout-question: 134, 100, 0;
+  --cru-color-callout-warning: 154, 82, 12;
+  --cru-color-callout-failure: 192, 38, 38;
+  --cru-color-callout-danger: 192, 38, 38;
+  --cru-color-callout-bug: 192, 38, 38;
+  --cru-color-callout-example: 109, 81, 168;
+  --cru-color-callout-quote: 79, 77, 87;
+  }
+}
+
+/* ── Tailwind's namespace ───────────────────────────────────────────────
+ * ALIASES ONLY. No literal belongs in this block; `contrast.test.ts` fails
+ * on one. Tailwind generates a utility per entry — `.bg-primary` from
+ * `--color-primary`, `.rounded-card` from `--radius-card` — and each utility
+ * emits `var(--color-primary)`, which resolves on to the contract above.
+ *
+ * The legacy names stay so that nothing breaks in one step: every
+ * `bg-shell-bg`, `text-muted` and inline `var(--color-hairline)` already in
+ * the app keeps working. Components move to the `--cru-` names file by file,
+ * and these entries retire when the last reference goes.
+ *
+ * Two are renames rather than copies: `shell-ink` and `shell-body` point at
+ * `--cru-color-ink` and `--cru-color-body`. The surface family already
+ * carries the `shell-` prefix where it means something. */
 @theme {
-  /* ── Faces ────────────────────────────────────────────────────────────
-   * Geist and Geist Mono, both VARIABLE (`wght` 100-900). The suffix is part
-   * of the family name fontsource declares — 'Geist' alone matches nothing
-   * and falls through to system-ui silently.
-   *
-   * One family, two halves, drawn together. They share a skeleton and, more
-   * usefully here, they share figure widths: a token count that streams up
-   * from 900 to 1,000 does not change width, and neither does a timestamp
-   * that ticks. The previous pair (IBM Plex Sans with IBM Plex Mono) was
-   * also one family, but a humanist one — it set wide, which cost a narrow
-   * chat panel about a line per paragraph at the reading size. */
-  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: var(--cru-font-ui);
+  --font-mono: var(--cru-font-mono);
+  --text-reading: var(--cru-font-reading);
+  /* `text-xs` rides the reading size: chrome text and prose share one step,
+   * and the whole scale moved up one pixel on 2026-09-15. */
+  --text-xs: var(--cru-font-reading);
+  --text-xs--line-height: var(--cru-font-reading-leading);
+  --text-floor: var(--cru-font-floor);
+  --text-title: var(--cru-font-title);
+  --leading-reading: var(--cru-leading-reading);
+  --chat-measure: var(--cru-measure-chat);
+  --row-sm: var(--cru-row-sm);
+  --row-md: var(--cru-row-md);
+  --row-touch: var(--cru-row-touch);
 
-  /* ── Type scale ───────────────────────────────────────────────────────
-   * THREE sizes, and the app owes a reason for any fourth.
-   *
-   *   text    12px — reading text: transcript prose, note prose, the user
-   *                  quote, tool rows, chips, code blocks. Body and chrome
-   *                  deliberately land on ONE size; the old scale split them
-   *                  13/12 for no reason a reader could see.
-   *   small   11px — the functional floor: timestamps, token counts, kiln
-   *                  names, tool arguments, counts. Never lower. Fifty
-   *                  `text-[10px]` labels were lifted to this floor and it
-   *                  does not move back down.
-   *   lead    1.6  — one leading for every block of running text.
-   *
-   * Hierarchy above `text` moves on WEIGHT, not on size — which is what the
-   * variable `wght` axis bought. Headings still scale in `em` off the prose
-   * root (see PROSE_CLASS in lib/markdown.ts). */
-  --text-reading: 12px;
-  --text-floor: 11px;
-  --leading-reading: 1.6;
+  --color-primary: var(--cru-color-primary);
+  --color-primary-hover: var(--cru-color-primary-hover);
+  --color-primary-active: var(--cru-color-primary-active);
+  --color-on-primary: var(--cru-color-on-primary);
+  --color-focus-ring: var(--cru-color-focus-ring);
+  --color-surface-base: var(--cru-color-surface-base);
+  --color-surface-elevated: var(--cru-color-surface-elevated);
+  --color-surface-overlay: var(--cru-color-surface-overlay);
+  --color-control: var(--cru-color-control);
+  --color-shell-bg: var(--cru-color-shell-bg);
+  --color-shell-panel: var(--cru-color-shell-panel);
+  --color-shell-ink: var(--cru-color-ink);
+  --color-shell-body: var(--cru-color-body);
+  --color-muted: var(--cru-color-muted);
+  --color-muted-dark: var(--cru-color-muted-dark);
+  --color-hairline: var(--cru-color-hairline);
+  --color-hairline-strong: var(--cru-color-hairline-strong);
+  --color-hover-wash: var(--cru-color-hover-wash);
+  --color-error: var(--cru-color-error);
+  --color-error-dark: var(--cru-color-error-dark);
+  --color-attention: var(--cru-color-attention);
+  --color-ok: var(--cru-color-ok);
+  --color-precog: var(--cru-color-precog);
+  --color-term-black: var(--cru-color-term-black);
+  --color-term-red: var(--cru-color-term-red);
+  --color-term-green: var(--cru-color-term-green);
+  --color-term-yellow: var(--cru-color-term-yellow);
+  --color-term-blue: var(--cru-color-term-blue);
+  --color-term-magenta: var(--cru-color-term-magenta);
+  --color-term-cyan: var(--cru-color-term-cyan);
+  --color-term-white: var(--cru-color-term-white);
+  --color-term-bright-black: var(--cru-color-term-bright-black);
+  --color-term-bright-red: var(--cru-color-term-bright-red);
+  --color-term-bright-green: var(--cru-color-term-bright-green);
+  --color-term-bright-yellow: var(--cru-color-term-bright-yellow);
+  --color-term-bright-blue: var(--cru-color-term-bright-blue);
+  --color-term-bright-magenta: var(--cru-color-term-bright-magenta);
+  --color-term-bright-cyan: var(--cru-color-term-bright-cyan);
+  --color-term-bright-white: var(--cru-color-term-bright-white);
+  --color-canvas-red: var(--cru-color-canvas-red);
+  --color-canvas-orange: var(--cru-color-canvas-orange);
+  --color-canvas-yellow: var(--cru-color-canvas-yellow);
+  --color-canvas-green: var(--cru-color-canvas-green);
+  --color-canvas-cyan: var(--cru-color-canvas-cyan);
+  --color-canvas-purple: var(--cru-color-canvas-purple);
 
-  /* ── The chat column's measure ────────────────────────────────────────
-   * A session is width-controlled and centred: the transcript, the composer
-   * and the scope row all stop at the same edge, and the pane's leftover
-   * width becomes gutter rather than line length.
-   *
-   * 46rem is ~736px, which is ~95 characters at the reading size — wider
-   * than the 65-75ch prose ideal on purpose, because a transcript is not
-   * an essay: it carries code blocks, tables and tool rows that a 65ch
-   * column would force to scroll. Prose still wraps well short of the edge.
-   *
-   * The SCROLLER stays full width. Centring the scroll container instead
-   * would pull the scrollbar in off the pane edge, which reads as a second
-   * inner panel. */
-  --chat-measure: 46rem;
-
-  --color-primary: #e0653a;
-  --color-primary-hover: #f08a5e;
-  --color-primary-active: #c4552e;
-
-  /* The ink that sits ON a solid ember fill. `text-white` on #e0653a is 3.45:1
-   * and fails AA; the ember is a brand constant, so the FOREGROUND moves. On a
-   * dark field the ember is the lighter half of the pair, so its ink is the
-   * canvas near-black (5.62:1 at rest, 7.84:1 on hover). On a light field the
-   * ember darkens to #b04823 and the ink inverts to white (5.53:1 / 7.09:1). */
-  --color-on-primary: #0e0d11;
-
-  /* ONE focus treatment for the whole app — see the `focus-ring` utility near
-   * the end of this file. Ember, because it is the only colour the UI already
-   * uses to mean "this is the one you are on", and it clears the 3:1 non-text
-   * floor on every surface in both themes (4.62:1 at worst). */
-  --color-focus-ring: var(--color-primary);
-
-  /* ── Neutral ramp ─────────────────────────────────────────────────────
-   * An even, low-chroma near-black stack, IDE-native: each step is a small,
-   * deliberate lift from the one below, so depth reads without heavy fills.
-   *   shell-bg   — deepest canvas, behind every panel
-   *   surface-base/shell-panel — a panel's own surface
-   *   surface-elevated — raised rows, cards, inputs at rest
-   *   surface-overlay  — popovers, menus, floating windows
-   *   control    — the resting fill of a solid control (button/slider track) */
-  --color-surface-base: #141318;
-  --color-surface-elevated: #1c1b22;
-  --color-surface-overlay: #232128;
-  --color-control: #302e38;
-
-  --color-shell-bg: #0e0d11;
-  --color-shell-panel: #141318;
-
-  /* ── Ink ──────────────────────────────────────────────────────────────
-   * Four weights, high → faint. Metadata lives on muted-dark; it should read
-   * as present-but-quiet, never competing with body text.
-   *
-   * ALL FOUR ARE TEXT, so all four clear WCAG 2.1 AA (4.5:1) against every
-   * PANEL surface — shell-bg, shell-panel, surface-base, surface-elevated and
-   * surface-overlay. The floor is set by surface-overlay, the lightest of the
-   * five: a step that reads on the deep canvas can still fail inside a popover.
-   * muted-dark was #656069, which is 3.16:1 on the canvas and 2.60:1 in a
-   * popover, and it carries timestamps, counts and kiln names — text a user
-   * reads. Lifting it to the floor pushed muted up with it, or the bottom two
-   * steps would have collapsed into one shade.
-   *
-   * `--color-control` is NOT in that set. It is a control FILL, and it is light
-   * enough that muted-dark cannot clear 4.5:1 on it. Text on a control starts
-   * at `muted` — including a placeholder, which is text. */
-  --color-shell-ink: #e7e4df;
-  --color-shell-body: #c4c0ba;
-  --color-muted: #9f9ba5;
-  --color-muted-dark: #8d8990;
-
-  /* ── Separators ───────────────────────────────────────────────────────
-   * Barely-there by design (Cursor's language): a hairline is a hint of an
-   * edge, ~6% lift over the panel, not a drawn line. hairline-strong is only
-   * for surfaces that float free of the panel (popovers, windows) and need a
-   * readable outline against whatever sits behind them. */
-  --color-hairline: #211f26;
-  --color-hairline-strong: #322f38;
-
-  /* Translucent hover fill that reads on any surface — kept faint so a hover
-   * is felt, not announced. */
-  --color-hover-wash: rgba(255, 255, 255, 0.05);
-
-  --color-error: #ef4444;
-  --color-error-dark: #991b1b;
-
-  /* ── Status ───────────────────────────────────────────────────────────
-   * One colour, one meaning, and no near-duplicates. A `--color-session`
-   * brass (#c9954a) briefly lived beside `attention` (#d4a72c) to mark the
-   * bound session; two ambers a shade apart cannot read as two meanings at
-   * 7px, which is the same argument `SessionStatusDot` makes against two
-   * brass tones. The three axes are now:
-   *   attention — something is waiting on YOU
-   *   ok        — the machine is busy, and it is fine
-   *   primary   — this is the one you are on (selection and binding) */
-  --color-attention: #d4a72c;
-  --color-ok: #7bc47f;
-  --color-precog: #a78bda;
-
-  /* ── Terminal ANSI palette ────────────────────────────────────────────
-   * A deliberate 16-color ramp for xterm, NOT the UI semantic tokens above
-   * (those are tuned for chrome legibility, not as a balanced terminal
-   * palette — mapping error/ok/attention onto ANSI slots produced a
-   * mismatched mix of loud and washed colors). One HSL envelope, warmed
-   * toward the ember identity; brights are the same hues lifted ~8-10 L.
-   * TerminalPanel reads these at mount (xterm can't consume CSS vars), so
-   * a future theme system restyles the terminal by overriding them. */
-  --color-term-black: #2b2933;
-  --color-term-red: #e8746e;
-  --color-term-green: #9dcf85;
-  --color-term-yellow: #e0b24c;
-  --color-term-blue: #7fa7e0;
-  --color-term-magenta: #bd93e0;
-  --color-term-cyan: #79c9c4;
-  --color-term-white: #c9c5bf;
-  --color-term-bright-black: #6b6673;
-  --color-term-bright-red: #f2938c;
-  --color-term-bright-green: #b7e0a1;
-  --color-term-bright-yellow: #ecc76e;
-  --color-term-bright-blue: #a0c0ee;
-  --color-term-bright-magenta: #d0b0ee;
-  --color-term-bright-cyan: #9adcd7;
-  --color-term-bright-white: #e7e4df;
-
-  /* ── Canvas preset colours ────────────────────────────────────────────
-   * The six slots JSON Canvas numbers 1-6, which a user picks per card
-   * (`src/lib/canvas-types.ts`). CATEGORICAL, not semantic: slot 4 means
-   * "the green one", never "ok". So this ramp is tuned for one job only —
-   * telling six cards apart at a glance — and it must not read as a second
-   * brand accent.
-   *
-   * Two rules shape it. First, EVERY SLOT IS QUIETER THAN THE EMBER: the
-   * loudest here is S60 against the ember's S73, so a coloured card sits
-   * behind the one accent that means "act on this". Second, THE EMBER OWNS
-   * ITS OWN HUE: the ramp opens at H2 and its next step is H34, leaving the
-   * ember's H16 a ~16-degree berth on each side, and the orange slot is an
-   * ochre (S56, L54) rather than a second #e0653a.
-   *
-   * The hues are the terminal ramp's, minus blue and plus orange, so the app
-   * speaks one colour vocabulary. The VALUES are separate: an ANSI slot is
-   * text on a panel, a canvas colour is a card border, a 10% wash, a minimap
-   * rect, an edge stroke AND the file-node header text, so it owes 4.5:1 on
-   * every dark surface including `surface-overlay`, the lightest. The floor
-   * measured here is 5.40:1.
-   *
-   * `canvas-types.ts` repeats these six values as `var()` fallbacks. Change
-   * one here and change it there; `canvas-viewport.test.ts` fails otherwise. */
-  --color-canvas-red: #dd7a76;
-  --color-canvas-orange: #cb9147;
-  --color-canvas-yellow: #cdb75f;
-  --color-canvas-green: #8fc47f;
-  --color-canvas-cyan: #6bbfbb;
-  --color-canvas-purple: #ae90d6;
-
-  /* ── Radii ────────────────────────────────────────────────────────────
-   * Tight and consistent, the way an editor rounds its chrome. Overrides
-   * Tailwind's defaults so every `rounded-*` in the app tightens at once —
-   * no more xl/2xl bubbles. */
-  --radius-sm: 3px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
-  --radius-2xl: 10px;
-  --radius-3xl: 14px;
-
-  /* ── Elevation ────────────────────────────────────────────────────────
-   * Quiet on a near-black canvas: a soft, mostly-vertical shadow that lifts a
-   * floating surface just enough. The border does most of the separating. */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 2px 8px -2px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 6px 20px -6px rgba(0, 0, 0, 0.5);
-  --shadow-xl: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
-  --shadow-2xl: 0 18px 46px -10px rgba(0, 0, 0, 0.6);
+  --radius-sm: var(--cru-radius-sm);
+  --radius-md: var(--cru-radius-md);
+  --radius-lg: var(--cru-radius-lg);
+  --radius-xl: var(--cru-radius-xl);
+  --radius-2xl: var(--cru-radius-2xl);
+  --radius-3xl: var(--cru-radius-3xl);
+  --radius-control: var(--cru-radius-control);
+  --radius-card: var(--cru-radius-card);
+  --radius-composer: var(--cru-radius-composer);
+  --shadow-sm: var(--cru-shadow-sm);
+  --shadow-md: var(--cru-shadow-md);
+  --shadow-lg: var(--cru-shadow-lg);
+  --shadow-xl: var(--cru-shadow-xl);
+  --shadow-2xl: var(--cru-shadow-2xl);
 }
 
-/* ── Light theme ────────────────────────────────────────────────────────
- * The SAME token names, re-declared. Every `bg-shell-bg`, `text-muted` and
- * inline `var(--color-…)` in the app follows with no change; a `dark:` variant
- * per class would have meant touching every file and would still have missed
- * the inline uses.
- *
- * SLIGHTLY COOL, not neutral and never warm. The first attempt made these
- * greys warm (B-R of -7), which put the surfaces at OKLCH hue ~88 while the
- * dark surfaces AND these light inks both sit near hue ~296 — a 208-degree
- * conflict, and cool violet text on warm cream is the pairing that reads
- * muddy. These are generated at the dark theme's own hue, so both themes and
- * both halves of this one agree.
- *
- * The field backs the direction: of ten sourced light themes, nine are neutral
- * or slightly cool (Primer #f6f8fa is +4, IntelliJ #F7F8FA is +3, VS Code
- * Light Modern and Obsidian are flat neutral). Solarized Light is the one
- * deliberate warm theme, and it is warm by -26, not by a little. Catppuccin
- * Latte is cool-grey with warm ACCENTS — the same shape used here, where the
- * ember stays the only warm thing in either theme.
- *
- * The four ink steps are chosen by CONTRAST, not by hex: each targets its dark
- * counterpart's ratio on shell-bg (15.3 / 10.7 / 7.1 / 5.6), so a token carries
- * the same visual weight in both themes. The bottom two numbers moved when the
- * dark ramp was lifted to clear WCAG AA; both halves moved together.
- *
- * The accents all darken. #e0653a over white is 3.45:1 and #c4552e is 4.48:1 —
- * both fail as text and as a button fill. Never reuse a dark accent on a light
- * ground. */
-:root[data-theme='light'] {
-  --color-surface-base: #f5f4f8;
-  --color-surface-elevated: #ffffff;
-  --color-surface-overlay: #ffffff;
-  --color-control: #e0dee6;
-
-  --color-shell-bg: #edecf2;
-  --color-shell-panel: #f5f4f8;
-
-  --color-shell-ink: #17161c;
-  --color-shell-body: #34323c;
-  --color-muted: #4f4d57;
-  /* Was #6d6b75, which the same comment claimed cleared the text floor and did
-   * not: 4.46:1 on shell-bg by an in-page check, 4.51:1 by this file's own
-   * formula, and under 4.5 either way. It carries timestamps, counts and kiln
-   * names — text a user reads — so it now clears with margin (4.90:1). The
-   * light steps still track their dark counterparts by RATIO, not by hex. */
-  --color-muted-dark: #66656e;
-
-  --color-hairline: #dedde4;
-  --color-hairline-strong: #c7c5ce;
-
-  --color-hover-wash: rgba(23, 22, 28, 0.055);
-
-  --color-primary: #b04823;
-  --color-primary-hover: #963c1c;
-  --color-primary-active: #7d3116;
-
-  /* Inverted from the dark theme, and for the same reason: the ink is whatever
-   * half of the pair the ember is not. */
-  --color-on-primary: #ffffff;
-  --color-focus-ring: var(--color-primary);
-
-  --color-error: #c02626;
-  --color-error-dark: #8a1b1b;
-
-  --color-attention: #866400;
-  --color-ok: #3a763f;
-  --color-precog: #6d51a8;
-
-  /* ── Terminal ANSI palette, light ──────────────────────────────────────
-   * The BRIGHT half is DARKER than the normal half here, which inverts the
-   * usual convention and is what every light terminal theme does: "bright"
-   * means more emphasis, and on a light ground emphasis is weight, not
-   * luminance. A literal lift would put bright yellow at #ecc76e on #f5f4f8,
-   * which is 1.4:1 — invisible. Same six hues as the dark ramp, darkened until
-   * each clears 4.5:1 on the panel (4.8 to 8.3).
-   *
-   * Two slots are not text and do not follow that floor, in either theme:
-   * `black` is the slot a program picks to draw ON the foreground, and
-   * `bright-black` is the comment/dim slot, 3.8:1 here against 3.5:1 in the
-   * dark ramp — deliberately faint, and the same faintness in both. */
-  --color-term-black: #3a3843;
-  --color-term-red: #c02626;
-  --color-term-green: #3a763f;
-  --color-term-yellow: #866400;
-  --color-term-blue: #2a5db0;
-  --color-term-magenta: #7c3fa8;
-  --color-term-cyan: #12717a;
-  --color-term-white: #6d6b75;
-  --color-term-bright-black: #7d7a85;
-  --color-term-bright-red: #9d1f1f;
-  --color-term-bright-green: #2b5c2f;
-  --color-term-bright-yellow: #6a4f00;
-  --color-term-bright-blue: #1f4a91;
-  --color-term-bright-magenta: #63308a;
-  --color-term-bright-cyan: #0d585f;
-  --color-term-bright-white: #17161c;
-
-  /* ── Canvas preset colours, light ──────────────────────────────────────
-   * The same six hues, darkened until each clears 4.5:1 on white — which is
-   * `surface-elevated` and `surface-overlay` here, so it is the floor for a
-   * card body, the swatch popover and the minimap alike. The floor measured
-   * is 5.40:1.
-   *
-   * Saturation RISES against the dark half (S38-78 against S37-60) and that
-   * is deliberate, for the reason the light ANSI ramp gives: on a light
-   * ground a dark accent loses its hue before it loses its weight, so the
-   * chroma has to hold. The "quieter than the ember" rule survives it — the
-   * light ember is #b04823 at L41, and the ochre orange sits at L31, ten
-   * steps darker at a 20-degree remove, so the two never trade places. */
-  --color-canvas-red: #b32d2d;
-  --color-canvas-orange: #8a5a14;
-  --color-canvas-yellow: #6f5b0f;
-  --color-canvas-green: #33713b;
-  --color-canvas-cyan: #0e6b73;
-  --color-canvas-purple: #6f3fa0;
-
-  /* ── Elevation, light ─────────────────────────────────────────────────
-   * The dark ramp is near-black at alpha 0.30–0.60. It has to be: a shadow on
-   * a #0e0d11 canvas has almost nowhere left to darken, so it buys separation
-   * with opacity. Painted unchanged on #edecf2 the same values are a grey
-   * smear under every menu, and these tokens WERE unchanged — declared once,
-   * in `@theme`, and never re-declared here.
-   *
-   * The geometry is identical, step for step; only the ink changes. Each light
-   * alpha is about a third of its dark counterpart, which holds the ramp's
-   * proportions while landing inside the range light themes actually use
-   * (Primer 0.04–0.16, Material 3 0.15, IntelliJ 0.10–0.20).
-   *
-   * The ink is #17161c — the light theme's own `shell-ink`, not pure black.
-   * These neutrals were generated at the dark theme's hue on purpose, and a
-   * neutral-black shadow under them reads a half-step warmer than the surface
-   * it falls on. */
-  --shadow-sm: 0 1px 2px rgba(23, 22, 28, 0.08);
-  --shadow-md: 0 2px 8px -2px rgba(23, 22, 28, 0.11);
-  --shadow-lg: 0 6px 20px -6px rgba(23, 22, 28, 0.14);
-  --shadow-xl: 0 12px 32px -8px rgba(23, 22, 28, 0.17);
-  --shadow-2xl: 0 18px 46px -10px rgba(23, 22, 28, 0.2);
-}
-
-/* ── Elevation, light: the tokens above have to be RE-APPLIED ───────────
- * Tailwind v4 does not emit `--shadow-*` as custom properties. It INLINES the
- * `@theme` value into each utility at build time:
+/* ── Elevation follows the theme on its own now ─────────────────────────
+ * This block used to re-assign `--tw-shadow` per utility under the light
+ * selector. Tailwind does not emit `--shadow-*` as a custom property; it
+ * INLINES the `@theme` value into each utility at build time, so when
+ * `@theme` held a literal the generated rule held that literal:
  *
  *   .shadow-lg { --tw-shadow: 0 6px 20px -6px var(--tw-shadow-color,#00000080) }
  *
- * so re-declaring `--shadow-lg` under the light selector — the obvious fix,
- * and the one the colour tokens above genuinely use — changes nothing that
- * paints. `--tw-shadow-color` is no way in either: it is registered
+ * and re-declaring `--shadow-lg` under the light selector changed nothing
+ * that paints. `--tw-shadow-color` was no way in either: it is registered
  * `@property … inherits:false`, so a value set on `:root` never reaches the
  * element that reads it.
  *
- * What is left is to re-assign `--tw-shadow` per utility, under a selector
- * that outranks the bare class (0,2,1 against 0,1,0). The VALUES still live in
- * one place — the token block above — so this stays a mapping, not a copy. */
-@layer utilities {
-  :root[data-theme='light'] .shadow-sm { --tw-shadow: var(--shadow-sm); }
-  :root[data-theme='light'] .shadow-md { --tw-shadow: var(--shadow-md); }
-  :root[data-theme='light'] .shadow-lg { --tw-shadow: var(--shadow-lg); }
-  :root[data-theme='light'] .shadow-xl { --tw-shadow: var(--shadow-xl); }
-  :root[data-theme='light'] .shadow-2xl { --tw-shadow: var(--shadow-2xl); }
-}
+ * `@theme` now holds `--shadow-lg: var(--cru-shadow-lg)`, so Tailwind inlines
+ * the REFERENCE instead of a literal and emits
+ *
+ *   .shadow-lg { --tw-shadow: var(--cru-shadow-lg) }
+ *
+ * A custom property inherits, so an element under `:root[data-theme='light']`
+ * already reads the light value. The five re-assignments became byte-for-byte
+ * copies of the rule they were correcting, and they are gone. A plugin that
+ * sets `--cru-shadow-lg` reaches every `.shadow-lg` by the same path. */
 
 /* ── shiki, light ───────────────────────────────────────────────────────
  * Markdown renders to an HTML STRING that is cached and inserted once, so a
@@ -601,40 +805,34 @@
   }
 
   /* ── The composer surface ───────────────────────────────────────────
-     One quiet field that firms up as you approach it: hairline at rest,
-     hairline-strong under the pointer, ember once the caret is in it.
-     Three steps on ONE property, so the control never changes size or
-     position as its state changes.
+     THE RULE. The radius stays at `--radius-composer` (18px) at every
+     height. The border colour steps through three values: hairline at
+     rest, hairline-strong under the pointer, ember while the caret is in
+     the field. There is no shadow.
 
-     No shadow. It sits flush at the bottom of a panel with nothing
-     behind it to float above, and index.css's own elevation note says
-     the border does the separating. */
-  /* ── The composer's ends ────────────────────────────────────────────
-     A single-line prompt is a PILL — both ends are true semicircles, so
-     the field reads as one continuous control rather than as a box with
-     things parked in it. `9999px` and not a measured value: the radius
-     has to stay exactly half the height as the field's padding or the
-     reading size changes, and a hardcoded 22px stops being a semicircle
-     the moment either moves.
+     The three steps move ONE property, so the control keeps its size and
+     its position as its state changes. The field needs no shadow: it sits
+     flush at the foot of a panel, and nothing sits behind it to float
+     above. The elevation note in this file gives the border that job.
 
-     Past one line a pill is wrong — the arcs grow with the height and
-     start eating the first and last characters of the middle rows — so
-     the ends square off to the shell's own corner radius. The transition
-     is on `border-radius` alone, so the morph costs no layout and the
-     text never moves.
+     The field was a 9999px pill, and it squared off to 10px as soon as
+     the text wrapped. A true semicircle takes the clearance away from the
+     first and the last character of a wrapped line. A control that
+     changes shape as you type reads as an animation, not as a field. A
+     `data-multiline` attribute drove that morph. The composer no longer
+     sets that attribute, so no rule reads it.
 
-     `data-multiline` rather than a class, because the state is a fact
-     about the field that the DOM should be able to state plainly. */
+     The transition carries the border colour only. No radius is left to
+     animate, and the padding no longer moves with the height.
+
+     styles/refine-composer.css repeats the radius and the transition with
+     the same values. That lane file can fold back into this block and
+     change nothing. The docked-state corners stay in the lane file. */
   .composer-surface {
-    border-radius: 9999px;
+    border-radius: var(--radius-composer);
     border: 1px solid var(--color-hairline);
     background: var(--color-surface-base);
-    transition:
-      border-color 140ms ease,
-      border-radius 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .composer-surface[data-multiline='true'] {
-    border-radius: var(--radius-2xl);
+    transition: border-color 140ms ease;
   }
   .composer-surface:hover {
     border-color: var(--color-hairline-strong);
@@ -715,19 +913,8 @@
   animation: cru-caret 1060ms steps(1, end) infinite;
 }
 
-/* Rendered [[wikilinks]] (chat + previews). Mirrors the editor's .cm-wikilink
-   ember pill so a knowledge link reads as one identity across every surface. */
-.wikilink {
-  color: var(--color-primary, #e0653a);
-  background-color: color-mix(in srgb, var(--color-primary, #e0653a) 10%, transparent);
-  border-radius: 3px;
-  padding: 0 2px;
-  cursor: pointer;
-  text-decoration: none;
-}
-.wikilink:hover {
-  text-decoration: underline;
-}
+/* Rendered [[wikilinks]] live in styles/refine-states.css — the pill and the
+   decoration are ONE rule set, and they used to be two files. */
 
 /* ===== Obsidian-style callouts =====
    Markup from lib/callouts.ts (reading mode / chat / hover previews); the
@@ -736,7 +923,7 @@
    keep in sync. Icons are lucide outlines as alpha masks so they take the
    variant color via background-color. */
 .callout {
-  --callout-rgb: 96, 165, 250;
+  --callout-rgb: var(--cru-color-callout-note);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>');
   border-left: 3px solid rgb(var(--callout-rgb));
   background: rgba(var(--callout-rgb), 0.08);
@@ -797,65 +984,67 @@ details.callout[open] > summary.callout-title::after {
 }
 
 .cm-lp-callout {
-  --callout-rgb: 96, 165, 250;
+  --callout-rgb: var(--cru-color-callout-note);
 }
 
 .callout[data-callout='abstract'],
 .cm-lp-callout-abstract {
-  --callout-rgb: 45, 212, 191;
+  --callout-rgb: var(--cru-color-callout-abstract);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>');
 }
 .callout[data-callout='info'],
 .cm-lp-callout-info {
+  --callout-rgb: var(--cru-color-callout-info);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>');
 }
 .callout[data-callout='todo'],
 .cm-lp-callout-todo {
+  --callout-rgb: var(--cru-color-callout-todo);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>');
 }
 .callout[data-callout='tip'],
 .cm-lp-callout-tip {
-  --callout-rgb: 45, 212, 191;
+  --callout-rgb: var(--cru-color-callout-tip);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>');
 }
 .callout[data-callout='success'],
 .cm-lp-callout-success {
-  --callout-rgb: 123, 196, 127;
+  --callout-rgb: var(--cru-color-callout-success);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
 }
 .callout[data-callout='question'],
 .cm-lp-callout-question {
-  --callout-rgb: 212, 167, 44;
+  --callout-rgb: var(--cru-color-callout-question);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>');
 }
 .callout[data-callout='warning'],
 .cm-lp-callout-warning {
-  --callout-rgb: 237, 137, 54;
+  --callout-rgb: var(--cru-color-callout-warning);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>');
 }
 .callout[data-callout='failure'],
 .cm-lp-callout-failure {
-  --callout-rgb: 239, 68, 68;
+  --callout-rgb: var(--cru-color-callout-failure);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>');
 }
 .callout[data-callout='danger'],
 .cm-lp-callout-danger {
-  --callout-rgb: 239, 68, 68;
+  --callout-rgb: var(--cru-color-callout-danger);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>');
 }
 .callout[data-callout='bug'],
 .cm-lp-callout-bug {
-  --callout-rgb: 239, 68, 68;
+  --callout-rgb: var(--cru-color-callout-bug);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>');
 }
 .callout[data-callout='example'],
 .cm-lp-callout-example {
-  --callout-rgb: 167, 139, 218;
+  --callout-rgb: var(--cru-color-callout-example);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>');
 }
 .callout[data-callout='quote'],
 .cm-lp-callout-quote {
-  --callout-rgb: 152, 147, 158;
+  --callout-rgb: var(--cru-color-callout-quote);
   --callout-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6c0 2-1 3-3 4"/><path d="M20 11h-4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6c0 2-1 3-3 4"/></svg>');
 }
 

@@ -26,7 +26,7 @@ import { notificationActions } from '@/stores/notificationStore';
 // table's right-hand cell beside every other section's controls.
 const inputClass =
   'w-56 max-w-full px-2 py-1 rounded border border-hairline bg-control text-shell-ink ' +
-  'text-sm focus:outline-none focus:border-primary disabled:opacity-50';
+  'text-sm focus-ring focus:border-primary disabled:opacity-50';
 
 /**
  * A leaf's value, fetched on mount and re-fetched when the tree reloads.

@@ -1,0 +1,47 @@
+/* Refinement lane: R1 composer pill + R3 docked permission. Owned by that lane; see docs/Meta/Analysis/2026-09-15 Web UI Review.md. */
+
+/* ── One radius, at every height ───────────────────────────────────────
+   The prompt was a 9999px pill that squared off to 10px the moment the
+   text wrapped. Two problems, and the morph made both worse: a true
+   semicircle costs the first and last characters of a wrapped line their
+   clearance, and a control that changes shape as you type reads as an
+   animation rather than as a field. `--radius-composer` (18px) holds at
+   one line and at ten, so the field keeps one shape while you fill it.
+
+   These rules are UNLAYERED on purpose. index.css declares the pill
+   inside `@layer components`, and unlayered CSS wins over layered CSS
+   whatever the specificity, so this lane needs no `!important` and no
+   selector arms race. The border steps (hairline → hairline-strong →
+   ember) and the recording gradient stay exactly as index.css sets them;
+   only the radius and the transition change here. */
+.composer-surface {
+  border-radius: var(--radius-composer);
+  /* Border colour only. There is no radius left to animate, and a
+     padding transition went with the morph. */
+  transition: border-color 140ms ease;
+}
+
+/* ── The docked seam ───────────────────────────────────────────────────
+   A pending permission is not a message and it is not a notification: it
+   is a question the prompt cannot serve until you answer it. So the card
+   sits ON the prompt — square bottom, no border between them, no gap —
+   and the prompt drops its top corners to meet it. The two read as one
+   surface with a rule across it, which is the shape that says "these
+   belong together" without a word of copy.
+
+   The wrapper restyles whatever interaction card lands in it rather than
+   each card restyling itself: every kind (permission, ask, edit …) docks
+   the same way, and none of them should have to know where it is drawn. */
+.composer-dock > * {
+  margin-bottom: 0;
+  border-top-left-radius: var(--radius-card);
+  border-top-right-radius: var(--radius-card);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-width: 0;
+}
+
+.composer-surface[data-docked='true'] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}

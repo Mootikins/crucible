@@ -152,6 +152,33 @@ describe('CenterComposer', () => {
     expect(chip.textContent).not.toContain('Select model');
   });
 
+  // The draft chip and the in-session chip name the same fact and read
+  // alike: the value only, with the icon and the tooltip naming the axis.
+  it('shows the project value without an axis label before the first turn', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const chip = await waitFor(() => getByTestId('composer-project'));
+    expect(chip.textContent).toContain('Session folder');
+    expect(chip.textContent).not.toContain('Project ·');
+  });
+
+  it('shows the model value without an axis label', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const chip = await waitFor(() => getByTestId('composer-model'));
+    expect(chip.textContent).toContain('Auto');
+    expect(chip.textContent).not.toContain('Model ·');
+  });
+
+  it('draws the model chip and the mic below the prompt, not inside it', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
+    const surface = document.querySelector('.composer-surface') as HTMLElement;
+
+    expect(surface.contains(getByTestId('composer-input'))).toBe(true);
+    expect(surface.contains(getByTestId('composer-send'))).toBe(true);
+    expect(surface.contains(getByTestId('composer-model'))).toBe(false);
+    expect(getByTestId('composer-controls').contains(getByTestId('composer-model'))).toBe(true);
+  });
+
   it('marks each ACP agent row with its own icon', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
     const chip = await waitFor(() => getByTestId('composer-agent'));

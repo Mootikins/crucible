@@ -7,7 +7,8 @@ import { SessionsTab } from '@/components/mobile/SessionsTab';
 import { FilesPanel } from '@/components/FilesPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { DrawerTabs } from '@/components/mobile/DrawerTabs';
-import { AlertTriangle, FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
+import { FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { TabOverview } from '@/components/mobile/TabOverview';
 import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
 import { OfflineBadge } from '@/components/OfflineBadge';
@@ -115,6 +116,19 @@ export const MobileShell: Component = () => {
   const setSide = (side: DrawerSide) => (open: boolean) =>
     setOpenSide(open ? side : openSide() === side ? null : openSide());
 
+  /**
+   * Open the left drawer on its Files tab.
+   *
+   * `DrawerTabs` owns which tab shows, and both tabs stay mounted, so the
+   * button is already in the DOM and a click on it is the whole selection.
+   * A second copy of that state in this shell would disagree with the strip
+   * as soon as the user touched a tab.
+   */
+  const openFilesDrawer = () => {
+    setSide('left')(true);
+    document.getElementById('drawer-tab-files')?.click();
+  };
+
   const swipes = (['left', 'right'] as const).map((side) =>
     createEdgeSwipe({
       side,
@@ -203,6 +217,10 @@ export const MobileShell: Component = () => {
       </header>
       <main
         class="flex-1 min-h-0 flex flex-col"
+        // Thumb metrics for everything the pane renders: the properties card
+        // header, and the rows of any tree a panel tab opens here. A tree
+        // states its own density only when a caller passes one.
+        data-density="touch"
         // The browser keeps vertical scroll; horizontal travel reaches the swipe.
         style={{ 'padding-bottom': 'var(--inset-bottom)', 'touch-action': 'pan-y' }}
       >
@@ -223,9 +241,19 @@ export const MobileShell: Component = () => {
         <ContentSurface
           tab={activeTab}
           empty={
-            <div class="flex-1 flex items-center justify-center px-6">
-              <p class="text-reading text-muted-dark">No note is open.</p>
-            </div>
+            <EmptyState
+              class="flex-1"
+              title="No note is open"
+              body="Open one from the files drawer, or start a session."
+              action={[
+                { label: 'Open a note', onClick: openFilesDrawer },
+                {
+                  label: 'Start a session',
+                  onClick: () => window.dispatchEvent(new CustomEvent('crucible:new-session')),
+                },
+              ]}
+              testid="mobile-empty"
+            />
           }
         />
         </Show>
@@ -237,7 +265,6 @@ export const MobileShell: Component = () => {
         <Show when={conflicts() > 0}>
           <SheetOption
             label={`Conflicts (${conflicts()})`}
-            icon={AlertTriangle}
             onSelect={() => {
               setMenuOpen(false);
               openConflict();
@@ -278,7 +305,7 @@ export const MobileShell: Component = () => {
             label="Sessions and files"
             tabs={[
               { id: 'sessions', label: 'Sessions', content: () => <SessionsTab /> },
-              { id: 'files', label: 'Files', content: () => <FilesPanel /> },
+              { id: 'files', label: 'Files', content: () => <FilesPanel density="touch" /> },
             ]}
           />
         </Drawer>

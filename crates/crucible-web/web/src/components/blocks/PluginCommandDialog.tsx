@@ -160,7 +160,7 @@ export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) 
                 <div class="flex items-center gap-2">
                   <span class="font-mono text-sm font-medium">{command().name}</span>
                   <span
-                    class={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                    class={`rounded border px-1.5 py-0.5 text-floor uppercase tracking-wide ${
                       effectLabel(command().effect).tone
                     }`}
                     title="The plugin declares this about itself. Nothing verifies it."
@@ -205,13 +205,13 @@ export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) 
                           class="flex items-baseline gap-2 text-xs"
                         >
                           <span class="font-medium">{field.name}</span>
-                          <span class="font-mono text-[10px] text-muted">{field.typeLabel}</span>
+                          <span class="font-mono text-floor text-muted">{field.typeLabel}</span>
                           <Show when={field.required}>
-                            <span class="text-[10px] uppercase text-attention">required</span>
+                            <span class="text-floor uppercase text-attention">required</span>
                           </Show>
                         </label>
                         <Show when={field.description}>
-                          <div class="text-[11px] text-muted">{field.description}</div>
+                          <div class="text-floor text-muted">{field.description}</div>
                         </Show>
                         <FieldControl
                           field={field}
@@ -221,7 +221,7 @@ export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) 
                           }
                         />
                         <Show when={errors()[field.name]}>
-                          <div class="text-[11px] text-error">{errors()[field.name]}</div>
+                          <div class="text-floor text-error">{errors()[field.name]}</div>
                         </Show>
                       </div>
                     )}

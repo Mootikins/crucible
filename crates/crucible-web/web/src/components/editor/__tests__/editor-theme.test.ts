@@ -25,4 +25,22 @@ describe('editorThemeExtension', () => {
     expect(light.length).toBeGreaterThan(0);
     expect(dark.filter((m) => light.includes(m))).toEqual([]);
   });
+
+  it.each(['dark', 'light'] as const)('never underlines a heading in %s', (theme) => {
+    // `defaultHighlightStyle` ships `{tag: heading, textDecoration: underline,
+    // fontWeight: bold}` and One Dark ships no underline, so the light editor
+    // underlined every markdown heading and the dark one did not. Underline
+    // WITH bold in one rule is the heading spec's signature in both themes;
+    // a link keeps its own underline and carries no weight.
+    const css = stateFor(theme)
+      .facet(EditorView.styleModule)
+      .map((m) => m.getRules())
+      .join('\n');
+
+    for (const rule of css.split('\n')) {
+      const underlined = /text-decoration:\s*underline/.test(rule);
+      const bold = /font-weight:\s*bold/.test(rule);
+      expect(underlined && bold).toBe(false);
+    }
+  });
 });

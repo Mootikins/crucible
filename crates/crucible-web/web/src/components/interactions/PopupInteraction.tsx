@@ -43,7 +43,7 @@ export const PopupInteraction: Component<Props> = (props) => {
         placeholder="Search..."
         value={filter()}
         onInput={(e) => setFilter(e.currentTarget.value)}
-        class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+        class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus-ring mb-3"
       />
 
       <div class="max-h-48 overflow-y-auto space-y-1 mb-3">
@@ -72,7 +72,7 @@ export const PopupInteraction: Component<Props> = (props) => {
             placeholder="Or type custom..."
             value={otherText()}
             onInput={(e) => setOtherText(e.currentTarget.value)}
-            class="flex-1 px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary"
+            class="flex-1 px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus-ring"
           />
           <button
             onClick={handleOther}

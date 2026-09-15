@@ -95,30 +95,42 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
    * still to the left of the editor it belongs to. Half a mirror reads as a
    * bug, because the eye checks the whole row.
    *
-   * `layout` and `width` travel with the contents: a file tree dragged out to
-   * 320px stays 320px on its new side rather than being re-cramped every
-   * swap. `isCollapsed` stays with the SIDE, because it describes the side
-   * you are looking at. That is what makes the common gesture work — with the
-   * right rail collapsed, one swap brings the tree onto the visible left and
-   * stows the session list. Carrying collapse across would instead hide both
-   * rails at once, which reads as the feature being broken.
+   * `layout`, `width` and `isCollapsed` all travel with the contents. A file
+   * tree dragged out to 320px stays 320px on its new side rather than being
+   * re-cramped every swap. A panel the user stowed stays stowed, and a panel
+   * the user opened stays open. The flip moves panels between sides; it does
+   * not open or stow anything.
    *
-   * The cost is that it is not a strict involution when the two sides differ
-   * in collapsed state; two presses can land somewhere other than the start.
-   * Deliberate: predictable-and-useful beats symmetric-and-surprising.
+   * `isCollapsed` used to stay with the SIDE, to make one gesture work: with
+   * the right rail stowed, one flip put the tree on the visible left. But it
+   * separated a panel's collapse from its width and its contents, so a flip
+   * silently opened one panel and stowed the other. It also broke the
+   * involution — two presses could land somewhere other than the start.
+   *
+   * To stow a panel, use its own toggle. The toggles stay POSITIONAL, so
+   * they need no remapping after a flip.
    */
   const swapSidePanels = () => {
     setStore(
       produce((s) => {
         const { left, right } = s.edgePanels;
-        // `id` stays with the side alongside `isCollapsed` — it names the
-        // panel, and findEdgePanelForGroup answers in positions.
+        // `id` travels with the contents too. Nothing resolves a panel BY
+        // this id — drop targets and every other caller name a position —
+        // so it is free to be what it reads as: the moving panel's name.
+        // WindowManager keys the shell row by it, which is what lets Solid
+        // MOVE a rail across the row instead of rebuilding it.
         const leftLayout = left.layout;
         const leftWidth = left.width;
+        const leftCollapsed = left.isCollapsed;
+        const leftId = left.id;
         left.layout = mirrorLayout(right.layout);
         left.width = right.width;
+        left.isCollapsed = right.isCollapsed;
+        left.id = right.id;
         right.layout = mirrorLayout(leftLayout);
         right.width = leftWidth;
+        right.isCollapsed = leftCollapsed;
+        right.id = leftId;
         // The centre reverses too, or the flip is only half done.
         s.layout = mirrorLayout(s.layout);
         // The focus ring is drawn where this says, and the panes it named

@@ -1051,29 +1051,29 @@ const livePreviewTheme = EditorView.baseTheme({
   // Ink headings, not oneDark's coral markdown-heading color — the reading
   // view renders headings in shell-ink and Edit ↔ Preview must agree. The
   // descendant reset covers the highlighter's nested token spans.
-  '.cm-lp-h1': { fontSize: '1.45em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
-  '.cm-lp-h2': { fontSize: '1.25em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
-  '.cm-lp-h3': { fontSize: '1.1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
-  '.cm-lp-h4': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
-  '.cm-lp-h5': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink, #e7e4df) !important' },
-  '.cm-lp-h6': { fontSize: '1em', fontWeight: '600', opacity: '0.8', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-h1': { fontSize: '1.45em', fontWeight: '600', color: 'var(--color-shell-ink) !important' },
+  '.cm-lp-h2': { fontSize: '1.25em', fontWeight: '600', color: 'var(--color-shell-ink) !important' },
+  '.cm-lp-h3': { fontSize: '1.1em', fontWeight: '600', color: 'var(--color-shell-ink) !important' },
+  '.cm-lp-h4': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink) !important' },
+  '.cm-lp-h5': { fontSize: '1em', fontWeight: '600', color: 'var(--color-shell-ink) !important' },
+  '.cm-lp-h6': { fontSize: '1em', fontWeight: '600', opacity: '0.8', color: 'var(--color-shell-ink) !important' },
   // oneDark colors the heading TOKEN in a nested span — pull it back to ink.
   '.cm-lp-h1 span, .cm-lp-h2 span, .cm-lp-h3 span, .cm-lp-h4 span, .cm-lp-h5 span, .cm-lp-h6 span':
     { color: 'inherit !important' },
-  '.cm-lp-strong': { fontWeight: '700', color: 'var(--color-shell-ink, #e7e4df) !important' },
+  '.cm-lp-strong': { fontWeight: '700', color: 'var(--color-shell-ink) !important' },
   '.cm-lp-em': { fontStyle: 'italic' },
   '.cm-lp-strike': { textDecoration: 'line-through', opacity: '0.75' },
   '.cm-lp-code': {
     fontFamily: 'var(--font-mono)',
     fontSize: '0.9em',
-    background: 'var(--color-surface-elevated, #1c1b22)',
-    borderRadius: '3px',
+    background: 'var(--color-surface-elevated)',
+    borderRadius: 'var(--cru-radius-sm)',
     padding: '0.5px 4px',
   },
-  '.cm-lp-link': { color: 'var(--color-primary, #e0653a)' },
+  '.cm-lp-link': { color: 'var(--color-primary)' },
   '.cm-lp-codeblock': {
     fontFamily: 'var(--font-mono)',
-    fontSize: '12px',
+    fontSize: 'var(--cru-font-reading)',
     lineHeight: '1.5',
     position: 'relative',
     padding: '0 12px',
@@ -1082,7 +1082,7 @@ const livePreviewTheme = EditorView.baseTheme({
     content: '""',
     position: 'absolute',
     inset: '0',
-    background: 'var(--color-surface-elevated, #1c1b22)',
+    background: 'var(--color-surface-elevated)',
     zIndex: '-3',
   },
   '.cm-lp-codeblock-top': {
@@ -1092,22 +1092,22 @@ const livePreviewTheme = EditorView.baseTheme({
     borderRadius: '0 0 6px 6px',
   },
   '.cm-lp-codeblock-top.cm-lp-codeblock-bottom': {
-    borderRadius: '6px',
+    borderRadius: 'var(--cru-radius-control)',
   },
   '.cm-lp-quote': {
-    borderLeft: '2px solid var(--color-hairline, #211f26)',
-    color: 'var(--color-muted, #928d99)',
+    borderLeft: '2px solid var(--color-hairline)',
+    color: 'var(--color-muted)',
     fontStyle: 'italic',
   },
   // !important so the accent wins over oneDark's syntax highlight for the
   // list marker (which otherwise renders it green, unlike the reading view).
-  '.cm-lp-bullet': { color: 'var(--color-primary, #e0653a) !important' },
+  '.cm-lp-bullet': { color: 'var(--color-primary) !important' },
   // Horizontal rule: hide the raw `---` (transparent text) and paint a 1px
   // line centered across the line box.
   '.cm-lp-hr': {
     color: 'transparent',
     background:
-      'linear-gradient(var(--color-hairline-strong, #2a2830), var(--color-hairline-strong, #2a2830)) no-repeat center / 100% 1px',
+      'linear-gradient(var(--color-hairline-strong), var(--color-hairline-strong)) no-repeat center / 100% 1px',
   },
   '.cm-lp-frontmatter': {
     fontFamily: 'var(--font-mono)',
@@ -1166,9 +1166,9 @@ const livePreviewTheme = EditorView.baseTheme({
   '.cm-lp-mermaid-error': {
     display: 'block',
     fontFamily: 'var(--font-mono)',
-    fontSize: '12px',
+    fontSize: 'var(--cru-font-reading)',
     whiteSpace: 'pre-wrap',
-    color: 'var(--color-muted, #928d99)',
+    color: 'var(--color-muted)',
   },
   // Inline images (badges, `![](…)`) render at their natural size, capped to
   // the column; a broken/blank src just collapses rather than showing an icon.
@@ -1186,21 +1186,21 @@ const livePreviewTheme = EditorView.baseTheme({
     borderSpacing: '0',
     margin: '2px 0',
     fontSize: '0.95em',
-    border: '1px solid var(--color-hairline, #211f26)',
+    border: '1px solid var(--color-hairline)',
     borderRadius: 'var(--radius-md, 4px)',
     overflow: 'hidden',
   },
   '.cm-lp-table th, .cm-lp-table td': {
     border: '0',
-    borderRight: '1px solid var(--color-hairline, #211f26)',
-    borderBottom: '1px solid var(--color-hairline, #211f26)',
+    borderRight: '1px solid var(--color-hairline)',
+    borderBottom: '1px solid var(--color-hairline)',
     padding: '3px 10px',
     textAlign: 'left',
   },
   '.cm-lp-table th:last-child, .cm-lp-table td:last-child': { borderRight: '0' },
   '.cm-lp-table tr:last-child td': { borderBottom: '0' },
   '.cm-lp-table th': {
-    background: 'var(--color-surface-elevated, #1c1b22)',
+    background: 'var(--color-surface-elevated)',
     fontWeight: '600',
   },
 });

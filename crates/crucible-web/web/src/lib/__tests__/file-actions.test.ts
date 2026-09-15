@@ -222,7 +222,7 @@ describe('openFileInEditor — beside the conversation, never on top of it', () 
     expect(windowStore.tabGroups['g-chat'].tabs).toHaveLength(1);
   });
 
-  it('falls back to a conversation pane when the centre holds nothing else', () => {
+  it('opens its own pane on the files side when the centre holds only conversations', () => {
     setStore(
       produce((s) => {
         s.layout = { id: 'pane-chat', type: 'pane', tabGroupId: 'g-chat' };
@@ -236,7 +236,17 @@ describe('openFileInEditor — beside the conversation, never on top of it', () 
       }),
     );
     openFileInEditor('/b.md', 'b.md');
-    // Opening it there beats not opening it at all.
-    expect(windowStore.tabGroups['g-chat'].tabs.map((t) => t.id)).toContain('tab-file-/b.md');
+    // A file never lands on a chat. It gets a new pane on the files side
+    // (right by default) of the conversation, and the chat keeps its one tab.
+    expect(windowStore.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    const holder = Object.values(windowStore.tabGroups).find((g) =>
+      g.tabs.some((t) => t.id === 'tab-file-/b.md'),
+    );
+    expect(holder).toBeDefined();
+    expect(windowStore.layout.type).toBe('split');
+    if (windowStore.layout.type === 'split') {
+      expect(windowStore.layout.direction).toBe('horizontal');
+      expect(windowStore.layout.second.type === 'pane' && windowStore.layout.second.tabGroupId).toBe(holder!.id);
+    }
   });
 });

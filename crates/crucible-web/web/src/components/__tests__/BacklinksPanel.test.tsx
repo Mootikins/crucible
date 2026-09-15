@@ -122,6 +122,59 @@ describe('BacklinksPanel', () => {
     expect(events).toEqual([{ path: '/kiln/notes/linker.md', name: 'linker' }]);
   });
 
+  it('renders an error state, not an empty one, when the fetch fails', async () => {
+    // The panel used to swallow every failure and say "No notes link here
+    // yet" — a claim about the data that it had no answer for.
+    getBacklinksMock.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+
+    const { getByTestId, queryByTestId } = render(() => <BacklinksPanel />);
+
+    await waitFor(() => {
+      expect(getByTestId('backlinks-error')).not.toBeNull();
+    });
+    const error = getByTestId('backlinks-error');
+    expect(error.textContent).toContain('Backlinks are unavailable');
+    expect(error.textContent).toContain('404');
+    expect(error.getAttribute('data-tone')).toBe('error');
+    // The empty states must not render beside the failure.
+    expect(queryByTestId('backlinks-linked-empty')).toBeNull();
+    expect(queryByTestId('backlinks-unlinked-empty')).toBeNull();
+  });
+
+  it('Retry re-runs the fetch and clears the error', async () => {
+    getBacklinksMock.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+    getBacklinksMock.mockResolvedValue(RESPONSE);
+
+    const { getByTestId, getAllByTestId } = render(() => <BacklinksPanel />);
+
+    await waitFor(() => {
+      expect(getByTestId('backlinks-error')).not.toBeNull();
+    });
+    const retry = getByTestId('backlinks-error').querySelector<HTMLButtonElement>(
+      '[data-testid="empty-state-action"]',
+    )!;
+    expect(retry.textContent).toContain('Retry');
+
+    fireEvent.click(retry);
+    await waitFor(() => {
+      expect(getAllByTestId('backlinks-linked-item')).toHaveLength(1);
+    });
+    expect(getBacklinksMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the empty tone for a real empty answer', async () => {
+    getBacklinksMock.mockResolvedValue({ ...RESPONSE, linked: [], unlinked: [] });
+
+    const { getByTestId, queryByTestId } = render(() => <BacklinksPanel />);
+
+    await waitFor(() => {
+      expect(getByTestId('backlinks-linked-empty')).not.toBeNull();
+    });
+    expect(getByTestId('backlinks-linked-empty').getAttribute('data-tone')).toBe('empty');
+    expect(getByTestId('backlinks-unlinked-empty').getAttribute('data-tone')).toBe('empty');
+    expect(queryByTestId('backlinks-error')).toBeNull();
+  });
+
   it('one-click Link wraps the mention as a wikilink in the open buffer', async () => {
     const { getAllByTestId, queryAllByTestId } = render(() => <BacklinksPanel />);
     await waitFor(() => {

@@ -190,6 +190,7 @@ function createHarness(): ReducerHarness {
             role: 'assistant',
             content: '',
             timestamp: 0,
+            placeholder: true,
           });
         }
       },
@@ -1225,5 +1226,179 @@ describe('mode_changed announces the mode for a staleness check', () => {
     h.reducer({ type: 'mode_changed', mode: 'plan' } as ChatEvent);
 
     expect(h.spies.onUnknownMode).toHaveBeenCalledWith('plan');
+  });
+});
+
+// ============================================================================
+// The turn's ANSWER owns the canonical response id.
+//
+// `turnResponseId` is the contract between the live stream and history
+// reconstruction: `loadHistory` rebuilds a turn's `message_complete` bubble
+// under `${turn_id}-response`, and the merge in ChatContext dedupes by id
+// alone. A live answer under any other id therefore renders a SECOND time the
+// moment history is loaded over it.
+//
+// The turn that broke it (GLM-4.7 through the daemon): thinking → tool → tool
+// → thinking → text. The reducer closes the thinking-only segment at the first
+// tool boundary and materializes a fresh bubble for the trailing text, while
+// `dispatchTurn` has already renamed the now-retired placeholder to the
+// canonical response id. The answer was left under a client-minted id.
+// ============================================================================
+describe('the canonical response id follows the answer, not the placeholder', () => {
+  /** Live shape of the reported turn, minus the token-by-token detail. */
+  const replayThinkingFirstTurn = (h: ReducerHarness, answer: string) => {
+    h.reducer({ type: 'thinking', content: 'The user wants the guide. ' });
+    h.reducer({ type: 'tool_call', id: 'call-a', title: 'read_note' });
+    h.reducer({ type: 'tool_result', id: 'call-a', result: '{"content":"..."}' });
+    h.reducer({ type: 'tool_call', id: 'call-b', title: 'list_notes' });
+    h.reducer({ type: 'tool_result', id: 'call-b', result: '{"notes":[]}' });
+    h.reducer({ type: 'thinking', content: 'Now I can answer. ' });
+    h.reducer({ type: 'token', content: answer });
+    h.reducer({
+      type: 'message_complete',
+      id: 'msg-turn-1',
+      content: answer,
+      prompt_tokens: 6472,
+      completion_tokens: 235,
+      total_tokens: 6707,
+    });
+  };
+
+  it('thinking → tool → tool → thinking → text keeps the answer on the canonical id', () => {
+    const h = createHarness();
+    // dispatchTurn canonicalized the optimistic placeholder as soon as the
+    // send POST returned the turn id — long before this slow turn ended.
+    h.setUp.streamingMessage('msg-turn-1-response');
+
+    replayThinkingFirstTurn(h, 'Here is the answer.');
+
+    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
+    expect(answers).toHaveLength(1);
+    expect(answers[0].id).toBe('msg-turn-1-response');
+    // The retired thinking-only segment keeps its reasoning but must not sit
+    // on the id the answer owns.
+    const others = h.state.messages.filter(
+      (m) => m.role === 'assistant' && m.id !== 'msg-turn-1-response',
+    );
+    expect(others.every((m) => m.content === '')).toBe(true);
+    expect(others.some((m) => m.thinking?.content === 'The user wants the guide. ')).toBe(true);
+  });
+
+  it('a history load over the finished turn cannot duplicate the answer', () => {
+    // Reproduces the screenshot: the reconstructed bubble (no thinking, no
+    // usage) landed beside the live one and the answer rendered twice.
+    const h = createHarness();
+    h.setUp.streamingMessage('msg-turn-1-response');
+    const answer = 'Here is the answer.';
+    replayThinkingFirstTurn(h, answer);
+
+    // What ChatContext.loadHistory reconstructs for this turn, keyed the same
+    // way, and its id-exact merge.
+    const reconstructedId = 'msg-turn-1-response';
+    const live = h.state.messages.filter((m) => m.id !== reconstructedId);
+    const merged = [
+      { id: reconstructedId, role: 'assistant' as const, content: answer, timestamp: 0 },
+      ...live,
+    ];
+    expect(merged.filter((m) => m.role === 'assistant' && m.content === answer)).toHaveLength(1);
+  });
+
+  it('claims the canonical id even when the turn never opened a new bubble', () => {
+    // Thinking-only segment, then tools, then text with no second thinking
+    // run: the token deltas materialize the trailing bubble instead.
+    const h = createHarness();
+    h.setUp.streamingMessage('msg-turn-2-response');
+    h.reducer({ type: 'thinking', content: 'reasoning' });
+    h.reducer({ type: 'tool_call', id: 'call-a', title: 'read_note' });
+    h.reducer({ type: 'tool_result', id: 'call-a', result: 'ok' });
+    h.reducer({ type: 'token', content: 'The answer.' });
+    h.reducer({ type: 'message_complete', id: 'msg-turn-2', content: 'The answer.' });
+
+    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
+    expect(answers).toHaveLength(1);
+    expect(answers[0].id).toBe('msg-turn-2-response');
+  });
+
+  it('thinking that arrives after the text deltas does not move the answer', () => {
+    // Providers that interleave the other way round: text first, reasoning
+    // appended to the same open bubble.
+    const h = createHarness();
+    h.setUp.streamingMessage('msg-turn-3-response');
+    h.reducer({ type: 'token', content: 'The answer.' });
+    h.reducer({ type: 'thinking', content: 'why that answer' });
+    h.reducer({ type: 'message_complete', id: 'msg-turn-3', content: 'The answer.' });
+
+    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
+    expect(answers).toHaveLength(1);
+    expect(answers[0]).toMatchObject({
+      id: 'msg-turn-3-response',
+      content: 'The answer.',
+      thinking: { content: 'why that answer', isStreaming: false },
+    });
+  });
+
+  it('a real answer already under the canonical id is never displaced', () => {
+    // History reconstructed the turn first (the bubble HAS text). A replayed
+    // message_complete must not collide two messages onto one id.
+    const h = createHarness();
+    h.state.messages.push({
+      id: 'msg-turn-4-response',
+      role: 'assistant',
+      content: 'Reconstructed answer.',
+      timestamp: 0,
+    });
+    h.setUp.streamingMessage('gen-live-1');
+    h.reducer({ type: 'token', content: 'Reconstructed answer.' });
+    h.reducer({ type: 'message_complete', id: 'msg-turn-4', content: 'Reconstructed answer.' });
+
+    const ids = h.state.messages.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(h.state.messages.find((m) => m.id === 'msg-turn-4-response')?.content)
+      .toBe('Reconstructed answer.');
+  });
+
+  it('the trailing text still lands when the placeholder holds the id and nothing streamed', () => {
+    // Late attach (second pane, reload mid-turn): no streaming bubble of our
+    // own, and the placeholder squatting on the canonical id is empty.
+    const h = createHarness();
+    h.state.messages.push({
+      id: 'msg-turn-5-response',
+      role: 'assistant',
+      content: '',
+      timestamp: 0,
+      placeholder: true,
+      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 9 },
+    });
+    h.reducer({ type: 'message_complete', id: 'msg-turn-5', content: 'The answer.' });
+
+    const answers = h.state.messages.filter((m) => m.role === 'assistant' && m.content !== '');
+    expect(answers).toHaveLength(1);
+    expect(answers[0].id).toBe('msg-turn-5-response');
+  });
+});
+
+// ============================================================================
+// Frozen-prefix drift: the daemon's `full_response` and the streamed segment
+// can disagree by trailing whitespace. A whitespace-exact strip then returns
+// the WHOLE turn verbatim and the narration renders twice — once as the frozen
+// segment bubble, once inside the final bubble.
+// ============================================================================
+describe('frozen segments survive trailing-whitespace drift in full_response', () => {
+  it('strips the segment even when the accumulated text trimmed its trailing space', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'token', content: 'Let me look that up. ' });
+    h.reducer({ type: 'tool_call', id: 'tc-1', title: 'semantic_search' });
+    h.reducer({ type: 'tool_result', id: 'tc-1', result: 'notes' });
+    h.reducer({ type: 'token', content: 'Here is what I found.' });
+    // Daemon copy: same text, trailing space gone.
+    h.reducer({
+      type: 'message_complete',
+      id: 'srv',
+      content: 'Let me look that up.Here is what I found.',
+    });
+
+    const transcript = h.state.messages.map((m) => m.content).join('\n');
+    expect(transcript.split('Let me look that up.').length - 1).toBe(1);
   });
 });

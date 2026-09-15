@@ -97,7 +97,7 @@ export const AskBatchInteraction: Component<Props> = (props) => {
                 }
                 value={other()[qi()] ?? ''}
                 onInput={(e) => setOtherAt(qi(), e.currentTarget.value)}
-                class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus-ring"
               />
             </Show>
           </div>

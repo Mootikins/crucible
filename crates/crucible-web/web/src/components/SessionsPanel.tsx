@@ -10,6 +10,7 @@ import { sessionStatus } from '@/lib/session-status';
 import { inboxSessions } from '@/lib/session-inbox';
 import { reflectionSessions } from '@/lib/session-reflections';
 import { SessionRow, SessionTree } from './SessionTree';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const byRecency = (a: Session, b: Session) =>
   (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
@@ -169,7 +170,17 @@ export const SessionsPanel: Component = () => {
           kilnName={kilnName}
         />
         <Show when={!projects().length && !treeList().length}>
-          <p class="px-3 py-6 text-center text-muted-dark text-sm">No sessions yet</p>
+          <EmptyState
+            title="No sessions yet"
+            body="Start one to give an agent a workspace and a kiln."
+            // No workspace in the detail: there is no project to name, so
+            // the draft asks for one. The palette dispatches the same event.
+            action={{
+              label: 'New session',
+              onClick: () => window.dispatchEvent(new CustomEvent('crucible:new-session')),
+            }}
+            testid="sessions-empty"
+          />
         </Show>
         <TreeSection
           label="Reflections"

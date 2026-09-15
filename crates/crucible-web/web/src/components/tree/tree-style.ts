@@ -18,3 +18,17 @@ export const treeGroupRow =
  * or an explicit rotate class toggle. */
 export const treeChevron = 'w-3.5 h-3.5 shrink-0 transition-transform duration-150';
 
+/**
+ * A clickable tree/list row. It carries NO metrics of its own: row height,
+ * text size, icon slot and indent step come from `styles/refine-touch.css`,
+ * which reads the nearest `data-density` ancestor. A surface therefore
+ * changes every row it owns with one attribute instead of a second class set.
+ *
+ * Do not put a Tailwind `text-*` class on the row or on the text inside it.
+ * Such a class pins the size and the density attribute stops reaching it.
+ */
+export const treeRow = 'tree-row';
+
+/** The fixed icon column at the head of a row (chevron or filetype icon). */
+export const treeIconSlot = 'tree-icon-slot';
+

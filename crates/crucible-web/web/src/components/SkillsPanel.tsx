@@ -115,7 +115,7 @@ export const SkillsPanel: Component = () => {
           value={query()}
           onInput={(e) => onQueryInput(e.currentTarget.value)}
           placeholder="Search skills…"
-          class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 placeholder-muted border border-hairline focus:outline-none focus:border-muted-dark"
+          class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 placeholder-muted border border-hairline focus-ring focus:border-muted-dark"
           data-testid="skills-search-input"
         />
       </div>

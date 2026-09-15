@@ -27,6 +27,14 @@ export interface Message {
   thinking?: ThinkingBlock;
   /** Token usage data (populated on message_complete) */
   usage?: TokenUsage;
+  /** When the daemon closed the turn (set on message_complete). A message
+   * rebuilt from history has no value: history timestamps are synthetic. */
+  completedAt?: number;
+  /** True on the empty assistant bubble the client mints when a turn is
+   * sent, before any token arrives. Only such a bubble may give up the
+   * canonical response id at `message_complete`; a bubble from history that
+   * happens to be empty is an answer, not a placeholder. */
+  placeholder?: boolean;
   /**
    * Precognition (auto-RAG) enrichment metadata, attached to the user message
    * that triggered the daemon's first-turn note retrieval. Used by

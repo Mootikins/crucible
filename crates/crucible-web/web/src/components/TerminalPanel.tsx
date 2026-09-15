@@ -27,10 +27,15 @@ import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
  */
 
 /** `#rrggbb` (or `#rgb`) to an `rgba()` string, for the one xterm color that
- *  needs an alpha. Returns the ember default if the token is not a hex. */
+ *  needs an alpha.
+ *
+ *  A colour it cannot read becomes TRANSPARENT rather than a hard-coded
+ *  ember. The literal here used to be `rgba(224, 101, 58, …)`, a fourth copy
+ *  of `#e0653a` that no test compared against the token, so a plugin that
+ *  re-valued the accent left one selection wash behind at the old colour. */
 function withAlpha(hex: string, alpha: number): string {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return `rgba(224, 101, 58, ${alpha})`;
+  if (!m) return 'transparent';
   const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -49,29 +54,29 @@ function buildEmberTheme() {
   const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   // Match the dock chrome (EdgePanel content is bg-shell-bg) — shell-panel
   // here made the terminal render as a visibly lighter rectangle.
-  const bg = v('--color-shell-bg', '#0e0d11');
+  const bg = v('--cru-color-shell-bg', '#0e0d11');
   return {
     background: bg,
-    foreground: v('--color-shell-ink', '#e7e4df'),
-    cursor: v('--color-primary', '#e0653a'),
+    foreground: v('--cru-color-ink', '#e7e4df'),
+    cursor: v('--cru-color-primary', '#e0653a'),
     cursorAccent: bg,
-    selectionBackground: withAlpha(v('--color-primary', '#e0653a'), 0.35),
-    black: v('--color-term-black', '#2b2933'),
-    red: v('--color-term-red', '#e8746e'),
-    green: v('--color-term-green', '#9dcf85'),
-    yellow: v('--color-term-yellow', '#e0b24c'),
-    blue: v('--color-term-blue', '#7fa7e0'),
-    magenta: v('--color-term-magenta', '#bd93e0'),
-    cyan: v('--color-term-cyan', '#79c9c4'),
-    white: v('--color-term-white', '#c9c5bf'),
-    brightBlack: v('--color-term-bright-black', '#6b6673'),
-    brightRed: v('--color-term-bright-red', '#f2938c'),
-    brightGreen: v('--color-term-bright-green', '#b7e0a1'),
-    brightYellow: v('--color-term-bright-yellow', '#ecc76e'),
-    brightBlue: v('--color-term-bright-blue', '#a0c0ee'),
-    brightMagenta: v('--color-term-bright-magenta', '#d0b0ee'),
-    brightCyan: v('--color-term-bright-cyan', '#9adcd7'),
-    brightWhite: v('--color-term-bright-white', '#e7e4df'),
+    selectionBackground: withAlpha(v('--cru-color-primary', '#e0653a'), 0.35),
+    black: v('--cru-color-term-black', '#2b2933'),
+    red: v('--cru-color-term-red', '#e8746e'),
+    green: v('--cru-color-term-green', '#9dcf85'),
+    yellow: v('--cru-color-term-yellow', '#e0b24c'),
+    blue: v('--cru-color-term-blue', '#7fa7e0'),
+    magenta: v('--cru-color-term-magenta', '#bd93e0'),
+    cyan: v('--cru-color-term-cyan', '#79c9c4'),
+    white: v('--cru-color-term-white', '#c9c5bf'),
+    brightBlack: v('--cru-color-term-bright-black', '#6b6673'),
+    brightRed: v('--cru-color-term-bright-red', '#f2938c'),
+    brightGreen: v('--cru-color-term-bright-green', '#b7e0a1'),
+    brightYellow: v('--cru-color-term-bright-yellow', '#ecc76e'),
+    brightBlue: v('--cru-color-term-bright-blue', '#a0c0ee'),
+    brightMagenta: v('--cru-color-term-bright-magenta', '#d0b0ee'),
+    brightCyan: v('--cru-color-term-bright-cyan', '#9adcd7'),
+    brightWhite: v('--cru-color-term-bright-white', '#e7e4df'),
   };
 }
 

@@ -63,7 +63,10 @@ export const AskInteraction: Component<Props> = (props) => {
           placeholder={props.request.choices ? 'Or type your own...' : 'Type your answer...'}
           value={otherText()}
           onInput={(e) => setOtherText(e.currentTarget.value)}
-          class="w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary mb-3"
+          // `focus-ring`, not a hand-built ring: one focus treatment for the
+          // whole app (index.css). The pair it replaces drew a second ember
+          // ring of its own thickness and offset.
+          class="focus-ring w-full px-3 py-2 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted mb-3"
         />
       </Show>
 

@@ -17,6 +17,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { RefreshCw } from '@/lib/icons';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { listKilns } from '@/lib/api';
 import { isMarkdownPath } from '@/lib/markdown-path';
 
@@ -55,11 +56,32 @@ export function noteKeyForPath(filePath: string, kiln: string | null): string {
 
 const suggestionKey = (s: UnlinkedMention) => `${s.target}:${s.offset}:${s.mention}`;
 
+/**
+ * One line naming why the request failed: the HTTP status when the daemon
+ * answered, the message when the transport did not.
+ *
+ * The panel used to return `null` on any failure and render "No notes link
+ * here yet", on the theory that a miss means an unindexed note. That theory
+ * covered ONE cause and spoke for every other: a dead daemon, a revoked key
+ * and a 500 all told the user their note has no backlinks. A panel must not
+ * report an answer it never received.
+ */
+export function backlinksFailureText(error: unknown): string {
+  const status = (error as { status?: number } | null)?.status;
+  if (typeof status === 'number') return `The daemon answered HTTP ${status}.`;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return message ? `The request failed: ${message}` : 'The request failed.';
+}
+
 export const BacklinksPanel: Component = () => {
   const editor = useEditorSafe();
   // Suggestions applied (or failed) since the last fetch — hidden locally.
   const [dismissed, setDismissed] = createSignal<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = createSignal(0);
+  // The last fetch failure, or null. A failure is a STATE, not a missing
+  // answer — see `backlinksFailureText`.
+  const [failure, setFailure] = createSignal<string | null>(null);
+  const retry = () => setRefreshTick((t) => t + 1);
 
   const focusedFile = createMemo(() => {
     const path = editor.activeFile();
@@ -78,10 +100,11 @@ export const BacklinksPanel: Component = () => {
     },
     async ({ path, kiln }): Promise<BacklinksResponse | null> => {
       setDismissed(new Set<string>());
+      setFailure(null);
       try {
         return await getBacklinks(kiln, noteKeyForPath(path, kiln));
-      } catch {
-        // Unindexed or brand-new note: an empty panel, not an error toast.
+      } catch (e) {
+        setFailure(backlinksFailureText(e));
         return null;
       }
     },
@@ -184,11 +207,28 @@ export const BacklinksPanel: Component = () => {
         <Show
           when={focusedFile()}
           fallback={
-            <div class="px-2 py-4 text-sm text-muted-dark" data-testid="backlinks-empty">
-              Open a note to see its backlinks.
-            </div>
+            <EmptyState
+              title="No note in focus"
+              body="Open a note to see its backlinks."
+              testid="backlinks-empty"
+            />
           }
         >
+          {/* A failure is NOT an empty result. The error tone, the status and
+              the Retry say the panel could not ask; the empty tone below says
+              it asked and the answer was nothing. */}
+          <Show when={failure()}>
+            {(message) => (
+              <EmptyState
+                tone="error"
+                title="Backlinks are unavailable"
+                body={message()}
+                action={{ label: 'Retry', onClick: retry }}
+                testid="backlinks-error"
+              />
+            )}
+          </Show>
+          <Show when={!failure()}>
           {/* Linked mentions — incoming wikilink edges */}
           <div class="mb-1 px-2 pt-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">
             Linked mentions ({backlinks()?.linked.length ?? 0})
@@ -196,9 +236,12 @@ export const BacklinksPanel: Component = () => {
           <Show
             when={(backlinks()?.linked.length ?? 0) > 0}
             fallback={
-              <div class="px-2 pb-2 text-xs text-muted-dark">
-                No notes link here yet.
-              </div>
+              <EmptyState
+                compact
+                title="No notes link here yet"
+                body="A wikilink from another note shows up here."
+                testid="backlinks-linked-empty"
+              />
             }
           >
             <For each={backlinks()?.linked}>
@@ -252,9 +295,12 @@ export const BacklinksPanel: Component = () => {
           <Show
             when={visibleUnlinked().length > 0}
             fallback={
-              <div class="px-2 pb-2 text-xs text-muted-dark">
-                No unlinked mentions found.
-              </div>
+              <EmptyState
+                compact
+                title="No unlinked mentions"
+                body="This note names no other note in plain text."
+                testid="backlinks-unlinked-empty"
+              />
             }
           >
             <For each={visibleUnlinked()}>
@@ -281,6 +327,7 @@ export const BacklinksPanel: Component = () => {
                 </div>
               )}
             </For>
+          </Show>
           </Show>
         </Show>
       </div>

@@ -79,7 +79,7 @@ export const GraphControls: Component<{
         <input
           type="search"
           placeholder="Search notes…"
-          class="w-full px-2 py-1 rounded border border-hairline bg-surface-base text-shell-body placeholder:text-muted-dark outline-none focus:border-primary"
+          class="w-full px-2 py-1 rounded border border-hairline bg-surface-base text-shell-body placeholder:text-muted-dark focus-ring focus:border-primary"
           value={props.settings.filters.query}
           onInput={(e) => props.onChange('filters', 'query', e.currentTarget.value)}
         />

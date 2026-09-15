@@ -24,6 +24,7 @@ const renderTree = (
   openFilePath: string | null = null,
   onOpenLeaf = vi.fn(),
   onContextAction = vi.fn(),
+  density?: 'default' | 'touch',
 ) => {
   const utils = render(() => (
     <FileTreeView
@@ -32,6 +33,7 @@ const renderTree = (
       openFilePath={openFilePath}
       onOpenLeaf={onOpenLeaf}
       onContextAction={onContextAction}
+      density={density}
     />
   ));
   return { ...utils, onOpenLeaf, onContextAction };
@@ -70,6 +72,41 @@ describe('FileTreeView — rendering & a11y', () => {
     expect(items.length).toBeGreaterThan(0);
     // Top-level items live at aria-level 1.
     expect(container.querySelector('[role="treeitem"][aria-level="1"]')).toBeTruthy();
+  });
+
+  // Row metrics come from `data-density` on the tree root and the `tree-row`
+  // class on each row (styles/refine-touch.css).
+  it('stamps nothing without a prop, so the surface decides', async () => {
+    const { container } = renderTree();
+    await waitFor(() => expect(container.querySelector('[role="tree"]')).toBeTruthy());
+    // The phone stamps `touch` on its content pane and a panel tab builds the
+    // tree there with no prop. An attribute here would override that pane.
+    expect(container.querySelector('[role="tree"]')!.hasAttribute('data-density')).toBe(false);
+  });
+
+  it('stamps touch density when the phone asks for it', async () => {
+    const { container } = renderTree(null, vi.fn(), vi.fn(), 'touch');
+    await waitFor(() => expect(container.querySelector('[role="tree"]')).toBeTruthy());
+    expect(container.querySelector('[role="tree"]')!.getAttribute('data-density')).toBe('touch');
+  });
+
+  it('holds desktop metrics when a caller asks for them explicitly', async () => {
+    const { container } = renderTree(null, vi.fn(), vi.fn(), 'default');
+    await waitFor(() => expect(container.querySelector('[role="tree"]')).toBeTruthy());
+    expect(container.querySelector('[role="tree"]')!.getAttribute('data-density')).toBe('default');
+  });
+
+  it('gives every row the shared row class and no text-size class', async () => {
+    const { container, findByText } = renderTree();
+    await findByText('README.md');
+    const all = rows(container);
+    expect(all.length).toBeGreaterThan(0);
+    for (const row of all) {
+      expect(row.classList.contains('tree-row')).toBe(true);
+      // A `text-*` utility here would pin the size and defeat the attribute.
+      expect([...row.classList].some((c) => c.startsWith('text-['))).toBe(false);
+      expect(row.classList.contains('text-reading')).toBe(false);
+    }
   });
 
   it('renders top-level nodes folders-first (Meta dir before README leaf)', async () => {

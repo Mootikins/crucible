@@ -71,7 +71,7 @@ export const PanelInteraction: Component<Props> = (props) => {
           placeholder="Filter..."
           value={filter()}
           onInput={(e) => setFilter(e.currentTarget.value)}
-          class="w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary"
+          class="w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus-ring"
         />
       </Show>
 
@@ -104,7 +104,7 @@ export const PanelInteraction: Component<Props> = (props) => {
           placeholder="Or type your own..."
           value={other()}
           onInput={(e) => setOther(e.currentTarget.value)}
-          class="w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary"
+          class="w-full px-3 py-2 mb-3 bg-control border border-hairline rounded-md text-shell-ink placeholder-muted focus-ring"
         />
       </Show>
 

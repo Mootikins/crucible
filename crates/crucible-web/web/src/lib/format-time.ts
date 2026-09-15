@@ -56,6 +56,17 @@ export function formatRelativeTime(timestamp: number): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** A turn's duration for message footers: "4.2 s", "1 m 12 s", "2 h 05 m". */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const s = ms / 1000;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} m ${String(Math.round(s % 60)).padStart(2, '0')} s`;
+  const h = Math.floor(m / 60);
+  return `${h} h ${String(m % 60).padStart(2, '0')} m`;
+}
+
 /** Absolute local timestamp for message footers: "Jul 22, 9:41 PM"
  * (year included once it differs from the current year). */
 export function formatAbsoluteTime(timestamp: number): string {

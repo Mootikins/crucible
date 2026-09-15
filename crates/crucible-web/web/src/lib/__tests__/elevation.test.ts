@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve as resolvePath, join as joinPath } from 'node:path';
-import { darkTokens, lightTokens } from '@/test-utils/css-tokens';
+import { darkTokens, lightTokens, resolveToken, themeAliases } from '@/test-utils/css-tokens';
 import { menuContent } from '@/components/ui/menu-style';
 
 /**
@@ -12,11 +12,18 @@ import { menuContent } from '@/components/ui/menu-style';
  * shadow painted on #edecf2.
  *
  * The fix has two halves and BOTH are load-bearing. Tailwind v4 does not emit
- * `--shadow-*` as custom properties; it inlines the `@theme` value into each
- * utility at build time. Re-declaring the tokens under the light selector is
- * therefore necessary and NOT sufficient — the utilities have to be re-pointed
- * at them. A test that checked only the tokens would be green while the page
+ * `--shadow-*` as custom properties; it INLINES the `@theme` value into each
+ * utility at build time. Declaring a value per theme is therefore necessary
+ * and NOT sufficient: what Tailwind inlines has to be able to follow the
+ * theme. A test that checked only the values would be green while the page
  * still painted black, which is the failure this file is written against.
+ *
+ * The second half used to be five per-utility re-assignments under the light
+ * selector. It is now the `@theme` ALIAS: `--shadow-lg: var(--cru-shadow-lg)`
+ * makes Tailwind inline a reference instead of a literal, and a custom
+ * property inherits, so `.shadow-lg` under `:root[data-theme='light']` reads
+ * the light value on its own. `no literal in the alias` below is the gate
+ * that keeps it that way — put a literal back and the inlining returns.
  */
 
 const CSS = readFileSync(resolvePath(process.cwd(), 'src/index.css'), 'utf8');
@@ -40,7 +47,7 @@ function blurOf(value: string): number {
 
 describe('shadow tokens exist in BOTH themes', () => {
   for (const step of STEPS) {
-    const name = `--shadow-${step}`;
+    const name = `--cru-shadow-${step}`;
 
     it(`${name} is declared light as well as dark`, () => {
       expect(darkTokens.get(name), `dark ${name}`).toBeDefined();
@@ -48,8 +55,8 @@ describe('shadow tokens exist in BOTH themes', () => {
     });
 
     it(`${name} is far quieter on the light theme`, () => {
-      const dark = alphaOf(darkTokens.get(name)!);
-      const light = alphaOf(lightTokens.get(name)!);
+      const dark = alphaOf(resolveToken(darkTokens, name));
+      const light = alphaOf(resolveToken(lightTokens, name));
       // A shadow on a #0e0d11 canvas has nowhere left to darken, so it buys
       // separation with opacity. The same alpha on #edecf2 is a grey smear;
       // the light-theme field (Primer, Material 3, IntelliJ) sits at 0.04–0.24.
@@ -62,12 +69,12 @@ describe('shadow tokens exist in BOTH themes', () => {
       // Only the ink changes. A light theme that also moved the offsets would
       // be a second elevation system, not the same one re-inked.
       const strip = (v: string) => v.replace(/rgba?\([^)]*\)/, '').trim();
-      expect(strip(lightTokens.get(name)!)).toBe(strip(darkTokens.get(name)!));
+      expect(strip(resolveToken(lightTokens, name))).toBe(strip(resolveToken(darkTokens, name)));
     });
   }
 
   it('the light ramp still rises, step by step', () => {
-    const alphas = STEPS.map((s) => alphaOf(lightTokens.get(`--shadow-${s}`)!));
+    const alphas = STEPS.map((s) => alphaOf(resolveToken(lightTokens, `--cru-shadow-${s}`)));
     for (let i = 1; i < alphas.length; i++) {
       expect(alphas[i], alphas.join(' / ')).toBeGreaterThan(alphas[i - 1]);
     }
@@ -75,26 +82,35 @@ describe('shadow tokens exist in BOTH themes', () => {
 });
 
 describe('the light tokens actually reach the utilities', () => {
-  // Tailwind v4 emits `.shadow-lg{--tw-shadow:0 6px 20px -6px var(--tw-shadow-color,#00000080)}`
-  // — the value is INLINED. `--tw-shadow-color` is no way in either: it is
-  // registered `@property … inherits:false`, so a value set on `:root` never
-  // reaches the element that reads it. Re-pointing `--tw-shadow` per utility,
-  // under a selector that outranks the bare class, is what is left.
+  /**
+   * Tailwind inlines what `@theme` holds. A LITERAL there is baked into
+   * `.shadow-lg` and can never follow the theme; a `var(--cru-shadow-lg)` is
+   * inlined as a reference and does follow it, because a custom property
+   * inherits down to the element. So the whole mechanism is the alias.
+   */
   for (const step of STEPS) {
-    it(`.shadow-${step} is re-pointed under the light theme`, () => {
-      const rule = new RegExp(
-        `:root\\[data-theme='light'\\]\\s+\\.shadow-${step}\\s*\\{[^}]*--tw-shadow:\\s*var\\(--shadow-${step}\\)`,
-      );
-      expect(CSS).toMatch(rule);
+    it(`--shadow-${step} is an alias, not a literal`, () => {
+      expect(themeAliases.get(`--shadow-${step}`)).toBe(`var(--cru-shadow-${step})`);
     });
   }
 
   it('every shadow utility the app uses is covered', () => {
-    // A sixth step used in a component with no light rule would paint black.
+    // A sixth step used in a component with no contract value would paint
+    // the dark ink on the light ground.
     const used = new Set(
-      [...CSS.matchAll(/--tw-shadow:\s*var\(--shadow-([a-z0-9]+)\)/g)].map((m) => m[1]),
+      [...CSS.matchAll(/--shadow-([a-z0-9]+):\s*var\(--cru-shadow-/g)].map((m) => m[1]),
     );
     expect([...used].sort()).toEqual([...STEPS].sort());
+    for (const step of STEPS) {
+      expect(lightTokens.has(`--cru-shadow-${step}`), `light ${step}`).toBe(true);
+    }
+  });
+
+  it('no per-utility re-assignment is left behind', () => {
+    // The five `:root[data-theme='light'] .shadow-*` rules became byte-for-byte
+    // copies of the base utility once the alias carried the reference. A
+    // returning copy means someone put a literal back in `@theme`.
+    expect(CSS).not.toMatch(/\[data-theme='light'\]\s+\.shadow-/);
   });
 });
 
@@ -139,7 +155,7 @@ describe('menu elevation is in proportion to its edge', () => {
   });
 
   it('keeps the blur within 10x the 1px border it sits under', () => {
-    const blur = blurOf(darkTokens.get(`--shadow-${step}`)!);
+    const blur = blurOf(resolveToken(darkTokens, `--cru-shadow-${step}`));
     expect(blur, `${blur}px blur under a 1px border`).toBeLessThanOrEqual(10);
   });
 

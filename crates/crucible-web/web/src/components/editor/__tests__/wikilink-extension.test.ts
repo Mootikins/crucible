@@ -204,6 +204,27 @@ describe('wikilink colour survives the syntax theme', () => {
     expect(light).not.toBe(dark);
   });
 
+  it('clears the underline at rest, on the pill AND on its spans', () => {
+    // The light theme underlined a wikilink and the dark theme did not:
+    // `defaultHighlightStyle` tags `[[Note]]` as a link and underlines it,
+    // and the line is drawn by a DESCENDANT span. A descendant cannot erase
+    // a line an ancestor draws, and an ancestor cannot erase a descendant's,
+    // so the rule must name the span for the two themes to agree.
+    //
+    // The RULE, not the computed style: jsdom applies no CodeMirror class to
+    // the nested spans it did not build, so a computed-style assertion here
+    // passes whatever the stylesheet says.
+    track(makeThemedView('light'));
+    const rules = [...document.head.querySelectorAll('style')]
+      .flatMap((el) => [...(el.sheet?.cssRules ?? [])])
+      .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule)
+      .filter((r) => r.selectorText.includes('.cm-wikilink') && !r.selectorText.includes(':hover'))
+      .filter((r) => r.style.textDecoration === 'none');
+
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules.some((r) => r.selectorText.includes('.cm-wikilink span'))).toBe(true);
+  });
+
   it('carries the follow affordance on hover', () => {
     const view = track(makeThemedView('dark'));
     const rules = [...document.head.querySelectorAll('style')]

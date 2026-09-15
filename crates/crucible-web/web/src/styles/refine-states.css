@@ -1,0 +1,78 @@
+/* Refinement lane: R2 empty states + link treatment + badges. Owned by that lane; see docs/Meta/Analysis/2026-09-15 Web UI Review.md. */
+
+/* ── Empty states (R2) ─────────────────────────────────────────────────
+ * The geometry lives on the component. Only the error tone needs CSS: it
+ * paints the icon in the error colour and draws a hairline in the same
+ * colour at 40%, so a failure never looks like an empty answer. */
+.empty-state[data-tone='error'] {
+  border: 1px solid color-mix(in srgb, var(--color-error) 40%, transparent);
+  border-radius: 6px;
+}
+
+
+/* ── Links (R6) ────────────────────────────────────────────────────────
+ * One rule for both themes. A wikilink is ember text with no underline at
+ * rest; the underline is the follow affordance and it appears on hover. An
+ * external link keeps its underline always, because it leaves the app. A
+ * heading is never underlined, even when a link is its whole text.
+ *
+ * The light theme broke all three. CodeMirror's `defaultHighlightStyle`
+ * (light only) underlines `tags.heading` and `tags.link`, and the markdown
+ * language tags a `[[wikilink]]` as a link — so light underlined headings
+ * and wikilinks that dark left alone. `editor-theme.ts` drops the heading
+ * rule and `wikilink-extension.ts` clears the decoration on the wikilink
+ * spans; these rules do the same for rendered prose.
+ *
+ * A descendant cannot erase an ancestor's underline, so each selector
+ * names the element that draws the line. */
+.prose :is(h1, h2, h3, h4, h5, h6) {
+  text-decoration: none;
+}
+
+.prose a:not(.wikilink) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A link that fills a heading stays a heading. The rule above outranks a
+ * plain heading selector, so the exception carries its own `:not` to match
+ * that weight and win on order. */
+.prose :is(h1, h2, h3, h4, h5, h6) a:not(.wikilink) {
+  text-decoration: none;
+}
+
+/* The rendered `[[wikilink]]`: an ember pill, identical in a chat turn, in
+ * the note reading view and in a hover card. ONE rule set for the class, and
+ * it lives here. The pill was in `index.css` and the decoration was here, so
+ * the two halves of one identity sat in two files.
+ *
+ * This mirrors `.cm-wikilink` in `editor/wikilink-extension.ts`, which cannot
+ * share the rules because CodeMirror injects its own stylesheet. The two must
+ * change together: `editor/__tests__/wikilink-extension.test.ts` guards that
+ * side, `components/__tests__/link-treatment.test.ts` guards this one.
+ *
+ * `.wikilink span` beside `.wikilink` for the reason the editor needs it: a
+ * descendant that draws its own colour or line cannot be corrected from an
+ * ancestor. */
+.wikilink,
+.wikilink span {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.wikilink {
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-radius: var(--cru-radius-sm);
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.wikilink:hover,
+.wikilink:hover span {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wikilink:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+}

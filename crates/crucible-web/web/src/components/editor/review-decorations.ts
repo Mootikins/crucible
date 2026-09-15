@@ -127,15 +127,18 @@ const reviewTheme = EditorView.baseTheme({
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     padding: '0 4px',
-    fontSize: '10px',
+    // 11px, the floor. The literal here was 10px, which sat BELOW the floor
+    // and passed the type gate: that gate read `text-[Npx]` classes only, so
+    // a size written as a style property was invisible to it.
+    fontSize: 'var(--cru-font-floor)',
     lineHeight: '1.4',
-    borderRadius: '3px',
+    borderRadius: 'var(--cru-radius-sm)',
     cursor: 'pointer',
-    border: '1px solid var(--color-hairline-strong, #322f38)',
-    color: 'var(--color-muted, #928d99)',
+    border: '1px solid var(--color-hairline-strong)',
+    color: 'var(--color-muted)',
   },
-  '.cm-review-chip-unreviewed': { color: 'var(--color-attention, #d4a72c)' },
-  '.cm-review-chip-accepted': { color: 'var(--color-ok, #7bc47f)' },
+  '.cm-review-chip-unreviewed': { color: 'var(--color-attention)' },
+  '.cm-review-chip-accepted': { color: 'var(--color-ok)' },
   '.cm-review-chip-external': { cursor: 'default' },
 });
 

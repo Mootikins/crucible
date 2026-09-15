@@ -1,4 +1,5 @@
 import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { Key } from '@solid-primitives/keyed';
 import { Pane } from './Pane';
 import type { LayoutNode } from '@/types/windowTypes';
 import { isCollapsedLeaf, splitFlex } from '@/lib/pane-collapse';
@@ -6,6 +7,12 @@ import { subtreeHasTabs } from '@/lib/pane-content';
 import { findSplitInLayout } from '@/lib/pane-boundaries';
 import { windowStore } from '@/stores/windowStore';
 import { startSplitDrag } from '@/lib/split-drag';
+
+/**
+ * Stands in for the splitter inside the keyed row. Its `id` never changes, so
+ * `Key` never moves it and the two halves reorder around it.
+ */
+const SPLITTER = { id: '\u0000splitter' } as const;
 
 const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }> = (props) => {
   const split = () => props.node;
@@ -84,6 +91,25 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
     });
   };
 
+  // The row is a KEYED LIST, not fixed JSX slots, so a mirror MOVES the two
+  // halves instead of rebuilding them. `swapSidePanels` reverses every
+  // horizontal split; with the halves in fixed slots each one received the
+  // other's node, and Solid answered the only way it can for a slot whose
+  // content changed — tear down, build again. Every chat pane in the flipped
+  // subtree lost its provider and refetched its transcript from empty.
+  //
+  // Keyed by node id, the same reversal is a REORDER: `Key` moves the
+  // existing DOM node, and the component instance inside it survives.
+  //
+  // The splitter rides in the list on a constant key, so it stays BETWEEN the
+  // halves in the DOM and the halves move around it. Keeping it in the
+  // markup instead would have forced DOM order away from visual order.
+  const rowItems = (): Array<LayoutNode | typeof SPLITTER> => [
+    split().first,
+    SPLITTER,
+    split().second,
+  ];
+
   return (
     <div
       ref={(el) => (containerRef = el)}
@@ -93,44 +119,50 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
         'flex-col': split().direction !== 'horizontal',
       }}
     >
-      <div
-        class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: flex().first }}
-      >
-        <SplitPane node={split().first} />
-      </div>
-      {/* 1px visible line; the after: pseudo extends the pointer target ±4px
-          so the thin separator is still comfortable to grab. Locked against a
-          collapsed side it stays as the separator and drops both the grab
-          target and the resize cursor. */}
-      <div
-        data-testid="resize-splitter"
-        data-split-id={split().id}
-        data-locked={locked() ? 'true' : undefined}
-        classList={{
-          'relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
-          'after:content-[\'\'] after:absolute': !locked(),
-          'w-px': split().direction === 'horizontal',
-          'h-px': split().direction !== 'horizontal',
-          'cursor-col-resize after:inset-y-0 after:-inset-x-1':
-            split().direction === 'horizontal' && !locked(),
-          'cursor-row-resize after:inset-x-0 after:-inset-y-1':
-            split().direction !== 'horizontal' && !locked(),
-          'bg-primary': isDragging(),
-          'bg-control': locked() && !isDragging(),
-          'bg-control hover:bg-hover-wash': !locked() && !isDragging(),
-        }}
-        on:pointerdown={(e) => {
-          if (locked()) return;
-          handlePointerDown(e);
-        }}
-      />
-      <div
-        class="relative z-0 overflow-hidden min-w-0 min-h-0"
-        style={{ flex: flex().second }}
-      >
-        <SplitPane node={split().second} />
-      </div>
+      <Key each={rowItems()} by="id">
+        {(item, index) => (
+          <Show
+            when={item() === SPLITTER ? undefined : (item() as LayoutNode)}
+            fallback={
+              /* 1px visible line; the after: pseudo extends the pointer target
+                 ±4px so the thin separator is still comfortable to grab.
+                 Locked against a collapsed side it stays as the separator and
+                 drops both the grab target and the resize cursor. */
+              <div
+                data-testid="resize-splitter"
+                data-split-id={split().id}
+                data-locked={locked() ? 'true' : undefined}
+                classList={{
+                  'relative flex-shrink-0 z-10 pointer-events-auto transition-colors': true,
+                  'after:content-[\'\'] after:absolute': !locked(),
+                  'w-px': split().direction === 'horizontal',
+                  'h-px': split().direction !== 'horizontal',
+                  'cursor-col-resize after:inset-y-0 after:-inset-x-1':
+                    split().direction === 'horizontal' && !locked(),
+                  'cursor-row-resize after:inset-x-0 after:-inset-y-1':
+                    split().direction !== 'horizontal' && !locked(),
+                  'bg-primary': isDragging(),
+                  'bg-control': locked() && !isDragging(),
+                  'bg-control hover:bg-hover-wash': !locked() && !isDragging(),
+                }}
+                on:pointerdown={(e) => {
+                  if (locked()) return;
+                  handlePointerDown(e);
+                }}
+              />
+            }
+          >
+            {(node) => (
+              <div
+                class="relative z-0 overflow-hidden min-w-0 min-h-0"
+                style={{ flex: index() === 0 ? flex().first : flex().second }}
+              >
+                <SplitPane node={node()} />
+              </div>
+            )}
+          </Show>
+        )}
+      </Key>
     </div>
   );
 };

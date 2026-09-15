@@ -512,7 +512,9 @@ export const CenterComposer: Component<{
                 value={wsTarget()}
                 onSelect={setWsTarget}
                 disabled={busy()}
-                placeholder={specLabel(wsOptions(), wsTarget()) ?? 'Workspace'}
+                // 'Project default' and not the axis name: the chip already wears the role, so
+                // an unset value has to say what happens instead of repeating it.
+                placeholder={specLabel(wsOptions(), wsTarget()) ?? 'Project default'}
                 testid="composer-workspace-target"
                 optionTestidPrefix="workspace-target"
               />
@@ -529,7 +531,7 @@ export const CenterComposer: Component<{
               value={runtime()}
               onSelect={setRuntime}
               disabled={busy()}
-              placeholder={specLabel(runtimeOptions(), runtime()) ?? 'Run on'}
+              placeholder={specLabel(runtimeOptions(), runtime()) ?? 'Project default'}
               testid="composer-target"
               optionTestidPrefix="runtime-target"
               footer={

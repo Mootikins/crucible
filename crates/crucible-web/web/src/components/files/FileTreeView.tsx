@@ -29,9 +29,25 @@ const ROW_PARTS =
 export const cssId = (value: string): string =>
   value ? value.replace(/[^a-zA-Z0-9_-]/g, '_') : 'root';
 
+/**
+ * Row metrics for the whole tree. `default` is the desktop pointer size;
+ * `touch` is the phone size — taller rows, larger text, a wider icon slot and
+ * a wider indent step. The value becomes `data-density` on the tree root and
+ * the metrics come from `styles/refine-touch.css`, so one attribute moves
+ * every row, guide and icon together.
+ *
+ * An absent prop stamps NOTHING, so the tree takes the density of the surface
+ * around it. That is what a panel tab needs: the phone stamps `touch` on its
+ * content pane, and a tree the panel registry builds there has no prop to
+ * carry. Pass `default` to hold desktop metrics inside a touch surface.
+ */
+export type TreeDensity = 'default' | 'touch';
+
 export interface FileTreeViewProps {
   collection: TreeCollection<Node>;
   rootKind: TreeRootKind;
+  /** Row metrics. Absent means "take them from the surrounding surface". */
+  density?: TreeDensity;
   openFilePath: string | null;
   defaultExpandedValue?: string[];
   /** Project lazy loader; `undefined` for kilns (whole tree pre-built). */
@@ -185,6 +201,7 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
             attachContextRouter(el);
           }}
           data-file-drop={rootDropOver() ? 'true' : undefined}
+          data-density={props.density}
           class="px-1 min-h-full data-[file-drop=true]:bg-primary/5"
         >
           <For each={api().collection.rootNode.children}>

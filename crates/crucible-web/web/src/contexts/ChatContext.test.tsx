@@ -31,9 +31,22 @@ vi.mock('@/lib/api', () => ({
   })(),
   turnResponseId: (id: string) => `${id}-response`,
   turnSegmentId: (id: string, index: number) => `${id}-seg-${index}`,
+  turnThinkingId: (id: string) => `${id}-thinking`,
   stripFrozenPrefix: (full: string, segs: string[]) => {
-    const prefix = segs.join('');
-    return prefix && full.startsWith(prefix) ? full.slice(prefix.length) : full;
+    let rest = full;
+    for (const seg of segs) {
+      if (rest.startsWith(seg)) {
+        rest = rest.slice(seg.length);
+        continue;
+      }
+      const trimmed = seg.replace(/\s+$/, '');
+      if (trimmed !== '' && rest.startsWith(trimmed)) {
+        rest = rest.slice(trimmed.length);
+        continue;
+      }
+      return full;
+    }
+    return rest;
   },
 }));
 
@@ -969,5 +982,74 @@ describe('mode hydration', () => {
     await waitFor(() =>
       expect(ctx!.availableModes().map((m) => m.id)).toEqual(['ask', 'review'])
     );
+  });
+});
+
+// A history load that lands ON TOP of a finished live turn is the shape that
+// doubled the transcript: `loadHistory` merges by id alone, so the live answer
+// and the reconstructed answer collapse into one bubble only while the live
+// one carries `turnResponseId`. A turn that opens with reasoning and goes
+// straight to a tool used to leave that id on the retired placeholder.
+describe('a slow history load cannot duplicate a finished turn', () => {
+  const ANSWER = 'Here is what a new user does first.';
+
+  it('merges the reconstructed answer onto the live one', async () => {
+    let emit: ((event: unknown) => void) | null = null;
+    mockSubscribeToEvents.mockImplementation(
+      (_sessionId: string, onEvent: (event: unknown) => void, onOpen?: () => void) => {
+        emit = onEvent;
+        onOpen?.();
+        return () => {};
+      },
+    );
+    // Held open until the live turn has finished.
+    let releaseHistory: ((value: unknown) => void) | null = null;
+    mockGetSessionHistory.mockImplementation(
+      () => new Promise((resolve) => {
+        releaseHistory = resolve;
+      }),
+    );
+    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    await waitFor(() => expect(emit).not.toBeNull());
+    screen.getByText('Send').click();
+    // The send POST returns the turn id, which renames the optimistic
+    // placeholder to the canonical response id.
+    await waitFor(() => expect(screen.queryByTestId('msg-msg-turn-1-response')).not.toBeNull());
+
+    // Live turn: reason, call a tool, reason again, then answer.
+    emit!({ type: 'thinking', content: 'The user wants the guide. ' });
+    emit!({ type: 'tool_call', id: 'call-a', title: 'read_note', arguments: { path: 'g.md' } });
+    emit!({ type: 'tool_result', id: 'call-a', result: '{}' });
+    emit!({ type: 'thinking', content: 'Now I can answer. ' });
+    emit!({ type: 'token', content: ANSWER });
+    emit!({ type: 'message_complete', id: 'msg-turn-1', content: ANSWER, total_tokens: 6707 });
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem').some((li) => li.textContent === ANSWER)).toBe(true)
+    );
+
+    // The daemon's own record of the same turn arrives now.
+    releaseHistory!({
+      history: [
+        { event: 'user_message', data: { message_id: 'msg-turn-1', content: 'test message' } },
+        { event: 'tool_call', data: { call_id: 'call-a', tool: 'read_note', args: { path: 'g.md' } } },
+        { event: 'tool_result', data: { call_id: 'call-a', result: '{}' } },
+        { event: 'message_complete', data: { message_id: 'msg-turn-1', full_response: ANSWER } },
+      ],
+      total_events: 4,
+    });
+
+    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    await waitFor(() => {
+      const answers = screen.getAllByRole('listitem').filter((li) => li.textContent === ANSWER);
+      expect(answers).toHaveLength(1);
+    });
   });
 });

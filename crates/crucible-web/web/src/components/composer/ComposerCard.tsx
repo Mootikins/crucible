@@ -28,23 +28,32 @@ export interface ComposerCardProps {
    * before the Enter-to-submit default (so a handler can claim Enter).
    */
   onKeyDown?: (e: KeyboardEvent) => void;
-  /** Trailing controls, left of the mic — model/mode/agent pickers. */
+  /** Pickers for the row below the prompt — model, mode, agent. */
   chips?: JSX.Element;
+  /**
+   * The quietest content of the row below, after the mic — session scope on
+   * the live composer. It comes last because it changes least.
+   */
+  trailing?: JSX.Element;
   /** The commit button — send, or cancel mid-stream. */
   action: JSX.Element;
+  /**
+   * A card sits directly on top of the prompt (a pending permission or ask).
+   * The prompt drops its top corners so the two read as one surface.
+   */
+  docked?: boolean;
 }
 
 /**
- * The shared composer: prompt, completion list, voice input and the commit
- * button.
+ * The shared composer: the prompt and its commit button in one surface, with
+ * every picker in a quiet row below it.
  *
- * ONE ROW, not two. The prompt and every control that acts on it sit on a
- * single baseline-aligned line, and the row WRAPS when the pane is too narrow
- * to hold both — which is why this is `flex-wrap` and not a media or container
- * query. The previous shape stacked a fixed 2.5rem prompt above a separate
- * chip row, so an empty composer was 95px tall with ~30px of dead field
- * between the placeholder and the controls. It is now one line tall when
- * empty and grows only when there is text to hold.
+ * The prompt holds ONLY the text and the button. Chips inside the field made
+ * the field look like a toolbar: the model id, the mode and the mic all sat
+ * on the prompt's own line, so the loudest control on the screen carried five
+ * competing labels. They now sit under the field, on the row that already
+ * held the session scope, where they read as settings rather than as part of
+ * the message.
  *
  * The card is also the completion list's ANCHOR. The list used to hang off the
  * textarea, which put a full-width panel over the last thing the agent said,
@@ -60,17 +69,8 @@ export interface ComposerCardProps {
 export const ComposerCard: Component<ComposerCardProps> = (props) => {
   const [textareaRef, setTextareaRef] = createSignal<HTMLTextAreaElement | undefined>();
   const [cardRef, setCardRef] = createSignal<HTMLDivElement | undefined>();
-  /**
-   * Whether the prompt has grown past a single line.
-   *
-   * It decides where the controls sit. Sharing the line with a one-line prompt
-   * costs nothing; sharing it with a three-line one costs the prompt ~40% of
-   * its width for the whole paragraph, which is a worse trade than one extra
-   * row of chrome. So the cluster drops to its own line the moment the prompt
-   * wraps, and comes back up when it does not.
-   */
-  const [multiline, setMultiline] = createSignal(false);
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
+
 
   const autocomplete = useAutocomplete({
     input: props.value,
@@ -89,13 +89,7 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
    */
   const resize = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
-    const content = el.scrollHeight;
-    el.style.height = `${Math.min(content, MAX_HEIGHT_PX)}px`;
-    // Compare against the field's OWN line height rather than a constant:
-    // `rows` differs per surface (the launchpad opens at three) and the
-    // reading size is a token that can move.
-    const line = parseFloat(getComputedStyle(el).lineHeight) || 18;
-    setMultiline(content > line * ((props.rows ?? 1) + 0.5));
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
   };
 
   // Re-fit on EVERY value change, not just on keystrokes: a send clears the
@@ -142,15 +136,13 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
     <div class="relative">
       <div
         ref={setCardRef}
-        // `px` steps up with the radius: at one line the ends are 22px arcs,
-        // and content set 14px from the edge collides with the curve. Squared
-        // off there is no arc to clear, so the padding comes back down.
-        classList={{
-          'composer-surface flex flex-wrap items-end gap-x-2 gap-y-1 py-2 transition-[padding] duration-150': true,
-          'px-4': !multiline(),
-          'px-2.5': multiline(),
-        }}
-        data-multiline={multiline()}
+        // ONE padding. The radius no longer changes with the line count, so
+        // there is no arc for the content to clear at one height and not at
+        // another. `data-docked` squares the top edge under a docked card;
+        // both radii live in `refine-composer.css`, which is unlayered and
+        // therefore wins over a Tailwind radius utility here.
+        class="composer-surface flex items-end gap-x-2 px-3.5 py-2"
+        data-docked={props.docked ? 'true' : undefined}
         style={cardStyle()}
       >
         <textarea
@@ -166,15 +158,11 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
           aria-label={props.ariaLabel}
           rows={props.rows ?? 1}
           disabled={props.disabled}
-          // `min-w` is what makes the wrap threshold meaningful: below it the
-          // controls move to their own line instead of squeezing the prompt
-          // down to a few characters.
-          //
           // `outline-none` with NO `focus-ring` is deliberate and is the one
           // exception index.css records: the card draws the focus treatment
           // for this control, and a second ember ring 2px outside the first
           // is what the single-treatment rule exists to prevent.
-          class="min-w-[11rem] flex-1 resize-none self-center bg-transparent px-1 py-0.5
+          class="min-w-0 flex-1 resize-none self-center bg-transparent px-1 py-0.5
                  text-sm leading-[1.55] text-shell-ink outline-none
                  placeholder-muted-dark disabled:opacity-50"
           style={{
@@ -184,35 +172,25 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
           data-testid={props.testid}
         />
 
-        {/* Everything that acts on the prompt, pinned to the trailing edge.
-            `ml-auto` holds it right whether it shares the prompt's line or
-            takes one of its own. */}
-        <div
-          classList={{
-            'ml-auto flex min-w-0 items-center gap-1': true,
-            // `basis-full` is what forces the wrap; the flex container is
-            // already `flex-wrap`, so nothing else has to change.
-            'basis-full justify-end': multiline(),
-          }}
-        >
-          {/* The pickers are the only part of the cluster allowed to shrink.
-              Without this they held their full width in a narrow pane and
-              pushed SEND out past the card's edge — the commit button, the
-              one control the composer exists for, was unreachable at any pane
-              width under ~260px. A model id truncates instead; ChipSelect
-              already draws it with `truncate`. */}
-          <div class="flex min-w-0 shrink items-center gap-1 overflow-hidden">
-            {props.chips}
-          </div>
-          <MicButton
-            onTranscription={handleTranscription}
-            disabled={props.disabled}
-            startRecording={startRecording}
-            stopRecording={stopRecording}
-            isRecording={isRecording}
-          />
-          {props.action}
-        </div>
+        {/* The mic is an INPUT control, so it stays in the field beside
+            send; the row below holds only session facts. */}
+        <MicButton
+          onTranscription={handleTranscription}
+          disabled={props.disabled}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+          isRecording={isRecording}
+        />
+        {props.action}
+      </div>
+
+      {/* The quiet row: the pickers, then whatever the surface considers its
+          most stable fact (the session scope). Chips carry their value only;
+          the icon and the tooltip name the role. The row wraps when a pane is
+          narrower than the chips, so nothing hides behind a scroll edge. */}
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1" data-testid="composer-controls">
+        {props.chips}
+        {props.trailing}
       </div>
 
       <Show when={autocomplete.isOpen()}>

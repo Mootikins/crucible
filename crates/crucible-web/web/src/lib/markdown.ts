@@ -5,6 +5,7 @@ import { theme } from './theme';
 import { calloutPlugin } from './callouts';
 import { mathPlugin } from './math';
 import { fitMermaidViewBox, renderMermaid } from './mermaid';
+import { noteStem } from './markdown-path';
 
 /**
  * Fresh global regex matching `[[wikilink]]` bodies (capture group 1 = inner
@@ -19,11 +20,20 @@ const WIKILINK_PATTERN = wikilinkRe();
  * Split a raw wikilink inner text into its resolution target and display text.
  * `[[Note|alias]]` displays "alias" but resolves "Note"; heading/block
  * fragments (`#heading`, `#^block`) are shown but stripped from the target.
+ *
+ * A markdown extension is part of the TARGET and not part of the TITLE.
+ * `[[Getting Started.md]]` resolves the file and reads "Getting Started",
+ * which is what the note calls itself and what every other surface — the
+ * files panel, the tab, a backlink row — shows. An explicit alias is the
+ * author's own words, so it is never stemmed.
  */
 export function parseWikilinkInner(inner: string): { target: string; display: string } {
   const [rawTarget, ...aliasParts] = inner.split('|');
-  const display = aliasParts.length > 0 ? aliasParts.join('|').trim() : inner.trim();
-  const target = (rawTarget.split('#')[0] ?? rawTarget).trim();
+  const hash = rawTarget.indexOf('#');
+  const target = (hash < 0 ? rawTarget : rawTarget.slice(0, hash)).trim();
+  const fragment = hash < 0 ? '' : rawTarget.slice(hash).trim();
+  const display =
+    aliasParts.length > 0 ? aliasParts.join('|').trim() : `${noteStem(target)}${fragment}`;
   return { target, display };
 }
 /**
@@ -568,6 +578,31 @@ async function renderMermaidBlocks(html: string): Promise<string> {
 }
 
 /**
+ * The top-level domains a BARE word.tld may auto-link on, replacing
+ * linkify-it's default list.
+ *
+ * A note filename is not a URL. linkify-it appends every two-letter country
+ * code to its TLD table, and `md` is Moldova and `ai` is Anguilla — so a turn
+ * that said `Getting Started.md` rendered as the text "Getting " plus an
+ * anchor to `http://Started.md`, and `Z.AI Setup.md` broke into two anchors.
+ * Filenames outnumber bare country-code domains in a knowledge base by a very
+ * wide margin, and the false anchor also broke the link treatment: it painted
+ * an external link's underline where the reader expected a wikilink pill.
+ *
+ * Calling `tlds()` at all is what drops the two-letter block — linkify-it only
+ * appends it while its list is untouched — so this list is the stock default,
+ * verbatim. An explicit scheme is unaffected: `https://example.md` still
+ * links, because a scheme is a statement that the text IS a URL.
+ */
+const FUZZY_LINK_TLDS = (
+  'biz|com|edu|gov|net|org|pro|web|xxx|aero|asia|coop|info|museum|name|shop|рф|' +
+  // Modern generic domains a bare `example.dev` must still link. The
+  // two-letter country codes stay out, `ai` included: `md` and `ai` turned
+  // every `Setup.md` and `Z.AI` in prose into a link. A scheme still links.
+  'app|cloud|codes|dev|fm|gg|io|link|ly|me|online|page|run|sh|site|so|tech|to|tools|tv|wiki|xyz'
+).split('|');
+
+/**
  * `html` passes raw HTML blocks/inline through markdown-it (still
  * DOMPurify-sanitized downstream). Off for chat/hover (LLM/user text should
  * not inject markup); on for the document Reading view, where authored docs
@@ -592,6 +627,7 @@ function createMarkdownRenderer(
       return `<pre><code class="language-${escapeHtml(language)}">${escapedCode}</code></pre>`;
     },
   });
+  renderer.linkify.tlds(FUZZY_LINK_TLDS, false);
 
   wikilinkPlugin(renderer);
   calloutPlugin(renderer);

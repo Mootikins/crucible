@@ -1,0 +1,11 @@
+/* Refinement lane: R6 focus ring and lint support. Owned by that lane; see docs/Meta/Analysis/2026-09-15 Web UI Review.md. */
+
+/* ── Palette rows ────────────────────────────────────────────────────────
+ * A palette row is a pointer target in a list that you read fast, so it gets
+ * the medium row height (36px), not the compact desktop list height (28px).
+ * The rule sets a minimum only. A row with a description grows past it.
+ * The rule changes the height of the row. It does not change the width or
+ * the position of the palette. */
+.cru-palette-row {
+  min-height: var(--row-md);
+}

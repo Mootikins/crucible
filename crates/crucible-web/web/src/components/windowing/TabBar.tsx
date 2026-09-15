@@ -15,6 +15,34 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/lib/context-menu';
 
+// ── Tab titles ─────────────────────────────────────────────────────────
+
+/** Characters a tab label keeps whole. Above this the middle goes. */
+const TAB_TITLE_MAX = 28;
+const TAB_TITLE_HEAD = 12;
+const TAB_TITLE_TAIL = 8;
+
+/**
+ * Elide a long tab label from the MIDDLE.
+ *
+ * CSS truncates from the end, and the end is where a tab title carries its
+ * meaning: `2026-09-15 Web UI Review.md` and `2026-09-15 Web UI Notes.md`
+ * both read as `2026-09-15 W…` at the old 120px cap, so a strip of dated
+ * notes became a column of identical tabs. The head names the file and the
+ * tail names its kind.
+ *
+ * The full label always rides on the element's `title`, so the elision costs
+ * the user nothing but a hover.
+ *
+ * Splits by code point, not by UTF-16 unit — a title that opens with an emoji
+ * must not be cut through the middle of one.
+ */
+export function elideTabTitle(title: string): string {
+  const chars = [...title];
+  if (chars.length <= TAB_TITLE_MAX) return title;
+  return `${chars.slice(0, TAB_TITLE_HEAD).join('')}…${chars.slice(-TAB_TITLE_TAIL).join('')}`;
+}
+
 // ── Module-level reorder state (shared with WindowManager) ──────────────
 
 export type ReorderState = {
@@ -68,6 +96,24 @@ interface TabItemProps {
 }
 
 const TabItem: Component<TabItemProps> = (props) => {
+  // Measured, not assumed: the fade exists for a title the box cuts off.
+  const [titleRef, setTitleRef] = createSignal<HTMLSpanElement | undefined>();
+  const [titleOverflows, setTitleOverflows] = createSignal(false);
+  const measureTitle = () => {
+    const el = titleRef();
+    if (el) setTitleOverflows(el.scrollWidth > el.clientWidth + 1);
+  };
+  createEffect(() => {
+    props.tab.title;
+    props.isActive;
+    const el = titleRef();
+    if (!el) return;
+    measureTitle();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measureTitle);
+    ro.observe(el);
+    onCleanup(() => ro.disconnect());
+  });
   const draggable = createDraggable(props.draggableId, props.draggableData);
   const Icon = props.tab.icon;
 
@@ -108,16 +154,18 @@ const TabItem: Component<TabItemProps> = (props) => {
         </Show>
       </div>
       {/* The title fades out under the trailing slot rather than being cut by
-          it. The mask only applies while something is IN that slot, so a plain
-          resting tab shows its title to the last pixel. */}
+          it. The mask applies only while the title OVERFLOWS its box: a short
+          title on an active tab used to fade its last letters for no reason,
+          because the mask sat on the span whether or not anything was cut. */}
       <span
+        ref={setTitleRef}
         classList={{
-          'text-xs font-medium truncate max-w-[120px] transition-[mask-image]': true,
-          'tab-title-fade': props.isActive || props.tab.isModified,
-          'group-hover:tab-title-fade': true,
+          'text-xs font-medium truncate max-w-(--cru-measure-tab) transition-[mask-image]': true,
+          'tab-title-fade': titleOverflows(),
         }}
+        title={elideTabTitle(props.tab.title) === props.tab.title ? undefined : props.tab.title}
       >
-        {props.tab.title}
+        {elideTabTitle(props.tab.title)}
       </span>
 
       {/* ONE trailing slot, out of the flow.
@@ -144,7 +192,7 @@ const TabItem: Component<TabItemProps> = (props) => {
             props.onClose(e);
           }}
           classList={{
-            'pointer-events-auto absolute inset-0 flex items-center justify-center rounded-sm transition-opacity hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary': true,
+            'pointer-events-auto absolute inset-0 flex items-center justify-center rounded-sm transition-opacity hover:bg-hover-wash hover:text-shell-ink focus:opacity-100 focus-ring': true,
             'opacity-0 group-hover:opacity-100': !props.isActive || props.tab.isModified,
           }}
         >
@@ -326,7 +374,7 @@ const TabStrip: Component<TabStripProps> = (props) => {
       <Show when={isOverflowing()}>
         <div class="relative flex-shrink-0">
           <button
-            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            class="flex-shrink-0 w-6 h-6 flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash rounded transition-colors focus-ring"
             aria-label="Show all tabs"
             onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown()); }}
             title="Show all tabs"
@@ -493,7 +541,7 @@ const CenterTabBar: Component<{
         {!edgePos() && props.onPopOut && tabs().length > 0 && (
           <button
             onClick={props.onPopOut}
-            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            class="w-6 h-6 flex items-center justify-center rounded text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors focus-ring"
             title="Pop out to floating window"
             aria-label="Pop out to floating window"
           >

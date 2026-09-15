@@ -106,7 +106,7 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
             // A phone cannot hold the two-column form: the section list alone
             // is 216 px of a 412 px screen. It takes the whole screen and
             // navigates by drilling in instead.
-            class={`cru-anim-pop overflow-hidden border-hairline-strong bg-shell-panel outline-none ${
+            class={`cru-anim-pop overflow-hidden border-hairline-strong bg-shell-panel focus-ring ${
               isCompact()
                 ? 'flex h-dvh w-screen flex-col'
                 : 'grid h-[min(38rem,85vh)] w-[min(56rem,94vw)] grid-cols-[13.5rem_1fr] rounded-2xl border shadow-2xl'

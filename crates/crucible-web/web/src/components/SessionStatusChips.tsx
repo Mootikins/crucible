@@ -3,7 +3,6 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import { getSessionStatus, listModes, type SessionStatusSlot } from '@/lib/api';
 import { reviewStore, useReviewSession } from '@/lib/review-store';
 import {
-  REVIEW_POLICY_LABELS,
   type ReviewAwareMode,
   type ReviewPolicy,
 } from '@/lib/review-types';
@@ -31,13 +30,6 @@ const TONES: Record<string, string> = {
 };
 const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 
-/** Policies worth a chip. `pre_write` and `post_turn` change what happens to
- * the agent; `none` is the absence of a mechanism and needs no badge. */
-const POLICY_TONE: Record<ReviewPolicy, string | null> = {
-  none: null,
-  post_turn: 'border-hairline bg-surface-elevated text-muted',
-  pre_write: 'border-precog/40 bg-precog/10 text-precog',
-};
 
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
@@ -93,16 +85,14 @@ export const SessionStatusChips: Component = () => {
 
   const gate = () => reviewStore.session(sessionId()).gate;
   const blocked = () => gate()?.blocked === true;
-  const policyTone = () => {
-    const p = policy();
-    return p ? POLICY_TONE[p] : null;
-  };
-
-  const anything = () => slots().length > 0 || blocked() || !!policyTone();
+  // The review policy is no longer a chip: a reader did not know what
+  // "gated" meant, and the permission card already says when a write waits.
+  // It stays on the wrapper as data for tests and plugins.
+  const anything = () => slots().length > 0 || blocked() || policy() !== null;
 
   return (
     <Show when={anything()}>
-      <div class="flex items-center gap-1 flex-wrap" data-testid="session-status">
+      <div class="contents" data-testid="session-status" data-review-policy={policy() ?? undefined}>
         {/* A blocked agent must never read as a stalled one. First chip,
             loudest tone, and it names what it is waiting on. */}
         <Show when={blocked()}>
@@ -116,16 +106,6 @@ export const SessionStatusChips: Component = () => {
             <Show when={reviewStore.unreviewedCount(sessionId()) > 0}>
               <span class="opacity-70">({reviewStore.unreviewedCount(sessionId())})</span>
             </Show>
-          </span>
-        </Show>
-
-        <Show when={policyTone()}>
-          <span
-            class={`inline-flex items-center px-2 py-0.5 rounded-md border text-floor ${policyTone()}`}
-            data-testid="session-review-policy"
-            title="The review policy in force for this session, after any degradation the agent forces."
-          >
-            {REVIEW_POLICY_LABELS[policy()!]}
           </span>
         </Show>
 

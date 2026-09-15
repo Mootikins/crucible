@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@solidjs/testing-library';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
+import type { InteractionRequest } from '@/lib/types';
 import { ChatInput } from '../ChatInput';
+
+/** The request the composer is parked on, or none. */
+const [pending, setPending] = createSignal<InteractionRequest | null>(null);
 
 // Mock the contexts
 const mockSendMessage = vi.fn();
@@ -30,7 +35,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     clearMessages: mockClearMessages,
     activeTools: () => [],
     subagentEvents: () => [],
-    pendingInteraction: () => null,
+    pendingInteraction: pending,
     respondToInteraction: vi.fn(),
   }),
 }));
@@ -93,6 +98,8 @@ vi.mock('@/lib/api', () => ({
   // CommandResponse (web/routes/session_commands.rs) always sets `type` to
   // "success" | "error"; a successful command returns "success".
   executeCommand: vi.fn(async () => ({ result: 'Command executed', type: 'success' })),
+  // The docked permission card reads the file it is about to overwrite.
+  getFileContent: vi.fn(async () => ''),
   // SessionScopeChips (rendered inside ChatInput) loads these on mount.
   listKilns: vi.fn(async () => []),
   listProjects: vi.fn(async () => []),
@@ -109,6 +116,11 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
 }));
+
+afterEach(() => {
+  cleanup();
+  setPending(null);
+});
 
 describe('ChatInput', () => {
   beforeEach(() => {
@@ -219,6 +231,78 @@ describe('ChatInput', () => {
     // treatments 2px apart is the defect index.css's focus note records.
     expect(textarea.classList).not.toContain('focus-ring');
     expect(textarea.classList).toContain('outline-none');
+  });
+});
+
+describe('ChatInput — the prompt carries only the message', () => {
+  /** The bordered prompt surface. */
+  const surface = () => document.querySelector('.composer-surface') as HTMLElement;
+
+  it('draws the model picker below the prompt and keeps the mic in it', () => {
+    render(() => <ChatInput />);
+    expect(surface().contains(screen.getByTestId('model-picker-button'))).toBe(false);
+    expect(surface().contains(screen.getByTestId('mic-button-mock'))).toBe(true);
+    const row = screen.getByTestId('composer-controls');
+    expect(row.contains(screen.getByTestId('model-picker-button'))).toBe(true);
+    expect(row.contains(screen.getByTestId('chat-mode-control-mock'))).toBe(true);
+  });
+
+  it('shares that row with the session scope, scope last', () => {
+    render(() => <ChatInput />);
+    const row = screen.getByTestId('composer-controls');
+    const chips = screen.getByTestId('context-chips');
+    expect(row.contains(chips)).toBe(true);
+    // The quietest thing on the row comes after the pickers.
+    expect(
+      screen.getByTestId('model-picker-button').compareDocumentPosition(chips) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('shows the model value without an axis label', () => {
+    render(() => <ChatInput />);
+    const text = screen.getByTestId('model-picker-button').textContent ?? '';
+    expect(text).toContain('test-model');
+    expect(text).not.toContain('Model ·');
+  });
+});
+
+describe('ChatInput — a pending request docks on the prompt', () => {
+  const permission = (): InteractionRequest => ({
+    kind: 'permission',
+    id: 'perm-1',
+    action_type: 'bash',
+    tokens: ['rm', '-rf', 'build'],
+  });
+
+  it('draws no card while nothing is pending', () => {
+    render(() => <ChatInput />);
+    expect(screen.queryByTestId('composer-dock')).toBeNull();
+    expect(
+      (document.querySelector('.composer-surface') as HTMLElement).getAttribute('data-docked'),
+    ).toBeNull();
+  });
+
+  it('draws the full card directly above the prompt', () => {
+    setPending(permission());
+    render(() => <ChatInput />);
+
+    const dock = screen.getByTestId('composer-dock');
+    // The whole gate, not a summary: this is where the user answers.
+    expect(dock.textContent).toContain('Permission Required');
+    expect(screen.getByTestId('perm-allow')).toBeInTheDocument();
+    expect(screen.getByTestId('perm-deny')).toBeInTheDocument();
+
+    // Immediately above, with nothing between the two.
+    const surface = document.querySelector('.composer-surface') as HTMLElement;
+    expect(dock.nextElementSibling?.contains(surface)).toBe(true);
+  });
+
+  it('squares the prompt\'s top edge while the card is docked', () => {
+    setPending(permission());
+    render(() => <ChatInput />);
+    const surface = document.querySelector('.composer-surface') as HTMLElement;
+    expect(surface.getAttribute('data-docked')).toBe('true');
   });
 });
 

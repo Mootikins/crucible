@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { contrastRatio, contrastRatioHex, parseHex, relativeLuminance } from '../contrast';
-import { darkTokens, lightTokens, resolveToken } from '@/test-utils/css-tokens';
+import {
+  contractDark,
+  contractLight,
+  darkTokens,
+  lightTokens,
+  resolveToken,
+  themeAliases,
+} from '@/test-utils/css-tokens';
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+
+const indexCss = () => readFileSync(resolvePath(process.cwd(), 'src/index.css'), 'utf8');
+
+/** The `@layer cru-theme { … }` block, brace-balanced. */
+function cruThemeLayer(): string {
+  const css = indexCss();
+  const start = css.indexOf('@layer cru-theme {');
+  let depth = 0;
+  for (let i = css.indexOf('{', start); i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return css.slice(start, i);
+  }
+  throw new Error('unbalanced @layer cru-theme');
+}
 
 /**
  * The WCAG 2.1 AA gate for the token layer.
@@ -90,6 +113,85 @@ describe('index.css token layer', () => {
         expect(parseHex(value), `${name} ${key} = ${value}`).not.toBeNull();
       }
     }
+  });
+});
+
+/**
+ * The `--cru-*` contract is PUBLIC (docs/Help/Extending/Web Theme Tokens.md).
+ * A plugin ships one stylesheet that re-values these names, so a name that
+ * exists in one theme and not the other is a page that half-restyles, and a
+ * name that changes is a plugin that breaks.
+ */
+describe('the --cru-* contract', () => {
+  /** A token whose VALUE changes with the theme. Both blocks must declare it. */
+  const THEMED = ['color', 'shadow'];
+  /** A token that does not. The light block must NOT re-declare it: a second
+   *  copy of a value that never differs is a copy that can only drift. */
+  const CONSTANT = ['radius', 'row', 'font', 'measure', 'leading'];
+
+  const namesIn = (t: Map<string, string>, family: string) =>
+    [...t.keys()].filter((k) => k.startsWith(`--cru-${family}-`)).sort();
+
+  for (const family of THEMED) {
+    it(`declares the same --cru-${family}-* set in both themes`, () => {
+      // A per-family assertion, so a failure names WHICH family lost a token.
+      // One list of all seven would report a diff nobody can read.
+      expect(namesIn(contractLight, family)).toEqual(namesIn(contractDark, family));
+      expect(namesIn(contractDark, family).length).toBeGreaterThan(0);
+    });
+  }
+
+  for (const family of CONSTANT) {
+    it(`declares --cru-${family}-* once, in the base theme only`, () => {
+      expect(namesIn(contractDark, family).length, `--cru-${family}-*`).toBeGreaterThan(0);
+      expect(namesIn(contractLight, family)).toEqual([]);
+    });
+  }
+
+  it('every @theme entry is an alias, never a literal', () => {
+    // Tailwind INLINES what `@theme` holds. A literal there is baked into the
+    // utility and can never follow the contract, which is exactly how the
+    // shadow ramp painted near-black on the light theme for months.
+    const offenders: string[] = [];
+    for (const [name, value] of themeAliases) {
+      if (!/^var\(\s*--cru-[a-z0-9-]+\s*\)$/.test(value)) offenders.push(`${name}: ${value}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('every alias target is declared by the contract', () => {
+    // The realistic failure when the aliases are written by hand is a typo,
+    // and a typo resolves to nothing rather than to the wrong colour.
+    for (const [name, value] of themeAliases) {
+      const target = /var\(\s*(--cru-[a-z0-9-]+)\s*\)/.exec(value)?.[1];
+      expect(target, `${name} names no contract token`).toBeDefined();
+      expect(contractDark.has(target!), `${name} -> ${target}`).toBe(true);
+    }
+  });
+
+  it('every --cru-* token resolves to a value, in both themes', () => {
+    for (const { name, tokens } of THEMES) {
+      for (const key of contractDark.keys()) {
+        expect(() => resolveToken(tokens, key), `${name} ${key}`).not.toThrow();
+      }
+    }
+  });
+
+  it('both theme blocks sit inside @layer cru-theme, and nothing escapes it', () => {
+    // One --cru-* declaration left unlayered defeats EVERY plugin override,
+    // and a parity test cannot see it: the token is still declared twice.
+    const layer = cruThemeLayer();
+    expect(layer).toContain("[data-theme='light']");
+    // Comments go first: the block above this layer explains the mechanism
+    // and names half the contract while doing it. And the search is NOT
+    // anchored to the start of a line — `:root { --cru-font-title: 13px; }`
+    // on one line is an escape too, and a line-anchored pattern misses it.
+    const outside = indexCss().replace(layer, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(outside).not.toMatch(/--cru-[a-z0-9-]+\s*:/);
+  });
+
+  it('the layer is declared before the layers Tailwind owns', () => {
+    expect(indexCss()).toMatch(/@layer\s+cru-theme\s*,\s*theme\s*,/);
   });
 });
 

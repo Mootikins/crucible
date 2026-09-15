@@ -70,6 +70,15 @@ describe('SessionScopeChips', () => {
     expect(screen.getByTestId('scope-kiln').textContent).toContain('main');
   });
 
+  // The chips carry the value only; the icon and the tooltip name the axis.
+  // A label on every chip cost the row its width.
+  it('carries the value without an axis label', () => {
+    mockSession = baseSession();
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-project').textContent).not.toContain('Project ·');
+    expect(screen.getByTestId('scope-kiln').textContent).not.toContain('Kiln ·');
+  });
+
   it('picking a project calls setSessionWorkspace and applies the scope', async () => {
     mockSession = baseSession();
     render(() => <SessionScopeChips />);

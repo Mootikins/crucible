@@ -93,12 +93,12 @@ const GRAPH_COLOR_FALLBACK: GraphColors = {
 /** Read the palette out of the tokens. A canvas paints literal colors, so the
  *  graph cannot follow a custom property — it re-reads on a theme switch. */
 const readGraphColors = (): GraphColors => ({
-  note: cssVar('--color-muted', GRAPH_COLOR_FALLBACK.note),
-  phantom: cssVar('--color-muted-dark', GRAPH_COLOR_FALLBACK.phantom),
-  tag: cssVar('--color-precog', GRAPH_COLOR_FALLBACK.tag),
-  accent: cssVar('--color-primary', GRAPH_COLOR_FALLBACK.accent),
-  link: cssVar('--color-hairline-strong', GRAPH_COLOR_FALLBACK.link),
-  label: cssVar('--color-shell-body', GRAPH_COLOR_FALLBACK.label),
+  note: cssVar('--cru-color-muted', GRAPH_COLOR_FALLBACK.note),
+  phantom: cssVar('--cru-color-muted-dark', GRAPH_COLOR_FALLBACK.phantom),
+  tag: cssVar('--cru-color-precog', GRAPH_COLOR_FALLBACK.tag),
+  accent: cssVar('--cru-color-primary', GRAPH_COLOR_FALLBACK.accent),
+  link: cssVar('--cru-color-hairline-strong', GRAPH_COLOR_FALLBACK.link),
+  label: cssVar('--cru-color-body', GRAPH_COLOR_FALLBACK.label),
 });
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));

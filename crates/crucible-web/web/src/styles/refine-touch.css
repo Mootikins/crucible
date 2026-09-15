@@ -1,0 +1,129 @@
+/* Refinement lane: R4 phone tree density + R5 properties card + hit areas. Owned by that lane; see docs/Meta/Analysis/2026-09-15 Web UI Review.md. */
+
+/* ---------------------------------------------------------------------------
+   R4 — tree density.
+
+   One attribute, `data-density`, carries the row metrics of a whole tree. A
+   surface stamps it once on the tree root (FileTreeView) or on its own
+   wrapper (SessionsTab, the phone content pane); every row, icon slot and
+   indent guide below reads the custom properties it sets.
+
+   The rules live in plain CSS, not in Tailwind utilities on the rows,
+   because a utility pins the value on ONE element and a nested row then
+   keeps the desktop size. Plain CSS also wins over the Tailwind utility
+   layer, so a row may keep its layout classes.
+--------------------------------------------------------------------------- */
+
+:root,
+[data-density='default'] {
+  /* One indent step per level, and the width of the icon column. */
+  --tree-indent: 1rem;
+  --tree-icon-slot: 1rem;
+}
+
+[data-density='touch'] {
+  --tree-indent: 20px;
+  --tree-icon-slot: 22px;
+}
+
+.tree-row {
+  min-height: var(--row-sm);
+  font-size: var(--text-reading);
+}
+
+[data-density='touch'] .tree-row {
+  min-height: var(--row-md);
+  font-size: var(--cru-font-title);
+}
+
+.tree-icon-slot {
+  width: var(--tree-icon-slot);
+}
+
+/* A larger slot needs a larger glyph, or the icon floats in it. */
+[data-density='touch'] .tree-icon-slot svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   R5 — the Properties card header.
+
+   The collapsed card is a control, so it looks like one: a hairline box the
+   width of the content column, at the row height of the surface it sits on.
+   The base rules are in index.css; these override them, and they are written
+   with the same or higher specificity on purpose.
+--------------------------------------------------------------------------- */
+
+/* The collapsed row reads in the document's own type, not in the 11px mono of
+   the key column. A collapsed card names the block; it is not part of the
+   table that the open card draws.
+
+   `.fm-card >` is not decoration: index.css declares `.fm-summary` AFTER the
+   import of this file, so a bare class selector here loses the tie. */
+.fm-card > .fm-summary {
+  height: auto;
+  min-height: var(--row-sm);
+  font-family: inherit;
+  font-size: inherit;
+  gap: 8px;
+}
+
+.fm-card:not([open]) > .fm-summary {
+  padding: 0 12px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+}
+
+.fm-card:not([open]) > .fm-summary:hover {
+  border-color: var(--color-hairline-strong);
+}
+
+.fm-card .fm-count {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* The open card keeps the bordered block from index.css; its summary is the
+   first row inside that block, so it carries no box of its own. */
+.fm-card[open] > .fm-summary {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+}
+
+/* Thumb height on the phone, where the card header is a tap target. The phone
+   also drops the right gutter that index.css reserves: the floating mode
+   toggles that the gutter protects belong to the desktop editor, and the
+   phone puts the same controls in its header bar instead. */
+[data-density='touch'] .fm-card > .fm-summary {
+  min-height: var(--row-touch);
+}
+
+[data-density='touch'] .fm-card {
+  padding-right: 0;
+}
+
+/* The blank line between the frontmatter and the first paragraph is hidden in
+   live preview, EXCEPT while the selection touches it — and the editor opens
+   with the cursor exactly there. The line then draws the active-line wash as a
+   full-width grey bar under the card, which reads as part of the card. Drop
+   the wash for that one line; the line stays editable and every other blank
+   line keeps its highlight. */
+.cm-content > .cm-lp-fm + .cm-line.cm-activeLine:has(> br:only-child) {
+  background-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   R6 — icon button hit area.
+
+   The chrome icon button stays 28px to the eye and becomes 32px to the finger
+   and the mouse. The extra 2px on each side come from a pseudo-element, so no
+   box in a titlebar or a tab strip moves.
+--------------------------------------------------------------------------- */
+
+.hit-32::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+}

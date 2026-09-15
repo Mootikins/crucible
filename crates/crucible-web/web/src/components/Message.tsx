@@ -87,7 +87,7 @@ export const Message: Component<MessageProps> = (props) => {
         <Show when={!isEditing()} fallback={
           <div class="flex flex-col gap-2">
             <textarea
-              class="w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus:border-primary focus:outline-none resize-y min-h-[60px]"
+              class="w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus:border-primary focus-ring resize-y min-h-[60px]"
               value={editContent()}
               onInput={(e) => setEditContent(e.currentTarget.value)}
               onKeyDown={(e) => {

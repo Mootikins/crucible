@@ -117,6 +117,27 @@ describe('renderFrontmatterCardHtml', () => {
     expect(html).not.toContain('aria-label=');
   });
 
+  /**
+   * The collapsed row is a control: a hairline box at row height across the
+   * content column. Its rules in `styles/refine-touch.css` select
+   * `.fm-card > .fm-summary`, so the summary must stay the card's DIRECT
+   * child. Wrapping it would drop the border and the tap height silently.
+   */
+  it('keeps the summary as the direct child of the card', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderFrontmatterCardHtml([
+      { key: 'a', value: '1' },
+      { key: 'b', value: '2' },
+    ]);
+    const card = host.querySelector('[data-testid="fm-card"]')!;
+    const summary = card.querySelector('[data-testid="fm-summary"]')!;
+    expect(summary.parentElement).toBe(card);
+    expect(summary.tagName).toBe('SUMMARY');
+    // The caret and the count are the whole row, and the row is the target.
+    expect(summary.querySelector('.fm-caret')).not.toBeNull();
+    expect(summary.textContent).toBe('2 properties');
+  });
+
   /** Escaped through the same path as the rows — the label is built, not user text, but the rows beside it are not. */
   it('keeps the rows available inside the collapsed card', () => {
     const html = renderFrontmatterCardHtml([{ key: 'tags', value: ['kiln'] }]);

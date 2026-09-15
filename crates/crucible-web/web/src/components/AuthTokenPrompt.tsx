@@ -61,7 +61,7 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
               if (e.key === 'Enter') void save();
             }}
             placeholder="API key"
-            class="mb-3 w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink outline-none focus:border-primary"
+            class="mb-3 w-full rounded border border-hairline bg-control px-3 py-2 text-sm text-shell-ink focus-ring focus:border-primary"
             data-testid="auth-token-input"
           />
           <div class="flex justify-end gap-2">

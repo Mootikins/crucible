@@ -338,7 +338,7 @@ export const PluginPanel: Component = () => {
             onInput={(e) => setInstallUrl(e.currentTarget.value)}
             placeholder="user/repo or https://…"
             disabled={installing()}
-            class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 border border-hairline focus:outline-none focus:border-muted-dark disabled:opacity-50"
+            class="w-full bg-control text-shell-ink text-sm rounded px-2 py-1.5 border border-hairline focus-ring focus:border-muted-dark disabled:opacity-50"
             data-testid="plugins-install-url"
           />
           <div class="mt-3 flex items-center justify-end gap-2">

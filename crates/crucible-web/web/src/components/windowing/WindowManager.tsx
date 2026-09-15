@@ -1,4 +1,5 @@
 import { Component, Show, For, onMount, onCleanup } from 'solid-js';
+import { Key } from '@solid-primitives/keyed';
 import {
   DragDropProvider,
   DragDropSensors,
@@ -12,8 +13,8 @@ import { CornerBar } from './CornerBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
-import type { DragSource, DropTarget } from '@/types/windowTypes';
-import { getPendingReorder, clearPendingReorder } from './TabBar';
+import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
+import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
@@ -52,11 +53,40 @@ function DragOverlayContent() {
   return (
     <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
       <div class="px-2.5 py-1.5 bg-surface-overlay border border-hairline-strong rounded shadow-lg text-xs text-shell-ink flex items-center gap-1.5 opacity-90">
-        <span class="font-medium truncate max-w-[120px]">{title()}</span>
+        <span class="font-medium truncate max-w-(--cru-measure-tab)" title={title()}>
+          {elideTabTitle(title())}
+        </span>
       </div>
     </Show>
   );
 }
+
+/** The middle column of the shell row. Its key never changes, so it never moves. */
+function CentreColumn() {
+  return (
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+      {/* relative: CornerBar floats at this area's bottom-right (above
+          the bottom dock), Adobe-style — the status bar's replacement. */}
+      <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
+        <CenterTiling />
+        <CornerBar />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The shell row, left to right: a rail, the centre, the other rail.
+ *
+ * `side` is absent on the centre, which is how the row tells the two apart.
+ */
+type RowSlot = { key: string; side?: EdgePanelPosition };
+
+const rowSlots = (): RowSlot[] => [
+  { key: windowStore.edgePanels.left.id, side: 'left' },
+  { key: 'centre' },
+  { key: windowStore.edgePanels.right.id, side: 'right' },
+];
 
 function InnerManager() {
   const dndCtx = useDragDropContext()!;
@@ -209,16 +239,23 @@ function InnerManager() {
   return (
     <div class="flex flex-col h-screen bg-shell-bg text-shell-ink overflow-hidden select-none">
       <div class="relative z-0 flex flex-1 overflow-hidden min-h-0">
-        <EdgePanel position="left" />
-        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
-          {/* relative: CornerBar floats at this area's bottom-right (above
-              the bottom dock), Adobe-style — the status bar's replacement. */}
-          <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
-            <CenterTiling />
-            <CornerBar />
-          </div>
-        </div>
-        <EdgePanel position="right" />
+        {/* The row is a KEYED LIST, not three fixed slots, so a flip MOVES a
+            rail across the centre instead of rebuilding it. The two rails
+            used to sit in fixed slots; `swapSidePanels` then handed each slot
+            the other rail's tree, and Solid rebuilt both — every chat panel
+            in them lost its provider and refetched from empty.
+
+            The key is the panel's own `id`, which travels with its contents.
+            So a flip reverses the two rail keys, `Key` moves the existing DOM
+            node, and the surviving EdgePanel sees only its `position` prop
+            change. The centre keeps a constant key and never moves. */}
+        <Key each={rowSlots()} by="key">
+          {(slot) => (
+            <Show when={slot().side} fallback={<CentreColumn />}>
+              {(side) => <EdgePanel position={side()} />}
+            </Show>
+          )}
+        </Key>
       </div>
       <div class="fixed inset-0 z-30 pointer-events-none">
         <For each={floatingWindows()}>

@@ -24,10 +24,10 @@ describe('swapSidePanels', () => {
     expect(rightGroup()).toBe(before.left);
   });
 
-  it('is its own inverse while both sides agree on collapse', () => {
+  // Every field travels with its panes, so two flips return the start state
+  // whatever the two sides say about collapse.
+  it('is its own inverse', () => {
     const before = { left: leftGroup(), right: rightGroup() };
-    setStore('edgePanels', 'left', 'isCollapsed', false);
-    setStore('edgePanels', 'right', 'isCollapsed', false);
     windowActions.swapSidePanels();
     windowActions.swapSidePanels();
     expect(leftGroup()).toBe(before.left);
@@ -62,10 +62,10 @@ describe('swapSidePanels', () => {
     expect(windowStore.edgePanels.right.width).toBe(250);
   });
 
-  // Collapse stays with the SIDE. This is the gesture the feature exists for:
-  // right rail stowed, one swap, and the file tree is on the visible left
-  // while the session list goes away — "focus on editing, not on a session".
-  it('leaves collapse with the side, so a swap reveals the stowed panel', () => {
+  // Collapse travels with the PANES, the same as layout and width. A panel a
+  // user stowed stays stowed after a flip; a panel a user opened stays open.
+  // The flip moves panels between sides. It does not open or stow anything.
+  it('carries each side’s collapse across with its panes', () => {
     const stowed = rightGroup();
     setStore('edgePanels', 'left', 'isCollapsed', false);
     setStore('edgePanels', 'right', 'isCollapsed', true);
@@ -73,8 +73,24 @@ describe('swapSidePanels', () => {
     windowActions.swapSidePanels();
 
     expect(leftGroup()).toBe(stowed);
+    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+  });
+
+  // Collapse and width describe the same panel, so they must not separate.
+  // A 320px panel that a user stowed is a stowed 320px panel on its new side.
+  it('carries collapse and width together, so they stay on one panel', () => {
+    setStore('edgePanels', 'left', 'isCollapsed', true);
+    setStore('edgePanels', 'left', 'width', 250);
+    setStore('edgePanels', 'right', 'isCollapsed', false);
+    setStore('edgePanels', 'right', 'width', 320);
+
+    windowActions.swapSidePanels();
+
     expect(windowStore.edgePanels.left.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.width).toBe(320);
     expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.width).toBe(250);
   });
 
   // The toggles are POSITIONAL — toggleEdgePanel('left') means "the left
@@ -83,8 +99,9 @@ describe('swapSidePanels', () => {
   it('leaves the positional toggles pointing at the right sides', () => {
     windowActions.swapSidePanels();
     const swapped = leftGroup();
+    const before = windowStore.edgePanels.left.isCollapsed;
     windowActions.toggleEdgePanel('left');
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.left.isCollapsed).toBe(!before);
     expect(leftGroup()).toBe(swapped);
   });
 
@@ -149,8 +166,6 @@ describe('swapSidePanels — a 100% flip, not a rail swap', () => {
       right: railOrder('right'),
     };
 
-    setStore('edgePanels', 'left', 'isCollapsed', false);
-    setStore('edgePanels', 'right', 'isCollapsed', false);
     windowActions.swapSidePanels();
     windowActions.swapSidePanels();
 

@@ -48,7 +48,7 @@ export const SessionRow: Component<{
        * column had no beat to chunk on. Indent carries the tier here, the way
        * every file explorer does it.
        */
-      class={`group relative flex items-center gap-2 w-full h-[26px] pl-6 pr-2 rounded transition-colors cursor-pointer ${
+      class={`group relative flex items-center gap-2 w-full h-(--cru-row-sm) pl-6 pr-2 rounded transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
@@ -430,7 +430,7 @@ export const SessionTree: Component<{
       // icon and the indent already say "this is a project"; a fill on top of
       // that is decoration. Sticky still needs SOME opaque paint, or rows
       // scroll through the header, so it paints the background it sits on.
-      class="group/proj sticky top-0 z-10 flex items-center h-[26px] pr-1 bg-shell-bg hover:bg-hover-wash transition-colors"
+      class="group/proj sticky top-0 z-10 flex items-center h-(--cru-row-sm) pr-1 bg-shell-bg hover:bg-hover-wash transition-colors"
       data-group-key={g.key}
     >
               <button
