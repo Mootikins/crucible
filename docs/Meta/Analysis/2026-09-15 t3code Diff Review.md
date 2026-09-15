@@ -2180,7 +2180,7 @@ Action glyphs in the sketch: `(v)` accept (Check), `(u)` reject (Undo2), `(c)` c
 |   143   144        }                                           |         ChangesP...  .|
 |  --------------- 12 unmodified lines ---------------           |                       |
 |                                                                |                       |
-|  >  * crates/crucible-daemon/src/agent_manager/messaging.rs    |                       |
+|  >  * crates/crucible-daemon/src/agent_manager/messaging/      |                       |
 |  >  . crates/crucible-web/web/src/components/ChangesPanel.tsx  |                       |
 +----------------------------------------------------------------+-----------------------+
 ```
