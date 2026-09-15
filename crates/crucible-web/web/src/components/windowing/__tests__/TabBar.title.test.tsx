@@ -76,11 +76,14 @@ describe('TabBar — titles', () => {
 
     const row = container.querySelector('[data-tab-id="tab-long"]')!;
     const label = [...row.querySelectorAll('span')].find((el) => el.textContent?.includes('…'))!;
-    // The class names the TOKEN, and the token carries the 200px. Asserting
+    // The class names the TOKEN, and the token carries the width. Asserting
     // the literal class would go green after someone re-valued the token, and
     // asserting only the token would go green at any width.
+    //
+    // The value is `rem`, so the cap follows a reader's font-size preference:
+    // a wider title needs a wider cap. 12.5rem is 200px at the default root.
     expect(label.className).toContain('max-w-(--cru-measure-tab)');
-    expect(resolveToken(darkTokens, '--cru-measure-tab')).toBe('200px');
+    expect(resolveToken(darkTokens, '--cru-measure-tab')).toBe('12.5rem');
     expect(label.getAttribute('title')).toBe(LONGER);
   });
 });

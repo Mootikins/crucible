@@ -122,12 +122,13 @@ describe('index.css token layer', () => {
  * exists in one theme and not the other is a page that half-restyles, and a
  * name that changes is a plugin that breaks.
  */
+/** A token whose VALUE changes with the theme. Both blocks must declare it. */
+const THEMED = ['color', 'shadow'];
+/** A token that does not. The light block must NOT re-declare it: a second
+ *  copy of a value that never differs is a copy that can only drift. */
+const CONSTANT = ['radius', 'row', 'font', 'measure', 'leading'];
+
 describe('the --cru-* contract', () => {
-  /** A token whose VALUE changes with the theme. Both blocks must declare it. */
-  const THEMED = ['color', 'shadow'];
-  /** A token that does not. The light block must NOT re-declare it: a second
-   *  copy of a value that never differs is a copy that can only drift. */
-  const CONSTANT = ['radius', 'row', 'font', 'measure', 'leading'];
 
   const namesIn = (t: Map<string, string>, family: string) =>
     [...t.keys()].filter((k) => k.startsWith(`--cru-${family}-`)).sort();
@@ -172,8 +173,24 @@ describe('the --cru-* contract', () => {
   it('every --cru-* token resolves to a value, in both themes', () => {
     for (const { name, tokens } of THEMES) {
       for (const key of contractDark.keys()) {
+        // `resolveToken` throws on a name the theme never declares AND on a
+        // name whose chain ends at one, which covers the empty value too.
         expect(() => resolveToken(tokens, key), `${name} ${key}`).not.toThrow();
       }
+    }
+  });
+
+  it('a token that does not change with the theme reads the same in both', () => {
+    // The CONSTANT families are declared once and inherited by the light
+    // block. Resolving both themes proves the inheritance still reaches them:
+    // a radius, a row height or a type size that answered differently per
+    // theme would mean the light block had quietly grown a second copy.
+    const constant = [...contractDark.keys()].filter((k) =>
+      CONSTANT.some((family) => k.startsWith(`--cru-${family}-`)),
+    );
+    expect(constant.length).toBeGreaterThan(0);
+    for (const key of constant) {
+      expect(resolveToken(lightTokens, key), key).toBe(resolveToken(darkTokens, key));
     }
   });
 

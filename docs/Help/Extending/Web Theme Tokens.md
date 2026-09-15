@@ -70,6 +70,27 @@ To re-value a radius, therefore, set it once on `:root`. To re-value a
 colour, set it on `:root` for both themes, or under the theme selector for
 one.
 
+## Which sizes follow the reader
+
+A browser lets a reader choose a font size. That choice multiplies the root
+font size. A `rem` value follows the multiplier. A `px` value ignores it.
+
+The app splits its sizes on that line:
+
+- **A type size, a row height and a measure are `rem`.** They carry text, or
+  they hold text, so they grow when the reader asks for larger text. The
+  tables below give each value in `rem` and name the pixel size it makes at
+  the default 16px root.
+- **Box geometry stays `px`.** A radius, a hairline, a rule, the focus ring
+  and an icon box draw an edge around a box. An edge does not carry text, and
+  a `rem` edge would thicken for a reader who only asked for larger type.
+- **`--cru-row-touch` stays `px` for a different reason.** It is a touch
+  target floor. A `rem` value would SHRINK the target for a reader who lowers
+  the font size, and a hit area must never follow that direction.
+
+Write a plugin override in the same unit as the default. A `px` type size in
+a plugin stylesheet freezes the app for every reader who set a preference.
+
 ## Colour
 
 Every colour token has a value in both themes.
@@ -184,7 +205,8 @@ a border, a wash and an icon mask from one value.
 ## Radius
 
 The three role names are the contract. Set those. The legacy steps stay for
-the classes that still name a step.
+the classes that still name a step. Every radius is `px`: a corner is box
+geometry, and it does not follow the reader's font size.
 
 | Token | Role | Value |
 |---|---|---|
@@ -202,37 +224,48 @@ the classes that still name a step.
 
 These three values set the density of every list and every tree.
 
-| Token | Role | Value |
-|---|---|---|
-| `--cru-row-sm` | A desktop list row or tree row | `28px` |
-| `--cru-row-md` | A palette row, and a tree row at touch density | `36px` |
-| `--cru-row-touch` | A phone control row | `44px` |
+| Token | Role | Value | At a 16px root |
+|---|---|---|---|
+| `--cru-row-sm` | A desktop list row or tree row | `1.75rem` | 28px |
+| `--cru-row-md` | A palette row, and a tree row at touch density | `2.25rem` | 36px |
+| `--cru-row-touch` | A phone control row | `44px` | 44px |
+
+The first two row heights hold a line of text, so they scale with it.
+`--cru-row-touch` does not: it is the floor of a touch target, and a reader
+who lowers the font size must keep the target.
 
 ## Type
 
-| Token | Role | Value |
-|---|---|---|
-| `--cru-font-ui` | The interface family | `'Geist Variable', system-ui, …` |
-| `--cru-font-mono` | The monospace family | `'Geist Mono Variable', ui-monospace, …` |
-| `--cru-font-floor` | Timestamps, token counts and kiln names | `11px` |
-| `--cru-font-reading` | The transcript, note prose, chips and tool rows | `13px` |
-| `--cru-font-title` | An empty state title or a card title | `14px` |
-| `--cru-leading-reading` | One leading for every block of running text | `1.6` |
-| `--cru-font-reading-leading` | The leading of the reading step, which `text-xs` reads | `1.5` |
+| Token | Role | Value | At a 16px root |
+|---|---|---|---|
+| `--cru-font-ui` | The interface family | `'Geist Variable', system-ui, …` | — |
+| `--cru-font-mono` | The monospace family | `'Geist Mono Variable', ui-monospace, …` | — |
+| `--cru-font-floor` | Timestamps, token counts and kiln names | `0.6875rem` | 11px |
+| `--cru-font-reading` | The transcript, note prose, chips and tool rows | `0.8125rem` | 13px |
+| `--cru-font-title` | An empty state title or a card title | `0.875rem` | 14px |
+| `--cru-leading-reading` | One leading for every block of running text | `1.6` | — |
+| `--cru-font-reading-leading` | The leading of the reading step, which `text-xs` reads | `1.5` | — |
+
+A leading carries no unit on purpose. An unitless leading multiplies the
+element's own font size, so it follows every size above with no second value
+to keep in step.
 
 Note prose takes `--cru-font-reading` as its root, and the headings scale in
 `em` from it. To enlarge the headings, raise the reading size. There is no
-separate prose token, because a second name for the same 13px invites the
+separate prose token, because a second name for the reading size invites the
 two to drift apart. Hierarchy above the reading size moves on weight, not on
 size.
 
 ## Measure
 
-| Token | Role | Value |
-|---|---|---|
-| `--cru-measure-chat` | The chat column. The transcript, the composer and the chip row stop at this edge | `64rem` |
-| `--cru-measure-empty` | The body line of an empty state | `36ch` |
-| `--cru-measure-tab` | The cap on a tab title before the middle ellipsis | `200px` |
+| Token | Role | Value | At a 16px root |
+|---|---|---|---|
+| `--cru-measure-chat` | The chat column. The transcript, the composer and the chip row stop at this edge | `64rem` | 1024px |
+| `--cru-measure-empty` | The body line of an empty state | `36ch` | — |
+| `--cru-measure-tab` | The cap on a tab title before the middle ellipsis | `12.5rem` | 200px |
+
+`--cru-measure-empty` counts characters. One `ch` is the width of a `0` in
+the element's own font, so the measure already follows the type size.
 
 ## Elevation
 
@@ -265,7 +298,8 @@ changes 9 values and touches no component.
   --cru-color-on-primary:     #0b0f17;
 
   /* Square the chrome. A radius does not change with the theme, so it is set
-     once here and the light block below does not repeat it. The composer
+     once here and the light block below does not repeat it. A radius is box
+     geometry, so it is written in `px`, not in `rem`. The composer
      keeps a small radius: a zero-radius prompt field reads as a text editor
      rather than as a prompt. */
   --cru-radius-control: 0px;

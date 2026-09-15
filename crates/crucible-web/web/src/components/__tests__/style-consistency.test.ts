@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { resolve, join } from 'path';
+import { contractDark, contractLight, resolveToken } from '@/test-utils/css-tokens';
 
 /**
  * Design-system contract: the 2026-07-17 styling pass migrated every raw
@@ -336,5 +337,68 @@ describe('no raw visual value in a component (token contract)', () => {
         });
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('a size that a reader scales is declared in rem (token contract)', () => {
+  /**
+   * A browser's font-size preference multiplies the root font size. A `rem`
+   * follows that multiplier; a `px` does not. So a type size, a row height or
+   * a measure written in `px` freezes the app at 16px for every reader who
+   * asked for something else, and no plugin stylesheet can unfreeze it.
+   *
+   * The gate reads the PARSED contract, not the source text. A grep for
+   * `13px` goes green the moment someone writes `13.0px`, and it can never
+   * fail for the reason it was written.
+   *
+   * At a 16px root each converted value is the same number of device pixels
+   * as the `px` it replaced, so this change moved no edge.
+   */
+
+  /** A family whose members scale with the reader. */
+  const SCALING_FAMILY = /^--cru-(?:font|row|measure)-/;
+
+  /**
+   * A token that is `px` ON PURPOSE. Each entry gives the reason, because a
+   * bare list of names rots into a list of excuses.
+   *
+   * Every OTHER px-by-design token sits outside the three scaling families
+   * and this gate never sees it: `--cru-radius-*` draws a corner on a box,
+   * and `--cru-shadow-*` offsets and blurs a shadow. A corner and a shadow
+   * belong to the box, not to the text inside it, so neither follows the
+   * reader.
+   */
+  const PX_BY_DESIGN = new Map<string, string>([
+    [
+      '--cru-row-touch',
+      'a touch target floor: 44px is the minimum a finger can hit, and a reader who LOWERS the font size must not lose the target',
+    ],
+  ]);
+
+  const PX_VALUE = /(?:^|[\s,(])-?[0-9.]+px\b/;
+
+  it('every allow-list entry names a token the contract declares', () => {
+    // An entry for a token that no longer exists is a hole nobody can see.
+    for (const name of PX_BY_DESIGN.keys()) {
+      expect(contractDark.has(name), `${name} is allow-listed but undeclared`).toBe(true);
+    }
+  });
+
+  it('no --cru-font-*, --cru-row-* or --cru-measure-* token carries a px value', () => {
+    const offenders: string[] = [];
+    for (const contract of [contractDark, contractLight]) {
+      for (const [name, value] of contract) {
+        if (!SCALING_FAMILY.test(name)) continue;
+        if (PX_BY_DESIGN.has(name)) continue;
+        if (PX_VALUE.test(value)) offenders.push(`${name}: ${value}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the touch row keeps its 44px floor', () => {
+    // The allow-list says 44px is deliberate. Prove that it is still 44px:
+    // an entry that excuses any value at all excuses the value going to 20px.
+    expect(resolveToken(contractDark, '--cru-row-touch')).toBe('44px');
   });
 });

@@ -21,6 +21,10 @@
   --tree-icon-slot: 1rem;
 }
 
+/* The touch steps stay in PIXELS. Both are box geometry: an indent guide is a
+   drawn rule and an icon slot is a box around a glyph, so neither carries text
+   and neither follows a reader's font-size preference. The row height above
+   them does follow it, through `--row-md`. */
 [data-density='touch'] {
   --tree-indent: 20px;
   --tree-icon-slot: 22px;

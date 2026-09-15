@@ -6,7 +6,9 @@
  * colour at 40%, so a failure never looks like an empty answer. */
 .empty-state[data-tone='error'] {
   border: 1px solid color-mix(in srgb, var(--color-error) 40%, transparent);
-  border-radius: 6px;
+  /* The control radius, by name. The literal `6px` here was a second copy of
+     the token's value, and a plugin that squared the chrome missed it. */
+  border-radius: var(--cru-radius-control);
 }
 
 

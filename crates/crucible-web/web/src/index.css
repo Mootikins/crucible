@@ -84,8 +84,13 @@
      * Hierarchy above `text` moves on WEIGHT, not on size — which is what the
      * variable `wght` axis bought. Headings still scale in `em` off the prose
      * root (see PROSE_CLASS in lib/markdown.ts). */
-    --cru-font-reading: 13px;
-    --cru-font-floor: 11px;
+    /* EVERY SIZE BELOW IS `rem`, NOT `px`. A browser's font-size preference
+     * multiplies the root font size, and a `rem` follows that multiplier
+     * while a `px` ignores it. A reader who asks for larger text gets it. At
+     * the default 16px root each value is the pixel size the comment names,
+     * so nothing moved. */
+    --cru-font-reading: 0.8125rem; /* 13px at a 16px root */
+    --cru-font-floor: 0.6875rem; /* 11px at a 16px root */
     /* Line height for the reading step; `text-xs` reads it. */
     --cru-font-reading-leading: 1.5;
     --cru-leading-reading: 1.6;
@@ -106,9 +111,15 @@
     /* 64rem, up from 46rem: a wide chat pane kept adding empty margins past
      * 736px while the editor beside it took the width. Was too small. */
     --cru-measure-chat: 64rem;
-    /* Three row heights (R6): desktop list rows, palette rows, touch rows. */
-    --cru-row-sm: 28px;
-    --cru-row-md: 36px;
+    /* Three row heights (R6): desktop list rows, palette rows, touch rows.
+     * The first two scale with the reader, because a row holds a line of text
+     * and a taller line needs a taller row. */
+    --cru-row-sm: 1.75rem; /* 28px at a 16px root */
+    --cru-row-md: 2.25rem; /* 36px at a 16px root */
+    /* 44px, IN PIXELS ON PURPOSE. This is a touch target floor, not a type
+     * size: 44px is the smallest box a finger hits reliably. A `rem` would
+     * shrink the target for a reader who LOWERS the font size, which is the
+     * one direction a hit area must never follow. */
     --cru-row-touch: 44px;
 
     --cru-color-primary: #e0653a;
@@ -251,7 +262,15 @@
     /* ── Radii ────────────────────────────────────────────────────────────
      * Tight and consistent, the way an editor rounds its chrome. Overrides
      * Tailwind's defaults so every `rounded-*` in the app tightens at once —
-     * no more xl/2xl bubbles. */
+     * no more xl/2xl bubbles.
+     *
+     * EVERY RADIUS IS `px`, NOT `rem`, AND STAYS THAT WAY. A radius is box
+     * geometry: it draws a corner, and a corner does not carry text. A `rem`
+     * radius would swell a 3px corner into a 6px corner for a reader who only
+     * asked for larger type, and the chrome would lose the tight look this
+     * scale exists to give it. The same rule holds for every other box value
+     * in this stylesheet — a 1px hairline, a 1px rule, the focus ring's 2px
+     * width and 2px offset, an icon box, and the 44px touch floor above. */
     --cru-radius-sm: 3px;
     --cru-radius-md: 4px;
     --cru-radius-lg: 6px;
@@ -285,9 +304,11 @@
    * There is no `--cru-font-prose`. PROSE_CLASS in lib/markdown.ts already
    * takes `text-reading` as its root and scales the headings from it in
    * `em`, so a second name for the same 12px would only invite drift. */
-  --cru-font-title: 14px;
+  --cru-font-title: 0.875rem; /* 14px at a 16px root */
+  /* `ch` already follows the type size: one `ch` is the width of a `0` in the
+   * element's own font, so this measure scales with no help. */
   --cru-measure-empty: 36ch;
-  --cru-measure-tab: 200px;
+  --cru-measure-tab: 12.5rem; /* 200px at a 16px root */
 
   /* ── Callout hues ─────────────────────────────────────────────────────
    * An `r, g, b` TRIPLE, not a hex: the callout rules wrap these in
@@ -625,6 +646,9 @@
     outline: none;
   }
   &:focus-visible {
+    /* 2px and 2px, IN PIXELS ON PURPOSE. A focus ring is a drawn edge around
+     * a box, not text. It must read the same at every type size, and a `rem`
+     * ring would thin out for a reader who lowers the font size. */
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 2px;
     /* No `border-radius: inherit` here: it made a rounded-sm close button
@@ -1314,10 +1338,14 @@ details.callout[open] > summary.callout-title::after {
   transform: rotate(180deg);
 }
 /* The count that names what is collapsed. Mono to match `.fm-key`, so the bar
-   reads as part of the property table rather than as prose. */
+   reads as part of the property table rather than as prose.
+
+   The three sizes in this card read the TOKEN. Each was a `px` literal, which
+   a plugin stylesheet cannot reach and a reader's font-size preference cannot
+   move. */
 .fm-count {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--cru-font-floor);
 }
 .fm-row + .fm-row {
   margin-top: 3px;
@@ -1330,14 +1358,18 @@ details.callout[open] > summary.callout-title::after {
 }
 .fm-key {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--cru-font-floor);
   color: var(--color-muted-dark);
 }
 .fm-val {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  font-size: 12.5px;
+  /* The reading step. This was `12.5px`, a half step that the published scale
+     never named. It dates from the scale before 2026-09-15, when the reading
+     size was 12px; the scale then moved up one pixel and left this value half
+     a pixel below it. */
+  font-size: var(--cru-font-reading);
   color: var(--color-shell-body);
   min-width: 0;
 }
@@ -1348,7 +1380,7 @@ details.callout[open] > summary.callout-title::after {
   border: 1px solid var(--color-hairline-strong);
   border-radius: 9999px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--cru-font-floor);
   line-height: 1.6;
   color: var(--color-shell-body);
 }
