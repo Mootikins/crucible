@@ -85,7 +85,7 @@ async fn list_models_dynamic_discovery_succeeds(
 }
 
 #[tokio::test]
-async fn test_list_models_dynamic_discovery_failure_returns_empty() {
+async fn a_failed_dynamic_discovery_offers_the_configured_model() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
@@ -115,6 +115,7 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
         "zai-fail".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
             .endpoint(&zai_endpoint)
+            .model("GLM-4.7")
             .build(),
     );
 
@@ -135,12 +136,17 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     let models = agent_manager.list_models(&session.id, None).await.unwrap();
     openai_server.await.unwrap();
 
-    // Without available_models, failed discovery returns empty (no hardcoded fallback)
+    // Without available_models, a failed discovery still offers the model the
+    // provider runs with: nothing was discovered, but the session can run.
     assert!(
-        models.is_empty(),
-        "Failed API discovery without available_models should return empty, got: {:?}",
-        models
+        models.contains(&"zai-fail/GLM-4.7".to_string()),
+        "the configured model must survive a refused connection, got: {models:?}"
     );
+    assert!(
+        models.iter().any(|m| m.starts_with("openai-fail/")),
+        "a 503 from the listing route must not empty the provider, got: {models:?}"
+    );
+    assert_eq!(models.len(), 2, "one model per provider, got: {models:?}");
 }
 
 #[tokio::test]
@@ -497,13 +503,21 @@ async fn test_list_models_integration_partial_failure() {
         models
     );
 
-    // 2 from openai-ok-int + 2 from zai-ok-int + 0 from failed ollama
-    let expected_total = 2 + 2;
+    // 2 from openai-ok-int + 2 from zai-ok-int + 1 from the failed ollama:
+    // discovery found nothing there, so the provider offers the one model it
+    // runs with. An endpoint that refuses `/models` still answers chat — the
+    // Z.AI coding endpoint does exactly that — and a picker that hid every
+    // such model listed nothing.
+    let expected_total = 2 + 2 + 1;
     assert_eq!(
         models.len(),
         expected_total,
-        "Expected 4 models from healthy providers, got: {:?}",
+        "Expected 4 discovered models plus the failed provider's own, got: {:?}",
         models
+    );
+    assert!(
+        models.iter().any(|m| m == "ollama-bad-int/llama3.2"),
+        "{models:?}"
     );
 }
 
@@ -674,12 +688,17 @@ async fn test_list_models_ollama_failure() {
         models
     );
 
-    // Only OpenAI models present (Ollama silently failed)
+    // Both OpenAI models, plus the one model the dead Ollama runs with: a
+    // failed discovery offers the configured model rather than nothing.
     assert_eq!(
         models.len(),
-        2,
-        "Should have exactly 2 OpenAI models, got: {:?}",
+        3,
+        "Should have 2 OpenAI models and the dead provider's own, got: {:?}",
         models
+    );
+    assert!(
+        models.iter().any(|m| m == "ollama-dead/llama3.2"),
+        "{models:?}"
     );
 }
 

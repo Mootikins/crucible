@@ -300,7 +300,7 @@ impl AgentManager {
         let mut all_models = Vec::new();
 
         for (provider_key, provider_config, _) in self.iter_chat_providers(classification) {
-            let models = self.discover_models(&provider_key, &provider_config).await;
+            let models = self.offered_models(&provider_key, &provider_config).await;
             for model in models {
                 all_models.push(format!("{}/{}", provider_key, model));
             }
@@ -350,7 +350,7 @@ impl AgentManager {
         let mut all_models = Vec::new();
 
         for (provider_key, provider_config, _) in self.iter_chat_providers(None) {
-            let models = self.discover_models(&provider_key, &provider_config).await;
+            let models = self.offered_models(&provider_key, &provider_config).await;
             for model in models {
                 all_models.push(format!("{}/{}", provider_key, model));
             }
@@ -366,6 +366,29 @@ impl AgentManager {
     ///
     /// Always returns a model list (never fails). Falls back to
     /// `effective_models()` from config when discovery errors or returns empty.
+    /// The models a picker may offer for one provider: what discovery found,
+    /// or the model the provider runs with when discovery found nothing.
+    ///
+    /// A provider with no `available_models` and a listing route that fails
+    /// (the Z.AI coding endpoint answers `/models` with 401) used to
+    /// contribute nothing, so the composer's model chip opened on "No
+    /// matches" for every session on that provider. The session still runs
+    /// the provider's configured model, so that model is a true offer.
+    /// `list_providers` keeps reading `discover_models` directly: its
+    /// `available` flag means "the endpoint answered", which this would hide.
+    pub(super) async fn offered_models(
+        &self,
+        provider_key: &str,
+        provider_config: &LlmProviderConfig,
+    ) -> Vec<String> {
+        let models = self.discover_models(provider_key, provider_config).await;
+        if models.is_empty() {
+            vec![provider_config.model()]
+        } else {
+            models
+        }
+    }
+
     pub(super) async fn discover_models(
         &self,
         provider_key: &str,

@@ -272,13 +272,20 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
     );
 }
 
+/// A provider whose listing endpoint is dead still runs the model its config
+/// names, so the picker offers that model instead of an empty list.
+///
+/// Discovery used to fail to an empty list, and the composer's model chip then
+/// opened on "No matches" for every session — the Z.AI coding endpoint
+/// answers its `/models` route with 401, so a user of that provider never saw
+/// a model to pick, on the phone or on the desktop.
 #[tokio::test]
-async fn test_list_models_discovery_failure_returns_empty() {
+async fn discovery_failure_still_offers_the_model_each_provider_runs() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    // Use dead endpoints to force discovery failure
+    // Dead endpoints force discovery failure.
     let dead_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let dead_addr = dead_listener.local_addr().unwrap();
     drop(dead_listener);
@@ -292,15 +299,10 @@ async fn test_list_models_discovery_failure_returns_empty() {
             .build(),
     );
     providers.insert(
-        "openai-dead".to_string(),
-        LlmProviderConfig::builder(BackendType::OpenAI)
-            .endpoint(&dead_endpoint)
-            .build(),
-    );
-    providers.insert(
         "zai-dead".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
             .endpoint(&dead_endpoint)
+            .model("GLM-4.7")
             .build(),
     );
 
@@ -320,11 +322,16 @@ async fn test_list_models_discovery_failure_returns_empty() {
 
     let models = agent_manager.list_models(&session.id, None).await.unwrap();
 
-    // Without available_models and with dead endpoints, all providers return empty
     assert!(
-        models.is_empty(),
-        "Failed discovery without available_models should return empty, got: {:?}",
-        models
+        models.contains(&"zai-dead/GLM-4.7".to_string()),
+        "the configured model must be offered when discovery finds nothing, got: {models:?}"
+    );
+    // The provider without a configured model runs its backend default, and
+    // that is what it offers. One row per provider, no discovery output.
+    assert_eq!(models.len(), 2, "one model per provider, got: {models:?}");
+    assert!(
+        models.iter().any(|m| m.starts_with("anthropic-dead/")),
+        "every configured provider offers the model it runs, got: {models:?}"
     );
 }
 
