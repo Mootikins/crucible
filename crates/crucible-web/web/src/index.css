@@ -1653,12 +1653,25 @@ details.callout[open] > summary.callout-title::after {
  * A notch, a rounded corner or a gesture bar covers part of a phone's screen.
  * The compact shell pads its app bar and its bottom edge by these, so no
  * control sits under the hardware. They are 0 on a desktop, and 0 on iOS
- * unless the viewport meta carries `viewport-fit=cover` (see index.html). */
+ * unless the viewport meta carries `viewport-fit=cover` (see index.html).
+ *
+ * The TOP inset applies only when the page is installed (standalone or
+ * fullscreen). In a browser tab the browser's own chrome already separates
+ * the page from the status bar, so the page never draws under it — yet
+ * Firefox on Android reports the status bar's height there anyway, which
+ * put a bar of dead space above the app bar on every phone with a camera
+ * cutout. The bottom inset stays live in a tab: Safari reports it only when
+ * its toolbar collapses and the page really reaches the home indicator. */
 :root {
-  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-top: 0px;
   --inset-right: env(safe-area-inset-right, 0px);
   --inset-bottom: env(safe-area-inset-bottom, 0px);
   --inset-left: env(safe-area-inset-left, 0px);
+}
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  :root {
+    --inset-top: env(safe-area-inset-top, 0px);
+  }
 }
 
 /* ── Settings on a phone ───────────────────────────────────────────────
