@@ -388,6 +388,35 @@ async fn create_session_accepts_acp_agent() {
 }
 
 #[tokio::test]
+async fn create_session_forwards_a_card_without_reconfiguring_its_agent() {
+    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+    let (mock, client) = start_mock_daemon().await;
+    let response = build_test_app(build_mock_state(client))
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(
+                    r#"{"agent_card":"researcher","workspace":"/work/project"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let request = mock.received_params("session.create").unwrap();
+    assert_eq!(request["agent_card"], "researcher");
+    assert_eq!(request["workspace"], "/work/project");
+    assert_eq!(request["configure_agent"], true);
+    assert!(request.get("agent_name").is_none());
+    assert!(!mock
+        .received_methods()
+        .iter()
+        .any(|method| method == "session.configure_agent"));
+}
+
+#[tokio::test]
 async fn create_session_refuses_an_endpoint_targeting_an_internal_address() {
     // The route must not forward such an endpoint to the daemon at all.
     // Only addresses that stay blocked under either loopback setting are

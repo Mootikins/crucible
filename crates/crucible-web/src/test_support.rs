@@ -4,11 +4,6 @@
 // build without CI feature flags. Do NOT fork a second copy: the two copies
 // this replaced drifted (different resume_from_storage shapes).
 #[cfg(any(test, feature = "test-utils"))]
-use crate::routes::{
-    agents_routes, chat_routes, config_routes, fs_routes, health_routes, project_routes,
-    search_routes, session_routes_fail_closed,
-};
-#[cfg(any(test, feature = "test-utils"))]
 use crate::services::daemon::{AppState, EventBroker, ReconnectingDaemon};
 #[cfg(any(test, feature = "test-utils"))]
 use axum::Router;
@@ -1018,16 +1013,30 @@ pub fn unique_test_layout_path() -> std::path::PathBuf {
 #[cfg(any(test, feature = "test-utils"))]
 /// Build the full app router with mock state.
 pub fn build_test_app(state: AppState) -> Router {
-    Router::new()
-        .merge(agents_routes())
-        .merge(chat_routes())
-        .merge(config_routes())
-        .merge(session_routes_fail_closed())
-        .merge(project_routes())
-        .merge(search_routes())
-        .merge(fs_routes())
-        .with_state(state)
-        .merge(health_routes())
+    use crate::middleware::auth::{ApiKeyState, HostPolicy};
+    use crate::server::{build_router, WebConfig};
+
+    // Contract fixtures represent a remote bind with authentication disabled.
+    // Security-composition tests inject credentials and real request headers.
+    let config = WebConfig {
+        host: "0.0.0.0".into(),
+        port: 3000,
+        ..Default::default()
+    };
+    let credentials = Arc::new(ApiKeyState::new_at(
+        None,
+        HostPolicy::from_web_config(&config).unwrap(),
+        None,
+    ));
+    build_router(&config, state, credentials).layer(axum::middleware::from_fn(
+        async |mut request: axum::extract::Request, next: axum::middleware::Next| {
+            request
+                .headers_mut()
+                .entry(axum::http::header::HOST)
+                .or_insert(axum::http::HeaderValue::from_static("localhost:3000"));
+            next.run(request).await
+        },
+    ))
 }
 
 #[cfg(any(test, feature = "test-utils"))]

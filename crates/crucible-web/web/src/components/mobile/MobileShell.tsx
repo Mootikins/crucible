@@ -10,7 +10,7 @@ import { DrawerTabs } from '@/components/mobile/DrawerTabs';
 import { AlertTriangle, FolderTree, Link2, MoreHorizontal } from '@/lib/icons';
 import { TabOverview } from '@/components/mobile/TabOverview';
 import { MobileEditorBar } from '@/components/mobile/MobileEditorBar';
-import { OfflineBadge } from '@/components/mobile/OfflineBadge';
+import { OfflineBadge } from '@/components/OfflineBadge';
 import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
 import { openPanelTab } from '@/lib/panel-actions';
 import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';

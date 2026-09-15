@@ -99,6 +99,7 @@ pub(crate) async fn handle_session_send_message(
 /// Shared implementation for context injection -- used by both RPC handler and Lua bridge.
 pub(crate) async fn inject_context_impl(
     sm: &SessionManager,
+    am: &AgentManager,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     session_id: &str,
     role: &str,
@@ -115,6 +116,17 @@ pub(crate) async fn inject_context_impl(
         .get_session(session_id)
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
+    if session
+        .agent
+        .as_ref()
+        .is_some_and(|agent| agent.agent_type == "acp")
+    {
+        return Err(
+            "Context injection requires an internal agent; ACP owns its conversation history"
+                .into(),
+        );
+    }
+
     let log_event = match role {
         "system" => crate::observe::LogEvent::system(content),
         "user" => crate::observe::LogEvent::user(content),
@@ -122,13 +134,25 @@ pub(crate) async fn inject_context_impl(
         _ => unreachable!(),
     };
 
-    let event_json = serde_json::to_string(&log_event).map_err(|e| e.to_string())?;
+    let slot = am.slot(session_id);
+    let mut input = slot.input.lock().await;
+    // Rebuild before writing, otherwise the first turn replays this acceptance
+    // and then drains the same message from the live queue a second time.
+    am.get_or_rebuild_session_tree(session_id, &session.jsonl_path(sm.sessions_root()))
+        .await;
+    let accepted = crate::observe::events::InjectedContext {
+        after_turn: input.after_turn.clone(),
+        message: log_event.clone(),
+    };
+    let event_json = serde_json::to_string(&accepted).map_err(|e| e.to_string())?;
     let storage = sm.storage();
     storage
         .append_event(&session, &event_json)
         .await
         .map_err(|e| e.to_string())?;
 
+    input.pending.push(log_event);
+    drop(input);
     let _ = emit_event(
         event_tx,
         SessionEventMessage::new(
@@ -147,6 +171,7 @@ pub(crate) async fn inject_context_impl(
 pub(crate) async fn handle_session_inject_context(
     req: Request,
     sm: &Arc<SessionManager>,
+    am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let params = match typed_params::<SessionInjectContextRequest>(&req) {
@@ -155,9 +180,13 @@ pub(crate) async fn handle_session_inject_context(
     };
     let session_id = &params.session_id;
 
-    match inject_context_impl(sm, event_tx, session_id, &params.role, &params.content).await {
+    match inject_context_impl(sm, am, event_tx, session_id, &params.role, &params.content).await {
         Ok(()) => Response::success(req.id, serde_json::json!({ "status": "ok" })),
-        Err(msg) if msg.starts_with("Invalid role") => Response::error(req.id, INVALID_PARAMS, msg),
+        Err(msg)
+            if msg.starts_with("Invalid role") || msg.starts_with("Context injection requires") =>
+        {
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
         Err(msg) if msg.starts_with("Session not found") => session_not_found(req.id, session_id),
         Err(msg) => Response::error(req.id, INTERNAL_ERROR, msg),
     }

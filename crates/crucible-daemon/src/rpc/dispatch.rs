@@ -635,6 +635,7 @@ impl RpcDispatcher {
                     crate::server::session::handle_session_inject_context(
                         req.clone(),
                         &self.ctx.sessions,
+                        &self.ctx.agents,
                         &self.ctx.event_tx
                     )
                 )

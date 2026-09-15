@@ -272,6 +272,18 @@ Withdrawal adds: T1 the name/title split in `components/surface_modal.rs`; T1 cl
 
 The `withdrawn` flag adds: T1 `a_withdrawn_event_needs_no_refetch` plus the two refetch negatives in `chat_runner/tests/surface_refresh.rs`; T2 `a_withdrawal_off_the_wire_stops_the_drawing` in `user_story_tests/surface_tests.rs`, which starts at the wire event and supplies no fetch result. RED-verify by ignoring `withdrawn` in `system_msgs` — the T1 gets a `RefreshSurface` and the T2 keeps the rows drawn, because nothing answers the refresh; then invert the branch and the two negatives fail. `declare`'s announcement is T1 in `crucible-lua/src/surfaces.rs`: `declaring_a_surface_announces_it`, `redeclaring_with_new_metadata_announces_it`, and `redeclaring_the_same_metadata_announces_nothing` for the no-op gate. RED-verify by dropping the announce (the first two fail, the third passes), then by announcing unconditionally on the update arm (only the third fails). The browser half is Vitest in `web/src/components/__tests__/SurfacesPanel.test.tsx`, and the wire frame is `routes/surface.rs` — the contract crosses a language boundary, so each side of it is tested.
 
+### US-909: Start a chat on an agent card
+
+**As a user**, I can run `cru chat --card researcher` and use the same daemon-resolved
+card as a one-shot or web session. The initial card label gives way to the model
+and mode the daemon actually resolved. Unknown cards create no session; resuming
+never replaces the existing session's agent.
+
+**Tests:** T1 flag/conflict parsing in `cli/tests/chat.rs` and progressive setup
+state in `chat_app/tests.rs`; T2 `user_story_tests/agent_card_tests.rs` draws the
+resolved model through the production event translator. The process boundary is
+covered by the card-backed query in `oneshot_precognition_query_e2e.rs`.
+
 ### US-HERO: One session, many consoles (cross-surface)
 **As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
 **Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.

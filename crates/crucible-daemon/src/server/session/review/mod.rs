@@ -207,8 +207,15 @@ async fn reject_hunk(
     // The revert already landed on disk. A failure to inject the note leaves
     // the worktree correct and the agent ignorant, which is the loop this
     // exists to prevent — loud, but never a failed RPC.
-    if let Err(e) =
-        super::inject_context_impl(sm, event_tx, session_id, "user", &rejection_notice(&hunk)).await
+    if let Err(e) = super::inject_context_impl(
+        sm,
+        am,
+        event_tx,
+        session_id,
+        "user",
+        &rejection_notice(&hunk),
+    )
+    .await
     {
         warn!(
             session_id,
@@ -266,7 +273,8 @@ pub(crate) async fn set_states(
         // The reverts already landed on disk. A failure to inject the note
         // leaves the worktree correct and the agent ignorant — loud, but
         // never a failed RPC, the same rule as the single reject.
-        if let Err(e) = super::inject_context_impl(sm, event_tx, session_id, "user", &notice).await
+        if let Err(e) =
+            super::inject_context_impl(sm, am, event_tx, session_id, "user", &notice).await
         {
             warn!(
                 session_id,
@@ -320,7 +328,8 @@ pub(crate) async fn undo_reject(
     // the worktree correct and the agent misinformed — loud, but never a
     // failed RPC, the same rule as the reject.
     if !notice.is_empty() {
-        if let Err(e) = super::inject_context_impl(sm, event_tx, session_id, "user", &notice).await
+        if let Err(e) =
+            super::inject_context_impl(sm, am, event_tx, session_id, "user", &notice).await
         {
             warn!(
                 session_id,

@@ -98,6 +98,8 @@ export interface CreateSessionParams {
   agent_type?: string;
   /** ACP agent profile name; required when agent_type is "acp". */
   agent_name?: string;
+  /** Internal-agent card name, resolved in the session's scope by the daemon. */
+  agent_card?: string;
   /**
    * The RUNTIME axis — where the session's process runs. Forwarded untouched:
    * `false` = unisolated even if the project asks otherwise, `true` = the
@@ -901,6 +903,5 @@ export interface EditorFile {
 // =============================================================================
 // Context Types (re-exported from types/context.ts)
 // =============================================================================
-
 
 

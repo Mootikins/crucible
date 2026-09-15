@@ -8,6 +8,7 @@ mod create;
 mod delegate;
 mod lifecycle;
 mod message_rows;
+mod persisted_history;
 mod review;
 mod session_json;
 

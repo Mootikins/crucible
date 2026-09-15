@@ -19,6 +19,13 @@ Agent cards define specialized AI agents. Each card is a markdown file: YAML fro
 
 ## What's in an Agent Card
 
+Use `cru chat --card <name>` for interactive or one-shot chat, or
+`cru session create --agent <name>` to create a session without opening it.
+In the web desktop composer or mobile New Session sheet, choose the internal
+agent and enter the name in **Agent card**. Leave it empty for the configured
+default. Every entry point asks the daemon to resolve the card after selecting
+the session's scope; an unknown name is an error, not a fallback to defaults.
+
 - **Who is this agent?** — Name, description, system prompt
 - **What can it do?** — Per-tool permissions and MCP servers
 - **What model?** — Optional provider/model override (omit to inherit the spawning context's model)

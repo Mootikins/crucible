@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { readState } from './_state';
 
@@ -104,6 +105,84 @@ async function saveBuffer(page: Page): Promise<void> {
 
 test.describe('live note conflict (WS-322)', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
+
+  test('a lost save reply survives reload, a competing write and a daemon restart during drain', async ({ page }, testInfo) => {
+    const name = `LostReply-${testInfo.project.name}.md`;
+    const notePath = path.join(state.kilnDir!, name);
+    writeFileSync(notePath, BASE);
+    await pinSettings(page);
+    await page.goto(state.baseURL!);
+    await shellReady(page);
+    await openNote(page, notePath, name);
+
+    // Read the browser's real durable queue, not component state or a test store.
+    const queued = () => page.evaluate(async (file) => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('crucible-offline');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        return await new Promise<any[]>((resolve, reject) => {
+          const request = db.transaction('outbox').objectStore('outbox').getAll();
+          request.onsuccess = () => resolve(request.result.filter((row) => row.path === file));
+          request.onerror = () => reject(request.error);
+        });
+      } finally { db.close(); }
+    }, notePath);
+
+    await page.route('**/api/kiln/file', async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      // The daemon committed, but this browser never receives the successful reply.
+      await route.abort('failed');
+    });
+    await appendToLine(page, 'the shared line', ' plus mine');
+    await saveBuffer(page);
+    const ours = BASE.replace('the shared line', 'the shared line plus mine');
+    await expect.poll(() => readFileSync(notePath, 'utf-8')).toBe(ours);
+    await expect.poll(async () => (await queued()).length).toBe(1);
+    expect((await queued())[0].baseText).toBe(BASE);
+
+    await page.reload();
+    await shellReady(page);
+    expect((await queued())[0].body).toBe(ours);
+    const combined = ours.replace('a line only I touch', 'a line changed elsewhere');
+    writeFileSync(notePath, combined);
+    await page.unroute('**/api/kiln/file');
+    let restartedDuringDrain = false;
+    await page.route('**/api/kiln/file', async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      const response = await route.fetch();
+      // A drain first compares the stale hash, then retries with the base text.
+      if (response.status() === 409) return route.fulfill({ response });
+      expect(response.status()).toBe(200);
+      // Stop only this fixture's daemon after it has committed the drain.
+      // The still-running web process must reconnect to a fresh daemon.
+      execFileSync(state.cruBin!, ['daemon', 'stop'], {
+        env: { ...process.env, CRUCIBLE_SOCKET: state.socket!, HOME: path.join(state.tmpDir!, 'home'),
+          XDG_CONFIG_HOME: path.join(state.tmpDir!, 'cfg'), XDG_DATA_HOME: path.join(state.tmpDir!, 'data'),
+          XDG_RUNTIME_DIR: path.join(state.tmpDir!, 'run') },
+        stdio: 'ignore', timeout: 20_000,
+      });
+      await route.abort('failed');
+      restartedDuringDrain = true;
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect.poll(() => restartedDuringDrain, { timeout: 25_000 }).toBe(true);
+    expect((await queued())[0].body).toBe(ours);
+    expect(readFileSync(notePath, 'utf-8')).toBe(combined);
+    await page.unroute('**/api/kiln/file');
+    // A safe read exercises production reconnection before replaying a write.
+    await expect.poll(async () => {
+      const response = await page.request.get(`${state.baseURL}/api/kiln/file`, { params: { path: notePath } });
+      return response.status();
+    }, { timeout: 15_000 }).toBe(200);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect.poll(async () => (await queued()).length, { timeout: 15_000 }).toBe(0);
+    expect(readFileSync(notePath, 'utf-8')).toBe(combined);
+  });
 
   test('WS-322: two writers on one line, settled in the conflict view', async (
     { page },

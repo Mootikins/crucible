@@ -46,9 +46,20 @@ cru chat --acp codex
 
 Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or any custom profile defined in `init.lua`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
 
-`cru chat` does not take an agent card. It resolves its agent client-side,
-while cards are resolved by the daemon at session create — use
-`cru session create --agent <card>` for a card-backed session.
+#### `--card <NAME>`
+
+Start interactive or one-shot chat on an [[Help/Extending/Agent Cards|agent card]]:
+
+```bash
+cru chat --card researcher
+cru chat --card researcher "Review this design"
+```
+
+The daemon resolves the card in the selected workspace and kiln scope; the
+CLI does not discover or compose it. An unknown card creates no session.
+`--card` cannot combine with `--acp`, `--resume` or `--replay`. `--agent`
+remains an alias for `--acp` here; `cru session create --agent <card>` keeps
+its existing card meaning. Use `cru agents list` to see available names.
 
 #### `--provider <PROVIDER>`
 

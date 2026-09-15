@@ -95,9 +95,14 @@ The `consolidation` plugin is the periodic half of the loop. Where reflection re
 - It is **off by default** (`[plugins.consolidation] enabled = true` turns it on), because a pass spends model calls with no user present. It also needs `kiln` and `model`.
 - It samples sessions that ended since its last pass: the sessions with a tool error or a rejected edit first (at most `max_problem`), then clean ones (at most `max_clean`). A session with fewer than `min_turns` user turns is skipped. A `plugin` session is never in the sample, and the reviewer itself runs in one.
 - It runs its review through the reflection plugin, so its notes land as hunks in the pass's own session, titled `Consolidation: <the day it ran>`, and a human accepts or rejects each one in the same Changes panel.
-- It stores each consumed session id and event count in `cru.storage`. A session still running while another finishes remains eligible when it ends; a resumed session with new events becomes eligible again. The sample stops at the first group cap, leaving unconsumed candidates for the next pass. An old timestamp cursor is replaced on first run, re-sampling resident ended sessions once rather than silently skipping older work.
+- It stores each consumed session id and event count in `cru.storage`. A session still running while another finishes remains eligible when it ends; a resumed session with new events becomes eligible again. The sample stops at the first group cap, leaving unconsumed candidates for the next pass. An old timestamp cursor is replaced on first run, re-sampling ended sessions once rather than silently skipping older work.
 
-**Known gap.** `cru.session.list()` answers from the daemon's resident session map. A session that ended before a daemon restart is not in that map, so the pass does not see it. The planned **Durable Scheduled Jobs** item in [[Meta/Product#Self-Improvement Avenues|the product map]] is the fix: a run with a persistent store can list sessions from disk.
+The session list and transcript reader include persisted sessions after a daemon
+restart without reviving them. A fresh plugin activation reads its saved progress,
+and a review interrupted before success leaves its input eligible for retry.
+This is at-least-once processing: a crash after note writes but before the progress
+save can review that input again. The timer itself is still in-process, with no
+durable execution history; **Durable Scheduled Jobs** in [[Meta/Product#Self-Improvement Avenues|the product map]] remains separate work.
 
 ## Configuration
 

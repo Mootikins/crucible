@@ -1,0 +1,16 @@
+# Version 1. Same format as `cru eval precognition`, not a second evaluator.
+# Use a real embedding provider for ranking measurements; CI's hash provider
+# proves the write/index/prompt path, not semantic quality.
+top_k = 1
+
+[[queries]]
+question = "Which code should I use to launch Lantern?"
+expect_note = "Lantern"
+
+[[queries]]
+question = "Where should learned knowledge go instead of project output?"
+expect_note = "Kilns"
+
+[[queries]]
+question = "When does injected context reach the model after a restart?"
+expect_note = "Durability"

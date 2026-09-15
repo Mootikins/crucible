@@ -325,14 +325,14 @@ impl LogEvent {
     }
 }
 
-/// One line of `session.jsonl`, in either shape the file can hold.
+/// One line of `session.jsonl`, across its transport, view and acceptance shapes.
 ///
 /// The log is mixed by construction and always has been. `persist_event`
 /// (`server/core.rs`) appends a serialized [`SessionEventMessage`] —
 /// `{"type":"event","event":"user_message","data":{…}}` — and that is the
-/// overwhelming majority of every real file. `inject_context_impl`
-/// (`server/session/messaging.rs`) and both fork handlers append
-/// [`LogEvent`] instead — `{"type":"user","ts":…,"content":…}`. Neither
+/// overwhelming majority of every real file. Fork handlers and older context
+/// writers append [`LogEvent`] instead — `{"type":"user","ts":…,"content":…}`.
+/// Context acceptance now appends [`InjectedContext`] to preserve turn ordering. Neither
 /// writer knows about the other, so a reader that understands only one
 /// shape silently drops the rest of the file. That was the bug this type
 /// exists to make unrepresentable.
@@ -340,11 +340,22 @@ impl LogEvent {
 pub enum SessionLogLine {
     /// The daemon's broadcast event, as persisted.
     Wire(SessionEventMessage),
-    /// The presentation-shaped event written by inject-context and fork.
+    /// The presentation-shaped event written by fork and older context writers.
     View(LogEvent),
+    /// Accepted context, anchored after the turn whose input was already assembled.
+    Injection(InjectedContext),
 }
 
-/// Reads only the discriminator, so neither full parse is attempted twice.
+/// The anchor is a message id, not the physical log position: the broadcast
+/// writer can append an in-flight turn after this synchronous acceptance write.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename = "context_injection")]
+pub struct InjectedContext {
+    pub after_turn: Option<String>,
+    pub message: LogEvent,
+}
+
+/// Reads only the discriminator, so no full parse is attempted twice.
 #[derive(Deserialize)]
 struct LineTypeProbe {
     #[serde(rename = "type")]
@@ -365,6 +376,7 @@ impl SessionLogLine {
     pub fn from_jsonl(line: &str) -> Result<Self, serde_json::Error> {
         let probe: LineTypeProbe = serde_json::from_str(line)?;
         match probe.kind.as_deref() {
+            Some("context_injection") => serde_json::from_str(line).map(SessionLogLine::Injection),
             Some("event" | "replay_event") => serde_json::from_str(line).map(SessionLogLine::Wire),
             _ => serde_json::from_str(line).map(SessionLogLine::View),
         }
@@ -483,7 +495,7 @@ fn wire_token_usage(data: &Value) -> Option<TokenUsage> {
 /// the two divergent line loops they had — which is how only one of them
 /// would have been fixed.
 ///
-/// A line that parses as neither shape warns and is skipped, keeping a
+/// A line that parses as no recognized shape warns and is skipped, keeping a
 /// partially-corrupt log recoverable. A line that parses but maps to no
 /// presentation event is skipped **silently**: a new persisted event kind is
 /// not corruption, and warning on it would put a line in the log for every
@@ -498,13 +510,53 @@ pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
     // emitted as an event, and inventing one would be worse than omitting it.
     let mut current_model: Option<String> = None;
 
-    for (line_no, line) in jsonl.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    let lines: Vec<_> = jsonl.lines().enumerate().filter_map(|(line_no, line)| {
+        if line.trim().is_empty() { return None; }
+        match SessionLogLine::from_jsonl(line.trim()) {
+            Ok(event) => Some(event),
+            Err(error) => {
+                tracing::warn!(line = line_no + 1, %error, "skipping unparseable session log line");
+                None
+            }
         }
-        match SessionLogLine::from_jsonl(trimmed) {
-            Ok(SessionLogLine::Wire(msg)) => {
+    }).collect();
+    let turns: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| match line {
+            SessionLogLine::Wire(msg) if msg.event == "user_message" => {
+                Some((index, msg.data.get("message_id").and_then(Value::as_str)))
+            }
+            SessionLogLine::View(LogEvent::User { .. }) => Some((index, None)),
+            _ => None,
+        })
+        .collect();
+    let mut injections = std::collections::BTreeMap::<usize, Vec<LogEvent>>::new();
+    for (index, line) in lines.iter().enumerate() {
+        if let SessionLogLine::Injection(injection) = line {
+            let anchor = match &injection.after_turn {
+                Some(id) => turns
+                    .iter()
+                    .find(|(_, turn)| *turn == Some(id.as_str()))
+                    .map(|(index, _)| *index)
+                    .unwrap_or(lines.len()),
+                None => index,
+            };
+            let boundary = turns
+                .iter()
+                .find(|(index, _)| *index > anchor)
+                .map(|(index, _)| *index)
+                .unwrap_or(lines.len());
+            injections
+                .entry(boundary)
+                .or_default()
+                .push(injection.message.clone());
+        }
+    }
+    for (index, line) in lines.into_iter().enumerate() {
+        events.extend(injections.remove(&index).unwrap_or_default());
+        match line {
+            SessionLogLine::Wire(msg) => {
                 if msg.event == "model_switched" {
                     current_model = msg
                         .data
@@ -519,16 +571,12 @@ pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
                     events.push(event);
                 }
             }
-            Ok(SessionLogLine::View(event)) => events.push(event),
-            Err(e) => {
-                tracing::warn!(
-                    line = line_no + 1,
-                    error = %e,
-                    "skipping unparseable session log line"
-                );
-            }
+            SessionLogLine::View(event) => events.push(event),
+            SessionLogLine::Injection(_) => {}
         }
     }
+    // Accepted but not yet consumed: a resumed turn must see these too.
+    events.extend(injections.into_values().flatten());
 
     events
 }
@@ -537,6 +585,35 @@ pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
 mod tests {
     use super::*;
     use chrono::Datelike;
+
+    #[test]
+    fn deferred_context_is_replayed_at_its_turn_boundary_even_when_writers_race() {
+        let first = SessionEventMessage::user_message("s", "first", "question");
+        let second = SessionEventMessage::user_message("s", "second", "follow-up");
+        let injection = serde_json::to_string(&InjectedContext {
+            after_turn: Some("first".into()),
+            message: LogEvent::system("remember"),
+        })
+        .unwrap();
+        let first = serde_json::to_string(&first).unwrap();
+        let second = serde_json::to_string(&second).unwrap();
+        let reply = LogEvent::assistant("answer").to_jsonl().unwrap();
+        for lines in [
+            vec![&injection, &first, &reply, &second],
+            vec![&first, &injection, &reply, &second],
+            vec![&first, &reply, &injection, &second],
+        ] {
+            let events =
+                parse_session_log(&lines.into_iter().cloned().collect::<Vec<_>>().join("\n"));
+            assert!(
+                matches!(&events[..], [LogEvent::User { .. }, LogEvent::Assistant { .. }, LogEvent::System { content, .. }, LogEvent::User { .. }] if content == "remember")
+            );
+        }
+        let pending = parse_session_log(&[first, injection, reply].join("\n"));
+        assert!(
+            matches!(&pending[..], [LogEvent::User { .. }, LogEvent::Assistant { .. }, LogEvent::System { content, .. }] if content == "remember")
+        );
+    }
 
     #[test]
     fn test_system_event_json() {

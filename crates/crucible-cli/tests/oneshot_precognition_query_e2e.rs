@@ -78,6 +78,9 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
     // The workspace must be outside the hermetic HOME: the daemon refuses a
     // session workspace that is HOME or an ancestor of it.
     let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let cards = workspace.path().join(".crucible/agents");
+    std::fs::create_dir_all(&cards).unwrap();
+    std::fs::write(cards.join("researcher.md"), "---\nname: researcher\ndescription: Grounded research\nmodel: llama3.2\n---\n\nKeep the kiln authoritative.\n").unwrap();
 
     let output = daemon
         .command()
@@ -208,8 +211,12 @@ fn stderr(run: &OneShotRun) -> String {
 #[test]
 #[ignore = "requires: cru binary"]
 fn one_shot_chat_sends_the_user_question_as_the_precognition_query() {
-    let run = run_one_shot(&[]);
-    let events = transcript(&sole_session_dir(&run));
+    let run = run_one_shot(&["--card", "researcher"]);
+    let session_dir = sole_session_dir(&run);
+    let agent = read_json(&session_dir.join("meta.json"))["agent"].clone();
+    assert_eq!(agent["agent_card_name"], "researcher");
+    assert_eq!(agent["system_prompt"], "Keep the kiln authoritative.");
+    let events = transcript(&session_dir);
 
     let precognition = expect_event(&events, "precognition_complete");
     assert_eq!(

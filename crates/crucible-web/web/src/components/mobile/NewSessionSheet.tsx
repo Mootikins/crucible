@@ -1,3 +1,4 @@
+import { AgentCardInput } from '@/components/AgentCardInput';
 import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -61,6 +62,7 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [rtTargets, setRtTargets] = createSignal<ProviderTarget[]>([]);
 
   const [agentName, setAgentName] = createSignal('');
+  const [agentCard, setAgentCard] = createSignal('');
   const [kiln, setKiln] = createSignal('');
   const [model, setModel] = createSignal('');
   const [workspace, setWorkspace] = createSignal(props.workspace ?? '');
@@ -153,6 +155,7 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
           defaultKiln: defaultKilnName(),
           workspace: workspace(),
           agentName: agentName(),
+          agentCard: agentCard(),
           wsTarget: wsTarget(),
           runtime: runtime(),
         }),
@@ -223,6 +226,9 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
                 </button>
               )}
             </For>
+            <Show when={!agentName()}>
+              <AgentCardInput value={agentCard()} onChange={setAgentCard} disabled={busy()} />
+            </Show>
           </div>
         </Show>
 

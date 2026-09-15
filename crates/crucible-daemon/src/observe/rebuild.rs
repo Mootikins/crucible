@@ -8,7 +8,7 @@
 //!
 //! Parsing is not done here. [`crate::observe::parse_session_log`] turns the
 //! JSONL into [`LogEvent`]s — it is the only parser, and it is the one that
-//! knows `session.jsonl` holds two shapes. There is no second one to find.
+//! knows every `session.jsonl` line shape. There is no second one to find.
 //!
 //! If a future `LogEvent` gains optional `node_id` / `parent_id`
 //! fields, this module is the place to honour them and rebuild actual
@@ -43,7 +43,7 @@ pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
     tree
 }
 
-fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
+pub(crate) fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
     match event {
         LogEvent::User { content, .. } => {
             let parent = tree.current();

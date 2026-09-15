@@ -12,7 +12,7 @@
 //!
 //! # Event Types
 //!
-//! `session.jsonl` holds **two** line shapes, and this module reads both. See
+//! `session.jsonl` holds three line shapes, and this module reads all of them. See
 //! [`SessionLogLine`] for why, and [`parse_session_log`] for the one parser
 //! that handles it.
 //!
@@ -27,8 +27,8 @@
 //! - `precognition_complete` - what context was injected
 //! - `ended` - lifecycle bookkeeping
 //!
-//! The view shape is a serialized [`LogEvent`], written by `inject_context_impl`
-//! (`server/session/messaging.rs`) and both fork handlers, and tagged on `type`:
+//! The view shape is a serialized [`LogEvent`], written by the fork handlers
+//! (and older context-injection writers), and tagged on `type`:
 //! - `init` - Session initialization with metadata
 //! - `system` - System prompts and context injections
 //! - `user` - User messages
@@ -41,11 +41,16 @@
 //! - `error` - Errors during session
 //! - `bash_*`, `subagent_*` - background task and subagent bookkeeping
 //!
+//! Context acceptance uses `context_injection`: a view event plus the id of the
+//! turn whose input was already assembled. The parser places it before the next
+//! user turn, even if the broadcast writer persisted that anchor later. Pending
+//! injections appear at the end, ready for the first turn after resume.
+//!
 //! # Example
 //!
-//! This module is the **read** side. Writing is `persist_event`'s job, off the
-//! daemon's broadcast channel; nothing outside the daemon appends to a session
-//! log.
+//! This module is the **read** side. The daemon writes broadcast events via
+//! `persist_event`, and context acceptance and fork records directly; nothing
+//! outside the daemon appends to a session log.
 //!
 //! ```no_run
 //! use crucible_daemon::{load_events, LogEvent};

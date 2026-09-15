@@ -45,6 +45,7 @@ pub(crate) struct SessionSlot {
     /// first use. `tokio::sync::OnceCell` because that rebuild is async.
     pub(in crate::agent_manager) tree:
         tokio::sync::OnceCell<Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>>,
+    pub(crate) input: tokio::sync::Mutex<SessionInput>,
     /// This session's starting values, captured when its VM ran its
     /// `on_session_start` hooks. `None` until the VM has run — a manager whose
     /// VM construction failed outright falls back to the raw globals, which is
@@ -80,6 +81,13 @@ pub(crate) struct SessionSlot {
     /// Per-session prompt-cache aggregate, updated on every
     /// `message_complete` that carries usage data.
     cache_stats: Mutex<CacheStats>,
+}
+
+/// Serializes injection acceptance with the next turn's assembly boundary.
+#[derive(Default)]
+pub(crate) struct SessionInput {
+    pub after_turn: Option<String>,
+    pub pending: Vec<crate::observe::LogEvent>,
 }
 
 /// The two values a turn builds from the session's config, and the generation

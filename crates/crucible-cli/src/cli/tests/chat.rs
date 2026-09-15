@@ -2,6 +2,22 @@ use super::parse;
 use crate::cli::*;
 
 #[test]
+fn chat_card_is_distinct_from_acp_and_cannot_replace_a_resumed_agent() {
+    use clap::Parser;
+    let Commands::Chat { card, acp, .. } = parse(&["cru", "chat", "--card", "researcher"]) else {
+        panic!("chat")
+    };
+    assert_eq!(card.as_deref(), Some("researcher"));
+    assert!(acp.is_none());
+    for conflict in ["--acp", "--agent", "--resume", "--replay"] {
+        assert!(
+            Cli::try_parse_from(["cru", "chat", "--card", "researcher", conflict, "other"])
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn test_chat_with_env_flag_single() {
     // Should parse --env KEY=VALUE
     let Commands::Chat { acp, env, .. } = parse(&[
@@ -50,9 +66,7 @@ fn test_chat_without_env_flag_has_empty_vec() {
 }
 
 /// `--agent` was the ACP spelling before agent cards took the name, and it is
-/// in people's shells. `cru chat` still cannot take a card — it resolves its
-/// agent CLI-side — so here the old spelling keeps working rather than
-/// becoming an error that has no card path to point at.
+/// in people's shells. Preserve that alias; cards use the distinct `--card` flag.
 #[test]
 fn chat_accepts_both_spellings_of_the_acp_flag() {
     let Commands::Chat { acp, .. } = parse(&["cru", "chat", "--acp", "claude"]) else {

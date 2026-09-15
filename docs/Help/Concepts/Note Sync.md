@@ -56,7 +56,7 @@ the merged text and its regions, until you settle it.
 
 Three surfaces open the same Conflicts panel:
 
-- the app bar badge on a phone, which counts conflicts apart from unsent edits,
+- the phone app bar or desktop left ribbon badge, which counts conflicts apart from unsent edits,
   shows even when the queue is empty, and opens the conflict when you tap it;
 - the **Conflicts** row in the phone's More sheet, which appears only while one
   waits;
@@ -81,7 +81,13 @@ stays open.
 ## Editing offline
 
 When the daemon does not answer, the write is queued in the **outbox** instead.
-The app bar counts what is unsent, and sends it when the connection returns.
+The phone app bar and desktop left ribbon count what is unsent, and send it when
+the browser reports the connection has returned. You can also press the badge
+(when no conflict waits), or use Settings → Offline → Send now.
+
+Queued writing survives a page reload. A save can have reached disk even when
+its successful reply never reaches the browser; retry still uses the original
+base and merges with any intervening edits, rather than blindly replacing them.
 
 - The outbox holds one entry per daemon and note path. Switching daemons never
   folds their writing together, even when their kiln paths are identical.

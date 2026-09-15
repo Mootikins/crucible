@@ -30,6 +30,8 @@ pub struct AgentInitParams {
     pub agent_type: Option<AgentType>,
     /// Preferred ACP agent name (for ACP type)
     pub agent_name: Option<String>,
+    /// Card discovery and composition belong to session.create in the daemon.
+    pub agent_card: Option<String>,
     /// Preferred LLM provider key (for internal type)
     pub provider_key: Option<String>,
     /// Environment variable overrides for ACP agents
@@ -53,6 +55,7 @@ impl AgentInitParams {
         Self {
             agent_type: None,
             agent_name: None,
+            agent_card: None,
             provider_key: None,
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
@@ -60,6 +63,11 @@ impl AgentInitParams {
             recording_mode: None,
             recording_path: None,
         }
+    }
+
+    pub fn with_agent_card(mut self, card: Option<String>) -> Self {
+        self.agent_card = card;
+        self
     }
 
     pub fn with_resume_session_id(mut self, session_id: Option<String>) -> Self {
@@ -242,11 +250,12 @@ async fn create_daemon_agent_inner(
 
     // Compute up-front so `session.create` can tell the daemon which agent type
     // this will be (Task 1.2f's setup task branches on it).
-    let is_acp = resolve_is_acp(
-        params.agent_type,
-        params.agent_name.as_deref(),
-        &config.chat.agent_preference,
-    );
+    let is_acp = params.agent_card.is_none()
+        && resolve_is_acp(
+            params.agent_type,
+            params.agent_name.as_deref(),
+            &config.chat.agent_preference,
+        );
     let create_agent_type = if is_acp { "acp" } else { "internal" };
 
     let (session_id, is_new_session) = match &params.resume_session_id {
@@ -289,8 +298,7 @@ async fn create_daemon_agent_inner(
                         &client,
                         config,
                         &workspace,
-                        params.recording_mode.as_deref(),
-                        params.recording_path.as_deref(),
+                        params,
                         create_agent_type,
                     )
                     .await?,
@@ -299,20 +307,13 @@ async fn create_daemon_agent_inner(
             }
         }
         None => (
-            create_new_daemon_session(
-                &client,
-                config,
-                &workspace,
-                params.recording_mode.as_deref(),
-                params.recording_path.as_deref(),
-                create_agent_type,
-            )
-            .await?,
+            create_new_daemon_session(&client, config, &workspace, params, create_agent_type)
+                .await?,
             true,
         ),
     };
 
-    let session_agent = if is_new_session {
+    let session_agent = if is_new_session && params.agent_card.is_none() {
         let agent = if is_acp {
             build_acp_session_agent(params, config)
         } else {
@@ -358,21 +359,32 @@ async fn create_new_daemon_session(
     client: &crucible_daemon::DaemonClient,
     config: &CliAppConfig,
     workspace: &std::path::Path,
-    recording_mode: Option<&str>,
-    recording_path: Option<&std::path::Path>,
+    params: &AgentInitParams,
     agent_type: &str,
 ) -> Result<String> {
-    let result = client
-        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
-            session_type: "chat".to_string(),
-            kilns: config.session_kiln_name().into_iter().collect(),
-            workspace: Some(workspace.to_path_buf()),
-            recording_mode: recording_mode.map(|m| m.to_string()),
-            recording_path: recording_path.map(|p| p.to_path_buf()),
-            agent_type: Some(agent_type.to_string()),
-            isolation: None,
-        })
-        .await?;
+    let create = crucible_daemon::rpc_client::SessionCreateParams {
+        session_type: "chat".into(),
+        kilns: config.session_kiln_name().into_iter().collect(),
+        workspace: Some(workspace.to_path_buf()),
+        recording_mode: params.recording_mode.clone(),
+        recording_path: params.recording_path.clone(),
+        agent_type: Some(agent_type.into()),
+        isolation: None,
+    };
+    let result = if let Some(card) = &params.agent_card {
+        client
+            .session_create_with_agent(
+                create,
+                crucible_daemon::rpc_client::SessionAgentSpec {
+                    agent_card: Some(card.clone()),
+                    provider_key: params.provider_key.clone(),
+                    ..Default::default()
+                },
+            )
+            .await?
+    } else {
+        client.session_create(create).await?
+    };
 
     let session_id = result["session_id"]
         .as_str()

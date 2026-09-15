@@ -4,7 +4,7 @@ import { isOnline, pendingCount, syncNow, warmIdentity } from '@/lib/offline/syn
 import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
 
 /**
- * Whether this device can reach the daemon, and how much writing it owes it.
+ * Shared shell status: connectivity, pending writing and conflicts.
  *
  * A queued write that looks saved and is not is the failure the whole offline
  * design exists to prevent, so the count is on the app bar rather than behind

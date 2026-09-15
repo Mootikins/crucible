@@ -154,6 +154,8 @@ struct CreateSessionRequest {
     agent_type: Option<String>,
     /// ACP agent profile name (e.g. "claude", "opencode"); required when agent_type == "acp"
     agent_name: Option<String>,
+    /// Internal-agent card name; never resolved in the web layer.
+    agent_card: Option<String>,
     /// Isolation override: absent → resolve normally; `false` → no container
     /// even if the project has one; `true`, a profile name or an environment
     /// object → override. Forwarded to the daemon untouched — the vocabulary
@@ -459,11 +461,7 @@ async fn create_session(
     // included — see `CreateSessionRequest::kilns`.
     let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
         agent_name: req.agent_name.clone(),
-        // The web's own request type still spells a card `agent_name` (the
-        // deprecated alias the daemon keeps for exactly this caller). Setting
-        // both fields is INVALID_PARAMS, so this stays None until the web
-        // frontend grows a card selector of its own.
-        agent_card: None,
+        agent_card: req.agent_card.clone(),
         provider: req.provider.clone(),
         provider_key: None,
         model: req.model.clone(),

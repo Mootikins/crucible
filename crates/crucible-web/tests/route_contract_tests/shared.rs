@@ -2,7 +2,7 @@
 //!
 //! The canonical mock daemon lives in `crucible_web::test_support`
 //! (exposed via the `test-utils` self dev-dependency) — this module only
-//! re-exports it plus a wider router. A second hand-maintained copy used to
+//! re-exports it and the production-composed test router. A hand-maintained copy used to
 //! live here and drifted from the library copy; don't recreate it.
 
 pub(super) use crucible_web::test_support::{
@@ -10,26 +10,4 @@ pub(super) use crucible_web::test_support::{
     start_mock_daemon_with_kilns, MockErrors,
 };
 
-use axum::Router;
-use crucible_web::routes::{
-    chat_routes, fs_routes, health_routes, kiln_routes, plugin_routes, project_routes,
-    search_routes, session_routes_fail_closed, skills_routes,
-};
-use crucible_web::services::daemon::AppState;
-
-/// Build the full app router with mock state. Wider than the library's
-/// `test_support::build_test_app`: contract tests also cover the skills and
-/// plugin route groups.
-pub(super) fn build_test_app(state: AppState) -> Router {
-    Router::new()
-        .merge(chat_routes())
-        .merge(session_routes_fail_closed())
-        .merge(project_routes())
-        .merge(fs_routes())
-        .merge(search_routes())
-        .merge(kiln_routes())
-        .merge(skills_routes())
-        .merge(plugin_routes())
-        .with_state(state)
-        .merge(health_routes())
-}
+pub(super) use crucible_web::test_support::build_test_app;

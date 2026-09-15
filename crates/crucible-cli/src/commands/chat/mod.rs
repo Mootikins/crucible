@@ -21,6 +21,7 @@ use crate::tui::AgentSelection;
 pub struct ChatParams {
     pub config: CliConfig,
     pub agent_name: Option<String>,
+    pub agent_card: Option<String>,
     /// The user's `--plan` intent, threaded rather than re-derived.
     ///
     /// Read-only-ness is a property of a mode's tools and permissions, which
@@ -43,6 +44,7 @@ impl ChatParams {
         Self {
             config,
             agent_name: None,
+            agent_card: None,
             read_only: false,
             no_context: false,
             // No override: the daemon's session default stands.
@@ -125,7 +127,7 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
         if params.resume_session_id.is_some() {
             anyhow::bail!("--replay cannot be combined with --resume");
         }
-        if params.agent_name.is_some() {
+        if params.agent_name.is_some() || params.agent_card.is_some() {
             anyhow::bail!("--replay cannot be combined with --agent");
         }
         return run_replay(path.clone(), *speed, *auto_exit, &params.config).await;
@@ -422,6 +424,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
     let ChatParams {
         config,
         agent_name,
+        agent_card,
         read_only,
         no_context,
         provider_key,
@@ -466,8 +469,10 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         .map(|p| p.model.clone())
         .unwrap_or_else(|| config.chat_model());
 
-    let display_model = agent_name
-        .as_deref()
+    let display_model = agent_card
+        .as_ref()
+        .or(agent_name.as_ref())
+        .map(String::as_str)
         .map(|n| n.to_string())
         .unwrap_or_else(|| model_name.clone());
 
@@ -616,6 +621,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
+        let agent_card = agent_card.clone();
         let provider_key = provider_key.clone();
         let parsed_env = parsed_env.clone();
         let working_dir = working_dir.clone();
@@ -626,6 +632,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         async move {
             // Build common params once
             let mut params = factories::AgentInitParams::new()
+                .with_agent_card(agent_card)
                 .with_provider_opt(provider_key)
                 .with_env_overrides(parsed_env)
                 .with_resume_session_id(resume_session_id)
@@ -706,6 +713,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     let ChatParams {
         config,
         agent_name,
+        agent_card,
         read_only,
         no_context,
         provider_key,
@@ -721,6 +729,7 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     let default_agent = config.acp.default_agent.clone();
 
     let mut agent_params = factories::AgentInitParams::new()
+        .with_agent_card(agent_card)
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
         .with_env_overrides(parsed_env)

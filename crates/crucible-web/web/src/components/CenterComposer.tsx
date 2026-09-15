@@ -1,3 +1,4 @@
+import { AgentCardInput } from '@/components/AgentCardInput';
 import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
@@ -104,6 +105,7 @@ export const CenterComposer: Component<{
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
+  const [agentCard, setAgentCard] = createSignal('');
   const [kiln, setKiln] = createSignal('');
   const [model, setModel] = createSignal('');
   const [workspace, setWorkspace] = createSignal('');
@@ -183,6 +185,7 @@ export const CenterComposer: Component<{
           defaultKiln: defaultKilnName(),
           workspace: workspace(),
           agentName: agentName(),
+          agentCard: agentCard(),
           wsTarget: wsTarget(),
           runtime: runtime(),
         }),
@@ -571,6 +574,9 @@ export const CenterComposer: Component<{
               disabled={busy()}
               testid="composer-agent"
             />
+            <Show when={!isAcp()}>
+              <AgentCardInput value={agentCard()} onChange={setAgentCard} disabled={busy()} />
+            </Show>
           </div>
 
           {/* The composer card — shared with the in-session chat input, so

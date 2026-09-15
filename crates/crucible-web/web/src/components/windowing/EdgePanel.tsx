@@ -3,6 +3,7 @@ import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { ProjectMenu } from '@/components/shell/ProjectMenu';
+import { OfflineBadge } from '@/components/OfflineBadge';
 import { applyTheme, theme } from '@/lib/theme';
 import {
   collectPanes,
@@ -486,6 +487,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         >
           <ArrowLeftRight class="w-4 h-4" />
         </RibbonCommand>
+        <OfflineBadge />
         <RibbonCommand
           title={theme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
           testId="ribbon-cmd-theme"

@@ -51,11 +51,47 @@ pub async fn start_server(
     // so the first splash render is served from cache.
     crate::services::catalog::warm(state.clone());
 
+    let api_key = resolve_api_key(web_config.api_key.as_deref());
+    if api_key.is_some() {
+        tracing::info!("API Bearer token auth enabled for non-localhost requests");
+    } else {
+        tracing::warn!("API Bearer token auth is disabled — all requests will be accepted");
+    }
+    let api_key_state = Arc::new(ApiKeyState::new(api_key, host_policy));
+    let app = build_router(web_config, state, api_key_state);
+
+    let addr: SocketAddr = format!("{}:{}", web_config.host, web_config.port)
+        .parse()
+        .map_err(|e| WebError::Config(format!("Invalid address: {e}")))?;
+
+    tracing::info!("Starting web server on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(WebError::Io)?;
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(WebError::Io)?;
+
+    Ok(())
+}
+
+/// Assemble the served application from injected runtime state and credentials.
+/// Startup owns filesystem discovery and binding; tests use this same composition.
+pub fn build_router(
+    web_config: &WebConfig,
+    mut state: daemon::AppState,
+    api_key_state: Arc<ApiKeyState>,
+) -> Router {
     // Wildcard CORS is dangerous here because `/api/shell/exec` can execute host shell commands.
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
     // Shared allow-list: CORS uses it for HTTP, and the terminal WebSocket
     // guard reuses it (browsers bypass CORS on WS handshakes).
-    let allowed_origins = Arc::new(build_cross_origin_allowlist(&host_policy));
+    let allowed_origins = Arc::new(build_cross_origin_allowlist(&api_key_state.host_policy));
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list((*allowed_origins).clone()))
         .allow_methods([
@@ -67,13 +103,6 @@ pub async fn start_server(
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    let api_key = resolve_api_key(web_config.api_key.as_deref());
-    if api_key.is_some() {
-        tracing::info!("API Bearer token auth enabled for non-localhost requests");
-    } else {
-        tracing::warn!("API Bearer token auth is disabled — all requests will be accepted");
-    }
-    let api_key_state = Arc::new(ApiKeyState::new(api_key, host_policy));
     state.remote_shell =
         remote_shell_active(web_config.remote_shell, api_key_state.api_key.is_some());
     if state.remote_shell {
@@ -143,6 +172,11 @@ pub async fn start_server(
         .merge(layout_routes())
         .merge(skills_routes())
         .merge(webhook_routes())
+        // An unknown API is not an SPA navigation: never answer it with HTML.
+        .route(
+            "/api/{*unmatched}",
+            axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
+        )
         .with_state(state)
         .layer(middleware::from_fn_with_state(
             api_key_state.clone(),
@@ -156,26 +190,7 @@ pub async fn start_server(
         .merge(auth_routes(api_key_state.clone()))
         .merge(static_routes(web_config.static_dir.as_deref()));
 
-    let app = with_security_headers(with_app_wide_layers(app, api_key_state, cors));
-
-    let addr: SocketAddr = format!("{}:{}", web_config.host, web_config.port)
-        .parse()
-        .map_err(|e| WebError::Config(format!("Invalid address: {e}")))?;
-
-    tracing::info!("Starting web server on http://{}", addr);
-
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(WebError::Io)?;
-
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .map_err(WebError::Io)?;
-
-    Ok(())
+    with_security_headers(with_app_wide_layers(app, api_key_state, cors))
 }
 
 /// The layers every route gets, whatever it is.

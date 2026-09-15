@@ -17,6 +17,7 @@ mod support;
 mod vocab;
 
 mod acp_parity_tests; // US-307 (ACP presentation parity)
+mod agent_card_tests; // US-909 (card-backed chat initialization)
 mod completion_frame_tests; // US-505
 mod notification_tests; // US-701 / US-702
 mod paste_tests; // US-106

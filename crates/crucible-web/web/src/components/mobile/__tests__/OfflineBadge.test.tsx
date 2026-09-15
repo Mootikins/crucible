@@ -26,7 +26,7 @@ vi.mock('@/lib/offline/sync', () => ({
 const openPanelTab = vi.fn();
 vi.mock('@/lib/panel-actions', () => ({ openPanelTab: (id: string) => openPanelTab(id) }));
 
-import { OfflineBadge } from '@/components/mobile/OfflineBadge';
+import { OfflineBadge } from '@/components/OfflineBadge';
 import { __resetConflictStore } from '@/lib/conflicts';
 
 /** One note whose write the daemon could neither take nor merge. */

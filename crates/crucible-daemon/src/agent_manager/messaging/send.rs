@@ -151,6 +151,8 @@ impl AgentManager {
         // `precognition_complete`, nothing in the transcript to say the answer
         // was ungrounded. Reproduced by widening the window to 200ms, which
         // turns `oneshot_precognition_query_e2e` red every run.
+        let input_slot = self.slot(session_id);
+        let mut input = input_slot.input.lock().await;
         let conversation_tree = self
             .get_or_rebuild_session_tree(
                 session_id,
@@ -166,7 +168,12 @@ impl AgentManager {
         }
 
         let snapshot_key_node = {
-            let t = conversation_tree.lock().await;
+            let mut t = conversation_tree.lock().await;
+            // Undo lands on the user node's parent, so accepted context must
+            // already be in the tree when the snapshot key is chosen.
+            for message in input.pending.drain(..) {
+                crate::observe::rebuild::apply_event_to_tree(&mut t, &message);
+            }
             t.current()
         };
         let snapshot = crate::workspace_snapshot::WorkspaceSnapshot::create(
@@ -256,6 +263,7 @@ impl AgentManager {
 
         let is_first_user_message = {
             let mut t = conversation_tree.lock().await;
+            input.after_turn = Some(message_id.clone());
             let parent = t.current();
             let _user_node = t.add_child_and_advance(
                 parent,
@@ -268,6 +276,7 @@ impl AgentManager {
             t.undo_depth() == 1
         };
 
+        drop(input);
         info!(target: "ttft", session_id = %session_id, stage = "precognition_start", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
         let precognition_message =
             if crate::agent_manager::precognition_gate::should_run_precognition(

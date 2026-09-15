@@ -49,6 +49,7 @@ describe('NewSessionSheet', () => {
 
   it('creates the session with the first message, and says nothing it was not told', async () => {
     render(() => <NewSessionSheet />);
+    fireEvent.input(screen.getByRole('textbox', { name: 'Agent card' }), { target: { value: 'researcher' } });
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     const box = screen.getByRole('textbox', { name: 'Message' });
@@ -58,6 +59,8 @@ describe('NewSessionSheet', () => {
     await waitFor(() => expect(created.params).toHaveLength(1));
     const params = created.params[0] as Record<string, unknown>;
     expect(created.opts[0]).toMatchObject({ initialMessage: 'hello there' });
+    expect(params.agent_card).toBe('researcher');
+    expect(params.agent_name).toBeUndefined();
     // Untouched axes say nothing at all.
     expect('isolation' in params).toBe(false);
     expect('workspace_target' in params).toBe(false);

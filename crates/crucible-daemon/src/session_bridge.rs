@@ -295,14 +295,27 @@ impl DaemonSessionApi for DaemonSessionBridge {
     fn get_session(&self, session_id: String) -> BoxFut<Option<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
             Ok(sm
-                .get_session(&session_id)
+                .read_session(&session_id)
+                .await
+                .map_err(|e| e.to_string())?
                 .map(|s| session_json(&crucible_core::session::SessionSummary::from(&s))))
         })
     }
 
     fn list_sessions(&self) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(self.session_manager, |sm| async move {
-            Ok(sm.list_sessions().iter().map(session_json).collect())
+            Ok(sm
+                .list_sessions_filtered_async(
+                    crate::session_manager::KilnFilter::Any,
+                    None,
+                    None,
+                    None,
+                    true,
+                )
+                .await
+                .iter()
+                .map(session_json)
+                .collect())
         })
     }
 
@@ -544,7 +557,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
             }
 
             let session = sm
-                .get_session(&session_id)
+                .read_session(&session_id)
+                .await
+                .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
             let session_dir = sm.session_dir(&session.id);
             // NOTE: Loads entire session event log. For very long sessions, consider
@@ -622,11 +637,13 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 
     fn inject_context(&self, session_id: String, role: String, content: String) -> BoxFut<()> {
+        let am = self.agent_manager.clone();
         let sm = self.session_manager.clone();
         let event_tx = self.event_tx.clone();
         Box::pin(async move {
             crate::server::session::inject_context_impl(
                 &sm,
+                &am,
                 &event_tx,
                 &session_id,
                 &role,

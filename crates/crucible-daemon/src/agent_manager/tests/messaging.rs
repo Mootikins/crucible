@@ -841,6 +841,17 @@ async fn turn_undo_restores_snapshotted_file() {
     // the snapshot/undo wire-up.
     h.inject_streaming_agent(vec![script::text("ok"), script::done()]);
 
+    crate::server::session::inject_context_impl(
+        &h.agent_manager.session_manager,
+        &h.agent_manager,
+        &h.event_tx,
+        &h.session_id,
+        "system",
+        "Remember the kiln",
+    )
+    .await
+    .unwrap();
+
     h.send("go").await;
 
     // Drain to message_complete so the snapshot has definitely been

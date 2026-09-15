@@ -55,4 +55,10 @@ describe('draftCreateParams', () => {
   it('names no agent when the internal one is used', () => {
     expect('agent_type' in draftCreateParams(base)).toBe(false);
   });
+
+  it('forwards a named card without confusing it with an ACP profile', () => {
+    expect(draftCreateParams({ ...base, agentCard: ' researcher ' })).toMatchObject({ agent_card: 'researcher' });
+    expect(draftCreateParams({ ...base, agentName: 'claude', agentCard: 'researcher' })).not.toHaveProperty('agent_card');
+    expect(draftCreateParams({ ...base, agentCard: ' ' })).not.toHaveProperty('agent_card');
+  });
 });

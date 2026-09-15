@@ -114,13 +114,13 @@ pub enum Commands {
         /// ACP profile to use (claude, gemini, codex, cursor, opencode, or a
         /// profile defined under `[acp.agents.*]`). `--agent` is the old
         /// spelling of this flag and still works.
-        ///
-        /// `cru chat` takes no agent card: it resolves its agent CLI-side
-        /// rather than through the daemon's create, so a card would need a
-        /// fourth discovery site rooted at the CLI's cwd. Use
-        /// `cru session create --agent <card>` for a card-backed session.
+
         #[arg(short = 'a', long, alias = "agent")]
         acp: Option<String>,
+
+        /// Agent card resolved by the daemon for this new chat session.
+        #[arg(long, conflicts_with_all = ["acp", "resume", "replay"])]
+        card: Option<String>,
 
         /// Resume a previous session by ID (format: chat-YYYYMMDD-HHMM-xxxx)
         #[arg(short = 'r', long)]

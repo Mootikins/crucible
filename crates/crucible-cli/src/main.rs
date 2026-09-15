@@ -402,6 +402,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         Some(Commands::Chat {
             query,
             acp,
+            card,
             resume,
             env,
             provider,
@@ -424,6 +425,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::chat::execute(commands::chat::ChatParams {
                 config,
                 agent_name: acp,
+                agent_card: card,
                 read_only: plan,
                 no_context,
                 provider_key: provider,

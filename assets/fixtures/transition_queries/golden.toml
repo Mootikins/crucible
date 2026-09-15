@@ -214,12 +214,12 @@ expect_note = "Reflection Pass"
 expect_text = ["ports Nous Research's Hermes Agent", "The `consolidation` plugin is the periodic half of the loop."]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
-#   "## The consolidation pass" — "**Known gap.** `cru.session.list()` answers from the daemon's resident session map."
+#   "## The consolidation pass" — "The session list and transcript reader include persisted sessions"
 #   "## Configuration" — "Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model"
 [[queries]]
-question = "why does the periodic review miss sessions from before a daemon restart, and how do I set its model?"
+question = "how does periodic review find sessions from before a daemon restart, and how do I set its model?"
 expect_note = "Reflection Pass"
-expect_text = ["**Known gap.** `cru.session.list()` answers from the daemon's resident session map.", "Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model"]
+expect_text = ["The session list and transcript reader include persisted sessions", "Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model"]
 
 # TRANSITION Help/Concepts/The Knowledge Graph.md
 #   "## Backlinks" — "You didn't have to create those connections manually."

@@ -477,6 +477,19 @@ impl SessionManager {
         self.sessions.get(session_id).map(|r| r.clone())
     }
 
+    /// Read history without reviving a session or running its lifecycle hooks.
+    pub async fn read_session(&self, session_id: &str) -> Result<Option<Session>, SessionError> {
+        if let Some(session) = self.get_session(session_id) {
+            return Ok(Some(session));
+        }
+        let id = SessionId::parse(session_id).map_err(|e| SessionError::IoError(e.to_string()))?;
+        match self.storage.load(&id).await {
+            Ok(session) => Ok(Some(session)),
+            Err(SessionError::NotFound(_)) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn register_transient(&self, session: Session) {
         self.sessions.insert(session.id.clone(), session);
     }

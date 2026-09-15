@@ -951,9 +951,11 @@ fn create_test_agent_manager_with_both(
 mod active_tools;
 mod build_race;
 mod concurrency;
+mod context_injection;
 mod dispatch;
 mod init_lua;
 mod init_lua_defaults;
+mod learning_loop;
 mod lifecycle;
 mod messaging;
 mod models;

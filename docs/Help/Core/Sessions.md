@@ -10,13 +10,13 @@ tags:
 
 # Sessions
 
-A session is a continuous sequence of events: a conversation with an AI agent, including tool calls, thinking, and responses. Sessions provide audit trails, enable resumption, and persist as markdown files.
+A session is a continuous sequence of events: a conversation with an AI agent, including tool calls, thinking, and responses. Sessions provide audit trails and resumption through an append-only JSONL log, with markdown export for reading.
 
 ## Architecture
 
 Sessions follow Crucible's "plaintext first" philosophy:
 
-- **Markdown is truth** — Each session saves as a markdown file
+- **Plaintext is truth** — Each session saves as JSONL; markdown is a readable export
 - **Daemon manages state** — the daemon tracks active sessions via RPC
 - **Resume anytime** — Pick up previous sessions with `cru session open`
 
@@ -50,6 +50,20 @@ Sessions are managed by the daemon (`cru daemon serve`):
 - `session.delete` — Permanently delete a session
 
 > **CLI naming vs RPC methods**: The daemon RPC methods are `session.resume` (open in TUI) and `session.unpause` (reactivate programmatically). The CLI commands use clearer names: `cru session open` maps to `session.resume`, and `cru session resume` maps to `session.unpause`. The old `cru session unpause` still works as a deprecated alias. Scripts should use `cru session resume`; humans picking up a conversation should use `cru session open`.
+
+## Adding context from Lua
+
+`cru.session.inject(session_id, role, content)` accepts context for a running
+internal-agent session. The role is `system`, `user`, or `assistant`.
+Acceptance persists immediately, but does not send a message or start a turn.
+The next turn incorporates the context once; an in-flight turn is unchanged.
+The same ordering survives resume, including context accepted before a restart
+but not yet consumed. Later turns retain it as conversation history, not as a
+new copy on every request.
+
+ACP sessions refuse this operation: the external ACP agent owns its conversation
+history. Precognition's ACP prompt context is a separate mechanism. Plugins and
+review rejection use this daemon primitive; it needs no separate TUI/web setting.
 
 ## Session Storage
 

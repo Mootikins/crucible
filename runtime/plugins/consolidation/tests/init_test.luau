@@ -420,6 +420,39 @@ describe("consolidation", function()
       expect.is_nil(prompt:find("### session short", 1, true))
     end)
 
+    it("a fresh activation resumes durable progress and retries an interrupted review", function()
+      plugin.run(nil)
+      expect.equal(1, #review_calls)
+      package.loaded["consolidation"] = nil
+      local restarted = require("consolidation")
+      restarted.setup({ kiln = "notes", model = "test-model", min_turns = 2 })
+      restarted.run(nil)
+      expect.equal(1, #review_calls)
+
+      cru.session.list = function()
+        return {
+          { id = "long", session_type = "chat", state = "ended", event_count = 12 },
+          { id = "reviewer", session_type = "plugin", state = "ended", event_count = 99 },
+        }, nil
+      end
+      local review = package.loaded["reflection"].review
+      package.loaded["reflection"].review = function()
+        return nil, "interrupted"
+      end
+      expect.is_nil(restarted.run(nil))
+      expect.equal("0", read_progress().long)
+      package.loaded["reflection"].review = review
+
+      package.loaded["consolidation"] = nil
+      restarted = require("consolidation")
+      restarted.setup({ kiln = "notes", model = "test-model", min_turns = 2 })
+      restarted.run(nil)
+      expect.equal(2, #review_calls)
+      expect.equal("12", read_progress().long)
+      expect.is_nil(read_progress().reviewer)
+      expect.is_nil(review_calls[2].prompt:find("### session reviewer", 1, true))
+    end)
+
     it("a pass writes through its own session and stages nothing", function()
       -- The reviewer writes each note with the note tools in the pass's own
       -- session, so the pass hands nothing to a staging directory: the
