@@ -36,6 +36,7 @@ Create reusable extensions:
 - [[Help/Extending/Agent Cards]] - Configure AI agent behavior
 - [[Help/Extending/Internal Agent]] - The built-in agent, sessions, and memory
 - [[Help/Extending/Scripted UI]] - Theme the TUI and build statuslines from Lua
+- [[Help/Extending/Web Theme Tokens]] - Restyle the web UI from a plugin stylesheet
 - [[Help/Extending/HTTP Module]] - HTTP client for scripts and plugins
 - [[Help/Extending/Container Isolation]] - Route workspace tools into containers
 - [[Help/Extending/Worktree Sessions]] - Run sessions against git worktrees

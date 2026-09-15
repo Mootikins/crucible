@@ -206,8 +206,12 @@ props through `reactiveMetadataProps` (`lib/panel-props.ts`). A plain spread of
 
 **The editor is the main area**, as the record says. On a cold start the surface
 shows the last active tab from the saved tab stack. With no saved stack it shows
-the editor's empty state: the recent notes from `/api/recents`, and a New
-Session button. A chat is a tab like any other, not the default.
+the shared `EmptyState` (2026-09-15, pick R2): the title "No note is open", one
+body line, and two offers — **Open a note**, which opens the left drawer on its
+Files tab, and **Start a session**. The earlier plan named the recent notes from
+`/api/recents` here; the shipped state offers the two doors instead, and the
+recents still reach the user through the files drawer. A chat is a tab like any
+other, not the default.
 
 Both drawers are overlays. They do not push the content. Each drawer uses
 `min(85vw, 320px)`. A scrim covers the content behind an open drawer.
@@ -463,19 +467,32 @@ keeps each tree short.
 
 ### Density rules
 
-- Row height 44 px. **Cite the standard correctly**: WCAG 2.1 has no Level AA
-  target-size criterion. 2.5.5 Target Size is 44x44 CSS px at Level **AAA**;
-  WCAG 2.2's 2.5.8 Target Size (Minimum) is Level AA at **24x24**. `PRODUCT.md`
-  commits to 2.1 AA, so 44 px exceeds the commitment rather than meeting it.
-  Keep 44 px — it is the right number for a thumb — and do not justify it with a
-  criterion that does not exist.
+- Row height 44 px for a control row. **Cite the standard correctly**: WCAG 2.1
+  has no Level AA target-size criterion. 2.5.5 Target Size is 44x44 CSS px at
+  Level **AAA**; WCAG 2.2's 2.5.8 Target Size (Minimum) is Level AA at
+  **24x24**. `PRODUCT.md` commits to 2.1 AA, so 44 px exceeds the commitment
+  rather than meeting it. Keep 44 px — it is the right number for a thumb — and
+  do not justify it with a criterion that does not exist.
+- **A TREE row is 36 px, not 44 px (built 2026-09-15, pick R4).** A file tree is
+  a list to read as well as a list to tap, and 44 px rows put four folders on a
+  phone screen. The touch metrics ride one attribute: a surface stamps
+  `data-density="touch"` on the tree root, and every row, icon slot and indent
+  guide below it reads the custom properties that attribute sets — 36 px rows
+  (`--cru-row-md`), 14 px text, a 22 px icon slot and a 20 px indent. The
+  desktop tree keeps 28 px (`--cru-row-sm`). The rules live in plain CSS in
+  `styles/refine-touch.css`, not in a utility on the row, because a utility
+  pins the value on one element and a nested row then keeps the desktop size.
 - **Hover-only actions are already handled — do not "fix" them.**
-  `SessionTree.tsx:86` and `:467` carry `[@media(hover:none)]:opacity-100`, as
-  do `Message.tsx:158` and `AssistantTurn.tsx:271`, plus `index.css:1211` and
-  `:1301`. A coarse pointer already reveals them.
+  `SessionTree.tsx` (the row actions and the project row) carries
+  `[@media(hover:none)]:opacity-100`, as does `Message.tsx`, and so do the
+  tab-close and rail rules in `index.css`. A coarse pointer already reveals
+  them. The assistant turn's footer no longer needs the rule at all: since
+  2026-09-15 it is always visible on every pointer, and it shows the turn's
+  duration beside copy and regenerate.
 - A long press opens a bottom sheet with the row's actions. `FileTreeContextMenu`
   supplies the action list.
-- Chevrons get their own 44 px hit area. A chevron tap expands. A row tap opens.
+- A chevron gets the 22 px slot the touch density sets, inside a 36 px row that
+  is the tap target for the whole width. A chevron tap expands. A row tap opens.
 
 ## 8. The editor
 
@@ -567,7 +584,16 @@ the heading level, the list toggle and the save action.
 where the second one applies:
 
 - A note may carry `properties: expanded` to open its own Properties card
-  (`web/src/lib/frontmatter.ts:176`).
+  (`web/src/lib/frontmatter.ts`).
+- **The collapsed Properties row is a control, and looks like one (built
+  2026-09-15, pick R5).** It carries a hairline border that darkens under a
+  pointer, reads in the document's own font rather than the 11 px mono of the
+  key column, and stands 44 px tall at touch density. The phone drops the right
+  gutter that the desktop card reserves for its floating mode toggles, because
+  the phone puts those controls in the header bar, so the card spans the whole
+  content column there. The open card keeps its block and its summary carries
+  no box. The grey bar that used to sit under the collapsed card was the
+  active-line wash on the hidden gap line; a rule clears it for that one line.
 - `editor.hideFrontmatterGap` hides the blank lines between frontmatter and the
   first content in live preview. It is ON by default
   (`web/src/lib/settings.ts:43,88`). The reading view never
