@@ -2,7 +2,6 @@ use super::super::*;
 
 use super::create::validate_trust_level;
 use crate::agent_manager::AgentError;
-use crate::kiln_registry::refuse_forbidden_scope;
 use crate::session_manager::KilnScope;
 use crate::trust_resolution::{find_workspace_and_resolve_classification, resolve_provider_trust};
 use crucible_core::config::KilnName;
@@ -119,7 +118,8 @@ fn scope_error(req_id: Option<crucible_core::protocol::RequestId>, e: AgentError
         AgentError::SessionNotFound(_)
         | AgentError::ConcurrentRequest(_)
         | AgentError::InvalidConfig(_)
-        | AgentError::NotSupported(_) => Response::error(req_id, INVALID_PARAMS, e.to_string()),
+        | AgentError::NotSupported(_)
+        | AgentError::WorkspaceFixed(_) => Response::error(req_id, INVALID_PARAMS, e.to_string()),
         other => internal_error(req_id, other),
     }
 }
@@ -235,56 +235,18 @@ pub(crate) async fn handle_session_disconnect_kiln(
     }
 }
 
-pub(crate) async fn handle_session_set_workspace(
-    req: Request,
-    sm: &Arc<SessionManager>,
-    am: &Arc<AgentManager>,
-    pm: &Arc<ProjectManager>,
-    llm_config: &Option<LlmConfig>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
+/// `session.set_workspace` is refused for every session: the workspace is
+/// fixed at creation (`AgentManager::refuse_workspace_change`). The handler
+/// registers no project and runs no trust check, because none of that may
+/// leave a side effect behind a refusal. The `workspace` the client sent is
+/// read for the trace only, so the wire shape stays what the client sends.
+pub(crate) async fn handle_session_set_workspace(req: Request, am: &Arc<AgentManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
-    // Absent/null → detach (workspace falls back to the kiln path).
-    let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
-
-    if let Some(ref ws) = workspace {
-        if !ws.is_dir() {
-            return Response::error(
-                req.id,
-                INVALID_PARAMS,
-                format!("Workspace is not a directory: {}", ws.display()),
-            );
-        }
-        // Refused outright rather than "registered, and warn if that fails":
-        // the workspace is the agent's filesystem containment boundary even
-        // when registration is skipped, so a forbidden one must not be set.
-        if let Err(message) = refuse_forbidden_scope("workspace", ws, sm.sessions_root()) {
-            return Response::error(req.id, INVALID_PARAMS, message);
-        }
-        if let Err(e) = pm.register_if_missing(ws) {
-            tracing::warn!(path = %ws.display(), error = %e, "Failed to auto-register project");
-        }
-        // The project's config may classify the session's kilns; the most
-        // restrictive of them is what the new workspace must clear.
-        let kilns = sm.kiln_paths(
-            &sm.get_session(&session_id)
-                .map(|s| s.kilns)
-                .unwrap_or_default(),
-        );
-        let classification =
-            crate::trust_resolution::most_restrictive_classification(&kilns, |kiln| {
-                crate::trust_resolution::resolve_kiln_classification(ws, kiln)
-            });
-        if let Err(message) = check_attach_trust(sm, llm_config, &session_id, classification) {
-            return Response::error(req.id, INVALID_PARAMS, message);
-        }
-    }
-
-    match am
-        .set_workspace(&session_id, workspace, Some(event_tx))
-        .await
-    {
-        Ok(session) => scope_response(req.id, &session),
-        Err(e) => scope_error(req.id, e),
-    }
+    let requested = optional_param!(req, "workspace", as_str).map(PathBuf::from);
+    tracing::info!(
+        session_id = %session_id,
+        requested = ?requested,
+        "refused session.set_workspace: the workspace is fixed at creation"
+    );
+    scope_error(req.id, am.refuse_workspace_change(&session_id))
 }

@@ -697,11 +697,7 @@ impl RpcDispatcher {
                     id,
                     crate::server::session::handle_session_set_workspace(
                         req.clone(),
-                        &self.ctx.sessions,
-                        &self.ctx.agents,
-                        &self.ctx.project_manager,
-                        &self.ctx.llm_config.get().map(|c| (*c).clone()),
-                        &self.ctx.event_tx
+                        &self.ctx.agents
                     )
                 )
             }

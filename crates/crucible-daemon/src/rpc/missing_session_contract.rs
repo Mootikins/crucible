@@ -386,10 +386,10 @@ async fn every_session_method_keeps_its_own_answer_for_a_missing_session() {
 /// The four handlers that obtain a `Session` value do not agree on what an
 /// absent one means, which is the second half of why S3 cannot be one layer.
 ///
-/// `session.get` and `session.fork` refuse. `session.set_workspace` reads the
-/// session only to learn its kilns and treats an absent one as "no kilns", so
-/// the refusal it eventually gives comes from `AgentManager`, not from the
-/// read. `session.connect_kiln` reads it only to learn the provider's trust
+/// `session.get` and `session.fork` refuse. `session.set_workspace` refuses
+/// every session, and asks `AgentManager` whether the session exists only to
+/// say "not found" instead of "fixed" for an absent one.
+/// `session.connect_kiln` reads it only to learn the provider's trust
 /// level and falls back to the most restrictive one. Routing all four through
 /// a resolver that refuses would move two decisions that are currently
 /// fail-open-then-refuse and fail-closed-and-continue.

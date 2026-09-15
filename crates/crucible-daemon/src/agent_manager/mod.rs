@@ -121,6 +121,11 @@ pub enum AgentError {
     #[error("Operation not supported: {0}")]
     NotSupported(String),
 
+    #[error(
+        "Session {0} keeps the project it was created in; start a new session to work in another"
+    )]
+    WorkspaceFixed(String),
+
     #[error(transparent)]
     Chat(#[from] ChatError),
 }
@@ -1155,8 +1160,8 @@ impl AgentManager {
         // Unconditionally. This used to be gated on a non-empty workspace and
         // otherwise fell through to the daemon-GLOBAL dispatcher, whose
         // `WorkspaceTools` is ambient — so detaching the workspace of a
-        // kiln-less session (`session.set_workspace` with no `workspace` key,
-        // which falls back to `default_kiln()` and thus to `""`) swapped a
+        // kiln-less session (a session created with no `workspace`, which
+        // fell back to `default_kiln()` and thus to `""`) swapped a
         // contained tool set for an uncontained one. An empty kiln set and an
         // absent workspace degrade CAPABILITIES; there must be no path that
         // lets them degrade containment.

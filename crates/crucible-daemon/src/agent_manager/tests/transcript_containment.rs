@@ -223,12 +223,14 @@ async fn a_session_whose_kiln_is_the_data_root_still_cannot_read_other_transcrip
 
 // ===================== RE-ATTACK: containment probes =====================
 
-/// `session.set_workspace` with no `workspace` detaches: the workspace falls
-/// back to `default_kiln()`, which on a kiln-less session is `None` and
-/// therefore `PathBuf::default()` — the empty path. An empty kiln set must
-/// degrade capabilities, never containment.
+/// A session created with no `workspace` and no kilns has nothing to anchor
+/// its allowlist at except its own storage directory. It used to fall back to
+/// `default_kiln()`, which on a kiln-less session is `None` and therefore
+/// `PathBuf::default()` — the empty path. An empty kiln set must degrade
+/// capabilities, never containment. (The workspace is fixed at creation, so
+/// this shape is reached at `session.create` only.)
 #[tokio::test]
-async fn detaching_the_workspace_of_a_kilnless_session_does_not_uncontain_it() {
+async fn a_kilnless_session_with_no_workspace_is_still_contained() {
     let home = TempDir::new().unwrap();
     let sessions_root = FileSessionStorage::root_for(home.path());
     let sm = Arc::new(SessionManager::new(sessions_root.clone()));
@@ -245,20 +247,12 @@ async fn detaching_the_workspace_of_a_kilnless_session_does_not_uncontain_it() {
     write_transcript(&victim, &sessions_root, SECRET);
 
     let snoop = sm
-        .create_session(
-            SessionType::Chat,
-            vec![],
-            Some(test_workspace_root().to_path_buf()),
-            None,
-        )
+        .create_session(SessionType::Chat, vec![], None, None)
         .await
         .unwrap();
+    assert_eq!(snoop.workspace, None);
 
     let manager = create_test_agent_manager(sm.clone());
-    // Exactly what `session.set_workspace {"session_id": ...}` (no workspace
-    // key) does.
-    let snoop = manager.set_workspace(&snoop.id, None, None).await.unwrap();
-    assert_eq!(snoop.workspace, None);
 
     let result = agent_reads(&manager, &snoop, &victim.jsonl_path(&sessions_root)).await;
 

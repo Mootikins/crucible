@@ -208,8 +208,8 @@ impl FileSessionStorage {
     ///
     /// `workspace` is a plain path deserialized unchecked, and it is chained
     /// straight into the session's containment allowlist alongside its kilns
-    /// (`agent_manager::scope::session_containment`). Every *live* door that
-    /// sets one — `session.create`, `session.set_workspace` — runs
+    /// (`agent_manager::scope::session_containment`). The one *live* door that
+    /// sets one — `session.create`; the workspace is fixed after that — runs
     /// [`refuse_forbidden_scope`](crate::kiln_registry::refuse_forbidden_scope)
     /// first, but a `meta.json` reaches that
     /// allowlist without passing any of them: a file written before the gate

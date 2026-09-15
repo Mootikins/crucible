@@ -206,36 +206,21 @@ impl AgentManager {
         .await
     }
 
-    /// Set or clear the session's workspace. `None` detaches, and the session
-    /// is then left with no workspace at all — the same state a workspace-less
-    /// create produces (see `Session::new`). It used to fall back to the kiln
-    /// path, which made "acting in this project" and "acting in this corpus"
-    /// the same sentence and left no way to say the session had no project.
-    /// Rejected for ACP sessions, whose external agent process runs in the
-    /// workspace it was spawned with.
-    pub async fn set_workspace(
-        &self,
-        session_id: &str,
-        workspace: Option<PathBuf>,
-        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-    ) -> Result<Session, AgentError> {
-        self.mutate_scope(session_id, event_tx, move |session| {
-            let is_acp = session
-                .agent
-                .as_ref()
-                .map(|a| a.agent_type == "acp")
-                .unwrap_or(false);
-            if is_acp {
-                return Err(AgentError::NotSupported(
-                    "ACP agents run in the workspace they were spawned with — start a new session to change it"
-                        .to_string(),
-                ));
-            }
-            let before = session.workspace.clone();
-            session.set_workspace(workspace);
-            Ok(session.workspace != before)
-        })
-        .await
+    /// Refuse a workspace change: a session's workspace is fixed at creation.
+    ///
+    /// The workspace is the agent's filesystem containment boundary and the
+    /// project the session is filed under. Moving it mid-session re-scoped
+    /// every later tool call and re-homed the transcript's row in the rail,
+    /// and an ACP agent could not follow at all, because its process runs in
+    /// the workspace it was spawned with. `session.set_workspace` stays on the
+    /// wire so an older client gets a refusal it can show, not a
+    /// method-not-found. An absent session is still reported as absent, so
+    /// the missing-session contract holds for this method too.
+    pub fn refuse_workspace_change(&self, session_id: &str) -> AgentError {
+        if self.session_manager.get_session(session_id).is_none() {
+            return AgentError::SessionNotFound(session_id.to_string());
+        }
+        AgentError::WorkspaceFixed(session_id.to_string())
     }
 }
 

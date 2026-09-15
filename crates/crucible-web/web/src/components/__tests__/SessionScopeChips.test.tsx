@@ -25,21 +25,14 @@ const disconnectMock = vi.fn().mockResolvedValue({
   kilns: ['main'],
   workspace: null,
 });
-const setWorkspaceMock = vi.fn().mockResolvedValue({
-  session_id: 's1',
-  kilns: ['main'],
-  workspace: null,
-});
-
+// No `setSessionWorkspace` here: the chip must have no path to it.
 vi.mock('@/lib/api', () => ({
   listKilns: vi.fn().mockResolvedValue([
     { path: '/kilns/main', name: 'main' },
     { path: '/kilns/extra', name: 'extra' },
   ]),
-  listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
   connectSessionKiln: (...args: unknown[]) => connectMock(...args),
   disconnectSessionKiln: (...args: unknown[]) => disconnectMock(...args),
-  setSessionWorkspace: (...args: unknown[]) => setWorkspaceMock(...args),
 }));
 
 const baseSession = (): Session => ({
@@ -79,24 +72,23 @@ describe('SessionScopeChips', () => {
     expect(screen.getByTestId('scope-kiln').textContent).not.toContain('Kiln ·');
   });
 
-  it('picking a project calls setSessionWorkspace and applies the scope', async () => {
-    mockSession = baseSession();
-    render(() => <SessionScopeChips />);
-    fireEvent.click(screen.getByTestId('scope-project'));
-    await waitFor(() => expect(screen.getByText('crucible')).toBeTruthy());
-    fireEvent.click(screen.getByText('crucible'));
-    await waitFor(() => expect(setWorkspaceMock).toHaveBeenCalledWith('s1', '/repos/crucible'));
-    await waitFor(() => expect(applySessionScopeMock).toHaveBeenCalled());
-  });
-
-  it('attached workspace shows its basename; "Session folder" detaches (workspace: null)', async () => {
+  // A session's project is fixed at creation (the daemon refuses
+  // `session.set_workspace`), so the chip says where the session acts and
+  // opens nothing. It used to be a picker that moved the workspace.
+  it('the project chip names the workspace and is not a control', async () => {
     mockSession = { ...baseSession(), workspace: '/repos/crucible' };
     render(() => <SessionScopeChips />);
-    expect(screen.getByTestId('scope-project').textContent).toContain('crucible');
-    fireEvent.click(screen.getByTestId('scope-project'));
-    await waitFor(() => expect(screen.getByText('Session folder')).toBeTruthy());
-    fireEvent.click(screen.getByText('Session folder'));
-    await waitFor(() => expect(setWorkspaceMock).toHaveBeenCalledWith('s1', null));
+    const chip = screen.getByTestId('scope-project');
+    expect(chip.textContent).toContain('crucible');
+    expect(chip.getAttribute('title')).toBe('/repos/crucible');
+    expect(chip.tagName).not.toBe('BUTTON');
+    expect(chip.querySelector('button')).toBeNull();
+    fireEvent.click(chip);
+    // Nothing opens: no popout, no "Session folder" alternative on offer.
+    await Promise.resolve();
+    expect(screen.queryByTestId('scope-project-popout')).toBeNull();
+    expect(screen.queryByText('Session folder')).toBeNull();
+    expect(applySessionScopeMock).not.toHaveBeenCalled();
   });
 
   it('every attached kiln toggles off, including the first', async () => {

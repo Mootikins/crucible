@@ -125,9 +125,10 @@ impl RpcContext {
         let workspace = params.workspace.as_deref().map(PathBuf::from);
 
         // The workspace is still a path — workspaces have no registry and no
-        // name authority to resolve against — so it still runs the floor here,
-        // the same one `session.set_workspace` runs. The socket has no auth, so
-        // create must not be the cheaper door.
+        // name authority to resolve against — so it runs the floor here. This
+        // is the only door: a session's workspace is fixed at creation, and
+        // `session.set_workspace` refuses every change. The socket has no
+        // auth, so create must not be a cheap door.
         let sessions_root = self.sessions.sessions_root().to_path_buf();
         if let Some(workspace) = workspace.as_deref() {
             refuse_forbidden_scope("workspace", workspace, &sessions_root)

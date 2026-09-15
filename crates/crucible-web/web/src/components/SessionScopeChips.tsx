@@ -1,14 +1,8 @@
 import { Component, Show, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
-import {
-  connectSessionKiln,
-  disconnectSessionKiln,
-  listKilns,
-  listProjects,
-  setSessionWorkspace,
-} from '@/lib/api';
-import type { KilnListEntry, Project } from '@/lib/types';
+import { connectSessionKiln, disconnectSessionKiln, listKilns } from '@/lib/api';
+import type { KilnListEntry } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
@@ -17,19 +11,22 @@ import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import { FlaskConical, FolderGit2 } from '@/lib/icons';
 
 /**
- * Interactive session-scope strip below the chat input: the workspace the
- * session acts in and the kilns it knows. Same ChipSelect popout idiom as the
- * launchpad composer (project = FolderGit2, kiln = FlaskConical) so the two
- * surfaces read identically. Attach/detach mid-session — the daemon rejects
- * mutations mid-turn, re-checks trust on attach, and rebuilds the agent's
- * tools/prompt on the next turn.
+ * Session-scope strip below the chat input: the workspace the session acts in
+ * and the kilns it knows. Same icons as the launchpad composer (project =
+ * FolderGit2, kiln = FlaskConical) so the two surfaces read identically.
+ *
+ * The project chip is static. A session's workspace is fixed at creation —
+ * the daemon refuses `session.set_workspace` for every session — so the chip
+ * says which project the session acts in and offers no other. The kiln chip
+ * still attaches and detaches mid-session: the daemon rejects mutations
+ * mid-turn, re-checks trust on attach, and rebuilds the agent's tools/prompt
+ * on the next turn.
  */
 export const SessionScopeChips: Component = () => {
   const { currentSession, applySessionScope } = useSessionSafe();
   const { isStreaming } = useChatSafe();
 
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
-  const [projects, setProjects] = createSignal<Project[]>([]);
   const [busy, setBusy] = createSignal(false);
 
   const session = () => currentSession();
@@ -42,7 +39,6 @@ export const SessionScopeChips: Component = () => {
   onMount(() => {
     // Last-known values paint instantly on reload (same as the composer).
     swrLocal('kilns', listKilns, setKilns);
-    swrLocal('projects', () => listProjects(), setProjects);
   });
 
   const mutate = async (action: () => Promise<Parameters<typeof applySessionScope>[0]>) => {
@@ -61,23 +57,7 @@ export const SessionScopeChips: Component = () => {
   };
 
   // ---- workspace (project) chip -------------------------------------------
-  const projectOptions = (): ChipOption[] => [
-    // No project → the session keeps its own scratch folder.
-    { value: '', label: 'Session folder', hint: 'unique per session', group: 'Projects' },
-    ...projects().map((p) => ({
-      value: p.path,
-      label: p.name || pathBasename(p.path) || p.path,
-      hint: p.path,
-      group: 'Projects',
-    })),
-  ];
-
-  const pickProject = (path: string) => {
-    const s = session();
-    if (!s) return;
-    void mutate(() => setSessionWorkspace(s.id, path || null));
-  };
-
+  // No project → the session keeps its own scratch folder.
   const projectLabel = () => {
     const ws = workspace();
     return (ws && pathBasename(ws)) || 'Session folder';
@@ -170,16 +150,17 @@ export const SessionScopeChips: Component = () => {
       {/* No margin of its own: this sits inside the composer's control row,
           which owns the spacing for everything on it. */}
       <div class="contents" data-testid="context-chips">
-        <ChipSelect
-          name="project"
-          icon={FolderGit2}
-          options={projectOptions()}
-          value={workspace() ?? ''}
-          triggerLabel={projectLabel()}
-          onSelect={pickProject}
-          disabled={disabled()}
-          testid="scope-project"
-        />
+        {/* Same footprint as the ChipSelect trigger beside it, minus the caret:
+            it is a label, not a control, and must not look like one. The
+            title carries the full path, as the kiln rows carry theirs. */}
+        <span
+          class="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs max-w-[220px] text-shell-body"
+          title={workspace() ?? 'Session folder — unique to this session'}
+          data-testid="scope-project"
+        >
+          <FolderGit2 class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />
+          <span class="truncate">{projectLabel()}</span>
+        </span>
         <ChipSelect
           name="kiln"
           icon={FlaskConical}

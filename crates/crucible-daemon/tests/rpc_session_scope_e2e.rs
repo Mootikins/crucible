@@ -184,44 +184,55 @@ async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
     server.shutdown().await;
 }
 
+/// A session's workspace is fixed at creation. `session.set_workspace` stays
+/// on the wire so an older client gets a refusal it can show, but the daemon
+/// changes nothing: not to another directory, and not to none.
 #[tokio::test]
-async fn set_workspace_attaches_and_detach_leaves_the_session_with_none() {
+async fn set_workspace_is_refused_and_the_session_keeps_its_workspace() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let project_dir = tempfile::tempdir().unwrap();
+    let created_in = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client).await;
-
-    let scope = client
-        .session_set_workspace(&session_id, Some(project_dir.path()))
+    let result = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".to_string(),
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
+            workspace: Some(created_in.path().to_path_buf()),
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+            isolation: None,
+        })
         .await
-        .expect("set_workspace failed");
-    assert_eq!(
-        scope["workspace"].as_str().unwrap(),
-        project_dir.path().to_string_lossy()
+        .expect("session_create failed");
+    let session_id = result["session_id"].as_str().unwrap().to_string();
+
+    let err = client
+        .session_set_workspace(&session_id, Some(other.path()))
+        .await
+        .expect_err("a workspace change on an existing session must be refused");
+    assert!(
+        err.to_string().contains("created in"),
+        "the refusal must say the workspace is fixed at creation: {err}"
     );
 
-    // Detach: the session then has NO workspace, and says so on the wire.
-    // It used to be handed back the kiln path, which left every client
-    // re-deriving `workspace == kilns[0]` to tell "no project" from "the
-    // project is the kiln" — and the web UI had its own copy of that rule.
-    let scope = client
+    let err = client
         .session_set_workspace(&session_id, None)
         .await
-        .expect("workspace detach failed");
+        .expect_err("detaching the workspace must be refused too");
     assert!(
-        scope["workspace"].is_null(),
-        "detach must report no workspace, got {}",
-        scope["workspace"]
+        err.to_string().contains("created in"),
+        "the refusal must say the workspace is fixed at creation: {err}"
     );
-    assert!(
-        !scope["workspace"]
-            .as_str()
-            .is_some_and(|w| w.ends_with("kilns/kiln")),
-        "and specifically not the kiln path: {}",
-        scope["workspace"]
+
+    let session = client.session_get(&session_id).await.unwrap();
+    assert_eq!(
+        session["workspace"].as_str().unwrap(),
+        created_in.path().to_string_lossy(),
+        "the session must keep the workspace it was created with"
     );
 
     server.shutdown().await;
@@ -262,29 +273,6 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     assert_eq!(
         session["kilns"].as_array(),
         Some(&vec![serde_json::json!("kiln")])
-    );
-
-    server.shutdown().await;
-}
-
-#[tokio::test]
-async fn set_workspace_rejects_nonexistent_directory() {
-    let server = TestServer::start().await.expect("Failed to start server");
-    let client = DaemonClient::connect_to(&server.socket_path)
-        .await
-        .expect("Failed to connect");
-    let session_id = create_session(&client).await;
-
-    let err = client
-        .session_set_workspace(
-            &session_id,
-            Some(std::path::Path::new("/definitely/not/a/real/dir")),
-        )
-        .await
-        .expect_err("nonexistent workspace must be rejected");
-    assert!(
-        err.to_string().contains("not a directory"),
-        "unexpected error: {err}"
     );
 
     server.shutdown().await;

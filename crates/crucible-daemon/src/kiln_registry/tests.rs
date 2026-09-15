@@ -469,9 +469,10 @@ fn a_session_kiln_may_not_be_the_filesystem_root_or_home() {
     }
 }
 
-/// Same door, other handler: `session.set_workspace` (and `session.create`)
-/// hand the workspace straight to `register_if_missing`, whose failure was
-/// only ever a warning — the session kept the scope regardless.
+/// Same door, other axis: `session.create` hands the workspace straight to
+/// `register_if_missing`, whose failure was only ever a warning — the session
+/// kept the scope regardless. (`session.set_workspace` refuses every change
+/// now, so create is the only door a workspace comes through.)
 #[test]
 fn a_session_workspace_may_not_be_the_filesystem_root_or_home() {
     let sessions_root = Path::new("/nonexistent-sessions-root");
@@ -532,7 +533,7 @@ fn session_storage_may_not_be_attached_as_scope() {
     );
     assert!(
         refuse_forbidden_scope("workspace", &victim, &sessions_root).is_err(),
-        "the same door via set_workspace must be shut too"
+        "the same door via the workspace axis must be shut too"
     );
 }
 

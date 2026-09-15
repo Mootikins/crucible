@@ -8,8 +8,7 @@
 //! # The floor lives here
 //!
 //! [`refuse_forbidden_scope`] is not new. It was the gate at each attach site
-//! (`session.create`, `session.connect_kiln`, `session.set_workspace`, a
-//! revived `meta.json`), and five review rounds' worth of cases are pinned by
+//! (`session.create`, `session.connect_kiln`, a revived `meta.json`), and five review rounds' worth of cases are pinned by
 //! its tests. Names do not delete it — they **move it**, from every attach site
 //! to this one registration site, because once `Session.kilns` holds names the
 //! attach sites no longer have a `&Path` to check.
