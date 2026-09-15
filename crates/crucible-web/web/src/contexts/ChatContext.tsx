@@ -292,15 +292,26 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           return m.role === 'tool' && tool && tool.callId === callId;
         });
 
+      // Real event times, so a reloaded turn shows the same duration the
+      // live one did. A missing stamp falls back to the old synthetic spacing.
+      const eventTime = (evt: { timestamp?: string }): number | undefined => {
+        const n = evt.timestamp ? Date.parse(evt.timestamp) : NaN;
+        return Number.isNaN(n) ? undefined : n;
+      };
+      const synthetic = () => Date.now() - (response.history.length - loadedMessages.length) * 1000;
+      // A turn's assistant bubbles carry the turn's START (the user message
+      // time), the same stamp a live placeholder gets when the turn is sent.
+      let turnStart: number | undefined;
       for (const evt of response.history) {
         if (evt.event === 'user_message' && evt.data?.content) {
+          turnStart = eventTime(evt);
           // New turn: drop any segments a prior turn left uncollected.
           pendingSegments = [];
           loadedMessages.push({
             id: evt.data.message_id as string || `user-${loadedMessages.length}`,
             role: 'user',
             content: evt.data.content,
-            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+            timestamp: turnStart ?? synthetic(),
           });
         } else if (evt.event === 'segment_complete') {
           // Canonical id derivation identical to the live reducer's, so a
@@ -314,7 +325,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             id: messageId ? turnSegmentId(messageId, index) : `assistant-seg-${loadedMessages.length}`,
             role: 'assistant',
             content,
-            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+            timestamp: turnStart ?? synthetic(),
           });
         } else if (evt.event === 'tool_call') {
           // Reconstruct tool entries so past tool activity stays visible in
@@ -394,7 +405,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
                 : `assistant-${loadedMessages.length}`,
               role: 'assistant',
               content: finalContent,
-              timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+              timestamp: turnStart ?? synthetic(),
+              completedAt: eventTime(evt),
             });
           }
         }

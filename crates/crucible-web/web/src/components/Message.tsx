@@ -13,7 +13,7 @@ import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import type { Message as MessageType } from '@/lib/types';
 import { renderPlainWithWikilinks } from '@/lib/markdown';
-import { formatAbsoluteTime } from '@/lib/format-time';
+import { formatMessageTime } from '@/lib/format-time';
 
 interface MessageProps {
   message: MessageType;
@@ -141,14 +141,17 @@ export const Message: Component<MessageProps> = (props) => {
           />
         </Show>
 
-        {/* Absolute time, bottom-left, hover-only — ambient relative
-            timestamps under every bubble were noise. */}
+        {/* The time the message was sent: quiet, in the flow, right under
+            the bubble, always visible. It was a hover-only label floating at
+            the bubble's bottom-left, which read as a stray caption. The date
+            only appears once it is not today. */}
         <Show when={isUser() && props.message.timestamp}>
           <div
-            class="absolute left-0 -bottom-5 text-floor leading-none text-muted-dark opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150"
+            class="mt-1 text-right text-floor leading-none text-muted-dark"
+            data-testid="message-time"
             title={new Date(props.message.timestamp).toLocaleString()}
           >
-            {formatAbsoluteTime(props.message.timestamp)}
+            {formatMessageTime(props.message.timestamp)}
           </div>
         </Show>
       </div>

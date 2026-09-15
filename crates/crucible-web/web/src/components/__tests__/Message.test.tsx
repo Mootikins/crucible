@@ -243,12 +243,15 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(old)).toBe(expected);
   });
 
-  it('renders the ABSOLUTE time on the user bubble (hover-revealed)', async () => {
-    const { formatAbsoluteTime } = await import('@/lib/format-time');
-    render(() => (
-      <Message message={makeMessage({ role: 'user', timestamp: NOW - 5 * 60_000 })} />
-    ));
-    expect(screen.getByText(formatAbsoluteTime(NOW - 5 * 60_000))).toBeInTheDocument();
+  it('shows the sent time under the user bubble, always visible', async () => {
+    const ts = NOW - 5 * 60_000;
+    render(() => <Message message={{ id: 'u1', role: 'user', content: 'hi', timestamp: ts }} />);
+    const { formatMessageTime } = await import('@/lib/format-time');
+    const time = screen.getByTestId('message-time');
+    expect(time.textContent).toBe(formatMessageTime(ts, NOW));
+    // In the flow and always on: no hover gate, no absolute float.
+    expect(time.className).not.toContain('opacity-0');
+    expect(time.className).not.toContain('absolute');
   });
 });
 

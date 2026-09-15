@@ -56,6 +56,20 @@ export function formatRelativeTime(timestamp: number): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** The time a message was sent: "9:41 PM" today, "Jul 22, 9:41 PM" on any
+ * other day (with the year once it differs). */
+export function formatMessageTime(timestamp: number, now: number = Date.now()): string {
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) return '';
+  const today = new Date(now);
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return formatAbsoluteTime(timestamp);
+}
+
 /** A turn's duration for message footers: "4.2 s", "1 m 12 s", "2 h 05 m". */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '';
