@@ -8,6 +8,7 @@
 import { resolveNotePath } from './api';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
+import { mostRecentKilnPath } from '@/stores/kilnStore';
 
 /**
  * Normalise the kiln a caller supplied.
@@ -22,7 +23,10 @@ function resolveKiln(kiln?: string): string | undefined {
   // registry has reported a kiln as its `.crucible` config dir before now, and
   // one helper applying that fix while its sibling does not is how a path ends
   // up as `/vault/.crucible/Note.md`.
-  return kiln ? kilnRoot(kiln) : undefined;
+  // No kiln on the element: the kiln in use. A session whose kiln name the
+  // registry cannot map carried none, and every link in it died.
+  const chosen = kiln ?? mostRecentKilnPath() ?? undefined;
+  return chosen ? kilnRoot(chosen) : undefined;
 }
 
 /**

@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const getNoteMock = vi.fn();
 const getConfigMock = vi.fn();
 const resolveNotePathMock = vi.fn();
+const kilnInUse = vi.hoisted(() => ({ path: null as string | null }));
+vi.mock('@/stores/kilnStore', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mostRecentKilnPath: () => kilnInUse.path,
+}));
 const openFileInEditorMock = vi.fn();
 
 vi.mock('../api', async (importOriginal) => ({
@@ -243,5 +248,18 @@ describe('insertWikilink', () => {
 
   it('refuses to double-wrap an existing wikilink', () => {
     expect(insertWikilink('[[Other Note]] is here.', s('Other Note', 'Other Note', 2))).toBeNull();
+  });
+});
+
+describe('openNoteInEditor with no kiln on the element', () => {
+  it('falls back to the kiln in use instead of giving up', async () => {
+    // A transcript whose session names a kiln the registry cannot map
+    // carries no data-kiln. The click used to resolve nothing and toast
+    // "Note not found" for a note that exists in the kiln on screen.
+    kilnInUse.path = '/vault';
+    resolveNotePathMock.mockResolvedValue({ path: 'A.md', absolutePath: '/vault/A.md', title: 'A' });
+    const { openNoteInEditor } = await import('../note-actions');
+    await openNoteInEditor('A');
+    expect(resolveNotePathMock).toHaveBeenCalledWith('/vault', 'A');
   });
 });

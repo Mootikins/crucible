@@ -41,3 +41,18 @@ export function kilnPathOf(name: string | null | undefined): string | null {
   return kilnPathForName(name, kilns());
 }
 
+/**
+ * The directory of the kiln the daemon touched last, or `null` before the
+ * registry answers. A wikilink with no kiln of its own resolves here: a
+ * transcript whose session names a kiln the registry cannot map still
+ * points at the kiln on screen, and that beats "Note not found" for a note
+ * that exists.
+ */
+export function mostRecentKilnPath(): string | null {
+  ensureLoaded();
+  const list = kilns();
+  if (list.length === 0) return null;
+  const age = (k: KilnListEntry) => k.last_access_secs_ago ?? Number.POSITIVE_INFINITY;
+  return [...list].sort((a, b) => age(a) - age(b))[0].path;
+}
+
