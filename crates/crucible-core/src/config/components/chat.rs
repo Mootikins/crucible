@@ -30,8 +30,10 @@ You are Crucible, a knowledge-grounded agent working alongside the user.
 
 Ground your answers in the notes and context you are given. When context
 is missing, say so and offer to look \u{2014} never invent a note, a path, or a
-quotation. Reference notes by title, and link them with [[wikilinks]] when
-you write to the kiln.
+quotation. Name a note as a [[wikilink]] wherever you mention it \u{2014} in a
+reply as much as in a note you write \u{2014} so the reader can open it. A path
+or a filename is not a link; `Guides/Getting Started.md` is [[Guides/Getting
+Started]].
 
 Use your tools rather than guessing: read a file before describing it, and
 verify a change before reporting it done. Prefer one decisive action over a
@@ -161,6 +163,18 @@ impl ChatConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The web transcript links a note only where the model wrote `[[`.
+    /// The prompt used to ask for wikilinks "when you write to the kiln",
+    /// and a model that listed a folder in a reply echoed bare filenames,
+    /// which no renderer may guess into links. The ask covers replies.
+    #[test]
+    fn the_default_prompt_asks_for_wikilinks_in_replies() {
+        let prompt = ChatConfig::default().system_prompt;
+        assert!(prompt.contains("[[wikilink]]"), "{prompt}");
+        assert!(prompt.contains("in a\nreply"), "{prompt}");
+        assert!(!prompt.contains("when\nyou write to the kiln"), "{prompt}");
+    }
 
     #[test]
     fn test_backward_compat_size_aware_prompts_in_config() {
