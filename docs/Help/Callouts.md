@@ -25,10 +25,9 @@ starts open:
 ```
 
 Folding is a **web-frontend rendering feature**: the browser's markdown
-pipeline renders `[!type]-`/`[!type]+` as a collapsible block. The Rust core
-parser does not understand the fold marker — it still detects the callout
-type, but in the folded form the title is not captured (the `-`/`+` breaks
-its title match).
+pipeline renders `[!type]-`/`[!type]+` as a collapsible block. Rust retains
+callout block kinds and byte spans for retrieval; it does not own the title,
+body or folding representation rendered in the browser.
 
 ## All variants
 
@@ -87,6 +86,5 @@ its title match).
 - Rendering (colors, icons, folding) lives in the **web frontend**: callouts
   render in reading mode, chat messages, and hover previews; in the
   live-preview editor the block is tinted with the variant color while
-  staying editable. The Rust core parser only extracts the callout type,
-  title, and content for indexing.
-
+  staying editable. The separate Rust callout collection and unknown-type diagnostics were
+  retired on 2026-09-14; callout block classification is retained.

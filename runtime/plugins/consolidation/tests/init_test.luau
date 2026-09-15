@@ -55,6 +55,12 @@ package.loaded["reflection"] = {
   end,
 }
 
+local function read_progress(): { [string]: string }
+  local raw = cru.storage.get("consolidation", "last_run")
+  expect.equal("string", type(raw))
+  return cru.json.decode(raw or "{}")
+end
+
 describe("consolidation", function()
   -- The runner activated this plugin before it loaded this file, and seeded
   -- `package.loaded` with the activated instance, whose setup() already ran
@@ -131,9 +137,16 @@ describe("consolidation", function()
         { id = "c", state = "active", started_at = "2026-09-01T13:00:00Z", session_type = "chat" },
         { id = "aux", state = "ended", started_at = "2026-09-01T12:30:00Z", session_type = "plugin" },
       }
-      local got = plugin.since_cursor(list, "2026-09-01T11:00:00Z")
+      local got = plugin.since_cursor(list, { a = "0" })
       expect.equal(1, #got)
       expect.equal("b", got[1].id)
+    end)
+
+    it("samples a resumed session again only when its event count changes", function()
+      local sessions = { { id = "a", state = "ended", started_at = "same", event_count = 8 } }
+      expect.equal(0, #plugin.since_cursor(sessions, { a = "8" }))
+      sessions[1].event_count = 12
+      expect.equal(1, #plugin.since_cursor(sessions, { a = "8" }))
     end)
 
     it("keeps every ended session when there is no cursor, oldest first", function()
@@ -231,10 +244,37 @@ describe("consolidation", function()
       expect.equal(99, call.timeout)
     end)
 
-    it("stores the newest started_at as the cursor after a pass", function()
+    it("reviews an older session when it ends after a newer session was sampled", function()
+      local older_ended = false
+      cru.session.list = function()
+        return {
+          { id = "older", state = if older_ended then "ended" else "active", started_at = "2026-09-01T09:00:00Z" },
+          { id = "newer", state = "ended", started_at = "2026-09-01T12:00:00Z" },
+        }, nil
+      end
+      messages_by_id.older = messages_by_id.long
+      messages_by_id.newer = messages_by_id.long
+      plugin.run(nil)
+      older_ended = true
+      plugin.run(nil)
+      expect.equal(2, #review_calls)
+      expect.truthy(review_calls[2].prompt:find("### session older", 1, true))
+      expect.is_nil(review_calls[2].prompt:find("### session newer", 1, true))
+    end)
+
+    it("records the session versions the pass consumed", function()
       plugin.run(nil)
 
-      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().long)
+    end)
+
+    it("re-samples once when migrating a timestamp cursor", function()
+      cru.storage.set("consolidation", "last_run", "2026-09-01T12:00:00Z")
+      plugin.run(nil)
+      plugin.run(nil)
+
+      expect.equal(1, #review_calls)
+      expect.equal("0", read_progress().long)
     end)
 
     it("moves the cursor only past the sessions the reviewer saw", function()
@@ -263,7 +303,7 @@ describe("consolidation", function()
       local first: any = review_calls[1].prompt
       expect.truthy(first:find("### session a", 1, true))
       expect.is_nil(first:find("### session b", 1, true))
-      expect.equal("2026-09-01T10:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().a)
 
       plugin.run(nil)
 
@@ -272,7 +312,7 @@ describe("consolidation", function()
       expect.truthy(second:find("### session b", 1, true))
       expect.truthy(second:find("### session c", 1, true))
       expect.is_nil(second:find("### session a", 1, true))
-      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().c)
     end)
 
     it("skips a session whose transcript did not load and moves the cursor past it", function()
@@ -304,7 +344,7 @@ describe("consolidation", function()
       expect.truthy(first:find("### session a", 1, true))
       expect.is_nil(first:find("### session b", 1, true))
       expect.truthy(first:find("### session c", 1, true))
-      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().c)
 
       fail_b = false
       plugin.run(nil)
@@ -338,7 +378,7 @@ describe("consolidation", function()
       local prompt: any = review_calls[1].prompt
       expect.truthy(prompt:find("### session bad", 1, true))
       expect.is_nil(prompt:find("### session clean", 1, true))
-      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().bad)
 
       plugin.run(nil)
 
@@ -359,7 +399,7 @@ describe("consolidation", function()
       plugin.run(nil)
 
       expect.equal(1, #review_calls)
-      expect.equal("2026-09-01T11:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().short)
     end)
 
     it("sends nothing on a second run when no session ended since the cursor", function()
@@ -371,7 +411,7 @@ describe("consolidation", function()
 
     it("starts after the cursor a previous pass stored", function()
       plugin.setup({ min_turns = 1 })
-      cru.storage.set("consolidation", "last_run", "2026-09-01T10:30:00Z")
+      cru.storage.set("consolidation", "last_run", cru.json.encode({ short = "0" }))
       plugin.run(nil)
 
       expect.equal(1, #review_calls)
@@ -399,10 +439,10 @@ describe("consolidation", function()
     end)
 
     it("keeps the cursor where it was when a pass sees no session", function()
-      cru.storage.set("consolidation", "last_run", "2026-09-01T12:00:00Z")
+      cru.storage.set("consolidation", "last_run", cru.json.encode({ short = "0", long = "0" }))
       plugin.run(nil)
 
-      expect.equal("2026-09-01T12:00:00Z", cru.storage.get("consolidation", "last_run"))
+      expect.equal("0", read_progress().long)
       expect.equal(0, #review_calls)
     end)
   end)

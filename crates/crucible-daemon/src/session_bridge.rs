@@ -1062,6 +1062,7 @@ pub(crate) fn session_json(s: &crucible_core::session::SessionSummary) -> serde_
         "title": s.title,
         "model": s.agent_model,
         "started_at": s.started_at.to_rfc3339(),
+        "event_count": s.event_count,
     })
 }
 

@@ -12,7 +12,7 @@
 //! - `implementation` - Main `CrucibleParser` implementation
 //! - `frontmatter_extractor` - Frontmatter parsing utilities
 //! - `markdown_it` - markdown-it AST converter + syntax plugins (feature-gated)
-//! - Extension modules: `wikilinks`, `callouts`, `blockquotes`, etc.
+//! - Extension modules: `wikilinks`, `latex`, `inline_links`, etc.
 
 pub mod error;
 pub mod extensions;
@@ -22,9 +22,7 @@ pub mod types;
 // Parser implementation modules (absorbed from crucible-parser)
 #[cfg(feature = "markdown-it-parser")]
 pub mod basic_markdown_it;
-pub mod callouts;
 pub mod enhanced_tags;
-pub mod footnotes;
 pub mod frontmatter_extractor;
 pub mod implementation;
 pub mod inline_links;
@@ -51,15 +49,13 @@ pub use implementation::CrucibleParser;
 
 // Re-export parser types from canonical source (this module)
 pub use types::{
+    Block,
     // AST types
     // Hash type
     BlockHash, // Enhanced content types
-    Callout,
+    BlockKind,
     CalloutType,
     CheckboxStatus,
-    FootnoteDefinition, // Footnote types
-    FootnoteMap,
-    FootnoteReference,
     Frontmatter,
     FrontmatterFormat, // Workflow types
     Gate,              // Content structure types

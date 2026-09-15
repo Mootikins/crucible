@@ -44,6 +44,7 @@ pub mod event_emitter;
 pub mod event_map;
 pub(crate) mod execution_roots;
 pub mod file_watch_bridge;
+pub mod file_write;
 pub mod internal_events;
 pub mod kiln_manager;
 pub mod kiln_registry;

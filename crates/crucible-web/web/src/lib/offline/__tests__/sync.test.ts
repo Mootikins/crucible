@@ -280,7 +280,7 @@ describe('editNote', () => {
       current_hash: '',
       stale_base: false,
     });
-    expect(net.patch, 'never sent: the daemon is not answering').toHaveBeenCalledTimes(1);
+    expect(net.patch, 'the existing outbox entry handles the edit without a network request').not.toHaveBeenCalled();
     expect(await pendingCount()).toBe(1);
   });
 
@@ -805,7 +805,7 @@ describe('a read prefers writing the daemon has not received', () => {
 
     net.read.mockRejectedValue(new TypeError('Failed to fetch'));
     const back = await readNote(PATH, KILN);
-    expect(back).toEqual({ content: '- [x] milk\n- [ ] eggs\n', content_hash: 'h0', fromMirror: true });
+    expect(back).toMatchObject({ content: '- [x] milk\n- [ ] eggs\n', content_hash: 'h0', fromMirror: true });
   });
 
   it('answers the mirror text when a queued edit no longer applies to it', async () => {
@@ -818,5 +818,25 @@ describe('a read prefers writing the daemon has not received', () => {
 
     net.read.mockRejectedValue(new TypeError('Failed to fetch'));
     expect((await readNote(PATH, KILN)).content).toBe('- [ ] eggs\n');
+  });
+});
+
+describe('online operations over queued writing', () => {
+  it('reopens the queued writing even when the network answers', async () => {
+    await warmIdentity();
+    net.guardedSave.mockRejectedValueOnce(new TypeError('offline'));
+    await writeNote({ path: PATH, kiln: KILN, body: 'unsent', base: 'h0', baseText: 'original' });
+    net.read.mockResolvedValue({ content: 'original', content_hash: 'h0' });
+    expect((await readNote(PATH, KILN)).content).toBe('unsent');
+  });
+  it('folds a newer online save into the pending write instead of bypassing it', async () => {
+    await warmIdentity();
+    net.guardedSave.mockRejectedValueOnce(new TypeError('offline'));
+    await writeNote({ path: PATH, kiln: KILN, body: 'older', base: 'h0', baseText: 'original' });
+    net.guardedSave.mockResolvedValue({ ok: true, content_hash: 'h2' });
+    await writeNote({ path: PATH, kiln: KILN, body: 'newest', base: 'h0', baseText: 'original' });
+    await syncNow();
+    expect(net.guardedSave.mock.calls.at(-1)?.[1]).toBe('newest');
+    expect(await pendingCount()).toBe(0);
   });
 });

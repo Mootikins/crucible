@@ -9,8 +9,7 @@ use super::error::{ParserError, ParserResult};
 use super::extensions::ExtensionRegistry;
 use super::traits::ParserCapabilities;
 use super::types::{
-    BlockKind, Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote,
-    ParsedNoteMetadata,
+    BlockKind, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
 
 /// The markdown parser.
@@ -19,7 +18,6 @@ use super::types::{
 /// - Obsidian-compatible wikilinks and transclusions
 /// - Frontmatter parsing (YAML/TOML)
 /// - LaTeX mathematical expressions
-/// - Callout blocks
 /// - Extensible plugin architecture
 /// - Block-level processing with hash generation (Phase 2 optimize-data-flow)
 #[derive(Debug, Clone)]
@@ -255,8 +253,6 @@ impl CrucibleParser {
             wikilinks: Vec::new(),
             tags: Vec::new(),
             latex_expressions: Vec::new(),
-            callouts: Vec::new(),
-            footnotes: super::types::FootnoteMap::new(),
         };
 
         parse_errors.extend(self.extensions.apply(content, &mut document_content));
@@ -265,16 +261,13 @@ impl CrucibleParser {
         // them from here on, so move them out. The content copies stay empty;
         // a reader of `content.wikilinks` sees nothing, which makes the one
         // source of truth visible in a test.
-        let callouts = std::mem::take(&mut document_content.callouts);
         let latex_expressions = std::mem::take(&mut document_content.latex_expressions);
-        let footnotes = std::mem::take(&mut document_content.footnotes);
         let wikilinks = std::mem::take(&mut document_content.wikilinks);
         let tags = std::mem::take(&mut document_content.tags);
         let inline_links = std::mem::take(&mut document_content.inline_links);
 
         // Extract structural metadata from parsed content
-        let metadata =
-            Self::extract_metadata(&document_content, &callouts, &latex_expressions, &footnotes);
+        let metadata = Self::extract_metadata(&document_content, &latex_expressions);
 
         // Create the initial parsed note using builder pattern
         let mut parsed_doc = ParsedNote::builder(source_path.to_path_buf())
@@ -283,9 +276,7 @@ impl CrucibleParser {
             .with_wikilinks(wikilinks)
             .with_tags(tags)
             .with_inline_links(inline_links)
-            .with_callouts(callouts)
             .with_latex_expressions(latex_expressions)
-            .with_footnotes(footnotes)
             .with_metadata(metadata)
             .with_body_offset(body_offset)
             .with_content_hash(content_hash)
@@ -321,12 +312,7 @@ impl CrucibleParser {
     /// This follows industry standard pattern (Unified/Remark, Pandoc, Elasticsearch)
     /// where structural metadata is extracted during parsing, while computed metadata
     /// (complexity, reading time) is added during enrichment.
-    fn extract_metadata(
-        content: &NoteContent,
-        callouts: &[Callout],
-        latex: &[LatexExpression],
-        footnotes: &FootnoteMap,
-    ) -> ParsedNoteMetadata {
+    fn extract_metadata(content: &NoteContent, latex: &[LatexExpression]) -> ParsedNoteMetadata {
         let count =
             |want: fn(&BlockKind) -> bool| content.blocks.iter().filter(|b| want(&b.kind)).count();
 
@@ -337,9 +323,7 @@ impl CrucibleParser {
             code_block_count: count(|k| matches!(k, BlockKind::Code { .. })),
             list_count: count(|k| matches!(k, BlockKind::List { .. })),
             paragraph_count: count(|k| matches!(k, BlockKind::Paragraph)),
-            callout_count: callouts.len(),
             latex_count: latex.len(),
-            footnote_count: footnotes.definitions.len(),
         }
     }
 }
@@ -349,7 +333,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// The six link lists live on `ParsedNote`; `parse_content` moves them out
+    /// The extracted lists live on `ParsedNote`; `parse_content` moves them out
     /// of `NoteContent`. A reader of the content copy must see an empty list.
     #[tokio::test]
     async fn link_lists_live_on_the_note_not_in_content() {
@@ -364,16 +348,12 @@ mod tests {
         assert_eq!(doc.wikilinks.len(), 1);
         assert_eq!(doc.inline_links.len(), 1);
         assert_eq!(doc.tags.len(), 1);
-        assert_eq!(doc.callouts.len(), 1);
         assert_eq!(doc.latex_expressions.len(), 1);
-        assert_eq!(doc.footnotes.definitions.len(), 1);
 
         assert!(doc.content.wikilinks.is_empty());
         assert!(doc.content.inline_links.is_empty());
         assert!(doc.content.tags.is_empty());
-        assert!(doc.content.callouts.is_empty());
         assert!(doc.content.latex_expressions.is_empty());
-        assert!(doc.content.footnotes.definitions.is_empty());
     }
 
     /// `content_hash` is BLAKE3 over the WHOLE input. It is what the daemon

@@ -1,12 +1,12 @@
 //! Note content structure and basic block types
 
-use super::{Block, Callout, FootnoteMap, InlineLink, LatexExpression, Tag, Wikilink};
+use super::{Block, InlineLink, LatexExpression, Tag, Wikilink};
 use serde::{Deserialize, Serialize};
 
 /// Parsed note content structure
 ///
-/// The extensions write the six link lists (`wikilinks`, `tags`,
-/// `inline_links`, `callouts`, `latex_expressions`, `footnotes`) here while
+/// The extensions write the extracted lists (`wikilinks`, `tags`,
+/// `inline_links`, `latex_expressions`) here while
 /// they run. `parse_content` then moves them to `ParsedNote`. Read them from
 /// the note; on a parsed note these copies are empty.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -36,12 +36,6 @@ pub struct NoteContent {
     /// LaTeX mathematical expressions extracted from content
     pub latex_expressions: Vec<LatexExpression>,
 
-    /// Obsidian-style callouts extracted from content
-    pub callouts: Vec<Callout>,
-
-    /// Footnote definitions and references
-    pub footnotes: FootnoteMap,
-
     /// Word count (approximate)
     pub word_count: usize,
 
@@ -59,8 +53,6 @@ impl NoteContent {
             wikilinks: Vec::new(),
             tags: Vec::new(),
             latex_expressions: Vec::new(),
-            callouts: Vec::new(),
-            footnotes: FootnoteMap::new(),
             word_count: 0,
             char_count: 0,
         }

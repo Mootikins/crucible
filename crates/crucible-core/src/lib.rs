@@ -9,6 +9,7 @@ pub mod config;
 pub mod enrichment;
 pub mod error_utils;
 pub mod events;
+pub mod file_write;
 pub mod fs;
 pub mod fuzzy;
 pub mod http;

@@ -8,6 +8,7 @@ import {
   type PatchRefused,
 } from '@/lib/api';
 import { applyAnchoredEdits } from '@/lib/offline/fold';
+import { daemonStore } from './namespace';
 import { daemonIdentity } from '@/lib/offline/identity';
 import { keptMode } from '@/lib/offline/kept';
 import { notificationActions } from '@/stores/notificationStore';
@@ -27,7 +28,7 @@ import {
   type QueueOutcome,
   type WriteKind,
 } from '@/lib/offline/outbox';
-import { idbStore, type OfflineStore } from '@/lib/offline/store';
+import { idbStore, withOfflineLock, type OfflineStore } from '@/lib/offline/store';
 
 /**
  * The offline layer wired to the real app: the network adapters, and the
@@ -44,8 +45,19 @@ let store: OfflineStore | null = null;
  * Private to this layer. A component that held the store assembled the
  * outbox on its own, and the facade below is the one door to it.
  */
-function offlineStore(): OfflineStore {
-  return (store ??= idbStore());
+let rootStore: OfflineStore | null = null;
+async function offlineStore(): Promise<OfflineStore> {
+  // An injected store is already scoped to the test daemon.
+  if (store) return store;
+  const raw = (rootStore ??= idbStore());
+  const remembered = (await raw.get<string>('meta', 'daemon-identity')) ?? '';
+  await raw.update<string>('meta', 'legacy-daemon', held => held ?? remembered);
+  const legacy = (await raw.get<string>('meta', 'legacy-daemon')) ?? '';
+  return daemonStore(raw, await daemonIdentity(raw), legacy);
+}
+
+async function storeIdentity(db: OfflineStore): Promise<string> {
+  return db === store ? daemonIdentity(db) : (await db.get<string>('meta', 'daemon-identity')) ?? '';
 }
 
 /** Test seam: swap the store, and put it back. */
@@ -165,7 +177,7 @@ export function isOnline(): boolean {
 }
 
 /**
- * Read a note: the network when it answers, the mirror when it does not.
+ * Read queued writing first, then the network, then the offline mirror.
  *
  * The mirror is also written on a successful read, so opening a note in a kept
  * kiln keeps it current without a second fetch.
@@ -173,7 +185,19 @@ export function isOnline(): boolean {
 export async function readNote(
   path: string,
   kiln: string | null,
-): Promise<{ content: string; content_hash: string; fromMirror: boolean }> {
+): Promise<{ content: string; content_hash: string; fromMirror: boolean; baseText?: string }> {
+  try {
+    const db = await offlineStore();
+    const queued = await readQueued(db, path);
+    if (queued) {
+      if (queued.kind === 'whole') return { content: queued.body, content_hash: queued.base, fromMirror: true, baseText: queued.baseText };
+      const base = queued.baseText ?? (await readMirrored(db, path))?.body;
+      if (base !== undefined) {
+        const folded = applyAnchoredEdits(base, queued.edits);
+        return { content: folded.ok ? folded.text : base, content_hash: queued.base, fromMirror: true, baseText: queued.baseText };
+      }
+    }
+  } catch { /* no offline store: the network read remains available */ }
   let failure: unknown = null;
   if (isOnline()) {
     try {
@@ -182,7 +206,7 @@ export async function readNote(
       // mirror must not move under writing the daemon has not received.
       if (kiln && keptMode(kiln)) {
         try {
-          const db = offlineStore();
+          const db = await offlineStore();
           if (!(await isQueued(db, path))) {
             await db.put('mirror', path, {
               body: fresh.content,
@@ -201,7 +225,7 @@ export async function readNote(
     }
   }
   try {
-    const db = offlineStore();
+    const db = await offlineStore();
     // Writing this device has not sent yet OUTRANKS the mirror. The mirror is
     // the daemon's copy; the outbox is the user's own text, and it exists
     // nowhere else. Reading past it showed the stale body after an offline
@@ -215,7 +239,7 @@ export async function readNote(
     // base.
     const queued = await readQueued(db, path);
     if (queued && queued.kind === 'whole') {
-      return { content: queued.body, content_hash: queued.base, fromMirror: true };
+      return { content: queued.body, content_hash: queued.base, fromMirror: true, baseText: queued.baseText };
     }
     const mirrored = await readMirrored(db, path);
     if (mirrored) {
@@ -281,6 +305,11 @@ export async function writeNote(opts: {
 }): Promise<WriteOutcome> {
   return sendOrQueue(
     async () => {
+      // Capture the queue version before sending. A later local save owns its
+      // entry even if this request eventually answers with a merge conflict.
+      const db = await offlineStore().catch(() => null);
+      const previous = db ? await readQueued(db, opts.path).catch(() => undefined) : undefined;
+      const daemon = db ? await storeIdentity(db) : '';
       const answer = await saveFileIfUnchanged(opts.path, opts.body, opts.base, opts.baseText);
       if (answer.ok) {
         return answer.merged
@@ -293,8 +322,11 @@ export async function writeNote(opts: {
       // in their buffer, and a toast is not somewhere it can wait: hold it
       // where every conflict waits, so a reload still finds it.
       try {
+        // Without a queue snapshot we cannot safely replace an entry: another
+        // tab may have saved while storage was unavailable. Keep the buffer dirty.
+        if (!db || previous === undefined || !daemon) return stale;
         const conflict = await recordConflict(
-          offlineStore(),
+          db,
           {
             kind: 'whole',
             path: opts.path,
@@ -302,7 +334,7 @@ export async function writeNote(opts: {
             base: opts.base,
             baseText: opts.baseText,
             kiln: opts.kiln ?? '',
-            daemon: await daemonIdentity(offlineStore()),
+            daemon,
           },
           {
             ok: false,
@@ -311,6 +343,7 @@ export async function writeNote(opts: {
             mergedContent: answer.merged_content ?? opts.body,
             regions: answer.regions,
           },
+          previous,
         );
         return { ...stale, conflict };
       } catch {
@@ -396,7 +429,8 @@ export async function editNote(opts: {
 /**
  * The one rule for a note write that may not reach the daemon.
  *
- * Online, `send` runs and its answer is the outcome. A throw the daemon never
+ * Pending writing folds into the queue even online. Otherwise `send` runs
+ * online and its answer is the outcome. A throw the daemon never
  * answered queues `write` instead. A throw the daemon answered with is
  * raised: that is not offline writing, and queueing it would report a save
  * that can never land. Both `writeNote` and `editNote` go through here, so
@@ -410,8 +444,13 @@ async function sendOrQueue<T>(
   write: Omit<NoteWrite, 'daemon'> & WriteKind,
   refusedFold: (index: number) => T,
 ): Promise<T | { queued: true }> {
+  let held = false;
+  try {
+    const entry = await readQueued(await offlineStore(), write.path);
+    held = !!entry && entry.state !== 'conflicted';
+  } catch { /* online-only browser */ }
   let failure: unknown = null;
-  if (isOnline()) {
+  if (isOnline() && !held) {
     try {
       return await send();
     } catch (error) {
@@ -421,7 +460,8 @@ async function sendOrQueue<T>(
   }
   let queued: QueueOutcome;
   try {
-    queued = await queueWrite(offlineStore(), { ...write, daemon: await daemonIdentity(offlineStore()) });
+    const db = await offlineStore();
+    queued = await queueWrite(db, { ...write, daemon: await storeIdentity(db) });
   } catch (queueError) {
     // No store on this browser — private mode, or no IndexedDB. The write
     // failed and nothing can hold it, so the caller must see the SEND's
@@ -434,7 +474,7 @@ async function sendOrQueue<T>(
 
 /** How many writes this device still owes the daemon. */
 export async function pendingCount(): Promise<number> {
-  return queuedCount(offlineStore());
+  return queuedCount(await offlineStore());
 }
 
 /**
@@ -445,7 +485,7 @@ export async function pendingCount(): Promise<number> {
  * buffer's text asks this first: the queued writing exists nowhere else.
  */
 export async function hasQueuedWriting(path: string): Promise<boolean> {
-  return isQueued(offlineStore(), path);
+  return isQueued(await offlineStore(), path);
 }
 
 /**
@@ -456,7 +496,7 @@ export async function hasQueuedWriting(path: string): Promise<boolean> {
  * count what is unsent must not count these too.
  */
 export async function pendingConflicts(): Promise<Conflicted[]> {
-  return listConflicts(offlineStore());
+  return listConflicts(await offlineStore());
 }
 
 /**
@@ -470,7 +510,7 @@ export async function pendingConflicts(): Promise<Conflicted[]> {
  * is why a conflicted entry never lends its base to an arriving write.
  */
 export async function resolveConflict(path: string, text: string): Promise<WriteOutcome> {
-  const db = offlineStore();
+  const db = await offlineStore();
   const held = await readQueued(db, path);
   if (!held || held.state !== 'conflicted') {
     throw new Error(`${path} has no conflict to resolve`);
@@ -486,7 +526,8 @@ export async function resolveConflict(path: string, text: string): Promise<Write
     kiln: held.kiln || null,
   });
   // A queued resolution already REPLACED the entry, with its own base.
-  if (!outcome.queued && !outcome.stale) await db.remove('outbox', path);
+  if (!outcome.queued && !outcome.stale) await db.update<NoteWrite & { revision?: string; sequence: number }>('outbox', path,
+    current => current?.sequence === held.sequence && current.revision === held.revision ? null : current);
   return outcome;
 }
 
@@ -532,7 +573,9 @@ export function onNoteConflicted(listener: (row: Conflicted) => boolean | void):
 
 /** Send everything queued for the daemon now answering. */
 export async function syncNow() {
-  const result = await drainOutbox(offlineStore(), networkSink, await daemonIdentity(offlineStore()));
+  const db = await offlineStore();
+  const daemon = await storeIdentity(db);
+  const result = await withOfflineLock('drain:' + daemon, () => drainOutbox(db, networkSink, daemon));
   for (const row of result.landed) {
     for (const listener of landedListeners) {
       // One listener's throw must not stop the others, or reject the sync.
@@ -584,19 +627,19 @@ export async function cacheKiln(kiln: string, onProgress?: (done: number, total:
   // Choosing to keep a kiln IS the declaration that this device will write
   // offline against this daemon. Learn its identity now, while it answers.
   await warmIdentity();
-  return mirrorKiln(offlineStore(), networkSource, kiln, mode, (p) =>
+  return mirrorKiln(await offlineStore(), networkSource, kiln, mode, (p) =>
     onProgress?.(p.done, p.total),
   );
 }
 
 /** Drop what a kiln kept. */
 export async function dropKiln(kiln: string): Promise<void> {
-  await forgetKiln(offlineStore(), kiln);
+  await forgetKiln(await offlineStore(), kiln);
 }
 
 /** How much a kiln costs on this device, notes and attachments apart. */
 export async function kilnSize(kiln: string): Promise<{ notes: number; attachments: number }> {
-  const db = offlineStore();
+  const db = await offlineStore();
   let notes = 0;
   for (const { value } of await db.list<{ kiln: string; body: string }>('mirror')) {
     if (value.kiln === kiln) notes += value.body.length * 2;
@@ -614,7 +657,7 @@ export async function kilnSize(kiln: string): Promise<{ notes: number; attachmen
  * needing a document context keeps using `rawFileUrl`.
  */
 export async function attachmentUrl(path: string, kiln: string | null): Promise<string> {
-  const db = offlineStore();
+  const db = await offlineStore();
   const cached = await db.get<Blob>('blobs', path);
   if (cached) return URL.createObjectURL(cached);
   if (!isOnline()) return rawFileUrl(path);
@@ -647,5 +690,8 @@ export async function attachmentUrl(path: string, kiln: string | null): Promise<
  * answering, which is the case the remembered value already covers.
  */
 export async function warmIdentity(): Promise<void> {
-  await daemonIdentity(offlineStore()).catch(() => undefined);
+  try {
+    if (store) await daemonIdentity(store);
+    else await offlineStore();
+  } catch { /* offline before the first connection */ }
 }

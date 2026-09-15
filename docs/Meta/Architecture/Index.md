@@ -10,6 +10,10 @@ tags: [meta, architecture]
 candidates and consolidation work checked at `53534ceea`, after the batches
 below landed. Its twelve recommendations are implemented on the review branch; the review records validation status.
 
+[[2026-09-14 Product Consistency Cleanup]] follows that reduction with a
+product-kiln audit: shared daemon writes, offline reconciliation, consolidation
+progress, and retirement of unused parser and tool state.
+
 Four documents, written on 2026-08-22 at commit `7053bcfe7`.
 
 | Doc | What it answers |
@@ -29,7 +33,7 @@ machine-written JSON registries and how state overlays config). For the older an
 
 [[Mobile Shell]] is a DRAFT, not an as-built note. It elaborates the small-screen
 web shell that `docs/Meta/Product.md` records at `P2`, and says where it departs
-from the 2026-08-13 decision-log rows. Its section 11 names a daemon change the
-offline path needs first: `PUT /api/kiln/file` overwrites blindly today and must
-be able to refuse a stale base. Its section 12 records where a phone meets the
+from the 2026-08-13 decision-log rows. Its section 11 describes offline writes;
+the implemented `fs.write` daemon RPC now compares bases and merges under the
+same lock used by agent note tools. Its section 12 records where a phone meets the
 plugin blocks and plugin surfaces now on master.

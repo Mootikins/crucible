@@ -29,10 +29,6 @@ pub struct ToolRef {
     /// Tags for indexing and search (e.g., ["file", "read", "workspace"])
     #[serde(default)]
     pub tags: Vec<String>,
-
-    /// Whether this tool is always available (core) or discovered via search
-    #[serde(default)]
-    pub always_available: bool,
 }
 
 /// Source of a tool
@@ -95,7 +91,6 @@ impl From<Tool> for ToolRef {
             source: ToolSource::Core,
             definition: tool,
             tags: Vec::new(),
-            always_available: true,
         }
     }
 }

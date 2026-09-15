@@ -1511,7 +1511,6 @@ dependencies = [
  "crucible-core",
  "crucible-daemon",
  "crucible-web",
- "dashmap",
  "dirs",
  "dns-lookup",
  "futures",

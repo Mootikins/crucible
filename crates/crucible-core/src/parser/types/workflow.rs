@@ -8,9 +8,7 @@
 //!
 //! Canonical location for workflow AST. Re-exported from [`crate::parser`].
 
-use super::{
-    Callout, CheckboxStatus, Frontmatter, FrontmatterFormat, InlineMetadata, ParsedNote, TaskItem,
-};
+use super::{CheckboxStatus, Frontmatter, FrontmatterFormat, InlineMetadata, ParsedNote, TaskItem};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -124,8 +122,7 @@ pub struct ValidationEntry {
     pub offset: usize,
 }
 
-/// A gate callout `> [!gate]`, typed wrapper so downstream code doesn't
-/// re-pattern-match on `CalloutType::Custom("gate")`.
+/// A gate callout `> [!gate]` read by the workflow parser.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Gate {
     /// Optional title from `> [!gate] Title`.
@@ -134,16 +131,6 @@ pub struct Gate {
     pub content: String,
     /// Byte offset in the full source (file-relative).
     pub offset: usize,
-}
-
-impl From<&Callout> for Gate {
-    fn from(c: &Callout) -> Self {
-        Gate {
-            title: c.title.clone(),
-            content: c.content.clone(),
-            offset: c.offset,
-        }
-    }
 }
 
 /// Non-fatal parser warnings.

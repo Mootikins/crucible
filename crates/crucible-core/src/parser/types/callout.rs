@@ -1,4 +1,4 @@
-//! Callout and LaTeX expression types
+//! The kind of a callout block, used by block-level retrieval.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -39,11 +39,6 @@ pub enum CalloutType {
 }
 
 impl CalloutType {
-    /// Returns true if this is a standard (non-custom) callout type
-    pub fn is_standard(&self) -> bool {
-        !matches!(self, CalloutType::Custom(_))
-    }
-
     /// Get the string representation of this callout type
     pub fn as_str(&self) -> &str {
         match self {
@@ -121,86 +116,5 @@ impl From<&str> for CalloutType {
 impl From<String> for CalloutType {
     fn from(s: String) -> Self {
         s.as_str().into()
-    }
-}
-
-/// Obsidian-style callout > [!type]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Callout {
-    /// Callout type
-    pub callout_type: CalloutType,
-
-    /// Callout title (optional)
-    pub title: Option<String>,
-
-    /// Callout content
-    pub content: String,
-
-    /// Character offset in source note
-    pub offset: usize,
-}
-
-impl Callout {
-    /// Create a new callout
-    pub fn new(callout_type: impl Into<CalloutType>, content: String, offset: usize) -> Self {
-        Self {
-            callout_type: callout_type.into(),
-            title: None,
-            content,
-            offset,
-        }
-    }
-
-    /// Create a callout with title
-    pub fn with_title(
-        callout_type: impl Into<CalloutType>,
-        title: impl Into<String>,
-        content: String,
-        offset: usize,
-    ) -> Self {
-        Self {
-            callout_type: callout_type.into(),
-            title: Some(title.into()),
-            content,
-            offset,
-        }
-    }
-
-    /// Get the total length of the callout
-    pub fn length(&self) -> usize {
-        let header_len = if let Some(title) = &self.title {
-            format!("> [!{}] {}\n", self.callout_type, title).len()
-        } else {
-            format!("> [!{}]\n", self.callout_type).len()
-        };
-        header_len + self.content.len()
-    }
-}
-
-/// LaTeX mathematical expression
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LatexExpression {
-    /// LaTeX expression content
-    pub expression: String,
-
-    /// Whether this is inline ($) or block ($$) math
-    pub is_block: bool,
-
-    /// Character offset in source note
-    pub offset: usize,
-
-    /// Length of the expression in source
-    pub length: usize,
-}
-
-impl LatexExpression {
-    /// Create a new LaTeX expression
-    pub fn new(expression: String, is_block: bool, offset: usize, length: usize) -> Self {
-        Self {
-            expression,
-            is_block,
-            offset,
-            length,
-        }
     }
 }

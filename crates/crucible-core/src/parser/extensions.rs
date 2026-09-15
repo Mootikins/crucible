@@ -3,10 +3,8 @@
 //! A new syntax is one `Extension` variant. The compiler then lists every
 //! `match` that the variant must join.
 
-use super::callouts::CalloutExtension;
 use super::enhanced_tags::EnhancedTagsExtension;
 use super::error::ParseError;
-use super::footnotes::FootnoteExtension;
 use super::inline_links::InlineLinkExtension;
 use super::latex::LatexExtension;
 use super::types::NoteContent;
@@ -28,12 +26,8 @@ pub enum Extension {
     InlineLink(InlineLinkExtension),
     /// `$inline$` and `$$block$$` math.
     Latex(LatexExtension),
-    /// `> [!type] title` callouts.
-    Callout(CalloutExtension),
     /// `#tags` and `- [ ]` task lists.
     EnhancedTags(EnhancedTagsExtension),
-    /// `[^id]` references and definitions.
-    Footnote(FootnoteExtension),
 }
 
 impl Extension {
@@ -45,9 +39,7 @@ impl Extension {
             Self::Wikilink(_) => "obsidian-wikilinks",
             Self::InlineLink(_) => "markdown-inline-links",
             Self::Latex(_) => "latex-math",
-            Self::Callout(_) => "obsidian-callouts",
             Self::EnhancedTags(_) => "enhanced-tags",
-            Self::Footnote(_) => "markdown-footnotes",
         }
     }
 
@@ -59,9 +51,7 @@ impl Extension {
             Self::Wikilink(ext) => ext.can_handle(content),
             Self::InlineLink(ext) => ext.can_handle(content),
             Self::Latex(ext) => ext.can_handle(content),
-            Self::Callout(ext) => ext.can_handle(content),
             Self::EnhancedTags(ext) => ext.can_handle(content),
-            Self::Footnote(ext) => ext.can_handle(content),
         }
     }
 
@@ -75,9 +65,7 @@ impl Extension {
             Self::Wikilink(ext) => ext.parse(content, doc_content),
             Self::InlineLink(ext) => ext.parse(content, doc_content),
             Self::Latex(ext) => ext.parse(content, doc_content),
-            Self::Callout(ext) => ext.parse(content, doc_content),
             Self::EnhancedTags(ext) => ext.parse(content, doc_content),
-            Self::Footnote(ext) => ext.parse(content, doc_content),
         }
     }
 }
@@ -104,9 +92,7 @@ impl ExtensionRegistry {
             Extension::Wikilink(WikilinkExtension::new()),
             Extension::InlineLink(InlineLinkExtension::new()),
             Extension::Latex(LatexExtension::new()),
-            Extension::Callout(CalloutExtension::new()),
             Extension::EnhancedTags(EnhancedTagsExtension::new()),
-            Extension::Footnote(FootnoteExtension::new()),
         ];
         for extension in defaults {
             registry
@@ -170,9 +156,7 @@ mod tests {
             "obsidian-wikilinks",
             "markdown-inline-links",
             "latex-math",
-            "obsidian-callouts",
             "enhanced-tags",
-            "markdown-footnotes",
         ];
         assert_eq!(names, expected);
     }
@@ -184,23 +168,23 @@ mod tests {
             .register(Extension::Wikilink(WikilinkExtension::new()))
             .unwrap();
         registry
-            .register(Extension::Callout(CalloutExtension::new()))
+            .register(Extension::Latex(LatexExtension::new()))
             .unwrap();
 
         let mut doc_content = NoteContent::new();
         let errors = registry.apply("See [[Other]].", &mut doc_content);
         assert!(errors.is_empty());
         assert_eq!(doc_content.wikilinks.len(), 1);
-        assert!(doc_content.callouts.is_empty());
+        assert!(doc_content.latex_expressions.is_empty());
     }
 
     #[test]
     fn with_defaults_registers_every_variant() {
         let registry = ExtensionRegistry::with_defaults();
         let expected = if cfg!(feature = "markdown-it-parser") {
-            7
+            5
         } else {
-            6
+            4
         };
         assert_eq!(registry.extensions().len(), expected);
     }

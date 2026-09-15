@@ -34,6 +34,14 @@ impl NoteListRow {
 }
 
 impl DaemonClient {
+    /// Apply a text mutation once. An unanswered write must never be replayed blindly.
+    pub async fn fs_write(
+        &self,
+        request: &crucible_core::file_write::FileWriteRequest,
+    ) -> Result<serde_json::Value> {
+        self.call("fs.write", serde_json::to_value(request)?).await
+    }
+
     // =========================================================================
     // Kiln RPC Methods
     // =========================================================================

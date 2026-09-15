@@ -448,8 +448,6 @@ pub struct ParsedNote {
     blocks: Vec<Block>,
     wikilinks: Vec<LinkOccurrence>,   // raw, unresolved
     tags: Vec<Tag>,
-    callouts: Vec<Callout>,
-    footnotes: FootnoteMap,
     tasks: Vec<TaskItem>,
     content_hash: ContentHash,
 }

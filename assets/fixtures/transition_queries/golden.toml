@@ -86,7 +86,7 @@ expect_note = "Frontmatter"
 expect_text = ["`description` is only read as a typed field for task files and workflow notes", "These fields are conventions carried over from Obsidian-style vaults."]
 
 # TRANSITION Help/Callouts.md
-#   (intro) — "Folding is a **web-frontend rendering feature** ... in the folded form the title is not captured"
+#   (intro) — "Folding is a **web-frontend rendering feature**"
 #   "## All variants" — "> [!note] Note"
 [[queries]]
 question = "does the parser understand a collapsed callout, and what callout types are there?"
@@ -94,20 +94,20 @@ expect_note = "Callouts"
 expect_text = ["Folding is a **web-frontend rendering feature**", "> [!note] Note"]
 
 # TRANSITION Help/Footnotes.md
-#   "## Syntax" — "**Inline footnotes** — a nonstandard caret form"
-#   "## What the parser records" — "References are kept in order of appearance"
+#   (intro) — "neither the web UI nor the TUI renders linked footnotes"
+#   (retirement) — "Inline caret text is no longer extracted"
 [[queries]]
-question = "how are caret-style inline footnotes treated, and in what order do references get numbered?"
+question = "are footnotes rendered, and is inline caret text extracted separately?"
 expect_note = "Footnotes"
-expect_text = ["**Inline footnotes** — a nonstandard caret form", "References are kept in order of appearance"]
+expect_text = ["neither the web UI nor the TUI renders linked footnotes", "Inline caret text is no longer extracted"]
 
 # TRANSITION Help/Footnotes.md
-#   "## What the parser records" — "Definitions are keyed by identifier on the parsed note."
-#   "## Diagnostics" — "Parsing produces per-note diagnostics rather than failing:"
+#   (syntax example) — "A claim[^source]."
+#   (retirement) — "duplicate/orphan/unused-definition diagnostics were retired"
 [[queries]]
-question = "what does the parser keep about footnote definitions, and what warning does an orphaned reference raise?"
+question = "how is a reference-style footnote written, and are orphan diagnostics still emitted?"
 expect_note = "Footnotes"
-expect_text = ["Definitions are keyed by identifier on the parsed note.", "Parsing produces per-note diagnostics rather than failing:"]
+expect_text = ["A claim[^source].", "duplicate/orphan/unused-definition diagnostics were retired"]
 
 # TRANSITION Help/Block References.md
 #   "## Heading References vs Block References" — "Both parse; neither fragment is resolved to a location inside the target note today."
@@ -390,7 +390,7 @@ expect_note = "Frontmatter"
 question = "how do I make an admonition box start collapsed?"
 expect_note = "Callouts"
 
-# CONTROL Help/Footnotes.md — "> [!warning] Implementation status" — "Footnotes are **parsed, not rendered**."
+# CONTROL Help/Footnotes.md — (intro) — "neither the web UI nor the TUI renders linked footnotes"
 [[queries]]
 question = "do footnotes show up rendered in the web UI?"
 expect_note = "Footnotes"

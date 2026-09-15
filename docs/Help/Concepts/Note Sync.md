@@ -15,13 +15,14 @@ Crucible is plaintext first. A note is bytes on disk, and the daemon owns the
 write. The agent writes notes. You write notes. Another device writes notes. So
 two writers reach one note often, and this page says what happens when they do.
 
-Every note write goes through one door, whether you typed it in the browser or
-an agent wrote it through a tool call. The door is the same on a desktop and on
-a phone.
+Browser note saves use the daemon's `fs.write` RPC on desktop and phone.
+Its compare, merge and write share a per-path lock with the agent's note tools.
+Two web-server processes therefore cannot bypass each other's note-write lock.
+An external editor or shell command does not take this lock.
 
 ## What a save carries
 
-A save carries three things: the text you want, the **base** (the hash of the
+A browser note save carries three things: the text you want, the **base** (the hash of the
 note as you read it), and the **base text** (the note as you read it).
 
 The base is what makes a save safe. If the note on disk no longer hashes to your
@@ -34,9 +35,8 @@ daemon merges instead of refusing.
 ## When the note moved on
 
 The merge is a three-way merge, line by line, over your base text, your text and
-the text on disk. The write path holds a lock on that one note across the read,
-the compare, the merge and the write, so two writers are ordered rather than
-raced.
+the text on disk. The daemon holds a lock on that one note across the read,
+the compare, the merge and the write, so participating writers are ordered.
 
 There are three answers:
 
@@ -83,17 +83,23 @@ stays open.
 When the daemon does not answer, the write is queued in the **outbox** instead.
 The app bar counts what is unsent, and sends it when the connection returns.
 
-- The outbox holds one entry per note. A later write to that note folds into the
-  entry, and the fold keeps the base and the base text of the first write.
+- The outbox holds one entry per daemon and note path. Switching daemons never
+  folds their writing together, even when their kiln paths are identical.
+- Queued text takes precedence when reopening a note, online or offline. A
+  later save folds into that entry, keeping the first write's base and base
+  text, and drains through the same path.
 - A queued write keeps its base text too, so a drain that meets a changed note
   merges rather than refusing.
+- A refused anchored edit with a saved base text is reconstructed and offered
+  for a whole-note merge before it can become a conflict.
 - An entry the merge could not settle becomes a conflict and stops being sent.
   Sending again cannot settle it; only you can.
 - A write to a note that already holds a conflict replaces the conflict with your
   new write and its own base.
 
-A write the daemon *answered* and refused is never queued. A refusal is an
-answer, and the outbox is for writes that got none.
+A rejected HTTP request is never queued as an offline save. Merge conflicts
+are retained separately for a person to settle. Queue replacements, conditional
+cleanup and conflict marking are transactional, including across browser tabs.
 
 ## A note that changed while you have it open
 
@@ -113,8 +119,10 @@ lands. A merge that leaves regions opens the conflict view.
 
 ## What this never does
 
-- It never overwrites another writer silently. A write whose base moved is
-  merged or refused, never applied blind.
+- A write carrying a base is merged or refused when that base moved. Legacy
+  base-less writes, including ordinary agent note replacements, still replace
+  the named contents; they are serialized but do not claim optimistic conflict
+  detection. A shell or external editor can also change files outside this lock.
 - It never writes a second note beside yours. An earlier version of Crucible kept
   a stale write as a dated copy next to the note. Nothing listed those copies, so
   people met them by accident or never. A conflict is counted, listed and opened
@@ -122,6 +130,14 @@ lands. A merge that leaves regions opens the conflict view.
 - It does not use a CRDT. The truth is markdown on disk, which the agent, the
   TUI, the CLI and any other editor may rewrite. A CRDT needs every writer to
   speak it, and most writers here never will.
+
+## Offline storage migration
+
+The first run separates cached content and queued writing by daemon identity.
+It imports a legacy outbox entry only into the daemon named on that entry;
+unlabelled mirrors are assigned only to the previously remembered daemon.
+Legacy originals are retained for recovery and are not reimported after a sent
+entry clears. Clearing browser site data removes those recovery copies too.
 
 ## Related
 

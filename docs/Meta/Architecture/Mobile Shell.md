@@ -41,9 +41,10 @@ What is NOT built, and named as such: the kiln-wide checkbox index (open
 question 11), a cross-file atomic move (10), the scope vocabulary (9),
 screenshot baselines for the phone (W3), and a live offline drain (W4).
 
-**Closed since:** `base_hash` now guards all three blind-write routes through
-one helper (`refuse_if_base_is_stale`), so the compare lives in the daemon
-where section 11 says it belongs, and the browser-side compare is gone.
+**Closed since:** guarded writes now run through the daemon's `fs.write` RPC.
+The web routes forward the write; the daemon owns containment, project policy,
+compare, merge and the lock shared with agent note tools. Base-less legacy
+writes remain explicit replacements.
 Ticking a checkbox in the reading view is the anchored edit's first caller —
 the "one or two lines at a time" case section 13 was written for.
 

@@ -384,7 +384,7 @@ describe('a stale write is retried with the base text it was made from', () => {
 
     expect(calls.map((c) => c.opts)).toEqual([undefined, { baseText: 'A\nB\nC\n' }]);
     expect(result.sent).toBe(1);
-    expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'merged-hash' }]);
+    expect(result.landed).toEqual([{ path: PATH, base: 'h0', hash: 'merged-hash', merged: true }]);
     expect(result.conflicted).toEqual([]);
     expect(await isQueued(store, PATH)).toBe(false);
     // The daemon wrote the MERGED text, so that is what this device now has.

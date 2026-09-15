@@ -76,6 +76,7 @@ type ConflictState = {
 };
 
 export type OutboxEntry = OutboxWrite & {
+  revision?: string;
   queuedAt: number;
   /** Ordering, so two writes to one note replay as they were made. */
   sequence: number;
@@ -142,7 +143,7 @@ export type SinkRefused = {
 type SinkAnswer = SinkWrote | SinkRefused;
 
 /** A write the daemon accepted: which note, from which base, to which hash. */
-export type Landed = { path: string; base: string; hash: string };
+export type Landed = { path: string; base: string; hash: string; merged?: true };
 
 /**
  * A whole write the daemon refused as stale, and could not merge cleanly.
@@ -240,38 +241,29 @@ export type QueueOutcome = { ok: true; folded: boolean } | { ok: false; index: n
  * A composition that leaves no edit clears the entry.
  */
 export async function queueWrite(store: OfflineStore, entry: OutboxWrite): Promise<QueueOutcome> {
-  const existing = await store.get<StoredEntry>('outbox', entry.path);
-  const found = existing && withKind(existing);
-  // A CONFLICTED entry does not fold, and does not lend its base. That base
-  // is the one the daemon already refused, and the note has moved past it, so
-  // an arriving write — a person settling the conflict, or an ordinary save
-  // from a buffer read since — is a new write from a text they have in front
-  // of them, and it keeps its own base. Folding would ask the daemon to merge
-  // the resolution against the text it already settled.
-  const held = found?.state === 'conflicted' ? null : found;
-  const folded: Fold = held ? fold(held, entry) : { ok: true, write: entry, folded: false };
-  if (!folded.ok) return folded;
-  if (folded.write.kind === 'anchored' && folded.write.edits.length === 0) {
-    // The edits returned the note to the queued base. Nothing is owed.
-    await store.remove('outbox', entry.path);
-    return { ok: true, folded: folded.folded };
-  }
-
   const sequence = await nextSequence(store);
-  await store.put<OutboxEntry>('outbox', entry.path, {
-    ...folded.write,
-    // The base is what the user edited FROM, so the FIRST queue wins it — and
-    // its TEXT comes with it. A first hash paired with a later text asks the
-    // daemon to merge from a text that is not the base it names, which it
-    // refuses as a caller bug.
-    ...(held ? { base: held.base, baseText: held.baseText } : { base: entry.base, baseText: entry.baseText }),
-    queuedAt: Date.now(),
-    // A REPLACEMENT takes a new sequence. A drain that is mid-flight over the
-    // old one compares this before it deletes, and leaves the newer writing
-    // alone. Reusing the sequence made the two indistinguishable.
-    sequence,
+  let outcome: QueueOutcome = { ok: true, folded: false };
+  await store.update<OutboxEntry>('outbox', entry.path, (existing) => {
+    const found = existing && withKind(existing);
+    if (found && found.daemon !== entry.daemon) throw new Error('Writing belongs to another daemon');
+    const held = found?.state === 'conflicted' ? null : found;
+    const folded: Fold = held ? fold(held, entry) : { ok: true, write: entry, folded: false };
+    if (!folded.ok) {
+      outcome = folded;
+      return existing;
+    }
+    outcome = { ok: true, folded: folded.folded };
+    if (folded.write.kind === 'anchored' && folded.write.edits.length === 0) return null;
+    return {
+      ...folded.write,
+      base: held ? held.base : entry.base,
+      baseText: held ? held.baseText : entry.baseText,
+      queuedAt: Date.now(),
+      sequence: Math.max(sequence, (found?.sequence ?? 0) + 1),
+      revision: crypto.randomUUID(),
+    };
   });
-  return { ok: true, folded: folded.folded };
+  return outcome;
 }
 
 type Fold = { ok: true; write: OutboxWrite; folded: boolean } | { ok: false; index: number };
@@ -470,14 +462,22 @@ export async function recordConflict(
   store: OfflineStore,
   write: WholeWrite,
   answer: SinkRefused,
+  expected?: OutboxEntry | null,
 ): Promise<Conflicted> {
   const entry: OutboxEntry = {
     ...write,
     queuedAt: Date.now(),
     sequence: await nextSequence(store),
+    revision: crypto.randomUUID(),
     ...conflictStateOf(write.body, answer),
   };
-  await store.put<OutboxEntry>('outbox', write.path, entry);
+  await store.update<OutboxEntry>('outbox', write.path, held => {
+    if (held && held.daemon !== write.daemon) throw new Error('Writing belongs to another daemon');
+    if (expected !== undefined && (expected ? !sameRevision(held, expected) : held !== null)) {
+      throw new Error('Note changed locally while the save was pending');
+    }
+    return { ...entry, sequence: Math.max(entry.sequence, (held?.sequence ?? 0) + 1) };
+  });
   return conflictReport(entry);
 }
 
@@ -511,7 +511,8 @@ export async function drainOutbox(
 
   /** The daemon took it: name it, mirror what it now holds, clear the entry. */
   const land = async (entry: OutboxEntry, answer: SinkWrote) => {
-    result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash });
+    result.landed.push({ path: entry.path, base: entry.base, hash: answer.hash,
+      ...(answer.merged ? { merged: true as const } : {}) });
     // Only a whole write knows the note's text — and a merge answers with the
     // text the daemon wrote, which is neither writer's alone. An anchored
     // entry knows nothing, so the mirror keeps what it has until the next
@@ -566,13 +567,6 @@ export async function drainOutbox(
         await land(entry, answer);
         continue;
       }
-      if (entry.kind === 'anchored' && answer.refused === true) {
-        // The daemon could not place the edit. There is no body to keep, and
-        // the daemon answered, so a replay would be refused again.
-        await refuseEdit(entry);
-        continue;
-      }
-
       // The note moved on. With the text this device edited FROM, the three
       // texts a merge needs are all in one place, so send ours whole and let
       // the daemon merge it against the disk.
@@ -588,6 +582,7 @@ export async function drainOutbox(
           daemon: entry.daemon,
           queuedAt: entry.queuedAt,
           sequence: entry.sequence,
+          revision: entry.revision,
         };
         const merged = await sink.write(whole, { baseText: entry.baseText });
         if (merged.ok) await land(whole, merged);
@@ -622,10 +617,13 @@ export async function drainOutbox(
  * Answers false when the entry was replaced, and leaves the newer one queued.
  */
 async function clearIfUnchanged(store: OfflineStore, sent: OutboxEntry): Promise<boolean> {
-  const held = await store.get<OutboxEntry>('outbox', sent.path);
-  if (!held || held.sequence !== sent.sequence || held.queuedAt !== sent.queuedAt) return false;
-  await store.remove('outbox', sent.path);
-  return true;
+  let cleared = false;
+  await store.update<OutboxEntry>('outbox', sent.path, (held) => {
+    if (!sameRevision(held, sent)) return held;
+    cleared = true;
+    return null;
+  });
+  return cleared;
 }
 
 /**
@@ -640,8 +638,16 @@ async function markIfUnchanged(
   sent: OutboxEntry,
   state: ConflictState,
 ): Promise<boolean> {
-  const held = await store.get<OutboxEntry>('outbox', sent.path);
-  if (!held || held.sequence !== sent.sequence || held.queuedAt !== sent.queuedAt) return false;
-  await store.put<OutboxEntry>('outbox', sent.path, { ...held, ...state });
-  return true;
+  let marked = false;
+  await store.update<OutboxEntry>('outbox', sent.path, (held) => {
+    if (!sameRevision(held, sent)) return held;
+    marked = true;
+    return { ...held!, ...state };
+  });
+  return marked;
+}
+
+function sameRevision(held: OutboxEntry | null, sent: OutboxEntry): boolean {
+  return !!held && held.daemon === sent.daemon && held.revision === sent.revision
+    && held.sequence === sent.sequence && held.queuedAt === sent.queuedAt;
 }

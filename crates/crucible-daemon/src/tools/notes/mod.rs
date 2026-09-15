@@ -25,10 +25,6 @@ use helpers::{
 
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::KnowledgeRepository;
-/// How a note name becomes a note path, and the rule that says the result has
-/// to be a note — re-exported for the other note-writing sink in this crate
-/// (`acp::tools::ToolExecutor`), which had its own hand-rolled copy of the
-/// first and none of the second. One definition, because two would drift.
 use helpers::ensure_md_suffix;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
@@ -138,6 +134,7 @@ impl NoteTools {
         // and answers to the same hardcoded deny, and what it creates has to
         // be a note or `ToolSurface::Daemon` is a lie about its reach.
         let full_path = resolve_note_write(&self.scope, &path)?;
+        let _write = crate::file_write::lock(full_path.as_path()).await;
 
         // Build final content with optional frontmatter
         let final_content = if let Some(fm) = frontmatter {
@@ -297,6 +294,7 @@ impl NoteTools {
 
         // Security: containment, the protected set, and the extension rule.
         let full_path = resolve_note_write(&self.scope, &path)?;
+        let _write = crate::file_write::lock(full_path.as_path()).await;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -373,6 +371,7 @@ impl NoteTools {
         // `delete_note` is the destructive half of the same authority, so a
         // path it may not write is a path it may not remove.
         let full_path = resolve_note_write(&self.scope, &path)?;
+        let _write = crate::file_write::lock(full_path.as_path()).await;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(

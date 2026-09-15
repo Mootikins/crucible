@@ -273,7 +273,6 @@ impl DaemonToolDispatcher {
             source,
             definition: tool,
             tags: Vec::new(),
-            always_available: true,
         }
     }
 

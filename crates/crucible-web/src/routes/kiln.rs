@@ -1,7 +1,4 @@
-use super::helpers::{
-    note_to_file_json, refuse_if_base_is_stale, reject_path_traversal, validate_file_within_kiln,
-    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
-};
+use super::helpers::{note_to_file_json, reject_path_traversal, validate_file_within_kiln};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::response::{IntoResponse, Response};
@@ -12,9 +9,7 @@ use axum::{
     Json, Router,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
-use crucible_core::note_edit::{
-    apply_anchored_edits, disk_hash, AnchoredEdit, EditOutcome, EditRefusal,
-};
+use crucible_core::note_edit::{disk_hash, AnchoredEdit};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -346,249 +341,79 @@ fn attachment_disposition(path: &Path) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static("attachment"))
 }
 
-/// `PUT /api/kiln/file` — write content to a file within an open kiln.
-///
-/// The read, the compare and the write are one critical section per note
-/// ([`AppState::write_locks`]), so the base this answers about is the base it
-/// writes over.
-///
-/// A caller that sends `base_text` as well as `base_hash` asks to be merged
-/// rather than refused: a whole-file refusal costs the user the edit, and the
-/// three texts a merge needs are all here. A clean merge lands and says so; a
-/// merge with regions writes nothing and hands both texts back, because the
-/// server never decides which writer's line wins.
+/// The daemon owns containment, policy, compare, merge and write.
 async fn put_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PutFileRequest>,
 ) -> Result<Response, WebError> {
-    // Accept absolute paths (the editor saves by a note's absolute path);
-    // containment is enforced below by find_enclosing_kiln + parent-within-kiln.
-    reject_path_traversal(&req.path)?;
-
-    // Security: limit content size (10 MB)
-    if req.content.len() > MAX_CONTENT_SIZE {
-        return Err(WebError::Validation(format!(
-            "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
-            req.content.len()
-        )));
-    }
-
-    let file_path = PathBuf::from(&req.path);
-    let root = find_enclosing_root(&state, &file_path).await?;
-    // Writes obey the project policy: `read-only` → 403, `off` → 404 (as if the
-    // file were not served). Kiln notes are always writable.
-    if let EnclosingRoot::Project(_, policy) = &root {
-        if !policy.can_write() {
-            return Err(if policy.can_read() {
-                WebError::Forbidden("Project files are read-only".to_string())
-            } else {
-                WebError::NotFound("File not within any open kiln".to_string())
-            });
-        }
-    }
-
-    validate_write_target_within_kiln(&file_path, root.path())?;
-
-    // A base text that is not the base the caller named is not a base: merging
-    // from it would invent a change neither writer made. Checked before the
-    // disk is read, so a caller hears about its own bug whatever the disk says.
-    if let Some(base_text) = &req.base_text {
-        let Some(base_hash) = req.base_hash.as_deref() else {
-            return Err(WebError::Validation(
-                "base_text needs the base_hash it is the text of".to_string(),
-            ));
-        };
-        if disk_hash(base_text) != base_hash {
-            return Err(WebError::Validation(
-                "base_text does not hash to base_hash".to_string(),
-            ));
-        }
-    }
-
-    // Held past the write: see [`AppState::write_locks`].
-    let _write = state.write_locks.lock(&file_path).await;
-
-    // Before the write, and after containment: a caller that names the bytes
-    // it read does not overwrite a writer who got there first.
-    let content = match refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await {
-        Ok(()) => std::borrow::Cow::Borrowed(&req.content),
-        Err(WebError::StaleBase { current_hash }) => {
-            // No base text, no merge: today's refusal.
-            let Some(base_text) = &req.base_text else {
-                return Err(WebError::StaleBase { current_hash });
-            };
-            let disk = read_text_or_empty(&file_path).await?;
-            let merge = crucible_core::note_merge::merge3(base_text, &req.content, &disk);
-            if !merge.regions.is_empty() {
-                return Ok(put_conflict(current_hash, disk, merge));
-            }
-            std::borrow::Cow::Owned(merge.text)
-        }
-        Err(e) => return Err(e),
-    };
-
-    // The merge can grow the note past the limit the caller's own text was
-    // under.
-    if content.len() > MAX_CONTENT_SIZE {
-        return Err(WebError::Validation(format!(
-            "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
-            content.len()
-        )));
-    }
-
-    // Create parent directories if needed
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
-    }
-
-    fs::write(&file_path, content.as_ref())
+    use crucible_core::file_write::{FileChange, FileWriteRequest};
+    let answer = state
+        .daemon
+        .fs_write(&FileWriteRequest {
+            path: req.path,
+            change: FileChange::Put {
+                content: req.content,
+                base_hash: req.base_hash,
+                base_text: req.base_text,
+            },
+        })
         .await
-        .map_err(WebError::Io)?;
-
-    let mut answer = serde_json::json!({
-        "ok": true,
-        "content_hash": disk_hash(&content),
-        "merged": false,
-    });
-    // Only a merge sends the text back. A caller that wrote its own text
-    // already holds it, and echoing every note twice is the payload of every
-    // save doubled for nothing.
-    if let std::borrow::Cow::Owned(merged) = content {
-        answer["merged"] = serde_json::Value::Bool(true);
-        answer["content"] = serde_json::Value::String(merged);
-    }
-    Ok(Json(answer).into_response())
+        .daemon_err()?;
+    write_response(answer)
 }
 
-/// Read a note for a merge. A note that is not there merges as the empty
-/// text, the same answer [`refuse_if_base_is_stale`] gives it.
-async fn read_text_or_empty(path: &Path) -> Result<String, WebError> {
-    match fs::read_to_string(path).await {
-        Ok(text) => Ok(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(WebError::Io(e)),
-    }
-}
-
-/// The one 409 body a merge with regions answers with. The file is untouched.
-///
-/// It carries every text the caller needs to resolve the note without a second
-/// round trip that would race the same way: what is on disk now, the merge as
-/// far as it got, and each region with the base, ours and theirs. `stale_base`
-/// and `current_hash` are spelled as the PATCH refusal and the bare stale
-/// refusal spell them, so one client branch reads all three.
-fn put_conflict(
-    current_hash: String,
-    current_content: String,
-    merge: crucible_core::note_merge::Merge,
-) -> Response {
-    (
-        StatusCode::CONFLICT,
-        Json(serde_json::json!({
-            "ok": false,
-            "stale_base": true,
-            "current_hash": current_hash,
-            "current_content": current_content,
-            "merged_content": merge.text,
-            "regions": merge.regions,
-        })),
-    )
-        .into_response()
-}
-
-/// `PATCH /api/kiln/file` — apply a batch of anchored edits, or refuse it.
-///
-/// The read, the apply and the write happen here, in that order, so the hash
-/// this answers with is the hash of what was written. A refusal names the edit
-/// and why (`EditRefusal`), because a UI that can only say "failed" makes the
-/// user re-read the file to find out what happened.
 async fn patch_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PatchFileRequest>,
-) -> Result<axum::response::Response, WebError> {
-    reject_path_traversal(&req.path)?;
-    if req.edits.is_empty() {
-        return Err(WebError::Validation("No edits given".to_string()));
-    }
+) -> Result<Response, WebError> {
+    use crucible_core::file_write::{FileChange, FileWriteRequest};
+    let answer = state
+        .daemon
+        .fs_write(&FileWriteRequest {
+            path: req.path,
+            change: FileChange::Patch {
+                edits: req.edits,
+                base_hash: req.base_hash,
+            },
+        })
+        .await
+        .daemon_err()?;
+    write_response(answer)
+}
 
-    let file_path = PathBuf::from(&req.path);
-    let root = find_enclosing_root(&state, &file_path).await?;
-    if let EnclosingRoot::Project(_, policy) = &root {
-        if !policy.can_write() {
-            return Err(if policy.can_read() {
-                WebError::Forbidden("Project files are read-only".to_string())
-            } else {
-                WebError::NotFound("File not within any open kiln".to_string())
-            });
-        }
-    }
-    let canonical_file = validate_file_within_kiln(&file_path, root.path(), &req.path)?;
-    validate_write_target_within_kiln(&file_path, root.path())?;
-
-    // Held past the write: see [`AppState::write_locks`]. PUT takes the same
-    // lock, so a whole write and an anchored one are ordered against each
-    // other too.
-    let _write = state.write_locks.lock(&file_path).await;
-
-    let original = read_text_file(&canonical_file).await?;
-    let current_hash = disk_hash(&original);
-
-    // Before the apply, and against the bytes just read: a base the caller
-    // names must still be the text on disk. Anchors that apply are no proof
-    // that the caller saw this text. A stale base written through gives the
-    // caller a hash for a buffer that lacks another writer's change, and the
-    // buffer's next whole save removes that change with no refusal. The
-    // outbox replay names no base, by design, and anchors on the current text.
-    if req
-        .base_hash
-        .as_deref()
-        .is_some_and(|base| base != current_hash)
-    {
-        return Ok(patch_refused(Vec::new(), current_hash, true));
-    }
-
-    match apply_anchored_edits(&original, &req.edits) {
-        EditOutcome::Applied(updated) => {
-            if updated.len() > MAX_CONTENT_SIZE {
-                return Err(WebError::Validation(format!(
-                    "Content too large: {} bytes (max {MAX_CONTENT_SIZE})",
-                    updated.len()
-                )));
-            }
-            let written_hash = disk_hash(&updated);
-            fs::write(&file_path, &updated)
-                .await
-                .map_err(WebError::Io)?;
-            Ok(Json(serde_json::json!({
-                "ok": true,
-                "content_hash": written_hash,
-            }))
-            .into_response())
-        }
-        // The base, when named, matched above, so the anchor was never right.
-        EditOutcome::Refused(refusals) => Ok(patch_refused(refusals, current_hash, false)),
+/// Translate domain failures into the existing HTTP contract.
+pub(super) fn check_write(answer: &serde_json::Value) -> Result<(), WebError> {
+    let message = answer["message"]
+        .as_str()
+        .unwrap_or("File write failed")
+        .to_owned();
+    match answer["failure"].as_str() {
+        Some("invalid") => Err(WebError::Validation(message)),
+        Some("not_found") => Err(WebError::NotFound(message)),
+        Some("forbidden") => Err(WebError::Forbidden(message)),
+        Some("unsupported") => Err(WebError::UnsupportedMediaType(message)),
+        Some(_) => Err(WebError::Internal(message)),
+        None if answer["ok"] == true => Ok(()),
+        None => Err(WebError::StaleBase {
+            current_hash: answer["current_hash"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        }),
     }
 }
 
-/// The one 409 body a PATCH answers with. The file is untouched. `stale_base`
-/// says the file moved on since the caller read it, which is the difference
-/// between "someone else edited this note" and "your anchor was never right";
-/// `failed` is empty when the base alone refused the batch.
-fn patch_refused(
-    failed: Vec<EditRefusal>,
-    current_hash: String,
-    stale_base: bool,
-) -> axum::response::Response {
-    (
-        StatusCode::CONFLICT,
-        Json(serde_json::json!({
-            "ok": false,
-            "failed": failed,
-            "current_hash": current_hash,
-            "stale_base": stale_base,
-        })),
-    )
-        .into_response()
+fn write_response(answer: serde_json::Value) -> Result<Response, WebError> {
+    match check_write(&answer) {
+        Ok(()) => Ok(Json(answer).into_response()),
+        Err(error @ WebError::StaleBase { .. })
+            if answer.get("regions").is_none() && answer.get("failed").is_none() =>
+        {
+            Ok(error.into_response())
+        }
+        Err(WebError::StaleBase { .. }) => Ok((StatusCode::CONFLICT, Json(answer)).into_response()),
+        Err(error) => Err(error),
+    }
 }
 
 /// A root the file endpoints may serve `file_path` from. Kilns are the
@@ -673,7 +498,9 @@ async fn find_enclosing_root(
 
 #[cfg(test)]
 mod tests {
-    use super::super::helpers::{reject_path_traversal, validate_parent_within_kiln};
+    use super::super::helpers::{
+        reject_path_traversal, validate_parent_within_kiln, validate_write_target_within_kiln,
+    };
     use super::*;
     use crate::test_support::{arb_safe_path, arb_traversal_path};
     use proptest::prelude::*;

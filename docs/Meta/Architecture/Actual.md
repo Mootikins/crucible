@@ -354,7 +354,7 @@ them.
 | `ParsedNote` | `crucible-core/src/parser/types/parsed_note.rs:31` | Parse output; raw text plus byte offsets, no resolution |
 | `NoteContent` | `crucible-core/src/parser/types/content.rs:11` | All extracted structure |
 | `Wikilink` | `crucible-core/src/parser/types/links.rs:15` | target, alias, offset, target_span, refs |
-| `Tag`, `InlineLink`, `FootnoteMap` | `links.rs:154,202,250` | |
+| `Tag`, `InlineLink` | `links.rs` | |
 | `Frontmatter`, `FrontmatterFormat` | `crucible-core/src/parser/types/frontmatter.rs:13,121` | Raw text plus lazy map; Yaml, Toml, None |
 | `BlockHash` | `crucible-core/src/parser/types/block_hash.rs:12` | 32-byte newtype; `NoteRecord.content_hash` |
 | `Block`, `BlockKind` | `crucible-core/src/parser/types/blocks.rs` | Every top-level block, in document order, with source-map spans |

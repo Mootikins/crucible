@@ -1,8 +1,6 @@
 //! ParsedNote and related types
 
-use super::{
-    Callout, FootnoteMap, Frontmatter, InlineLink, LatexExpression, NoteContent, Tag, Wikilink,
-};
+use super::{Frontmatter, InlineLink, LatexExpression, NoteContent, Tag, Wikilink};
 use crate::parser::error::ParseError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,9 +18,7 @@ use std::path::PathBuf;
 /// - Frontmatter: ~200 bytes average
 /// - Wikilinks: ~50 bytes × 10 avg = 500 bytes
 /// - Tags: ~40 bytes × 5 avg = 200 bytes
-/// - Callouts: ~80 bytes × 3 avg = 240 bytes (new)
 /// - LaTeX: ~60 bytes × 2 avg = 120 bytes (new)
-/// - Footnotes: ~70 bytes × 5 avg = 350 bytes (new)
 /// - Content: ~1 KB (plain text excerpt)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedNote {
@@ -44,14 +40,8 @@ pub struct ParsedNote {
     /// Parsed note content structure
     pub content: NoteContent,
 
-    /// Extracted Obsidian-style callouts > [!type]
-    pub callouts: Vec<Callout>,
-
     /// LaTeX mathematical expressions ($...$ and $$...$$)
     pub latex_expressions: Vec<LatexExpression>,
-
-    /// Footnote definitions and references
-    pub footnotes: FootnoteMap,
 
     /// When this note was parsed
     pub parsed_at: DateTime<Utc>,
@@ -106,14 +96,8 @@ pub struct ParsedNoteMetadata {
     /// Number of paragraphs
     pub paragraph_count: usize,
 
-    /// Number of callouts (Obsidian-style)
-    pub callout_count: usize,
-
     /// Number of LaTeX expressions
     pub latex_count: usize,
-
-    /// Number of footnotes
-    pub footnote_count: usize,
 }
 
 impl ParsedNote {
@@ -173,9 +157,7 @@ pub struct ParsedNoteBuilder {
     tags: Vec<Tag>,
     inline_links: Vec<InlineLink>,
     content: NoteContent,
-    callouts: Vec<Callout>,
     latex_expressions: Vec<LatexExpression>,
-    footnotes: FootnoteMap,
     parsed_at: Option<DateTime<Utc>>,
     content_hash: String,
     file_size: u64,
@@ -194,9 +176,7 @@ impl ParsedNoteBuilder {
             tags: Vec::new(),
             inline_links: Vec::new(),
             content: NoteContent::default(),
-            callouts: Vec::new(),
             latex_expressions: Vec::new(),
-            footnotes: FootnoteMap::new(),
             parsed_at: None,
             content_hash: String::new(),
             file_size: 0,
@@ -236,21 +216,9 @@ impl ParsedNoteBuilder {
         self
     }
 
-    /// Set callouts
-    pub fn with_callouts(mut self, callouts: Vec<Callout>) -> Self {
-        self.callouts = callouts;
-        self
-    }
-
     /// Set LaTeX expressions
     pub fn with_latex_expressions(mut self, latex_expressions: Vec<LatexExpression>) -> Self {
         self.latex_expressions = latex_expressions;
-        self
-    }
-
-    /// Set footnotes
-    pub fn with_footnotes(mut self, footnotes: FootnoteMap) -> Self {
-        self.footnotes = footnotes;
         self
     }
 
@@ -293,9 +261,7 @@ impl ParsedNoteBuilder {
             tags: self.tags,
             inline_links: self.inline_links,
             content: self.content,
-            callouts: self.callouts,
             latex_expressions: self.latex_expressions,
-            footnotes: self.footnotes,
             parsed_at: self.parsed_at.unwrap_or_else(Utc::now),
             content_hash: self.content_hash,
             file_size: self.file_size,

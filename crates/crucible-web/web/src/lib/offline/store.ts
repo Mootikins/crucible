@@ -17,6 +17,8 @@ const TABLES: OfflineTable[] = ['mirror', 'outbox', 'index', 'blobs', 'meta'];
 export interface OfflineStore {
   get<T>(table: OfflineTable, key: string): Promise<T | null>;
   put<T>(table: OfflineTable, key: string, value: T): Promise<void>;
+  /** Read and replace in ONE transaction; null deletes. The callback must be synchronous. */
+  update<T>(table: OfflineTable, key: string, change: (held: T | null) => T | null): Promise<void>;
   remove(table: OfflineTable, key: string): Promise<void>;
   /** Every entry, or every entry whose key starts with `prefix`. */
   list<T>(table: OfflineTable, prefix?: string): Promise<{ key: string; value: T }[]>;
@@ -42,6 +44,11 @@ export function memoryStore(): OfflineStore {
     },
     async put<T>(name: OfflineTable, key: string, value: T) {
       table(name).set(key, value);
+    },
+    async update<T>(name: OfflineTable, key: string, change: (held: T | null) => T | null) {
+      const next = change((table(name).get(key) as T) ?? null);
+      if (next === null) table(name).delete(key);
+      else table(name).set(key, next);
     },
     async remove(name, key) {
       table(name).delete(key);
@@ -170,6 +177,28 @@ export function idbStore(name = DB_NAME): OfflineStore {
     },
     put: (table, key, value) =>
       run<void>(table, 'readwrite', (store) => store.put(value, key)).then(() => undefined),
+    async update<T>(table: OfflineTable, key: string, change: (held: T | null) => T | null) {
+      const open = await database();
+      await new Promise<void>((resolve, reject) => {
+        const tx = open.transaction(table, 'readwrite');
+        const objectStore = tx.objectStore(table);
+        const request = objectStore.get(key);
+        let failure: unknown;
+        request.onsuccess = () => {
+          try {
+            const next = change((request.result as T) ?? null);
+            if (next === null) objectStore.delete(key);
+            else objectStore.put(next, key);
+          } catch (error) {
+            failure = error;
+            tx.abort();
+          }
+        };
+        tx.oncomplete = () => resolve();
+        tx.onabort = () => reject(failure ?? tx.error ?? new Error('transaction aborted'));
+        tx.onerror = () => reject(failure ?? tx.error);
+      });
+    },
     remove: (table, key) =>
       run<void>(table, 'readwrite', (store) => store.delete(key)).then(() => undefined),
     list: entries,
@@ -180,4 +209,20 @@ export function idbStore(name = DB_NAME): OfflineStore {
       return total;
     },
   };
+}
+
+const pendingLocks = new Map<string, Promise<unknown>>();
+
+/** Coordinate migrations and network drains across tabs; unit tests use the local queue. */
+export function withOfflineLock<T>(name: string, run: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('crucible-offline:' + name, run);
+  }
+  const previous = pendingLocks.get(name) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(run);
+  pendingLocks.set(name, next);
+  void next.finally(() => {
+    if (pendingLocks.get(name) === next) pendingLocks.delete(name);
+  }).catch(() => undefined);
+  return next;
 }

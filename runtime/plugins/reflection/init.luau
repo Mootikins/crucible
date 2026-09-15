@@ -40,7 +40,7 @@ durable knowledge notes that are worth keeping in a personal knowledge base (a
 
 Every note you write is a proposal. It lands in the review queue of your own
 session, and a human accepts or rejects each one; a rejected note is reverted
-on disk. Nothing you write reaches the live graph without that decision.
+on disk. Your writes are live immediately and may be indexed before review; a rejection reverts them.
 Be conservative: writing nothing is the correct answer for most sessions.
 
 Capture ONLY durable, reusable knowledge, such as:

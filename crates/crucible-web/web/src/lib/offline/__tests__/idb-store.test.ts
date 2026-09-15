@@ -107,3 +107,17 @@ describe('idbStore durability', () => {
     });
   });
 });
+
+describe('atomic updates across database handles', () => {
+  it('does not lose any concurrent update', async () => {
+    const other = idbStore(`crucible-test-${n}`);
+    await Promise.all(Array.from({ length: 30 }, (_, i) =>
+      (i % 2 ? db : other).update<number>('outbox', 'counter', held => (held ?? 0) + 1)));
+    expect(await db.get('outbox', 'counter')).toBe(30);
+  });
+  it('rolls back a callback that refuses the change', async () => {
+    await db.put('outbox', 'note', 'safe');
+    await expect(db.update('outbox', 'note', () => { throw new Error('refused'); })).rejects.toThrow('refused');
+    expect(await db.get('outbox', 'note')).toBe('safe');
+  });
+});

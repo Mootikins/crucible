@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use super::helpers::{
-    refuse_if_base_is_stale, reject_path_traversal, validate_file_within_kiln,
-    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
+    reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
+    MAX_CONTENT_SIZE,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
 
@@ -135,21 +135,6 @@ async fn put_canvas(
         )));
     }
 
-    // Directories are created LAST, after parsing and containment have both
-    // passed. Doing it first meant a malformed or escaping document still
-    // created its destination folder chain and only then returned 400/403 —
-    // the same side-effect-surviving-a-rejected-write this guards against.
-    // Only after proving the parent chain
-    // resolves inside the kiln. Guarding on `starts_with` alone is lexical, so
-    // a planted symlink got a directory created OUTSIDE the kiln and only then
-    // had the request refused — a side effect surviving a rejected write.
-    //
-    // Each missing component is checked against the canonical root as it is
-    // created, so the walk can never step through a link out of the kiln.
-    if let Some(parent) = path.parent() {
-        create_dir_within(parent, &kiln).await?;
-    }
-
     // Restore any reference the READ path blanked.
     //
     // Redaction deliberately withholds a failing path from the client, so the
@@ -173,9 +158,19 @@ async fn put_canvas(
         .to_json_pretty()
         .map_err(|e| WebError::Validation(format!("Could not serialize canvas: {e}")))?;
 
-    refuse_if_base_is_stale(&path, req.base_hash.as_deref()).await?;
-
-    fs::write(&path, &serialized).await.map_err(WebError::Io)?;
+    let answer = state
+        .daemon
+        .fs_write(&crucible_core::file_write::FileWriteRequest {
+            path: path.to_string_lossy().into_owned(),
+            change: crucible_core::file_write::FileChange::Put {
+                content: serialized,
+                base_hash: req.base_hash,
+                base_text: None,
+            },
+        })
+        .await
+        .daemon_err()?;
+    super::kiln::check_write(&answer)?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -255,49 +250,6 @@ pub(crate) async fn enclosing_root(
             "Canvas is not within an open kiln or registered project".to_string(),
         )),
     }
-}
-
-/// Create `dir` and any missing ancestors, refusing to step outside `root`.
-///
-/// Built bottom-up so every level that already exists is canonicalized and
-/// checked before the next is created. `create_dir_all` on a lexically-checked
-/// path will happily follow a symlink partway down.
-async fn create_dir_within(dir: &Path, root: &Path) -> Result<(), WebError> {
-    let mut missing = Vec::new();
-    let mut cursor = dir.to_path_buf();
-
-    let existing = loop {
-        match cursor.canonicalize() {
-            Ok(resolved) => break resolved,
-            Err(_) => {
-                let Some(parent) = cursor.parent().map(Path::to_path_buf) else {
-                    return Err(WebError::Validation(
-                        "Destination is outside the kiln".to_string(),
-                    ));
-                };
-                let Some(name) = cursor.file_name().map(|n| n.to_os_string()) else {
-                    return Err(WebError::Validation(
-                        "Destination is outside the kiln".to_string(),
-                    ));
-                };
-                missing.push(name);
-                cursor = parent;
-            }
-        }
-    };
-
-    if !existing.starts_with(root) {
-        return Err(WebError::Validation(
-            "Destination is outside the kiln".to_string(),
-        ));
-    }
-
-    let mut here = existing;
-    for name in missing.into_iter().rev() {
-        here.push(name);
-        fs::create_dir(&here).await.map_err(WebError::Io)?;
-    }
-    Ok(())
 }
 
 /// Put back any reference the read path blanked before this document was sent.

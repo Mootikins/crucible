@@ -208,6 +208,7 @@ rpc_methods! {
     ProjectRegistryList = "project.registry_list",
     ScmClone = "scm.clone",
     FsListDir = "fs.list_dir",
+    FsWrite = "fs.write",
     FsMove = "fs.move",
     FsMkdir = "fs.mkdir",
     FsTrash = "fs.trash",
@@ -1091,6 +1092,10 @@ impl RpcDispatcher {
             RpcMethod::FsListDir => forward!(
                 id,
                 crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager)
+            ),
+            RpcMethod::FsWrite => forward!(
+                id,
+                crate::file_write::handle(req.clone(), &self.ctx.kiln, &self.ctx.project_manager)
             ),
             RpcMethod::FsMove => forward!(
                 id,

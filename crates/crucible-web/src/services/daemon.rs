@@ -5,7 +5,9 @@ use crucible_daemon::rpc::RpcMethod;
 use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -31,65 +33,6 @@ pub struct AppState {
     /// Serializes /api/recents read-modify-writes (concurrent records would
     /// clobber each other's entries).
     pub recents_lock: Arc<tokio::sync::Mutex<()>>,
-    /// Serializes the read-compare-write of one note against itself, so the
-    /// kiln write routes cannot lose a change to their own concurrency.
-    pub write_locks: Arc<PathLocks>,
-}
-
-/// One lock per file, so two writes to one note are ordered and two writes to
-/// two notes are not.
-///
-/// `PUT` and `PATCH /api/kiln/file` each read the file, compare the caller's
-/// base against what they read, and then write. Without a lock the compare is
-/// a promise about a moment that has passed: a second writer can land between
-/// the read and the write, and the first write removes its change with no
-/// refusal — the very race `refuse_if_base_is_stale` exists to report. The
-/// merge in `PUT` widens the window, because it reads the disk a second time.
-///
-/// The lock is per web server. Two servers over one kiln still race, and a
-/// process outside this one always could; the recorded answer to that is one
-/// daemon-owned write door, not a second copy of this map.
-///
-/// The map keeps one entry per note written in this process's lifetime. Notes
-/// are bounded by the kilns on disk, so it does not grow without end, and an
-/// entry is one path plus one mutex.
-#[derive(Default)]
-pub struct PathLocks {
-    locks: dashmap::DashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>,
-}
-
-impl PathLocks {
-    /// Take this file's lock, waiting for whoever holds it. Hold the guard
-    /// across the read, the compare AND the write.
-    pub async fn lock(&self, path: &Path) -> tokio::sync::OwnedMutexGuard<()> {
-        let mutex = self
-            .locks
-            // The entry API holds one shard, not the map, and the clone
-            // happens under it, so no await sits between the lookup and the
-            // handle a waiter needs.
-            .entry(lock_key(path))
-            .or_default()
-            .clone();
-        mutex.lock_owned().await
-    }
-}
-
-/// The key one note's writes share: its canonical directory plus its file
-/// name.
-///
-/// The file itself cannot be canonicalized, because a write may be creating
-/// it; its parent can, and both write routes validate that parent before they
-/// reach here. So `/kiln/./Note.md` and `/symlink-to-kiln/Note.md` take one
-/// lock, and a path with no parent or no name falls back to itself — it names
-/// nothing writable, and a lock on a key nothing else uses harms nobody.
-fn lock_key(path: &Path) -> PathBuf {
-    match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => parent
-            .canonicalize()
-            .unwrap_or_else(|_| parent.to_path_buf())
-            .join(name),
-        _ => path.to_path_buf(),
-    }
 }
 
 /// Default persistence location for the web UI layout:
@@ -674,6 +617,12 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Once FsWrite =>
+        fs_write(request: &crucible_core::file_write::FileWriteRequest)
+        -> serde_json::Value = fs_write(&request);
+    }
+
+    forward_rpc! {
         Once FsMove =>
         fs_move(root: &str, kind: &str, from_rel: &str, to_rel: &str)
         -> serde_json::Value = fs_move(&root, &kind, &from_rel, &to_rel);
@@ -806,7 +755,6 @@ pub async fn init_daemon(config: CliAppConfig) -> Result<AppState> {
         remote_shell: false,
         swr: Arc::new(crate::services::catalog::SwrCache::default()),
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
-        write_locks: Arc::new(PathLocks::default()),
     })
 }
 

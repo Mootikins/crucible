@@ -1,7 +1,6 @@
-//! Link types: wikilinks, tags, inline links, and footnotes
+//! Link types: wikilinks, tags, and inline links.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Wikilink reference [[target|alias]] (parser output)
 ///
@@ -226,93 +225,5 @@ impl InlineLink {
     /// Check if this is a relative link (internal to vault)
     pub fn is_relative(&self) -> bool {
         !self.is_external()
-    }
-}
-
-/// Footnote definitions and references
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FootnoteMap {
-    /// Footnote definitions [^1]: content
-    pub definitions: HashMap<String, FootnoteDefinition>,
-
-    /// Footnote references in text order
-    pub references: Vec<FootnoteReference>,
-}
-
-impl FootnoteMap {
-    /// Create a new empty footnote map
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add a footnote definition
-    pub fn add_definition(&mut self, identifier: String, definition: FootnoteDefinition) {
-        self.definitions.insert(identifier, definition);
-    }
-
-    /// Get a footnote definition by identifier
-    pub fn get_definition(&self, identifier: &str) -> Option<&FootnoteDefinition> {
-        self.definitions.get(identifier)
-    }
-}
-
-/// Footnote definition [^1]: content
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FootnoteDefinition {
-    /// Footnote identifier (without [^] and :)
-    pub identifier: String,
-
-    /// Footnote content
-    pub content: String,
-
-    /// Character offset in source note
-    pub offset: usize,
-
-    /// Line number in source
-    pub line_number: usize,
-}
-
-impl FootnoteDefinition {
-    /// Create a new footnote definition
-    pub fn new(identifier: String, content: String, offset: usize, line_number: usize) -> Self {
-        Self {
-            identifier,
-            content,
-            offset,
-            line_number,
-        }
-    }
-}
-
-/// Footnote reference `[^1]`
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FootnoteReference {
-    /// Footnote identifier (without [^])
-    pub identifier: String,
-
-    /// Character offset in source note
-    pub offset: usize,
-
-    /// Reference order number (for sequential numbering)
-    pub order_number: Option<usize>,
-}
-
-impl FootnoteReference {
-    /// Create a new footnote reference
-    pub fn new(identifier: String, offset: usize) -> Self {
-        Self {
-            identifier,
-            offset,
-            order_number: None,
-        }
-    }
-
-    /// Create a footnote reference with order number
-    pub fn with_order(identifier: String, offset: usize, order_number: usize) -> Self {
-        Self {
-            identifier,
-            offset,
-            order_number: Some(order_number),
-        }
     }
 }

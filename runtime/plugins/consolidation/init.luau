@@ -27,8 +27,8 @@ local config = require("config")
 
 local M = {}
 
--- The `cru.storage` entity and key that hold the `started_at` of the newest
--- session the last pass saw. The next pass starts after it.
+-- Progress is an id -> event-count map. Start-time watermarks lose sessions
+-- that were still active when a newer conversation finished.
 M.CURSOR_ENTITY = "consolidation"
 M.CURSOR_KEY = "last_run"
 
@@ -46,21 +46,24 @@ end
 -- Pure helpers (unit-testable without a daemon)
 -- ============================================================================
 
---- The sessions that ended and started after `cursor`, oldest first. A
+--- Ended session versions not yet sampled, oldest first. A
 --- plugin session is dropped: it is a reviewer's own session, never a
 --- user's conversation. `session_type` and `state` are the prefix and the
 --- Display forms of SessionType and SessionState in crucible-core.
-function M.since_cursor(sessions: { any }?, cursor: string?): { any }
+function M.since_cursor(sessions: { any }?, cursor: { [string]: string }?): { any }
     local out = {}
     for _, s in ipairs(sessions or {}) do
         local ended = s.state == "ended"
-        local after = (cursor == nil) or (tostring(s.started_at) > cursor)
+        local after = (cursor == nil) or (cursor[s.id] ~= tostring(s.event_count or 0))
         local aux = s.session_type == "plugin"
         if ended and after and not aux then
             out[#out + 1] = s
         end
     end
-    table.sort(out, function(a, b) return tostring(a.started_at) < tostring(b.started_at) end)
+    table.sort(out, function(a, b)
+        if a.started_at == b.started_at then return tostring(a.id) < tostring(b.id) end
+        return tostring(a.started_at) < tostring(b.started_at)
+    end)
     return out
 end
 
@@ -71,7 +74,7 @@ end
 --- sample comes from a prefix of `sessions`. A group with a cap of 0 is
 --- never wanted: the walk skips its sessions and does not stop at them.
 --- The second answer is the length of the prefix the walk covered: the
---- cursor may move past it and no wanted session is skipped.
+--- consumed prefix can be recorded without skipping a wanted session.
 function M.stratify(sessions: { any }, caps: { max_problem: number, max_clean: number }): ({ any }, number)
     local problem, clean = {}, {}
     local taken = 0
@@ -100,7 +103,7 @@ that the clean ones did not.
 
 Every note you write is a proposal. It lands in the review queue of your own
 session, and a human accepts or rejects each one; a rejected note is reverted
-on disk. Nothing you write reaches the live graph without that decision.
+on disk. Your writes are live immediately and may be indexed before review; a rejection reverts them.
 Write nothing when nothing recurs.
 
 Each note MUST carry a one-sentence "description" in the form
@@ -144,17 +147,21 @@ end
 -- Orchestration (daemon-facing)
 -- ============================================================================
 
---- The cursor the last pass stored, or nil.
-local function read_cursor(): string?
+--- Old timestamp cursors cannot say which older sessions were still running.
+--- Re-sample once on migration rather than permanently omit their writing.
+local function read_cursor(): { [string]: string }
     local ok, raw = pcall(cru.storage.get, M.CURSOR_ENTITY, M.CURSOR_KEY)
-    if ok and type(raw) == "string" and raw ~= "" then return raw end
-    return nil
+    if ok and type(raw) == "string" then
+        local decoded, progress = pcall(cru.json.decode, raw)
+        if decoded and type(progress) == "table" then return progress end
+    end
+    return {}
 end
 
 --- Store `stamp` as the cursor. A failed write is logged: the next pass then
 --- reads the same sessions again, which costs model calls but loses nothing.
-local function write_cursor(stamp: string)
-    local ok, err = pcall(cru.storage.set, M.CURSOR_ENTITY, M.CURSOR_KEY, stamp)
+local function write_cursor(stamp: { [string]: string })
+    local ok, err = pcall(cru.storage.set, M.CURSOR_ENTITY, M.CURSOR_KEY, cru.json.encode(stamp))
     if not ok then
         cru.log("warn", "consolidation: could not store the cursor: " .. tostring(err))
     end
@@ -187,7 +194,8 @@ function M.run(kiln: string?): string?
         cru.log("warn", "consolidation: could not list sessions: " .. tostring(list_err))
         return nil
     end
-    local candidates = M.since_cursor(listed, read_cursor())
+    local seen = read_cursor()
+    local candidates = M.since_cursor(listed, seen)
     if #candidates == 0 then
         cru.log("debug", "consolidation: no session ended since the last pass")
         return nil
@@ -200,21 +208,22 @@ function M.run(kiln: string?): string?
     -- loads (a bad byte, a permission) must not stop every later pass.
     local min_turns = config.get("min_turns", 2)
     local scored = {}
-    local walked = 0
     for _, s in ipairs(candidates) do
-        walked += 1
         local messages, messages_err = cru.session.messages(s.id, { tools = true })
         if messages == nil then
             cru.log("warn", string.format(
                 "consolidation: skipping session %s, its transcript did not load: %s",
                 tostring(s.id), tostring(messages_err)))
+            seen[s.id] = tostring(s.event_count or 0)
             continue
         end
         local outcome = ref.build_outcome(messages, ref.load_hunks(s.id))
         if outcome.user_turns >= min_turns then
             scored[#scored + 1] = {
-                id = s.id, started_at = s.started_at, messages = messages, outcome = outcome,
+                id = s.id, started_at = s.started_at, event_count = s.event_count, messages = messages, outcome = outcome,
             }
+        else
+            seen[s.id] = tostring(s.event_count or 0)
         end
     end
     local samples, taken = M.stratify(scored, {
@@ -222,21 +231,15 @@ function M.run(kiln: string?): string?
         max_clean = config.get("max_clean", 3),
     })
 
-    -- The cursor moves past what this pass saw and no further. When every
-    -- session that qualified was taken, it moves past the newest candidate
-    -- that loaded: a short session needs no review. When a cap stopped the
-    -- walk, it stops at the last session taken, and the rest are candidates
-    -- again.
-    local newest: string? = nil
-    if taken == #scored then
-        if walked > 0 then newest = tostring(candidates[walked].started_at) end
-    elseif taken > 0 then
-        newest = tostring(scored[taken].started_at)
+    -- Mark only the prefix actually consumed; group caps leave the rest pending.
+    for i = 1, taken do
+        local s = scored[i]
+        seen[s.id] = tostring(s.event_count or 0)
     end
 
     if #samples == 0 then
         cru.log("debug", "consolidation: no session passed the gates")
-        if newest then write_cursor(newest) end
+        write_cursor(seen)
         return nil
     end
 
@@ -268,8 +271,8 @@ function M.run(kiln: string?): string?
     cru.log("info", string.format(
         "consolidation: reviewed %d session(s); the notes wait in the review queue of the pass's session",
         #samples))
-    -- The reviewer saw these sessions, so the next pass starts after them.
-    if newest then write_cursor(newest) end
+    -- Persist consumed versions only after the reviewer succeeds.
+    write_cursor(seen)
     return output
 end
 

@@ -267,7 +267,16 @@ async fn start_mock_daemon_scripted(
                                     "error": { "code": code, "message": message }
                                 })
                             } else {
-                                let result = if method == "kiln.list" && !kilns.is_empty() {
+                                let result = if method == "fs.write" {
+                                    let request =
+                                        serde_json::from_value(msg["params"].clone()).unwrap();
+                                    crucible_daemon::file_write::write_for_roots(
+                                        request,
+                                        &kilns,
+                                        &[],
+                                    )
+                                    .await
+                                } else if method == "kiln.list" && !kilns.is_empty() {
                                     json!(kilns
                                         .iter()
                                         .map(|k| json!({ "path": k }))
@@ -990,7 +999,6 @@ pub fn build_mock_state_with_config(client: DaemonClient, config: CliAppConfig) 
         remote_shell: false,
         swr: Arc::new(crate::services::catalog::SwrCache::default()),
         recents_lock: Arc::new(tokio::sync::Mutex::new(())),
-        write_locks: Arc::new(crate::services::daemon::PathLocks::default()),
     }
 }
 

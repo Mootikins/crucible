@@ -527,6 +527,20 @@ describe('EditorContext — a drained write moves the open buffer', () => {
     expect(fileState(editor).content).toBe('typed after the tick\n');
   });
 
+  it('a merged drain leaves a dirty buffer on its original base', async () => {
+    const editor = await openAndQueue();
+    const originalBase = fileState(editor).baseHash;
+    const originalText = fileState(editor).baseText;
+    editor.updateFileContent(PATH, 'newer local typing\n');
+    guardedSave.mockResolvedValueOnce({ ok: false, current_hash: 'remote' });
+    guardedSave.mockResolvedValueOnce({ ok: true, content_hash: 'merged', merged: true, content: 'queued text\nremote\n' });
+    await syncNow();
+    expect(fileState(editor).baseHash).toBe(originalBase);
+    expect(fileState(editor).baseText).toBe(originalText);
+    expect(fileState(editor).content).toBe('newer local typing\n');
+    expect(fileState(editor).changedOnDisk).toBe(true);
+  });
+
   it('a drained write refreshes a clean buffer\'s text', async () => {
     const editor = await openAndQueue();
 

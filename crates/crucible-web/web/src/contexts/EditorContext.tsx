@@ -85,13 +85,13 @@ export const EditorProvider: ParentComponent = (props) => {
       // Through the offline layer: the network when it answers, and the copy
       // this device keeps when it does not. It also carries the hash the file
       // was read at, which is what an offline save is anchored on.
-      const { content, content_hash } = await readNote(path, await kilnOf(path));
+      const { content, content_hash, baseText } = await readNote(path, await kilnOf(path));
 
       setOpenFiles(
         produce((files) => {
           // The text comes with the hash: the two are one fact, and this is
           // the only copy of the text a later merge can be made from.
-          files.push({ path, content, dirty: false, baseHash: content_hash, baseText: content });
+          files.push({ path, content, dirty: false, baseHash: content_hash, baseText: baseText ?? content });
         })
       );
       openCounts.set(path, 1);
@@ -313,7 +313,7 @@ export const EditorProvider: ParentComponent = (props) => {
     setRetryFailedOperation(null);
 
     try {
-      const { content, content_hash } = await readNote(path, await kilnOf(path));
+      const { content, content_hash, baseText } = await readNote(path, await kilnOf(path));
       setOpenFiles(
         produce((files) => {
           const f = files.find((x) => x.path === path);
@@ -323,7 +323,7 @@ export const EditorProvider: ParentComponent = (props) => {
           // The read answers a text and a hash that belong together, so the
           // buffer is mergeable again from the text the other writer left.
           f.baseHash = content_hash;
-          f.baseText = content;
+          f.baseText = baseText ?? content;
           f.changedOnDisk = false;
         }),
       );
@@ -362,7 +362,7 @@ export const EditorProvider: ParentComponent = (props) => {
     if (!before) return;
     const baseAtRead = before.baseHash;
     try {
-      const { content, content_hash, fromMirror } = await readNote(path, await kilnOf(path));
+      const { content, content_hash, fromMirror, baseText } = await readNote(path, await kilnOf(path));
       // The mirror is the daemon's older copy, not the disk. A read that fell
       // back to it answers text the note may no longer hold, so the buffer is
       // told rather than quietly moved onto it.
@@ -376,7 +376,7 @@ export const EditorProvider: ParentComponent = (props) => {
           if (!f || f.dirty || f.baseHash !== baseAtRead) return;
           f.content = content;
           f.baseHash = content_hash;
-          f.baseText = content;
+          f.baseText = baseText ?? content;
           f.changedOnDisk = false;
         }),
       );
@@ -443,11 +443,17 @@ export const EditorProvider: ParentComponent = (props) => {
   const onLanded = (row: Landed) => {
     const file = openFilesStore.find((f) => f.path === row.path && f.baseHash === row.base);
     if (!file) return;
+    // A dirty buffer descends from the old base, not the merged disk text.
+    // Keep it stale so its next save merges again instead of erasing the remote edit.
+    if (row.merged && file.dirty) {
+      flagChangedOnDisk(row.path);
+      return;
+    }
     setBaseHash(row.path, row.hash);
     if (file.dirty) return;
     void kilnOf(row.path)
       .then((kiln) => readNote(row.path, kiln))
-      .then(({ content, content_hash }) => {
+      .then(({ content, content_hash, baseText }) => {
         setOpenFiles(
           produce((files) => {
             const f = files.find((x) => x.path === row.path);
@@ -457,7 +463,7 @@ export const EditorProvider: ParentComponent = (props) => {
             f.baseHash = content_hash;
             // The read answers a text and a hash that belong together, so the
             // buffer is mergeable again — the landed write cleared the pair.
-            f.baseText = content;
+            f.baseText = baseText ?? content;
           }),
         );
       })

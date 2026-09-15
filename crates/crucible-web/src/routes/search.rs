@@ -1,7 +1,4 @@
-use super::helpers::{
-    note_to_metadata_json, refuse_if_base_is_stale, validate_note_name,
-    validate_write_target_within_kiln, MAX_CONTENT_SIZE,
-};
+use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE};
 // The daemon owns the grep request shape. The copy that used to live in
 // this file had the same six fields and its own `default_grep_limit`
 // hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
@@ -403,26 +400,19 @@ async fn put_note(
         ));
     }
 
-    // Create parent directories if needed
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).await.map_err(WebError::Io)?;
-    }
-
-    // Security: block writes that would escape the kiln by following a symlinked
-    // final component (the lexical check above does NOT resolve symlinks).
-    validate_write_target_within_kiln(&file_path, &canonical_kiln)?;
-
-    // Write content to filesystem (source of truth). The file watcher then runs
-    // the note through the daemon pipeline (real content hash, tags, wikilinks,
-    // embedding), same as PUT /api/kiln/file. We deliberately do NOT upsert a
-    // NoteRecord here: the old code wrote a stub (default hash, empty tags/links,
-    // null embedding) that CLOBBERED the properly-enriched record — dropping the
-    // note from vector search and backlinks until the watcher re-enriched it.
-    refuse_if_base_is_stale(&file_path, req.base_hash.as_deref()).await?;
-
-    fs::write(&file_path, &req.content)
+    let answer = state
+        .daemon
+        .fs_write(&crucible_core::file_write::FileWriteRequest {
+            path: file_path.to_string_lossy().into_owned(),
+            change: crucible_core::file_write::FileChange::Put {
+                content: req.content.clone(),
+                base_hash: req.base_hash,
+                base_text: None,
+            },
+        })
         .await
-        .map_err(WebError::Io)?;
+        .daemon_err()?;
+    super::kiln::check_write(&answer)?;
 
     let title = extract_title(&req.content);
 

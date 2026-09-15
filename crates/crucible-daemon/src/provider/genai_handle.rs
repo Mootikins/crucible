@@ -151,35 +151,26 @@ fn usage_to_token_usage(usage: &genai::chat::Usage) -> TokenUsage {
 ///      args finish streaming, rather than after the whole response block.
 ///   2. Avoid double-emission when the provider also replays tool calls in
 ///      `captured_content` at `End` (deduplication by `call_id`).
-///   3. Honor `max_tool_depth` consistently across both paths.
-///   4. Synthesize `FileDiff`s for file-mutating tools so the TUI can show
+///   3. Synthesize `FileDiff`s for file-mutating tools so the TUI can show
 ///      the pending change in scrollback before the model receives the
 ///      tool result.
 struct ToolCallEmitter {
     emitted_call_ids: std::collections::HashSet<String>,
-    emitted_count: usize,
-    max_depth: usize,
 }
 
 impl ToolCallEmitter {
-    fn new(max_depth: usize) -> Self {
+    fn new() -> Self {
         Self {
             emitted_call_ids: std::collections::HashSet::new(),
-            emitted_count: 0,
-            max_depth,
         }
     }
 
     /// Try to emit a `TurnEvent::ToolCall` for `tc`. Returns `None` when the
-    /// `call_id` was already emitted or the depth cap has been reached.
+    /// `call_id` was already emitted.
     fn try_emit(&mut self, tc: ToolCall) -> Option<TurnEvent> {
-        if self.emitted_count >= self.max_depth {
-            return None;
-        }
         if !self.emitted_call_ids.insert(tc.call_id.clone()) {
             return None;
         }
-        self.emitted_count += 1;
         let normalized_args = normalize_tool_args(tc.fn_arguments);
         // Pure helper — returns an empty Vec for unknown tools, malformed
         // args, or oversized content. Mirrors the permission flow's
@@ -195,7 +186,7 @@ impl ToolCallEmitter {
 
     #[cfg(test)]
     fn emitted_count(&self) -> usize {
-        self.emitted_count
+        self.emitted_call_ids.len()
     }
 }
 
@@ -436,7 +427,6 @@ pub struct GenaiAgentHandle {
     /// direct constructions) keeps the shipped plan-mode behaviour.
     modes: Option<crucible_lua::ModeRegistry>,
     mode_context_sent: bool,
-    max_tool_depth: usize,
     context_budget: usize,
     context_strategy: ContextStrategy,
     /// Tool names eligible for progressive disclosure. The daemon's agent
@@ -799,7 +789,6 @@ impl GenaiAgentHandle {
             current_mode_id,
             modes: None,
             mode_context_sent: false,
-            max_tool_depth: usize::MAX,
             context_budget: crucible_core::config::components::chat::DEFAULT_CONTEXT_BUDGET,
             context_strategy: ContextStrategy::default(),
             deferrable_tool_names: std::collections::HashSet::new(),
@@ -1083,7 +1072,6 @@ impl GenaiAgentHandle {
 
         let client = self.client.clone();
         let model_name = self.explicit_model_name();
-        let max_tool_depth = self.max_tool_depth;
         let context_budget = self.context_budget;
         let context_strategy = self.context_strategy.clone();
 
@@ -1145,7 +1133,7 @@ impl GenaiAgentHandle {
             };
             let mut first_chunk_logged = false;
 
-            let mut tool_emitter = ToolCallEmitter::new(max_tool_depth);
+            let mut tool_emitter = ToolCallEmitter::new();
             let mut reasoning_state = ReasoningEmissionState::new();
 
             while let Some(next) = stream.next().await {
@@ -1715,15 +1703,6 @@ mod tests {
         }
     }
 
-    /// Build an emitter with no workspace root — synthesized diffs will
-    /// resolve relative paths against the daemon's current working
-    /// directory, which is fine for tests that don't exercise diff
-    /// synthesis (the tool name is a non-edit tool like "bash" or
-    /// "read", so synthesis returns an empty Vec).
-    fn emitter(max_depth: usize) -> ToolCallEmitter {
-        ToolCallEmitter::new(max_depth)
-    }
-
     #[test]
     fn emitter_unwraps_double_encoded_json_string_args() {
         // Some OpenAI-compatible providers (e.g. GLM-style endpoints over
@@ -1739,7 +1718,7 @@ mod tests {
             ),
             thought_signatures: None,
         };
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => {
@@ -1760,7 +1739,7 @@ mod tests {
             fn_arguments: args_obj.clone(),
             thought_signatures: None,
         };
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => assert_eq!(args, args_obj),
@@ -1778,7 +1757,7 @@ mod tests {
             fn_arguments: serde_json::Value::String("not really json".to_string()),
             thought_signatures: None,
         };
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(raw).expect("must emit");
         match ev {
             TurnEvent::ToolCall { args, .. } => {
@@ -1790,14 +1769,14 @@ mod tests {
 
     #[test]
     fn emitter_emits_first_chunk() {
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(tc("call-1", "bash"));
         assert!(matches!(ev, Some(TurnEvent::ToolCall { ref id, .. }) if id == "call-1"));
     }
 
     #[test]
     fn emitter_dedupes_same_call_id() {
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         assert!(e.try_emit(tc("call-1", "bash")).is_some());
         assert!(
             e.try_emit(tc("call-1", "bash")).is_none(),
@@ -1807,19 +1786,19 @@ mod tests {
 
     #[test]
     fn emitter_distinct_ids_both_emit() {
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         assert!(e.try_emit(tc("a", "bash")).is_some());
         assert!(e.try_emit(tc("b", "read")).is_some());
     }
 
     #[test]
-    fn emitter_caps_at_max_depth() {
-        let mut e = emitter(2);
+    fn emitter_does_not_cap_distinct_calls() {
+        let mut e = ToolCallEmitter::new();
         assert!(e.try_emit(tc("a", "x")).is_some());
         assert!(e.try_emit(tc("b", "x")).is_some());
         assert!(
-            e.try_emit(tc("c", "x")).is_none(),
-            "third call past max_depth must not emit"
+            e.try_emit(tc("c", "x")).is_some(),
+            "every distinct tool call must emit"
         );
     }
 
@@ -1827,7 +1806,7 @@ mod tests {
     fn emitter_chunk_then_end_no_double_emit() {
         // Real-world: provider streams ToolCallChunk live AND replays the
         // same tool calls in captured_content at End. Emitter dedupes by id.
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let chunk_ev = e.try_emit(tc("call-1", "bash"));
         assert!(chunk_ev.is_some());
         let end_ev = e.try_emit(tc("call-1", "bash"));
@@ -1841,7 +1820,7 @@ mod tests {
     fn emitter_end_only_path_still_works() {
         // Provider that does NOT emit ToolCallChunks (only End): emitter
         // sees the tool calls for the first time at End and emits.
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(tc("call-1", "bash"));
         assert!(ev.is_some());
         assert_eq!(e.emitted_count(), 1);
@@ -1854,7 +1833,7 @@ mod tests {
         // pending file contents alongside the call header. The synthesizer
         // is pure and gracefully degrades to empty for unknown tools, but
         // for known edit-style tools it must produce one entry per file.
-        let mut e = ToolCallEmitter::new(10);
+        let mut e = ToolCallEmitter::new();
 
         let raw = ToolCall {
             call_id: "call-1".to_string(),
@@ -1891,7 +1870,7 @@ mod tests {
         // For tools that aren't file-mutating (`bash`, `read`, etc.),
         // synthesize_diffs returns an empty Vec — emitter forwards that
         // unchanged so the TUI doesn't render a diff section.
-        let mut e = emitter(10);
+        let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(tc("call-1", "bash")).expect("must emit");
         match ev {
             TurnEvent::ToolCall { diffs, .. } => {
@@ -1909,7 +1888,7 @@ mod tests {
     use genai::chat::{MessageContent, StreamChunk, StreamEnd, ToolChunk};
 
     fn drive_translate(events: Vec<ChatStreamEvent>) -> Vec<TurnEvent> {
-        let mut emitter = self::emitter(10);
+        let mut emitter = ToolCallEmitter::new();
         let mut reasoning = ReasoningEmissionState::new();
         let mut out = Vec::new();
         for ev in events {
@@ -2022,7 +2001,7 @@ mod tests {
         // ALSO put the same content in End.captured_reasoning_content. That
         // replay would previously emit a second TurnEvent::Thinking, causing
         // the TUI to render two identical "Thought (N words)" blocks.
-        let mut emitter = self::emitter(10);
+        let mut emitter = ToolCallEmitter::new();
         let mut state = ReasoningEmissionState::new();
 
         let chunk = ChatStreamEvent::ReasoningChunk(StreamChunk {
@@ -2055,7 +2034,7 @@ mod tests {
     fn end_only_provider_still_emits_reasoning() {
         // Provider that only delivers reasoning at End (no live chunks)
         // must still surface it once.
-        let mut emitter = self::emitter(10);
+        let mut emitter = ToolCallEmitter::new();
         let mut state = ReasoningEmissionState::new();
 
         let end = ChatStreamEvent::End(StreamEnd {
@@ -2196,7 +2175,7 @@ mod tests {
 
     #[test]
     fn translate_end_yields_done_terminal() {
-        let mut emitter = self::emitter(10);
+        let mut emitter = ToolCallEmitter::new();
         let mut reasoning = ReasoningEmissionState::new();
         let (out, terminal) = translate_chat_stream_event(
             ChatStreamEvent::End(StreamEnd {
@@ -2214,7 +2193,7 @@ mod tests {
 
     #[test]
     fn translate_pre_end_events_are_not_terminal() {
-        let mut emitter = self::emitter(10);
+        let mut emitter = ToolCallEmitter::new();
         let mut reasoning = ReasoningEmissionState::new();
         for ev in [
             ChatStreamEvent::Start,

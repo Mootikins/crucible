@@ -214,12 +214,5 @@ mod never_panics_on_multibyte {
                 wl.offset
             );
         }
-        for def in parsed.footnotes.definitions.values() {
-            assert!(
-                content.is_char_boundary(def.offset),
-                "footnote offset {} splits a codepoint",
-                def.offset
-            );
-        }
     }
 }

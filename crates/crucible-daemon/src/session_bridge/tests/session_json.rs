@@ -16,6 +16,10 @@ fn session_json_names_the_agent_model() {
 
     assert_eq!(json["model"], "claude-haiku-4-5-20251001");
     assert!(json["started_at"].is_string());
+    assert_eq!(
+        json["event_count"],
+        SessionSummary::from(&session).event_count
+    );
 }
 
 #[test]

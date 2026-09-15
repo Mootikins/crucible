@@ -863,3 +863,25 @@ fn test_tool_router_creation() {
     // This should compile and not panic - the tool_router macro generates the router
     let _router = NoteTools::tool_router();
 }
+
+#[tokio::test]
+async fn note_updates_share_the_rpc_write_lock() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("note.md");
+    std::fs::write(&path, "before").unwrap();
+    let tools = super::unindexed(dir.path().to_string_lossy().into_owned());
+    let held = crate::file_write::lock(&path).await;
+    let mut update = std::pin::pin!(tools.update_note(Parameters(UpdateNoteParams {
+        path: "note.md".into(),
+        content: Some("after".into()),
+        frontmatter: None,
+    })));
+    assert!(
+        futures::poll!(&mut update).is_pending(),
+        "the tool must wait for the RPC writer"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "before");
+    drop(held);
+    update.await.unwrap();
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "after");
+}
