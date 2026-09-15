@@ -66,14 +66,17 @@ fn a_tilde_path_and_its_expanded_form_are_one_entry() {
 
 /// The shipped `create_example` config has no `[kilns]` at all. A registry
 /// built from the raw map is empty for it — every name unresolvable, which is
-/// the empty-set shape — so it is built from the resolved map instead.
+/// the empty-set shape — so it is built from the resolved map instead. The
+/// entry is named after its directory: `kiln_path` defaults to the working
+/// directory, and a daemon started inside a kiln listed it as "default".
 #[test]
 fn a_kiln_path_only_config_still_yields_a_named_kiln() {
     let tmp = TempDir::new().unwrap();
     let notes = tmp.path().join("notes");
     let registry = registry(&tmp, json!({ "kiln_path": notes.to_str().unwrap() }));
 
-    assert_eq!(ready_path(&registry, "default"), notes);
+    assert_eq!(ready_path(&registry, "notes"), notes);
+    assert_eq!(registry.resolve(&name("default")), KilnResolution::Unknown);
 }
 
 /// `lazy` has to survive the trip through the registry: dropping it opens and

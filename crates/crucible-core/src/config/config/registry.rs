@@ -56,6 +56,22 @@ impl KilnEntry {
     }
 }
 
+/// The name a `kiln_path`-only config gives its one kiln: the directory
+/// basename, folded to the registry charset.
+///
+/// `None` when the path has no usable basename (`/`, `""`, `.`). The caller
+/// then synthesizes no entry, because a name that resolves to nothing is the
+/// shape the daemon registry refuses to produce. "default" is never the
+/// answer here: it is the `default_kiln` *pointer*, and a kiln named by it
+/// showed up as "default" in every picker while its directory said otherwise.
+pub fn synthesized_kiln_name(kiln_path: &Path) -> Option<String> {
+    kiln_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(crate::config::KilnName::normalize)
+        .map(|name| name.to_string())
+}
+
 /// The effective `[kilns]` map for a config's `kiln_path` + `[kilns]` pair.
 ///
 /// The body of [`CliAppConfig::resolved_kilns`](crate::config::CliAppConfig::resolved_kilns),
@@ -72,10 +88,9 @@ pub fn resolve_kiln_entries(
     kilns: &BTreeMap<String, KilnEntry>,
 ) -> BTreeMap<String, KilnEntry> {
     let mut map = if kilns.is_empty() {
-        BTreeMap::from([(
-            "default".to_string(),
-            KilnEntry::Path(kiln_path.to_path_buf()),
-        )])
+        synthesized_kiln_name(kiln_path)
+            .map(|name| BTreeMap::from([(name, KilnEntry::Path(kiln_path.to_path_buf()))]))
+            .unwrap_or_default()
     } else {
         kilns.clone()
     };
@@ -157,5 +172,36 @@ default_kiln = "vault"
         let deserialized: std::collections::BTreeMap<String, KilnEntry> =
             toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized["vault"].path(), PathBuf::from("~/vault"));
+    }
+
+    /// `kiln_path` defaults to the working directory, so `cru --standalone
+    /// web` run inside a kiln used to list that kiln as "default". The
+    /// directory names the kiln; "default" is only ever the `default_kiln`
+    /// pointer.
+    #[test]
+    fn a_kiln_path_only_config_names_the_kiln_after_its_directory() {
+        let map = resolve_kiln_entries(Path::new("/home/u/My Vault"), &BTreeMap::new());
+        assert_eq!(map["my-vault"].path(), PathBuf::from("/home/u/My Vault"));
+        assert!(
+            !map.contains_key("default"),
+            "\"default\" is a pointer, never a kiln's identity: {map:?}"
+        );
+        assert_eq!(
+            synthesized_kiln_name(Path::new("~/vault")).as_deref(),
+            Some("vault")
+        );
+    }
+
+    /// A path with no usable basename yields no entry rather than a name
+    /// that resolves to nothing; the daemon floor refuses such a path anyway.
+    #[test]
+    fn a_kiln_path_with_no_usable_basename_synthesizes_no_entry() {
+        for raw in ["/", "", "."] {
+            let map = resolve_kiln_entries(Path::new(raw), &BTreeMap::new());
+            assert!(
+                map.keys().all(|k| k == "crucible-docs"),
+                "{raw:?} must synthesize nothing: {map:?}"
+            );
+        }
     }
 }

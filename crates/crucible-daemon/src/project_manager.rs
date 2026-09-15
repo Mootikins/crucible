@@ -4,6 +4,7 @@
 //! registered projects and provides CRUD operations. Projects are
 //! persisted to a JSON file in the crucible home directory.
 
+use crate::kiln_registry::KilnRegistry;
 use crate::registry_store::RegistryStore;
 use crucible_core::config::{read_kiln_config, read_project_config};
 use crucible_core::{Project, ProjectKiln, RepositoryInfo};
@@ -11,6 +12,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// System trees that are never a project and always hold host secrets.
@@ -167,6 +169,11 @@ pub struct ProjectManager {
     /// wrote. Two of three registries being safe is worse than none, because
     /// nobody remembers which is which.
     store: RegistryStore<ProjectStateFile>,
+    /// Which directories are kilns. A kiln root is never a project — see
+    /// [`Self::kiln_root_refusal`]. `None` is a manager built before the
+    /// registry exists (tests, the config migration) and then no directory
+    /// is a kiln to it.
+    kiln_registry: Option<Arc<KilnRegistry>>,
 }
 
 impl ProjectManager {
@@ -174,11 +181,41 @@ impl ProjectManager {
         let manager = Self {
             projects: DashMap::new(),
             store: RegistryStore::new(storage_path),
+            kiln_registry: None,
         };
         if let Err(e) = manager.load() {
             warn!("Failed to load projects from storage: {}", e);
         }
         manager
+    }
+
+    /// Tell the manager which directories are kilns.
+    ///
+    /// Asked at every read and every registration rather than once at load:
+    /// the registry is additive at runtime (`kiln.register`), so a directory
+    /// can become a kiln after `projects.json` was read.
+    pub fn with_kiln_registry(mut self, registry: Arc<KilnRegistry>) -> Self {
+        self.kiln_registry = Some(registry);
+        self
+    }
+
+    /// Why `path` is not a project, if it is a registered kiln root.
+    ///
+    /// A project is where work goes; a kiln is where knowledge goes. The two
+    /// registries name directories independently, and nothing stopped one
+    /// directory from being in both: a session created with a kiln as its
+    /// workspace auto-registered the kiln, and the session rail then grouped
+    /// sessions under a project header named after the kiln.
+    ///
+    /// `path` is compared through the registry's own reverse index, so both
+    /// spellings of a directory (configured and symlink-resolved) match.
+    fn kiln_root_refusal(&self, path: &Path) -> Option<ProjectError> {
+        let name = self.kiln_registry.as_ref()?.name_for(path)?;
+        Some(ProjectError::InvalidPath(format!(
+            "{} is the root of the kiln '{name}', not a project: a kiln is where \
+             knowledge goes, a project is where work goes",
+            path.display()
+        )))
     }
 
     /// Where the registry lives. Named in diagnostics.
@@ -270,6 +307,11 @@ impl ProjectManager {
                 "{} is not a valid project root: {why}",
                 canonical.display()
             )));
+        }
+        // Also on the FINAL path, and for the same reason: a kiln inside a
+        // repository resolves to the repository, which is a project.
+        if let Some(refusal) = self.kiln_root_refusal(&canonical) {
+            return Err(refusal);
         }
 
         let (name, kilns) = self.read_project_metadata(&canonical);
@@ -390,10 +432,14 @@ impl ProjectManager {
         projects
     }
 
-    /// Check if a project is valid for listing.
+    /// Check if a project is valid for listing and lookup.
     /// Filters out:
     /// - Paths ending with `.crucible` (kiln subdirectories)
     /// - Non-existent paths
+    /// - Registered kiln roots (see [`Self::kiln_root_refusal`]) — an entry
+    ///   an older build wrote, or a directory that became a kiln after it
+    ///   was registered. Decided at read, not dropped at load, because the
+    ///   kiln registry grows while the daemon runs.
     fn is_valid_project(&self, project: &Project) -> bool {
         let path = &project.path;
 
@@ -407,12 +453,23 @@ impl ProjectManager {
             return false;
         }
 
+        if self.kiln_root_refusal(path).is_some() {
+            debug!(path = %path.display(), "Registered project left out: it is a kiln root");
+            return false;
+        }
+
         true
     }
 
+    /// The registered project at `path`, under the same rules as [`Self::list`]:
+    /// an entry the list would leave out is not found here either, or
+    /// `register_if_missing` would revive it with a touch.
     pub fn get(&self, path: &Path) -> Option<Project> {
         let canonical = path.canonicalize().ok()?;
-        self.projects.get(&canonical).map(|r| r.clone())
+        self.projects
+            .get(&canonical)
+            .map(|r| r.clone())
+            .filter(|project| self.is_valid_project(project))
     }
 
     pub fn touch(&self, path: &Path) {
@@ -685,6 +742,106 @@ path = "./notes"
         assert_eq!(project.kilns.len(), 1);
         assert_eq!(project.kilns[0].name, None);
         assert_eq!(project.kilns[0].path, project_dir.join("notes"));
+    }
+
+    // ── A kiln root is never a project ──────────────────────────────────
+    //
+    // A project is where work goes; a kiln is where knowledge goes. The
+    // session rail groups sessions under their project, so a kiln directory
+    // that registered itself as a project (a session created with the kiln as
+    // its workspace did exactly that) showed up as a project header named
+    // after the kiln.
+
+    /// A registry that names `kiln` — through the same floor as production.
+    fn registry_naming(tmp: &TempDir, kiln: &Path) -> Arc<crate::kiln_registry::KilnRegistry> {
+        crate::test_support::kiln_registry(&tmp.path().join("data"), &[("notes", kiln)])
+    }
+
+    #[test]
+    fn a_registered_kiln_root_is_refused_as_a_project() {
+        let tmp = TempDir::new().unwrap();
+        let notes = tmp.path().join("notes");
+        fs::create_dir(&notes).unwrap();
+        let manager = ProjectManager::new(tmp.path().join("projects.json"))
+            .with_kiln_registry(registry_naming(&tmp, &notes));
+
+        let err = manager.register(&notes).unwrap_err();
+        assert!(matches!(err, ProjectError::InvalidPath(_)), "{err:?}");
+        assert!(err.to_string().contains("kiln"), "{err}");
+        // The auto-registration door a session opens.
+        assert!(manager.register_if_missing(&notes).is_err());
+        assert!(manager.list().is_empty());
+        assert!(manager.get(&notes).is_none());
+    }
+
+    /// The entry already on disk — written by a build that let a session's
+    /// kiln-root workspace register itself — is left out rather than served.
+    /// It is filtered at read, not dropped at load: the kiln registry grows at
+    /// runtime (`kiln.register`), so a load-time decision is stale by the
+    /// first registration.
+    #[test]
+    fn a_persisted_project_that_is_a_kiln_root_is_left_out() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let notes = tmp.path().join("notes");
+        let work = tmp.path().join("work");
+        fs::create_dir(&notes).unwrap();
+        fs::create_dir(&work).unwrap();
+        {
+            let before = ProjectManager::new(storage.clone());
+            before.register(&notes).unwrap();
+            before.register(&work).unwrap();
+            assert_eq!(before.list().len(), 2);
+        }
+
+        let manager =
+            ProjectManager::new(storage).with_kiln_registry(registry_naming(&tmp, &notes));
+        let listed: Vec<String> = manager.list().into_iter().map(|p| p.name).collect();
+        assert_eq!(listed, vec!["work".to_string()]);
+        assert!(manager.get(&notes).is_none());
+        assert!(
+            manager.register_if_missing(&notes).is_err(),
+            "a session in the kiln must not revive the stale entry"
+        );
+        assert!(manager.get(&work).is_some());
+    }
+
+    /// A project that becomes a kiln root while the daemon runs leaves the
+    /// list at once, without a restart.
+    #[test]
+    fn a_project_that_becomes_a_kiln_root_leaves_the_list() {
+        let tmp = TempDir::new().unwrap();
+        let notes = tmp.path().join("notes");
+        fs::create_dir(&notes).unwrap();
+        let registry = crate::test_support::kiln_registry(&tmp.path().join("data"), &[]);
+        let manager = ProjectManager::new(tmp.path().join("projects.json"))
+            .with_kiln_registry(registry.clone());
+        manager.register(&notes).unwrap();
+        assert_eq!(manager.list().len(), 1);
+
+        registry
+            .register_named(crate::test_support::kiln_name("notes"), &notes)
+            .unwrap();
+        assert!(manager.list().is_empty());
+    }
+
+    /// A kiln that lives inside a repository does not stop the repository
+    /// from being the project: the registration resolves to the repo root, and
+    /// only the FINAL path is judged. This is `~/crucible/docs` inside
+    /// `~/crucible`, the shipped shape.
+    #[test]
+    fn a_kiln_inside_a_repository_still_registers_the_repository() {
+        let tmp = TempDir::new().unwrap();
+        let repo = tmp.path().join("repo");
+        let docs = repo.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        gix::init(&repo).unwrap();
+        let manager = ProjectManager::new(tmp.path().join("projects.json"))
+            .with_kiln_registry(registry_naming(&tmp, &docs));
+
+        let project = manager.register(&docs).unwrap();
+        assert_eq!(project.path, repo.canonicalize().unwrap());
+        assert_eq!(manager.list().len(), 1);
     }
 
     #[test]

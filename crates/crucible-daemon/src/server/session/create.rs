@@ -715,6 +715,64 @@ mod tests {
         }
     }
 
+    /// A session whose workspace is a kiln root still gets created, and the
+    /// kiln does not become a project on the way: the rail files it in the
+    /// project-less bucket. This is `cru --standalone web` run inside a kiln,
+    /// which used to leave a project named after the kiln in `projects.json`.
+    #[tokio::test]
+    async fn a_kiln_root_workspace_creates_the_session_but_no_project() {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use std::sync::Arc;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let notes = tmp.path().join("notes");
+        std::fs::create_dir(&notes).unwrap();
+        let sm = crate::test_support::temp_session_manager_with_kilns(&[("notes", &notes)]);
+        let km = Arc::new(crate::kiln_manager::KilnManager::new());
+        let (event_tx, _) = tokio::sync::broadcast::channel(64);
+        let am = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: km.clone(),
+            session_manager: sm.clone(),
+            background_manager: Arc::new(crate::background_manager::BackgroundJobManager::new(
+                event_tx.clone(),
+            )),
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: None,
+            context_config: None,
+            permission_config: None,
+            plugin_loader: None,
+            card_roots: Default::default(),
+            review_snapshot_root: crate::test_support::scratch_snapshot_root(),
+        }));
+        let pm = Arc::new(
+            crate::project_manager::ProjectManager::new(tmp.path().join("projects.json"))
+                .with_kiln_registry(sm.kiln_registry().clone()),
+        );
+        let ctx = crate::rpc::RpcContext::for_test(
+            km,
+            sm.clone(),
+            am,
+            pm.clone(),
+            event_tx,
+            tmp.path().to_path_buf(),
+        );
+
+        let params = SessionCreateRequest {
+            session_type: "chat".into(),
+            kilns: Some(vec!["notes".into()]),
+            workspace: Some(notes.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let session = ctx.create_session_resolved(&params).await.unwrap();
+        assert_eq!(session.workspace.as_deref(), Some(notes.as_path()));
+        assert!(
+            pm.list().is_empty(),
+            "the kiln must not register itself as a project: {:?}",
+            pm.list()
+        );
+    }
+
     /// No request fields: the config default provider supplies everything.
     #[test]
     fn an_empty_request_takes_the_config_default_provider() {

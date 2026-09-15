@@ -133,8 +133,9 @@ cru.config.set({
 | `lazy` | bool | `false` | If true, the kiln is not opened at daemon start; it must be opened explicitly |
 
 If `kilns` is empty or absent, Crucible falls back to `kiln_path`
-(synthesized as a kiln named `"default"`). When `kilns` is present,
-`kiln_path` is ignored.
+(synthesized as a kiln named after its directory: `~/vault` is `vault`).
+`"default"` is never a kiln's name unless you declare one; it is at most the
+`default_kiln` pointer. When `kilns` is present, `kiln_path` is ignored.
 
 Config-declared kilns are one of two layers — see
 [[#Registration versus authorship]] for the other.
@@ -160,7 +161,10 @@ cru.config.set({
 | `kilns` | list | `[]` | Named kilns this project uses (resolved from `kilns`) |
 
 `cru init` in a project directory registers the project with the **daemon**
-(`projects.json`); declaring one here is the hand-authored alternative.
+(`projects.json`); declaring one here is the hand-authored alternative. A
+session's workspace registers itself the same way. A registered kiln root is
+never a project: the daemon refuses to register one and leaves an existing
+entry out of `project.list`.
 
 ### chat — chat configuration
 

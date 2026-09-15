@@ -880,6 +880,11 @@ endpoint = "http://localhost:11434"
     }
 
     /// Returns the effective default kiln name.
+    ///
+    /// With no `[kilns]` the pointer names the entry `resolved_kilns`
+    /// synthesizes from `kiln_path`, so the two agree. "default" survives
+    /// only as a pointer to nothing, for a `kiln_path` with no usable
+    /// basename — never as a kiln's identity.
     pub fn resolved_default_kiln(&self) -> String {
         if let Some(ref name) = self.default_kiln {
             return name.clone();
@@ -888,7 +893,8 @@ endpoint = "http://localhost:11434"
             // First alphabetically
             return self.kilns.keys().min().cloned().unwrap_or_default();
         }
-        "default".to_string()
+        crate::config::config::registry::synthesized_kiln_name(&self.kiln_path)
+            .unwrap_or_else(|| "default".to_string())
     }
 
     /// The registry NAME of the kiln a new session should attach, if any.
@@ -1314,9 +1320,10 @@ default_kiln = "vault"
         let toml_str = r#"kiln_path = "~/vault""#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_kilns();
-        assert_eq!(resolved["default"].path(), PathBuf::from("~/vault"));
+        assert_eq!(resolved["vault"].path(), PathBuf::from("~/vault"));
+        assert!(!resolved.contains_key("default"));
         // `crucible-docs` is also offered; it is lazy and never the default.
-        assert_eq!(config.resolved_default_kiln(), "default");
+        assert_eq!(config.resolved_default_kiln(), "vault");
     }
 
     #[test]
@@ -1352,7 +1359,7 @@ docs = "~/docs"
     fn resolved_default_kiln_falls_back() {
         let toml_str = r#"kiln_path = "~/vault""#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.resolved_default_kiln(), "default");
+        assert_eq!(config.resolved_default_kiln(), "vault");
     }
 
     #[test]

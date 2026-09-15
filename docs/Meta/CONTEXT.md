@@ -18,7 +18,7 @@ A knowledge-grounded agent runtime. Notes, sessions and wikilinks form a knowled
 ### Places
 
 **Project**:
-Where work output goes. A registered directory, the git root or the invocation directory.
+Where work output goes. A registered directory, the git root or the invocation directory. A kiln root is never a project.
 _Avoid_: repo, workspace (for this meaning)
 
 **Kiln**:

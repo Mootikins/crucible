@@ -68,7 +68,7 @@ pub use components::{
     OllamaTagsResponse, PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
     TransportType, TrustLevel, UpstreamServerConfig,
 };
-pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
+pub use config::registry::{resolve_kiln_entries, synthesized_kiln_name, KilnEntry, ProjectEntry};
 // Its own line rather than folded into the block below: this is the
 // location/settings classification of `CliAppConfig`'s top-level keys, and it
 // has two security consumers (the plugin-visible config store and

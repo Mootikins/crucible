@@ -460,7 +460,13 @@ impl Server {
         );
         delegation_service.bind_agent_manager(&agent_manager);
         let subscription_manager = Arc::new(SubscriptionManager::new());
-        let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
+        // With the kiln registry, so a kiln root is never listed or
+        // registered as a project — including by a session whose workspace
+        // is a kiln.
+        let project_manager = Arc::new(
+            ProjectManager::new(data_home.join("projects.json"))
+                .with_kiln_registry(kiln_registry.clone()),
+        );
 
         // Register every checkout that sits directly under the workspace root
         // dir, so a user who keeps all their repositories in one place does not
