@@ -3,7 +3,12 @@ use crucible_core::turn::StopReason;
 use crucible_daemon::SessionEvent;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// The browser's view of a session event, streamed by `GET
+/// /api/chat/events/{session_id}`.
+///
+/// `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
+/// browser reads the union from the enum instead of repeating it.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatEvent {
     Token {
@@ -72,7 +77,12 @@ pub enum ChatEvent {
         /// Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The
         /// browser reads it to style the turn. Absent when the daemon
         /// reported none.
+        ///
+        /// It is a `String` in the document because `StopReason` lives in
+        /// `crucible-core`, which takes no utoipa dependency. The values are
+        /// `StopReason::ALL`, serialised snake_case.
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[schema(value_type = Option<String>)]
         stop_reason: Option<StopReason>,
         /// The note the browser draws under a reply the provider cut off, or
         /// absent when the reason needs none — which is every normal turn.
@@ -155,7 +165,7 @@ pub enum ChatEvent {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PrecognitionNote {
     pub name: String,
     #[serde(default)]

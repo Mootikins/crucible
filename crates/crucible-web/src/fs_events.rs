@@ -19,7 +19,7 @@ use serde::Serialize;
 /// Serializes with an internal `type` tag whose values are `changed` /
 /// `deleted` / `moved` (e.g. `{"type":"changed","path":"/abs","kind":"modified"}`).
 /// The SSE `event:` name is separate — see [`FsEvent::event_name`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FsEvent {
     Changed { path: String, kind: String },

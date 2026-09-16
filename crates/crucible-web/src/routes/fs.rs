@@ -10,20 +10,21 @@ use axum::{
     extract::{Query, State},
     response::sse::{Event, KeepAlive, Sse},
     routing::{get, post},
-    Json, Router,
+    Json,
 };
 use futures::stream::Stream;
 use serde::Deserialize;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn fs_routes() -> Router<AppState> {
-    Router::new()
+pub fn fs_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/fs/list", get(list_dir))
         .route("/api/fs/move", post(move_path))
         .route("/api/fs/mkdir", post(mkdir_path))
         .route("/api/fs/trash", post(trash_path))
-        .route("/api/fs/events", get(fs_event_stream))
+        .routes(routes!(fs_event_stream))
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +122,13 @@ async fn trash_path(
 }
 
 /// Live filesystem-change stream for the file-tree explorer.
+///
+/// The body schema describes one SSE `data:` payload, not the whole stream.
+#[utoipa::path(
+    get,
+    path = "/api/fs/events",
+    responses((status = 200, content_type = "text/event-stream", body = FsEvent))
+)]
 async fn fs_event_stream(
     State(state): State<AppState>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {

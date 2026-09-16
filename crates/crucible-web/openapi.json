@@ -6,6 +6,55 @@
     "version": "0.30.0"
   },
   "paths": {
+    "/api/chat/events/{session_id}": {
+      "get": {
+        "summary": "The session's live event stream.",
+        "description": "The body schema describes one SSE `data:` payload, not the whole stream:\nOpenAPI has no way to say \"many of these, one per line\".",
+        "operationId": "event_stream",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "The session to stream",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/events": {
+      "get": {
+        "summary": "Live filesystem-change stream for the file-tree explorer.",
+        "description": "The body schema describes one SSE `data:` payload, not the whole stream.",
+        "operationId": "fs_event_stream",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models": {
       "get": {
         "summary": "All chat models across providers, no session required (draft-state picker).",
@@ -24,10 +73,700 @@
           }
         }
       }
+    },
+    "/api/plugins/events": {
+      "get": {
+        "summary": "`GET /api/plugins/events` — a push when a plugin's published data changes.",
+        "description": "The counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
+        "operationId": "publication_event_stream",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationChangedEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shell/exec": {
+      "post": {
+        "summary": "Run one command and stream its output.",
+        "description": "The router nests under `/api/shell`, so the document reads this path as\n`/api/shell/exec`. The body schema describes one SSE `data:` payload, not\nthe whole stream.",
+        "operationId": "shell_exec",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShellExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShellEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/surfaces/events": {
+      "get": {
+        "summary": "Live stream of surface changes.",
+        "description": "The body schema describes one SSE `data:` payload, not the whole stream.",
+        "operationId": "surface_event_stream",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurfaceChangedEvent"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ChatEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "type"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "token"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "arguments": {},
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "result": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "terminate": {
+                "type": "boolean",
+                "description": "True if this tool requested an agent-turn early-stop\n(daemon's conjunctive batch-terminate check fired). UI renders\na \"Terminated\" badge on the tool card."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_result"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "delta",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "delta": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_result_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_result_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "error",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_result_error"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "type"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "thinking"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A text segment that streamed before a tool call, carrying the turn's\n`message_id`, its 0-based `index`, and the segment text. Lets the\nfrontend materialize a canonical per-segment bubble that matches\nhistory reconstruction.",
+            "required": [
+              "message_id",
+              "index",
+              "content",
+              "type"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "content": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "segment_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "content",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "prompt_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "completion_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "total_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "cache_read_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "cache_creation_tokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "stop_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the turn ended (`end_turn`, `max_tokens`, `refusal`, …). The\nbrowser reads it to style the turn. Absent when the daemon\nreported none.\n\nIt is a `String` in the document because `StopReason` lives in\n`crucible-core`, which takes no utoipa dependency. The values are\n`StopReason::ALL`, serialised snake_case."
+              },
+              "stop_notice": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The note the browser draws under a reply the provider cut off, or\nabsent when the reason needs none — which is every normal turn.\n\n**The daemon words it, not the page.** `StopReason::user_notice`\nis the only wording; the browser held a second one in TypeScript\nand the two drifted. One `Option<String>` once per turn is cheaper\nthan a wording nothing compares, and `AGENTS.md` puts the decision\nin the daemon for exactly this reason: a web front end must not\nduplicate it."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "message_complete"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "type"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {},
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "interaction_requested"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "prompt",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "subagent_spawned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "summary",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "subagent_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "error",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "subagent_failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "prompt",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "target_agent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delegation_spawned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "summary",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delegation_completed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "error",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delegation_failed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "used",
+              "total",
+              "type"
+            ],
+            "properties": {
+              "used": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "context_usage"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "notes_count",
+              "type"
+            ],
+            "properties": {
+              "notes_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PrecognitionNote"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "precognition_result"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "mode",
+              "type"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mode_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "title",
+              "type"
+            ],
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "title_changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "event",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "event": {
+                "type": "string"
+              },
+              "data": {},
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_event"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
+      },
+      "FsEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "kind",
+              "type"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "type"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "from",
+              "to",
+              "type"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "moved"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A filesystem change delivered to the browser.\n\nSerializes with an internal `type` tag whose values are `changed` /\n`deleted` / `moved` (e.g. `{\"type\":\"changed\",\"path\":\"/abs\",\"kind\":\"modified\"}`).\nThe SSE `event:` name is separate — see [`FsEvent::event_name`]."
+      },
       "ModelsResponse": {
         "type": "object",
         "description": "Response for model listings — the session-scoped `list_models` and the\nsession-less `list_all_models` return the same `{ models: [...] }` shape.",
@@ -40,6 +779,165 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "PrecognitionNote": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "relevance": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "PublicationChangedEvent": {
+        "type": "object",
+        "description": "A plugin's published data changed, delivered to the browser.\n\nCarries who published and under which key, never the value — the same\ncontract the daemon event has, and for the same reason: a publication is\nopaque JSON of the plugin's own choosing. The browser refetches through\n`GET /api/plugins/publications`.\n\nProjected through a named type rather than passed through as raw `data`,\nwhich is the treatment `SurfaceChangedEvent` already gets: a field the\ndaemon renames then breaks the browser with nothing on this side to notice.",
+        "required": [
+          "plugin",
+          "key"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          }
+        }
+      },
+      "ShellEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "stdout"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "stderr"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "code",
+              "type"
+            ],
+            "properties": {
+              "code": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "exit"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message",
+              "type"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ShellExecRequest": {
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SurfaceChangedEvent": {
+        "type": "object",
+        "description": "A surface changed, delivered to the browser.\n\nCarries the identity and the new version, never the rows — the same contract\nthe daemon event has, and for the same reason: a surface is unbounded where an\nevent is not, and two clients want it at different moments. The browser\nrefetches through `GET /api/surfaces`.",
+        "required": [
+          "plugin",
+          "name",
+          "version"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "description": "The surface is gone, so the browser drops it instead of refetching.\n\nPassed through rather than re-derived. The daemon knew this when it\ndropped the entry, and a browser that had to ask `GET /api/surfaces`\nto find out would pay a round trip for a fact the event already held."
           }
         }
       }

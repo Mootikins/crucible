@@ -16,7 +16,7 @@ use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
-    Json, Router,
+    Json,
 };
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
@@ -24,11 +24,12 @@ use futures::stream::Stream;
 use serde::Serialize;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn surface_routes() -> Router<AppState> {
-    Router::new()
+pub fn surface_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/surfaces", get(list_surfaces))
-        .route("/api/surfaces/events", get(surface_event_stream))
+        .routes(routes!(surface_event_stream))
 }
 
 /// A surface changed, delivered to the browser.
@@ -37,7 +38,7 @@ pub fn surface_routes() -> Router<AppState> {
 /// the daemon event has, and for the same reason: a surface is unbounded where an
 /// event is not, and two clients want it at different moments. The browser
 /// refetches through `GET /api/surfaces`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SurfaceChangedEvent {
     pub plugin: String,
     pub name: String,
@@ -94,6 +95,17 @@ async fn list_surfaces(State(state): State<AppState>) -> Result<Json<serde_json:
 }
 
 /// Live stream of surface changes.
+///
+/// The body schema describes one SSE `data:` payload, not the whole stream.
+#[utoipa::path(
+    get,
+    path = "/api/surfaces/events",
+    responses((
+        status = 200,
+        content_type = "text/event-stream",
+        body = SurfaceChangedEvent
+    ))
+)]
 async fn surface_event_stream(
     State(state): State<AppState>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {

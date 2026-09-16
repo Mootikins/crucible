@@ -3,8 +3,7 @@ use crate::WebError;
 use axum::{
     extract::State,
     response::sse::{Event, Sse},
-    routing::post,
-    Json, Router,
+    Json,
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
@@ -15,20 +14,21 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
-pub fn shell_routes() -> Router<AppState> {
-    Router::new().route("/exec", post(shell_exec))
+pub fn shell_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(shell_exec))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct ShellExecRequest {
     command: String,
     timeout_secs: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ShellEvent {
     Stdout { data: String },
@@ -48,6 +48,17 @@ impl ShellEvent {
     }
 }
 
+/// Run one command and stream its output.
+///
+/// The router nests under `/api/shell`, so the document reads this path as
+/// `/api/shell/exec`. The body schema describes one SSE `data:` payload, not
+/// the whole stream.
+#[utoipa::path(
+    post,
+    path = "/exec",
+    request_body = ShellExecRequest,
+    responses((status = 200, content_type = "text/event-stream", body = ShellEvent))
+)]
 async fn shell_exec(
     State(_state): State<AppState>,
     Json(req): Json<ShellExecRequest>,

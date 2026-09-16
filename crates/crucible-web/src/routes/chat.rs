@@ -5,17 +5,18 @@ use axum::{
     extract::{Path, State},
     response::sse::{Event, Sse},
     routing::{get, post},
-    Json, Router,
+    Json,
 };
 use futures::stream::Stream;
 use serde::Deserialize;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn chat_routes() -> Router<AppState> {
-    Router::new()
+pub fn chat_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/chat/send", post(send_message))
-        .route("/api/chat/events/{session_id}", get(event_stream))
+        .routes(routes!(event_stream))
         .route("/api/interaction/respond", post(interaction_respond))
         .route("/api/interactions/pending", get(pending_interactions))
 }
@@ -43,6 +44,16 @@ async fn send_message(
     Ok(Json(serde_json::json!({ "message_id": message_id })))
 }
 
+/// The session's live event stream.
+///
+/// The body schema describes one SSE `data:` payload, not the whole stream:
+/// OpenAPI has no way to say "many of these, one per line".
+#[utoipa::path(
+    get,
+    path = "/api/chat/events/{session_id}",
+    params(("session_id" = String, Path, description = "The session to stream")),
+    responses((status = 200, content_type = "text/event-stream", body = ChatEvent))
+)]
 async fn event_stream(
     State(state): State<AppState>,
     Path(session_id): Path<String>,

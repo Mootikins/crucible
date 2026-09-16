@@ -117,12 +117,10 @@ fn api_router(
     OpenApiRouter::with_openapi(api_document_info())
         .nest(
             "/api/shell",
-            shell_routes()
-                .layer(middleware::from_fn_with_state(
-                    shell_gate.clone(),
-                    localhost_only_shell_auth,
-                ))
-                .into(),
+            shell_routes().layer(middleware::from_fn_with_state(
+                shell_gate.clone(),
+                localhost_only_shell_auth,
+            )),
         )
         // A PTY is full shell access: localhost gate + an Origin allow-list on
         // the WS upgrade to block Cross-Site WebSocket Hijacking (CORS doesn't
@@ -141,7 +139,7 @@ fn api_router(
                 .into(),
         )
         .merge(agents_routes())
-        .merge(chat_routes().into())
+        .merge(chat_routes())
         .merge(config_routes().into())
         // Endpoint policy comes from the bind: a loopback bind keeps
         // `http://localhost:11434` (the local-Ollama path) working, a LAN or
@@ -150,10 +148,10 @@ fn api_router(
         .merge(session_routes_with(EndpointPolicy::for_bind_host(&web_config.host)).into())
         .merge(project_routes().into())
         .merge(scm_routes().into())
-        .merge(fs_routes().into())
+        .merge(fs_routes())
         .merge(search_routes().into())
-        .merge(plugin_routes().into())
-        .merge(surface_routes().into())
+        .merge(plugin_routes())
+        .merge(surface_routes())
         .merge(mcp_routes().into())
         .merge(kiln_routes().into())
         .merge(canvas_routes().into())

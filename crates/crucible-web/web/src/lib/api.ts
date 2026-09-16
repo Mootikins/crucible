@@ -510,6 +510,10 @@ export async function sendChatMessage(
  * Exported so tests can assert this list stays in sync with the reducer's
  * switch (in `chatEventReducer.ts`). When a new ChatEvent variant is added,
  * append it here and the reducer test will catch missing reducer handling.
+ *
+ * A Rust test now holds the other half of that contract:
+ * `every_sse_event_name_is_in_the_document` compares this list against the
+ * `ChatEvent` schema in the generated OpenAPI document, in both directions.
  */
 export const SSE_EVENT_TYPES = [
   'token',

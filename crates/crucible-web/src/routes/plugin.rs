@@ -5,7 +5,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     extract::{Path, Query, State},
     routing::{delete, get, post},
-    Json, Router,
+    Json,
 };
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::server::plugins::OptionAction;
@@ -14,6 +14,7 @@ use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 /// The ten plugin endpoints, six of which take a caller identity and four of
 /// which do not.
@@ -49,8 +50,8 @@ use tokio_stream::StreamExt;
 /// plugin arrive through a runtime root without passing the install path at
 /// all. A gate that is wrong in both directions is worse than a line the
 /// person adding the route will read.
-pub fn plugin_routes() -> Router<AppState> {
-    Router::new()
+pub fn plugin_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/plugins", get(list_plugins).post(install_plugin))
         .route("/api/plugins/{name}", delete(remove_plugin))
         .route("/api/plugins/{name}/reload", post(reload_plugin))
@@ -58,7 +59,7 @@ pub fn plugin_routes() -> Router<AppState> {
         .route("/api/plugins/commands", get(list_commands))
         .route("/api/plugins/options", get(list_options))
         .route("/api/plugins/{name}/option", post(option_call))
-        .route("/api/plugins/events", get(publication_event_stream))
+        .routes(routes!(publication_event_stream))
         .route("/api/plugins/command", post(run_command))
 }
 
@@ -243,7 +244,7 @@ async fn option_call(
 /// Projected through a named type rather than passed through as raw `data`,
 /// which is the treatment `SurfaceChangedEvent` already gets: a field the
 /// daemon renames then breaks the browser with nothing on this side to notice.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PublicationChangedEvent {
     pub plugin: String,
     pub key: String,
@@ -283,6 +284,15 @@ impl PublicationChangedEvent {
 /// daemon to forward, because `EventBroker::dispatch` drops events for a
 /// session id with no local subscriber and the window between the two calls
 /// would lose the first event.
+#[utoipa::path(
+    get,
+    path = "/api/plugins/events",
+    responses((
+        status = 200,
+        content_type = "text/event-stream",
+        body = PublicationChangedEvent
+    ))
+)]
 async fn publication_event_stream(
     State(state): State<AppState>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
