@@ -14,53 +14,36 @@ type PaneState = {
   activeTabId: string | null;
 };
 
-async function getFirstPaneState(page: Page): Promise<PaneState> {
-  return page.evaluate(() => {
-    const store = (window as unknown as { __windowStore?: any }).__windowStore;
+const isChat = (t: { contentType: string }) =>
+  t.contentType === 'chat' || t.contentType === 'chat-draft';
 
-    // The EDITOR group: the first centre leaf that is not a conversation. It
-    // used to be simply "the first leaf", which stopped meaning the editor the
-    // moment a session began opening as a pane to its LEFT.
-    const leaves = (node: any): string[] =>
-      !node ? [] : node.type === 'pane'
-        ? (node.tabGroupId ? [node.tabGroupId] : [])
-        : [...leaves(node.first), ...leaves(node.second)];
-    const ids = store ? leaves(store.layout) : [];
-    const isChat = (t: any) => t.contentType === 'chat' || t.contentType === 'chat-draft';
-    const groupId =
-      ids.find((id: string) => !(store.tabGroups[id]?.tabs ?? []).some(isChat)) ?? ids[0] ?? null;
-    const group = groupId ? store.tabGroups[groupId] : null;
-
-    return {
-      groupId,
-      tabs: group?.tabs ?? [],
-      activeTabId: group?.activeTabId ?? null,
-    };
-  });
-}
-
-/** The CENTRE group holding conversations. A session is a PEER of the editor
- * now — its own pane, left of it — not a tab docked in a rail. */
-async function getRightPaneState(page: Page): Promise<PaneState> {
+/**
+ * Every centre leaf, in layout order.
+ *
+ * The sessions rail is fixed on the LEFT (WS-324), so leaf 0 is the centre
+ * pane next to it — the pane a session opens in (WS-220).
+ */
+async function getCentrePanes(page: Page): Promise<PaneState[]> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
     const leaves = (node: any): string[] =>
       !node ? [] : node.type === 'pane'
         ? (node.tabGroupId ? [node.tabGroupId] : [])
         : [...leaves(node.first), ...leaves(node.second)];
-    const groupId =
-      leaves(store?.layout).find((id: string) =>
-        (store.tabGroups[id]?.tabs ?? []).some((t: any) =>
-          t.contentType === 'chat' || t.contentType === 'chat-draft')) ?? null;
-    const group = groupId ? store.tabGroups[groupId] : null;
-
-    return {
-      groupId,
-      tabs: group?.tabs ?? [],
-      activeTabId: group?.activeTabId ?? null,
-    };
+    return leaves(store?.layout).map((id: string) => {
+      const group = store.tabGroups[id];
+      return { groupId: id, tabs: group?.tabs ?? [], activeTabId: group?.activeTabId ?? null };
+    });
   });
 }
+
+/** The CENTRE pane that holds conversations. A session is a PEER of the
+ * editor — its own pane on the sessions rail's side — not a tab in a rail. */
+async function getSessionPaneState(page: Page): Promise<PaneState> {
+  return (await getCentrePanes(page)).find((p) => p.tabs.some(isChat))
+    ?? { groupId: null, tabs: [], activeTabId: null };
+}
+
 
 test.describe('New Session -> Chat Tab', () => {
   test.beforeEach(async ({ page }) => {
@@ -69,7 +52,7 @@ test.describe('New Session -> Chat Tab', () => {
     await openSessionsList(page);
   });
 
-  test('clicking New Session opens a draft; first message creates the chat tab beside the editor', async ({ page }) => {
+  test('clicking New Session opens a draft; first message opens the chat tab in the centre pane beside the sessions rail', async ({ page }) => {
     const createdSession = {
       ...MOCK_SESSION,
       session_id: 'test-session-new',
@@ -84,9 +67,10 @@ test.describe('New Session -> Chat Tab', () => {
       await route.fallback();
     });
 
-    // Fresh load lands on Home (the shell's landing tab) in the left/first pane.
-    const leftBefore = await getFirstPaneState(page);
-    expect(leftBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    // A fresh load gives the centre ONE empty pane, and no conversation.
+    const centreBefore = await getCentrePanes(page);
+    expect(centreBefore).toHaveLength(1);
+    expect(centreBefore[0].tabs.filter(isChat)).toHaveLength(0);
 
     // Lazy creation: clicking New Session opens a DRAFT surface docked right —
     // nothing hits the daemon until the first message.
@@ -101,8 +85,8 @@ test.describe('New Session -> Chat Tab', () => {
 
     await expect
       .poll(async () => {
-        const right = await getRightPaneState(page);
-        return right.tabs.filter((t) => t.contentType === 'chat-draft').length;
+        const session = await getSessionPaneState(page);
+        return session.tabs.filter((t) => t.contentType === 'chat-draft').length;
       })
       .toBe(1);
 
@@ -118,30 +102,34 @@ test.describe('New Session -> Chat Tab', () => {
 
     await expect
       .poll(async () => {
-        const right = await getRightPaneState(page);
-        return right.tabs.filter((t) => t.contentType === 'chat').length;
+        const session = await getSessionPaneState(page);
+        return session.tabs.filter((t) => t.contentType === 'chat').length;
       })
       .toBe(1);
 
-    const rightAfter = await getRightPaneState(page);
-    expect(rightAfter.groupId).not.toBeNull();
+    const sessionAfter = await getSessionPaneState(page);
+    expect(sessionAfter.groupId).not.toBeNull();
     // The draft closed itself once the real session opened.
-    expect(rightAfter.tabs.filter((t) => t.contentType === 'chat-draft')).toHaveLength(0);
-    const chatTab = rightAfter.tabs.find((t) => t.contentType === 'chat');
+    expect(sessionAfter.tabs.filter((t) => t.contentType === 'chat-draft')).toHaveLength(0);
+    const chatTab = sessionAfter.tabs.find((t) => t.contentType === 'chat');
     expect(chatTab?.id).toBe('tab-chat-test-session-new');
     expect(chatTab?.metadata?.sessionId).toBe('test-session-new');
-    expect(rightAfter.activeTabId).toBe('tab-chat-test-session-new');
+    expect(sessionAfter.activeTabId).toBe('tab-chat-test-session-new');
 
-    // The left pane keeps its original (non-chat) tabs — sessions never land there.
-    const leftAfter = await getFirstPaneState(page);
-    expect(leftAfter.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    // The session sits in the centre pane next to the sessions rail, and it
+    // OCCUPIED the empty pane: the centre is still one pane, not a chat beside
+    // an empty editor.
+    const centreAfter = await getCentrePanes(page);
+    expect(centreAfter).toHaveLength(1);
+    expect(centreAfter[0].groupId).toBe(sessionAfter.groupId);
   });
 
-  test('clicking an existing session opens its chat tab beside the editor', async ({ page }) => {
+  test('clicking an existing session opens its chat tab in the centre pane beside the sessions rail', async ({ page }) => {
     await page.route('**/api/session/test-session-002', (route) => route.fulfill({ json: MOCK_SESSION_2 }));
 
-    const leftBefore = await getFirstPaneState(page);
-    expect(leftBefore.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    const centreBefore = await getCentrePanes(page);
+    expect(centreBefore).toHaveLength(1);
+    expect(centreBefore[0].tabs.filter(isChat)).toHaveLength(0);
 
     const getSessionRequest = page.waitForRequest(
       (req) => req.url().includes('/api/session/test-session-002') && req.method() === 'GET',
@@ -152,14 +140,15 @@ test.describe('New Session -> Chat Tab', () => {
 
     await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).toBeVisible();
 
-    const rightAfter = await getRightPaneState(page);
-    const chatTab = rightAfter.tabs.find((t) => t.contentType === 'chat');
+    const sessionAfter = await getSessionPaneState(page);
+    const chatTab = sessionAfter.tabs.find((t) => t.contentType === 'chat');
     expect(chatTab?.id).toBe('tab-chat-test-session-002');
     expect(chatTab?.metadata?.sessionId).toBe('test-session-002');
-    expect(rightAfter.activeTabId).toBe('tab-chat-test-session-002');
+    expect(sessionAfter.activeTabId).toBe('tab-chat-test-session-002');
 
-    // The left pane did not gain a chat tab.
-    const leftAfter = await getFirstPaneState(page);
-    expect(leftAfter.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
+    // The session OCCUPIED the empty centre pane next to the sessions rail.
+    const centreAfter = await getCentrePanes(page);
+    expect(centreAfter).toHaveLength(1);
+    expect(centreAfter[0].groupId).toBe(sessionAfter.groupId);
   });
 });

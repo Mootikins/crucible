@@ -7,7 +7,7 @@ vi.mock('@/lib/recent-files', () => ({ recordRecentFile: vi.fn(), recentFiles: (
 import { openFileInEditor } from '@/lib/file-actions';
 import { openSessionInChat } from '@/lib/session-actions';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds, createInitialState } from '@/stores/windowStoreInternals';
 import { edgeCenterPane } from '@/lib/panel-actions';
 
 const groupOf = (tabId: string) =>
@@ -23,6 +23,18 @@ describe('centre placement follows the rails', () => {
   it('opens a session in the pane next to the sessions rail (left by default)', () => {
     openSessionInChat('s1', 'One');
     expect(groupOf('tab-chat-s1')).toBe(edgeCenterPane('left')!.groupId);
+  });
+
+  it('occupies the empty centre pane instead of splitting it', () => {
+    // A fresh shell has ONE empty centre pane, and that pane already IS the
+    // pane next to the sessions rail. A split there would draw an empty
+    // editor pane beside the chat; the editor pane appears when a file opens.
+    openSessionInChat('s1', 'One');
+    expect(collectLeafGroupIds(windowStore.layout)).toHaveLength(1);
+    expect(groupOf('tab-chat-s1')).toBe(edgeCenterPane('left')!.groupId);
+
+    openFileInEditor('/k/Note.md');
+    expect(collectLeafGroupIds(windowStore.layout)).toHaveLength(2);
   });
 
   it('opens a file in the pane next to the files rail, never on the chat', () => {
