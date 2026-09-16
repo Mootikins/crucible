@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Component } from 'solid-js';
 import {
   configureWindowing,
   windowStore,
@@ -83,6 +84,17 @@ describe('WindowPolicy', () => {
     configureWindowing(neutralPolicy({ layoutHooks: { ...base.layoutHooks, prune } }));
     windowActions.importLayout(windowActions.exportLayout());
     expect(prune).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives each restored tab the icon from the policy', () => {
+    const Icon: Component<{ class?: string }> = () => null;
+    const iconFor = vi.fn(() => Icon);
+    configureWindowing(neutralPolicy({ iconFor }));
+    iconFor.mockClear();
+    windowActions.importLayout(windowActions.exportLayout());
+    expect(iconFor).toHaveBeenCalledWith('alpha');
+    const g = centreGroupId();
+    expect(windowStore.tabGroups[g]!.tabs.map((t) => t.icon)).toEqual([Icon, Icon]);
   });
 
   it('resets from the policy seed, then repairs', () => {

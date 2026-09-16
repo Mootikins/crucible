@@ -8,9 +8,9 @@ import type { StoredLayout } from '@/windowing/model/serializer';
 import { appLayoutHooks } from '../layoutMigrations';
 import type { TabContentType } from '@/types/windowTypes';
 
-/** The core reader with the app history and prune. */
+/** The core reader with the app history, prune and icons. */
 const deserializeLayout = (json: unknown) =>
-  readLayout(json as StoredLayout<TabContentType>, appLayoutHooks);
+  readLayout(json as StoredLayout<TabContentType>, appLayoutHooks, iconForContentType);
 
 const paneLayout = (id: string, tabGroupId: string): LayoutNode => ({
   id,

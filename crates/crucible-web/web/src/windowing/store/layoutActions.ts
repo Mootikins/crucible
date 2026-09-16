@@ -319,7 +319,8 @@ export function createLayoutActions<C extends string>(
   };
 
   const importLayout = (json: StoredLayout<C>) => {
-    const restored = deserializeLayout(json, policy().layoutHooks);
+    const p = policy();
+    const restored = deserializeLayout(json, p.layoutHooks, (type) => p.iconFor(type));
     /**
      * A restored layout has to satisfy the same invariant every mutation
      * maintains: no pane may point at a tab group that does not exist.

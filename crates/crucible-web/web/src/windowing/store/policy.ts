@@ -23,14 +23,17 @@ export interface WindowPolicy<C extends string = string> {
   repairLayout(draft: WindowState<C>): void;
   /** The tab that took focus, or undefined when the focused pane has none. */
   onActiveTabChange(tab: Tab<C> | undefined): void;
-  /** The icon that a tab of this type shows when the tab carries none. */
+  /**
+   * The icon of a tab of this type. The core calls it for each tab that a
+   * stored layout brings back, because no layout stores an icon.
+   */
   iconFor(contentType: C): Component<{ class?: string }> | undefined;
   /**
    * Why the tab cannot work here, or null when it can. A reason greys the
    * tab out, and the ribbon shows the reason in its tooltip.
    */
   unavailableReason(tab: Tab<C>): string | null;
-  /** The reader hooks for a stored layout: legacy upgrade, prune, icons. */
+  /** The reader hooks for a stored layout: legacy upgrade and prune. */
   layoutHooks: LayoutCodecHooks<C>;
   /** The chords that the keyboard loop matches, in priority order. */
   shortcuts: readonly ShortcutAction[];

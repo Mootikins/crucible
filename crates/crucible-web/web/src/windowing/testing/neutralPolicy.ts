@@ -65,7 +65,6 @@ export function neutralPolicy(over: Partial<WindowPolicy> = {}): WindowPolicy {
         throw new Error('neutralPolicy: no legacy layouts in the windowing core');
       },
       prune: () => {},
-      iconFor: () => undefined,
     },
     shortcuts: LAYOUT_SHORTCUTS,
     onShortcut: () => false,

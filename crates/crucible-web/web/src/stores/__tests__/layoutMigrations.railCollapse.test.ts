@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { serializeLayout, deserializeLayout as readLayout } from '@/windowing/model/serializer';
 import type { StoredLayout } from '@/windowing/model/serializer';
+import { iconForContentType } from '@/lib/tab-icons';
 import { appLayoutHooks } from '../layoutMigrations';
 import type { LayoutNode, PaneNode, TabContentType } from '@/types/windowTypes';
 
 /** A stored layout at any version, as these tests write one. */
 type SerializedLayout = StoredLayout<TabContentType> & Record<string, any>;
 
-/** The core reader with the app history and prune. */
+/** The core reader with the app history, prune and icons. */
 const deserializeLayout = (json: unknown) =>
-  readLayout(json as StoredLayout<TabContentType>, appLayoutHooks);
+  readLayout(json as StoredLayout<TabContentType>, appLayoutHooks, iconForContentType);
 
 // v7 → v8 adds `PaneNode.collapsed`: a rail pane collapses to its tab strip on
 // its own. The migration gives a stored layout the same terminal default a

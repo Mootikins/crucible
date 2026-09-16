@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { serializeLayout, deserializeLayout as readLayout } from '@/windowing/model/serializer';
+import { iconForContentType } from '@/lib/tab-icons';
 import { appLayoutHooks } from '../layoutMigrations';
 import type {
   TabContentType,
@@ -116,9 +117,9 @@ const arbWindowState = fc
       .map((state) => state as WindowState);
   });
 
-/** The core reader with the app history and prune. */
+/** The core reader with the app history, prune and icons. */
 const deserializeLayout = (json: Parameters<typeof readLayout<TabContentType>>[0]) =>
-  readLayout(json, appLayoutHooks);
+  readLayout(json, appLayoutHooks, iconForContentType);
 
 describe('layout round-trip property tests', () => {
   it('round-trip: deserializeLayout(serializeLayout(state)) deep-equals state', () => {

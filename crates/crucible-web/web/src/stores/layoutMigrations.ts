@@ -14,7 +14,6 @@ import type {
   SerializedTabGroup as CoreSerializedTabGroup,
 } from '@/windowing/model/serializer';
 import { isLegacyV9 } from '@/windowing/model/serializer';
-import { iconForContentType } from '@/lib/tab-icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 
 /**
@@ -677,5 +676,4 @@ function pruneRestored(restored: RestoredLayout<TabContentType>): void {
 export const appLayoutHooks: LayoutCodecHooks<TabContentType> = {
   upgradeLegacy,
   prune: pruneRestored,
-  iconFor: iconForContentType,
 };

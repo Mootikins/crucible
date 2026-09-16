@@ -92,9 +92,15 @@ export interface LayoutCodecHooks<C extends string = string> {
   upgradeLegacy(json: unknown): SerializedLayoutV9<C>;
   /** Drop or move tabs the app no longer supports. Mutates the restored state. */
   prune(state: RestoredLayout<C>): void;
-  /** The icon of a restored tab. An icon is a component, so no layout stores it. */
-  iconFor(contentType: C): Component<{ class?: string }> | undefined;
 }
+
+/**
+ * The icon of a restored tab. An icon is a component, so no layout stores it.
+ * The store passes `WindowPolicy.iconFor`, the one icon source of the core.
+ */
+export type TabIconFor<C extends string = string> = (
+  contentType: C,
+) => Component<{ class?: string }> | undefined;
 
 const EDGE_POSITIONS: readonly EdgePanelPosition[] = ['left', 'right'];
 
@@ -181,12 +187,13 @@ function unsupported(version: unknown): Error {
  * Read a stored layout into window state.
  *
  * The order is fixed: the app history up to v9, the step to v10, the rebuild
- * of absent rails, the app prune, and last the icons. The prune sees every
+ * of absent rails, the app prune, and last the icons from `iconFor`. The prune sees every
  * rail, and the icons go only on the tabs that the prune keeps.
  */
 export function deserializeLayout<C extends string>(
   json: StoredLayout<C>,
   hooks: LayoutCodecHooks<C>,
+  iconFor: TabIconFor<C>,
 ): RestoredLayout<C> {
   if (!isSupported(json.version)) throw unsupported(json.version);
 
@@ -257,7 +264,7 @@ export function deserializeLayout<C extends string>(
   hooks.prune(restored);
 
   for (const group of Object.values(restored.tabGroups)) {
-    group.tabs = group.tabs.map((t) => ({ ...t, icon: hooks.iconFor(t.contentType) }));
+    group.tabs = group.tabs.map((t) => ({ ...t, icon: iconFor(t.contentType) }));
   }
   return restored;
 }

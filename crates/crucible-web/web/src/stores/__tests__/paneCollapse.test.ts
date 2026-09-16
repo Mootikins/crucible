@@ -7,6 +7,7 @@ import {
 } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
 import { serializeLayout, deserializeLayout } from '@/windowing/model/serializer';
+import { iconForContentType } from '@/lib/tab-icons';
 import { appLayoutHooks } from '@/stores/layoutMigrations';
 
 const resetStore = () => {
@@ -146,7 +147,7 @@ describe('rail pane collapse survives layout transforms', () => {
     windowActions.setPaneCollapsed('right-term-pane', false);
     windowActions.setPaneCollapsed('right-pane', true);
 
-    const restored = deserializeLayout(serializeLayout(windowStore), appLayoutHooks);
+    const restored = deserializeLayout(serializeLayout(windowStore), appLayoutHooks, iconForContentType);
     const panes = collectPanes(restored.edgePanels.right.layout);
     expect(panes[0].collapsed).toBe(true);
     expect(panes[1].collapsed).toBe(false);
