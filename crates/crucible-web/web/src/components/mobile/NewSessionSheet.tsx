@@ -11,13 +11,13 @@ import {
   getTargetProviders,
   listAgents,
   listAllModels,
-  listProjects,
   type ProviderTarget,
   type TargetProvider,
 } from '@/lib/api';
-import type { AgentProfileEntry, Project } from '@/lib/types';
+import type { AgentProfileEntry } from '@/lib/types';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
+import { useProjects } from '@/lib/query/projects';
 import { ChevronRight } from '@/lib/icons';
 
 type Step = 'agent' | 'context' | 'prompt';
@@ -54,7 +54,8 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [models, setModels] = createSignal<string[]>([]);
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
-  const [projects, setProjects] = createSignal<Project[]>([]);
+  const projectsQuery = useProjects();
+  const projects = () => projectsQuery.data ?? [];
   const configQuery = useConfig();
   const defaultKilnPath = () => configQuery.data?.kiln_path ?? '';
   const [wsProviders, setWsProviders] = createSignal<TargetProvider[]>([]);
@@ -72,7 +73,6 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   onMount(() => {
     void listAgents().then(setAgents).catch(() => {});
     void listAllModels().then(setModels).catch(() => {});
-    void listProjects().then(setProjects).catch(() => {});
     void getTargetProviders('workspace').then(setWsProviders).catch(() => {});
     void getTargetProviders('runtime').then(setRtProviders).catch(() => {});
   });

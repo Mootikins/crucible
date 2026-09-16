@@ -6,9 +6,7 @@ import {
   isGitRepoUrl,
   listAgents,
   listAllModels,
-  listProjects,
   listProviders,
-  scmClone,
   type ProviderTarget,
   type TargetProvider,
 } from '@/lib/api';
@@ -24,6 +22,7 @@ import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from
 import { swrLocal } from '@/lib/local-cache';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
+import { useProjects, useScmClone } from '@/lib/query/projects';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -79,7 +78,11 @@ export const CenterComposer: Component<{
   // panel, the search panel and the scope chips all read the same roster.
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
-  const [projects, setProjects] = createSignal<Project[]>([]);
+  // The same shared roster the project rail and the files pane read: a project
+  // registered anywhere is in this chip's menu without a refetch of its own.
+  const projectsQuery = useProjects();
+  const projects = () => projectsQuery.data ?? [];
+  const clone = useScmClone();
   // `config.kiln_path` — a PATH, and the only path left on this axis. It is
   // useful solely as a lookup key into the kiln list to recover the default's
   // registry NAME; nothing sends it anywhere.
@@ -138,7 +141,6 @@ export const CenterComposer: Component<{
     swrLocal('models', () => listAllModels(), (mo) =>
       setModels(mo.filter((m) => !m.startsWith('[error]'))),
     );
-    swrLocal('projects', () => listProjects(), setProjects);
     swrLocal('providers', () => listProviders(), (providers) => {
       const first = providers.find((p) => p.available);
       if (first?.default_model) setDefaultModel(first.default_model);
@@ -416,8 +418,9 @@ export const CenterComposer: Component<{
     setCloning(true);
     void (async () => {
       try {
-        const res = await scmClone(url);
-        setProjects(await listProjects().catch(() => projects()));
+        // The mutation refreshes the roster before it settles, so the new
+        // checkout is a row in the chip's menu by the time it is selected.
+        const res = await clone.mutateAsync(url);
         setWorkspace(res.path);
         notificationActions.addNotification('info', `Cloned ${url} → ${res.path}`);
       } catch (err) {

@@ -6,12 +6,10 @@ import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
   isGitRepoUrl,
   listWorkspaceTargets,
-  registerProject,
   resolveWorkspaceTarget,
-  scmClone,
   type ProviderTarget,
 } from '@/lib/api';
-import { useProjectSafe } from '@/contexts/ProjectContext';
+import { useRegisterProject, useScmClone } from '@/lib/query/projects';
 
 function basename(p: string): string {
   const parts = p.replace(/\/$/, '').split('/');
@@ -59,7 +57,8 @@ export const RootDropdown: Component<{
   /** Surface warnings/errors (FilesPanel banner). */
   onNotice?: (msg: string | null) => void;
 }> = (props) => {
-  const { refreshProjects } = useProjectSafe();
+  const register = useRegisterProject();
+  const clone = useScmClone();
   const ownKeys = () => new Set(props.own.map(rootKey));
   // Own roots override their roster twins, so one key resolves to one row.
   const index = () => {
@@ -120,20 +119,20 @@ export const RootDropdown: Component<{
   const selectWorktreeRoot = async (path: string) => {
     // The worktree may exist on disk without being a registered project —
     // register (idempotent) so the roster lists it, then select.
+    // The mutation refreshes the roster before it settles, so the row exists
+    // by the time the tree is re-rooted on it.
     try {
-      await registerProject(path);
+      await register.mutateAsync(path);
     } catch {
       /* already registered */
     }
-    await refreshProjects();
     props.onSelect({ kind: 'project', path, name: basename(path) });
   };
 
   const cloneRepo = async (url: string) => {
     try {
-      const res = await scmClone(url);
+      const res = await clone.mutateAsync(url);
       props.onNotice?.(null);
-      await refreshProjects();
       props.onSelect({ kind: 'project', path: res.path, name: basename(res.path) });
     } catch (e) {
       props.onNotice?.(e instanceof Error ? e.message : 'Failed to clone repository');

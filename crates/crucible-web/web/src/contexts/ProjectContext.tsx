@@ -2,19 +2,18 @@ import {
   createContext,
   useContext,
   ParentComponent,
+  createEffect,
   createSignal,
-  onMount,
 } from 'solid-js';
-import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Project } from '@/lib/types';
 import type { ProjectContextValue } from '@/lib/types/context';
 import { projectFromUrl } from '@/lib/project-url';
 import {
-  registerProject as apiRegisterProject,
-  unregisterProject as apiUnregisterProject,
-  listProjects as apiListProjects,
-  getProject as apiGetProject,
-} from '@/lib/api';
+  fetchProjectOnce,
+  useProjects,
+  useRegisterProject,
+  useUnregisterProject,
+} from '@/lib/query/projects';
 
 
 const ProjectContext = createContext<ProjectContextValue>();
@@ -42,109 +41,79 @@ function rememberPin(path: string): void {
   }
 }
 
-function cachedProjects(): Project[] {
-  try {
-    const raw = localStorage.getItem('crucible:cache:projects');
-    return raw ? (JSON.parse(raw) as Project[]) : [];
-  } catch {
-    return [];
-  }
-}
-
+/**
+ * Which project the shell is pointed at.
+ *
+ * The roster itself is NOT held here any more: `useProjects()` owns it, so the
+ * composer, the files pane and this context read one list from one fetch, and
+ * a project registered anywhere appears everywhere. What stays is the part
+ * that is this browser's alone — the selection and the pin that survives a
+ * reload. Display state belongs to the client; the roster belongs to the
+ * daemon.
+ */
 export const ProjectProvider: ParentComponent = (props) => {
   const [currentProject, setCurrentProject] = createSignal<Project | null>(null);
-  // Seed with the last-known roster so the shell paints instantly on reload.
-  const [projects, setProjects] = createStore<Project[]>(cachedProjects());
-  const [isLoading, setIsLoading] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
+  const projectsQuery = useProjects();
+  const projects = () => projectsQuery.data ?? [];
+  const register = useRegisterProject();
+  const unregister = useUnregisterProject();
+  // The failure of one action, which is not the failure of the roster read.
+  const [actionError, setActionError] = createSignal<string | null>(null);
+
+  const error = () =>
+    actionError() ?? (projectsQuery.error ? projectsQuery.error.message : null);
+  const isLoading = () =>
+    projectsQuery.isFetching || register.isPending || unregister.isPending;
 
   const refreshProjects = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const list = await apiListProjects();
-      setProjects(reconcile(list));
-      try {
-        localStorage.setItem('crucible:cache:projects', JSON.stringify(list));
-      } catch {
-        /* private mode */
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load projects';
-      setError(msg);
-      console.error('Failed to refresh projects:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    await projectsQuery.refetch();
   };
 
   const registerProject = async (path: string): Promise<Project> => {
-    setIsLoading(true);
-    setError(null);
-
+    setActionError(null);
     try {
-      const project = await apiRegisterProject(path);
-      setProjects(produce((list) => list.unshift(project)));
+      const project = await register.mutateAsync(path);
       setCurrentProject(project);
       return project;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to register project';
-      setError(msg);
+      setActionError(err instanceof Error ? err.message : 'Failed to register project');
       throw err;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const unregisterProject = async (path: string) => {
-    setIsLoading(true);
-    setError(null);
-
+    setActionError(null);
     try {
-      await apiUnregisterProject(path);
-      setProjects(produce((list) => {
-        const idx = list.findIndex((p) => p.path === path);
-        if (idx !== -1) list.splice(idx, 1);
-      }));
-
-      if (currentProject()?.path === path) {
-        setCurrentProject(null);
-      }
+      await unregister.mutateAsync(path);
+      if (currentProject()?.path === path) setCurrentProject(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to unregister project';
-      setError(msg);
+      setActionError(msg);
       console.error('Failed to unregister project:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const selectProject = async (path: string) => {
-    const existing = projects.find((p) => p.path === path);
+    const existing = projects().find((p) => p.path === path);
     if (existing) {
       setCurrentProject(existing);
       rememberPin(path);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-
+    setActionError(null);
     try {
-      const project = await apiGetProject(path);
+      const project = await fetchProjectOnce(path);
       if (project) {
         setCurrentProject(project);
         rememberPin(path);
       } else {
-        setError(`Project not found: ${path}`);
+        setActionError(`Project not found: ${path}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load project';
-      setError(msg);
+      setActionError(msg);
       console.error('Failed to select project:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -152,9 +121,18 @@ export const ProjectProvider: ParentComponent = (props) => {
     setCurrentProject(null);
   };
 
-  onMount(async () => {
-    await refreshProjects();
-    if (currentProject() || projects.length === 0) return;
+  // Cold start: pin one project, once, and only against a roster the daemon
+  // answered. `dataUpdatedAt` is 0 while the seeded last-known roster is on
+  // screen, so a pin cannot be spent on a project that was unregistered since
+  // the previous run. A refused read ends the wait too: an offline reload
+  // pins from the last-known roster rather than pinning nothing at all.
+  let pinned = false;
+  createEffect(() => {
+    if (pinned || currentProject()) return;
+    if (projectsQuery.dataUpdatedAt === 0 && !projectsQuery.isError) return;
+    const list = projects();
+    if (list.length === 0) return;
+    pinned = true;
     // A window opened from "Open <project> in a new window" is ADDRESSED to
     // that project. Without this it ran the same cold-start rule as the first
     // window and pinned projects[0], so every row but the first opened the
@@ -165,14 +143,14 @@ export const ProjectProvider: ParentComponent = (props) => {
     // F5 silently repointed the file tree and the switcher's Recent list.
     const remembered = projectFromUrl() ?? cachedPinPath();
     const match = remembered
-      ? projects.find((p) => trimSlash(p.path) === trimSlash(remembered))
+      ? list.find((p) => trimSlash(p.path) === trimSlash(remembered))
       : undefined;
-    setCurrentProject(match ?? projects[0]);
+    setCurrentProject(match ?? list[0]);
   });
 
   const value: ProjectContextValue = {
     currentProject,
-    projects: () => projects,
+    projects,
     isLoading,
     error,
     registerProject,
