@@ -383,25 +383,61 @@ describe('AssistantTurn — data-kiln', () => {
   });
 });
 
-describe('AssistantTurn — the right-hand gutter', () => {
-  it('holds the actions in the same column every turn kind uses', () => {
-    messagesAccessor = () => [textMsg('a1', 'done', { usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } })];
-    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
-    const gutter = screen.getByTestId('turn-gutter');
-    expect(gutter).toContainElement(screen.getByTitle('Copy response'));
-    expect(gutter).toContainElement(screen.getByTitle('Regenerate response'));
-    expect(gutter.className).toContain('w-[var(--cru-turn-gutter)]');
-    expect(gutter.className).toContain('shrink-0');
+// ── The meta row, after T3 Code's assistant turn ─────────────────────
+//
+// T3 gives an assistant turn ONE meta row at the bottom of the text, aligned
+// with the prose rather than pushed to an edge: the copy action first, the
+// measurements after it. The row fades in on hover, except on the turn that
+// ends the transcript, where T3 keeps it on. We copy that, and add our own
+// two measurements (elapsed, tokens) to the row T3 gives a timestamp.
+
+describe('AssistantTurn — the meta row', () => {
+  it('sits at the bottom of the turn, after the text, in the reading column', () => {
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    const { container } = render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const meta = screen.getByTestId('turn-meta');
+    const text = container.querySelector('[data-testid="message-assistant"]') as HTMLElement;
+    expect(text.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // No fixed column beside the turn any more.
+    expect(screen.queryByTestId('turn-gutter')).toBeNull();
+    expect(meta.className).not.toContain('cru-turn-gutter');
+    expect(meta.className).not.toContain('absolute');
   });
 
-  it('is revealed on hover or focus, and is always on where there is no hover', () => {
+  it('renders every action through IconButton, none hand-drawn', () => {
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
+    const meta = screen.getByTestId('turn-meta');
+    for (const title of ['Copy response', 'Regenerate response']) {
+      const button = screen.getByTitle(title);
+      expect(meta).toContainElement(button);
+      expect(button.className).toContain('w-6');
+      expect(button.className).toContain('h-6');
+      expect(button.className).toContain('hover:bg-hover-wash');
+      expect(button.className).not.toMatch(/(^|\s)p-1(\s|$)/);
+    }
+  });
+
+  it('fades in on hover for a turn the reader has scrolled past', () => {
     messagesAccessor = () => [textMsg('a1', 'done')];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    const gutter = screen.getByTestId('turn-gutter');
-    expect(gutter.className).toContain('opacity-0');
-    expect(gutter.className).toContain('group-hover:opacity-100');
-    expect(gutter.className).toContain('group-focus-within:opacity-100');
-    expect(gutter.className).toContain('[@media(hover:none)]:opacity-100');
+    const meta = screen.getByTestId('turn-meta');
+    expect(meta.className).toContain('opacity-0');
+    expect(meta.className).toContain('transition-opacity');
+    expect(meta.className).toContain('group-hover:opacity-100');
+    expect(meta.className).toContain('group-focus-within:opacity-100');
+    expect(meta.className).toContain('[@media(hover:none)]:opacity-100');
+    // Hidden means untouchable as well: no click lands on an invisible button.
+    expect(meta.className).toContain('pointer-events-none');
+    expect(meta.className).toContain('group-hover:pointer-events-auto');
+  });
+
+  it('stays on for the turn that ends the transcript, the way T3 keeps it', () => {
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
+    const meta = screen.getByTestId('turn-meta');
+    expect(meta.className).toContain('opacity-100');
+    expect(meta.className).not.toContain('opacity-0');
   });
 
   it('reserves NO vertical room for a footer', () => {
@@ -416,19 +452,36 @@ describe('AssistantTurn — the right-hand gutter', () => {
     expect(turn.className).not.toMatch(/-bottom-5/);
   });
 
-  it('shows how long the turn took, LEFT of the buttons', async () => {
+  it('puts the actions first, then the elapsed time, then the token usage', async () => {
     const start = Date.now() - 60_000;
     messagesAccessor = () => [
-      textMsg('a1', 'done', { timestamp: start, completedAt: start + 4_200 }),
+      textMsg('a1', 'done', {
+        timestamp: start,
+        completedAt: start + 4_200,
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      }),
     ];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    const elapsed = screen.getByText('4.2 s');
-    const gutter = screen.getByTestId('turn-gutter');
-    expect(gutter).toContainElement(elapsed);
-    // DOM order decides the reading order: the measurement, then the actions.
+    const meta = screen.getByTestId('turn-meta');
     const copy = screen.getByTitle('Copy response');
-    expect(elapsed.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const elapsed = screen.getByText('4.2 s');
+    const tokens = screen.getByText(/2 tokens/);
+    expect(meta).toContainElement(elapsed);
+    // ONE meta row: the usage is no longer a second strip of its own.
+    expect(meta).toContainElement(tokens);
+    // DOM order decides the reading order: what you can do, then what it cost.
+    expect(copy.compareDocumentPosition(elapsed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(elapsed.compareDocumentPosition(tokens) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const { formatAbsoluteTime } = await import('@/lib/format-time');
     expect(screen.queryByText(formatAbsoluteTime(start))).toBeNull();
+  });
+
+  it('announces the author as a heading for a screen reader only', () => {
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    const { container } = render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const heading = container.querySelector('h3') as HTMLElement;
+    expect(heading).not.toBeNull();
+    expect(heading.textContent).toBe('Assistant');
+    expect(heading.className).toContain('sr-only');
   });
 });

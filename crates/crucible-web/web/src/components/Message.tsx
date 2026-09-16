@@ -7,7 +7,8 @@ import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { Component, Show, createSignal } from 'solid-js';
 import { Copy, Check, Pencil } from 'lucide-solid';
 import { PrecognitionBadge } from './PrecognitionBadge';
-import { TurnGutter } from './TurnGutter';
+import { TurnMeta, AuthorHeading } from './TurnMeta';
+import { IconButton } from './ui/IconButton';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { sessionDefaultKiln } from '@/lib/session-scope';
@@ -74,13 +75,16 @@ export const Message: Component<MessageProps> = (props) => {
 
   return (
     <div
-      // The row is content + gutter. `items-start` puts the gutter at the top
-      // of the turn; the gap between rows belongs to the list, not here.
-      class="group relative flex items-start gap-1 justify-start"
+      // T3's user turn: a COLUMN of bubble then meta row, with one 4px step
+      // between them. `items-start` keeps both boxes on the transcript's
+      // leading edge — T3 stacks them on the trailing edge because its prompt
+      // sits on the right of the pane; ours sits on the left, so the two rows
+      // line up down the same edge the assistant's text uses. The gap between
+      // transcript rows belongs to the list, not here.
+      class="group flex flex-col items-start gap-1"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
-      <div class="min-w-0 flex-1">
       <div
         class={
           isUser()
@@ -91,6 +95,7 @@ export const Message: Component<MessageProps> = (props) => {
             : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
         }
       >
+        <AuthorHeading>{isUser() ? 'You' : 'Notice'}</AuthorHeading>
         <Show when={!isEditing()} fallback={
           <div class="flex flex-col gap-2">
             <textarea
@@ -138,30 +143,8 @@ export const Message: Component<MessageProps> = (props) => {
             // while clicking it did nothing at all.
             data-kiln={sessionKiln() || undefined}
             onClick={handleMarkdownClick}
-          >
-            <span innerHTML={renderPlainWithWikilinks(props.message.content)} />
-
-            {/* The time the message was sent, INLINE at the end of the last
-                line — the trailer a chat app puts there, not a caption on a
-                row of its own.
-
-                It is always in the document and only its opacity answers the
-                hover, which is the whole no-reflow rule: a stamp that ENTERS
-                the flow on hover re-wraps the last line under the pointer,
-                and a stamp taken OUT of the flow needs reserved padding to
-                sit in, which is the dead space this pass removes. Reserving
-                the room inline costs the tail of one line and no height at
-                all. The date appears once the message is not from today. */}
-            <Show when={isUser() && props.message.timestamp}>
-              <span
-                class="ml-2 align-baseline text-floor leading-none text-muted-dark opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-                data-testid="message-time"
-                title={new Date(props.message.timestamp).toLocaleString()}
-              >
-                {formatMessageTime(props.message.timestamp)}
-              </span>
-            </Show>
-          </p>
+            innerHTML={renderPlainWithWikilinks(props.message.content)}
+          />
         </Show>
         <Show when={isUser() && hasPrecognition()}>
           <PrecognitionBadge
@@ -170,34 +153,52 @@ export const Message: Component<MessageProps> = (props) => {
           />
         </Show>
       </div>
-      </div>
 
-      {/* The gutter is drawn for a system row too, empty: it is what holds
-          every row's reading edge on the same line. */}
-      <TurnGutter>
-        <Show when={!isSystem()}>
-          <button
-            type="button"
-            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
-            title={copied() ? 'Copied!' : 'Copy message'}
-            onClick={handleCopy}
-          >
-            <Show when={copied()} fallback={<Copy size={14} />}>
-              <Check size={14} class="text-ok" />
-            </Show>
-          </button>
-          <Show when={isUser()}>
-            <button
-              type="button"
-              class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
-              title="Edit message"
-              onClick={handleEditStart}
+      {/* The meta row, under the bubble. A system notice is a record rather
+          than a turn: it offers nothing to do and carries no stamp, so it
+          draws no row at all rather than an empty one. */}
+      <Show when={!isSystem()}>
+        <TurnMeta>
+          {/* T3's order, read outward from the text: what you can DO with the
+              turn first, then what the turn IS. The buttons sit closer
+              together (2px) than the measurement beside them (8px), so the
+              pair reads as one control and the stamp as a caption. */}
+          <div class="flex items-center gap-0.5">
+            <IconButton
+              size="sm"
+              title={copied() ? 'Copied!' : 'Copy message'}
+              aria-label="Copy message"
+              onClick={handleCopy}
             >
-              <Pencil size={14} />
-            </button>
+              <Show when={copied()} fallback={<Copy class="w-4 h-4" />}>
+                <Check class="w-4 h-4 text-ok" />
+              </Show>
+            </IconButton>
+            <Show when={isUser()}>
+              <IconButton
+                size="sm"
+                title="Edit message"
+                aria-label="Edit message"
+                onClick={handleEditStart}
+              >
+                <Pencil class="w-4 h-4" />
+              </IconButton>
+            </Show>
+          </div>
+          {/* The time the prompt was sent. It lives OUTSIDE the bubble, so the
+              bubble's box measures the same whether or not a stamp exists and
+              whether or not the pointer is on it. The date appears once the
+              message is not from today. */}
+          <Show when={isUser() && props.message.timestamp}>
+            <span
+              data-testid="message-time"
+              title={new Date(props.message.timestamp).toLocaleString()}
+            >
+              {formatMessageTime(props.message.timestamp)}
+            </span>
           </Show>
-        </Show>
-      </TurnGutter>
+        </TurnMeta>
+      </Show>
     </div>
   );
 };

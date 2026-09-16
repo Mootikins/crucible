@@ -90,7 +90,8 @@ describe('Message — role rendering', () => {
     ));
     const outer = container.querySelector('[data-testid="message-system"]') as HTMLElement;
     expect(outer).toBeInTheDocument();
-    expect(outer.className).toContain('justify-start');
+    // The row is a COLUMN now, so the leading edge comes from the cross axis.
+    expect(outer.className).toContain('items-start');
     expect(screen.getByText('sys note')).toBeInTheDocument();
     // System messages don't render copy/edit buttons
     expect(screen.queryByTitle('Copy message')).not.toBeInTheDocument();
@@ -254,48 +255,127 @@ describe('formatRelativeTime', () => {
   });
 });
 
-// ── The stamp: hover-only, and the box never moves ───────────────────
+// ── The meta row, after T3 Code's user turn ──────────────────────────
 //
-// The time is INLINE, at the end of the last line of the prompt, and it is
-// always in the document. Only its opacity answers the hover. That is the
-// whole no-reflow rule: a stamp that enters the flow on hover re-wraps the
-// last line, and a stamp that leaves the flow needs reserved padding, which
-// is the dead space this pass removes.
+// T3 puts a user message's actions on a row of their OWN, under the bubble,
+// aligned with the bubble's edge and separated from it by one 4px gap. The
+// row is always in the document and only its opacity answers the hover, so
+// the bubble above it never moves. We copy that arrangement; the one change
+// is the edge it aligns to, because our prompt sits on the LEFT of the
+// transcript rather than the right.
 
-describe('Message — the sent time', () => {
-  it('is hidden at rest and revealed on hover or keyboard focus', () => {
+describe('Message — the meta row under the prompt', () => {
+  it('stacks under the bubble in DOM order, and draws no fixed side column', () => {
+    const { container } = render(() => <Message message={makeMessage({ role: 'user' })} />);
+    const row = container.querySelector('[data-testid="message-user"]') as HTMLElement;
+    const bubble = container.querySelector('.user-quote') as HTMLElement;
+    const meta = screen.getByTestId('turn-meta');
+    // A column, not content-beside-gutter.
+    expect(row.className).toContain('flex-col');
+    expect(row.className).toContain('items-start');
+    expect(bubble.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The right-hand column is gone, in the markup and in the tokens.
+    expect(screen.queryByTestId('turn-gutter')).toBeNull();
+    expect(meta.className).not.toContain('cru-turn-gutter');
+    expect(meta.className).not.toContain('absolute');
+    const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
+    expect(css).not.toContain('--cru-turn-gutter');
+  });
+
+  it('renders every action through IconButton, none hand-drawn', () => {
+    render(() => <Message message={makeMessage({ role: 'user' })} />);
+    const meta = screen.getByTestId('turn-meta');
+    for (const title of ['Copy message', 'Edit message']) {
+      const button = screen.getByTitle(title);
+      expect(meta).toContainElement(button);
+      // IconButton's dense box — a 24px square with a shared hover wash, not
+      // a bare `rounded p-1` re-drawn per call site.
+      expect(button.className).toContain('w-6');
+      expect(button.className).toContain('h-6');
+      expect(button.className).toContain('hover:bg-hover-wash');
+      expect(button.className).not.toMatch(/(^|\s)p-1(\s|$)/);
+    }
+  });
+
+  it('orders the actions first and the sent time after them, as T3 does', () => {
     render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
+    const meta = screen.getByTestId('turn-meta');
     const time = screen.getByTestId('message-time');
-    expect(time.className).toContain('opacity-0');
-    expect(time.className).toContain('group-hover:opacity-100');
-    expect(time.className).toContain('group-focus-within:opacity-100');
-    // A phone has no hover, so the stamp cannot be gated behind one there.
-    expect(time.className).toContain('[@media(hover:none)]:opacity-100');
+    expect(meta).toContainElement(time);
+    const copy = screen.getByTitle('Copy message');
+    expect(copy.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('is hidden at rest and fades in on hover or keyboard focus', () => {
+    render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
+    const meta = screen.getByTestId('turn-meta');
+    expect(meta.className).toContain('opacity-0');
+    expect(meta.className).toContain('transition-opacity');
+    expect(meta.className).toContain('group-hover:opacity-100');
+    expect(meta.className).toContain('group-focus-within:opacity-100');
+    // A phone has no hover, so the row cannot be gated behind one there.
+    expect(meta.className).toContain('[@media(hover:none)]:opacity-100');
+  });
+
+  it('takes no click while it is hidden, and takes one again when it shows', () => {
+    // An invisible button that still hit-tests is a trap: a tap on a device
+    // that reports hover lands on Copy or Edit with nothing on screen.
+    render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
+    const meta = screen.getByTestId('turn-meta');
+    expect(meta.className).toContain('pointer-events-none');
+    expect(meta.className).toContain('group-hover:pointer-events-auto');
+    expect(meta.className).toContain('group-focus-within:pointer-events-auto');
+    expect(meta.className).toContain('[@media(hover:none)]:pointer-events-auto');
   });
 
   it('changes NOTHING but opacity between rest and hover', () => {
-    // The bubble's box must measure the same with and without the pointer on
-    // it. Any other state-gated utility — a margin, a display, a position —
-    // would move an edge.
+    // The row is always in the flow. Any other state-gated utility — a
+    // margin, a display, a position — would move an edge under the pointer.
+    // Pointer events move nothing, so the hit-test guard is allowed too.
     render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
-    const time = screen.getByTestId('message-time');
-    const stateGated = time.className
+    const meta = screen.getByTestId('turn-meta');
+    const stateGated = meta.className
       .split(/\s+/)
       .filter((c) => /^(group-hover:|group-focus-within:|\[@media\(hover:none\)\]:)/.test(c))
       // The media variant carries a colon of its own, so the UTILITY is
       // what follows the LAST one.
       .map((c) => c.slice(c.lastIndexOf(':') + 1));
     expect(stateGated.length).toBeGreaterThan(0);
-    expect(stateGated.filter((c) => !c.startsWith('opacity-'))).toEqual([]);
+    expect(
+      stateGated.filter((c) => !c.startsWith('opacity-') && !c.startsWith('pointer-events-')),
+    ).toEqual([]);
   });
 
-  it('sits inside the prompt paragraph, so the last line reflows around it', () => {
-    const { container } = render(() => (
+  it('leaves the bubble box identical with and without a sent time', () => {
+    const withTime = render(() => (
       <Message message={makeMessage({ role: 'user', content: 'a prompt', timestamp: Date.now() })} />
     ));
-    const paragraph = container.querySelector('.user-quote p');
-    expect(paragraph).not.toBeNull();
-    expect(paragraph!.querySelector('[data-testid="message-time"]')).not.toBeNull();
+    const stamped = withTime.container.querySelector('.user-quote') as HTMLElement;
+    // The stamp is OUTSIDE the bubble now, so the bubble cannot answer for it.
+    expect(stamped.querySelector('[data-testid="message-time"]')).toBeNull();
+    const stampedClass = stamped.className;
+    const stampedHtml = stamped.innerHTML;
+    withTime.unmount();
+
+    const without = render(() => (
+      <Message message={makeMessage({ role: 'user', content: 'a prompt', timestamp: 0 })} />
+    ));
+    const bare = without.container.querySelector('.user-quote') as HTMLElement;
+    expect(bare.className).toBe(stampedClass);
+    expect(bare.innerHTML).toBe(stampedHtml);
+  });
+
+  it('announces the author as a heading for a screen reader only', () => {
+    const { container } = render(() => <Message message={makeMessage({ role: 'user' })} />);
+    const heading = container.querySelector('h3') as HTMLElement;
+    expect(heading).not.toBeNull();
+    expect(heading.textContent).toBe('You');
+    expect(heading.className).toContain('sr-only');
+  });
+
+  it('draws no meta row on a system notice', () => {
+    render(() => <Message message={makeMessage({ role: 'system', content: 'sys' })} />);
+    expect(screen.queryByTestId('turn-meta')).toBeNull();
   });
 });
 
@@ -317,28 +397,16 @@ describe('Message — the prompt sizes to its text', () => {
   });
 });
 
-// ── The gutter ───────────────────────────────────────────
+// ── The row's own rhythm ──────────────────────────────────
 
-describe('Message — the right-hand gutter', () => {
-  it('holds the actions in a column beside the prompt, never under it', () => {
+describe('Message — the row spends no vertical space of its own', () => {
+  it('reserves no footer band and adds no margin', () => {
     const { container } = render(() => <Message message={makeMessage({ role: 'user' })} />);
-    const gutter = screen.getByTestId('turn-gutter');
-    expect(gutter).toContainElement(screen.getByTitle('Copy message'));
-    expect(gutter).toContainElement(screen.getByTitle('Edit message'));
-    // A fixed column out of the reading measure, not a strip hung below it.
-    expect(gutter.className).toContain('w-[var(--cru-turn-gutter)]');
-    expect(gutter.className).toContain('shrink-0');
-    expect(gutter.className).not.toContain('absolute');
-    // The turn reserves no vertical room for a footer any more.
     const row = container.querySelector('[data-testid="message-user"]') as HTMLElement;
     expect(row.className).not.toMatch(/\bpb-5\b/);
     expect(row.className).not.toMatch(/\bmb-\d/);
-  });
-
-  it('keeps the column on a system row so the reading edge does not move', () => {
-    render(() => <Message message={makeMessage({ role: 'system', content: 'sys' })} />);
-    const gutter = screen.getByTestId('turn-gutter');
-    expect(gutter.textContent).toBe('');
+    // The gap between the bubble and its meta row is T3's single 4px step.
+    expect(row.className).toContain('gap-1');
   });
 });
 

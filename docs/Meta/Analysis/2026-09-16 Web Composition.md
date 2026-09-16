@@ -32,7 +32,9 @@ and `text-error` with `hit()` appended. `hover:bg-hover-wash` appears on 139 lin
 files.
 
 **1.2 The hover-revealed column — 6 sites. Part: `Reveal`.** `TurnGutter.tsx:25` keeps the
-box, changes opacity, and drops pointer events while hidden. `SessionTree.tsx:106` repeats it
+box, changes opacity, and drops pointer events while hidden. (The transcript's right-hand
+gutter became the per-turn meta row `TurnMeta.tsx` later the same day; the opacity rule and the
+pointer-event rule moved with it, and the count of copies did not change.) `SessionTree.tsx:106` repeats it
 without the pointer-event rule. `InboxPanel.tsx:190`, `windowing/TabBar.tsx:148`,
 `canvas/CanvasCardChrome.tsx:209` and `canvas/CanvasNodeView.tsx:222` write four more copies.
 
@@ -141,7 +143,7 @@ panel writes its own.
 True structure: `ChangesPanel.tsx:452` and `ChangesPanel.tsx:619` list conflicts and comments,
 which are separate data; `canvas/CanvasPanel.tsx` holds a viewport, a marquee and three
 dialogs, so it is long rather than branchy. `AssistantTurn.tsx` lines 294, 298, 312 and 316
-are all gutter contents, and they became branches only because the gutter arrived as a wrapper
+are all meta-row contents, and they became branches only because the row arrived as a wrapper
 and not as a list. `CenterComposer.tsx` holds one branch in 732 lines, so its depth needs a
 layout lane, not this one.
 
@@ -190,7 +192,7 @@ New files under `crates/crucible-web/web/src/components/ui/`, by sites replaced.
 | `Chip` | 9 | `inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-floor` |
 | `Fold` | 9 | the `TreeSection.tsx:29` header plus `treeChevron` |
 | `PopoverPanel` | 9 | `menu-style.ts:22`: `hairline-strong` under `shadow-md` |
-| `Reveal` | 6 | the `TurnGutter.tsx:25` opacity and pointer-event rule |
+| `Reveal` | 6 | the `TurnMeta.tsx` opacity and pointer-event rule (formerly `TurnGutter.tsx:25`) |
 | `LoadLadder` | 6 | no classes; it renders `EmptyState` per state |
 | `Segmented` | 4 | `inline-flex rounded-md border border-hairline overflow-hidden` |
 | `StatusDot` (promote) | 4 | move `shell/SessionStatusDot.tsx` into `ui/` |
@@ -243,7 +245,7 @@ interface ToolKind { match: (name: string) => boolean;
 One session on `opus` each. File-disjoint except where stated.
 1. **IconButton.** Add `tone` and `hit`; migrate the 12 sites in 1.1. Tests:
    `ui/__tests__/IconButton.test.tsx` gains a tone case, and `style-consistency.test.ts` gains a
-   gate that fails on a raw `hover:bg-hover-wash` on a `<button>`. Check the transcript gutter,
+   gate that fails on a raw `hover:bg-hover-wash` on a `<button>`. Check the transcript meta row,
    the Changes accept/reject pair, the Backlinks refresh.
 2. **SectionHead.** Replace the four declarations and the ten copies in 1.3;
    delete `components/ui/SectionLabel.tsx` and the `treeSectionHeader` export. Tests: the

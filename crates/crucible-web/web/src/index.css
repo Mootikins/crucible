@@ -112,10 +112,10 @@
      * 736px while the editor beside it took the width. Was too small. */
     --cru-measure-chat: 64rem;
 
-    /* ── The transcript's rhythm and its gutter ─────────────────────
-     * Two LAYOUT names, which the rest of the contract deliberately avoids.
-     * They are here because each one is a rhythm the reader sees, and each
-     * one had three conflicting values in three components before it.
+    /* ── The transcript's rhythm ────────────────────────────────────
+     * One LAYOUT name, which the rest of the contract deliberately avoids.
+     * It is here because it is a rhythm the reader sees, and because it had
+     * three conflicting values in three components before it.
      *
      * `--cru-turn-gap` is the ONLY vertical space between two transcript
      * rows. It used to be `mb-5` under a prompt, `mb-6` under a turn, and a
@@ -123,12 +123,12 @@
      * distance between two rows depended on which kind came first, and the
      * biggest gap in the transcript was empty on purpose.
      *
-     * `--cru-turn-gutter` is the column at the RIGHT of every row that holds
-     * that row's actions, and the assistant's elapsed time beside them. It is
-     * taken OUT of the chat measure rather than added to it, so the reading
-     * column keeps the same left and right edges as the composer below. */
+     * There is no gutter token any more. A fixed right-hand column took
+     * 5.25rem out of the chat measure on every row, and it put each turn's
+     * actions as far from the words they act on as the pane allowed. The
+     * actions moved to a meta row at the bottom of the turn (`TurnMeta`),
+     * which costs the reading column nothing. */
     --cru-turn-gap: 1.25rem;
-    --cru-turn-gutter: 5.25rem;
     /* Three row heights (R6): desktop list rows, palette rows, touch rows.
      * The first two scale with the reader, because a row holds a line of text
      * and a taller line needs a taller row. */

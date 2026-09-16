@@ -1,10 +1,10 @@
 /**
  * One assistant TURN — everything the agent did for a single user prompt:
  * interleaved text segments and tool-call groups, rendered as one block with
- * ONE meta row (the token usage) for the whole response, the way other agent
- * UIs treat a response as a unit. Individual segments carry no chrome of
- * their own, and the turn's actions and elapsed time sit in the transcript's
- * right-hand column (`TurnGutter`) rather than under the turn.
+ * ONE meta row for the whole response, the way other agent UIs treat a
+ * response as a unit. Individual segments carry no chrome of their own, and
+ * the turn's actions and its two measurements share that one row at the
+ * bottom of the turn (`TurnMeta`), the arrangement T3 Code uses.
  *
  * Structure comes in as id lists (not message objects): each part resolves
  * its live message from the store by id, so streaming token appends update
@@ -16,7 +16,8 @@ import { kilnPathOf } from '@/stores/kilnStore';
 import { Copy, Check, RefreshCw } from 'lucide-solid';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
-import { TurnGutter } from './TurnGutter';
+import { TurnMeta, AuthorHeading } from './TurnMeta';
+import { IconButton } from './ui/IconButton';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, TokenUsage } from '@/lib/types';
@@ -225,10 +226,10 @@ export const AssistantTurn: Component<{
 
   return (
     <div
-      // Content + gutter, the same row a prompt draws. The turn reserves no
-      // room of its own any more: the footer that `pb-5` and `mb-6` held open
-      // moved into the column on the right, and the list owns the gap.
-      class="group relative flex items-start gap-1"
+      // Text then meta row, the same column a prompt draws. The turn reserves
+      // no room of its own: the footer that `pb-5` and `mb-6` held open is a
+      // sibling in the flow now, and the list owns the gap between turns.
+      class="group"
       data-testid="assistant-turn"
       data-role="assistant-turn"
       // Same kiln the click handler uses, declared for the document-level
@@ -236,7 +237,7 @@ export const AssistantTurn: Component<{
       // which is not necessarily the one the status bar points at.
       data-kiln={sessionKiln() || undefined}
     >
-      <div class="min-w-0 flex-1">
+      <AuthorHeading>Assistant</AuthorHeading>
       <div class="flex flex-col gap-1.5">
         <For each={props.parts}>
           {(part) => {
@@ -278,53 +279,53 @@ export const AssistantTurn: Component<{
         </Show>
       </div>
 
-      {/* ONE meta row for the whole response — never per segment. Tiny and
-          muted, out of the reading flow: the token usage, hairline-quiet.
-          The elapsed time is NOT here — it is a measurement of the turn, so
-          it reads beside the turn's actions in the gutter. */}
-      <Show when={!turnInFlight() && usage()}>
-        <div class="mt-2 flex items-center gap-1.5 text-floor leading-none text-muted-dark">
-          <span>{formatTokenUsage(usage()!)}</span>
+      {/* ONE meta row for the whole response — never per segment, and never
+          two strips. T3 puts the copy action and the timestamp on a single
+          row at the bottom of the turn, aligned with the prose; ours carries
+          the same shape with our two measurements in the timestamp's place.
+          The last turn in the transcript keeps its row on (T3's
+          `alwaysVisible`), because there the row is the answer's footer. */}
+      <Show when={!turnInFlight()}>
+        <div class="mt-1.5">
+          <TurnMeta always={props.isLast}>
+            {/* Read outward from the text: what you can DO with the turn,
+                then what the turn cost. */}
+            <div class="flex items-center gap-0.5">
+              <IconButton
+                size="sm"
+                title={copied() ? 'Copied!' : 'Copy response'}
+                aria-label="Copy response"
+                onClick={handleCopy}
+              >
+                <Show when={copied()} fallback={<Copy class="w-4 h-4" />}>
+                  <Check class="w-4 h-4 text-ok" />
+                </Show>
+              </IconButton>
+              <Show when={props.isLast}>
+                <IconButton
+                  size="sm"
+                  title="Regenerate response"
+                  aria-label="Regenerate response"
+                  onClick={handleRegenerate}
+                >
+                  <RefreshCw class="w-4 h-4" />
+                </IconButton>
+              </Show>
+            </div>
+            {/* How long the turn took, when the daemon told us when it ended.
+                A turn rebuilt from history has no end, so it keeps the clock
+                time; the tooltip carries the full date either way. */}
+            <Show when={firstMessage()?.timestamp}>
+              <span title={new Date(firstMessage()!.timestamp).toLocaleString()}>
+                {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
+              </span>
+            </Show>
+            <Show when={usage()}>
+              <span>{formatTokenUsage(usage()!)}</span>
+            </Show>
+          </TurnMeta>
         </div>
       </Show>
-      </div>
-
-      {/* The turn's column: how long it took, then what you can do with it. */}
-      <TurnGutter>
-        <Show when={!turnInFlight()}>
-          {/* How long the turn took, when the daemon told us when it ended.
-              A turn rebuilt from history has no end, so it keeps the clock
-              time; the tooltip carries the full date either way. */}
-          <Show when={firstMessage()?.timestamp}>
-            <span
-              class="mr-1 text-right text-floor leading-tight text-muted-dark"
-              title={new Date(firstMessage()!.timestamp).toLocaleString()}
-            >
-              {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
-            </span>
-          </Show>
-          <button
-            type="button"
-            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
-            title={copied() ? 'Copied!' : 'Copy response'}
-            onClick={handleCopy}
-          >
-            <Show when={copied()} fallback={<Copy size={14} />}>
-              <Check size={14} class="text-ok" />
-            </Show>
-          </button>
-          <Show when={props.isLast}>
-            <button
-              type="button"
-              class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
-              title="Regenerate response"
-              onClick={handleRegenerate}
-            >
-              <RefreshCw size={14} />
-            </button>
-          </Show>
-        </Show>
-      </TurnGutter>
     </div>
   );
 };
