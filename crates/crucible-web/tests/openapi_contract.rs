@@ -19,7 +19,7 @@
 //! To regenerate the committed document, run:
 //! `cargo test -p crucible-web --test openapi_contract -- --ignored write_openapi_json`
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crucible_web::fs_events::FsEvent;
@@ -821,6 +821,74 @@ fn documented_operations() -> BTreeSet<(String, String)> {
         }
     }
     described
+}
+
+/// Every `operationId` in the document, with the operations that carry it.
+///
+/// An operation with no id lands under an empty key, so the test below can
+/// name it. A skipped operation would make the gate read "no duplicates" for a
+/// document that describes nothing.
+fn operation_ids() -> BTreeMap<String, Vec<String>> {
+    let spec = spec_json();
+    let paths = spec["paths"]
+        .as_object()
+        .expect("the document holds a `paths` object")
+        .clone();
+
+    let mut carried: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, item) in paths {
+        let item = item.as_object().expect("a path item is an object");
+        for (method, operation) in item {
+            if !OPENAPI_METHODS.contains(&method.as_str()) {
+                continue;
+            }
+            let id = operation["operationId"].as_str().unwrap_or_default();
+            carried
+                .entry(id.to_owned())
+                .or_default()
+                .push(format!("{} {path}", method.to_uppercase()));
+        }
+    }
+    carried
+}
+
+/// One `operationId` names one operation.
+///
+/// utoipa takes the id from the handler's function name, and two modules may
+/// spell one name the same way. `openapi-typescript` keys its generated
+/// `operations` map on that id, so the second operation overwrites the first:
+/// one of the two routes silently stops being described, and the browser reads
+/// the other route's request and reply types for it. The A4 completeness gate
+/// cannot see this, because both routes do have an operation.
+///
+/// An operation with no id at all fails here too. Without that, a document
+/// whose operations carry no ids would pass as "no duplicates".
+#[test]
+fn no_two_operations_share_an_operation_id() {
+    let carried = operation_ids();
+
+    let anonymous = carried.get("").cloned().unwrap_or_default();
+    assert!(
+        anonymous.is_empty(),
+        "{} operations carry no `operationId`, so nothing downstream can name \
+         them:\n  - {}",
+        anonymous.len(),
+        anonymous.join("\n  - ")
+    );
+
+    let shared: Vec<String> = carried
+        .iter()
+        .filter(|(id, operations)| !id.is_empty() && operations.len() > 1)
+        .map(|(id, operations)| format!("{id}: {}", operations.join(", ")))
+        .collect();
+
+    assert!(
+        shared.is_empty(),
+        "{} `operationId`s name more than one operation. Rename one of the \
+         handlers, or give it `operation_id = \"…\"`:\n  - {}",
+        shared.len(),
+        shared.join("\n  - ")
+    );
 }
 
 /// The `(method, path)` pairs the router serves and the document does not,
