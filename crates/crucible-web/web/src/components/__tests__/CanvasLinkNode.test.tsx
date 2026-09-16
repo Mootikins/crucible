@@ -1,17 +1,41 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import type { CanvasResponse } from '@/lib/canvas-types';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { normaliseUrl } from '../canvas/LinkPrompt';
 
-const getCanvasMock = vi.fn();
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getCanvas: (...a: unknown[]) => getCanvasMock(...a),
-  saveCanvas: vi.fn(),
-  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
-}));
-
 import { CanvasPanel } from '../canvas/CanvasPanel';
+
+/** The board answers on the wire; the panel holds it in the query cache. */
+let env: TestQueryEnv;
+let board: () => unknown;
+
+function serve(answer: CanvasResponse): void {
+  board = () => answer;
+}
+
+beforeEach(() => {
+  board = () => withUrl('https://example.com');
+  env = createTestQueryEnv({
+    'GET /api/canvas': () => board(),
+    'PUT /api/canvas': () => ({}),
+  });
+});
+
+afterEach(() => env?.restore());
+
+/**
+ * The surface, once the board behind it has ARRIVED.
+ *
+ * An edit made before the document lands is replaced by it, so a paste or a
+ * drop onto a surface that is still empty proves nothing. The panel stamps the
+ * kiln on its wrapper when it adopts the document, which is the one marker
+ * that says the document is in.
+ */
+async function loadedSurface(container: HTMLElement): Promise<HTMLElement> {
+  await waitFor(() => expect(container.querySelector('[data-kiln]')).toBeTruthy());
+  return container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+}
 
 const withUrl = (url: string): CanvasResponse => ({
   kiln: '/kiln',
@@ -27,12 +51,10 @@ const withUrl = (url: string): CanvasResponse => ({
  * it — a URL is not a filesystem reference. But it lands in an `href`.
  */
 describe('canvas link nodes', () => {
-  beforeEach(() => getCanvasMock.mockReset());
-
   it.each(['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox'])(
     'refuses to navigate to %s',
     async (url) => {
-      getCanvasMock.mockResolvedValue(withUrl(url));
+      serve(withUrl(url));
       const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
 
       const link = (await waitFor(() => {
@@ -47,7 +69,7 @@ describe('canvas link nodes', () => {
   );
 
   it('still navigates ordinary web links', async () => {
-    getCanvasMock.mockResolvedValue(withUrl('https://jsoncanvas.org'));
+    serve(withUrl('https://jsoncanvas.org'));
     const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
 
     const link = (await waitFor(() => {
@@ -114,16 +136,10 @@ describe('authoring a web card', () => {
     canvas: { nodes: [], edges: [] },
   });
 
-  beforeEach(() => getCanvasMock.mockReset());
-
   const paste = async (text: string) => {
-    getCanvasMock.mockResolvedValue(empty());
+    serve(empty());
     const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
-    const surface = await waitFor(() => {
-      const el = container.querySelector('[data-testid="canvas-surface"]');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
+    const surface = await loadedSurface(container);
     fireEvent.paste(surface, {
       clipboardData: { getData: () => text },
     });
@@ -153,13 +169,9 @@ describe('authoring a web card', () => {
   });
 
   const drop = async (data: Record<string, string>) => {
-    getCanvasMock.mockResolvedValue(empty());
+    serve(empty());
     const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
-    const surface = await waitFor(() => {
-      const el = container.querySelector('[data-testid="canvas-surface"]');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
+    const surface = await loadedSurface(container);
     fireEvent.drop(surface, {
       clientX: 100,
       clientY: 100,
@@ -208,13 +220,9 @@ describe('authoring a web card', () => {
    * canvas edit still inside the save debounce with it.
    */
   it('cancels the browser drop even when the payload is unusable', async () => {
-    getCanvasMock.mockResolvedValue(empty());
+    serve(empty());
     const { container } = render(() => <CanvasPanel filePath="/kiln/B.canvas" />);
-    const surface = await waitFor(() => {
-      const el = container.querySelector('[data-testid="canvas-surface"]');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
+    const surface = await loadedSurface(container);
 
     const event = new Event('drop', { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'dataTransfer', {

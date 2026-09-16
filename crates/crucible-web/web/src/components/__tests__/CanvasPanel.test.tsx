@@ -1,18 +1,35 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import type { CanvasResponse } from '@/lib/canvas-types';
-
-const getCanvasMock = vi.fn();
-const saveCanvasMock = vi.fn();
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getCanvas: (...args: unknown[]) => getCanvasMock(...args),
-  saveCanvas: (...args: unknown[]) => saveCanvasMock(...args),
-  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
-}));
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 import { CanvasPanel } from '../canvas/CanvasPanel';
+
+/**
+ * The board answers on the WIRE, not through a mocked module.
+ *
+ * It is held in the query cache now, so a mocked module counts the calls that
+ * reach it rather than the calls that reach the daemon — and a panel reading a
+ * board another test left behind would still look right.
+ */
+let env: TestQueryEnv;
+/** What `GET /api/canvas` answers next: a body, or a `Response` to refuse. */
+let board: () => unknown;
+/** Every `PUT /api/canvas` body the daemon was sent, in order. */
+let saved: { path: string; content: string }[] = [];
+
+/** Points the daemon at one board, and forgets everything read before it. */
+function serve(answer: CanvasResponse | (() => unknown)): void {
+  board = typeof answer === 'function' ? answer : () => answer;
+}
+
+/** A refusal in the envelope `request()` unwraps. */
+function refuse(message: string): Response {
+  return new Response(JSON.stringify({ error: { code: 422, message } }), {
+    status: 422,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 const response = (over: Partial<CanvasResponse> = {}): CanvasResponse => ({
   kiln: '/kiln',
@@ -47,15 +64,31 @@ const canvasToClient = (container: HTMLElement, x: number, y: number) => {
   return { x: (x + tx) * zoom, y: (y + ty) * zoom };
 };
 
-describe('CanvasPanel', () => {
-  beforeEach(() => {
-    getCanvasMock.mockReset();
-    saveCanvasMock.mockReset();
-    saveCanvasMock.mockResolvedValue(undefined);
+/** The path of every `GET /api/canvas` the daemon answered, in order. */
+let reads: string[] = [];
+
+beforeEach(() => {
+  saved = [];
+  reads = [];
+  serve(response());
+  env = createTestQueryEnv({
+    'GET /api/canvas': (request: Request) => {
+      reads.push(new URL(request.url).searchParams.get('path') ?? '');
+      return board();
+    },
+    'PUT /api/canvas': async (request: Request) => {
+      saved.push((await request.json()) as { path: string; content: string });
+      return {};
+    },
   });
+});
+
+afterEach(() => env?.restore());
+
+describe('CanvasPanel', () => {
 
   it('renders every node type as DOM and edges as SVG', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     await waitFor(() => {
@@ -87,7 +120,7 @@ describe('CanvasPanel', () => {
   });
 
   it('draws edge labels', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     await waitFor(() => {
@@ -102,7 +135,7 @@ describe('CanvasPanel', () => {
    * it was never sent one.
    */
   it('quarantines a rejected node without revealing its path', async () => {
-    getCanvasMock.mockResolvedValue(
+    serve(
       response({
         canvas: {
           nodes: [
@@ -127,7 +160,7 @@ describe('CanvasPanel', () => {
   });
 
   it('surfaces a load failure instead of rendering an empty canvas', async () => {
-    getCanvasMock.mockRejectedValue(new Error('Canvas is not within an open kiln'));
+    serve(() => refuse('Canvas is not within an open kiln'));
     const { findByTestId } = render(() => <CanvasPanel filePath="/outside/Board.canvas" />);
 
     const err = await findByTestId('canvas-error');
@@ -135,7 +168,7 @@ describe('CanvasPanel', () => {
   });
 
   it('embeds a link node as a live page with chrome that opens in a new tab', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     await waitFor(() => {
@@ -155,7 +188,7 @@ describe('CanvasPanel', () => {
    * that makes embedding safe at all.
    */
   it('sandboxes the embed into an opaque origin so it cannot reach the session', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     const frame = (await waitFor(() => {
@@ -176,7 +209,7 @@ describe('CanvasPanel', () => {
    * makes the page reachable and what keeps an unselected card grabbable.
    */
   it('keeps the embed inert until the card is selected', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     const frame = (await waitFor(() => {
@@ -195,7 +228,7 @@ describe('CanvasPanel', () => {
    * on screen and cards appeared to have no mode control at all.
    */
   it('offers the live/source toggle on a card that is not being edited', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     const toggle = (await waitFor(() => {
@@ -223,7 +256,7 @@ describe('CanvasPanel', () => {
    * would connect anything was a guess until you let go.
    */
   it('highlights the node a connection would land on, and snaps the line to it', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -272,7 +305,7 @@ describe('CanvasPanel', () => {
    * releasing declines to make.
    */
   it('does not offer the source card as its own destination', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -308,7 +341,7 @@ describe('CanvasPanel', () => {
 
   /** One click to work in the page, as in Obsidian — not a double-click. */
   it('hands the pointer to the embed as soon as the card is selected', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
 
     const card = (await waitFor(() => {
@@ -334,7 +367,7 @@ describe('CanvasPanel', () => {
    * tab acted on one keypress. They live on the surface now.
    */
   it('ignores destructive shortcuts pressed outside the canvas surface', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -365,24 +398,25 @@ describe('CanvasPanel', () => {
    * of flushing it loses any edit made inside the window, silently.
    */
   it('flushes a pending save when the panel unmounts', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container, unmount } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
-    const surface = (await waitFor(() => {
-      const el = container.querySelector('[data-testid="canvas-surface"]');
-      expect(el).toBeTruthy();
-      return el;
-    })) as HTMLElement;
+    // The board FIRST. An edit made before the document arrives is replaced by
+    // it, so a double click on an empty surface would prove nothing here.
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
 
     // Double-click empty space creates a card, which marks the doc dirty.
     surface.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(5);
     });
-    expect(saveCanvasMock).not.toHaveBeenCalled();
+    expect(saved).toHaveLength(0);
 
     unmount();
 
-    await waitFor(() => expect(saveCanvasMock).toHaveBeenCalled());
+    await waitFor(() => expect(saved.length).toBeGreaterThan(0));
   });
 
   /**
@@ -391,7 +425,7 @@ describe('CanvasPanel', () => {
    * them meant merely selecting a card stole the keyboard.
    */
   it('selects on single click and only edits on double click', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -421,7 +455,7 @@ describe('CanvasPanel', () => {
 
   /** Connector dots live at edge midpoints, separate from the corner handles. */
   it('offers four corner handles and four edge connectors on a selected card', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -460,7 +494,7 @@ describe('CanvasPanel', () => {
    * dragged the width, making it an awkward corner handle.
    */
   it('constrains a cardinal handle to its own axis', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -506,7 +540,7 @@ describe('CanvasPanel', () => {
    * bindings update.
    */
   it('moves a card on drag without recreating its DOM element', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -538,7 +572,7 @@ describe('CanvasPanel', () => {
    * 0x0 and the connect line stayed pinned at its origin for the whole gesture.
    */
   it('grows the marquee rectangle as the pointer moves', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     const surface = (await waitFor(() => {
       const el = container.querySelector('[data-testid="canvas-surface"]');
@@ -564,7 +598,7 @@ describe('CanvasPanel', () => {
   });
 
   it('moves the pending connection line with the pointer', async () => {
-    getCanvasMock.mockResolvedValue(response());
+    serve(response());
     const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
@@ -600,7 +634,7 @@ describe('CanvasPanel', () => {
   });
 
   it('shows the empty canvas without error', async () => {
-    getCanvasMock.mockResolvedValue(response({ canvas: { nodes: [], edges: [] } }));
+    serve(response({ canvas: { nodes: [], edges: [] } }));
     const { container } = render(() => <CanvasPanel filePath="/kiln/Empty.canvas" />);
 
     await waitFor(() => {
@@ -608,5 +642,43 @@ describe('CanvasPanel', () => {
     });
     expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(0);
     expect(container.querySelector('[data-testid="canvas-error"]')).toBeNull();
+  });
+});
+
+describe('CanvasPanel — the shared board', () => {
+  /**
+   * Two panes on one board read it once.
+   *
+   * They held separate documents before, so the later save carried whatever
+   * the earlier read had: a card moved in one pane came back to where the
+   * other pane still believed it was.
+   */
+  it('reads one board once for two panes on it', async () => {
+    const { container } = render(() => (
+      <>
+        <CanvasPanel filePath="/kiln/Board.canvas" />
+        <CanvasPanel filePath="/kiln/Board.canvas" />
+      </>
+    ));
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(8);
+    });
+    expect(reads).toEqual(['/kiln/Board.canvas']);
+  });
+
+  // The negative: the path is the key, so a second board is its own read.
+  it('reads a second board of its own', async () => {
+    const { container } = render(() => (
+      <>
+        <CanvasPanel filePath="/kiln/Board.canvas" />
+        <CanvasPanel filePath="/kiln/Other.canvas" />
+      </>
+    ));
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(8);
+    });
+    expect(reads).toEqual(['/kiln/Board.canvas', '/kiln/Other.canvas']);
   });
 });

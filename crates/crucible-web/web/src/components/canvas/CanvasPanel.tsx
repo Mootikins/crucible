@@ -5,6 +5,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount,
 } from 'solid-js';
@@ -33,7 +34,12 @@ import {
   ZoomOut,
 } from '@/lib/icons';
 import { CanvasMinimap } from './CanvasMinimap';
-import { getCanvas, saveCanvas, rawFileUrl } from '@/lib/api';
+import { rawFileUrl } from '@/lib/api';
+import {
+  CANVAS_SAVE_DEBOUNCE_MS,
+  saveCanvasOnce,
+  useGetCanvas,
+} from '@/lib/query/canvas';
 import { notificationActions } from '@/stores/notificationStore';
 import { openFileInEditor } from '@/lib/file-actions';
 import {
@@ -48,7 +54,6 @@ import {
   type CanvasEdge,
   type CanvasNode,
   type GroupNode,
-  type CanvasResponse,
   type RejectedRef,
 } from '@/lib/canvas-types';
 import {
@@ -195,13 +200,31 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
 
   // --- loading / saving -----------------------------------------------------
 
-  createEffect(() => {
-    const path = props.filePath;
-    if (!path) return;
-    setLoading(true);
-    setError(null);
-    getCanvas(path)
-      .then((res: CanvasResponse) => {
+  // The board, held under its path: a second pane on the same file joins this
+  // entry rather than reading the document a second time, and a save in either
+  // pane puts what it wrote here.
+  const board = useGetCanvas(() => props.filePath ?? null);
+
+  createEffect(() => setLoading(board.isPending && props.filePath !== undefined));
+
+  /**
+   * Adopt the daemon's document, and ONLY when it is a new one.
+   *
+   * `dataUpdatedAt` moves on every answer, including one that equals the last,
+   * so it is the honest "this is a new document" signal — and reading the
+   * query at all re-runs this effect on every state change it makes, including
+   * the ones that carry no answer. Rebuilding the history on those would throw
+   * away the edit the user made since the read: a card added, then a refetch
+   * that changed nothing, and the card is gone with no warning.
+   */
+  createEffect(
+    on(
+      () => board.dataUpdatedAt,
+      (at, previousAt) => {
+        if (at === previousAt) return;
+        const res = board.data;
+        if (!res) return;
+        setError(null);
         // Kiln first. Node cards resolve their file against it, so setting the
         // document before it is known makes every card fetch a path missing its
         // base — one spurious 404 per card on every open.
@@ -210,16 +233,20 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         setHistory(initHistory(res.canvas));
         setDirty(false);
         queueMicrotask(openAtNaturalZoom);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      },
+    ),
+  );
+
+  createEffect(() => {
+    const failure = board.error;
+    if (failure) setError(failure.message || String(failure));
   });
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleSave = () => {
     setDirty(true);
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 600);
+    saveTimer = setTimeout(save, CANVAS_SAVE_DEBOUNCE_MS);
   };
   onCleanup(() => {
     clearTimeout(saveTimer);
@@ -233,7 +260,10 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
     const path = props.filePath;
     if (!path) return;
     try {
-      await saveCanvas(path, doc());
+      // Through the cache, so a second pane on this board sees the move
+      // without re-reading the file — and without racing the next frame of a
+      // drag that is still going.
+      await saveCanvasOnce(path, doc());
       setDirty(false);
     } catch (e) {
       // A refused save is nearly always containment: a node was pointed
