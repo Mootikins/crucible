@@ -93,7 +93,7 @@ The replacement rules, concrete:
 
 In order. Each makes the next one cheaper.
 
-**1. A generated contract for the wire types.** Add a `cru schema` command (or a build step in `crates/crucible-web/build.rs`) that emits `crates/crucible-web/web/src/lib/generated/protocol.ts` from the core and daemon types that already derive `JsonSchema`, and a CI check that the file is current. Replace the hand-written interfaces in `lib/types.ts` one at a time. Cost: one command, one CI step, one migration pass over about forty interfaces. Removes: every future field typed twice, and the class of drift that added `registered` and `open` by hand.
+**1. A generated contract for the wire types.** Add a `cru schema` command (or a build step in `crates/crucible-web/build.rs`) that emits one generated TypeScript module of wire types, under the web `lib/` directory, from the core and daemon types that already derive `JsonSchema`, and a CI check that the file is current. Replace the hand-written interfaces in `lib/types.ts` one at a time. Cost: one command, one CI step, one migration pass over about forty interfaces. Removes: every future field typed twice, and the class of drift that added `registered` and `open` by hand.
 
 **2. One session record.** Define `SessionRecord` in `crucible-core` with the serde names the clients see, and derive the Lua table from it in `session_bridge.rs` instead of building JSON by hand. Emit the record type into `cru.d.luau` so the shipped-plugin typecheck refuses `s.agent_model`. Cost: one struct, one projection, a rename of `model` to `agent_model` for Lua with a deprecation shim for one release. Removes: the five field lists above and the abort of 2026-09-16.
 
