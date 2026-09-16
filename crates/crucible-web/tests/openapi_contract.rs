@@ -154,7 +154,6 @@ fn web_src(relative: &str) -> PathBuf {
         .join(relative)
 }
 
-
 /// Every `type` tag value an internally-tagged enum schema can take.
 ///
 /// utoipa renders such an enum as a `oneOf` of variants, and each variant

@@ -914,7 +914,6 @@ mod tests {
     //   `bun run typecheck` fails both for a name that is not a variant and
     //   for a variant the tuple forgot.
 
-
     /// `ended` with an `"error: "` reason is the only thing on the wire that
     /// produces `ChatEvent::Error`. Before this, `ChatEvent::Error` was
     /// unreachable and the reducer's `case 'error'` never fired from the server,
