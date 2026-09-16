@@ -107,7 +107,7 @@ describe('findTabByFilePath', () => {
 
   it('ignores tabs without metadata', () => {
     setupDefaultState([
-      makeTab('tab-plain', 'plain', 'tool'),
+      makeTab('tab-plain', 'plain', 'terminal'),
       makeTab('tab-file-a', 'a.md', 'file', { filePath: '/docs/a.md' }),
     ]);
 

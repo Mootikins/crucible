@@ -19,7 +19,6 @@ import {
   Settings,
   Target,
   Terminal,
-  Wrench,
 } from '@/lib/icons';
 
 /**
@@ -44,7 +43,6 @@ const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> 
   plugins: Package,
   skills: Target,
   surfaces: Layers,
-  tool: Wrench,
 };
 
 /**

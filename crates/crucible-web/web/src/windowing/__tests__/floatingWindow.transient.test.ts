@@ -1,28 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { produce } from 'solid-js/store';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 
-beforeEach(() => {
-  const fresh = defaultLayout();
-  setStore(
-    produce((s) => {
-      s.layout = fresh.layout;
-      s.tabGroups = fresh.tabGroups;
-      s.edgePanels = fresh.edgePanels;
-      s.floatingWindows = [];
-      s.activePaneId = fresh.activePaneId;
-      s.nextZIndex = 100;
-    }),
-  );
-});
+beforeEach(() => configureWindowing(neutralPolicy()));
 
 function spawnTransient(): string {
   const groupId = windowActions.createTabGroup();
   windowActions.addTab(groupId, {
     id: 'tab-hoverfile-/k/x.md',
     title: 'X',
-    contentType: 'file',
+    contentType: 'alpha',
     metadata: { filePath: '/k/x.md' },
   });
   return windowActions.createFloatingWindow(groupId, 50, 60, 460, 320, {

@@ -1,10 +1,9 @@
 import type * as Core from '@/windowing/model/types';
 
 // Tab types — every entry is a REGISTERED panel (register-panels.tsx),
-// except 'tool', a neutral dummy the windowing unit tests use.
+// except the legacy 'settings' below.
 export type TabContentType =
   | 'file'
-  | 'tool'
   | 'terminal'
   // LEGACY. Settings is a dialog, and `registerPanels` registers no panel for
   // it, so a tab of this type renders nothing. The name survives for the

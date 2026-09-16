@@ -1,24 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { produce } from 'solid-js/store';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
 import { collectPanes } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
 import type { SerializedLayout } from '@/windowing/model/serializer';
-
-const resetStore = () => {
-  const fresh = defaultLayout();
-  setStore(
-    produce((s) => {
-      s.layout = fresh.layout;
-      s.tabGroups = fresh.tabGroups;
-      s.edgePanels = fresh.edgePanels;
-      s.floatingWindows = [];
-      s.activePaneId = fresh.activePaneId;
-      s.focusedRegion = 'center';
-      s.nextZIndex = 100;
-    }),
-  );
-};
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 
 /**
  * Reduced from a layout taken off a running daemon (`GET /api/layout`), which
@@ -29,9 +13,12 @@ const resetStore = () => {
  * opening a session or a file adds a tab to the OTHER pane, and none of those
  * paths collapse anything. Only tab-close and window operations ran
  * `collapseEmptyNodes`, and restore never did.
+ *
+ * The payload is in the current format, with the rails of the neutral seed,
+ * so the read needs no legacy upgrade.
  */
-const DANGLING: SerializedLayout = {
-  version: 8,
+const dangling = (): SerializedLayout => ({
+  ...windowActions.exportLayout(),
   layout: {
     id: 'root-split',
     type: 'split',
@@ -43,19 +30,17 @@ const DANGLING: SerializedLayout = {
   tabGroups: {
     'chat-group': {
       id: 'chat-group',
-      tabs: [{ id: 'chat-1', title: 'Test Session', contentType: 'chat' }],
+      tabs: [{ id: 'chat-1', title: 'Test Session', contentType: 'alpha' }],
       activeTabId: 'chat-1',
     },
   },
-  edgePanels: defaultLayout().edgePanels,
-  floatingWindows: [],
-} as unknown as SerializedLayout;
+});
 
 describe('restoring a layout with a dangling tab group', () => {
-  beforeEach(resetStore);
+  beforeEach(() => configureWindowing(neutralPolicy()));
 
   it('drops the pane whose tab group no longer exists', () => {
-    windowActions.importLayout(DANGLING);
+    windowActions.importLayout(dangling());
 
     const paneIds = collectPanes(windowStore.layout).map((p) => p.id);
     expect(paneIds).not.toContain('orphan-pane');
@@ -65,26 +50,27 @@ describe('restoring a layout with a dangling tab group', () => {
   });
 
   it('keeps the surviving pane focusable', () => {
-    windowActions.importLayout(DANGLING);
+    windowActions.importLayout(dangling());
     expect(windowStore.activePaneId).toBe('good-pane');
   });
 
   it('leaves a layout whose groups all resolve untouched', () => {
-    const healthy = {
-      ...DANGLING,
+    const base = dangling();
+    const healthy: SerializedLayout = {
+      ...base,
       layout: {
-        ...DANGLING.layout,
+        ...base.layout,
         second: { id: 'second-pane', type: 'pane', tabGroupId: 'files-group' },
       },
       tabGroups: {
-        ...DANGLING.tabGroups,
+        ...base.tabGroups,
         'files-group': {
           id: 'files-group',
-          tabs: [{ id: 'files-1', title: 'Files', contentType: 'files' }],
+          tabs: [{ id: 'files-1', title: 'Files', contentType: 'beta' }],
           activeTabId: 'files-1',
         },
       },
-    } as unknown as SerializedLayout;
+    } as SerializedLayout;
 
     windowActions.importLayout(healthy);
 
@@ -94,10 +80,10 @@ describe('restoring a layout with a dangling tab group', () => {
   });
 
   it('collapses an all-dangling layout to one empty pane, not to nothing', () => {
-    const allDangling = {
-      ...DANGLING,
+    const allDangling: SerializedLayout = {
+      ...dangling(),
       tabGroups: {},
-    } as unknown as SerializedLayout;
+    };
 
     windowActions.importLayout(allDangling);
 

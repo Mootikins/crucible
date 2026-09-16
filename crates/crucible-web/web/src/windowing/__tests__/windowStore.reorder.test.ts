@@ -61,12 +61,12 @@ describe('reorder tabs in edge tab groups via moveTab', () => {
       tabGroups: {
         'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
         'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
-          { id: 'left-2', title: 'Search', contentType: 'tool' },
-          { id: 'left-3', title: 'Source Control', contentType: 'tool' },
+          { id: 'left-1', title: 'Explorer', contentType: 'gamma' },
+          { id: 'left-2', title: 'Search', contentType: 'gamma' },
+          { id: 'left-3', title: 'Source Control', contentType: 'gamma' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [
-          { id: 'right-1', title: 'Outline', contentType: 'tool' },
+          { id: 'right-1', title: 'Outline', contentType: 'gamma' },
         ], 'right-1'),
       },
       edgePanels: {

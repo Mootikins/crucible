@@ -46,14 +46,14 @@ function createTestState(): WindowState {
       [leftGroupId]: {
         id: leftGroupId,
         tabs: [
-          { id: 'explorer-tab', title: 'Explorer', contentType: 'tool' },
-          { id: 'search-tab', title: 'Search', contentType: 'tool' },
+          { id: 'explorer-tab', title: 'Explorer', contentType: 'search' },
+          { id: 'search-tab', title: 'Search', contentType: 'search' },
         ],
         activeTabId: 'explorer-tab',
       },
       [rightGroupId]: {
         id: rightGroupId,
-        tabs: [{ id: 'outline-tab', title: 'Outline', contentType: 'tool' }],
+        tabs: [{ id: 'outline-tab', title: 'Outline', contentType: 'search' }],
         activeTabId: 'outline-tab',
       },
       [bottomGroupId]: {
@@ -114,8 +114,8 @@ describe('layout history and restore', () => {
           id: 'left-panel',
           position: 'left',
           tabs: [
-            { id: 'tab1', title: 'Explorer', contentType: 'tool', panelPosition: 'left' },
-            { id: 'tab2', title: 'Search', contentType: 'tool', panelPosition: 'left' },
+            { id: 'tab1', title: 'Explorer', contentType: 'search', panelPosition: 'left' },
+            { id: 'tab2', title: 'Search', contentType: 'search', panelPosition: 'left' },
           ],
           activeTabId: 'tab1',
           isCollapsed: false,
@@ -161,8 +161,8 @@ describe('layout history and restore', () => {
           id: 'left-panel',
           position: 'left',
           tabs: [
-            { id: 'tab1', title: 'Explorer', contentType: 'tool', panelPosition: 'left' },
-            { id: 'tab2', title: 'Search', contentType: 'tool', panelPosition: 'left' },
+            { id: 'tab1', title: 'Explorer', contentType: 'search', panelPosition: 'left' },
+            { id: 'tab2', title: 'Search', contentType: 'search', panelPosition: 'left' },
           ],
           activeTabId: 'tab2',
           isCollapsed: false,
@@ -595,7 +595,7 @@ describe('v5 edge panels with split layout trees', () => {
     const state = createTestState();
     state.tabGroups['edge-right-b'] = {
       id: 'edge-right-b',
-      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'tool' }],
+      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'search' }],
       activeTabId: 'tab-right-b',
     };
     state.edgePanels.right.layout = {
@@ -815,7 +815,7 @@ describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
     };
     base.tabGroups['edge-right-b'] = {
       id: 'edge-right-b',
-      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'tool' }],
+      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'search' }],
       activeTabId: 'tab-right-b',
     };
     base.edgePanels.right.layout = {
@@ -828,7 +828,7 @@ describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
     };
 
     const restored = deserializeLayout(base as never);
-    expect(types(restored.tabGroups['edge-right-b'])).toEqual(['tool', 'files']);
+    expect(types(restored.tabGroups['edge-right-b'])).toEqual(['search', 'files']);
   });
 
   it('does not re-add a tab the user closed after migrating', () => {

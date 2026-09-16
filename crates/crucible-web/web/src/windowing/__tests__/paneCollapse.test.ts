@@ -1,28 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { produce } from 'solid-js/store';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import {
-  collectPanes,
-  findPaneInLayout,
-} from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
+import { collectPanes, findPaneInLayout } from '@/windowing/model/tree';
 import { serializeLayout, deserializeLayout } from '@/windowing/model/serializer';
-import { iconForContentType } from '@/lib/tab-icons';
-import { appLayoutHooks } from '@/stores/layoutMigrations';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
+import { stackRightRail } from '@/windowing/testing/stackedRail';
 
+/**
+ * The neutral seed with a column in the right rail: `right-pane` above the
+ * collapsed `right-term-pane`. The app seed has the same shape, and
+ * src/stores/__tests__/paneCollapse.seed.test.ts pins that seed.
+ */
 const resetStore = () => {
-  const fresh = defaultLayout();
-  setStore(
-    produce((s) => {
-      s.layout = fresh.layout;
-      s.tabGroups = fresh.tabGroups;
-      s.edgePanels = fresh.edgePanels;
-      s.floatingWindows = [];
-      s.activePaneId = fresh.activePaneId;
-      s.focusedRegion = 'center';
-      s.nextZIndex = 100;
-    }),
-  );
+  configureWindowing(neutralPolicy());
+  stackRightRail();
 };
 
 const rightPane = (paneId: string) =>
@@ -34,26 +24,6 @@ const rightSplitRatio = () => {
 };
 
 beforeEach(resetStore);
-
-describe('rail pane collapse — default seed', () => {
-  // The shipped default: a fresh rail shows the tree at full height with a
-  // terminal BAR under it.
-  it('seeds the terminal pane collapsed and the tree pane expanded', () => {
-    const state = defaultLayout();
-    const panes = collectPanes(state.edgePanels.right.layout);
-    expect(panes.map((p) => p.id)).toEqual(['right-pane', 'right-term-pane']);
-    expect(panes[0].collapsed).not.toBe(true);
-    expect(panes[1].collapsed).toBe(true);
-  });
-
-  // The rail's own collapse and a pane's collapse are separate controls: the
-  // seed opening the rail must not open the terminal with it.
-  it('collapsing state of the rail is independent of the pane', () => {
-    const state = defaultLayout();
-    state.edgePanels.right.mode = 'docked';
-    expect(collectPanes(state.edgePanels.right.layout)[1].collapsed).toBe(true);
-  });
-});
 
 describe('setPaneCollapsed', () => {
   it('expands and re-collapses one pane, leaving its sibling alone', () => {
@@ -106,7 +76,7 @@ describe('setPaneCollapsed', () => {
     windowActions.openTabInNewPane(firstId, 'right', {
       id: 'tab-collapse-probe',
       title: 'Probe',
-      contentType: 'settings',
+      contentType: 'alpha',
     });
     void groupId;
     const panes = collectPanes(windowStore.layout);
@@ -147,7 +117,8 @@ describe('rail pane collapse survives layout transforms', () => {
     windowActions.setPaneCollapsed('right-term-pane', false);
     windowActions.setPaneCollapsed('right-pane', true);
 
-    const restored = deserializeLayout(serializeLayout(windowStore), appLayoutHooks, iconForContentType);
+    const p = neutralPolicy();
+    const restored = deserializeLayout(serializeLayout(windowStore), p.layoutHooks, (t) => p.iconFor(t));
     const panes = collectPanes(restored.edgePanels.right.layout);
     expect(panes[0].collapsed).toBe(true);
     expect(panes[1].collapsed).toBe(false);

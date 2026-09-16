@@ -1,21 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { configureWindowing, windowStore, windowActions, setStore } from '@/windowing/store';
 import {
   collectLeafGroupIds,
   findFirstPane,
   mirrorLayout,
   primaryEdgeGroupId,
 } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import type { LayoutNode } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
+import { stackRightRail } from '@/windowing/testing/stackedRail';
+import type { LayoutNode } from '@/windowing/model/types';
+import { isEdgeCollapsed } from '@/windowing/model/types';
 
 const leftGroup = () => primaryEdgeGroupId(windowStore, 'left');
 const rightGroup = () => primaryEdgeGroupId(windowStore, 'right');
 
 describe('swapSidePanels', () => {
   beforeEach(() => {
-    setStore(defaultLayout());
+    configureWindowing(neutralPolicy());
   });
 
   it('moves each side’s panes to the other side', () => {
@@ -139,7 +140,7 @@ const railOrder = (side: 'left' | 'right') =>
 
 describe('swapSidePanels — a 100% flip, not a rail swap', () => {
   beforeEach(() => {
-    setStore(defaultLayout());
+    configureWindowing(neutralPolicy());
   });
 
   it('reverses the CENTRE columns too', () => {
@@ -150,7 +151,7 @@ describe('swapSidePanels — a 100% flip, not a rail swap', () => {
     windowActions.openTabInNewPane(pane.id, 'left', {
       id: 'tab-chat-1',
       title: 'chat',
-      contentType: 'chat',
+      contentType: 'alpha',
     });
     const before = centreOrder();
     expect(before).toHaveLength(2);
@@ -163,6 +164,7 @@ describe('swapSidePanels — a 100% flip, not a rail swap', () => {
     // The file tree with a terminal under it: the column moves sides, the
     // terminal stays under the tree. Mirroring vertical splits too would put
     // it above.
+    stackRightRail();
     const before = railOrder('right');
     expect(before).toHaveLength(2);
 
@@ -171,11 +173,12 @@ describe('swapSidePanels — a 100% flip, not a rail swap', () => {
   });
 
   it('is its own inverse across every region', () => {
+    stackRightRail();
     const pane = findFirstPane(windowStore.layout)!;
     windowActions.openTabInNewPane(pane.id, 'left', {
       id: 'tab-chat-1',
       title: 'chat',
-      contentType: 'chat',
+      contentType: 'alpha',
     });
     const before = {
       centre: centreOrder(),

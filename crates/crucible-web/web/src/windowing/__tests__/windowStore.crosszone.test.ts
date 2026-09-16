@@ -157,11 +157,11 @@ describe('moveTab: edge → center', () => {
       tabGroups: {
         'group-1': makeTabGroup('group-1', [makeTab('center-1'), makeTab('center-2')], 'center-1'),
         'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
-          { id: 'left-2', title: 'Search', contentType: 'tool' },
+          { id: 'left-1', title: 'Explorer', contentType: 'gamma' },
+          { id: 'left-2', title: 'Search', contentType: 'gamma' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [
-          { id: 'right-1', title: 'Outline', contentType: 'tool' },
+          { id: 'right-1', title: 'Outline', contentType: 'gamma' },
         ], 'right-1'),
       },
       edgePanels: {
@@ -213,7 +213,7 @@ describe('moveTab: center → edge', () => {
         'group-1': makeTabGroup('group-1', [makeTab('center-1'), makeTab('center-2')], 'center-1'),
         'group-2': makeTabGroup('group-2', [makeTab('center-3')], 'center-3'),
         'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
+          { id: 'left-1', title: 'Explorer', contentType: 'gamma' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [], null),
       },
@@ -267,11 +267,11 @@ describe('moveTab: edge → edge', () => {
       tabGroups: {
         'group-1': makeTabGroup('group-1', [makeTab('center-1')]),
         'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
-          { id: 'left-2', title: 'Search', contentType: 'tool' },
+          { id: 'left-1', title: 'Explorer', contentType: 'gamma' },
+          { id: 'left-2', title: 'Search', contentType: 'gamma' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [
-          { id: 'right-1', title: 'Outline', contentType: 'tool' },
+          { id: 'right-1', title: 'Outline', contentType: 'gamma' },
         ], 'right-1'),
       },
       edgePanels: {
@@ -317,9 +317,9 @@ describe('moveTab: same-group reorder', () => {
       tabGroups: {
         'group-1': makeTabGroup('group-1', [makeTab('a'), makeTab('b'), makeTab('c')], 'a'),
         'left-group': makeTabGroup('left-group', [
-          { id: 'l1', title: 'L1', contentType: 'tool' },
-          { id: 'l2', title: 'L2', contentType: 'tool' },
-          { id: 'l3', title: 'L3', contentType: 'tool' },
+          { id: 'l1', title: 'L1', contentType: 'gamma' },
+          { id: 'l2', title: 'L2', contentType: 'gamma' },
+          { id: 'l3', title: 'L3', contentType: 'gamma' },
         ], 'l1'),
         'right-group': makeTabGroup('right-group', [], null),
       },
@@ -356,11 +356,11 @@ describe('removeTab: edge-aware', () => {
         'group-1': makeTabGroup('group-1', [makeTab('center-1'), makeTab('center-2')], 'center-1'),
         'group-2': makeTabGroup('group-2', [makeTab('center-3')], 'center-3'),
         'left-group': makeTabGroup('left-group', [
-          { id: 'left-1', title: 'Explorer', contentType: 'tool' },
+          { id: 'left-1', title: 'Explorer', contentType: 'gamma' },
         ], 'left-1'),
         'right-group': makeTabGroup('right-group', [
-          { id: 'right-1', title: 'Outline', contentType: 'tool' },
-          { id: 'right-2', title: 'Debug', contentType: 'tool' },
+          { id: 'right-1', title: 'Outline', contentType: 'gamma' },
+          { id: 'right-2', title: 'Debug', contentType: 'gamma' },
         ], 'right-1'),
       },
       edgePanels: {
@@ -433,7 +433,7 @@ describe('edge panel split trees (v5 model)', () => {
           { id: 'term-1', title: 'Terminal', contentType: 'terminal' },
         ], 'term-1'),
         'g-b2': makeTabGroup('g-b2', [
-          { id: 'chat-1', title: 'Chat', contentType: 'tool' },
+          { id: 'chat-1', title: 'Chat', contentType: 'gamma' },
         ], 'chat-1'),
       },
       edgePanels: {

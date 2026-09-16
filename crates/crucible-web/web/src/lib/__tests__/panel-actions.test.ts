@@ -131,10 +131,10 @@ describe('openPanelTab', () => {
   });
 
   it('is a safe no-op for an unregistered content type', () => {
-    // 'tool' is in the type union (test dummy) but never registered.
-    expect(() => openPanelTab('tool')).not.toThrow();
+    // 'graph' is in the type union, and this test does not register it.
+    expect(() => openPanelTab('graph')).not.toThrow();
     const allTabs = Object.values(windowStore.tabGroups).flatMap((g) => g.tabs);
-    expect(allTabs.find((t) => t.contentType === 'tool')).toBeUndefined();
+    expect(allTabs.find((t) => t.contentType === 'graph')).toBeUndefined();
   });
 });
 
