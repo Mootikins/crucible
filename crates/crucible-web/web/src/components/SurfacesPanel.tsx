@@ -1,7 +1,7 @@
-import { Component, For, Show, createResource, createSignal, onCleanup } from 'solid-js';
-import { getSurfaces } from '@/lib/api';
+import { Component, For, Show, createSignal, onCleanup } from 'solid-js';
 import type { Surface, SurfaceRow } from '@/lib/api';
 import { surfaceEvents } from '@/lib/query/sse';
+import { useSurfaces } from '@/lib/query/surfaces';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 
@@ -52,37 +52,43 @@ const SurfaceRowItem: Component<{ row: SurfaceRow }> = (props) => (
 );
 
 export const SurfacesPanel: Component = () => {
-  const [surfaces, { refetch, mutate }] = createResource(getSurfaces);
-  const [selected, setSelected] = createSignal<string | null>(null);
+  // One entry for every panel on screen, and the stream's route keeps it
+  // current. The panel used to hold its own resource and correct it by hand,
+  // which gave a second panel a second fetch and a second answer.
+  const surfaces = useSurfaces();
+  const all = (): Surface[] => surfaces.data ?? [];
 
-  // A change says only that a surface moved, so refetch rather than patch: the
-  // event carries a version and no rows, which is what keeps an unbounded
-  // surface off an event channel.
+  // The chooser's pick, as the pair that identifies a surface. The name alone
+  // is not one: two plugins may declare `sessions`, and a pick stored as a bare
+  // name follows whichever of them the roster happens to list first.
+  const [selected, setSelected] = createSignal<{ plugin: string; name: string } | null>(null);
+
+  // The panel no longer answers the frame with a fetch or a patch: the cache
+  // write belongs to the route, which runs inside the shared root
+  // (`lib/query/routes/surfaces.ts`). What is left here is the one thing the
+  // route cannot own, because it is this browser's display state — a pick that
+  // named the surface that is gone. Dropping it matters because a plugin that
+  // later re-declares the same name would otherwise silently take the panel
+  // back from whatever the user had selected.
   //
-  // A withdrawal is the exception, and the daemon marks it rather than leaving
-  // this layer to work it out. The surface is gone, so there is no content to
-  // fetch and asking for it would spend a round trip to be told what the event
-  // already said. Drop it here, and drop a selection that pointed at it —
-  // otherwise a plugin that later re-declares the same name silently steals the
-  // panel back. A re-declare announces, so the refetch below restores it.
-  //
-  // One source for the stream, whatever the count of panels: `surfaceEvents()`
-  // is the shared root of `lib/query/sse.ts`, so a second panel joins the
-  // stream the first one opened rather than starting another.
+  // The subscription is still required whatever the handler does: the root
+  // counts its subscribers, and with none it closes the `EventSource` and no
+  // panel hears anything. One source for the stream, whatever the count of
+  // panels — `surfaceEvents()` is the shared root of `lib/query/sse.ts`, so a
+  // second panel joins the stream the first one opened.
   const unsubscribe = surfaceEvents().subscribe((event) => {
-    if (event.withdrawn) {
-      mutate((prev) => (prev ?? []).filter((s) => s.name !== event.name));
-      if (selected() === event.name) setSelected(null);
-      return;
-    }
-    void refetch();
+    if (!event.withdrawn) return;
+    const pick = selected();
+    if (pick && pick.plugin === event.plugin && pick.name === event.name) setSelected(null);
   });
   onCleanup(unsubscribe);
 
   const shown = (): Surface | undefined => {
-    const all = surfaces() ?? [];
+    const list = all();
     const pick = selected();
-    return all.find((s) => s.name === pick) ?? all[0];
+    return (
+      list.find((s) => pick !== null && s.plugin === pick.plugin && s.name === pick.name) ?? list[0]
+    );
   };
 
   return (
@@ -90,18 +96,18 @@ export const SurfacesPanel: Component = () => {
       <PanelHeader title={shown()?.title ?? 'Surfaces'} />
 
       {/* More than one surface: a chooser. One: its title is already the header. */}
-      <Show when={(surfaces() ?? []).length > 1}>
+      <Show when={all().length > 1}>
         <div class="flex gap-1 px-2 py-1 border-b border-hairline overflow-x-auto">
-          <For each={surfaces()}>
+          <For each={all()}>
             {(s) => (
               <button
                 type="button"
                 class={`px-2 py-0.5 text-xs rounded whitespace-nowrap ${
-                  shown()?.name === s.name
+                  shown()?.plugin === s.plugin && shown()?.name === s.name
                     ? 'bg-surface-elevated text-shell-ink'
                     : 'text-muted hover:text-shell-ink'
                 }`}
-                onClick={() => setSelected(s.name)}
+                onClick={() => setSelected({ plugin: s.plugin, name: s.name })}
               >
                 {s.title}
               </button>
