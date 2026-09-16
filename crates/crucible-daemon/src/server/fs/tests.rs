@@ -26,10 +26,10 @@ fn lists_nested_dirs_and_files_dirs_first() {
     fs::write(proj.join("Cargo.toml"), "[package]").unwrap();
     fs::write(proj.join("src").join("main.rs"), "fn main() {}").unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
     // Top level.
-    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
+    let entries = list_dir(&root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     // Dirs first (case-insensitive name), then files (case-insensitive).
     assert_eq!(names, vec!["assets", "src", "Cargo.toml", "README.md"]);
@@ -45,7 +45,7 @@ fn lists_nested_dirs_and_files_dirs_first() {
     assert!(entries.iter().all(|e| e.status.is_none()));
 
     // One level down via rel_path.
-    let sub = list_dir(&pm, &root, "src", false, false).unwrap().entries;
+    let sub = list_dir(&root, "src", false, false).unwrap().entries;
     assert_eq!(sub.len(), 1);
     assert_eq!(sub[0].name, "main.rs");
     assert_eq!(sub[0].rel_path, "src/main.rs");
@@ -60,9 +60,9 @@ fn gitignored_file_hidden_by_default_shown_with_show_ignored() {
     fs::write(proj.join("ignored.txt"), "secret").unwrap();
     fs::write(proj.join("kept.txt"), "ok").unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
-    let hidden = list_dir(&pm, &root, "", false, false).unwrap().entries;
+    let hidden = list_dir(&root, "", false, false).unwrap().entries;
     let hidden_names: Vec<&str> = hidden.iter().map(|e| e.name.as_str()).collect();
     assert!(hidden_names.contains(&"kept.txt"));
     assert!(!hidden_names.contains(&"ignored.txt"));
@@ -70,13 +70,13 @@ fn gitignored_file_hidden_by_default_shown_with_show_ignored() {
     assert!(!hidden_names.contains(&".gitignore"));
 
     // show_ignored alone reveals gitignored entries but NOT dotfiles.
-    let shown = list_dir(&pm, &root, "", true, false).unwrap().entries;
+    let shown = list_dir(&root, "", true, false).unwrap().entries;
     let shown_names: Vec<&str> = shown.iter().map(|e| e.name.as_str()).collect();
     assert!(shown_names.contains(&"ignored.txt"));
     assert!(!shown_names.contains(&".gitignore"));
 
     // Both axes on: dotfiles too.
-    let all = list_dir(&pm, &root, "", true, true).unwrap().entries;
+    let all = list_dir(&root, "", true, true).unwrap().entries;
     assert!(all.iter().any(|e| e.name == ".gitignore"));
 }
 
@@ -89,14 +89,14 @@ fn dotfile_hidden_by_default() {
     fs::write(proj.join(".env"), "SECRET=1").unwrap();
     fs::write(proj.join("visible.txt"), "ok").unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
-    let hidden = list_dir(&pm, &root, "", false, false).unwrap().entries;
+    let hidden = list_dir(&root, "", false, false).unwrap().entries;
     assert!(hidden.iter().all(|e| e.name != ".env"));
     assert!(hidden.iter().any(|e| e.name == "visible.txt"));
 
     // show_hidden alone reveals the dotfile (no gitignore involvement).
-    let shown = list_dir(&pm, &root, "", false, true).unwrap().entries;
+    let shown = list_dir(&root, "", false, true).unwrap().entries;
     assert!(shown.iter().any(|e| e.name == ".env"));
 }
 
@@ -109,8 +109,8 @@ fn git_dir_never_listed_even_with_both_flags() {
     fs::write(proj.join(".git").join("HEAD"), "ref: x").unwrap();
     fs::write(proj.join("visible.txt"), "ok").unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
-    let all = list_dir(&pm, &root, "", true, true).unwrap().entries;
+    let (_pm, root) = registered_pm(store.path(), proj);
+    let all = list_dir(&root, "", true, true).unwrap().entries;
     assert!(all.iter().all(|e| e.name != ".git"));
     assert!(all.iter().any(|e| e.name == "visible.txt"));
 }
@@ -128,8 +128,8 @@ fn symlink_escaping_root_is_excluded() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&secret, proj.join("escape.txt")).unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
-    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
+    let (_pm, root) = registered_pm(store.path(), proj);
+    let entries = list_dir(&root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&"inside.txt"));
     // The escaping symlink must never surface.
@@ -146,8 +146,8 @@ fn intra_project_symlink_is_listed() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(proj.join("target.txt"), proj.join("link.txt")).unwrap();
 
-    let (pm, root) = registered_pm(store.path(), proj);
-    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
+    let (_pm, root) = registered_pm(store.path(), proj);
+    let entries = list_dir(&root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     #[cfg(unix)]
     assert!(names.contains(&"link.txt"));
@@ -160,14 +160,14 @@ fn rejects_parent_traversal() {
     let store = tempfile::TempDir::new().unwrap();
     let proj = tmp.path();
     fs::create_dir(proj.join("src")).unwrap();
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
     assert!(matches!(
-        list_dir(&pm, &root, "../", false, false),
+        list_dir(&root, "../", false, false),
         Err(FsListError::Escape)
     ));
     assert!(matches!(
-        list_dir(&pm, &root, "src/../..", false, false),
+        list_dir(&root, "src/../..", false, false),
         Err(FsListError::Escape)
     ));
 }
@@ -177,24 +177,156 @@ fn rejects_absolute_rel_path() {
     let tmp = tempfile::TempDir::new().unwrap();
     let store = tempfile::TempDir::new().unwrap();
     let proj = tmp.path();
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
     assert!(matches!(
-        list_dir(&pm, &root, "/etc", false, false),
+        list_dir(&root, "/etc", false, false),
         Err(FsListError::Escape)
     ));
 }
 
-#[test]
-fn unregistered_root_is_rejected() {
+#[tokio::test]
+async fn unregistered_root_is_rejected() {
     let tmp = tempfile::TempDir::new().unwrap();
     let store = tempfile::TempDir::new().unwrap();
-    // A ProjectManager with nothing registered.
+    // A ProjectManager with nothing registered, and a session manager with no
+    // session folders at all.
     let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
-    assert!(matches!(
-        list_dir(&pm, tmp.path(), "", false, false),
-        Err(FsListError::NotRegistered)
-    ));
+    let sessions = crate::test_support::temp_session_manager();
+    assert!(project_root(&pm, &sessions, tmp.path()).await.is_none());
+}
+
+/// A session manager whose project-less sessions get folders under `base`.
+fn sessions_with_scratch(base: &Path) -> Arc<SessionManager> {
+    let storage = crate::test_support::temp_session_storage();
+    Arc::new(
+        SessionManager::with_storage(storage).with_session_workspace_dir(Some(base.to_path_buf())),
+    )
+}
+
+/// A session created with no project runs in `<workspaces>/<id>`, and that
+/// folder is where its work goes — so the file tree opens it the moment the
+/// session exists. It used to answer "root is not a registered project",
+/// which was true and beside the point.
+#[tokio::test]
+async fn a_sessions_own_workspace_folder_is_admitted_as_a_root() {
+    let scratch = tempfile::TempDir::new().unwrap();
+    let store = tempfile::TempDir::new().unwrap();
+    let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
+    let sessions = sessions_with_scratch(scratch.path());
+    let session = sessions
+        .create_session(
+            crucible_core::session::SessionType::Chat,
+            vec![],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let folder = session.workspace.clone().expect("a scratch workspace");
+    fs::write(folder.join("notes.md"), "# hi").unwrap();
+
+    let base = project_root(&pm, &sessions, &folder)
+        .await
+        .expect("the session's own folder lists");
+    assert_eq!(base, folder.canonicalize().unwrap());
+
+    let names: Vec<String> = list_dir(&base, "", true, false)
+        .unwrap()
+        .entries
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+    assert_eq!(names, vec!["notes.md"]);
+
+    // The whole RPC, so the wire shape is proved too.
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "fs.list_dir".to_string(),
+        params: serde_json::json!({ "root": folder.to_string_lossy(), "rel_path": "" }),
+    };
+    let resp = handle_fs_list_dir(req, &pm, &sessions).await;
+    assert!(resp.error.is_none(), "list failed: {:?}", resp.error);
+}
+
+/// Only the folder a session actually owns: the scratch base itself, a
+/// sibling nobody's session names, a folder under the base for an id no
+/// session has, and a subfolder inside a real session folder all stay refused.
+#[tokio::test]
+async fn only_a_real_sessions_folder_is_admitted_under_the_scratch_base() {
+    let scratch = tempfile::TempDir::new().unwrap();
+    let store = tempfile::TempDir::new().unwrap();
+    let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
+    let sessions = sessions_with_scratch(scratch.path());
+    let session = sessions
+        .create_session(
+            crucible_core::session::SessionType::Chat,
+            vec![],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let folder = session.workspace.clone().unwrap();
+    fs::create_dir(folder.join("inner")).unwrap();
+    let stranger = scratch.path().join("not-a-session");
+    fs::create_dir(&stranger).unwrap();
+
+    assert!(project_root(&pm, &sessions, scratch.path()).await.is_none());
+    assert!(project_root(&pm, &sessions, &stranger).await.is_none());
+    assert!(
+        project_root(&pm, &sessions, &folder.join("inner"))
+            .await
+            .is_none(),
+        "a tree root is the folder, not a path inside it"
+    );
+
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "fs.list_dir".to_string(),
+        params: serde_json::json!({ "root": stranger.to_string_lossy(), "rel_path": "" }),
+    };
+    let resp = handle_fs_list_dir(req, &pm, &sessions).await;
+    let error = resp.error.expect("a stranger under the base is refused");
+    assert_eq!(error.code, INVALID_PARAMS);
+    assert_eq!(error.message, ROOT_NOT_ADMITTED);
+}
+
+/// The mutating routes share the admission: a session can make a folder in
+/// its own workspace from the tree.
+#[tokio::test]
+async fn fs_mkdir_admits_a_sessions_own_workspace_folder() {
+    let scratch = tempfile::TempDir::new().unwrap();
+    let store = tempfile::TempDir::new().unwrap();
+    let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
+    let sessions = sessions_with_scratch(scratch.path());
+    let km = Arc::new(KilnManager::new());
+    let session = sessions
+        .create_session(
+            crucible_core::session::SessionType::Chat,
+            vec![],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let folder = session.workspace.clone().unwrap();
+
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "fs.mkdir".to_string(),
+        params: serde_json::json!({
+            "root": folder.to_string_lossy(),
+            "kind": "project",
+            "rel_path": "notes",
+        }),
+    };
+    let resp = handle_fs_mkdir(req, &pm, &km, &sessions).await;
+    assert!(resp.error.is_none(), "mkdir failed: {:?}", resp.error);
+    assert!(folder.join("notes").is_dir());
 }
 
 #[test]
@@ -203,10 +335,10 @@ fn not_a_directory_is_rejected() {
     let store = tempfile::TempDir::new().unwrap();
     let proj = tmp.path();
     fs::write(proj.join("file.txt"), "x").unwrap();
-    let (pm, root) = registered_pm(store.path(), proj);
+    let (_pm, root) = registered_pm(store.path(), proj);
 
     assert!(matches!(
-        list_dir(&pm, &root, "file.txt", false, false),
+        list_dir(&root, "file.txt", false, false),
         Err(FsListError::NotADir)
     ));
 }
@@ -471,9 +603,9 @@ fn a_directory_past_the_cap_is_truncated_and_says_so() {
     for i in 0..(MAX_DIR_ENTRIES + 25) {
         std::fs::write(big.join(format!("f{i:05}.txt")), b"").unwrap();
     }
-    let (pm, root) = registered_pm(tmp.path(), &proj);
+    let (_pm, root) = registered_pm(tmp.path(), &proj);
 
-    let listing = list_dir(&pm, &root, "many", true, false).unwrap();
+    let listing = list_dir(&root, "many", true, false).unwrap();
     assert_eq!(listing.entries.len(), MAX_DIR_ENTRIES);
     assert!(
         listing.truncated,
@@ -491,9 +623,9 @@ fn a_directory_within_the_cap_is_not_flagged_truncated() {
     for i in 0..5 {
         std::fs::write(proj.join("few").join(format!("f{i}.txt")), b"").unwrap();
     }
-    let (pm, root) = registered_pm(tmp.path(), &proj);
+    let (_pm, root) = registered_pm(tmp.path(), &proj);
 
-    let listing = list_dir(&pm, &root, "few", true, false).unwrap();
+    let listing = list_dir(&root, "few", true, false).unwrap();
     assert_eq!(listing.entries.len(), 5);
     assert!(!listing.truncated);
 }
@@ -506,6 +638,7 @@ async fn fs_mkdir_reads_root_kind_and_rel_path() {
     let store = tempfile::TempDir::new().unwrap();
     let (pm, root) = registered_pm(store.path(), tmp.path());
     let km = Arc::new(KilnManager::new());
+    let sessions = crate::test_support::temp_session_manager();
 
     let req = Request {
         jsonrpc: "2.0".to_string(),
@@ -517,7 +650,7 @@ async fn fs_mkdir_reads_root_kind_and_rel_path() {
             "rel_path": "notes/inbox",
         }),
     };
-    let resp = handle_fs_mkdir(req, &pm, &km).await;
+    let resp = handle_fs_mkdir(req, &pm, &km, &sessions).await;
 
     assert!(resp.error.is_none(), "mkdir failed: {:?}", resp.error);
     assert!(root.join("notes").join("inbox").is_dir());
@@ -529,6 +662,7 @@ async fn fs_mkdir_without_a_rel_path_is_invalid_params() {
     let store = tempfile::TempDir::new().unwrap();
     let (pm, root) = registered_pm(store.path(), tmp.path());
     let km = Arc::new(KilnManager::new());
+    let sessions = crate::test_support::temp_session_manager();
 
     let req = Request {
         jsonrpc: "2.0".to_string(),
@@ -536,7 +670,7 @@ async fn fs_mkdir_without_a_rel_path_is_invalid_params() {
         method: "fs.mkdir".to_string(),
         params: serde_json::json!({ "root": root.to_string_lossy(), "kind": "project" }),
     };
-    let resp = handle_fs_mkdir(req, &pm, &km).await;
+    let resp = handle_fs_mkdir(req, &pm, &km, &sessions).await;
 
     let error = resp.error.expect("a request with no `rel_path` must fail");
     assert_eq!(error.code, crate::protocol::INVALID_PARAMS);

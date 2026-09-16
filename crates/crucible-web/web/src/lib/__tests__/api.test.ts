@@ -1047,7 +1047,7 @@ describe('MCP / kilns / notes / search', () => {
 
   it('listDir throws on a non-ok response', async () => {
     global.fetch = createMockFetch({ 'GET /api/fs/list': { status: 400 } });
-    await expect(listDir('/proj')).rejects.toThrow(/listDir failed: 400/);
+    await expect(listDir('/proj')).rejects.toThrow(/Failed to list \/proj: HTTP 400/);
   });
 
   it.each([

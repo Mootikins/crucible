@@ -115,6 +115,80 @@ async fn session_list_daemon_error_maps_to_502() {
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
 }
 
+/// The daemon's refusal reaches the browser as the sentence the daemon
+/// wrote, at 422, and not as `RPC error: {"code":-32602,…}`: a session
+/// created with no project lists its own folder, and when the daemon refuses
+/// a root the user must read why.
+#[tokio::test]
+async fn fs_list_refusal_maps_to_422_with_the_daemons_sentence() {
+    let mut errors = MockErrors::new();
+    errors.insert(
+        "fs.list_dir".to_string(),
+        (
+            -32602,
+            "root is not a registered project or a session's own workspace folder".to_string(),
+        ),
+    );
+    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/fs/list?root=/home/u/.crucible/workspaces/ses-1&rel_path=")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let json = body_json(response).await;
+    assert_eq!(
+        json["error"]["message"],
+        "root is not a registered project or a session's own workspace folder",
+        "the body is the daemon's sentence, not its envelope: {json}"
+    );
+}
+
+/// A create the daemon cannot honour — here a workspace target no plugin
+/// resolves — is a 422 whose body names the reason, for every agent type.
+#[tokio::test]
+async fn session_create_refusal_maps_to_422_with_the_reason() {
+    let mut errors = MockErrors::new();
+    errors.insert(
+        "session.create".to_string(),
+        (
+            -32602,
+            "workspace target 'worktree:feat/x' could not be resolved: no plugin provides workspace targets named 'worktree'".to_string(),
+        ),
+    );
+    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/session")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"agent_type":"acp","agent_name":"claude","workspace_target":"worktree:feat/x","isolation":{"plugin":"oci","target":"dev"}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let json = body_json(response).await;
+    let message = json["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.starts_with("workspace target 'worktree:feat/x' could not be resolved"),
+        "the reason, unwrapped: {json}"
+    );
+}
+
 /// A method NOT in the error script still succeeds — the scripting is
 /// per-method, so one failing RPC doesn't poison unrelated routes.
 #[tokio::test]

@@ -11,8 +11,11 @@
 //! daemon-side and load-bearing — never trust the thin web layer. Controls:
 //!
 //! 1. **Registry allowlist** — the only listable roots are directories the user
-//!    registered as projects (`ProjectManager::get`, fail-closed). An unknown
-//!    root is rejected before any disk access.
+//!    registered as projects (`ProjectManager::get`, fail-closed) and the
+//!    workspace folder the daemon made for a project-less session
+//!    (`SessionManager::session_workspace_containing`, matched by shape and by
+//!    the session's own record). An unknown root is rejected before any disk
+//!    access.
 //! 2. **`rel_path` component whitelist** — `..`, absolute paths, Windows
 //!    prefixes, and NUL are rejected *before* touching the disk (`resolve_within`).
 //! 3. **Canonicalize-and-contain** on the resolved target dir — blocks
@@ -46,6 +49,7 @@
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
+use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -91,10 +95,36 @@ struct DirListing {
     pub truncated: bool,
 }
 
+/// The refusal every `project`-kind root check answers with.
+///
+/// One string, because the web client matches on it to explain the file tree's
+/// empty state, and because three handlers used to spell it three ways.
+pub(crate) const ROOT_NOT_ADMITTED: &str =
+    "root is not a registered project or a session's own workspace folder";
+
+/// The canonical base a caller may treat as a project root, or `None`.
+///
+/// Two admissions and no third: a registered project, or the folder the
+/// daemon created as a project-less session's workspace. The second is what
+/// the web file tree opens the moment such a session is created, and it used
+/// to be refused as "not a registered project" — true, and beside the point:
+/// the folder is where that session's work goes, so listing it is exactly
+/// what the tree is for. Everything else stays refused before disk access.
+pub(crate) async fn project_root(
+    pm: &ProjectManager,
+    sessions: &SessionManager,
+    root: &Path,
+) -> Option<PathBuf> {
+    if let Some(project) = pm.get(root) {
+        return project.path.canonicalize().ok();
+    }
+    // The folder itself, not a path inside it: a tree root is the folder.
+    let folder = sessions.session_workspace_containing(root).await?;
+    (root.canonicalize().ok()? == folder).then_some(folder)
+}
+
 #[derive(Debug, thiserror::Error)]
 enum FsListError {
-    #[error("root is not a registered project")]
-    NotRegistered,
     #[error("path escapes project root")]
     Escape,
     #[error("not a directory")]
@@ -104,16 +134,24 @@ enum FsListError {
 }
 
 /// Handle the `fs.list_dir` RPC. Read-only, metadata only.
-pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -> Response {
+pub(crate) async fn handle_fs_list_dir(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    sessions: &Arc<SessionManager>,
+) -> Response {
     let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsListDirRequest>(&req)
     {
         Ok(p) => p,
         Err(response) => return *response,
     };
 
+    // Fail-closed allowlist, before any disk access.
+    let Some(base) = project_root(pm, sessions, Path::new(&params.root)).await else {
+        return Response::error(req.id, INVALID_PARAMS, ROOT_NOT_ADMITTED);
+    };
+
     match list_dir(
-        pm,
-        Path::new(&params.root),
+        &base,
         &params.rel_path,
         params.show_ignored,
         params.show_hidden,
@@ -122,9 +160,6 @@ pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         },
-        Err(FsListError::NotRegistered) => {
-            Response::error(req.id, INVALID_PARAMS, "root is not a registered project")
-        }
         Err(FsListError::Escape) => {
             Response::error(req.id, INVALID_PARAMS, "path escapes project root")
         }
@@ -133,16 +168,14 @@ pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -
     }
 }
 
+/// One level of `base`, which [`project_root`] already admitted.
 fn list_dir(
-    pm: &Arc<ProjectManager>,
-    root: &Path,
+    base: &Path,
     rel_path: &str,
     show_ignored: bool,
     show_hidden: bool,
 ) -> Result<DirListing, FsListError> {
-    // Fail-closed allowlist: only registered projects are listable.
-    let project = pm.get(root).ok_or(FsListError::NotRegistered)?;
-    let base = project.path.canonicalize()?;
+    let base = base.canonicalize()?;
     let target = resolve_within(&base, rel_path)?;
     if !target.is_dir() {
         return Err(FsListError::NotADir);
@@ -295,6 +328,7 @@ pub(crate) async fn handle_fs_move(
     req: Request,
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<SessionManager>,
 ) -> Response {
     let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsMoveRequest>(&req) {
         Ok(p) => p,
@@ -304,7 +338,7 @@ pub(crate) async fn handle_fs_move(
     let from_rel = params.from_rel.as_str();
     let to_rel = params.to_rel.as_str();
 
-    let base = match resolve_root(pm, km, kind, &params.root).await {
+    let base = match resolve_root(pm, km, sessions, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
@@ -345,24 +379,27 @@ pub(crate) async fn handle_fs_move(
     }
 }
 
-/// Resolve the mutation root for `kind`: a registered project or an
-/// ALREADY-OPEN kiln (fail-closed — see `handle_fs_move` docs). Returns the
-/// canonical base, or the INVALID_PARAMS message for the caller to wrap.
+/// Resolve the mutation root for `kind`: a registered project or a session's
+/// own workspace folder ([`project_root`]), or an ALREADY-OPEN kiln
+/// (fail-closed — see `handle_fs_move` docs). Returns the canonical base, or
+/// the INVALID_PARAMS message for the caller to wrap.
 async fn resolve_root(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<SessionManager>,
     kind: &str,
     root: &str,
 ) -> Result<PathBuf, &'static str> {
-    let base = match kind {
-        "project" => pm.get(Path::new(root)).map(|p| p.path),
+    match kind {
+        "project" => project_root(pm, sessions, Path::new(root))
+            .await
+            .ok_or(ROOT_NOT_ADMITTED),
         "kiln" => match Path::new(root).canonicalize() {
-            Ok(canon) if km.get(&canon).await.is_some() => Some(canon),
-            _ => None,
+            Ok(canon) if km.get(&canon).await.is_some() => Ok(canon),
+            _ => Err("root is not an open kiln"),
         },
-        _ => return Err("kind must be 'project' or 'kiln'"),
-    };
-    base.ok_or("root is not a registered project or open kiln")
+        _ => Err("kind must be 'project' or 'kiln'"),
+    }
 }
 
 /// Resolve `rel` to `canonical(parent) + leaf name`, containing the PARENT in
@@ -424,6 +461,7 @@ pub(crate) async fn handle_fs_mkdir(
     req: Request,
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<SessionManager>,
 ) -> Response {
     let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
         Ok(p) => p,
@@ -432,7 +470,7 @@ pub(crate) async fn handle_fs_mkdir(
     let kind = params.kind.as_str();
     let rel_path = params.rel_path.as_str();
 
-    let base = match resolve_root(pm, km, kind, &params.root).await {
+    let base = match resolve_root(pm, km, sessions, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
@@ -480,6 +518,7 @@ pub(crate) async fn handle_fs_trash(
     req: Request,
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<SessionManager>,
 ) -> Response {
     let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
         Ok(p) => p,
@@ -488,7 +527,7 @@ pub(crate) async fn handle_fs_trash(
     let kind = params.kind.as_str();
     let rel_path = params.rel_path.as_str();
 
-    let base = match resolve_root(pm, km, kind, &params.root).await {
+    let base = match resolve_root(pm, km, sessions, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };

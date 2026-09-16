@@ -1,4 +1,5 @@
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
+import { notificationActions } from '@/stores/notificationStore';
 import type {
   AgentProfileEntry,
   ChatEvent,
@@ -161,6 +162,14 @@ export interface ProviderTarget {
   path?: string;
   /** Set when this target is the one currently in effect. */
   current?: boolean;
+  /**
+   * Set on the one target the provider applies when the session says nothing
+   * on this axis — what an untouched chip actually gets. Declared by the
+   * provider, because only it knows its precedence (a devcontainer over a
+   * configured image, say); the composer renders the answer and never
+   * derives it.
+   */
+  default?: boolean;
 }
 
 /**
@@ -290,6 +299,16 @@ export interface RequestOptions extends Omit<RequestInit, 'method'> {
   parseAs?: 'json' | 'text' | 'none';
   includeErrorText?: boolean;
   /**
+   * Raise an error notification when the call fails, carrying the server's
+   * own sentence (the body's `error.message`) rather than the status alone.
+   *
+   * For the calls whose callers swallow a failure or fold it into local
+   * state — the file tree's first listing, the model and mode lists — where
+   * a bare "422" used to be all the user ever saw. The store deduplicates a
+   * sentence that repeats within a few seconds, so a burst is one toast.
+   */
+  notify?: boolean;
+  /**
    * Who is asking: {@link APP_CALLER}, or the plugin this call draws for.
    *
    * Defaults to the app, which is a convenience for the app's own call sites
@@ -342,6 +361,7 @@ export async function request<T>(
     errorMessage = 'Request failed',
     parseAs = 'json',
     includeErrorText = false,
+    notify = false,
     caller = APP_CALLER,
     ...init
   } = options;
@@ -353,7 +373,7 @@ export async function request<T>(
 
   if (!res.ok) {
     let errorText = '';
-    if (includeErrorText) {
+    if (includeErrorText || notify) {
       errorText = errorBodyMessage(await res.text().catch(() => ''));
     }
     if (res.status === 401) {
@@ -363,7 +383,14 @@ export async function request<T>(
       res.status === 401
         ? ' — Unauthorized: sign in with the API key (from `cru web key` on the host)'
         : '';
-    throw Object.assign(new Error((errorText || `${errorMessage}: HTTP ${res.status}`) + hint), {
+    // The server's sentence, framed by what was being attempted: "Failed to
+    // list folder: root is not a registered project…" says both what broke
+    // and why, where either half alone leaves the user guessing.
+    const message = errorText ? `${errorMessage}: ${errorText}` : `${errorMessage}: HTTP ${res.status}`;
+    if (notify && res.status !== 401) {
+      notificationActions.addNotification('error', message + hint);
+    }
+    throw Object.assign(new Error(message + hint), {
       status: res.status,
     }) as ApiError;
   }
@@ -464,6 +491,8 @@ export async function sendChatMessage(
   return (
     await request<{ message_id: string }>('POST', '/api/chat/send', {
       errorMessage: 'Failed to send message',
+      includeErrorText: true,
+      notify: true,
       ...jsonRequest({ session_id: sessionId, content }),
     })
   ).message_id;
@@ -837,6 +866,7 @@ export async function getProviderTargets(
           spec: `${provider.plugin}:${target.value}`,
           path: typeof target.path === 'string' ? target.path : undefined,
           current: target.current === true ? true : undefined,
+          default: target.default === true ? true : undefined,
         },
       ];
     });
@@ -933,6 +963,9 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
   return mapSession(
     await request<RawSession>('POST', '/api/session', {
       errorMessage: 'Failed to create session',
+      // The daemon's reason rides the error; `SessionContext.createSession`
+      // is the one that toasts it, so no `notify` here or it shows twice.
+      includeErrorText: true,
       ...jsonRequest(params),
     }),
   );
@@ -1178,6 +1211,7 @@ export async function listModels(sessionId: string): Promise<string[]> {
   return (
     await request<{ models: string[] }>('GET', `/api/session/${encodeURIComponent(sessionId)}/models`, {
       errorMessage: 'Failed to list models',
+      notify: true,
     })
   ).models;
 }
@@ -1243,6 +1277,7 @@ export async function setAgentOption(
 export async function listModes(sessionId: string): Promise<SessionModes> {
   return request<SessionModes>('GET', `/api/session/${encodeURIComponent(sessionId)}/modes`, {
     errorMessage: 'Failed to list modes',
+    notify: true,
   });
 }
 
@@ -1383,6 +1418,7 @@ export async function listAgents(): Promise<AgentProfileEntry[]> {
 export async function listAllModels(): Promise<string[]> {
   return (await request<{ models: string[] }>('GET', '/api/models', {
     errorMessage: 'Failed to list models',
+    notify: true,
   })).models;
 }
 
@@ -2354,8 +2390,11 @@ export async function recordRecent(absPath: string, name: string): Promise<void>
  * sent true); dotfiles stay behind the explicit `showHidden` toggle and
  * `.git` never lists (daemon policy).
  *
- * Bypasses `request()` to preserve the exact query-string contract the daemon
- * route parses (`root` / `rel_path` / `show_ignored` / `show_hidden`).
+ * Goes through `request()` like every other call: a refused root used to
+ * surface as `listDir failed: 422`, the status and nothing else, while the
+ * daemon had said in a sentence which root it refused and why. The query
+ * string is built here exactly as the daemon route parses it (`root` /
+ * `rel_path` / `show_ignored` / `show_hidden`).
  */
 export async function listDir(
   root: string,
@@ -2368,12 +2407,12 @@ export async function listDir(
     show_ignored: 'true',
     show_hidden: String(showHidden),
   });
-  const res = await fetch(`/api/fs/list?${q}`, { credentials: 'same-origin' });
-  if (!res.ok) {
-    if (res.status === 401) notifyAuthRequired();
-    throw new Error(`listDir failed: ${res.status}`);
-  }
-  return res.json();
+  return request<FsListing>('GET', `/api/fs/list?${q}`, {
+    errorMessage: `Failed to list ${root}`,
+    includeErrorText: true,
+    notify: true,
+    credentials: 'same-origin',
+  });
 }
 
 /** Outcome of a move: kiln `.md` moves carry the wikilink-rewrite report. */

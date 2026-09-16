@@ -243,6 +243,14 @@ and a drill-down. The chip row is: project · workspace target · runtime target
 · model. Both target chips come from `getTargetProviders` (`web/src/lib/api.ts:555`).
 The `run on` chip has a built-in `This PC` row (`components/CenterComposer.tsx:352`).
 
+An untouched chip names the project's actual default rather than "Project default":
+a provider flags the row an unset session gets — `default = true` on the oci plugin's
+unnamed row (its devcontainer or configured image, by `resolve_config`'s precedence),
+`current` on the worktree plugin's checked-out branch — and the chip reads "Container
+· default" or "master · default". No runtime provider flagging a row means no provider
+claims the session, and the chip reads "This PC · default". A runtime provider that
+applies a target when the session says nothing must flag it, or the chip misreports.
+
 The old `run on` chip and the isolation chip asked one question twice. They are now
 one chip. One provider on an axis flattens its targets into the menu. Two or more get a
 `▸` drill-down.

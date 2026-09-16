@@ -58,3 +58,34 @@ describe('notificationStore mark-read vs dismiss', () => {
     expect(notificationStore.notifications.filter((n) => !n.dismissed)).toHaveLength(0);
   });
 });
+
+describe('notificationStore deduplication', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    notificationActions.clearAll();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('the same sentence within the window is one notification', () => {
+    const first = notificationActions.addNotification('error', 'root refused');
+    const second = notificationActions.addNotification('error', 'root refused');
+    expect(second).toBe(first);
+    expect(notificationStore.notifications.filter((n) => !n.dismissed)).toHaveLength(1);
+  });
+
+  it('a different type or text is not a duplicate', () => {
+    notificationActions.addNotification('error', 'root refused');
+    notificationActions.addNotification('warning', 'root refused');
+    notificationActions.addNotification('error', 'root refused elsewhere');
+    expect(notificationStore.notifications.filter((n) => !n.dismissed)).toHaveLength(3);
+  });
+
+  it('the same sentence after the window is a new notification', () => {
+    const first = notificationActions.addNotification('error', 'root refused');
+    vi.advanceTimersByTime(6_000);
+    const second = notificationActions.addNotification('error', 'root refused');
+    expect(second).not.toBe(first);
+  });
+});

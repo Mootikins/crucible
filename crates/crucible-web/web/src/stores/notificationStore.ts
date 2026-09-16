@@ -28,17 +28,31 @@ function recalcCount() {
 
 let nextId = 0;
 
+// One sentence, once. A failed session start fans out into several calls
+// (the folder listing, the model list, the mode list) that can all refuse
+// with the same reason, and a retry loop repeats one; the user needs the
+// sentence, not a column of it. Same type and same text inside this window
+// return the notification already on screen.
+const DEDUPE_WINDOW_MS = 5000;
+
 function addNotification(
   type: NotificationType,
   message: string,
   action?: Notification['action'],
 ): string {
-  const id = `notif-${Date.now()}-${nextId++}`;
+  const now = Date.now();
+  if (!action) {
+    const repeat = notifications.find(
+      (n) => !n.dismissed && n.type === type && n.message === message && now - n.timestamp < DEDUPE_WINDOW_MS,
+    );
+    if (repeat) return repeat.id;
+  }
+  const id = `notif-${now}-${nextId++}`;
   const notification: Notification = {
     id,
     type,
     message,
-    timestamp: Date.now(),
+    timestamp: now,
     dismissed: false,
     read: false,
     action,

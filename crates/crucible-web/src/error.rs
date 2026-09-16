@@ -109,20 +109,46 @@ pub trait WebResultExt<T> {
 impl<T, E: std::fmt::Display> WebResultExt<T> for std::result::Result<T, E> {
     fn daemon_err(self) -> Result<T> {
         self.map_err(|e| {
-            let message = e.to_string();
+            let raw = e.to_string();
+            let (code, message) = rpc_error_parts(&raw);
             // JSON-RPC `-32602` is INVALID_PARAMS: the caller sent something the
             // daemon refused, which is a 4xx. Mapping it to `Daemon` told the
             // client "upstream is broken" (502) for its own bad input — e.g.
             // refusing `/` as a session kiln, a deliberate containment check,
             // reported as a gateway failure. One route mapped this correctly and
             // every other one did not, so it belongs here rather than per-route.
-            if message.contains("-32602") {
+            if code == Some(-32602) || (code.is_none() && raw.contains("-32602")) {
                 WebError::Validation(message)
             } else {
                 WebError::Daemon(message)
             }
         })
     }
+}
+
+/// The code and the human message inside a daemon refusal.
+///
+/// `DaemonClient` reports a JSON-RPC error as `RPC error: {"code":…,"message":…}`
+/// — the envelope, serialised, behind a prefix. Passed through, that is what
+/// the browser toasted: a status and a JSON blob, where the daemon had written
+/// one plain sentence. The sentence is the part a person can act on, so it is
+/// what the response body carries; the code decides the status. Anything
+/// that is not that shape (a socket error, a plain string) passes unchanged.
+fn rpc_error_parts(raw: &str) -> (Option<i64>, String) {
+    let Some(envelope) = raw.strip_prefix("RPC error: ") else {
+        return (None, raw.to_string());
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(envelope) else {
+        return (None, raw.to_string());
+    };
+    let code = value.get("code").and_then(serde_json::Value::as_i64);
+    let message = value
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| raw.to_string());
+    (code, message)
 }
 
 #[cfg(test)]
@@ -142,6 +168,43 @@ mod tests {
         let status = refusal.daemon_err().unwrap_err().into_response().status();
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    /// The body carries the daemon's sentence, not the serialised envelope
+    /// it arrived in: a person reads "root is not a registered project…",
+    /// never `RPC error: {"code":-32602,"message":"…"}`.
+    #[tokio::test]
+    async fn the_body_carries_the_daemons_message_not_the_rpc_envelope() {
+        let refusal: std::result::Result<(), String> = Err(
+            r#"RPC error: {"code":-32602,"message":"root is not a registered project or a session's own workspace folder"}"#
+                .to_string(),
+        );
+
+        let response = refusal.daemon_err().unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body["error"]["message"],
+            "root is not a registered project or a session's own workspace folder"
+        );
+    }
+
+    /// A daemon-side failure keeps its sentence too, at 502.
+    #[tokio::test]
+    async fn a_daemon_failure_envelope_is_unwrapped_at_502() {
+        let failure: std::result::Result<(), String> =
+            Err(r#"RPC error: {"code":-32000,"message":"session.get exploded"}"#.to_string());
+
+        let response = failure.daemon_err().unwrap_err().into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["message"], "session.get exploded");
     }
 
     #[test]

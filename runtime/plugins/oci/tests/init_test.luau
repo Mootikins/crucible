@@ -1327,6 +1327,34 @@ describe("oci.targets", function()
     spec.setup({ runtime = "podman" })
     expect.equals(0, #targets({}).targets)
   end)
+
+  -- The composer's runtime chip names what an untouched session gets. It
+  -- reads that off this flag rather than re-deriving `resolve_config`'s
+  -- precedence in the browser, so the flag has to sit on exactly the row
+  -- that an unset `isolation` resolves to — and on no named profile.
+  it("flags the unnamed row as the default, and no profile", function()
+    spec.setup({
+      image = "alpine:latest",
+      profiles = { throwaway = { image = "debian:trixie" } },
+    })
+    local rows = targets({}).targets
+    expect.equals(2, #rows)
+    expect.equals("", rows[1].value)
+    expect.equals(true, rows[1].default)
+    expect.equals("throwaway", rows[2].value)
+    -- Every row says so: a profile is never the default, and an absent
+    -- field would read as "not stated" rather than "no".
+    expect.equals(false, rows[2].default)
+  end)
+
+  -- Profiles alone: an untouched session gets no container, so no row may
+  -- claim to be its default.
+  it("flags nothing when only named profiles are configured", function()
+    spec.setup({ profiles = { rust = { image = "rust:1-bookworm" } } })
+    for _, row in ipairs(targets({}).targets) do
+      expect.equals(false, row.default)
+    end
+  end)
 end)
 
 -- A branch is normally worked on in a linked worktree, whose `.git` is a FILE

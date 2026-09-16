@@ -492,7 +492,28 @@ async fn find_enclosing_root(
         })
         .collect();
 
-    resolve_enclosing_root(file_path, &kilns, &projects)
+    if let Some(root) = resolve_enclosing_root(file_path, &kilns, &projects) {
+        return Ok(root);
+    }
+
+    // A project-less session works in the folder the daemon made for it,
+    // which no registry lists. Asked only after the registries miss, so the
+    // ordinary read costs no extra round trip. Read-write like a project with
+    // no policy file: nothing in a scratch folder can say otherwise.
+    let session_folders: Vec<(PathBuf, ProjectFileAccess)> = state
+        .daemon
+        .session_list(None, None, None, None, Some(true))
+        .await
+        .daemon_err()?
+        .get("sessions")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.get("workspace").and_then(serde_json::Value::as_str))
+        .map(|w| (PathBuf::from(w), ProjectFileAccess::ReadWrite))
+        .collect();
+
+    resolve_enclosing_root(file_path, &[], &session_folders)
         .ok_or_else(|| WebError::NotFound("File not within any open kiln".to_string()))
 }
 

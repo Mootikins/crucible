@@ -311,10 +311,13 @@ knows what a container is:
 | `POST /api/session` → `isolation` | The value above, forwarded to the daemon untouched |
 | `GET /api/session/{id}/status` | Every plugin's keyed status slots, verbatim |
 
-The new-session composer shows an isolation chip — a toggle plus the profile
-list — whenever `profiles` is non-empty, and omits the field entirely while the
-toggle is untouched, so absent still means "resolve normally". A server with no
-named profiles shows no chip: a control that could only fail is worse than none.
+The new-session composer's run-on chip lists this plugin's targets — the
+unnamed default row plus every named profile — whenever the plugin publishes
+itself, and omits the field entirely while the chip is untouched, so absent
+still means "resolve normally". Untouched, the chip names what that resolves
+to: "Container · default" when the unnamed row exists (the plugin flags it
+`default`, by the precedence above), "This PC · default" when only named
+profiles are configured and an unset session would run on the host.
 
 The status route is a plain proxy of the `session.status` RPC. Slots render as
 chips keyed by `key`, labelled with `text`, toned by `level` and attributed to

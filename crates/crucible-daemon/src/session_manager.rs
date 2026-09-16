@@ -257,6 +257,31 @@ impl SessionManager {
         session_id.dir_under(self.sessions_root())
     }
 
+    /// The session-owned workspace folder that holds `path`, when one does.
+    ///
+    /// A session created with no project gets `<session_workspace_dir>/<id>`
+    /// as its workspace (see [`SessionManager::create_session`]). That folder
+    /// is where the session's work goes, so the file surfaces that admit a
+    /// registered project must admit it too — it used to answer "root is not
+    /// a registered project" to the file tree of every project-less session.
+    ///
+    /// Admitted by shape AND by record: the canonical `path` must sit at or
+    /// under a direct child of the scratch base, and that child must be the
+    /// stored workspace of a session this manager can read. A folder someone
+    /// created under the base by hand names no session and is refused, and
+    /// nothing outside the base is ever a session folder. Canonical paths on
+    /// both sides, so a symlink cannot present the shape.
+    pub async fn session_workspace_containing(&self, path: &Path) -> Option<PathBuf> {
+        let base = self.session_workspace_dir.as_ref()?.canonicalize().ok()?;
+        let canon = path.canonicalize().ok()?;
+        let rel = canon.strip_prefix(&base).ok()?;
+        let id = rel.components().next()?.as_os_str().to_str()?;
+        let folder = base.join(id);
+        let session = self.read_session(id).await.ok().flatten()?;
+        let stored = session.workspace.as_deref()?.canonicalize().ok()?;
+        (stored == folder).then_some(folder)
+    }
+
     /// Create a session manager with a custom storage backend.
     pub fn with_storage(storage: Arc<dyn SessionStorage>) -> Self {
         let sessions_root = storage.sessions_root().to_path_buf();

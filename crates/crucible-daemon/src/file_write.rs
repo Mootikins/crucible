@@ -184,11 +184,19 @@ pub(crate) async fn handle(
     req: crate::protocol::Request,
     km: &crate::kiln_manager::KilnManager,
     pm: &crate::project_manager::ProjectManager,
+    sessions: &crate::session_manager::SessionManager,
 ) -> crate::protocol::Response {
     let params = match crate::rpc_helpers::typed_params::<FileWriteRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
+    // A project-less session's own workspace folder is writable like a
+    // project: it is where that session's work goes. Read-write, because no
+    // `.crucible/project.toml` can exist there to say otherwise.
+    let session_folder = sessions
+        .session_workspace_containing(std::path::Path::new(&params.path))
+        .await
+        .map(|folder| (folder, ProjectFileAccess::ReadWrite));
     let kilns = km
         .list()
         .await
@@ -204,6 +212,7 @@ pub(crate) async fn handle(
                 .unwrap_or_default();
             (p.path, policy)
         })
+        .chain(session_folder)
         .collect::<Vec<_>>();
     crate::protocol::Response::success(req.id, write_for_roots(params, &kilns, &projects).await)
 }

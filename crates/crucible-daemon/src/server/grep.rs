@@ -30,6 +30,7 @@ pub(crate) async fn handle_search_grep(
     req: Request,
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<crate::session_manager::SessionManager>,
 ) -> Response {
     let params =
         match crate::rpc_helpers::typed_params::<crate::rpc_client::GrepSearchRequest>(&req) {
@@ -45,7 +46,7 @@ pub(crate) async fn handle_search_grep(
     // the daemon's.
     let limit = params.limit.clamp(1, GREP_MAX_LIMIT);
 
-    let canonical_root = match validate_grep_root(pm, km, root).await {
+    let canonical_root = match validate_grep_root(pm, km, sessions, root).await {
         Ok(p) => p,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
@@ -75,8 +76,9 @@ pub(crate) async fn handle_search_grep(
     }
 }
 
-/// Resolve `root` and confirm it is contained within a registered project or an
-/// open kiln. Returns the canonical root, or the `INVALID_PARAMS` message.
+/// Resolve `root` and confirm it is contained within a registered project, a
+/// session's own workspace folder, or an open kiln. Returns the canonical
+/// root, or the `INVALID_PARAMS` message.
 ///
 /// Open-kilns-only (not `get_or_open`) is deliberate: opening a kiln would
 /// initialize `.crucible/` in an arbitrary directory, minting search capability
@@ -84,6 +86,7 @@ pub(crate) async fn handle_search_grep(
 async fn validate_grep_root(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
+    sessions: &Arc<crate::session_manager::SessionManager>,
     root: &str,
 ) -> Result<PathBuf, String> {
     let canon = Path::new(root)
@@ -109,7 +112,17 @@ async fn validate_grep_root(
         }
     }
 
-    Err("root is not within a registered project or open kiln".to_string())
+    // The folder the daemon made for a project-less session — the same
+    // admission the file tree gets, so search and browse agree on it.
+    if sessions
+        .session_workspace_containing(&canon)
+        .await
+        .is_some()
+    {
+        return Ok(canon);
+    }
+
+    Err("root is not within a registered project, a session's own workspace folder, or an open kiln".to_string())
 }
 
 #[cfg(test)]
@@ -146,6 +159,57 @@ mod tests {
         (pm, km, project.path)
     }
 
+    /// A session manager that owns no session folders.
+    fn no_sessions() -> Arc<crate::session_manager::SessionManager> {
+        crate::test_support::temp_session_manager()
+    }
+
+    /// A project-less session's own workspace folder is searchable, like the
+    /// project it stands in for; a stranger under the same base is not.
+    #[tokio::test]
+    async fn a_sessions_own_workspace_folder_is_a_grep_root() {
+        let scratch = tempfile::TempDir::new().unwrap();
+        let store = tempfile::TempDir::new().unwrap();
+        let pm = Arc::new(ProjectManager::new(store.path().join("projects.json")));
+        let km = Arc::new(KilnManager::new());
+        let sessions = Arc::new(
+            crate::session_manager::SessionManager::with_storage(
+                crate::test_support::temp_session_storage(),
+            )
+            .with_session_workspace_dir(Some(scratch.path().to_path_buf())),
+        );
+        let session = sessions
+            .create_session(
+                crucible_core::session::SessionType::Chat,
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let folder = session.workspace.clone().unwrap();
+        fs::write(folder.join("a.md"), "a needle here\n").unwrap();
+        let stranger = scratch.path().join("not-a-session");
+        fs::create_dir(&stranger).unwrap();
+
+        let ok = validate_grep_root(&pm, &km, &sessions, folder.to_str().unwrap()).await;
+        assert_eq!(ok, Ok(folder.canonicalize().unwrap()));
+        let refused = validate_grep_root(&pm, &km, &sessions, stranger.to_str().unwrap()).await;
+        assert!(refused.is_err(), "a stranger under the base: {refused:?}");
+
+        let resp = handle_search_grep(
+            req(serde_json::json!({
+                "root": folder.to_string_lossy(),
+                "query": "needle",
+            })),
+            &pm,
+            &km,
+            &sessions,
+        )
+        .await;
+        assert_eq!(hits_of(&resp)["hits"].as_array().unwrap().len(), 1);
+    }
+
     #[tokio::test]
     async fn greps_notes_with_offsets_and_rel_path() {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -157,6 +221,7 @@ mod tests {
         fs::write(proj.join("c.txt"), "needle in a text file\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), proj);
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -166,6 +231,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -193,6 +259,7 @@ mod tests {
         fs::write(proj.join("c.txt"), "needle\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), proj);
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -201,6 +268,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -217,6 +285,7 @@ mod tests {
 
         // Register `tmp` but ask to grep `outside`.
         let (pm, km, _root) = registered(store.path(), tmp.path());
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -225,6 +294,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -243,6 +313,7 @@ mod tests {
         fs::write(proj.join("sub/note.md"), "needle in sub\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), proj);
+        let sessions = no_sessions();
         let sub = root.join("sub");
 
         let resp = handle_search_grep(
@@ -252,6 +323,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -269,6 +341,7 @@ mod tests {
         fs::write(proj.join("a.md"), "TODO7: tag\nTODOx: not a digit\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), proj);
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -278,6 +351,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -293,6 +367,7 @@ mod tests {
         fs::write(tmp.path().join("a.md"), "content\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), tmp.path());
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -302,6 +377,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -322,6 +398,7 @@ mod tests {
         fs::write(tmp.path().join("a.md"), "fooXbar\nfoo.bar\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), tmp.path());
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -330,6 +407,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 
@@ -346,6 +424,7 @@ mod tests {
         fs::write(proj.join("a.md"), "needle\nneedle\nneedle\nneedle\n").unwrap();
 
         let (pm, km, root) = registered(store.path(), proj);
+        let sessions = no_sessions();
 
         let resp = handle_search_grep(
             req(serde_json::json!({
@@ -355,6 +434,7 @@ mod tests {
             })),
             &pm,
             &km,
+            &sessions,
         )
         .await;
 

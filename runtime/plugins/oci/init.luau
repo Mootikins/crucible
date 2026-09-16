@@ -823,6 +823,11 @@ local plugin = {
             value = "",
             label = "Default",
             hint = has_devcontainer and "this project's devcontainer" or config.image,
+            -- What a session that says nothing on this axis gets, by
+            -- `resolve_config`'s own precedence. Flagged here, once, so the
+            -- composer can name the project's default instead of deriving it:
+            -- this row exists exactly when an untouched session is isolated.
+            default = true,
           }
         end
 
@@ -839,6 +844,8 @@ local plugin = {
             value = name,
             label = name,
             hint = type(profile) == "table" and profile.image or nil,
+            -- A named profile is a choice, never what an untouched session gets.
+            default = false,
           }
         end
 

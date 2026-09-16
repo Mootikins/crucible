@@ -437,7 +437,8 @@ impl RpcDispatcher {
                 crate::server::grep::handle_search_grep(
                     req.clone(),
                     &self.ctx.project_manager,
-                    &self.ctx.kiln
+                    &self.ctx.kiln,
+                    &self.ctx.sessions
                 )
             ),
             RpcMethod::EmbedQuery => forward!(
@@ -1088,18 +1089,28 @@ impl RpcDispatcher {
             RpcMethod::ScmClone => to_response(id, self.handle_scm_clone(&req).await),
             RpcMethod::FsListDir => forward!(
                 id,
-                crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager)
+                crate::server::fs::handle_fs_list_dir(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.sessions
+                )
             ),
             RpcMethod::FsWrite => forward!(
                 id,
-                crate::file_write::handle(req.clone(), &self.ctx.kiln, &self.ctx.project_manager)
+                crate::file_write::handle(
+                    req.clone(),
+                    &self.ctx.kiln,
+                    &self.ctx.project_manager,
+                    &self.ctx.sessions
+                )
             ),
             RpcMethod::FsMove => forward!(
                 id,
                 crate::server::fs::handle_fs_move(
                     req.clone(),
                     &self.ctx.project_manager,
-                    &self.ctx.kiln
+                    &self.ctx.kiln,
+                    &self.ctx.sessions
                 )
             ),
             RpcMethod::FsMkdir => forward!(
@@ -1107,7 +1118,8 @@ impl RpcDispatcher {
                 crate::server::fs::handle_fs_mkdir(
                     req.clone(),
                     &self.ctx.project_manager,
-                    &self.ctx.kiln
+                    &self.ctx.kiln,
+                    &self.ctx.sessions
                 )
             ),
             RpcMethod::FsTrash => forward!(
@@ -1115,7 +1127,8 @@ impl RpcDispatcher {
                 crate::server::fs::handle_fs_trash(
                     req.clone(),
                     &self.ctx.project_manager,
-                    &self.ctx.kiln
+                    &self.ctx.kiln,
+                    &self.ctx.sessions
                 )
             ),
             RpcMethod::NoteRename | RpcMethod::NoteMove => forward!(
