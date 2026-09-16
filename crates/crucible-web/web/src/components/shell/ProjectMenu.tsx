@@ -20,10 +20,17 @@ const PIN = 'pin:';
 const NEW_WINDOW = 'window:';
 
 /**
- * The titlebar kebab: pin a project, or open one in a second window.
+ * The sessions-pane kebab: pin a project, or open one in a second window.
+ *
+ * It sits in the sessions pane because that pane groups its sessions BY
+ * project — the menu acts on the thing the list is organised by. It stood on
+ * the rail's kebab before, which is the layout control now, and before that
+ * in a titlebar that is gone. It stays a roster-wide menu rather than rows on
+ * the project tier: the tier draws a project only once a session starts in
+ * it, so a project you have not worked in has no row to pin from.
  *
  * Everything here is low-frequency, which is why it is buried behind a kebab
- * while the session switcher sits in the open. Pinning happens IN THIS WINDOW.
+ * while the session list sits in the open. Pinning happens IN THIS WINDOW.
  * Switching projects must not spawn a window: two windows means two layouts
  * and two things to track — worth it when you deliberately want them side by
  * side, actively bad as the automatic outcome of a switch. `New window` is

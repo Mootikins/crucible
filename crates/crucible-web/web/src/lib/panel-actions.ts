@@ -1,9 +1,10 @@
 import { windowStore } from '@/stores/windowStore';
 import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition } from '@/types/windowTypes';
-import { getGlobalRegistry } from './panel-registry';
+import { getGlobalRegistry, type PanelDefinition } from './panel-registry';
 import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
+import { terminalAllowed } from './terminal-availability';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
@@ -109,6 +110,33 @@ export function firstCenterPaneId(): string | null {
     return findFirst(node.first) || findFirst(node.second);
   }
   return findFirst(windowStore.layout);
+}
+
+/**
+ * Panels a user may ask for BY NAME — the ones the layout menu and the
+ * palette can open on their own.
+ *
+ * A file tab names a file and a chat tab names a session, so neither means
+ * anything without one: "Open File" would open an empty viewer. They are
+ * registered because something else (the tree, the session list) opens them
+ * with an argument.
+ */
+const NOT_REOPENABLE = new Set<string>(['file', 'chat', 'chat-draft']);
+
+/**
+ * Registered panels with no tab open anywhere — what "Re-add pane" offers.
+ *
+ * Reads the live tab groups, so it is reactive: closing a panel puts it back
+ * in the list. The terminal drops out where the client cannot run one (a
+ * remote without the `remote_shell` opt-in), because re-adding it would open
+ * a panel that only explains itself.
+ */
+export function closedPanels(): PanelDefinition[] {
+  return getGlobalRegistry()
+    .list()
+    .filter((def) => !NOT_REOPENABLE.has(def.id))
+    .filter((def) => def.id !== 'terminal' || terminalAllowed())
+    .filter((def) => findTabByContentType(def.id as TabContentType) === null);
 }
 
 export function findTabByContentType(

@@ -36,6 +36,7 @@ import {
   updateRootWhere,
 } from './windowStoreInternals';
 import type { WindowState } from './windowStoreTypes';
+import { isLastFixedRailTab } from './layoutActions';
 
 /** Drop an emptied group that lives in an edge panel: a multi-pane panel
  * collapses the empty pane out of its tree; the sole remaining pane keeps an
@@ -117,6 +118,12 @@ export function createTabActions(context: WindowStoreContext): TabActions {
   const removeTab = (groupId: string, tabId: string) => {
     const group = store.tabGroups[groupId];
     if (!group) return;
+    // The two rails are fixed: the LAST Sessions panel and the last Files
+    // panel do not close. The guard is here rather than in the tab strip
+    // because every close path reaches this one function — the tab's own
+    // button, Close Others, Close to the Right, and a pane closing with its
+    // tabs — and a rule enforced in one of them is not a rule.
+    if (isLastFixedRailTab(store, groupId, tabId)) return;
     const newTabs = group.tabs.filter((t) => t.id !== tabId);
     const newActiveTabId =
       group.activeTabId === tabId

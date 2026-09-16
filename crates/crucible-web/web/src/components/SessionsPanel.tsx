@@ -10,6 +10,7 @@ import { byRecency, inboxSessions } from '@/lib/session-inbox';
 import { reflectionSessions } from '@/lib/session-reflections';
 import { SessionRow, SessionTree } from './SessionTree';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ProjectMenu } from '@/components/shell/ProjectMenu';
 
 /**
  * The sessions rail — an Inbox of the last few sessions, then two tiers,
@@ -134,10 +135,27 @@ export const SessionsPanel: Component = () => {
 
   return (
     <PanelShell>
-      {/* No switcher header. It was a dropdown listing sessions, sitting on
-          top of a list of sessions — its one unique offer was a GLOBAL
-          "active" group, and the Inbox below is that group, in the open,
-          without a click. The waiting count rides the Inbox header instead. */}
+      {/* No SESSION switcher header. It was a dropdown listing sessions,
+          sitting on top of a list of sessions — its one unique offer was a
+          GLOBAL "active" group, and the Inbox below is that group, in the
+          open, without a click. The waiting count rides the Inbox header.
+
+          The PROJECT menu is a different thing and it does belong here. It
+          came off the rail's kebab, which is the layout control now, and it
+          acts on the registry of projects this panel groups its sessions by.
+          It is not rows on the project tier: that tier draws a project only
+          once a session starts in it, so a project you have not worked in has
+          no row to pin from. Pinning ONE project from its own row stays in
+          the tree's context menu, where the row already is. */}
+      <div
+        data-testid="sessions-panel-header"
+        class="flex-none flex items-center gap-1 px-2 pt-2 pb-1"
+      >
+        <span class="flex-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">
+          Projects
+        </span>
+        <ProjectMenu />
+      </div>
       {/* The whole rail is the session list: Inbox, tree, Reflections and
           Archived are its sections. */}
       <div class="flex-1 overflow-y-auto px-1 py-1.5" data-testid="session-list">

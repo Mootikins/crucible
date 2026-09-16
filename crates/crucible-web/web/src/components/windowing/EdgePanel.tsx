@@ -2,7 +2,7 @@ import { Component, Show, createEffect, createSignal, on, onCleanup } from 'soli
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { ProjectMenu } from '@/components/shell/ProjectMenu';
+import { LayoutMenu } from '@/components/shell/LayoutMenu';
 import { OfflineBadge } from '@/components/OfflineBadge';
 import { applyTheme, theme } from '@/lib/theme';
 import {
@@ -445,11 +445,15 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         <RibbonPaneStrip position={props.position} ribbonEl={() => ribbonRef} />
       </Show>
       <Show when={props.position === 'left'}>
-        {/* Project actions — pin one, or open one in a second window. They
-            lived in a title bar that is gone; the ribbon is where the shell's
-            low-frequency chrome belongs. */}
+        {/* Layout actions — put a closed pane back, or start the layout
+            over. On the rail because the rail IS the layout: the two repairs
+            belong on the thing they repair, not on a settings page the user
+            has to find while looking at what they broke.
+
+            Project actions used to sit here. They moved into the sessions
+            pane, beside the projects they act on. */}
         <div class="flex-none w-10 h-9 flex items-center justify-center border-b border-hairline">
-          <ProjectMenu />
+          <LayoutMenu />
         </div>
       </Show>
       {/* Everything from here down is pinned to the rail's far end.

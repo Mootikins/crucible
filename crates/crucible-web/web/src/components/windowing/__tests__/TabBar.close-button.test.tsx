@@ -88,6 +88,34 @@ describe('TabBar — close button visibility & behavior', () => {
     expect(closeButton(container, 'tab-a')!.className).toContain('opacity-0');
   });
 
+  // The rails are fixed: the store refuses to close the last Sessions panel,
+  // so the strip must not offer an X that does nothing. The affordance and
+  // the capability go together.
+  it('offers no close button on the last Sessions panel', () => {
+    const railPane = findFirstPane(windowStore.edgePanels.left.layout)!;
+    const railGroupId = railPane.tabGroupId!;
+    const sessionsTabId = windowStore.tabGroups[railGroupId].tabs.find(
+      (t) => t.contentType === 'sessions',
+    )!.id;
+    const { container } = render(() => (
+      <DragDropProvider>
+        <TabBar groupId={railGroupId} paneId={railPane.id} />
+      </DragDropProvider>
+    ));
+
+    expect(container.querySelector(`[data-tab-id="${sessionsTabId}"]`)).toBeTruthy();
+    expect(closeButton(container, sessionsTabId)).toBeNull();
+
+    // A SECOND copy closes normally — the rule is "never zero", not "never
+    // this content type".
+    windowActions.addTab(railGroupId, {
+      id: 'sessions-copy',
+      title: 'Sessions',
+      contentType: 'sessions',
+    });
+    expect(closeButton(container, 'sessions-copy')).toBeTruthy();
+  });
+
   it('clicking a close button removes that tab', () => {
     const { container } = render(() => (
       <DragDropProvider>
