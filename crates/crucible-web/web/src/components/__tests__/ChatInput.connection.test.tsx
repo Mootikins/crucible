@@ -82,7 +82,6 @@ vi.mock('../AutocompletePopup', () => ({ AutocompletePopup: () => <div /> }));
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  executeCommand: vi.fn(async () => ({ result: '', type: 'success' })),
   listProjects: vi.fn(async () => []),
   connectSessionKiln: vi.fn(),
   disconnectSessionKiln: vi.fn(),

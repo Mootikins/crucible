@@ -100,10 +100,6 @@ vi.mock('../AutocompletePopup', () => ({
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  // Mock must match CommandResult (api.ts): { result, type }. The daemon's
-  // CommandResponse (web/routes/session_commands.rs) always sets `type` to
-  // "success" | "error"; a successful command returns "success".
-  executeCommand: vi.fn(async () => ({ result: 'Command executed', type: 'success' })),
   // The docked permission card reads the file it is about to overwrite.
   getFileContent: vi.fn(async () => ''),
   // SessionScopeChips (rendered inside ChatInput) loads this on mount. Its

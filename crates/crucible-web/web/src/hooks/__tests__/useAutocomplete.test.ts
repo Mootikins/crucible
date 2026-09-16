@@ -1,22 +1,48 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
-
-const listSlashCommandsMock = vi.fn();
-const listFilesMock = vi.fn();
-const listKilnNotesMock = vi.fn();
-
-vi.mock('@/lib/api', () => ({
-  listSlashCommands: () => listSlashCommandsMock(),
-  listFiles: (p: string) => listFilesMock(p),
-  listKilnNotes: (p: string) => listKilnNotesMock(p),
-}));
-
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import type { FileEntry } from '@/lib/types';
+import type { SlashCommand } from '@/lib/api';
 import {
   fuzzyFilter,
-  useAutocomplete,
   resetCommandCache,
+  useAutocomplete,
   type AutocompleteItem,
 } from '@/hooks/useAutocomplete';
+
+/**
+ * Nothing in `@/lib/api` is stubbed. The command list is held by
+ * `lib/query/commands.ts` now, so the hook runs the real `listSlashCommands`
+ * against the mocked fetch — which is what proves the list is fetched once and
+ * that a refusal does not poison the cache.
+ */
+
+/** What each route answers next. */
+let commands: SlashCommand[] = [];
+let files: FileEntry[] = [];
+let notes: FileEntry[] = [];
+/** When true, `GET /api/commands` refuses once. */
+let refuseCommands = false;
+
+let env: TestQueryEnv;
+
+function installEnv(): void {
+  env = createTestQueryEnv({
+    'GET /api/commands': () => {
+      if (!refuseCommands) return { commands };
+      refuseCommands = false;
+      return new Response(JSON.stringify({ error: { code: 503, message: 'offline' } }), {
+        status: 503,
+      });
+    },
+    'GET /api/kiln/files': () => ({ files }),
+    'GET /api/kiln/notes': () => ({ files: notes }),
+  });
+}
+
+afterEach(() => {
+  env?.restore();
+});
 
 const item = (label: string): AutocompleteItem => ({ id: label, label, insertText: label });
 
@@ -57,15 +83,15 @@ function harness(initial = '') {
 
 describe('useAutocomplete slash commands', () => {
   beforeEach(() => {
-    resetCommandCache();
-    vi.clearAllMocks();
-    listSlashCommandsMock.mockResolvedValue([
+    commands = [
       { name: 'help', args: '', description: 'Show available commands' },
       { name: 'models', args: '', description: 'List available models' },
       { name: 'model', args: '<name>', description: 'Switch to a different model' },
-    ]);
-    listFilesMock.mockResolvedValue([]);
-    listKilnNotesMock.mockResolvedValue([]);
+    ];
+    files = [];
+    notes = [];
+    refuseCommands = false;
+    installEnv();
   });
 
   it('opens the popup when the user types "/"', async () => {
@@ -82,11 +108,32 @@ describe('useAutocomplete slash commands', () => {
     await createRoot(async (dispose) => {
       const { auto, type } = harness();
       await type('/');
-      expect(listSlashCommandsMock).toHaveBeenCalled();
+      expect(env.fetch.calls('GET /api/commands')).toBe(1);
       // Descriptions come across for the popup's second line.
       expect(auto.items().find((i) => i.label === '/help')?.detail).toBe(
         'Show available commands',
       );
+      dispose();
+    });
+  });
+
+  // The daemon serves the commands from the constant it dispatches on, so they
+  // cannot change while it runs. Two composers, and a composer that opens the
+  // popup twice, must cost one GET between them.
+  it('fetches the list once for every composer, and again after a reset', async () => {
+    await createRoot(async (dispose) => {
+      const first = harness();
+      await first.type('/');
+      const second = harness();
+      await second.type('/h');
+      expect(second.auto.isOpen()).toBe(true);
+      expect(env.fetch.calls('GET /api/commands')).toBe(1);
+
+      // The seam: a daemon restarted under a browser that stayed open serves a
+      // different set, and this is what lets the next keystroke see it.
+      await resetCommandCache();
+      await first.type('/m');
+      expect(env.fetch.calls('GET /api/commands')).toBe(2);
       dispose();
     });
   });
@@ -125,7 +172,7 @@ describe('useAutocomplete slash commands', () => {
 
   it('stays closed when the command fetch fails, and retries on the next keystroke', async () => {
     await createRoot(async (dispose) => {
-      listSlashCommandsMock.mockRejectedValueOnce(new Error('offline'));
+      refuseCommands = true;
       const { auto, type } = harness();
       await type('/');
       expect(auto.isOpen()).toBe(false);
@@ -141,14 +188,14 @@ describe('useAutocomplete slash commands', () => {
 
 describe('useAutocomplete wikilinks', () => {
   beforeEach(() => {
-    resetCommandCache();
-    vi.clearAllMocks();
-    listSlashCommandsMock.mockResolvedValue([]);
-    listFilesMock.mockResolvedValue([]);
-    listKilnNotesMock.mockResolvedValue([
-      { name: 'Wikilinks', path: 'Help/Wikilinks.md' },
-      { name: 'Tags', path: 'Help/Tags.md' },
-    ]);
+    commands = [];
+    files = [];
+    notes = [
+      { name: 'Wikilinks', path: 'Help/Wikilinks.md', is_dir: false },
+      { name: 'Tags', path: 'Help/Tags.md', is_dir: false },
+    ];
+    refuseCommands = false;
+    installEnv();
   });
 
   it('opens on "[[" and completes to a closed wikilink', async () => {

@@ -1,5 +1,6 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
-import { listFiles, listKilnNotes, listSlashCommands } from '@/lib/api';
+import { listFiles, listKilnNotes } from '@/lib/api';
+import { fetchSlashCommandsOnce } from '@/lib/query/commands';
 import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
 
@@ -26,33 +27,36 @@ interface UseAutocompleteOptions {
   textareaRef: Accessor<HTMLTextAreaElement | undefined>;
 }
 
-/** Commands are static for the server's lifetime — fetch once, share process-wide. */
-let commandItemsPromise: Promise<AutocompleteItem[]> | null = null;
-
+/**
+ * The commands as popup rows.
+ *
+ * The list itself is held by `lib/query/commands.ts`, under one key for the
+ * whole browser. This hook used to memoise its own promise beside that cache,
+ * which meant a second copy of a list that is static for the daemon's
+ * lifetime, and its own hand-written rule for dropping the copy after a
+ * refused fetch. The query does both: a refusal leaves no data, so the next
+ * keystroke asks again.
+ */
 function loadCommandItems(): Promise<AutocompleteItem[]> {
-  commandItemsPromise ??= listSlashCommands()
-    .then((commands) =>
-      commands.map((c) => ({
-        id: `command:${c.name}`,
-        label: `/${c.name}`,
-        // Commands taking an argument keep the trailing space so the user can
-        // type straight into it; nullary ones don't (nothing follows).
-        insertText: c.args ? `${c.name} ` : c.name,
-        detail: c.description,
-      })),
-    )
-    // A failed fetch must not poison the cache — a later keystroke retries.
-    .catch((err) => {
-      commandItemsPromise = null;
-      throw err;
-    });
-  return commandItemsPromise;
+  return fetchSlashCommandsOnce().then((commands) =>
+    commands.map((c) => ({
+      id: `command:${c.name}`,
+      label: `/${c.name}`,
+      // Commands taking an argument keep the trailing space so the user can
+      // type straight into it; nullary ones don't (nothing follows).
+      insertText: c.args ? `${c.name} ` : c.name,
+      detail: c.description,
+    })),
+  );
 }
 
-/** Test seam: drop the memoised command list. */
-export function resetCommandCache(): void {
-  commandItemsPromise = null;
-}
+/**
+ * Test seam: drop the held command list.
+ *
+ * Re-exported rather than moved, because every caller of it is a test of this
+ * hook. The list is the query layer's; the seam stays where the tests reach it.
+ */
+export { resetCommandCache } from '@/lib/query/commands';
 
 function toAutocompleteItems(entries: FileEntry[], prefix: string): AutocompleteItem[] {
   return entries.map((entry) => ({

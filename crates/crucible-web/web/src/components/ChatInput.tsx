@@ -6,7 +6,7 @@ import { useSessionScopeChips } from './SessionScopeChips';
 import { SessionStatusChips } from './SessionStatusChips';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import type { ComposerChip } from '@/components/composer/ChipRow';
-import { executeCommand } from '@/lib/api';
+import { useExecuteCommand } from '@/lib/query/commands';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
@@ -31,6 +31,10 @@ export const ChatInput: Component = () => {
   let formRef: HTMLFormElement | undefined;
 
   const session = () => currentSession();
+  // Bound to the accessor, not to an id: the composer outlives the session on
+  // screen, so a command typed after a tab switch must reach the session the
+  // user is looking at.
+  const runCommand = useExecuteCommand(() => session()?.id ?? '');
   // Sending is allowed whenever a session is selected and no turn is in flight.
   // Lifecycle state (paused/ended) is NOT a gate: the daemon transparently
   // revives an idle session on send, so an ended session is never a dead end.
@@ -65,7 +69,7 @@ export const ChatInput: Component = () => {
       if (!s) return;
 
       try {
-        const result = await executeCommand(s.id, message);
+        const result = await runCommand.mutateAsync(message);
         // Special handling for /clear
         if (message.startsWith('/clear')) {
           clearMessages();
