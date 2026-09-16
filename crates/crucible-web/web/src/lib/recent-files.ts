@@ -9,12 +9,7 @@
  * server list loads.
  */
 import { createSignal } from 'solid-js';
-import { fetchRecents, recordRecent } from '@/lib/api';
-
-interface RecentFile {
-  absPath: string;
-  name: string;
-}
+import { fetchRecentsOnce, recordRecentOnce, type RecentFile } from '@/lib/query/recents';
 
 const STORAGE_KEY = 'crucible:recentFiles';
 const MAX_RECENTS = 20;
@@ -45,13 +40,17 @@ const [recentFiles, setRecentFiles] = createSignal<RecentFile[]>(load());
 
 export { recentFiles };
 
-let synced = false;
-
-/** Replace the warm-start list with the server's once per page load. */
+/**
+ * Replace the warm-start list with the server's.
+ *
+ * There is no once-per-page-load flag any more. The server's list is held
+ * under `keys.recents()`, and that entry decides when to ask again — so a
+ * second composer mounting costs nothing, and the first one mounting after a
+ * file was opened elsewhere gets the list that open produced rather than the
+ * one from before it.
+ */
 export function syncRecentsFromServer(): void {
-  if (synced) return;
-  synced = true;
-  void fetchRecents()
+  void fetchRecentsOnce()
     .then((server) => {
       if (server.length > 0) {
         setRecentFiles(server);
@@ -70,7 +69,7 @@ export function recordRecentFile(absPath: string, name: string): void {
   ].slice(0, MAX_RECENTS);
   setRecentFiles(next);
   persistLocal(next);
-  void recordRecent(absPath, name).catch(() => {
-    /* server write is best-effort; local list already updated */
-  });
+  // The write makes the held list wrong, so the next reader of it sees this
+  // open. A refusal is the write's own business: the file is open either way.
+  void recordRecentOnce(absPath, name);
 }
