@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { Component } from 'solid-js';
+import { createComputed, onCleanup, type Component } from 'solid-js';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { Pane } from '../Pane';
@@ -194,5 +194,47 @@ describe('Pane — the renderer gets the LIVE tab', () => {
     // A remount would discard whatever the user had typed.
     expect(renders).toBe(before);
     expect((getByTestId('probe-input') as HTMLInputElement).value).toBe('unsent draft');
+  });
+});
+
+describe('Pane — each panel reads its own tab', () => {
+  /**
+   * A switch of the active tab replaces the panel. Until the pane disposes the
+   * old panel, the old panel can still read its accessor. That accessor must
+   * give the old tab, never the tab that the user selected. The cleanup of the
+   * old panel runs after the store names the new tab.
+   */
+  it('never gives the first panel the metadata of the second tab', () => {
+    const seen: Record<string, unknown[]> = {};
+    const recorder: WindowingContextValue['renderContent'] = (tab) => {
+      const id = tab().id;
+      seen[id] = [];
+      createComputed(() => seen[id].push(tab().metadata?.label));
+      // A panel may read its tab when the pane disposes it, for example to
+      // save a draft.
+      onCleanup(() => seen[id].push(tab().metadata?.label));
+      return <div data-testid={`body-${id}`} />;
+    };
+    windowActions.addTab(groupId, {
+      id: 'first',
+      title: 'First',
+      contentType: 'alpha',
+      metadata: { label: 'first-label' },
+    });
+    windowActions.addTab(groupId, {
+      id: 'second',
+      title: 'Second',
+      contentType: 'alpha',
+      metadata: { label: 'second-label' },
+    });
+    windowActions.setActiveTab(groupId, 'first');
+    const { queryByTestId } = renderPane(() => paneId, { renderContent: recorder });
+    expect(queryByTestId('body-first')).toBeTruthy();
+
+    windowActions.setActiveTab(groupId, 'second');
+
+    expect(queryByTestId('body-second')).toBeTruthy();
+    expect(seen.first).not.toContain('second-label');
+    expect(seen.second).toEqual(['second-label']);
   });
 });

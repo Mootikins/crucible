@@ -301,9 +301,10 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
                 </div>
               );
             }
-            // The live tab, rendered untracked, as in Pane.
+            // The live copy of THIS tab, rendered untracked, as in Pane.
             const snapshot = untrack(activeTab)!;
-            return untrack(() => windowing.renderContent(() => activeTab() ?? snapshot));
+            const live = () => group()?.tabs.find((t) => t.id === id) ?? snapshot;
+            return untrack(() => windowing.renderContent(live));
           })()}
         </div>
       </div>

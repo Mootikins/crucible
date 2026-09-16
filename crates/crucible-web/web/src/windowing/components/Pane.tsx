@@ -109,9 +109,12 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       );
     }
     // The renderer gets the LIVE tab, and runs untracked: a read inside it must
-    // not make this function re-run, which would remount the panel.
+    // not make this function re-run, which would remount the panel. The
+    // accessor finds THIS tab by its id, not the active tab: the cleanup of the
+    // old panel runs after the store names the tab that the user selected.
     const snapshot = untrack(activeTab)!;
-    return untrack(() => windowing.renderContent(() => activeTab() ?? snapshot));
+    const live = () => group()?.tabs.find((t) => t.id === id) ?? snapshot;
+    return untrack(() => windowing.renderContent(live));
   };
 
   // A collapsed rail pane is CLIPPED to its tab strip, not unmounted: the
