@@ -66,7 +66,7 @@ const suggestionKey = (s: UnlinkedMention) => `${s.target}:${s.offset}:${s.menti
  * and a 500 all told the user their note has no backlinks. A panel must not
  * report an answer it never received.
  */
-export function backlinksFailureText(error: unknown): string {
+function backlinksFailureText(error: unknown): string {
   const status = (error as { status?: number } | null)?.status;
   if (typeof status === 'number') return `The daemon answered HTTP ${status}.`;
   const message = error instanceof Error ? error.message : String(error ?? '');

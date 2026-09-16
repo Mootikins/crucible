@@ -80,7 +80,6 @@ export {
   ClipboardList,
   CircleQuestionMark,
   Map,
-  Play,
   Trash2,
   Inbox,
   Link2,

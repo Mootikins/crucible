@@ -65,7 +65,7 @@ function groupHolds(groupId: string | null, pred: (contentType: string) => boole
 }
 
 /** True when the group holds nothing, or nothing that is a conversation. */
-export function groupIsEditorRoom(groupId: string | null): boolean {
+function groupIsEditorRoom(groupId: string | null): boolean {
   return !groupHolds(groupId, (c) => SESSION_CONTENT.has(c));
 }
 
@@ -101,15 +101,6 @@ export function editorGroupId(): string | null {
     centre.find((g) => !g.tabs.some((t) => SESSION_CONTENT.has(t.contentType)))?.id ??
     null
   );
-}
-
-/** The first pane in the centre tiling — what a new pane splits off from. */
-export function firstCenterPaneId(): string | null {
-  function findFirst(node: LayoutNode): string | null {
-    if (node.type === 'pane') return node.id;
-    return findFirst(node.first) || findFirst(node.second);
-  }
-  return findFirst(windowStore.layout);
 }
 
 /**

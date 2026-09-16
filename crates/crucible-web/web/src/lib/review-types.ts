@@ -98,13 +98,6 @@ export interface ReviewAwareMode extends ModeDescriptor {
   review_policy?: ReviewPolicy;
 }
 
-/** Human-readable label for a policy, for the chip beside the mode selector. */
-export const REVIEW_POLICY_LABELS: Record<ReviewPolicy, string> = {
-  none: 'ungated',
-  post_turn: 'review at turn end',
-  pre_write: 'gated',
-};
-
 /**
  * A hunk nobody's ledger claims: the user's own editor, an async formatter, a
  * plugin writing directly. Shown for context so the composed diff stays

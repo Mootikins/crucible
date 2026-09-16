@@ -23,6 +23,7 @@
         "@fontsource-variable/geist-mono": "^5.3.0",
         "@huggingface/transformers": "^4.0.1",
         "@lezer/common": "^1.2.0",
+        "@lezer/highlight": "^1.2.3",
         "@replit/codemirror-vim": "^6.3.0",
         "@solid-primitives/keyed": "^1.5.3",
         "@thisbeyond/solid-dnd": "^0.7.5",
