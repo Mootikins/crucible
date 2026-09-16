@@ -20,6 +20,9 @@ import {
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { isMarkdownPath, noteStem } from './markdown-path';
+import { openFileInGroup } from './file-actions';
+import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
+import { collectPanes } from '@/windowing/model/tree';
 
 type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
 
@@ -137,4 +140,48 @@ export function attachFileDropTarget(
       },
     }),
   );
+}
+
+/**
+ * The attribute a pane drop target carries while a file drag hovers it. The
+ * window manager styles its drop surfaces from this attribute.
+ */
+export const FILE_DROP_OVER_ATTR = 'data-file-drop-over';
+
+/** The pane that shows `groupId`, in the centre or on a rail. */
+function paneShowing(groupId: string) {
+  const roots = [
+    windowStore.layout,
+    windowStore.edgePanels.left.layout,
+    windowStore.edgePanels.right.layout,
+  ];
+  return roots.flatMap((root) => collectPanes(root)).find((p) => p.tabGroupId === groupId);
+}
+
+/**
+ * The window manager's drop target: a file dropped on a pane body or a rail
+ * ribbon opens in `groupId`.
+ *
+ * The drop then shows its result. The pane that holds the group takes focus,
+ * and a rail that holds it opens, so a file dropped on a closed rail does not
+ * open out of sight.
+ */
+export function attachPaneDropTarget(
+  element: HTMLElement,
+  groupId: () => string | null,
+): () => void {
+  return attachFileDropTarget(element, {
+    zone: 'pane',
+    canDrop: (source) => !source.isDir,
+    onDragEnter: () => element.setAttribute(FILE_DROP_OVER_ATTR, ''),
+    onDragLeave: () => element.removeAttribute(FILE_DROP_OVER_ATTR),
+    onDrop: (source) => {
+      const id = groupId();
+      const pane = id ? paneShowing(id) : undefined;
+      if (pane) windowActions.setActivePane(pane.id);
+      openFileInGroup(id, source.absPath, source.name);
+      const rail = id ? findEdgePanelForGroup(id) : null;
+      if (rail) windowActions.setEdgePanelCollapsed(rail, false);
+    },
+  });
 }

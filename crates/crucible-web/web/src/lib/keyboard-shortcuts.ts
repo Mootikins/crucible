@@ -65,3 +65,19 @@ export function shortcutLabel(
   const key = shortcut.key.length === 1 ? shortcut.key.toUpperCase() : shortcut.key;
   return [...modifiers, key].join('+');
 }
+
+/**
+ * The rows an empty centre pane prints: the two keys that fill it.
+ *
+ * The chords come from `DEFAULT_SHORTCUTS`, so a rebound key reprints here,
+ * and a hint never names a key that the app does not listen for.
+ */
+export function emptyPaneHints(): { label: string; chord: string }[] {
+  return [
+    { action: 'openNoteSwitcher', label: 'Open a note' },
+    { action: 'openCommandPalette', label: 'Command palette' },
+  ].flatMap(({ action, label }) => {
+    const chord = shortcutLabel(action);
+    return chord === null ? [] : [{ label, chord }];
+  });
+}

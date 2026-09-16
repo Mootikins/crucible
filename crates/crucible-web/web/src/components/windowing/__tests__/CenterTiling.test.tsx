@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider } from '@thisbeyond/solid-dnd';
+import { AppDragDropProvider } from './appProviders';
 import { CenterTiling } from '../CenterTiling';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { findFirstPane, generateId } from '@/windowing/model/tree';
@@ -44,9 +44,9 @@ describe('CenterTiling', () => {
       contentType: 'file',
     });
     const { queryByText, container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <CenterTiling />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     // Single-pane layout → that pane's tab strip.
@@ -73,9 +73,9 @@ describe('CenterTiling', () => {
     );
 
     const { container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <CenterTiling />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     const splitter = container.querySelector('[data-testid="resize-splitter"]');
@@ -117,9 +117,9 @@ describe('CenterTiling — an empty side yields its width', () => {
 
   const renderTiling = () =>
     render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <CenterTiling />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
   /** The two flex children the splitter sits between. */

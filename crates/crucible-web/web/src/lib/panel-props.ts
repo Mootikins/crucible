@@ -1,5 +1,5 @@
 import { createMemo, untrack } from 'solid-js';
-import type { Tab } from '@/types/windowTypes';
+import type { Tab } from '@/windowing/model/types';
 
 /**
  * A tab's metadata as REACTIVE panel props.
@@ -33,6 +33,7 @@ import type { Tab } from '@/types/windowTypes';
  * whole props object a dependency — which is the remount this exists to avoid.
  */
 export function reactiveMetadataProps(
+  // The core tab: the props read only the metadata, whatever the content type.
   liveTab: () => Tab | null,
 ): Record<string, unknown> {
   const props: Record<string, unknown> = {};

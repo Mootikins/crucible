@@ -1,15 +1,11 @@
-import { Component, Show, createMemo, createSignal, onCleanup } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
+import { Component, Show, createMemo, onCleanup, untrack } from 'solid-js';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { EmptyPane } from './EmptyPane';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { regionOfPane } from '@/windowing/model/tree';
 import { hasTabsOutsidePane } from '@/windowing/model/pane-content';
-import { getGlobalRegistry } from '@/lib/panel-registry';
-import { reactiveMetadataProps } from '@/lib/panel-props';
-import { attachFileDropTarget } from '@/lib/file-dnd';
-import { openFileInGroup } from '@/lib/file-actions';
+import { useWindowing } from '@/windowing/components/context';
 
 type PaneDropPosition = 'left' | 'right' | 'top' | 'bottom';
 
@@ -31,6 +27,7 @@ function PaneDropZone(props: {
 }
 
 export const Pane: Component<{ paneId: string }> = (props) => {
+  const windowing = useWindowing();
   const dndContext = useDragDropContext();
   // Match by payload type, not draggable-id prefix: anything carrying a Tab
   // ('tab' moves, 'newTab' spawns from e.g. a hover card) targets panes.
@@ -76,25 +73,12 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     position: 'bottom',
   });
 
-  // Native file drag from the file tree (pragmatic-drag-and-drop, a separate
-  // pipeline from solid-dnd tab drags): dropping a FILE on the pane opens it
-  // here. The editor content area registers its own inner 'editor' zone
-  // (insert-link); the innermost-zone protocol in file-dnd keeps the two
-  // behaviors exclusive.
-  const [fileDropOver, setFileDropOver] = createSignal(false);
-  const attachFileDrop = (el: HTMLElement) => {
-    const cleanup = attachFileDropTarget(el, {
-      zone: 'pane',
-      canDrop: (source) => !source.isDir,
-      onDragEnter: () => setFileDropOver(true),
-      onDragLeave: () => setFileDropOver(false),
-      onDrop: (source) => {
-        setFileDropOver(false);
-        windowActions.setActivePane(props.paneId);
-        openFileInGroup(tabGroupId(), source.absPath, source.name);
-      },
-    });
-    onCleanup(cleanup);
+  // Native drags from outside the window manager (the app's file tree) reach
+  // the pane body through the app's drop target. The app marks the body with
+  // `data-file-drop-over` while a drag hovers it.
+  const attachDrop = (el: HTMLElement) => {
+    const cleanup = windowing.slots.attachDropTarget?.(el, tabGroupId);
+    onCleanup(() => cleanup?.());
   };
 
   // Pop-out MOVES the group (popOutPane detaches it from this pane) — sharing
@@ -124,18 +108,10 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         </div>
       );
     }
-    const panel = getGlobalRegistry().get(contentType);
-    if (panel) {
-      const panelProps = reactiveMetadataProps(activeTab);
-      return <Dynamic component={panel.component} {...panelProps} />;
-    }
-    // Every shipped content type is registry-backed; anything else is a
-    // stale persisted layout entry.
-    return (
-      <div class="flex-1 bg-shell-bg flex items-center justify-center">
-        <div class="text-muted-dark text-sm">Unknown content type</div>
-      </div>
-    );
+    // The renderer gets the LIVE tab, and runs untracked: a read inside it must
+    // not make this function re-run, which would remount the panel.
+    const snapshot = untrack(activeTab)!;
+    return untrack(() => windowing.renderContent(() => activeTab() ?? snapshot));
   };
 
   // A collapsed rail pane is CLIPPED to its tab strip, not unmounted: the
@@ -163,15 +139,14 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   return (
     <div
       use:centerDroppable
-      ref={attachFileDrop}
+      ref={attachDrop}
       data-pane-id={props.paneId}
       data-pane-collapsed={collapsed() ? 'true' : undefined}
       classList={{
-        'relative flex flex-col h-full overflow-hidden transition-all': true,
+        'relative flex flex-col h-full overflow-hidden transition-all data-file-drop-over:ring-1 data-file-drop-over:ring-primary/60': true,
         // Focus reads through the active tab chip (Obsidian's language) —
         // no colored ring around the pane itself.
         'bg-primary/5': centerDroppable.isActiveDroppable,
-        'ring-1 ring-primary/60': fileDropOver(),
         'cursor-pointer': collapsed(),
       }}
       onClick={handleClick}

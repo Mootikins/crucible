@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider } from '@thisbeyond/solid-dnd';
-import { EdgePanel } from '../EdgePanel';
+import { AppDragDropProvider } from './appProviders';
+import { EdgeHost } from '../EdgeHost';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { findPaneInLayout } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
@@ -65,9 +65,9 @@ beforeEach(() => {
 
 const renderRail = (position: 'left' | 'right') =>
   render(() => (
-    <DragDropProvider>
-      <EdgePanel position={position} />
-    </DragDropProvider>
+    <AppDragDropProvider>
+      <EdgeHost position={position} />
+    </AppDragDropProvider>
   ));
 
 /** Render, then hand the component a real geometry and let it re-measure. */
@@ -382,9 +382,9 @@ describe('a ribbon button sits on the same half as its pane', () => {
     );
 
     const { container, unmount } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="right" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="right" />
+      </AppDragDropProvider>
     ));
 
     const floor = container.querySelector('[data-ribbon-floor]');

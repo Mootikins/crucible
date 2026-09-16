@@ -27,7 +27,9 @@ import { EditorPanel } from '@/components/EditorPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { FloatingWindow } from '@/components/windowing/FloatingWindow';
+import { WindowingProvider } from '@/windowing/components/context';
 import { windowStore } from '@/stores/windowStore';
+import { renderPanel } from '@/lib/render-panel';
 import { registerPanels } from '@/lib/register-panels';
 
 // Floating windows resolve their content through the panel registry — the
@@ -131,12 +133,15 @@ const EditorHarness: Component = () => (
     {/* Real SettingsProvider so persisted editor settings (vim mode) apply. */}
     <SettingsProvider>
       <EditorProvider>
-        {/* FloatingWindow tab bars register solid-dnd droppables. */}
-        <DragDropProvider>
-          <DragDropSensors>
-            <HarnessInner />
-          </DragDropSensors>
-        </DragDropProvider>
+        {/* FloatingWindow tab bars register solid-dnd droppables, and a
+            FloatingWindow draws its tab through the app renderer. */}
+        <WindowingProvider renderContent={renderPanel} slots={{}}>
+          <DragDropProvider>
+            <DragDropSensors>
+              <HarnessInner />
+            </DragDropSensors>
+          </DragDropProvider>
+        </WindowingProvider>
       </EditorProvider>
     </SettingsProvider>
   </ProjectProvider>

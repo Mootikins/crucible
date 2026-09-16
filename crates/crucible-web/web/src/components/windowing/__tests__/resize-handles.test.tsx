@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider } from '@thisbeyond/solid-dnd';
+import { AppDragDropProvider } from './appProviders';
 import { SplitPane } from '../SplitPane';
-import { EdgePanel } from '../EdgePanel';
+import { EdgeHost } from '../EdgeHost';
 import { FloatingWindow } from '../FloatingWindow';
 import { windowStore, setStore } from '@/stores/windowStore';
 import { findFirstPane, generateId } from '@/windowing/model/tree';
@@ -66,9 +66,9 @@ describe('SplitPane splitter — rendered DOM', () => {
   it('is a 1px line (w-px, cursor-col-resize) with a widened after: grab zone', () => {
     const layout = splitLayout();
     const { container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <SplitPane node={layout} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     const splitter = container.querySelector<HTMLElement>('[data-testid="resize-splitter"]')!;
@@ -91,9 +91,9 @@ describe('SplitPane splitter — rendered DOM', () => {
 describe('EdgePanel resize handle — rendered DOM', () => {
   it('is a 1px separator line with a widened after: grab zone, no grip glyph', () => {
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
 
     const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
@@ -114,9 +114,9 @@ describe('EdgePanel resize handle — rendered DOM', () => {
 describe('EdgePanel ribbon chrome — rendered DOM', () => {
   it('renders an always-visible ribbon with its panel toggle (w-4 svg glyph)', () => {
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
 
     const toggle = container.querySelector<HTMLElement>('[data-testid="ribbon-toggle-left"]')!;
@@ -129,9 +129,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
 
   it('the left ribbon carries the shell-wide toggles, and only those', () => {
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
 
     // What the rail keeps: the three toggles that act on the WHOLE shell and
@@ -157,9 +157,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     // two of them and the overlay is bounded by the wrong element.
     for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
-        <DragDropProvider>
-          <EdgePanel position={position} />
-        </DragDropProvider>
+        <AppDragDropProvider>
+          <EdgeHost position={position} />
+        </AppDragDropProvider>
       ));
       const floors = container.querySelectorAll('[data-ribbon-floor]');
       expect(floors.length, `${position} ribbon floor claimants`).toBe(1);
@@ -174,9 +174,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
   it('every edge position renders its own ribbon toggle', () => {
     for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
-        <DragDropProvider>
-          <EdgePanel position={position} />
-        </DragDropProvider>
+        <AppDragDropProvider>
+          <EdgeHost position={position} />
+        </AppDragDropProvider>
       ));
       expect(
         container.querySelector(`[data-testid="ribbon-toggle-${position}"]`),
@@ -193,9 +193,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     const seen: Record<string, HTMLElement | null> = {};
     for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
-        <DragDropProvider>
-          <EdgePanel position={position} />
-        </DragDropProvider>
+        <AppDragDropProvider>
+          <EdgeHost position={position} />
+        </AppDragDropProvider>
       ));
       seen[position] = container.querySelector<HTMLElement>('[data-testid="corner-bell"]');
       // Read before unmount — the node is detached afterwards.
@@ -221,9 +221,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
 
   it('the expanded tab bar has no duplicate in-bar collapse control', () => {
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
     // The old duplicate collapse button carried these test ids / would render a
     // PanelClose glyph in the tab bar; the ribbon toggle is now canonical.
@@ -256,9 +256,9 @@ describe('FloatingWindow grab zones — rendered DOM', () => {
     );
 
     const { container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <FloatingWindow window={windowStore.floatingWindows[0]} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     const handles = Array.from(container.querySelectorAll<HTMLElement>('div')).filter((el) =>

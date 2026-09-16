@@ -7,7 +7,6 @@ import {
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/windowStore';
-import { isLastFixedRailTab } from '@/stores/fixedRails';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
@@ -93,8 +92,8 @@ interface TabItemProps {
   isFocused: boolean;
   onClick: () => void;
   onClose: (e: MouseEvent) => void;
-  /** False on a tab the store refuses to close — the last Sessions or Files
-   * panel. The affordance goes with the capability: an X that does nothing
+  /** False on a tab that the store refuses to close, because the policy
+   * keeps it. The affordance goes with the capability: an X that does nothing
    * teaches the user that the app is broken. */
   closable?: boolean;
   testId?: string;
@@ -453,10 +452,10 @@ const TabContextMenu: Component<{
       <Portal>
         <Menu.Positioner>
           <Menu.Content class={`${menuContent} z-50`}>
-          {/* No Close on the last Sessions or Files panel — the store refuses
-              it, so offering it would be a row that does nothing. The two
-              bulk closes stay: they skip the rail panel and close the rest. */}
-          <Show when={!isLastFixedRailTab(windowStore, props.groupId(), props.tab.id)}>
+          {/* No Close on a tab that the policy keeps. The store refuses to
+              close it, so the row would do nothing. The two bulk closes stay:
+              they skip the kept tab and close the rest. */}
+          <Show when={windowActions.canCloseTab(props.groupId(), props.tab.id)}>
             <Menu.Item
               value="close"
               class={menuItem}
@@ -542,7 +541,7 @@ const CenterTabBar: Component<{
               isFocused={isFocused()}
               onClick={() => windowActions.setActiveTab(props.groupId, tab().id)}
               onClose={() => confirmTabClose(tab()) && windowActions.removeTab(props.groupId, tab().id)}
-              closable={!isLastFixedRailTab(windowStore, props.groupId, tab().id)}
+              closable={windowActions.canCloseTab(props.groupId, tab().id)}
               testId={edgePos() ? `edge-tab-${edgePos()}-${tab().id}` : undefined}
             />
           </TabContextMenu>

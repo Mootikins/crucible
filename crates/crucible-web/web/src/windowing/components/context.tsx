@@ -1,4 +1,4 @@
-import { createContext, useContext, type JSX, type ParentComponent } from 'solid-js';
+import { createContext, useContext, type Accessor, type JSX, type ParentComponent } from 'solid-js';
 import type { EdgePanelPosition, Tab } from '../model/types';
 
 /** What the app hangs on the window manager's chrome. Every slot is optional. */
@@ -11,13 +11,24 @@ export interface WindowingSlots {
   corner?: () => JSX.Element;
   /** Rows that an empty pane prints under its label. */
   emptyPaneHints?: () => { label: string; chord: string }[];
-  /** Attach a native drop target to a pane body. Returns the cleanup. */
+  /**
+   * Attach a native drop target to a pane body or a rail ribbon, for the
+   * group that `groupId` names. Returns the cleanup. While a drag hovers the
+   * element, the slot sets `data-file-drop-over` on it, and the window
+   * manager styles the element from that attribute.
+   */
   attachDropTarget?: (el: HTMLElement, groupId: () => string | null) => () => void;
 }
 
 export interface WindowingContextValue {
-  /** The body of a tab. The core knows no content type, so the app draws it. */
-  renderContent: (tab: Tab) => JSX.Element;
+  /**
+   * The body of a tab. The core knows no content type, so the app draws it.
+   *
+   * The core calls it untracked, once per tab id and content type, and passes
+   * the live tab. A panel that reads `tab()` inside its own effects sees later
+   * writes to the tab without a remount.
+   */
+  renderContent: (tab: Accessor<Tab>) => JSX.Element;
   slots: WindowingSlots;
 }
 

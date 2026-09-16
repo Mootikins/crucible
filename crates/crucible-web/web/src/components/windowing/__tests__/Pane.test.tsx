@@ -3,7 +3,7 @@ import { createEffect, type Component } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider } from '@thisbeyond/solid-dnd';
+import { AppDragDropProvider } from './appProviders';
 import { Pane } from '../Pane';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { findFirstPane, generateId } from '@/windowing/model/tree';
@@ -39,9 +39,9 @@ beforeEach(() => {
 describe('Pane — empty center', () => {
   it('renders the empty-pane affordance, not a composer, when the pane has no tabs', () => {
     const { queryByTestId, getByTestId, container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     expect(queryByTestId('center-composer')).toBeNull();
@@ -58,9 +58,9 @@ describe('Pane — empty center', () => {
 
   it('prints the chords the app actually listens for', () => {
     const { getByTestId } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     const chords = Array.from(getByTestId('empty-pane').querySelectorAll('kbd')).map(
@@ -76,9 +76,9 @@ describe('Pane — empty center', () => {
 
   it('names the region empty when no other pane holds a tab', () => {
     const { getByTestId } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('region');
@@ -107,9 +107,9 @@ describe('Pane — empty center', () => {
     );
 
     const { getByTestId } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('pane');
@@ -129,9 +129,9 @@ describe('Pane — empty center', () => {
       }),
     );
     const { queryByTestId } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={railPane.id} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     // A rail slot is a fixed tool stack; "open a note here" is not an
@@ -141,9 +141,9 @@ describe('Pane — empty center', () => {
 
   it('renders the tab bar once a tab is added', () => {
     const { container } = render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
     expect(container.querySelector('[data-tab-id="note-tab"]')).toBeNull();
@@ -194,9 +194,9 @@ describe('Pane — tab metadata reaches a MOUNTED panel', () => {
 
   const renderPane = () =>
     render(() => (
-      <DragDropProvider>
+      <AppDragDropProvider>
         <Pane paneId={paneId} />
-      </DragDropProvider>
+      </AppDragDropProvider>
     ));
 
   it('passes the metadata a tab was created with', () => {

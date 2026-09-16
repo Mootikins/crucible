@@ -8,14 +8,14 @@ describe('WindowingProvider', () => {
       const w = useWindowing();
       return (
         <div data-testid="probe">
-          {w.renderContent({ id: 't', title: 'T', contentType: 'alpha' })}
+          {w.renderContent(() => ({ id: 't', title: 'T', contentType: 'alpha' }))}
           {w.slots.corner?.()}
         </div>
       );
     };
     const { getByTestId } = render(() => (
       <WindowingProvider
-        renderContent={(tab) => <span>{tab.contentType}</span>}
+        renderContent={(tab) => <span>{tab().contentType}</span>}
         slots={{ corner: () => <span>+corner</span> }}
       >
         <Probe />

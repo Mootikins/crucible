@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider } from '@thisbeyond/solid-dnd';
-import { EdgePanel } from '../EdgePanel';
+import { AppDragDropProvider } from './appProviders';
+import { EdgeHost } from '../EdgeHost';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
@@ -41,9 +41,9 @@ const edgeTabs = (position: EdgePanelPosition) =>
 describe('EdgePanel — tab icons', () => {
   it('renders each ribbon tab with its icon as an <svg>', () => {
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
 
     // Left roster ships Sessions + Files, both with icons.
@@ -59,9 +59,9 @@ describe('EdgePanel — tab icons', () => {
     windowActions.addTab(groupId, { id: 'no-icon-tab', title: 'Zeta', contentType: 'files' });
 
     const { container } = render(() => (
-      <DragDropProvider>
-        <EdgePanel position="left" />
-      </DragDropProvider>
+      <AppDragDropProvider>
+        <EdgeHost position="left" />
+      </AppDragDropProvider>
     ));
 
     const buttons = Array.from(

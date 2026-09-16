@@ -1,4 +1,4 @@
-import { Component, Show, For, onMount, onCleanup } from 'solid-js';
+import { Show, For, onMount, onCleanup, type ParentComponent } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import {
   DragDropProvider,
@@ -7,34 +7,29 @@ import {
   DragOverlay,
 } from '@thisbeyond/solid-dnd';
 import { CenterTiling } from './CenterTiling';
-import { EdgePanel } from './EdgePanel';
+import { EdgeHost } from './EdgeHost';
 import { FloatingWindow } from './FloatingWindow';
-import { CornerBar } from './CornerBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
 import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
-import { matchShortcut } from '@/windowing/shortcuts';
-import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
+import { LAYOUT_ACTIONS, matchShortcut } from '@/windowing/shortcuts';
+import { policy } from '@/windowing/store';
+import {
+  WindowingProvider,
+  useWindowing,
+  type WindowingContextValue,
+} from '@/windowing/components/context';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
 import { lastPointerPosition } from '@/windowing/model/collision-detector';
-import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
 import { smallestIntersecting } from '@/windowing/model/collision-detector';
-import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
-// The chrome splits three ways, and none of them is a title bar. The edge
-// ribbons carry panel chrome (toggles, palette, new session, settings); the
-// session pane carries its own switcher and waiting badge, beside the session
-// it names; the corner cluster carries per-buffer state. Everything else
+// The window manager draws no title bar. The app hangs its chrome on the
+// slots: the rail head and tail, and the corner of the centre. Everything else
 // belongs to content.
-//
-// There WAS a full-width title bar here. It held three 24px controls and then
-// ~1400px of nothing, with an 11px project label at the far right — the
-// faintest text in the shell, and the only thing the whole right half existed
-// to show.
 
 function DragOverlayContent() {
   const dndContext = useDragDropContext();
@@ -65,13 +60,13 @@ function DragOverlayContent() {
 
 /** The middle column of the shell row. Its key never changes, so it never moves. */
 function CentreColumn() {
+  const { slots } = useWindowing();
   return (
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
-      {/* relative: CornerBar floats at this area's bottom-right (above
-          the bottom dock), Adobe-style — the status bar's replacement. */}
+      {/* relative: the corner slot floats at this area's bottom-right. */}
       <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
         <CenterTiling />
-        <CornerBar />
+        {slots.corner?.()}
       </div>
     </div>
   );
@@ -173,7 +168,8 @@ function InnerManager() {
     }
   });
 
-  const handleShortcutAction = (action: string) => {
+  /** The chords the layout owns. `LAYOUT_ACTIONS` names each of them. */
+  const handleLayoutAction = (action: string) => {
     if (action === 'closeActiveTab') {
       const activePaneId = windowStore.activePaneId;
       if (!activePaneId) return;
@@ -204,32 +200,23 @@ function InnerManager() {
       }
     } else if (action === 'toggleLeftPanel') {
       windowActions.toggleEdgePanel('left');
-    } else if (action === 'swapSidePanels') {
-      windowActions.swapSidePanels();
-    } else if (action === 'openCommandPalette') {
-      // Handled by App.tsx in capture phase
-    } else if (action === 'focusChatInput') {
-      const el = document.querySelector<HTMLTextAreaElement>('textarea[data-testid="chat-input"]');
-      el?.focus();
-    } else if (action === 'newSession') {
-      window.dispatchEvent(new CustomEvent('crucible:new-session'));
     } else if (action === 'toggleRightPanel') {
       windowActions.toggleEdgePanel('right');
-    } else if (action === 'clearChat') {
-      window.dispatchEvent(new CustomEvent('crucible:clear-chat'));
-    } else if (action === 'toggleThinking') {
-      const current = statusBarStore.showThinking();
-      statusBarActions.setShowThinking(!current);
+    } else if (action === 'swapSidePanels') {
+      windowActions.swapSidePanels();
     }
   };
 
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const action = matchShortcut(e, DEFAULT_SHORTCUTS);
-      if (action) {
+      const action = matchShortcut(e, policy().shortcuts);
+      if (!action) return;
+      if (LAYOUT_ACTIONS.has(action)) {
         e.preventDefault();
-        handleShortcutAction(action);
+        handleLayoutAction(action);
+        return;
       }
+      if (policy().onShortcut(action, e)) e.preventDefault();
     };
     document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => document.removeEventListener('keydown', handleKeyDown));
@@ -249,12 +236,12 @@ function InnerManager() {
 
             The key is the panel's own `id`, which travels with its contents.
             So a flip reverses the two rail keys, `Key` moves the existing DOM
-            node, and the surviving EdgePanel sees only its `position` prop
+            node, and the surviving EdgeHost sees only its `position` prop
             change. The centre keeps a constant key and never moves. */}
         <Key each={rowSlots()} by="key">
           {(slot) => (
             <Show when={slot().side} fallback={<CentreColumn />}>
-              {(side) => <EdgePanel position={side()} />}
+              {(side) => <EdgeHost position={side()} />}
             </Show>
           )}
         </Key>
@@ -276,15 +263,20 @@ function InnerManager() {
   );
 }
 
-export const WindowManager: Component = () => {
+/**
+ * The window manager. The app gives it the tab renderer and the chrome slots;
+ * `children` render inside the drag provider, so an app overlay there can
+ * start a tab drag.
+ */
+export const WindowManager: ParentComponent<WindowingContextValue> = (props) => {
   return (
-    <DragDropProvider collisionDetector={smallestIntersecting}>
-      <DragDropSensors>
-        <InnerManager />
-        {/* Inside the provider so hover cards can drag file tabs into the
-            window system (DragSource 'newTab'). */}
-        <WikilinkHoverPreview />
-      </DragDropSensors>
-    </DragDropProvider>
+    <WindowingProvider renderContent={props.renderContent} slots={props.slots}>
+      <DragDropProvider collisionDetector={smallestIntersecting}>
+        <DragDropSensors>
+          <InnerManager />
+          {props.children}
+        </DragDropSensors>
+      </DragDropProvider>
+    </WindowingProvider>
   );
 };

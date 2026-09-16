@@ -1,5 +1,5 @@
 import { Component, For } from 'solid-js';
-import { shortcutLabel } from '@/lib/keyboard-shortcuts';
+import { useWindowing } from '@/windowing/components/context';
 
 /**
  * What an empty centre pane shows.
@@ -11,8 +11,8 @@ import { shortcutLabel } from '@/lib/keyboard-shortcuts';
  * state, it names the two keys that fill the pane, and it stops there. No
  * illustration, no splash, no copy that asks to be read.
  *
- * The chords come from `DEFAULT_SHORTCUTS`, so a rebound key reprints here and
- * the hint can never name a key the app does not listen for.
+ * The rows come from the `emptyPaneHints` slot. The app knows its keys; the
+ * window manager does not.
  */
 export const EmptyPane: Component<{
   /**
@@ -24,13 +24,8 @@ export const EmptyPane: Component<{
    */
   solitary: boolean;
 }> = (props) => {
-  const hints = () =>
-    [
-      { action: 'openNoteSwitcher', label: 'Open a note' },
-      { action: 'openCommandPalette', label: 'Command palette' },
-    ]
-      .map((hint) => ({ ...hint, chord: shortcutLabel(hint.action) }))
-      .filter((hint): hint is typeof hint & { chord: string } => hint.chord !== null);
+  const { slots } = useWindowing();
+  const hints = () => slots.emptyPaneHints?.() ?? [];
 
   return (
     <div

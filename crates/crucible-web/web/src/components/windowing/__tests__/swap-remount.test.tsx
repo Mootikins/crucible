@@ -3,6 +3,8 @@ import { render } from '@solidjs/testing-library';
 import { onMount, onCleanup } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { WindowManager } from '../WindowManager';
+import { renderPanel } from '@/lib/render-panel';
+import { appWindowSlots } from '@/components/shell/windowSlots';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { findFirstPane, primaryEdgeGroupId } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
@@ -69,7 +71,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
 
   it('carries the same DOM node and the same component instance across a flip', () => {
     chatOnLeftRail();
-    const { container } = render(() => <WindowManager />);
+    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
 
     const before = probeNode(container);
     expect(before).toBeTruthy();
@@ -96,7 +98,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
       contentType: 'chat',
     });
 
-    const { container } = render(() => <WindowManager />);
+    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
 
     const before = probeNode(container);
     expect(before).toBeTruthy();
@@ -115,7 +117,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
   // follow the rail to its new side rather than keep the side it booted on.
   it('moves the rail chrome to the side the rail landed on', () => {
     chatOnLeftRail();
-    const { container } = render(() => <WindowManager />);
+    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
 
     const ids = () =>
       Array.from(container.querySelectorAll('[data-testid^="ribbon-toggle-"]')).map((el) =>

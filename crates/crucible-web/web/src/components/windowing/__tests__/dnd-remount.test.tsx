@@ -1,9 +1,10 @@
 import { it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { DragDropProvider, useDragDropContext } from '@thisbeyond/solid-dnd';
+import { useDragDropContext } from '@thisbeyond/solid-dnd';
+import { AppDragDropProvider } from './appProviders';
 import { TabBar } from '../TabBar';
-import { EdgePanel } from '../EdgePanel';
+import { EdgeHost } from '../EdgeHost';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import { findFirstPane, generateId, primaryEdgeGroupId } from '@/windowing/model/tree';
@@ -50,10 +51,10 @@ beforeEach(() => {
 
 it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () => {
   render(() => (
-    <DragDropProvider>
+    <AppDragDropProvider>
       <Probe />
       <TabBar groupId={groupId} paneId={paneId} />
-    </DragDropProvider>
+    </AppDragDropProvider>
   ));
 
   const id = `tab:${groupId}:tab-note`;
@@ -70,9 +71,9 @@ it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () =>
 
 it('the row still re-renders tab fields updated in place (dirty dot, title)', () => {
   const { container } = render(() => (
-    <DragDropProvider>
+    <AppDragDropProvider>
       <TabBar groupId={groupId} paneId={paneId} />
-    </DragDropProvider>
+    </AppDragDropProvider>
   ));
 
   const row = () => container.querySelector('[data-tab-id="tab-note"]')!;
@@ -84,10 +85,10 @@ it('the row still re-renders tab fields updated in place (dirty dot, title)', ()
 
 it('a genuinely new tab id still mounts its own draggable', () => {
   render(() => (
-    <DragDropProvider>
+    <AppDragDropProvider>
       <Probe />
       <TabBar groupId={groupId} paneId={paneId} />
-    </DragDropProvider>
+    </AppDragDropProvider>
   ));
 
   const otherId = generateId();
@@ -131,10 +132,10 @@ it('collapsed strip icons re-register their draggable with the live group id aft
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
 
   render(() => (
-    <DragDropProvider>
+    <AppDragDropProvider>
       <Probe />
-      <EdgePanel position="left" />
-    </DragDropProvider>
+      <EdgeHost position="left" />
+    </AppDragDropProvider>
   ));
 
   const id = 'edgetab-collapsed:left:strip-tab';
@@ -154,10 +155,10 @@ it('expanded edge tab bars re-register draggables with the live group id after a
   windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });
 
   render(() => (
-    <DragDropProvider>
+    <AppDragDropProvider>
       <Probe />
-      <EdgePanel position="left" />
-    </DragDropProvider>
+      <EdgeHost position="left" />
+    </AppDragDropProvider>
   ));
 
   // Edge panels host the unified TabBar; draggable ids carry the group id,

@@ -76,7 +76,7 @@ describe('motion primitives on structural surfaces', () => {
   });
 
   it('edge panels slide via one rAF-driven progress (frame + translate locked)', () => {
-    const src = read('components/windowing/EdgePanel.tsx');
+    const src = read('components/windowing/DockedBody.tsx');
     // A single progress value drives the clip frame size AND the inner
     // translate each frame, so neighbors reflow smoothly over the whole
     // toggle and the clip edge never tears from the panel edge. Content
@@ -252,7 +252,9 @@ describe('no raw visual value in a component (token contract)', () => {
     // header that a maximized window has to clear.
     ['components/windowing/FloatingWindow.tsx', 'resize handle and maximize insets'],
     // A first-open panel size that the user then drags.
-    ['components/windowing/EdgePanel.tsx', 'default panel width and height'],
+    ['components/windowing/DockedBody.tsx', 'default panel width and height'],
+    // The unread badge: a pill sized to clear the 16px bell icon it sits on.
+    ['components/shell/RailChrome.tsx', 'unread badge size'],
     // The minimum a pointer can hit on a split drop zone.
     ['components/windowing/Pane.tsx', 'drop zone minimum'],
 

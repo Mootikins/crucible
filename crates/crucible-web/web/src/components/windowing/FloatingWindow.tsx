@@ -1,5 +1,4 @@
 import { Component, Show, createMemo, createSignal, createEffect, onCleanup, untrack, For } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import type { FloatingWindow as FloatingWindowType } from '@/types/windowTypes';
 import { TabBar } from './TabBar';
@@ -12,8 +11,7 @@ import {
   IconTabBar,
 } from './icons';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
-import { getGlobalRegistry } from '@/lib/panel-registry';
-import { reactiveMetadataProps } from '@/lib/panel-props';
+import { useWindowing } from '@/windowing/components/context';
 
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
 
@@ -34,6 +32,7 @@ const HANDLE_DEFS: { edge: ResizeEdge; cursor: string; style: Record<string, str
 ];
 
 export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props) => {
+  const windowing = useWindowing();
   const w = () => props.window;
   const group = () => windowStore.tabGroups[w().tabGroupId];
   const tabs = () => group()?.tabs ?? [];
@@ -302,17 +301,9 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
                 </div>
               );
             }
-            const tab = untrack(() => activeTab());
-            const panel = getGlobalRegistry().get(contentType);
-            if (panel) {
-              const panelProps = reactiveMetadataProps(activeTab);
-              return <Dynamic component={panel.component} {...panelProps} />;
-            }
-            return (
-              <div class="flex-1 bg-surface-base overflow-auto p-2 text-xs text-muted">
-                <span>Content for {tab?.title}</span>
-              </div>
-            );
+            // The live tab, rendered untracked, as in Pane.
+            const snapshot = untrack(activeTab)!;
+            return untrack(() => windowing.renderContent(() => activeTab() ?? snapshot));
           })()}
         </div>
       </div>
