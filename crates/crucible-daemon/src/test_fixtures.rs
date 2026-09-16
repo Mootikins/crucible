@@ -53,6 +53,31 @@ pub(crate) fn build_llm_config_with_trust(
 /// agent — they just need a value to pass to a create path so the setup task
 /// has a handle for `list_providers`. The returned manager has no MCP gateway,
 /// no ACP config, no plugin loader.
+/// An internal agent a stored session can carry, for handlers that read the
+/// record without a live agent behind it.
+pub(crate) fn test_session_agent() -> crucible_core::session::SessionAgent {
+    crucible_core::session::SessionAgent {
+        mode: None,
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some("ollama".to_string()),
+        provider: BackendType::Ollama,
+        model: "llama3.2".to_string(),
+        system_prompt: "You are helpful.".to_string(),
+        max_context_tokens: None,
+        endpoint: None,
+        env_overrides: Default::default(),
+        mcp_servers: Vec::new(),
+        agent_card_name: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: false,
+        context_budget: None,
+        context_strategy: Default::default(),
+        tool_policy: None,
+    }
+}
+
 pub(crate) fn test_agent_manager(
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,

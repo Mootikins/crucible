@@ -29,15 +29,17 @@ pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManage
     };
     let session_id = &params.session_id;
 
-    let agent_type = match am.get_session_with_agent(session_id) {
-        Ok((_, agent)) => agent.agent_type,
+    // A read, so a session in storage only answers too; see
+    // `AgentManager::read_session_with_agent`.
+    let (agent_type, persisted) = match am.read_session_with_agent(session_id).await {
+        Ok((_, agent)) => (agent.agent_type, agent.mode),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             return session_not_found(req.id, &id);
         }
-        Err(_) => String::new(),
+        Err(_) => (String::new(), None),
     };
 
-    let state = am.session_modes(session_id);
+    let state = am.session_modes_with(session_id, persisted);
     let modes: Vec<crucible_core::types::mode::ModeDescriptor> = state
         .available_modes
         .iter()
@@ -156,5 +158,91 @@ pub(crate) async fn handle_session_set_agent_option(
             session_not_found(req.id, &id)
         }
         Err(e) => Response::error(req.id, -32602, e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod stored_session_tests {
+    //! A session the daemon holds in storage only — after a restart, or an
+    //! eviction — answers a read the same as a live one. A client used to
+    //! get "Session not found" here until something read the history, so a
+    //! restored pane sat on the three built-in modes for the whole session
+    //! and its model chip listed nothing. Reading history is not a
+    //! precondition for reading a session.
+    use super::*;
+    use crate::session_manager::SessionManager;
+    use crate::session_storage::FileSessionStorage;
+    use crucible_core::session::{Session, SessionType};
+    use std::sync::Arc;
+
+    fn request(method: &str, session_id: &str) -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": { "session_id": session_id },
+        }))
+        .unwrap()
+    }
+
+    /// A session on disk, and a manager that has never seen it in memory.
+    pub(super) async fn stored_only(tmp: &tempfile::TempDir) -> (String, Arc<SessionManager>) {
+        let storage = Arc::new(FileSessionStorage::new(FileSessionStorage::root_for(
+            tmp.path(),
+        )));
+        let writer = SessionManager::with_storage(storage.clone());
+        let mut session = Session::new(SessionType::Chat, vec![]);
+        session.agent = Some(crate::test_fixtures::test_session_agent());
+        writer.update_session(&session).await.unwrap();
+        let reader = Arc::new(SessionManager::with_storage(storage));
+        assert!(reader.get_session(session.id.as_ref()).is_none());
+        (session.id.to_string(), reader)
+    }
+
+    #[tokio::test]
+    async fn list_modes_answers_for_a_session_held_in_storage_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (id, sm) = stored_only(&tmp).await;
+        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let am = crate::test_fixtures::test_agent_manager(
+            Arc::new(crate::kiln_manager::KilnManager::new()),
+            sm,
+            event_tx,
+            None,
+        );
+        let resp = handle_session_list_modes(request("session.list_modes", &id), &am).await;
+        assert!(resp.error.is_none(), "{resp:?}");
+        let result = resp.result.unwrap();
+        assert!(!result["modes"].as_array().unwrap().is_empty());
+        assert!(result["current_mode_id"].is_string());
+    }
+
+    #[tokio::test]
+    async fn list_models_answers_for_a_session_held_in_storage_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (id, sm) = stored_only(&tmp).await;
+        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let am = crate::test_fixtures::test_agent_manager(
+            Arc::new(crate::kiln_manager::KilnManager::new()),
+            sm,
+            event_tx,
+            None,
+        );
+        let resp = super::super::models::handle_session_list_models(
+            request("session.list_models", &id),
+            &am,
+        )
+        .await;
+        assert!(resp.error.is_none(), "{resp:?}");
+        assert!(resp.result.unwrap()["models"].is_array());
+    }
+
+    #[tokio::test]
+    async fn get_answers_for_a_session_held_in_storage_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (id, sm) = stored_only(&tmp).await;
+        let resp = super::super::list::handle_session_get(request("session.get", &id), &sm).await;
+        assert!(resp.error.is_none(), "{resp:?}");
+        assert_eq!(resp.result.unwrap()["session_id"], id);
     }
 }

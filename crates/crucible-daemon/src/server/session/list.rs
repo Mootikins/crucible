@@ -291,7 +291,13 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
     };
     let session_id = &params.session_id;
 
-    match sm.get_session(session_id) {
+    // A read, live or from storage: a stored session's record is as real as
+    // a live one's, and reading it revives nothing.
+    let session = match sm.read_session(session_id).await {
+        Ok(session) => session,
+        Err(e) => return internal_error(req.id, e),
+    };
+    match session {
         Some(session) => {
             let mut response = serde_json::json!({
                 "session_id": session.id,

@@ -14,7 +14,6 @@ import {
   createSession as apiCreateSession,
   listSessions as apiListSessions,
   getSession as apiGetSession,
-  getSessionHistory as apiGetSessionHistory,
   pauseSession as apiPauseSession,
   resumeSession as apiResumeSession,
   endSession as apiEndSession,
@@ -60,15 +59,6 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
   const [providersLoaded, setProvidersLoaded] = createSignal(false);
   const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
-
-  const hydrateSession = async (sessionId: string): Promise<boolean> => {
-    try {
-      await apiGetSessionHistory(sessionId, 1, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
 
   // Last explicit includeArchived choice (the panel's state filter): bare
   // refreshSessions() calls reuse it so an unarchive while viewing Archived
@@ -239,6 +229,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const adoptSession = async (id: string) => {
     if (currentSession()?.id === id) return;
     try {
+      // A read. The daemon answers `session.get` for a stored session as for
+      // a live one, so no history read is needed to bring it back first: the
+      // client used to revive a session through one history page when this
+      // call failed, and a rule kept in the client was kept in one path and
+      // not the other.
       const session = await apiGetSession(id);
       // Focus can move again while the fetch is in flight; the last pane to be
       // focused wins, not the last response to land.
@@ -265,14 +260,13 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (existing) {
       if (!(await apiGetSession(existing.id).then(() => true).catch(() => false))) {
         // The row can come from the last-known localStorage cache — the
-        // daemon may have deleted the session since. A failed hydrate means
-        // it's really gone: prune the dead row instead of opening a chat
-        // tab that can never load.
-        if (!(await hydrateSession(existing.id))) {
-          setSessions(sessions.filter((s) => s.id !== id));
-          notificationActions.addNotification('error', 'Session no longer exists');
-          return;
-        }
+        // daemon may have deleted the session since. The daemon reads a
+        // stored session too, so a failed read means it is really gone:
+        // prune the dead row instead of opening a chat tab that can never
+        // load.
+        setSessions(sessions.filter((s) => s.id !== id));
+        notificationActions.addNotification('error', 'Session no longer exists');
+        return;
       }
 
       setCurrentSession(existing);
@@ -300,13 +294,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     setError(null);
     
     try {
-      const session = await apiGetSession(id).catch(async () => {
-        const hydrated = await hydrateSession(id);
-        if (!hydrated) {
-          throw new Error('Failed to load session');
-        }
-        return await apiGetSession(id);
-      });
+      const session = await apiGetSession(id);
       setCurrentSession(session);
       // Transparently resume idle sessions on open (paused warm, ended/evicted
       // from storage) so the opened session is always live.

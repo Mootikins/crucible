@@ -50,7 +50,9 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
     };
     let session_id = &params.session_id;
 
-    let classification = match am.get_session_with_agent(session_id) {
+    // A read, so a session in storage only answers too; see
+    // `AgentManager::read_session_with_agent`.
+    let classification = match am.read_session_with_agent(session_id).await {
         Ok((session, _)) => {
             // Names → directories, once, through the registry. A name it does
             // not know contributes no classification, which is not the same as

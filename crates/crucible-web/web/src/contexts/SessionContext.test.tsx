@@ -173,11 +173,11 @@ describe('selectSession auto-resume', () => {
     );
   });
 
-  it('loads persisted session into daemon when selecting from existing list', async () => {
+  it('opens a stored session from the list with one read, no history page first', async () => {
+    // The daemon answers `session.get` for a session it holds in storage
+    // only. The client used to read one history page to revive it first.
     (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([makeSession('active')]);
-    (api.getSession as ReturnType<typeof vi.fn<any>>)
-      .mockRejectedValueOnce(new Error('Session not found'))
-      .mockResolvedValue(makeSession('active'));
+    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('active'));
 
     render(() => (
       <SessionProvider initialKiln="/tmp/test-kiln">
@@ -188,8 +188,9 @@ describe('selectSession auto-resume', () => {
     screen.getByTestId('select').click();
 
     await waitFor(() => {
-      expect(api.getSessionHistory).toHaveBeenCalledWith('test-id', 1, 0);
+      expect(api.getSession).toHaveBeenCalledWith('test-id');
     });
+    expect(api.getSessionHistory).not.toHaveBeenCalledWith('test-id', 1, 0);
 
     await waitFor(() => {
       expect(dispatchSpy).toHaveBeenCalledWith(
@@ -525,6 +526,104 @@ describe('adopting the focused pane’s session', () => {
     await Promise.resolve();
     await Promise.resolve();
     // No throw, no bogus session — the pane surfaces its own load error.
+    expect(screen.getByTestId('current').textContent).toBe('none');
+  });
+});
+
+/**
+ * A session opened from the rail, or restored on reload, must end with the
+ * model picker holding the list the daemon answered — the same list a session
+ * just created gets.
+ */
+describe('the model list of a session that was not just created', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    statusBarActions.setActiveSessionId(null);
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    vi.mocked(api.listProviders).mockResolvedValue([]);
+    vi.mocked(api.resumeSession).mockResolvedValue(undefined as never);
+    vi.mocked(api.getSessionHistory).mockResolvedValue({
+      session_id: 's-old',
+      history: [],
+      total_events: 0,
+    } as never);
+  });
+
+  afterEach(() => statusBarActions.setActiveSessionId(null));
+
+  function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
+    const ctx = useSession();
+    props.onCtx(ctx);
+    return (
+      <>
+        <span data-testid="current">{ctx.currentSession()?.id ?? 'none'}</span>
+        <span data-testid="models">{ctx.availableModels().join(',')}</span>
+      </>
+    );
+  }
+
+  it('lists the daemon’s models after a rail click on an existing session', async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([makeChatSession('s-old')]);
+    vi.mocked(api.getSession).mockResolvedValue(makeChatSession('s-old'));
+    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+
+    let ctx: ReturnType<typeof useSession> | undefined;
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Probe onCtx={(c) => (ctx = c)} />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(ctx!.sessions().length).toBe(1));
+
+    await ctx!.selectSession('s-old');
+
+    expect(screen.getByTestId('current').textContent).toBe('s-old');
+    expect(vi.mocked(api.listModels)).toHaveBeenCalledWith('s-old');
+    expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
+  });
+
+  /**
+   * Regression. On reload the restored pane announces its session while the
+   * daemon holds it in storage only. `GET /api/session/{id}` used to answer
+   * 422 for such a session until a history read revived it, so adoption gave
+   * up, `currentSession()` stayed null, the composer sat disabled and the
+   * model picker had nothing — for exactly the sessions a user comes back
+   * to. The daemon now reads a stored session, and the client reads once.
+   */
+  it('adopts a stored session with one read, then lists its models', async () => {
+    vi.mocked(api.getSession).mockResolvedValue(makeChatSession('s-old'));
+    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+
+    statusBarActions.setActiveSessionId('s-old');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current').textContent).toBe('s-old');
+    });
+    // One read of the record; no history page to bring it back first.
+    expect(vi.mocked(api.getSession)).toHaveBeenCalledWith('s-old');
+    expect(vi.mocked(api.getSessionHistory)).not.toHaveBeenCalledWith('s-old', 1, 0);
+    await waitFor(() => {
+      expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
+    });
+  });
+
+  it('still leaves the current session alone when the session is really gone', async () => {
+    vi.mocked(api.getSession).mockRejectedValue(new Error('Failed to load session: HTTP 404'));
+
+    render(() => (
+      <SessionProvider>
+        <Probe onCtx={() => {}} />
+      </SessionProvider>
+    ));
+
+    statusBarActions.setActiveSessionId('s-gone');
+    await new Promise((r) => setTimeout(r, 0));
     expect(screen.getByTestId('current').textContent).toBe('none');
   });
 });

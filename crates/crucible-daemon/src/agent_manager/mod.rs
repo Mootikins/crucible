@@ -895,6 +895,34 @@ impl AgentManager {
         Ok((session, agent))
     }
 
+    /// The session record and its agent, live or in storage.
+    ///
+    /// A read. A session the daemon holds in storage only — after a restart,
+    /// or an eviction — answers the same as a live one, and nothing is
+    /// revived or run to answer it. `session.get`, `session.list_modes` and
+    /// `session.list_models` used to refuse such a session until a history
+    /// read brought it back, so a client that opened a stored session saw
+    /// "not found" for the record it was drawing, and a restored pane sat on
+    /// the built-in modes with no model to offer. Reading history is not a
+    /// precondition for reading a session.
+    pub async fn read_session_with_agent(
+        &self,
+        session_id: &str,
+    ) -> Result<(crucible_core::session::Session, SessionAgent), AgentError> {
+        let session = self
+            .session_manager
+            .read_session(session_id)
+            .await?
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        let agent = session
+            .agent
+            .clone()
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+
+        Ok((session, agent))
+    }
+
     pub fn invalidate_agent_cache(&self, session_id: &str) {
         if let Some(slot) = self.existing_slot(session_id) {
             slot.invalidate_agent();
@@ -931,6 +959,21 @@ impl AgentManager {
         &self,
         session_id: &str,
     ) -> crucible_core::types::acp::schema::SessionModeState {
+        let persisted = self
+            .session_manager
+            .get_session(session_id)
+            .and_then(|s| s.agent.and_then(|a| a.mode));
+        self.session_modes_with(session_id, persisted)
+    }
+
+    /// [`Self::session_modes`] for a caller that already holds the session's
+    /// persisted mode — a record read from storage, which the live lookup
+    /// above cannot see.
+    pub fn session_modes_with(
+        &self,
+        session_id: &str,
+        persisted: Option<String>,
+    ) -> crucible_core::types::acp::schema::SessionModeState {
         use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
         use crucible_core::types::mode::default_internal_modes;
         // The SESSION's mode, not registration order. `current_mode_id` was
@@ -940,10 +983,6 @@ impl AgentManager {
         // whichever mode the defaults file happens to declare first. A
         // persisted mode that is no longer declared is ignored: reporting it
         // would advertise a mode `set_mode` now rejects.
-        let persisted = self
-            .session_manager
-            .get_session(session_id)
-            .and_then(|s| s.agent.and_then(|a| a.mode));
 
         // An ACP agent's modes are the agent's, not Crucible's. claude-agent-acp
         // declares five and codex-acp three, with ids Crucible does not share,
