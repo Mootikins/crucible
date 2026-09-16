@@ -2,7 +2,7 @@ import { Component, Show, createMemo, onCleanup, untrack } from 'solid-js';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { EmptyPane } from './EmptyPane';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowStore, windowActions } from '@/windowing/store';
 import { regionOfPane } from '@/windowing/model/tree';
 import { hasTabsOutsidePane } from '@/windowing/model/pane-content';
 import { useWindowing } from '@/windowing/components/context';
@@ -151,11 +151,10 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       }}
       onClick={handleClick}
     >
-      {/* A pane with no tabs holds no splash and no session composer — that
-          lives in its own New Session tab. It holds one quiet affordance that
-          names the state and the two keys that fill it, because a region that
-          draws nothing at all reads as a rendering failure. It is still a drop
-          target. */}
+      {/* A pane with no tabs holds no splash. It holds one quiet affordance
+          that names the state and the rows the app gives it, because a region
+          that draws nothing at all reads as a rendering failure. It is still a
+          drop target. */}
       <Show when={tabs().length > 0} fallback={<Show when={inCenter()}><EmptyPane solitary={solitary()} /></Show>}>
         <TabBar
           groupId={tabGroupId()!}

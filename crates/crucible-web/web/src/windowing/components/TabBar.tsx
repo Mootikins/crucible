@@ -5,15 +5,15 @@ import {
   createDroppable,
   useDragDropContext,
 } from '@thisbeyond/solid-dnd';
-import type { Tab as TabType, TabBarProps, DragSource } from '@/types/windowTypes';
-import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/windowStore';
+import type { Tab as TabType, TabBarProps, DragSource } from '@/windowing/model/types';
+import { windowStore, windowActions, findEdgePanelForGroup } from '@/windowing/store';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
-import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/lib/context-menu';
+import { attachNativeMenuGuard, tabsToClose, type TabCloseMode } from '@/windowing/context-menu';
 
 // ── Tab titles ─────────────────────────────────────────────────────────
 

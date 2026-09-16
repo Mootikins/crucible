@@ -1,5 +1,6 @@
 /**
- * Shared rules for the app's custom right-click menus.
+ * Shared rules for custom right-click menus. The window manager's tab strip
+ * and the app's own menus use them.
  *
  * The override is SELECTIVE by design: we only replace the native menu where
  * we have something better to offer, and never on copyable content — images

@@ -3,9 +3,11 @@ import { render, fireEvent } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { TabBar } from '../TabBar';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 // The old test grepped TabBar.tsx for the exact classList literal
 // ("'opacity-0 group-hover:opacity-100': !props.isActive") plus a couple of
@@ -19,7 +21,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -89,32 +91,33 @@ describe('TabBar — close button visibility & behavior', () => {
     expect(closeButton(container, 'tab-a')!.className).toContain('opacity-0');
   });
 
-  // The rails are fixed: the store refuses to close the last Sessions panel,
-  // so the strip must not offer an X that does nothing. The affordance and
-  // the capability go together.
-  it('offers no close button on the last Sessions panel', () => {
+  // The policy may keep a tab; the store then refuses to close it, so the
+  // strip must not offer an X that does nothing. The affordance and the
+  // capability go together. This policy keeps the last `alpha` tab.
+  it('offers no close button on a tab that the policy keeps', () => {
+    configureRails({
+      mayCloseTab: (state, _groupId, tabId) => {
+        const all = Object.values(state.tabGroups).flatMap((g) => g.tabs);
+        const tab = all.find((t) => t.id === tabId);
+        return tab?.contentType !== 'alpha' || all.filter((t) => t.contentType === 'alpha').length > 1;
+      },
+    });
     const railPane = findFirstPane(windowStore.edgePanels.left.layout)!;
     const railGroupId = railPane.tabGroupId!;
-    const sessionsTabId = windowStore.tabGroups[railGroupId].tabs.find(
-      (t) => t.contentType === 'sessions',
-    )!.id;
     const { container } = render(() => (
       <DragDropProvider>
         <TabBar groupId={railGroupId} paneId={railPane.id} />
       </DragDropProvider>
     ));
 
-    expect(container.querySelector(`[data-tab-id="${sessionsTabId}"]`)).toBeTruthy();
-    expect(closeButton(container, sessionsTabId)).toBeNull();
+    expect(container.querySelector('[data-tab-id="alpha-tab"]')).toBeTruthy();
+    expect(closeButton(container, 'alpha-tab')).toBeNull();
 
-    // A SECOND copy closes normally — the rule is "never zero", not "never
-    // this content type".
-    windowActions.addTab(railGroupId, {
-      id: 'sessions-copy',
-      title: 'Sessions',
-      contentType: 'sessions',
-    });
-    expect(closeButton(container, 'sessions-copy')).toBeTruthy();
+    // The strip asks again when the store changes: with a SECOND copy, both
+    // may close.
+    windowActions.addTab(railGroupId, { id: 'alpha-copy', title: 'Alpha', contentType: 'alpha' });
+    expect(closeButton(container, 'alpha-copy')).toBeTruthy();
+    expect(closeButton(container, 'alpha-tab')).toBeTruthy();
   });
 
   it('clicking a close button removes that tab', () => {

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { placeNewTab, resolveNewTabTarget } from '../tab-placement';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane, primaryEdgeGroupId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import type { Tab } from '@/types/windowTypes';
+import type { Tab } from '@/windowing/model/types';
+import { railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 const fileTab = (path: string): Tab => ({
   id: `tab-file-${path}`,
@@ -17,7 +19,7 @@ let paneId: string;
 let centerGroupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(produce((s) => {
     s.layout = fresh.layout;
     s.tabGroups = fresh.tabGroups;

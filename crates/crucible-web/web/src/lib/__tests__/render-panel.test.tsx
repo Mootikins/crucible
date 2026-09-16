@@ -1,19 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createEffect, type Component } from 'solid-js';
+import { createEffect, type Component, type ParentComponent } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { AppDragDropProvider } from './appProviders';
-import { Pane } from '../Pane';
+import { DragDropProvider } from '@thisbeyond/solid-dnd';
+import { WindowingProvider } from '@/windowing/components/context';
+import { renderPanel } from '@/lib/render-panel';
+import { appWindowSlots } from '@/components/shell/windowSlots';
+import { Pane } from '@/windowing/components/Pane';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { findFirstPane, generateId } from '@/windowing/model/tree';
+import { findFirstPane } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
 import { shortcutLabel } from '@/lib/keyboard-shortcuts';
 
-// Renders Pane against the real windowStore. An empty pane holds no splash and
-// no session composer — that moved into its own New Session tab. It holds one
-// quiet affordance: the state it is in, and the keys that fill it. Drawing
-// nothing at all read as a rendering failure on a wide screen.
+// The window manager's Pane, with the app's renderer and chrome, against the
+// app store. The core tests prove the pane mechanics with a neutral renderer;
+// these prove what the app gives it: the registry panel, its metadata props,
+// and the empty pane's chords.
+
+/** The providers AppShell gives the window manager. */
+const AppProviders: ParentComponent = (props) => (
+  <WindowingProvider renderContent={renderPanel} slots={appWindowSlots}>
+    <DragDropProvider>{props.children}</DragDropProvider>
+  </WindowingProvider>
+);
 
 let paneId: string;
 let groupId: string;
@@ -36,21 +46,16 @@ beforeEach(() => {
   groupId = pane.tabGroupId!;
 });
 
-describe('Pane — empty center', () => {
-  it('renders the empty-pane affordance, not a composer, when the pane has no tabs', () => {
-    const { queryByTestId, getByTestId, container } = render(() => (
-      <AppDragDropProvider>
+describe('Pane — the app empty pane', () => {
+  it('offers no composer, only the affordance', () => {
+    const { queryByTestId, getByTestId } = render(() => (
+      <AppProviders>
         <Pane paneId={paneId} />
-      </AppDragDropProvider>
+      </AppProviders>
     ));
 
     expect(queryByTestId('center-composer')).toBeNull();
     expect(queryByTestId('composer-input')).toBeNull();
-    // No tab strip either — nothing to strip.
-    expect(container.querySelector('[data-tab-id]')).toBeNull();
-
-    // The pane says what it is and which keys fill it. Before this, a third of
-    // a 1280px viewport rendered nothing at all.
     const affordance = getByTestId('empty-pane');
     expect(affordance.textContent).toContain('Open a note');
     expect(affordance.textContent).toContain('Command palette');
@@ -58,9 +63,9 @@ describe('Pane — empty center', () => {
 
   it('prints the chords the app actually listens for', () => {
     const { getByTestId } = render(() => (
-      <AppDragDropProvider>
+      <AppProviders>
         <Pane paneId={paneId} />
-      </AppDragDropProvider>
+      </AppProviders>
     ));
 
     const chords = Array.from(getByTestId('empty-pane').querySelectorAll('kbd')).map(
@@ -72,89 +77,6 @@ describe('Pane — empty center', () => {
       shortcutLabel('openNoteSwitcher'),
       shortcutLabel('openCommandPalette'),
     ]);
-  });
-
-  it('names the region empty when no other pane holds a tab', () => {
-    const { getByTestId } = render(() => (
-      <AppDragDropProvider>
-        <Pane paneId={paneId} />
-      </AppDragDropProvider>
-    ));
-
-    expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('region');
-    expect(getByTestId('empty-pane').textContent).toContain('Nothing open');
-  });
-
-  it('names the pane empty when a sibling pane still holds work', () => {
-    const siblingPaneId = generateId();
-    const siblingGroupId = generateId();
-    setStore(
-      produce((s) => {
-        s.tabGroups[siblingGroupId] = {
-          id: siblingGroupId,
-          tabs: [{ id: 'sibling-tab', title: 'note.md', contentType: 'file' }],
-          activeTabId: 'sibling-tab',
-        };
-        s.layout = {
-          id: generateId(),
-          type: 'split',
-          direction: 'horizontal',
-          splitRatio: 0.5,
-          first: { id: paneId, type: 'pane', tabGroupId: groupId },
-          second: { id: siblingPaneId, type: 'pane', tabGroupId: siblingGroupId },
-        };
-      }),
-    );
-
-    const { getByTestId } = render(() => (
-      <AppDragDropProvider>
-        <Pane paneId={paneId} />
-      </AppDragDropProvider>
-    ));
-
-    expect(getByTestId('empty-pane').getAttribute('data-empty-pane')).toBe('pane');
-    expect(getByTestId('empty-pane').textContent).toContain('Empty pane');
-  });
-
-  it('leaves a rail pane alone — the affordance is the centre tiling only', () => {
-    const railPane = findFirstPane(windowStore.edgePanels.left.layout)!;
-    // Empty it, so the only reason it could render no affordance is its region.
-    setStore(
-      produce((s) => {
-        s.tabGroups[railPane.tabGroupId!] = {
-          id: railPane.tabGroupId!,
-          tabs: [],
-          activeTabId: null,
-        };
-      }),
-    );
-    const { queryByTestId } = render(() => (
-      <AppDragDropProvider>
-        <Pane paneId={railPane.id} />
-      </AppDragDropProvider>
-    ));
-
-    // A rail slot is a fixed tool stack; "open a note here" is not an
-    // instruction it can honour.
-    expect(queryByTestId('empty-pane')).toBeNull();
-  });
-
-  it('renders the tab bar once a tab is added', () => {
-    const { container } = render(() => (
-      <AppDragDropProvider>
-        <Pane paneId={paneId} />
-      </AppDragDropProvider>
-    ));
-
-    expect(container.querySelector('[data-tab-id="note-tab"]')).toBeNull();
-
-    windowActions.addTab(groupId, {
-      id: 'note-tab',
-      title: 'note.md',
-      contentType: 'file',
-    });
-
-    expect(container.querySelector('[data-tab-id="note-tab"]')).toBeTruthy();
   });
 });
 
@@ -194,9 +116,9 @@ describe('Pane — tab metadata reaches a MOUNTED panel', () => {
 
   const renderPane = () =>
     render(() => (
-      <AppDragDropProvider>
+      <AppProviders>
         <Pane paneId={paneId} />
-      </AppDragDropProvider>
+      </AppProviders>
     ));
 
   it('passes the metadata a tab was created with', () => {
@@ -271,5 +193,18 @@ describe('Pane — tab metadata reaches a MOUNTED panel', () => {
     // pane reads tab fields untracked in the first place.
     expect(renders).toBe(before);
     expect((getByTestId('probe-input') as HTMLInputElement).value).toBe('unsent draft');
+  });
+});
+
+describe('renderPanel', () => {
+  it('says so for a content type with no registered panel', () => {
+    resetGlobalRegistry();
+    windowActions.addTab(groupId, { id: 'stale', title: 'stale', contentType: 'graph' });
+    const { getByText } = render(() => (
+      <AppProviders>
+        <Pane paneId={paneId} />
+      </AppProviders>
+    ));
+    expect(getByText('Unknown content type')).toBeTruthy();
   });
 });

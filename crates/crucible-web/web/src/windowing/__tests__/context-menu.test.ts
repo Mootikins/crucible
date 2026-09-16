@@ -1,6 +1,6 @@
-// src/lib/context-menu.test.ts
+// src/windowing/__tests__/context-menu.test.ts
 import { describe, it, expect } from 'vitest';
-import { shouldUseNativeMenu, tabsToClose } from './context-menu';
+import { shouldUseNativeMenu, tabsToClose } from '@/windowing/context-menu';
 
 const tab = (id: string) => ({ id });
 

@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { WindowManager } from '@/components/windowing/WindowManager';
+import { WindowManager } from '@/windowing/components/WindowManager';
 import { MobileShell } from '@/components/mobile/MobileShell';
 import { isCompact } from '@/stores/deviceStore';
 import { renderPanel } from '@/lib/render-panel';

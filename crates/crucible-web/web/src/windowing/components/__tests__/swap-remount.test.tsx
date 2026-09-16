@@ -1,14 +1,14 @@
-import { it, expect, beforeEach, afterEach, describe } from 'vitest';
+import { it, expect, beforeEach, describe } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { onMount, onCleanup } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { WindowManager } from '../WindowManager';
-import { renderPanel } from '@/lib/render-panel';
-import { appWindowSlots } from '@/components/shell/windowSlots';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane, primaryEdgeGroupId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
+import type { WindowingContextValue } from '@/windowing/components/context';
+import { railSeed, configureRails, neutralRenderer } from './fixtures';
+
+beforeEach(() => configureRails());
 
 /**
  * A flip moves a panel from one side to the other. It must MOVE the panel,
@@ -30,6 +30,10 @@ const ChatProbe = () => {
   return <div data-testid="chat-probe">transcript</div>;
 };
 
+/** The chat tab draws the probe; every other tab draws the neutral box. */
+const renderProbe: WindowingContextValue['renderContent'] = (tab) =>
+  tab().contentType === 'chat' ? <ChatProbe /> : neutralRenderer(tab);
+
 const probeNode = (container: HTMLElement) =>
   container.querySelector('[data-testid="chat-probe"]');
 
@@ -37,10 +41,8 @@ describe('swapSidePanels keeps the panels mounted', () => {
   beforeEach(() => {
     mounts = 0;
     cleanups = 0;
-    resetGlobalRegistry();
-    getGlobalRegistry().register('chat', 'Chat', ChatProbe, 'left');
     setStore(produce((s) => {
-      const fresh = defaultLayout();
+      const fresh = railSeed();
       s.layout = fresh.layout;
       s.tabGroups = fresh.tabGroups;
       s.edgePanels = fresh.edgePanels;
@@ -65,13 +67,9 @@ describe('swapSidePanels keeps the panels mounted', () => {
     windowActions.setActiveTab(leftGroup, 'tab-chat');
   };
 
-  afterEach(() => {
-    resetGlobalRegistry();
-  });
-
   it('carries the same DOM node and the same component instance across a flip', () => {
     chatOnLeftRail();
-    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
+    const { container } = render(() => <WindowManager renderContent={renderProbe} slots={{}} />);
 
     const before = probeNode(container);
     expect(before).toBeTruthy();
@@ -98,7 +96,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
       contentType: 'chat',
     });
 
-    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
+    const { container } = render(() => <WindowManager renderContent={renderProbe} slots={{}} />);
 
     const before = probeNode(container);
     expect(before).toBeTruthy();
@@ -117,7 +115,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
   // follow the rail to its new side rather than keep the side it booted on.
   it('moves the rail chrome to the side the rail landed on', () => {
     chatOnLeftRail();
-    const { container } = render(() => <WindowManager renderContent={renderPanel} slots={appWindowSlots} />);
+    const { container } = render(() => <WindowManager renderContent={renderProbe} slots={{}} />);
 
     const ids = () =>
       Array.from(container.querySelectorAll('[data-testid^="ribbon-toggle-"]')).map((el) =>

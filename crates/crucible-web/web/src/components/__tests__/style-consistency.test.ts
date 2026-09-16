@@ -72,11 +72,11 @@ describe('semantic color tokens (no raw palettes)', () => {
 
 describe('motion primitives on structural surfaces', () => {
   it('floating windows pop in', () => {
-    expect(read('components/windowing/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
+    expect(read('windowing/components/FloatingWindow.tsx')).toMatch(/cru-anim-pop/);
   });
 
   it('edge panels slide via one rAF-driven progress (frame + translate locked)', () => {
-    const src = read('components/windowing/DockedBody.tsx');
+    const src = read('windowing/components/DockedBody.tsx');
     // A single progress value drives the clip frame size AND the inner
     // translate each frame, so neighbors reflow smoothly over the whole
     // toggle and the clip edge never tears from the panel edge. Content
@@ -250,13 +250,13 @@ describe('no raw visual value in a component (token contract)', () => {
 
     // Window geometry: the grab strip around an edge, and the ribbon and
     // header that a maximized window has to clear.
-    ['components/windowing/FloatingWindow.tsx', 'resize handle and maximize insets'],
+    ['windowing/components/FloatingWindow.tsx', 'resize handle and maximize insets'],
     // A first-open panel size that the user then drags.
-    ['components/windowing/DockedBody.tsx', 'default panel width and height'],
+    ['windowing/components/DockedBody.tsx', 'default panel width and height'],
     // The unread badge: a pill sized to clear the 16px bell icon it sits on.
     ['components/shell/RailChrome.tsx', 'unread badge size'],
     // The minimum a pointer can hit on a split drop zone.
-    ['components/windowing/Pane.tsx', 'drop zone minimum'],
+    ['windowing/components/Pane.tsx', 'drop zone minimum'],
 
     // One device pixel.
     ['components/files/FileTreeNode.tsx', 'one-pixel indent guide'],
@@ -396,6 +396,12 @@ describe('a size that a reader scales is declared in rem (token contract)', () =
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('the tab title cap is 12.5rem, so it follows the reader font size', () => {
+    // The window manager's tab label names the token; the app sets its value.
+    // 12.5rem is 200px at the default root.
+    expect(resolveToken(contractDark, '--cru-measure-tab')).toBe('12.5rem');
   });
 
   it('the touch row keeps its 44px floor', () => {

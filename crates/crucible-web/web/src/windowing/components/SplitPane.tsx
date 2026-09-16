@@ -1,12 +1,12 @@
 import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import { Pane } from './Pane';
-import type { LayoutNode } from '@/types/windowTypes';
+import type { LayoutNode } from '@/windowing/model/types';
 import { isCollapsedLeaf, splitFlex } from '@/windowing/model/pane-collapse';
 import { subtreeHasTabs } from '@/windowing/model/pane-content';
 import { findSplitInLayout } from '@/windowing/model/pane-boundaries';
-import { windowStore } from '@/stores/windowStore';
-import { startSplitDrag } from '@/lib/split-drag';
+import { windowStore } from '@/windowing/store';
+import { startSplitDrag } from '@/windowing/components/split-drag';
 
 /**
  * Stands in for the splitter inside the keyed row. Its `id` never changes, so

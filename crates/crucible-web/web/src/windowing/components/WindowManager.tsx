@@ -10,10 +10,10 @@ import { CenterTiling } from './CenterTiling';
 import { EdgeHost } from './EdgeHost';
 import { FloatingWindow } from './FloatingWindow';
 import { MinimizedBar } from './MinimizedBar';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowStore, windowActions } from '@/windowing/store';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
-import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
+import type { DragSource, DropTarget, EdgePanelPosition } from '@/windowing/model/types';
+import { isEdgeCollapsed } from '@/windowing/model/types';
 import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
 import { LAYOUT_ACTIONS, matchShortcut } from '@/windowing/shortcuts';
 import { policy } from '@/windowing/store';
@@ -23,7 +23,7 @@ import {
   type WindowingContextValue,
 } from '@/windowing/components/context';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
-import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
+import { placeNewTab, resolveNewTabTarget } from '@/windowing/components/tab-placement';
 import { lastPointerPosition } from '@/windowing/model/collision-detector';
 import { smallestIntersecting } from '@/windowing/model/collision-detector';
 

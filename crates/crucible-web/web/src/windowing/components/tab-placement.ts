@@ -4,10 +4,10 @@
  * today, anything carrying a Tab payload tomorrow — participate in the same
  * drag-and-drop abstraction as panes, tabs, and edge panels.
  */
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowStore, windowActions } from '@/windowing/store';
 import { primaryEdgeGroupId } from '@/windowing/model/tree';
-import type { DropTarget, Tab } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
+import type { DropTarget, Tab } from '@/windowing/model/types';
+import { isEdgeCollapsed } from '@/windowing/model/types';
 
 /** Focus the tab if some group already holds its id. */
 function focusExisting(tabId: string): boolean {
@@ -21,7 +21,7 @@ function focusExisting(tabId: string): boolean {
 }
 
 export function placeNewTab(target: DropTarget, tab: Tab): void {
-  // Same dedupe rule as openFileInEditor: one tab per identity, focus wins.
+  // One tab per identity: an open tab with this id takes focus instead.
   if (focusExisting(tab.id)) return;
 
   switch (target.type) {

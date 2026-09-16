@@ -1,6 +1,6 @@
 import { Component } from 'solid-js';
 import { SplitPane } from './SplitPane';
-import { windowStore } from '@/stores/windowStore';
+import { windowStore } from '@/windowing/store';
 
 /**
  * Center tiling region: user-configurable binary tree of splits and panes

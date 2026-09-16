@@ -3,7 +3,7 @@ import { render, screen } from '@solidjs/testing-library';
 
 const device = vi.hoisted(() => ({ compact: false }));
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
-vi.mock('@/components/windowing/WindowManager', () => ({
+vi.mock('@/windowing/components/WindowManager', () => ({
   WindowManager: () => <div data-testid="window-manager" />,
 }));
 vi.mock('@/components/mobile/MobileShell', () => ({

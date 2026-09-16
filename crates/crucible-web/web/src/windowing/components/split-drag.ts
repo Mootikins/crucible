@@ -1,4 +1,4 @@
-import { windowActions } from '@/stores/windowStore';
+import { windowActions } from '@/windowing/store';
 
 /** A split never drags past this much of its container, either way. */
 const SPLIT_RATIO_MIN = 0.1;

@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { AppDragDropProvider } from './appProviders';
 import { EdgeHost } from '../EdgeHost';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findPaneInLayout } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { CoreProviders, railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 /**
  * A rail is a COLUMN of panes, so the ribbon carries one marker per pane, not
@@ -14,7 +15,7 @@ import { defaultLayout } from '@/stores/defaultLayout';
  * That position is MEASURED off the panel, never recomputed from the split
  * ratios. The mirrored version matched the proportions and missed the pixels:
  * every fixed cluster above the strip pushed the bands down by its own height,
- * so the terminal's marker sat 56px below the terminal's tab bar. These tests
+ * so the bottom pane's marker sat 56px below that pane's tab bar. These tests
  * therefore give the panes distinct, unequal boxes and assert the marker lands
  * on the pane's own top — an assertion the mirrored version cannot pass.
  */
@@ -22,7 +23,7 @@ import { defaultLayout } from '@/stores/defaultLayout';
 /** jsdom reports every box as 0×0, so the geometry under test has to be told. */
 const RIBBON_TOP = 0;
 const TOGGLE_BOTTOM = 36;
-const BELL_TOP = 964;
+const FLOOR_TOP = 964;
 
 const stubGeometry = (container: HTMLElement, tops: Record<string, number>) => {
   const box = (top: number, height: number) =>
@@ -35,7 +36,7 @@ const stubGeometry = (container: HTMLElement, tops: Record<string, number>) => {
   if (toggle) toggle.getBoundingClientRect = () => box(RIBBON_TOP, TOGGLE_BOTTOM);
 
   const floorEl = container.querySelector<HTMLElement>('[data-ribbon-floor]');
-  if (floorEl) floorEl.getBoundingClientRect = () => box(BELL_TOP, 36);
+  if (floorEl) floorEl.getBoundingClientRect = () => box(FLOOR_TOP, 36);
 
   const body = container.querySelector<HTMLElement>('[data-edge-panel-body]')!;
   for (const [paneId, top] of Object.entries(tops)) {
@@ -46,7 +47,7 @@ const stubGeometry = (container: HTMLElement, tops: Record<string, number>) => {
 };
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -65,9 +66,9 @@ beforeEach(() => {
 
 const renderRail = (position: 'left' | 'right') =>
   render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <EdgeHost position={position} />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
 /** Render, then hand the component a real geometry and let it re-measure. */
@@ -138,33 +139,33 @@ describe('a marker sits on its pane’s own top edge', () => {
     expect(markers(container, 'left')).toHaveLength(0);
   });
 
-  it('wears the pane’s active tab icon, so the terminal marker is a terminal', async () => {
+  it('names the pane’s active tab, so the bottom marker names its own tool', async () => {
     const { container } = await renderMeasured();
     expect(marker(container, 'right-term-pane').getAttribute('title')).toBe(
-      'Expand Terminal',
+      'Expand Omega',
     );
   });
 });
 
 describe('the pinned clusters keep their pixels', () => {
-  // A marker under the notification bell is a control the user cannot reach,
+  // A marker under the pinned tail is a control the user cannot reach,
   // and nudging it clear is what put every marker on the wrong pane before.
-  it('drops a band that would fall under the bell rather than nudging it', async () => {
+  it('drops a band that would fall under the tail rather than nudging it', async () => {
     const { container } = await renderMeasured({ 'right-term-pane': 650 });
     expect(markers(container, 'right')).toHaveLength(1);
 
-    stubGeometry(container, { 'right-term-pane': BELL_TOP - 10 });
+    stubGeometry(container, { 'right-term-pane': FLOOR_TOP - 10 });
     await waitFor(() => expect(markers(container, 'right')).toHaveLength(0));
   });
 
-  it('keeps a band that ends exactly on the bell', async () => {
-    const { container } = await renderMeasured({ 'right-term-pane': BELL_TOP - 36 });
+  it('keeps a band that ends exactly on the tail', async () => {
+    const { container } = await renderMeasured({ 'right-term-pane': FLOOR_TOP - 36 });
     expect(markers(container, 'right')).toHaveLength(1);
   });
 });
 
 describe('EdgeRibbon markers — clicking one collapses its pane', () => {
-  it('expands the terminal pane and collapses it again', async () => {
+  it('expands the bottom pane and collapses it again', async () => {
     const { container } = await renderMeasured();
     expect(marker(container, 'right-term-pane').dataset.collapsed).toBe('true');
 
@@ -319,13 +320,13 @@ describe('the collapsed pane is its own affordance', () => {
   // the whole rail here would hide the tabs the user can plainly see.
   it('opens the pane when a ribbon tab of a collapsed pane is clicked', () => {
     const { container } = renderRail('right');
-    const terminalTab = Array.from(
+    const bottomTab = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '[data-testid="collapsed-tab-button-right"]',
       ),
-    ).find((b) => b.getAttribute('title') === 'Terminal')!;
+    ).find((b) => b.getAttribute('title') === 'Omega')!;
 
-    fireEvent.click(terminalTab);
+    fireEvent.click(bottomTab);
     expect(termPane()?.collapsed).toBe(false);
     expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
@@ -335,14 +336,13 @@ describe('the collapsed pane is its own affordance', () => {
  * A ribbon button opens a pane, so it renders on the same half of the rail as
  * the pane it opens.
  *
- * The terminal is the case that surfaced this: it lives in the BOTTOM pane of
- * the right panel, and its rail button rendered in one run from the top with
- * every other leaf button. The control sat as far from its own pane as the
+ * A tool in the BOTTOM pane of a rail surfaced this: its rail button rendered
+ * in one run from the top with every other leaf button. The control sat as far from its own pane as the
  * rail allows.
  */
 describe('a ribbon button sits on the same half as its pane', () => {
   beforeEach(() => {
-    const fresh = defaultLayout();
+    const fresh = railSeed();
     setStore(
       produce((s) => {
         s.layout = fresh.layout;
@@ -361,13 +361,13 @@ describe('a ribbon button sits on the same half as its pane', () => {
       produce((s) => {
         s.tabGroups['top-group'] = {
           id: 'top-group',
-          tabs: [{ id: 'files-tab', title: 'Files', contentType: 'files' }],
-          activeTabId: 'files-tab',
+          tabs: [{ id: 'beta-tab', title: 'Beta', contentType: 'beta' }],
+          activeTabId: 'beta-tab',
         };
         s.tabGroups['bottom-group'] = {
           id: 'bottom-group',
-          tabs: [{ id: 'term-tab', title: 'Terminal', contentType: 'terminal' }],
-          activeTabId: 'term-tab',
+          tabs: [{ id: 'omega-tab', title: 'Omega', contentType: 'omega' }],
+          activeTabId: 'omega-tab',
         };
         s.edgePanels.right.layout = {
           id: 'right-root',
@@ -382,26 +382,26 @@ describe('a ribbon button sits on the same half as its pane', () => {
     );
 
     const { container, unmount } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <EdgeHost position="right" />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const floor = container.querySelector('[data-ribbon-floor]');
     expect(floor, 'the ribbon claims a floor').toBeTruthy();
 
-    const term = container.querySelector('[data-testid="ribbon-tab-term-tab"]')
+    const term = container.querySelector('[data-testid="ribbon-tab-omega-tab"]')
       ?? Array.from(container.querySelectorAll('button')).find(
-        (b) => (b.getAttribute('title') ?? '').includes('Terminal'),
+        (b) => (b.getAttribute('title') ?? '').includes('Omega'),
       );
-    expect(term, 'the terminal has a ribbon button').toBeTruthy();
-    expect(floor!.contains(term!), 'terminal button is in the floor cluster').toBe(true);
+    expect(term, 'the bottom tab has a ribbon button').toBeTruthy();
+    expect(floor!.contains(term!), 'the bottom button is in the floor cluster').toBe(true);
 
     // And the top pane's button is NOT — it stays in the leading run.
-    const files = Array.from(container.querySelectorAll('button')).find(
-      (b) => (b.getAttribute('title') ?? '').includes('Files'),
+    const top = Array.from(container.querySelectorAll('button')).find(
+      (b) => (b.getAttribute('title') ?? '').includes('Beta'),
     );
-    if (files) expect(floor!.contains(files)).toBe(false);
+    if (top) expect(floor!.contains(top)).toBe(false);
 
     unmount();
   });

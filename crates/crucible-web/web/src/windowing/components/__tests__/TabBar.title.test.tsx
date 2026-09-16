@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
-import { darkTokens, resolveToken } from '@/test-utils/css-tokens';
 import { FileText } from '@/lib/icons';
 import { TabBar, elideTabTitle } from '../TabBar';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 const LONG = '2026-09-15 Web UI Review.md';
 const LONGER = '2026-09-15 Architecture Review Notes.md';
@@ -16,7 +17,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -60,7 +61,7 @@ describe('elideTabTitle', () => {
 });
 
 describe('TabBar — titles', () => {
-  it('caps the title at 200px and carries the full label in `title`', () => {
+  it('caps the title at the tab measure and carries the full label in `title`', () => {
     windowActions.addTab(groupId, {
       id: 'tab-long',
       title: LONGER,
@@ -77,14 +78,9 @@ describe('TabBar — titles', () => {
 
     const row = container.querySelector('[data-tab-id="tab-long"]')!;
     const label = [...row.querySelectorAll('span')].find((el) => el.textContent?.includes('…'))!;
-    // The class names the TOKEN, and the token carries the width. Asserting
-    // the literal class would go green after someone re-valued the token, and
-    // asserting only the token would go green at any width.
-    //
-    // The value is `rem`, so the cap follows a reader's font-size preference:
-    // a wider title needs a wider cap. 12.5rem is 200px at the default root.
+    // The class names the TOKEN, and the token carries the width. The app's
+    // stylesheet sets the value; style-consistency.test.ts asserts it.
     expect(label.className).toContain('max-w-(--cru-measure-tab)');
-    expect(resolveToken(darkTokens, '--cru-measure-tab')).toBe('12.5rem');
     expect(label.getAttribute('title')).toBe(LONGER);
   });
 });

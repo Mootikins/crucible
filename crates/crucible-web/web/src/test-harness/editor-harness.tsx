@@ -26,7 +26,7 @@ import { EditorProvider, useEditor } from '@/contexts/EditorContext';
 import { EditorPanel } from '@/components/EditorPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
-import { FloatingWindow } from '@/components/windowing/FloatingWindow';
+import { FloatingWindow } from '@/windowing/components/FloatingWindow';
 import { WindowingProvider } from '@/windowing/components/context';
 import { windowStore } from '@/stores/windowStore';
 import { renderPanel } from '@/lib/render-panel';

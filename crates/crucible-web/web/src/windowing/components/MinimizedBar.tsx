@@ -1,5 +1,5 @@
 import { Component, For, Show } from 'solid-js';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowStore, windowActions } from '@/windowing/store';
 import { IconLayout } from './icons';
 
 export const MinimizedBar: Component = () => {

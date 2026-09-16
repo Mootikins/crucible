@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { AppDragDropProvider } from './appProviders';
 import { SplitPane } from '../SplitPane';
 import { EdgeHost } from '../EdgeHost';
 import { FloatingWindow } from '../FloatingWindow';
-import { windowStore, setStore } from '@/stores/windowStore';
+import { windowStore, setStore } from '@/windowing/store';
 import { findFirstPane, generateId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { CoreProviders, railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 /**
  * Separator + panel-chrome contract (Obsidian-style):
@@ -25,7 +26,7 @@ let mainPaneId: string;
 let mainGroupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -66,9 +67,9 @@ describe('SplitPane splitter — rendered DOM', () => {
   it('is a 1px line (w-px, cursor-col-resize) with a widened after: grab zone', () => {
     const layout = splitLayout();
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <SplitPane node={layout} />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const splitter = container.querySelector<HTMLElement>('[data-testid="resize-splitter"]')!;
@@ -88,12 +89,12 @@ describe('SplitPane splitter — rendered DOM', () => {
   });
 });
 
-describe('EdgePanel resize handle — rendered DOM', () => {
+describe('DockedBody resize handle — rendered DOM', () => {
   it('is a 1px separator line with a widened after: grab zone, no grip glyph', () => {
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <EdgeHost position="left" />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
@@ -111,12 +112,12 @@ describe('EdgePanel resize handle — rendered DOM', () => {
   });
 });
 
-describe('EdgePanel ribbon chrome — rendered DOM', () => {
+describe('Ribbon chrome — rendered DOM', () => {
   it('renders an always-visible ribbon with its panel toggle (w-4 svg glyph)', () => {
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <EdgeHost position="left" />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const toggle = container.querySelector<HTMLElement>('[data-testid="ribbon-toggle-left"]')!;
@@ -127,25 +128,50 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     expect(svg!.getAttribute('class') ?? '').toContain('w-4');
   });
 
-  it('the left ribbon carries the shell-wide toggles, and only those', () => {
+  it('the left ribbon carries swap sides, and no palette or new-session command', () => {
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <EdgeHost position="left" />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
-    // What the rail keeps: the three toggles that act on the WHOLE shell and
-    // have nowhere else to live.
-    for (const id of ['ribbon-cmd-swap-sides', 'ribbon-cmd-theme', 'ribbon-cmd-settings']) {
-      expect(container.querySelector(`[data-testid="${id}"]`), id).toBeTruthy();
-    }
+    // Swapping sides is a layout action, so the core draws it.
+    expect(container.querySelector('[data-testid="ribbon-cmd-swap-sides"]')).toBeTruthy();
 
-    // What it dropped, and must not grow back: a command-palette bolt and a
-    // new-session plus. Neither was the fastest route to its own action
-    // (Ctrl+P; the session tree's hover button), and each spent the rail's
-    // most reachable pixels on a third doorway.
+    // What the rail dropped, and must not grow back: a command-palette bolt and
+    // a new-session plus. Each spent the rail's most reachable pixels on a
+    // third doorway.
     for (const id of ['ribbon-cmd-palette', 'ribbon-cmd-new-session']) {
       expect(container.querySelector(`[data-testid="${id}"]`), id).toBeNull();
+    }
+  });
+
+  it('hangs the rail head under the toggle and the rail tail at the far end', () => {
+    const slots = {
+      railHead: (p: string) => <span data-testid={`head-${p}`} />,
+      railTail: (p: string) => <button type="button" data-testid={`tail-${p}`} />,
+    };
+    for (const position of ['left', 'right'] as const) {
+      const { container, unmount } = render(() => (
+        <CoreProviders slots={slots}>
+          <EdgeHost position={position} />
+        </CoreProviders>
+      ));
+      const ribbon = container.querySelector(`[data-testid="edge-collapsed-drop-${position}"]`)!;
+      const head = ribbon.querySelector(`[data-testid="head-${position}"]`)!;
+      const tail = ribbon.querySelector(`[data-testid="tail-${position}"]`)!;
+      const toggle = ribbon.querySelector(`[data-testid="ribbon-toggle-${position}"]`)!;
+      expect(toggle.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // The tail is the last button of the rail, in or after the floor
+      // claimant, so the free space sits above it.
+      const buttons = Array.from(ribbon.querySelectorAll('button'));
+      expect(buttons[buttons.length - 1], `${position} tail is last`).toBe(tail);
+      const floor = ribbon.querySelector('[data-ribbon-floor]')!;
+      expect(
+        floor.contains(tail) || !!(floor.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING),
+        `${position} tail is pinned below the free space`,
+      ).toBe(true);
+      unmount();
     }
   });
 
@@ -157,9 +183,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     // two of them and the overlay is bounded by the wrong element.
     for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
-        <AppDragDropProvider>
+        <CoreProviders>
           <EdgeHost position={position} />
-        </AppDragDropProvider>
+        </CoreProviders>
       ));
       const floors = container.querySelectorAll('[data-ribbon-floor]');
       expect(floors.length, `${position} ribbon floor claimants`).toBe(1);
@@ -174,9 +200,9 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
   it('every edge position renders its own ribbon toggle', () => {
     for (const position of ['left', 'right'] as const) {
       const { container, unmount } = render(() => (
-        <AppDragDropProvider>
+        <CoreProviders>
           <EdgeHost position={position} />
-        </AppDragDropProvider>
+        </CoreProviders>
       ));
       expect(
         container.querySelector(`[data-testid="ribbon-toggle-${position}"]`),
@@ -186,44 +212,11 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     }
   });
 
-  it('pins the notification bell to the bottom of the RIGHT ribbon only', () => {
-    // It used to float in the centre pane's bottom-right corner, over the
-    // document, and disappeared with the rest of the transient chip cluster.
-    // `mt-auto` is the same bottom-anchor the left ribbon's settings gear uses.
-    const seen: Record<string, HTMLElement | null> = {};
-    for (const position of ['left', 'right'] as const) {
-      const { container, unmount } = render(() => (
-        <AppDragDropProvider>
-          <EdgeHost position={position} />
-        </AppDragDropProvider>
-      ));
-      seen[position] = container.querySelector<HTMLElement>('[data-testid="corner-bell"]');
-      // Read before unmount — the node is detached afterwards.
-      //
-      // The bell is LAST in the bottom cluster, but it is not always what
-      // holds that cluster down: when the panel has a trailing pane, the
-      // cluster of ribbon buttons for that pane claims the space instead, and
-      // a second `mt-auto` here would split it. So the assertion is position,
-      // not class — the previous one pinned `mt-auto` on the bell itself and
-      // broke the moment anything else could legitimately claim the floor.
-      if (seen[position]) {
-        const ribbon = seen[position]!.closest('[data-testid^="edge-ribbon"]') ?? container;
-        const buttons = Array.from(ribbon.querySelectorAll('button'));
-        expect(buttons[buttons.length - 1], `${position} bell is last`).toBe(seen[position]);
-      }
-      unmount();
-    }
-
-    expect(seen.right, 'right ribbon hosts the bell').toBeTruthy();
-    expect(seen.left, 'left ribbon must not').toBeNull();
-
-  });
-
   it('the expanded tab bar has no duplicate in-bar collapse control', () => {
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <EdgeHost position="left" />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
     // The old duplicate collapse button carried these test ids / would render a
     // PanelClose glyph in the tab bar; the ribbon toggle is now canonical.
@@ -256,9 +249,9 @@ describe('FloatingWindow grab zones — rendered DOM', () => {
     );
 
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <FloatingWindow window={windowStore.floatingWindows[0]} />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const handles = Array.from(container.querySelectorAll<HTMLElement>('div')).filter((el) =>

@@ -7,7 +7,7 @@ import { type Page } from '@playwright/test';
  * splitter between them goes inert — the same rule a collapsed pane follows,
  * because `splitRatio` is the size the pane opens back to (see `splitFlex` in
  * `src/windowing/model/pane-collapse.ts` and `locked` in
- * `src/components/windowing/SplitPane.tsx`).
+ * `src/windowing/components/SplitPane.tsx`).
  *
  * So a test that drags a splitter has to put content on BOTH sides. Without
  * this it drags a control the app has deliberately switched off, and measures

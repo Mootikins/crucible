@@ -1,6 +1,6 @@
 import { Component, Show, createMemo, createSignal, createEffect, onCleanup, untrack, For } from 'solid-js';
-import { windowStore, windowActions } from '@/stores/windowStore';
-import type { FloatingWindow as FloatingWindowType } from '@/types/windowTypes';
+import { windowStore, windowActions } from '@/windowing/store';
+import type { FloatingWindow as FloatingWindowType } from '@/windowing/model/types';
 import { TabBar } from './TabBar';
 import {
   IconClose,

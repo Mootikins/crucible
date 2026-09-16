@@ -4,9 +4,11 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { FileText } from '@/lib/icons';
 import { TabBar } from '../TabBar';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 // The old test scraped TabBar.tsx for the absence of "▼" and the presence of a
 // "<ChevronDown …class=…" substring with a regex. That never renders the bar
@@ -19,7 +21,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

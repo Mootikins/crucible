@@ -2,14 +2,15 @@ import { it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { useDragDropContext } from '@thisbeyond/solid-dnd';
-import { AppDragDropProvider } from './appProviders';
 import { TabBar } from '../TabBar';
 import { EdgeHost } from '../EdgeHost';
-import type { EdgePanelPosition } from '@/types/windowTypes';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import type { EdgePanelPosition } from '@/windowing/model/types';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane, generateId, primaryEdgeGroupId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import type { DragSource } from '@/types/windowTypes';
+import type { DragSource } from '@/windowing/model/types';
+import { CoreProviders, railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 // Regression: updateTab replaces the tab OBJECT on every write (dirty flag,
 // title). Rows keyed by object identity remount, and a remounting row
@@ -29,7 +30,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(produce((s) => {
     s.layout = fresh.layout;
     s.tabGroups = fresh.tabGroups;
@@ -51,10 +52,10 @@ beforeEach(() => {
 
 it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () => {
   render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <Probe />
       <TabBar groupId={groupId} paneId={paneId} />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
   const id = `tab:${groupId}:tab-note`;
@@ -71,9 +72,9 @@ it('updateTab (dirty-flag/title sync) keeps the tab draggable registered', () =>
 
 it('the row still re-renders tab fields updated in place (dirty dot, title)', () => {
   const { container } = render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <TabBar groupId={groupId} paneId={paneId} />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
   const row = () => container.querySelector('[data-tab-id="tab-note"]')!;
@@ -85,10 +86,10 @@ it('the row still re-renders tab fields updated in place (dirty dot, title)', ()
 
 it('a genuinely new tab id still mounts its own draggable', () => {
   render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <Probe />
       <TabBar groupId={groupId} paneId={paneId} />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
   const otherId = generateId();
@@ -122,7 +123,7 @@ const swapEdgeGroupId = (position: EdgePanelPosition): string => {
 };
 
 it('collapsed strip icons re-register their draggable with the live group id after a restore', () => {
-  // defaultLayout() can ship left.mode='strip', so setting it
+  // railSeed() can ship left.mode='strip', so setting it
   // to 'strip' is a no-op that Solid's store setter never notifies on. Force the
   // opposite first so the collapse is a real transition even if the default
   // flips later.
@@ -132,10 +133,10 @@ it('collapsed strip icons re-register their draggable with the live group id aft
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
 
   render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <Probe />
       <EdgeHost position="left" />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
   const id = 'edgetab-collapsed:left:strip-tab';
@@ -146,7 +147,7 @@ it('collapsed strip icons re-register their draggable with the live group id aft
 });
 
 it('expanded edge tab bars re-register draggables with the live group id after a restore', () => {
-  // defaultLayout() already ships left.mode='docked', so setting it to
+  // railSeed() already ships left.mode='docked', so setting it to
   // 'docked' is a no-op Solid never notifies on. Force the opposite first so the
   // expand is a real transition even if the default flips later.
   setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));
@@ -155,10 +156,10 @@ it('expanded edge tab bars re-register draggables with the live group id after a
   windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });
 
   render(() => (
-    <AppDragDropProvider>
+    <CoreProviders>
       <Probe />
       <EdgeHost position="left" />
-    </AppDragDropProvider>
+    </CoreProviders>
   ));
 
   // Edge panels host the unified TabBar; draggable ids carry the group id,

@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
-import { AppDragDropProvider } from './appProviders';
 import { CenterTiling } from '../CenterTiling';
-import { windowStore, windowActions, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/windowing/store';
 import { findFirstPane, generateId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
 import { EMPTY_PANE_PX } from '@/windowing/model/pane-collapse';
+import { CoreProviders, railSeed, configureRails } from './fixtures';
+
+beforeEach(() => configureRails());
 
 // The old test only scraped CenterTiling.tsx to prove the string "Set ratio"
 // was absent — a check that never rendered anything. Here we render the real
@@ -18,7 +19,7 @@ let mainPaneId: string;
 let mainGroupId: string;
 
 beforeEach(() => {
-  const fresh = defaultLayout();
+  const fresh = railSeed();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -44,9 +45,9 @@ describe('CenterTiling', () => {
       contentType: 'file',
     });
     const { queryByText, container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <CenterTiling />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     // Single-pane layout → that pane's tab strip.
@@ -73,9 +74,9 @@ describe('CenterTiling', () => {
     );
 
     const { container } = render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <CenterTiling />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
     const splitter = container.querySelector('[data-testid="resize-splitter"]');
@@ -117,9 +118,9 @@ describe('CenterTiling — an empty side yields its width', () => {
 
   const renderTiling = () =>
     render(() => (
-      <AppDragDropProvider>
+      <CoreProviders>
         <CenterTiling />
-      </AppDragDropProvider>
+      </CoreProviders>
     ));
 
   /** The two flex children the splitter sits between. */

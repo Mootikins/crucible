@@ -1,13 +1,13 @@
 import { Component, Show, createSignal, createEffect, onCleanup, onMount } from 'solid-js';
 import { Key } from '@solid-primitives/keyed';
 import { Dynamic } from 'solid-js/web';
-import { windowStore, windowActions } from '@/stores/windowStore';
+import { windowStore, windowActions } from '@/windowing/store';
 import { collectPanes } from '@/windowing/model/tree';
 import { isCollapsedLeaf } from '@/windowing/model/pane-collapse';
 import { paneBoundaries, findSplitInLayout } from '@/windowing/model/pane-boundaries';
-import { startSplitDrag } from '@/lib/split-drag';
-import type { EdgePanelPosition, PaneNode } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
+import { startSplitDrag } from '@/windowing/components/split-drag';
+import type { EdgePanelPosition, PaneNode } from '@/windowing/model/types';
+import { isEdgeCollapsed } from '@/windowing/model/types';
 
 /** A pane's marker band is exactly a tab bar: TabBar is `h-9`. */
 const MARKER_PX = 36;
@@ -85,8 +85,7 @@ export const RibbonPaneStrip: Component<{
     setBands(next);
 
     // Two pinned clusters own ribbon pixels the strip may not draw on: the
-    // rail toggle at the top, and the bell (right) or the settings pair (left)
-    // at the bottom. A band that reached either would put a marker under a
+    // rail toggle at the top, and the pinned tail at the bottom. A band that reached either would put a marker under a
     // button that already owns those pixels.
     //
     // The band is DROPPED, never nudged. Nudging is exactly what the mirrored
