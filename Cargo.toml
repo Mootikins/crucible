@@ -176,11 +176,22 @@ protobuf = { stage = ["build"] }
 inherits = "release"
 lto = "thin"
 
+# TRAP this encodes: `panic = "abort"` belongs nowhere in this workspace, and it
+# lived here for a long time looking like a free binary-size win.
+#
+# Luau reports a host callback's `Err(mlua::Error)` by throwing a C++ exception
+# out of the Rust frame mlua called that callback from. An abort profile marks
+# every Rust frame `nounwind`, so the throw reaches `panic_cannot_unwind` and
+# kills the process — a mistyped field name in one plugin took the whole daemon
+# down at boot. It also disarms every `catch_unwind` in the workspace, including
+# the one wrapping the markdown parser precisely so a bad note cannot do that.
+#
+# `crucible-lua` carries a `#[cfg(panic = "abort")] compile_error!` so a profile
+# that sets it again fails the build instead of the daemon.
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-panic = "abort"
 strip = true
 
 [profile.release-debug]

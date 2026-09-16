@@ -330,3 +330,96 @@ async fn an_operator_disable_entry_leaves_an_installed_now_plugin_disabled() {
         "a disabled plugin's body must not run"
     );
 }
+
+/// A server over one fixture plugin whose `setup()` body is `body`.
+///
+/// Installed the same way [`server_with_installed_plugin`] does it, so the
+/// spec-driven pass activates it; the difference is that the caller chooses
+/// what the body does.
+async fn server_with_failing_plugin(tmp: &TempDir, name: &str, body: &str) -> Server {
+    let data_home = tmp.path().join("data");
+    let runtimepath = tmp.path().join("rp");
+    let plugin_dir = runtimepath.join("plugins").join(name);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(
+        plugin_dir.join("init.luau"),
+        format!("--!nocheck\nreturn {{ setup = function(_cfg)\n{body}\nend }}\n"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(&data_home).unwrap();
+    std::fs::write(
+        crate::plugin_ops::installed_manifest_path(&data_home),
+        serde_json::json!({
+            "version": crate::plugin_ops::INSTALLED_PLUGINS_VERSION,
+            "plugins": { name: { "url": format!("file:///nowhere/{name}") } }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    Server::bind_with_plugin_config(BindWithPluginConfigParams {
+        path: tmp.path().join("d.sock"),
+        runtimepath: vec![runtimepath],
+        config_home: Some(data_home.join("config")),
+        data_home: Some(data_home),
+        ..Default::default()
+    })
+    .await
+    .expect("bind")
+}
+
+/// A plugin that fails in `setup()` is marked `Error` and inert, and the
+/// daemon carries on. Two ways to fail, because they were not equivalent.
+///
+/// A plain `error(...)` always behaved: Luau raised it, `lua_pcall` caught it
+/// inside Luau's own C++ frames, `activate` returned `Err`, the pass logged
+/// "did not activate" and moved on.
+///
+/// The second is the one that killed a release daemon. `cru.surface.declare`
+/// with no `name` returns `Err(mlua::Error)` from a synchronous Rust callback,
+/// and Luau raises that by throwing a C++ exception OUT of the Rust frame it
+/// was called from. Under `panic = "abort"` that frame cannot unwind, so the
+/// throw reached `panic_cannot_unwind` and the process died before `activate`
+/// could return anything — the daemon never reached its kilns, and the only
+/// message was "panic in a function that cannot unwind".
+///
+/// This test cannot see that difference on its own: it runs under the dev
+/// profile, which unwinds. The gate that keeps the difference from coming
+/// back is the `#[cfg(panic = "abort")] compile_error!` in `crucible-lua`.
+/// What this pins is the behaviour on the other side of it — both failures
+/// stay local to the plugin.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plugin_that_fails_in_setup_is_marked_failed_and_the_daemon_lives() {
+    for (name, body) in [
+        (
+            "boot-plain-raise",
+            r#"error("this plugin refuses to load")"#,
+        ),
+        (
+            "boot-host-raise",
+            "cru.surface.declare({ title = \"no name given\" })",
+        ),
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let server = server_with_failing_plugin(&tmp, name, body).await;
+
+        server.boot_plugins().await;
+
+        let loader = server.plugin_loader.lock().await;
+        let loader = loader.as_ref().expect("loader present");
+        assert_eq!(
+            loader.plugin_state(name),
+            Some(crucible_lua::manifest::PluginState::Error),
+            "{name}: a plugin that raised in setup must be listed as failed"
+        );
+
+        // The daemon is still here and still answers: the VM took the error,
+        // not the process.
+        let alive: i64 = loader
+            .lua()
+            .load("return 1 + 1")
+            .eval()
+            .expect("the plugin VM must still evaluate after a failed activation");
+        assert_eq!(alive, 2, "{name}");
+    }
+}

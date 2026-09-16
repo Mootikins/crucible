@@ -43,6 +43,32 @@
 //! - `luau` (default): Use the Luau runtime
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
+// A host function reports a bad call by returning `Err(mlua::Error)`. Luau
+// turns that into a raise, and Luau raises by throwing a C++ exception out of
+// the Rust callback frame mlua called it from. Under `panic = "abort"` every
+// Rust frame is `nounwind`, so that throw hits `panic_cannot_unwind` and the
+// process dies on the spot — no unwind, no `Err` for the caller to handle, no
+// message but "panic in a function that cannot unwind".
+//
+// Measured, not deduced. A plugin whose `setup()` raised a plain Lua error was
+// caught, logged as "did not activate", and the daemon kept serving. The same
+// plugin reading one unknown property off a session record — a raise that
+// starts inside a Rust callback — aborted a release daemon at boot, twice, for
+// two unrelated reasons on the same day: a misspelled field in `session-board`
+// and a char-boundary bug in the vendored markdown parser.
+//
+// The same strategy also silently disarms every `catch_unwind` in the
+// workspace, including the one `crucible-core`'s markdown extension wraps the
+// parser in specifically so a bad note cannot take the daemon down.
+//
+// This is a build-time gate rather than a comment in `Cargo.toml` because a
+// profile is easy to add and the failure it causes looks like anything but its
+// cause. Every consumer of this crate inherits it.
+#[cfg(panic = "abort")]
+compile_error!(
+    "crucible-lua requires panic = \"unwind\": Luau raises a host callback's Err by throwing through the Rust frame that produced it, and an abort profile turns every such raise into a process abort. Remove `panic = \"abort\"` from the profile you are building."
+);
+
 pub mod auth_plugin;
 pub mod authorship;
 pub mod check;
