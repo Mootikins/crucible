@@ -11,6 +11,8 @@ import { sessionEvents } from '../sse';
 import { installSessionEventRoute } from '../routes/session';
 import {
   fetchPendingInteractionsOnce,
+  refetchPendingInteractions,
+  resetInteractionsForTests,
   usePendingInteractions,
   useRespondToInteraction,
 } from '../interactions';
@@ -43,6 +45,7 @@ afterEach(() => {
   dispose?.();
   dispose = null;
   env?.restore();
+  resetInteractionsForTests();
   vi.useRealTimers();
 });
 
@@ -201,5 +204,100 @@ describe('useRespondToInteraction', () => {
     ).rejects.toThrow();
 
     expect(env.client.getQueryData<PendingInteractionEntry[]>(keys.pendingInteractions())).toHaveLength(1);
+  });
+});
+
+describe('the requests this client already answered', () => {
+  it('keeps an answered request out of a refetch that still lists it', async () => {
+    // The daemon's aggregate purges an answered request when it gets round to
+    // it. Meanwhile ANOTHER session raising a request invalidates this key,
+    // and the refetch would write the answered entry back — the badge lights
+    // again and the pane that answered raises the card a second time.
+    installFakeEventSource();
+    env = createTestQueryEnv({
+      // The daemon has not caught up: it still lists `r-1` after the answer.
+      [PENDING]: () => body([entry('s-1', 'r-1')]),
+      [RESPOND]: () => new Response(null, { status: 204 }),
+    });
+    installSessionEventRoute();
+
+    const query = inRoot(() => usePendingInteractions());
+    await vi.waitFor(() => expect(query.data).toHaveLength(1));
+    const respond = inRoot(() => useRespondToInteraction());
+    await respond.mutateAsync({ sessionId: 's-1', requestId: 'r-1', response: { ok: true } });
+    expect(query.data).toEqual([]);
+
+    // A second session raises a request, which invalidates this key.
+    const stop = sessionEvents('s-2').subscribe(() => {});
+    onlyEventSource().emit('interaction_requested', {
+      type: 'interaction_requested',
+      request: { ...perm, id: 'r-9' },
+    });
+
+    // Waiting on the CACHE and not on the request count: the count rises when
+    // the request starts, and an assertion made then passes against a refetch
+    // that has not written anything yet. This waits for the stale entry to be
+    // back in the cache, which is the state the reader has to survive.
+    await vi.waitFor(() =>
+      expect(env.client.getQueryData<PendingInteractionEntry[]>(keys.pendingInteractions()))
+        .toHaveLength(1),
+    );
+
+    // It is on the wire and in the cache, and still not shown.
+    expect(query.data).toEqual([]);
+    expect(await fetchPendingInteractionsOnce()).toEqual([]);
+    stop();
+  });
+
+  it('forgets the answer once the daemon stops listing it', async () => {
+    // The record of an answer is short-lived on purpose: it must not grow, and
+    // it must not hide a request the daemon raises later.
+    let listed: PendingInteractionEntry[] = [entry('s-1', 'r-1')];
+    env = createTestQueryEnv({
+      [PENDING]: () => body(listed),
+      [RESPOND]: () => new Response(null, { status: 204 }),
+    });
+
+    const query = inRoot(() => usePendingInteractions());
+    await vi.waitFor(() => expect(query.data).toHaveLength(1));
+    const respond = inRoot(() => useRespondToInteraction());
+    await respond.mutateAsync({ sessionId: 's-1', requestId: 'r-1', response: { ok: true } });
+
+    // The daemon catches up.
+    listed = [];
+    await env.client.invalidateQueries({ queryKey: keys.pendingInteractions() });
+    await vi.waitFor(() => expect(env.fetch.calls(PENDING)).toBe(2));
+
+    // Nothing of that answer is held any more: the same id, listed again, is
+    // shown rather than filtered.
+    listed = [entry('s-1', 'r-1')];
+    await env.client.invalidateQueries({ queryKey: keys.pendingInteractions() });
+
+    await vi.waitFor(() => expect(query.data).toHaveLength(1));
+  });
+
+  it('forgets the answer after half a minute, whatever the daemon says', async () => {
+    // A daemon that never purges the entry must not silence that session for
+    // the life of the tab, and the record of the answer must not outlive its
+    // purpose. The read below is the forced re-sync the badge runs, which
+    // asks the daemon and filters the answer afresh; a reactive reader
+    // recovers with it, because its own filter re-runs when the list changes.
+    vi.useFakeTimers();
+    env = createTestQueryEnv({
+      [PENDING]: () => body([entry('s-1', 'r-1')]),
+      [RESPOND]: () => new Response(null, { status: 204 }),
+    });
+
+    const query = inRoot(() => usePendingInteractions());
+    await vi.waitFor(() => expect(query.data).toHaveLength(1));
+    const respond = inRoot(() => useRespondToInteraction());
+    await respond.mutateAsync({ sessionId: 's-1', requestId: 'r-1', response: { ok: true } });
+    expect(query.data).toEqual([]);
+    // A forced re-sync still hides it: the daemon lists it, the answer stands.
+    expect(await refetchPendingInteractions()).toEqual([]);
+
+    vi.setSystemTime(Date.now() + 31_000);
+
+    expect(await refetchPendingInteractions()).toHaveLength(1);
   });
 });
