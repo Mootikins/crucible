@@ -50,7 +50,7 @@ import {
 } from './review-types';
 
 /** What the daemon's `review_gate` event says about a held tool call. */
-export interface ReviewGate {
+interface ReviewGate {
   blocked: boolean;
   tool: string;
   path: string | null;

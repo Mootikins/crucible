@@ -18,7 +18,7 @@ import { expect, type Page } from '@playwright/test';
  */
 
 /** One outbound browser request to the daemon's HTTP API. */
-export interface ApiRequest {
+interface ApiRequest {
   method: string;
   path: string;
   /** The query string without its `?`, so a spec can tell two keys apart. */
