@@ -137,9 +137,18 @@ async fn test_e2e_kiln_list_initially_empty() {
     let n = stream.read(&mut buf).await.expect("Failed to read");
     let response = String::from_utf8_lossy(&buf[..n]);
 
+    // The fixture's registered kiln is LISTED, and listed as closed: nothing
+    // has opened it yet. This used to expect an empty array, because the
+    // listing held only the kilns the manager had open — which made every
+    // registered kiln unreachable until something opened it, and a daemon
+    // restart a 404 on the kiln-addressed routes.
     assert!(
-        response.contains("\"result\":[]"),
-        "Expected empty kiln list"
+        !response.contains("\"result\":[]"),
+        "a registered kiln must be listed before anything opens it: {response}"
+    );
+    assert!(
+        response.contains("\"open\":false"),
+        "and listed as closed: {response}"
     );
 
     daemon.stop().await.expect("Failed to stop daemon");

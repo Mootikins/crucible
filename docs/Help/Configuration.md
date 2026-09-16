@@ -130,7 +130,7 @@ cru.config.set({
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `path` | string | required | Filesystem path to the kiln root |
-| `lazy` | bool | `false` | If true, the kiln is not opened at daemon start; it must be opened explicitly |
+| `lazy` | bool | `false` | If true, the kiln is not opened at daemon start. It is still listed and addressable, and the first request that uses it opens it |
 
 A name holds `[A-Za-z0-9._- ]`, at most 64 characters. It keeps the case and
 the spaces you wrote — `"Crucible Help"` shows as `Crucible Help` — and it

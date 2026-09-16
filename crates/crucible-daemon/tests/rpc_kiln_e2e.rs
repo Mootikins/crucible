@@ -125,11 +125,17 @@ async fn create_seeded_kiln() -> TempDir {
 async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> {
     for _ in 0..100 {
         let list = client.kiln_list().await.expect("kiln_list failed");
-        if list.len() >= expected {
-            return list
-                .iter()
-                .filter_map(|row| row["path"].as_str().map(str::to_string))
-                .collect();
+        // Only the rows that are OPEN. `kiln.list` also reports registered
+        // kilns that nothing has opened — the bundled help corpus among them,
+        // on a machine where it has been extracted — and these tests are about
+        // what `kiln.open` and `kiln.close` do to the open set.
+        let open: Vec<String> = list
+            .iter()
+            .filter(|row| row["open"].as_bool().unwrap_or(true))
+            .filter_map(|row| row["path"].as_str().map(str::to_string))
+            .collect();
+        if open.len() >= expected {
+            return open;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -240,7 +246,11 @@ async fn test_kiln_close_removes_from_list() {
     // Closed, and only the closed one: the fixture's registered kiln stays
     // open, because closing one kiln says nothing about another.
     let list = client.kiln_list().await.expect("kiln_list failed");
-    let paths: Vec<&str> = list.iter().filter_map(|row| row["path"].as_str()).collect();
+    let paths: Vec<&str> = list
+        .iter()
+        .filter(|row| row["open"].as_bool().unwrap_or(true))
+        .filter_map(|row| row["path"].as_str())
+        .collect();
     assert!(
         !paths
             .iter()
@@ -389,7 +399,11 @@ async fn test_kiln_lifecycle_open_query_close() {
     // Closed. The fixture's own registered kiln is still open — boot opened
     // it, and closing this one says nothing about it.
     let list = client.kiln_list().await.expect("kiln_list failed");
-    let paths: Vec<&str> = list.iter().filter_map(|row| row["path"].as_str()).collect();
+    let paths: Vec<&str> = list
+        .iter()
+        .filter(|row| row["open"].as_bool().unwrap_or(true))
+        .filter_map(|row| row["path"].as_str())
+        .collect();
     assert!(
         !paths
             .iter()

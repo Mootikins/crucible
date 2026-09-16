@@ -104,7 +104,7 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     }
 }
 
-/// List the open kilns.
+/// List the kilns a client may address.
 ///
 /// `name` is the **registry key** — the name every other API call answers to,
 /// and the one the web layer joins a session's kilns against. It used to be the
@@ -112,18 +112,28 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
 /// about itself, which two kilns can claim at once and which no caller can say
 /// back to us.
 ///
-/// # The listing never publishes a name the attach refuses
+/// # Registered, not merely open
 ///
-/// It used to. A directory with no registry entry was listed under the name
-/// this daemon *would* have derived from its basename, and
-/// `session.connect_kiln` answered `Unknown kiln "docs"` for exactly that
-/// name — a picker offering a kiln the daemon then refused with 422.
+/// This listed what the *manager* held open, and a fresh daemon holds nothing.
+/// Every kiln-addressed route gates on it — the web file editor checks a path
+/// against this listing before it reads a byte — so a restart turned every
+/// registered kiln into a 404, and a lazy kiln was unreachable for the life of
+/// the process. "Which directories are kilns" is the REGISTRY's question, and
+/// asking the manager was asking the wrong owner.
 ///
-/// So there is one source and no fallback: the name comes from the registry or
-/// there is no name. Opening a directory is what puts it in the registry
-/// (`KilnManager::open`), so the nameless case is only what the registration
-/// floor refuses — and `registered` says so, for a client that must not offer
-/// the row.
+/// So the listing is the registry's entries, plus any directory the manager
+/// has open that no entry names. `open` says which of the two it is, honestly,
+/// and a closed row is not a dead one: the first request that addresses a kiln
+/// opens it (`KilnManager::get_or_open`, used by every storage handler here).
+/// `lazy` therefore keeps meaning "not opened UNASKED" rather than "never".
+///
+/// # What it still refuses to publish
+///
+/// A name the attach cannot resolve. An open directory with no registry entry
+/// carries `registered: false` and no name — a client must not offer it — and
+/// a registration whose directory is gone is left out entirely, because
+/// attaching it would fail to open. `cru kiln list` (`kiln.registry_list`) is
+/// the surface that reports a missing registration, marked `(missing)`.
 ///
 /// `path` stays, by design — this is the one listing whose job is to say where
 /// a kiln lives.
@@ -133,24 +143,58 @@ pub(crate) async fn handle_kiln_list(
     registry: &crate::kiln_registry::KilnRegistry,
     data_home: &Path,
 ) -> Response {
-    let kilns = km.list().await;
-    let list: Vec<_> = kilns
-        .iter()
-        // The daemon data root (~/.crucible) gets opened as the fallback kiln
-        // for kiln-less sessions, but it is config/session storage — not a
-        // user kiln. Listing it would surface ".crucible" in every kiln picker.
-        .filter(|(path, _, _)| path != data_home)
-        .map(|(path, _self_asserted, last_access)| {
-            let name = registry.name_for(path);
-            serde_json::json!({
-                "path": path.to_string_lossy(),
-                "name": name.as_ref().map(|n| n.as_str()).unwrap_or_default(),
-                "registered": name.is_some(),
-                "last_access_secs_ago": last_access.elapsed().as_secs()
-            })
-        })
+    use std::collections::{HashMap, HashSet};
+
+    // What the manager holds open. Keyed by the path it opened, which a
+    // registry entry matches by either of its two spellings.
+    let open: HashMap<std::path::PathBuf, std::time::Instant> = km
+        .list()
+        .await
+        .into_iter()
+        .map(|(path, _self_asserted, last_access)| (path, last_access))
         .collect();
-    Response::success(req.id, list)
+
+    let mut rows = Vec::new();
+    let mut claimed: HashSet<std::path::PathBuf> = HashSet::new();
+
+    for kiln in registry.entries() {
+        let opened = open
+            .get(kiln.path())
+            .or_else(|| open.get(kiln.resolved_path()));
+        // A registration pointing at a directory that is gone is not offered:
+        // the attach would fail to open it, and this listing publishes only
+        // names the attach resolves.
+        if opened.is_none() && !kiln.path().is_dir() {
+            continue;
+        }
+        claimed.insert(kiln.path().to_path_buf());
+        claimed.insert(kiln.resolved_path().to_path_buf());
+        rows.push(serde_json::json!({
+            "path": kiln.path().to_string_lossy(),
+            "name": kiln.name().as_str(),
+            "registered": true,
+            "open": opened.is_some(),
+            "last_access_secs_ago": opened.map(|at| at.elapsed().as_secs()),
+        }));
+    }
+
+    for (path, last_access) in open {
+        // The daemon data root gets opened as the fallback kiln for kiln-less
+        // sessions, but it is config/session storage — not a user kiln.
+        // Listing it would surface ".crucible" in every kiln picker.
+        if path == data_home || claimed.contains(&path) || registry.name_for(&path).is_some() {
+            continue;
+        }
+        rows.push(serde_json::json!({
+            "path": path.to_string_lossy(),
+            "name": "",
+            "registered": false,
+            "open": true,
+            "last_access_secs_ago": last_access.elapsed().as_secs(),
+        }));
+    }
+
+    Response::success(req.id, rows)
 }
 
 /// `kiln.register`: give a directory a name, and write it down.
@@ -1726,7 +1770,13 @@ mod tests {
         let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
 
         let listed = resp.result.expect("kiln.list returns a list");
-        let entry = &listed.as_array().expect("an array")[0];
+        let entry = listed
+            .as_array()
+            .expect("an array")
+            .iter()
+            .find(|row| row["path"] == serde_json::json!(kiln_dir.to_string_lossy()))
+            .unwrap_or_else(|| panic!("the kiln must be listed: {listed}"))
+            .clone();
         assert_eq!(
             entry["name"], "work",
             "the registry key is the name every other call answers to: {listed}"
@@ -1828,9 +1878,124 @@ mod tests {
 
         let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
         let listed = resp.result.expect("kiln.list returns a list");
-        let row = &listed.as_array().expect("an array")[0];
-        assert_eq!(row["name"], "My Vault");
+        let row = listed
+            .as_array()
+            .expect("an array")
+            .iter()
+            .find(|row| row["name"] == serde_json::json!("My Vault"))
+            .unwrap_or_else(|| panic!("the opened kiln must be listed: {listed}"));
         assert_eq!(row["registered"], true);
+        assert_eq!(row["open"], true);
+    }
+
+    /// A registered kiln is reachable after a restart, even a LAZY one.
+    ///
+    /// `kiln.list` reported the kilns the manager held OPEN, and a fresh daemon
+    /// holds none. Every kiln-addressed route gates on that listing — the web
+    /// file editor checks the path against it before reading a byte — so a
+    /// restart turned a registered kiln into a 404 and the picker lost it.
+    ///
+    /// Lazy has to keep meaning lazy: the entry is listed, it is honestly
+    /// marked closed, and the first request that addresses it opens it.
+    #[tokio::test]
+    async fn a_lazy_registered_kiln_is_listed_and_opens_on_first_use() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let vault = tmp.path().join("Team Notes");
+        std::fs::create_dir_all(&vault).unwrap();
+
+        // A fresh daemon over the same data root: the registry knows the kiln,
+        // the manager has opened nothing.
+        let registry = crate::test_support::kiln_registry_with_lazy(
+            &data_home,
+            &[("Team Notes", &vault, true)],
+        );
+        let km = Arc::new(KilnManager::new().with_kiln_registry(registry.clone()));
+
+        let listed = handle_kiln_list(list_request(), &km, &registry, &data_home)
+            .await
+            .result
+            .expect("kiln.list returns a list");
+        let rows = listed.as_array().expect("an array");
+        let row = rows
+            .iter()
+            .find(|row| row["name"] == serde_json::json!("Team Notes"))
+            .unwrap_or_else(|| panic!("a registered kiln must be listed: {listed}"));
+        assert_eq!(
+            row["open"], false,
+            "and listed honestly as closed: {listed}"
+        );
+        assert_eq!(row["registered"], true);
+        assert_eq!(row["path"], vault.to_string_lossy().as_ref());
+
+        // The first request that addresses it opens it. This is the write the
+        // web file editor's 404 stood in front of.
+        let upsert = handle_note_upsert(
+            Request {
+                jsonrpc: "2.0".to_string(),
+                id: Some(crucible_core::protocol::RequestId::Number(2)),
+                method: "note.upsert".to_string(),
+                params: serde_json::json!({
+                    "kiln": vault.to_string_lossy(),
+                    "note": {
+                        "path": "Watched.md",
+                        "content_hash": crucible_core::parser::BlockHash::zero(),
+                        "title": "Watched",
+                        "tags": [],
+                        "links_to": [],
+                        "properties": {},
+                        "updated_at": chrono::Utc::now().to_rfc3339(),
+                    },
+                }),
+            },
+            &km,
+        )
+        .await;
+        assert!(upsert.error.is_none(), "{:?}", upsert.error);
+
+        let listed = handle_kiln_list(list_request(), &km, &registry, &data_home)
+            .await
+            .result
+            .expect("kiln.list returns a list");
+        let row = listed
+            .as_array()
+            .expect("an array")
+            .iter()
+            .find(|row| row["name"] == serde_json::json!("Team Notes"))
+            .expect("still listed");
+        assert_eq!(row["open"], true, "the use opened it: {listed}");
+    }
+
+    /// A registered kiln whose directory is gone is NOT offered. An attach
+    /// would fail to open it, and the listing's rule is that every name it
+    /// publishes is one the attach resolves. `cru kiln list` is the surface
+    /// that reports a missing registration, with `(missing)`.
+    #[tokio::test]
+    async fn a_registered_kiln_with_no_directory_is_not_listed() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let gone = tmp.path().join("gone");
+        std::fs::create_dir_all(&gone).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[("gone", &gone)]);
+        std::fs::remove_dir_all(&gone).unwrap();
+
+        let km = Arc::new(KilnManager::new().with_kiln_registry(registry.clone()));
+        let listed = handle_kiln_list(list_request(), &km, &registry, &data_home)
+            .await
+            .result
+            .expect("kiln.list returns a list");
+
+        // By name, not by count: the bundled help corpus is a registered lazy
+        // kiln too, and it is listed whenever its directory exists on the
+        // machine running the test.
+        assert!(
+            !listed
+                .as_array()
+                .expect("an array")
+                .iter()
+                .any(|row| row["name"] == serde_json::json!("gone")),
+            "a registration with no directory must not be offered: {listed}"
+        );
     }
 
     /// The rule, stated as the round trip the user's 422 broke: every name the
@@ -1857,7 +2022,20 @@ mod tests {
 
         let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
         let listed = resp.result.expect("kiln.list returns a list");
-        let rows = listed.as_array().expect("an array");
+        // Every row under this test's own temp directory. The bundled help
+        // corpus is a registered kiln as well, and whether its directory
+        // exists depends on the machine, so counting every row would make this
+        // pass or fail for a reason it is not about.
+        let rows: Vec<&serde_json::Value> = listed
+            .as_array()
+            .expect("an array")
+            .iter()
+            .filter(|row| {
+                row["path"]
+                    .as_str()
+                    .is_some_and(|path| path.starts_with(tmp.path().to_str().unwrap()))
+            })
+            .collect();
         assert_eq!(rows.len(), 2, "both kilns are listed: {listed}");
 
         for row in rows {

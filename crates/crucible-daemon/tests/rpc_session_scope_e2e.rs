@@ -263,13 +263,19 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
         "unexpected error: {err}"
     );
 
-    // The refusal must leave no side effect: the rejected kiln was never opened,
-    // so it must not surface in kiln.list (where it would otherwise be indexed).
-    let listed = serde_json::to_string(&client.kiln_list().await.expect("kiln.list failed"))
-        .expect("serialize kiln list");
-    assert!(
-        !listed.contains("classified"),
-        "rejected kiln leaked into kiln.list: {listed}"
+    // The refusal must leave no side effect. `kiln.list` names every REGISTERED
+    // kiln now, so the claim is not that the row is absent — it is that the row
+    // is still CLOSED. An opened kiln is one the daemon indexes and serves
+    // files from, and the trust floor refused exactly that.
+    let listed = client.kiln_list().await.expect("kiln.list failed");
+    let row = listed
+        .iter()
+        .find(|row| row["name"] == serde_json::json!("classified"))
+        .unwrap_or_else(|| panic!("the registered kiln is listed: {listed:?}"));
+    assert_eq!(
+        row["open"],
+        serde_json::json!(false),
+        "a trust-refused attach must not open the kiln: {listed:?}"
     );
 
     // Session scope is unchanged — the rejected kiln was never added.

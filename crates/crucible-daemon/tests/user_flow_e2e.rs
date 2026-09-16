@@ -353,9 +353,17 @@ async fn test_complete_user_flow() {
         close_result.err()
     );
 
-    // Verify kiln is no longer listed
+    // Verify the kiln is no longer OPEN. It stays listed: `kiln.list` reports
+    // the registry's entries as well, so that a registered kiln is reachable
+    // without something having opened it first. Closing changes `open`, not
+    // whether the directory is a kiln.
     let kilns = client.kiln_list().await.expect("kiln.list after close");
-    assert!(kilns.is_empty(), "Kiln list should be empty after close");
+    assert!(
+        kilns
+            .iter()
+            .all(|row| !row["open"].as_bool().unwrap_or(false)),
+        "no kiln should be open after close: {kilns:?}"
+    );
 
     // ── Cleanup ───────────────────────────────────────────────────────────
     server.shutdown().await;

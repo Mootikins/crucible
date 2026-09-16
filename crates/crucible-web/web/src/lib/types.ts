@@ -265,6 +265,21 @@ export interface KilnListEntry {
    * it as false would empty the picker against a daemon that works.
    */
   registered?: boolean;
+  /**
+   * Whether the daemon currently holds this kiln open.
+   *
+   * A registered kiln is listed whether or not it is open, because "which
+   * directories are kilns" is a question about the registry and this listing
+   * is what every kiln-addressed route checks a path against. A closed row is
+   * not a dead one: the first request that addresses the kiln opens it. Before
+   * this field existed the listing held only open kilns, so a daemon restart
+   * turned a registered kiln into a 404.
+   *
+   * Optional for the same reason as `registered`: an older daemon omits it,
+   * and everything it listed was open.
+   */
+  open?: boolean;
+  /** Seconds since the last access, or absent while the kiln is closed. */
   last_access_secs_ago?: number;
 }
 
