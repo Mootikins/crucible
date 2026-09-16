@@ -227,7 +227,9 @@ describe('SessionsPanel — the Inbox', () => {
   it('counts what is waiting on you in the accent', () => {
     attentionActions.report('s1', { pendingInteraction: ASK });
     render(() => <SessionsPanel />);
-    const count = screen.getByTestId('inbox-section').querySelector('.tabular-nums')!;
+    // The visible count sits beside the toggle button, not inside it.
+    const row = screen.getByTestId('inbox-section').parentElement!;
+    const count = row.querySelector('.tabular-nums')!;
     expect(count.className).toContain('text-attention');
   });
 });

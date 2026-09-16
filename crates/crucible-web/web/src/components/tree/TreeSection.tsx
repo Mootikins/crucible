@@ -18,7 +18,7 @@ export const TreeSection: Component<{
   urgent?: boolean;
   /** Keep the header when the count is zero: its `actions` still apply. */
   always?: boolean;
-  /** Controls on the header row, after the count: they must not nest in the toggle. */
+  /** Controls on the header row, between the label and the count: they must not nest in the toggle. */
   actions?: JSX.Element;
   children: JSX.Element;
 }> = (props) => (
@@ -40,16 +40,26 @@ export const TreeSection: Component<{
           </Show>
           <span class="flex-1 text-left truncate">{props.label}</span>
           <Show when={props.count > 0}>
-            <span
-              class="tabular-nums"
-              classList={{ 'text-attention': props.urgent === true }}
-            >
-              {props.count}
-            </span>
+            <span class="sr-only">{props.count}</span>
           </Show>
         </button>
         <Show when={props.actions}>
-          <div class="shrink-0 pr-1">{props.actions}</div>
+          <div class="shrink-0 px-1">{props.actions}</div>
+        </Show>
+        <Show when={props.count > 0}>
+          <span
+            class="tabular-nums pr-2 cursor-pointer text-floor leading-4 font-semibold tracking-wide"
+            // One colour class at a time: two on one element resolve by
+            // stylesheet order, not by intent.
+            classList={{
+              'text-attention': props.urgent === true,
+              'text-muted-dark hover:text-shell-body': props.urgent !== true,
+            }}
+            aria-hidden="true"
+            onClick={() => props.onToggle()}
+          >
+            {props.count}
+          </span>
         </Show>
       </div>
       <Show when={props.open && props.count > 0}>{props.children}</Show>
