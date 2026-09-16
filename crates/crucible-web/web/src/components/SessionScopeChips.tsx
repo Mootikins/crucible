@@ -1,7 +1,8 @@
 import { Accessor, createSignal } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
-import { connectSessionKiln, disconnectSessionKiln } from '@/lib/api';
+import type { SessionScope } from '@/lib/api';
+import { useConnectSessionKiln, useDisconnectSessionKiln } from '@/lib/query/scope';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
@@ -36,6 +37,12 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
   const kilns = () => kilnsQuery.data ?? [];
   const [busy, setBusy] = createSignal(false);
 
+  // The two writes, which fold the scope the daemon echoes into every cached
+  // copy of the session. The files panel still attaches a kiln through
+  // `applySessionScope`, so the context keeps that entry point.
+  const connect = useConnectSessionKiln();
+  const disconnect = useDisconnectSessionKiln();
+
   const session = () => currentSession();
   const workspace = () => {
     const s = session();
@@ -43,10 +50,12 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
   };
   const disabled = () => busy() || isStreaming();
 
-  const mutate = async (action: () => Promise<Parameters<typeof applySessionScope>[0]>) => {
+  const mutate = async (action: () => Promise<SessionScope>) => {
     if (disabled()) return;
     setBusy(true);
     try {
+      // The mutation patches the cache; this hands the same echo to the
+      // context, whose selection signal these chips read.
       applySessionScope(await action());
     } catch (err) {
       notificationActions.addNotification(
@@ -150,9 +159,9 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
     const s = session();
     if (!s) return;
     if (s.kilns.includes(name)) {
-      void mutate(() => disconnectSessionKiln(s.id, name));
+      void mutate(() => disconnect.mutateAsync({ id: s.id, kiln: name }));
     } else {
-      void mutate(() => connectSessionKiln(s.id, name));
+      void mutate(() => connect.mutateAsync({ id: s.id, kiln: name }));
     }
   };
 

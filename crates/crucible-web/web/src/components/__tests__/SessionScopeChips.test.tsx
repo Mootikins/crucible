@@ -24,22 +24,15 @@ vi.mock('@/contexts/ChatContext', () => ({
   useChatSafe: () => ({ isStreaming: () => false }),
 }));
 
-const connectMock = vi.fn().mockResolvedValue({
-  session_id: 's1',
-  kilns: ['main', 'extra'],
-  workspace: null,
-});
-const disconnectMock = vi.fn().mockResolvedValue({
-  session_id: 's1',
-  kilns: ['main'],
-  workspace: null,
-});
-// No `setSessionWorkspace` here: the chip must have no path to it.
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  connectSessionKiln: (...args: unknown[]) => connectMock(...args),
-  disconnectSessionKiln: (...args: unknown[]) => disconnectMock(...args),
-}));
+// No `vi.mock('@/lib/api')`. The chip attaches and detaches through
+// `lib/query/scope.ts`, so both writes answer the ROUTES below: that is what
+// proves the daemon is told the registry NAME, and it is the only way to see
+// that the chip has no path to `setSessionWorkspace` at all.
+const CONNECT = 'POST /api/session/s1/kilns/connect';
+const DISCONNECT = 'POST /api/session/s1/kilns/disconnect';
+
+/** What each write was sent, in the order the chip sent it. */
+const sent: { route: string; kiln: string }[] = [];
 
 // The roster the chips read through `useKilns`, which runs the real
 // `listKilns` against the mocked fetch.
@@ -62,7 +55,20 @@ beforeEach(() => {
   // the way a reload does. The fetch below still runs and still corrects it —
   // the first spec here waits for exactly that.
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
+  sent.length = 0;
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: KILNS }),
+    [CONNECT]: async (request) => {
+      const { kiln } = (await request.json()) as { kiln: string };
+      sent.push({ route: CONNECT, kiln });
+      return { session_id: 's1', kilns: ['main', 'extra'], workspace: null };
+    },
+    [DISCONNECT]: async (request) => {
+      const { kiln } = (await request.json()) as { kiln: string };
+      sent.push({ route: DISCONNECT, kiln });
+      return { session_id: 's1', kilns: ['main'], workspace: null };
+    },
+  });
 });
 
 const baseSession = (): Session => ({
@@ -165,7 +171,7 @@ describe('SessionScopeChips', () => {
     const mainOption = screen.getByText('main').closest('button') as HTMLButtonElement;
     expect(mainOption.disabled).toBe(false);
     fireEvent.click(screen.getByText('extra'));
-    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', 'extra'));
+    await waitFor(() => expect(sent).toEqual([{ route: DISCONNECT, kiln: 'extra' }]));
   });
 
   it('detaching the only attached kiln is offered like any other detach', async () => {
@@ -176,7 +182,7 @@ describe('SessionScopeChips', () => {
     const only = within(popout).getByText('main').closest('button') as HTMLButtonElement;
     expect(only.disabled).toBe(false);
     fireEvent.click(only);
-    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', 'main'));
+    await waitFor(() => expect(sent).toEqual([{ route: DISCONNECT, kiln: 'main' }]));
   });
 
   // `kiln.list` reports every OPEN directory, and the registration floor
@@ -219,7 +225,7 @@ describe('SessionScopeChips', () => {
     fireEvent.click(screen.getByTestId('scope-kiln'));
     await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
     fireEvent.click(screen.getByText('extra'));
-    await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', 'extra'));
+    await waitFor(() => expect(sent).toEqual([{ route: CONNECT, kiln: 'extra' }]));
   });
 
   // The join is on the registry NAME. It used to be on `path`, which meant a
@@ -232,9 +238,10 @@ describe('SessionScopeChips', () => {
     fireEvent.click(screen.getByTestId('scope-kiln'));
     const popout = await screen.findByTestId('scope-kiln-popout');
     fireEvent.click(within(popout).getByText('extra'));
-    await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', 'extra'));
-    const [, sent] = connectMock.mock.calls[0] as [string, string];
-    expect(sent).not.toContain('/');
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].route).toBe(CONNECT);
+    expect(sent[0].kiln).toBe('extra');
+    expect(sent[0].kiln).not.toContain('/');
   });
 
   // A path in `kilns` is what a session file written before names carries. It
