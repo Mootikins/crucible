@@ -110,6 +110,99 @@ describe('createBus', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
+
+  it('holds no handler after the Solid owner of the caller disposes', () => {
+    const bus = createBus();
+    const dispose = createRoot((disposeRoot) => {
+      bus.on('exportSession', vi.fn());
+      return disposeRoot;
+    });
+    expect(bus.handlerCount()).toBe(1);
+
+    dispose();
+
+    // The bookkeeping of the bus must not grow with each mount and unmount.
+    expect(bus.handlerCount()).toBe(0);
+  });
+
+  it('holds no handler after the caller runs the answer of on()', () => {
+    const bus = createBus();
+    const unsubscribe = bus.on('focusSearch', vi.fn());
+    expect(bus.handlerCount()).toBe(1);
+
+    unsubscribe();
+
+    expect(bus.handlerCount()).toBe(0);
+  });
+
+  it('holds no handler after the caller runs off()', () => {
+    const bus = createBus();
+    const handler = vi.fn();
+    bus.on('focusSearch', handler);
+
+    bus.off('focusSearch', handler);
+
+    expect(bus.handlerCount()).toBe(0);
+  });
+
+  it('accepts two removals of one handler', () => {
+    const bus = createBus();
+    const handler = vi.fn();
+    const unsubscribe = bus.on('authOk', handler);
+
+    unsubscribe();
+    expect(() => bus.off('authOk', handler)).not.toThrow();
+    expect(() => unsubscribe()).not.toThrow();
+    expect(bus.handlerCount()).toBe(0);
+  });
+
+  it('adds one handler once, for two calls with the same handler', () => {
+    const bus = createBus();
+    const handler = vi.fn();
+    const first = bus.on('authRequired', handler);
+    const second = bus.on('authRequired', handler);
+
+    bus.emit('authRequired', {});
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(bus.handlerCount()).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  it('accepts an event that no handler answers', () => {
+    const bus = createBus();
+    expect(() => bus.emit('focusSessionSearch', {})).not.toThrow();
+  });
+
+  it('gives the payload to the later handler when an earlier one throws', () => {
+    const bus = createBus();
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const later = vi.fn();
+    bus.on('clearChat', () => {
+      throw new Error('the handler failed');
+    });
+    bus.on('clearChat', later);
+
+    expect(() => bus.emit('clearChat', {})).not.toThrow();
+
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(reported).toHaveBeenCalled();
+    reported.mockRestore();
+  });
+
+  it('removes every handler of every event on clear()', () => {
+    const bus = createBus();
+    const handler = vi.fn();
+    bus.on('openSettings', handler);
+    bus.on('switchModel', vi.fn());
+    expect(bus.handlerCount()).toBe(2);
+
+    bus.clear();
+    bus.emit('openSettings', {});
+
+    expect(bus.handlerCount()).toBe(0);
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
 
 describe('getBus', () => {
@@ -143,6 +236,14 @@ describe('resetBusForTests', () => {
     const bus = getBus();
     resetBusForTests();
     expect(getBus()).toBe(bus);
+  });
+
+  it('leaves the singleton with no handler', () => {
+    getBus().on('openSession', vi.fn());
+
+    resetBusForTests();
+
+    expect(getBus().handlerCount()).toBe(0);
   });
 });
 
