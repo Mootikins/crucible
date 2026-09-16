@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
+import { Component, For, JSX, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { menuContent, menuItem } from '@/components/ui/menu-style';
@@ -198,6 +198,8 @@ export const SessionTree: Component<{
    * left under it to unfold.
    */
   inbox?: Session[];
+  /** Controls for the Projects section header: the project menu. */
+  projectsActions?: JSX.Element;
   currentSessionId?: string;
   projects: Project[];
   currentProjectPath?: string;
@@ -230,6 +232,7 @@ export const SessionTree: Component<{
    */
   const [menuTarget, setMenuTarget] = createSignal<MenuTarget | null>(null);
   const [idleOpen, setIdleOpen] = createSignal(false);
+  const [projectsOpenRaw, setProjectsOpen] = createSignal(true);
 
   // A kiln-less session is a legitimate shape, so its row says nothing about
   // kilns. `kilnName` is never handed '' to resolve: the empty path is a real
@@ -359,11 +362,10 @@ export const SessionTree: Component<{
       g.sessions.sort(byRecency);
       g.rows = g.sessions.filter((s) => !shownAbove().has(s.id));
     }
-    // A group with no session at all is not a place the user works yet.
-    // A group draws when it has a row to unfold, or when it is a real project
-    // whose New Session button must stay reachable. The project-less group
-    // has no such button, so with every session in the Inbox it draws nothing.
-    return all.filter((g) => g.rows.length > 0 || (g.sessions.length > 0 && !!g.projectPath));
+    // Every registered project is listed, with or without a session. The
+    // project-less group has no New Session of its own, so it draws only
+    // with a row to unfold.
+    return all.filter((g) => g.rows.length > 0 || !!g.projectPath);
   });
 
   /** The project an inbox row names: the group its workspace falls in. */
@@ -373,7 +375,9 @@ export const SessionTree: Component<{
   };
 
   const live = createMemo<SessionGroup[]>(() =>
-    [...allGroups()].sort((a, b) => b.lastActivity - a.lastActivity),
+    [...allGroups()].sort(
+      (a, b) => b.lastActivity - a.lastActivity || a.name.localeCompare(b.name),
+    ),
   );
 
   /** True when the pinned project actually has a group to scope to. */
@@ -405,6 +409,11 @@ export const SessionTree: Component<{
     const shown = new Set(groups().map((g) => g.key));
     return live().filter((g) => !shown.has(g.key));
   });
+
+  /** The section, like a group, does not hide the open session. */
+  const projectsOpen = () =>
+    projectsOpenRaw() ||
+    groups().some((g) => g.rows.some((s) => s.id === props.currentSessionId));
 
   /** The fold, like a group, does not hide the open session. */
   const foldOpen = () =>
@@ -548,7 +557,7 @@ export const SessionTree: Component<{
     <Menu.ContextTrigger
       asChild={(triggerProps) => (
         <div {...triggerProps({ class: 'contents' })}>
-    <div data-testid="session-tree">
+    <div data-testid="session-tree" class="flex flex-col gap-2">
       {/* Above the project tier, because it is where you were. The waiting
           count rides its header in the accent. */}
       <TreeSection
@@ -576,34 +585,44 @@ export const SessionTree: Component<{
           </For>
         </div>
       </TreeSection>
-      <For each={groups()}>
-        {(g) => (
-          <div class="mb-0.5">
-            {/* Sticky: titles repeat across projects, so scrolling past a
-                header otherwise leaves nothing on screen saying which project
-                you are reading. */}
-            {groupHeader(g)}
-            <Show when={!isCollapsed(g) && g.rows.length > 0}>
-              <div class="flex flex-col">
-              <For each={g.rows}>
-                {(s) => (
-                  <SessionRow
-                    session={s}
-                    selected={props.currentSessionId === s.id}
-                    branch={branchOfSession(s)}
-                    kilnLabel={kilnNameOf(s)}
-                    showKiln={kilnNameOf(s) !== dominantKiln(g)}
-                    onSelect={() => props.onSelectSession(s.id)}
-                    onArchive={() => props.onArchiveSession(s.id)}
-                    onDelete={() => props.onDeleteSession(s.id)}
-                  />
-                )}
-              </For>
-              </div>
-            </Show>
-          </div>
-        )}
-      </For>
+      <TreeSection
+        label="Projects"
+        count={groups().length}
+        always
+        open={projectsOpen()}
+        onToggle={() => setProjectsOpen((v) => !v)}
+        testid="projects-section"
+        actions={props.projectsActions}
+      >
+        <For each={groups()}>
+          {(g) => (
+            <div>
+              {/* Sticky: titles repeat across projects, so scrolling past a
+                  header otherwise leaves nothing on screen saying which
+                  project you are reading. */}
+              {groupHeader(g)}
+              <Show when={!isCollapsed(g) && g.rows.length > 0}>
+                <div class="flex flex-col">
+                  <For each={g.rows}>
+                    {(s) => (
+                      <SessionRow
+                        session={s}
+                        selected={props.currentSessionId === s.id}
+                        branch={branchOfSession(s)}
+                        kilnLabel={kilnNameOf(s)}
+                        showKiln={kilnNameOf(s) !== dominantKiln(g)}
+                        onSelect={() => props.onSelectSession(s.id)}
+                        onArchive={() => props.onArchiveSession(s.id)}
+                        onDelete={() => props.onDeleteSession(s.id)}
+                      />
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+          )}
+        </For>
+      </TreeSection>
 
       {/* The projects the pin scopes out. Collapsed by default and counted,
           so the rail states what it hides without spending a row on each
@@ -617,7 +636,7 @@ export const SessionTree: Component<{
       >
         <For each={offScope()}>
           {(g) => (
-            <div class="mb-0.5">
+            <div>
               {groupHeader(g)}
               <Show when={!isCollapsed(g) && g.rows.length > 0}>
                 <div class="flex flex-col">

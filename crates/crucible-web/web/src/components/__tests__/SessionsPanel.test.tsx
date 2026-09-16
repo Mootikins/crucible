@@ -120,13 +120,11 @@ describe('SessionsPanel — two tiers, project over session', () => {
     expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });
 
-  it('hides a detected project until a session starts in it', () => {
+  it('lists a registered project before a session starts in it', () => {
     pinnedProject = null;
     projectList = [...projectList, project('/home/me/quiet', 'quiet')];
     render(() => <SessionsPanel />);
-    // No row, no chevron, no fold: a directory the user never worked in is
-    // not a place on the rail yet.
-    expect(screen.queryByTestId('session-group-/home/me/quiet')).toBeNull();
+    expect(screen.getByTestId('session-group-/home/me/quiet')).toBeTruthy();
     expect(screen.queryByTestId('idle-projects-toggle')).toBeNull();
   });
 });
@@ -221,9 +219,7 @@ describe('SessionsPanel — the Inbox', () => {
     render(() => <SessionsPanel />);
     // An inbox row is out of its project's group. That is exactly when the
     // project must ride the row; a tree row has the header above it.
-    const inboxRow = screen.getByTestId('inbox-section').parentElement!.querySelector(
-      '[data-testid="session-item-s2"]',
-    )!;
+    const inboxRow = screen.getByTestId('session-list').querySelector('[data-testid="session-item-s2"]')!;
     expect(inboxRow.textContent).toContain('atlas');
     expect(inboxRow.className).not.toMatch(/\bpl-6\b/);
   });
@@ -237,7 +233,7 @@ describe('SessionsPanel — the Inbox', () => {
 });
 
 describe('SessionsPanel — one section vocabulary', () => {
-  it('gives Inbox, Other projects and Archived the same header shape', () => {
+  it('gives Inbox, Projects, Other projects and Archived the same header shape', () => {
     localStorage.clear();
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
     pinnedProject = projectList[0];
@@ -250,7 +246,7 @@ describe('SessionsPanel — one section vocabulary', () => {
 
     // Three sections of one list that used to have three paddings, two count
     // placements and two chevron treatments.
-    const classes = ['inbox-section', 'idle-projects-toggle', 'archived-section'].map(
+    const classes = ['inbox-section', 'projects-section', 'idle-projects-toggle', 'archived-section'].map(
       (id) => screen.getByTestId(id).className,
     );
     expect(new Set(classes).size).toBe(1);

@@ -2,13 +2,11 @@ import { Component, JSX, Show } from 'solid-js';
 import { ChevronRight } from '@/lib/icons';
 
 /**
- * A collapsible section of the sessions rail: Inbox, No sessions, Archived.
+ * A collapsible section of the sessions rail: Inbox, Projects, Archived.
  *
- * ONE component because there were three headers with three different
- * paddings, two different count placements and two different chevron
- * treatments — three sections of one list that did not look like siblings.
- * A section that renders nothing when empty is not offered at all: a control
- * that does nothing must not take a row.
+ * One row at the rail's row height, and one chevron slot, so a section header
+ * and the rows under it share one leading edge. A section with nothing in it
+ * is not offered, unless `always` says its actions must stay reachable.
  */
 export const TreeSection: Component<{
   label: string;
@@ -18,25 +16,43 @@ export const TreeSection: Component<{
   testid: string;
   /** Draw the count in the session accent — the Inbox uses it for "waiting". */
   urgent?: boolean;
+  /** Keep the header when the count is zero: its `actions` still apply. */
+  always?: boolean;
+  /** Controls on the header row, after the count: they must not nest in the toggle. */
+  actions?: JSX.Element;
   children: JSX.Element;
 }> = (props) => (
-  <Show when={props.count > 0}>
-    <button
-      type="button"
-      data-testid={props.testid}
-      aria-expanded={props.open}
-      onClick={props.onToggle}
-      class="w-full flex items-center gap-2 px-2 pt-3 pb-1 text-floor leading-4 font-semibold uppercase tracking-wide text-muted-dark hover:text-shell-body"
-    >
-      <ChevronRight class={`w-3.5 h-3.5 shrink-0 transition-transform ${props.open ? 'rotate-90' : ''}`} />
-      <span class="flex-1 text-left truncate">{props.label}</span>
-      <span
-        class="tabular-nums"
-        classList={{ 'text-attention': props.urgent === true }}
-      >
-        {props.count}
-      </span>
-    </button>
-    <Show when={props.open}>{props.children}</Show>
+  <Show when={props.count > 0 || props.always}>
+    <div>
+      <div class="flex items-center">
+        <button
+          type="button"
+          data-testid={props.testid}
+          aria-expanded={props.count > 0 ? props.open : undefined}
+          onClick={() => props.count > 0 && props.onToggle()}
+          class="flex-1 min-w-0 flex items-center gap-2 px-2 h-(--cru-row-sm) text-floor leading-4 font-semibold uppercase tracking-wide text-muted-dark hover:text-shell-body"
+        >
+          <Show
+            when={props.count > 0}
+            fallback={<span class="w-3.5 h-3.5 shrink-0 inline-block" aria-hidden="true" />}
+          >
+            <ChevronRight class={`w-3.5 h-3.5 shrink-0 transition-transform ${props.open ? 'rotate-90' : ''}`} />
+          </Show>
+          <span class="flex-1 text-left truncate">{props.label}</span>
+          <Show when={props.count > 0}>
+            <span
+              class="tabular-nums"
+              classList={{ 'text-attention': props.urgent === true }}
+            >
+              {props.count}
+            </span>
+          </Show>
+        </button>
+        <Show when={props.actions}>
+          <div class="shrink-0 pr-1">{props.actions}</div>
+        </Show>
+      </div>
+      <Show when={props.open && props.count > 0}>{props.children}</Show>
+    </div>
   </Show>
 );

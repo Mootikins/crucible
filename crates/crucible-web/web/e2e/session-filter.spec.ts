@@ -47,15 +47,15 @@ test.describe('Session list', () => {
     await expect(page.getByTestId('session-item-archived-001')).toHaveCount(0);
   });
 
-  test('hides a registered project until a session starts in it', async ({ page }) => {
+  test('lists a registered project before a session starts in it', async ({ page }) => {
     await setupBasicMocks(page, { sessions: [] });
     await page.goto('/');
     await openSessionsList(page);
 
-    // A detected directory is not a place the user works yet. It used to sit
-    // behind a counted "No sessions" fold, one row per empty project; now it
-    // takes no row and no fold, and the panel says what there is to do.
-    await expect(page.getByTestId('session-group-/home/user/project')).toHaveCount(0);
+    // The row is there to start a session from; nothing folds it away.
+    const row = page.getByTestId('session-group-/home/user/project');
+    await expect(row).toHaveCount(1);
+    await expect(row.getByTestId('session-group-chevron')).toHaveCount(0);
     await expect(page.getByTestId('idle-projects-toggle')).toHaveCount(0);
     await expect(page.getByText('No sessions yet')).toBeVisible();
   });

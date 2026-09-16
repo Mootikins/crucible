@@ -133,35 +133,19 @@ export const SessionsPanel: Component = () => {
       new CustomEvent('crucible:new-session', { detail: { workspace: projectPath } }),
     );
 
+  // Created here, outside the tree's own context menu: an ark Menu.Root that
+  // mounts inside another becomes its submenu.
+  const projectMenu = <ProjectMenu />;
+
   return (
     <PanelShell>
-      {/* No SESSION switcher header. It was a dropdown listing sessions,
-          sitting on top of a list of sessions — its one unique offer was a
-          GLOBAL "active" group, and the Inbox below is that group, in the
-          open, without a click. The waiting count rides the Inbox header.
-
-          The PROJECT menu is a different thing and it does belong here. It
-          came off the rail's kebab, which is the layout control now, and it
-          acts on the registry of projects this panel groups its sessions by.
-          It is not rows on the project tier: that tier draws a project only
-          once a session starts in it, so a project you have not worked in has
-          no row to pin from. Pinning ONE project from its own row stays in
-          the tree's context menu, where the row already is. */}
-      <div
-        data-testid="sessions-panel-header"
-        class="flex-none flex items-center gap-1 px-2 pt-2 pb-1"
-      >
-        <span class="flex-1 text-floor font-semibold uppercase tracking-wide text-muted-dark">
-          Projects
-        </span>
-        <ProjectMenu />
-      </div>
       {/* The whole rail is the session list: Inbox, tree, Reflections and
           Archived are its sections. */}
-      <div class="flex-1 overflow-y-auto px-1 py-1.5" data-testid="session-list">
+      <div class="flex-1 overflow-y-auto px-1 py-1.5 flex flex-col gap-2" data-testid="session-list">
         <SessionTree
           sessions={treeList()}
           inbox={inbox()}
+          projectsActions={projectMenu}
           currentSessionId={currentSession()?.id}
           projects={projects()}
           currentProjectPath={currentProject()?.path}

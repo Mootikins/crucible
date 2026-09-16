@@ -12,6 +12,7 @@ describe('TreeSection — the header', () => {
     ));
     const header = screen.getByRole('button', { name: /Inbox/ });
     expect(header.className).toContain('leading-4');
+    expect(header.className).toContain('h-(--cru-row-sm)');
   });
 
   it('draws its chevron in the 14 px slot every tier of the rail uses', () => {

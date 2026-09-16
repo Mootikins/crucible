@@ -52,10 +52,10 @@ describe('SessionsPanel — the project control', () => {
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
   });
 
-  it('puts the project menu in the panel header', () => {
+  it('puts the project menu on the Projects section header', () => {
     const { getByTestId } = render(() => <SessionsPanel />);
-    const header = getByTestId('sessions-panel-header');
-    expect(header.querySelector('[data-testid="project-menu"]')).toBeTruthy();
+    const row = getByTestId('projects-section').parentElement!;
+    expect(row.querySelector('[data-testid="project-menu"]')).toBeTruthy();
   });
 
   it('lists every registered project, including one with no session', async () => {
@@ -68,9 +68,6 @@ describe('SessionsPanel — the project control', () => {
       expect(el).toBeTruthy();
       return el!;
     });
-    // The tree draws no row for atlas — it has no sessions — so this menu is
-    // the only way to pin it.
-    expect(document.querySelector('[data-testid="session-group-/home/me/atlas"]')).toBeNull();
     fireEvent.pointerDown(item);
     fireEvent.click(item);
     await waitFor(() => expect(selectProject).toHaveBeenCalledWith('/home/me/atlas'));

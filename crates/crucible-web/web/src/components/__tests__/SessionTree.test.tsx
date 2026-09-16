@@ -68,11 +68,11 @@ describe('SessionTree', () => {
     ));
 
     // ONE group for the repo (main + worktree), one session-folders bucket.
-    // 'other' has no session, so it takes no row.
+    // 'other' has no session; it is still listed, uncounted.
     const repoGroup = getByTestId('session-group-/repo');
     expect(repoGroup).toBeTruthy();
     expect(repoGroup.textContent).toContain('2');
-    expect(queryByTestId('session-group-/other')).toBeNull();
+    expect(getByTestId('session-group-/other').textContent).not.toMatch(/\d/);
     expect(getByTestId('session-group-::none')).toBeTruthy();
     expect(queryByTestId('session-group-x')).toBeNull(); // worktree never a group
 
@@ -381,7 +381,7 @@ describe('SessionTree — the project row context menu', () => {
   });
 });
 
-describe('SessionTree — a project with no sessions is not there', () => {
+describe('SessionTree — every registered project is listed', () => {
   const projects = [
     project('/repo', 'crucible'),
     project('/other', 'other'),
@@ -389,18 +389,45 @@ describe('SessionTree — a project with no sessions is not there', () => {
   ];
   const sessions = [session({ id: 's-main', workspace: '/repo' })];
 
-  it('hides a project until it has a session', () => {
+  it('lists a project before it has a session: no chevron, no count, New Session on the row', () => {
     const { getByTestId, queryByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
-
-    // A detected project is not a place the user works yet. It used to sit
-    // behind a counted "No sessions" fold; now it takes no row at all until
-    // a session is started in it.
     expect(getByTestId('session-group-/repo')).toBeTruthy();
-    expect(queryByTestId('session-group-/other')).toBeNull();
-    expect(queryByTestId('session-group-/third')).toBeNull();
+    for (const key of ['/other', '/third']) {
+      const header = getByTestId(`session-group-${key}`);
+      expect(header.querySelector('[data-testid="session-group-chevron"]')).toBeNull();
+      expect(header.getAttribute('aria-expanded')).toBeNull();
+      expect(header.textContent).not.toMatch(/\d/);
+      expect(getByTestId(`session-group-new-${key}`)).toBeTruthy();
+    }
     expect(queryByTestId('idle-projects-toggle')).toBeNull();
+  });
+
+  it('puts the projects with sessions first, then the rest by name', () => {
+    const { container } = render(() => (
+      <SessionTree sessions={sessions} projects={projects} {...baseProps} />
+    ));
+    const keys = [...container.querySelectorAll('[data-group-key]')].map((n) => n.getAttribute('data-group-key'));
+    expect(keys).toEqual(['/repo', '/other', '/third']);
+  });
+
+  it('wraps the tier in a Projects section that stays on the rail with no project at all', () => {
+    const { getByTestId } = render(() => <SessionTree sessions={[]} projects={[]} {...baseProps} />);
+    const section = getByTestId('projects-section');
+    expect(section.textContent).toContain('Projects');
+    expect(section.textContent).not.toMatch(/\d/);
+  });
+
+  it('draws every section header at the row height, with no padding of its own', () => {
+    const { getByTestId } = render(() => (
+      <SessionTree sessions={sessions} projects={projects} inbox={sessions} {...baseProps} />
+    ));
+    for (const id of ['inbox-section', 'projects-section']) {
+      const header = getByTestId(id);
+      expect(header.className).toContain('h-(--cru-row-sm)');
+      expect(header.className).not.toMatch(/\bp[tb]-\d/);
+    }
   });
 
   it('keeps the project-less bucket in the main list', () => {
