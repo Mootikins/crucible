@@ -2091,7 +2091,14 @@ impl RpcDispatcher {
             crucible_lua::get_app_config()
                 .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())),
         );
-        config_origin_row(&config, key, &leaf_origin(&registered, key))
+        // A `Value`, because `config.reset` and `config.pop` add their own
+        // `outcome` and `dropped` keys to the row they answer with.
+        serde_json::to_value(config_origin_row(
+            &config,
+            key,
+            &leaf_origin(&registered, key),
+        ))
+        .unwrap_or(serde_json::Value::Null)
     }
 
     /// Drop config layers for one leaf: `config.reset` (`:set key&`) drops
@@ -2386,17 +2393,34 @@ fn config_origin_row(
     config: &serde_json::Value,
     key: &str,
     origin: &crucible_core::config::LeafOrigin,
-) -> serde_json::Value {
-    let mut row = serde_json::json!({
-        "key": key,
-        "value": crucible_core::config::leaf_at(config, key).cloned().unwrap_or(serde_json::Value::Null),
-    });
-    if let (Some(object), Ok(serde_json::Value::Object(origin))) =
-        (row.as_object_mut(), serde_json::to_value(origin))
-    {
-        object.extend(origin);
+) -> ConfigOriginRow {
+    ConfigOriginRow {
+        key: key.to_string(),
+        value: crucible_core::config::leaf_at(config, key)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        origin: origin.clone(),
     }
-    row
+}
+
+/// One row of `config.origin`: a leaf, the value the store holds for it, and
+/// where that value came from.
+///
+/// The origin flattens, so `pinned`, `source`, `file` and `line` sit beside
+/// `key` and `value` rather than under a nested object. A settings control
+/// renders a lock from this row, and the file and the line are how it offers a
+/// jump to the line that holds the key.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigOriginRow {
+    /// The dot-joined leaf path.
+    pub key: String,
+    /// What the effective view holds for the leaf. Always written, `null` when
+    /// the view holds nothing there.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub value: serde_json::Value,
+    #[serde(flatten)]
+    pub origin: crucible_core::config::LeafOrigin,
 }
 
 /// One leaf's origin over the effective view: the state overlay's row when it

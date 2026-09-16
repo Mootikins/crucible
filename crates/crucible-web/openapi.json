@@ -4908,6 +4908,30 @@
           }
         }
       },
+      "ConfigOriginRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LeafOrigin"
+          },
+          {
+            "type": "object",
+            "required": [
+              "key",
+              "value"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "The dot-joined leaf path."
+              },
+              "value": {
+                "description": "What the effective view holds for the leaf. Always written, `null` when\nthe view holds nothing there."
+              }
+            }
+          }
+        ],
+        "description": "One row of `config.origin`: a leaf, the value the store holds for it, and\nwhere that value came from.\n\nThe origin flattens, so `pinned`, `source`, `file` and `line` sit beside\n`key` and `value` rather than under a nested object. A settings control\nrenders a lock from this row, and the file and the line are how it offers a\njump to the line that holds the key."
+      },
       "ConfigResponse": {
         "type": "object",
         "description": "What `GET /api/config` answers.\n\nThree of its fields stay open objects. The effective config, the origin\nrows and the control tree are the daemon's vocabulary, declared in Lua and\nin the store; a fixed shape here would make this layer a second owner of\nthem, and a key a newer daemon adds would not reach the browser at all.",
@@ -4938,8 +4962,11 @@
             "description": "Where `init.lua` and `settings.json` live, so a lock can offer a jump\nto the file that holds a key. Absent when the daemon booted from a\nconfig value rather than a file."
           },
           "origins": {
-            "type": "object",
-            "description": "One row per recorded leaf: `{key, value, source, file?, line?}`, as\n`config.origin` gives them. The flat shape is what a settings control\nrenders a lock from; the effective config's own `provenance` map is\nthe same fact in the store's enum shape, and serving both would be two\nspellings of one answer."
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigOriginRow"
+            },
+            "description": "One row per recorded leaf, as `config.origin` gives them. The flat\nshape is what a settings control renders a lock from; the effective\nconfig's own `provenance` map is the same fact in the store's enum\nshape, and serving both would be two spellings of one answer.\n\nA closed shape, unlike the three fields around it: the daemon builds\nevery row from one type, so this route reads that type rather than\nforwarding an object it cannot describe."
           },
           "controls": {
             "type": "object",
@@ -5968,6 +5995,27 @@
             "description": "Always true. A failed write is an error status, not a `false`."
           }
         }
+      },
+      "LeafOrigin": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SourceOrigin",
+            "description": "The source that owns the leaf, with its file and line when it has\nthem."
+          },
+          {
+            "type": "object",
+            "required": [
+              "pinned"
+            ],
+            "properties": {
+              "pinned": {
+                "type": "boolean",
+                "description": "Whether a boot-restored layer holds this leaf, so `config.save`\nrefuses it."
+              }
+            }
+          }
+        ],
+        "description": "Where one leaf came from, and whether `config.save` would refuse it.\n\nThe row `config.origin` answers with. `pinned` is the refusal rule itself,\nreported per leaf, and the [`SourceOrigin`] beside it is the pin that\nrefuses — the same one the refusal carries. See [`crate::config::ConfigStore::origin`]\nfor why the pin, and not the last writer, names the file here."
       },
       "LineRangeRow": {
         "type": "object",

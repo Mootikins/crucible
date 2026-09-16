@@ -101,13 +101,18 @@ impl SwrCache {
     }
 }
 
-/// Daemon agent-profiles payload (`agents.list_profiles` result), cached.
+/// Daemon agent-profiles payload (serialized `AgentProfilesReply`), cached.
+///
+/// The cache holds a `Value`, so the reply is serialised on the way in and
+/// read back at the route. That is the one place the shape re-enters, which is
+/// why `agents_from_profiles` still fails safe there.
 pub async fn agents_value(state: &AppState) -> anyhow::Result<serde_json::Value> {
     let daemon = state.daemon.clone();
     state
         .swr
         .get_or_fetch("agents", CATALOG_TTL, move || async move {
-            daemon.agents_list_profiles().await
+            let profiles = daemon.agents_list_profiles().await?;
+            Ok(serde_json::to_value(profiles)?)
         })
         .await
 }

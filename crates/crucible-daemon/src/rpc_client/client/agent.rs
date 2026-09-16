@@ -569,7 +569,7 @@ impl DaemonClient {
     }
 
     /// List all available agent profiles (builtins + configured).
-    pub async fn agents_list_profiles(&self) -> Result<serde_json::Value> {
+    pub async fn agents_list_profiles(&self) -> Result<crate::AgentProfilesReply> {
         self.typed_call("agents.list_profiles", EmptyParams {})
             .await
     }

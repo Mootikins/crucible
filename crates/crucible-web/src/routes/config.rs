@@ -9,7 +9,7 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{extract::State, Json};
-use crucible_daemon::ConfigSaveReply;
+use crucible_daemon::{ConfigOriginRow, ConfigSaveReply};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -33,13 +33,15 @@ struct ConfigResponse {
     /// to the file that holds a key. Absent when the daemon booted from a
     /// config value rather than a file.
     config_root: Option<String>,
-    /// One row per recorded leaf: `{key, value, source, file?, line?}`, as
-    /// `config.origin` gives them. The flat shape is what a settings control
-    /// renders a lock from; the effective config's own `provenance` map is
-    /// the same fact in the store's enum shape, and serving both would be two
-    /// spellings of one answer.
-    #[schema(value_type = Object)]
-    origins: serde_json::Value,
+    /// One row per recorded leaf, as `config.origin` gives them. The flat
+    /// shape is what a settings control renders a lock from; the effective
+    /// config's own `provenance` map is the same fact in the store's enum
+    /// shape, and serving both would be two spellings of one answer.
+    ///
+    /// A closed shape, unlike the three fields around it: the daemon builds
+    /// every row from one type, so this route reads that type rather than
+    /// forwarding an object it cannot describe.
+    origins: Vec<ConfigOriginRow>,
     /// The declared control tree the settings UI renders, as
     /// `config.controls` gives it: `{options, read_only}`. Served here rather
     /// than from a second endpoint because a control and the value it shows
@@ -76,6 +78,13 @@ async fn get_config(State(state): State<AppState>) -> Result<Json<ConfigResponse
     let effective = state.daemon.config_effective().await.daemon_err()?;
     let origins = state.daemon.config_origins().await.daemon_err()?;
     let controls = state.daemon.config_controls().await.daemon_err()?;
+    // A row the daemon writes and this crate cannot read is a settings pane
+    // with no locks, not a 502: the values and the controls beside it are the
+    // screen, and they arrived.
+    let origins: Vec<ConfigOriginRow> = origins
+        .get("origins")
+        .and_then(|rows| serde_json::from_value(rows.clone()).ok())
+        .unwrap_or_default();
     Ok(Json(ConfigResponse {
         kiln_path: kiln_path_for_client(&effective, || {
             state.config.kiln_path_str().unwrap_or_default()
@@ -86,7 +95,7 @@ async fn get_config(State(state): State<AppState>) -> Result<Json<ConfigResponse
             .get("config_root")
             .and_then(|root| root.as_str())
             .map(str::to_string),
-        origins: origins.get("origins").cloned().unwrap_or_default(),
+        origins,
         controls,
     }))
 }
@@ -221,8 +230,75 @@ mod tests {
             parsed.config["chat"]["model"],
             serde_json::json!("daemon-model")
         );
-        assert!(parsed.origins.is_array(), "{json}");
         assert!(parsed.controls["options"].is_object(), "{json}");
+
+        // The rows are a LIST, and the document has to say so. A schema that
+        // called them an object generated `Record<string, never>`, which no
+        // settings control can render a lock from.
+        assert!(json["origins"].is_array(), "{json}");
+        let row = &parsed.origins[0];
+        assert_eq!(row.key, "chat.model");
+        assert_eq!(row.value, serde_json::json!("daemon-model"));
+        assert_eq!(row.origin.origin.source, "lua");
+        assert_eq!(row.origin.origin.file.as_deref(), Some(MOCK_PIN_FILE));
+        assert_eq!(row.origin.origin.line, Some(12));
+    }
+
+    /// The document says `origins` is an array of the daemon's row.
+    ///
+    /// Asserted against the generated schema and not only against a body,
+    /// because it is the document that `openapi-typescript` reads: a body can
+    /// be a list while the schema calls it an object, and then the browser's
+    /// generated type is `Record<string, never>`.
+    #[test]
+    fn the_document_says_the_origin_rows_are_a_list() {
+        let spec = serde_json::to_value(crate::server::api_spec()).expect("the spec serialises");
+        let origins = &spec["components"]["schemas"]["ConfigResponse"]["properties"]["origins"];
+
+        assert_eq!(
+            origins["type"],
+            serde_json::json!("array"),
+            "the origin rows are a list: {origins:#}"
+        );
+        assert_eq!(
+            origins["items"]["$ref"],
+            serde_json::json!("#/components/schemas/ConfigOriginRow"),
+            "each row is the daemon's own: {origins:#}"
+        );
+    }
+
+    /// The row flattens its origin, so `pinned`, `source`, `file` and `line`
+    /// sit beside `key` and `value` on the wire.
+    #[test]
+    fn an_origin_row_round_trips_with_its_origin_flattened() {
+        let row = ConfigOriginRow {
+            key: "chat.model".to_string(),
+            value: serde_json::json!("daemon-model"),
+            origin: crucible_core::config::LeafOrigin {
+                pinned: true,
+                origin: crucible_core::config::SourceOrigin {
+                    source: "lua".to_string(),
+                    file: Some("/config/init.lua".to_string()),
+                    line: Some(12),
+                },
+            },
+        };
+        let wire = serde_json::to_value(&row).expect("the row serialises");
+        assert_eq!(
+            wire,
+            serde_json::json!({
+                "key": "chat.model",
+                "value": "daemon-model",
+                "pinned": true,
+                "source": "lua",
+                "file": "/config/init.lua",
+                "line": 12,
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<ConfigOriginRow>(wire).expect("the row parses"),
+            row
+        );
     }
 
     /// The refusal envelope reads back into the type the DAEMON declares, so

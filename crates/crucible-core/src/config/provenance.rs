@@ -189,7 +189,8 @@ pub struct SourceOrigin {
 /// reported per leaf, and the [`SourceOrigin`] beside it is the pin that
 /// refuses — the same one the refusal carries. See [`crate::config::ConfigStore::origin`]
 /// for why the pin, and not the last writer, names the file here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LeafOrigin {
     /// Whether a boot-restored layer holds this leaf, so `config.save`
     /// refuses it.

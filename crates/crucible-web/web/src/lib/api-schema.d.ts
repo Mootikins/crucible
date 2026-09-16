@@ -2297,6 +2297,24 @@ export interface components {
             root?: string | null;
         };
         /**
+         * @description One row of `config.origin`: a leaf, the value the store holds for it, and
+         *     where that value came from.
+         *
+         *     The origin flattens, so `pinned`, `source`, `file` and `line` sit beside
+         *     `key` and `value` rather than under a nested object. A settings control
+         *     renders a lock from this row, and the file and the line are how it offers a
+         *     jump to the line that holds the key.
+         */
+        ConfigOriginRow: components["schemas"]["LeafOrigin"] & {
+            /** @description The dot-joined leaf path. */
+            key: string;
+            /**
+             * @description What the effective view holds for the leaf. Always written, `null` when
+             *     the view holds nothing there.
+             */
+            value: unknown;
+        };
+        /**
          * @description What `GET /api/config` answers.
          *
          *     Three of its fields stay open objects. The effective config, the origin
@@ -2322,13 +2340,16 @@ export interface components {
             controls: Record<string, never>;
             kiln_path: string;
             /**
-             * @description One row per recorded leaf: `{key, value, source, file?, line?}`, as
-             *     `config.origin` gives them. The flat shape is what a settings control
-             *     renders a lock from; the effective config's own `provenance` map is
-             *     the same fact in the store's enum shape, and serving both would be two
-             *     spellings of one answer.
+             * @description One row per recorded leaf, as `config.origin` gives them. The flat
+             *     shape is what a settings control renders a lock from; the effective
+             *     config's own `provenance` map is the same fact in the store's enum
+             *     shape, and serving both would be two spellings of one answer.
+             *
+             *     A closed shape, unlike the three fields around it: the daemon builds
+             *     every row from one type, so this route reads that type rather than
+             *     forwarding an object it cannot describe.
              */
-            origins: Record<string, never>;
+            origins: components["schemas"]["ConfigOriginRow"][];
             /**
              * @description Non-loopback terminal/shell access is active (opt-in + API key) —
              *     the terminal panel connects from LAN clients only when this is true.
@@ -2848,6 +2869,21 @@ export interface components {
         LayoutWriteResponse: {
             /** @description Always true. A failed write is an error status, not a `false`. */
             ok: boolean;
+        };
+        /**
+         * @description Where one leaf came from, and whether `config.save` would refuse it.
+         *
+         *     The row `config.origin` answers with. `pinned` is the refusal rule itself,
+         *     reported per leaf, and the [`SourceOrigin`] beside it is the pin that
+         *     refuses — the same one the refusal carries. See [`crate::config::ConfigStore::origin`]
+         *     for why the pin, and not the last writer, names the file here.
+         */
+        LeafOrigin: components["schemas"]["SourceOrigin"] & {
+            /**
+             * @description Whether a boot-restored layer holds this leaf, so `config.save`
+             *     refuses it.
+             */
+            pinned: boolean;
         };
         /** @description A half-open range of 1-based line numbers: `end` is one past the last line. */
         LineRangeRow: {
@@ -4389,6 +4425,7 @@ export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
 export type SchemaCommentRequest = components['schemas']['CommentRequest'];
+export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
@@ -4425,6 +4462,7 @@ export type SchemaKilnRequest = components['schemas']['KilnRequest'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
+export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];

@@ -161,19 +161,14 @@ async fn acp_profiles(client: Option<&DaemonClient>) -> Vec<AcpProfile> {
         return Vec::new();
     };
     reply
-        .get("profiles")
-        .and_then(|p| p.as_array())
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|e| AcpProfile {
-                    name: e["name"].as_str().unwrap_or_default().to_string(),
-                    description: e["description"].as_str().unwrap_or_default().to_string(),
-                    available: e["available"].as_bool().unwrap_or(false),
-                })
-                .collect()
+        .profiles
+        .into_iter()
+        .map(|profile| AcpProfile {
+            name: profile.name,
+            description: profile.description,
+            available: profile.available,
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// List both things `cru session create` can attach to a session.

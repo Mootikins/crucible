@@ -1041,16 +1041,22 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             },
             "read_only": [{ "path": "data_home", "reason": MOCK_LOCATION_REASON }],
         }),
+        // SERIALISED from the daemon's own row type. A literal here had no
+        // `pinned` key, which the daemon always writes, so a route test could
+        // not have noticed the route dropping the whole row.
         "config.origin" => json!({
-            "origins": [
-                {
-                    "key": "chat.model",
-                    "value": "daemon-model",
-                    "source": "lua",
-                    "file": MOCK_PIN_FILE,
-                    "line": 12,
-                }
-            ],
+            "origins": [as_rpc_result(crucible_daemon::ConfigOriginRow {
+                key: "chat.model".to_string(),
+                value: json!("daemon-model"),
+                origin: crucible_core::config::LeafOrigin {
+                    pinned: true,
+                    origin: crucible_core::config::SourceOrigin {
+                        source: "lua".to_string(),
+                        file: Some(MOCK_PIN_FILE.to_string()),
+                        line: Some(12),
+                    },
+                },
+            })],
         }),
         // Which leaves a save may write is the daemon's rule, not this mock's.
         // A top-level [`MOCK_PINNED_KEY`] is the sentinel for "a human's line

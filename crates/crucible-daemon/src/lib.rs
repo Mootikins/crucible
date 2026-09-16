@@ -145,7 +145,7 @@ pub use server::note_refactor::{SkipReason, SkippedRef};
 // `config.save` and `webhook.receive` RPCs. The web routes forward them
 // verbatim, so they read the type rather than keeping a second copy of it.
 pub use mcp_server::{McpRunning, McpStatus, McpStopped};
-pub use rpc::{ConfigSaveReply, WebhookReceiveReply};
+pub use rpc::{ConfigOriginRow, ConfigSaveReply, WebhookReceiveReply};
 pub use server::platform::{
     AgentProfileEntry, AgentProfilesReply, SkillDetail, SkillSummary, SkillsReply,
 };

@@ -564,7 +564,7 @@ impl ReconnectingDaemon {
         /// List ACP agent profiles (builtins + config) with probed availability.
         Safe AgentsListProfiles =>
         agents_list_profiles()
-        -> serde_json::Value = agents_list_profiles();
+        -> crucible_daemon::AgentProfilesReply = agents_list_profiles();
     }
 
     forward_rpc! {
