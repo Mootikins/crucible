@@ -1,10 +1,10 @@
-import { Component, For, Index, Show, createResource, createSignal } from 'solid-js';
+import { Component, For, Index, Show, createSignal } from 'solid-js';
+import type { PluginOptionNode } from '@/lib/api';
 import {
-  getPluginOption,
-  setPluginOption,
-  executePluginOption,
-  type PluginOptionNode,
-} from '@/lib/api';
+  useExecutePluginOption,
+  usePluginOption,
+  useSetPluginOption,
+} from '@/lib/query/plugins';
 import { notificationActions } from '@/stores/notificationStore';
 
 /**
@@ -29,13 +29,13 @@ const inputClass =
   'text-sm focus-ring focus:border-primary disabled:opacity-50';
 
 /**
- * A leaf's value, fetched on mount and re-fetched when the tree reloads.
+ * A leaf's value, on the cache entry its plugin and path name.
  *
- * The resource is keyed on the declaration itself, so a reloaded tree — every
- * node of which arrives as a fresh object off the wire — re-reads the value
- * along with it. That is what lets a write cost one read instead of two: the
- * reconciliation the row needs and the invalidation the pane needs are the
- * same fetch.
+ * The row used to key a resource on the declaration object, so a reloaded tree
+ * re-read every value with it. The entry is keyed on the plugin and the path
+ * instead, and the write mutation invalidates every option of that plugin —
+ * which is the same reconciliation, from the writer rather than from the
+ * reload, so a second pane showing the same option is corrected too.
  */
 const OptionRow: Component<{
   plugin: string;
@@ -43,33 +43,33 @@ const OptionRow: Component<{
   node: PluginOptionNode;
   onChanged: () => void | Promise<unknown>;
 }> = (props) => {
-  const [value, { mutate, refetch }] = createResource(
-    () => props.node,
-    () => getPluginOption(props.plugin, props.path),
+  const value = usePluginOption(
+    () => props.plugin,
+    () => props.path,
+  );
+  const setOption = useSetPluginOption(
+    () => props.plugin,
+    () => props.path,
+  );
+  const executeOption = useExecutePluginOption(
+    () => props.plugin,
+    () => props.path,
   );
   const [busy, setBusy] = createSignal(false);
 
   const editable = () => props.node.writable !== false && !props.node.disabled && !busy();
 
   const commit = async (next: unknown) => {
-    // Optimistic, then reconciled against what the plugin actually stored: a
-    // setter is free to normalise, clamp, or reject, and the pane must end up
-    // showing the stored value rather than what was typed at it.
-    const previous = value();
-    const declared = props.node;
-    mutate(() => next);
     setBusy(true);
     try {
-      await setPluginOption(props.plugin, props.path, next);
-      // Sibling options can depend on this one (a `values` or `disabled`
-      // function reading it), so the tree is re-read, not just this row.
+      // The mutation paints `next` at once and puts the old value back if the
+      // plugin refuses. On success it asks the plugin's options again, because
+      // a setter is free to normalise or clamp what it stored.
+      await setOption.mutateAsync(next);
+      // Sibling DECLARATIONS can depend on this one (a `values` or `disabled`
+      // function reading it), so the tree is re-read as well as the values.
       await props.onChanged();
-      // The reloaded tree replaced this row's declaration, and the value was
-      // re-read with it — reading again here would fetch what just arrived.
-      // Only a caller that does not reload leaves the row to reconcile itself.
-      if (props.node === declared) await refetch();
     } catch (err) {
-      mutate(() => previous);
       notificationActions.addNotification('error', `${props.node.name ?? props.path.at(-1)}: ${err}`);
     } finally {
       setBusy(false);
@@ -79,7 +79,7 @@ const OptionRow: Component<{
   const press = async () => {
     setBusy(true);
     try {
-      await executePluginOption(props.plugin, props.path);
+      await executeOption.mutateAsync();
       await props.onChanged();
     } catch (err) {
       notificationActions.addNotification('error', `${props.node.name ?? 'Action'}: ${err}`);
@@ -115,7 +115,7 @@ const OptionRow: Component<{
         <input
           type="checkbox"
           class="align-middle"
-          checked={value() === true}
+          checked={value.data === true}
           disabled={!editable()}
           onChange={(e) => void commit(e.currentTarget.checked)}
         />
@@ -125,7 +125,7 @@ const OptionRow: Component<{
         <select
           class={`cru-select ${inputClass}`}
           disabled={!editable()}
-          value={String(value() ?? '')}
+          value={String(value.data ?? '')}
           onChange={(e) => void commit(e.currentTarget.value)}
         >
           {/* An empty choice so an unset option can be left unset, and so a
@@ -145,7 +145,7 @@ const OptionRow: Component<{
           min={props.node.min}
           max={props.node.max}
           step={props.node.step}
-          value={value() === null || value() === undefined ? '' : String(value())}
+          value={value.data === null || value.data === undefined ? '' : String(value.data)}
           disabled={!editable()}
           onChange={(e) => {
             const raw = e.currentTarget.value;
@@ -172,7 +172,7 @@ const OptionRow: Component<{
         <input
           type="text"
           class={inputClass}
-          value={value() === null || value() === undefined ? '' : String(value())}
+          value={value.data === null || value.data === undefined ? '' : String(value.data)}
           disabled={!editable()}
           onChange={(e) => {
             const raw = e.currentTarget.value;

@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { Palette, Pencil } from '@/lib/icons';
 
 const device = vi.hoisted(() => ({ compact: false }));
 const mounts = vi.hoisted(() => ({ deep: 0 }));
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
-vi.mock('@/lib/api', () => ({ getPluginOptions: () => Promise.resolve({}) }));
 // Each section draws a form over every context; the navigation is what is
 // tested. The shape matches `SettingsSection` — a mock that drifts from it
 // tests a screen the app never renders.
@@ -47,10 +46,20 @@ vi.mock('../sections', async () => {
 
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { useSettingsStack } from '@/components/settings/settings-nav';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+
+// The dialog reads the declared plugin trees off the shared cache, so the
+// daemon's route answers here rather than a stub of one api function.
+let env: TestQueryEnv;
 
 beforeEach(() => {
   device.compact = false;
   mounts.deep = 0;
+  env = createTestQueryEnv({ 'GET /api/plugins/options': () => ({ options: {} }) });
+});
+
+afterEach(() => {
+  env?.restore();
 });
 
 describe('SettingsModal layout', () => {

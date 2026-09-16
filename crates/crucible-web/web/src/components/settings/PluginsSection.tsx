@@ -2,44 +2,35 @@
 //
 // The installed plugins, each with its state and a reload button, over the
 // install rows.
-import { Component, Show, For, createSignal, onMount } from 'solid-js';
+import { Component, Show, For, createSignal } from 'solid-js';
 import { Package } from '@/lib/icons';
 
 import { SettingsSectionState } from './primitives';
 import { PluginInstallRows } from './PluginInstall';
-import type { PluginInfo } from '@/lib/api';
 import { pluginVersionLabel } from '@/lib/plugin-version';
-import { getPlugins, reloadPlugin } from '@/lib/api';
+import { usePluginList, useReloadPlugin } from '@/lib/query/plugins';
 
-export const PluginsSection: Component<{ onChanged?: () => void | Promise<unknown> }> = (props) => {
-  const [plugins, setPlugins] = createSignal<PluginInfo[]>([]);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
+/**
+ * This section used to hold its own copy of the roster, filled once on mount
+ * and refreshed only by its own reload button. `PluginPanel` held another one,
+ * so a reload here left the panel describing the plugin as it was before.
+ * Both now read one query, and the reload mutation invalidates it.
+ */
+export const PluginsSection: Component = () => {
+  const plugins = usePluginList();
+  const reloadMutation = useReloadPlugin();
   const [reloadingPlugin, setReloadingPlugin] = createSignal<string | null>(null);
+  const [reloadError, setReloadError] = createSignal<string | null>(null);
 
-  const loadPlugins = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await getPlugins();
-      setPlugins(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load plugins');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadPlugins);
+  const error = () => reloadError() ?? plugins.error?.message ?? null;
 
   const handleReload = async (name: string) => {
     setReloadingPlugin(name);
+    setReloadError(null);
     try {
-      await reloadPlugin(name);
-      // Refresh list after reload
-      await loadPlugins();
+      await reloadMutation.mutateAsync(name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to reload ${name}`);
+      setReloadError(err instanceof Error ? err.message : `Failed to reload ${name}`);
     } finally {
       setReloadingPlugin(null);
     }
@@ -49,27 +40,22 @@ export const PluginsSection: Component<{ onChanged?: () => void | Promise<unknow
     <SettingsSectionState
       title="Plugins"
       icon={Package}
-      loading={loading()}
+      loading={plugins.isPending}
       error={error()}
       loadingMessage="Loading plugins…"
       isEmpty={false}
     >
-      <PluginInstallRows
-        onInstalled={async () => {
-          await loadPlugins();
-          // The declared trees too, so a plugin that ships settings gets its
-          // pane in the left list without a restart.
-          await props.onChanged?.();
-        }}
-      />
-      <Show when={plugins().length === 0}>
+      {/* No callback: the install mutation invalidates the roster and the
+          declared trees, so this list and the left one refresh themselves. */}
+      <PluginInstallRows />
+      <Show when={(plugins.data ?? []).length === 0}>
         <tr>
           <td colSpan={2} class="py-3 text-center text-sm text-muted-dark">
             No plugins discovered.
           </td>
         </tr>
       </Show>
-      <For each={plugins()}>
+      <For each={plugins.data}>
         {(plugin) => (
           <tr class="border-b border-hairline">
             <td class="py-2.5 text-shell-body text-sm">

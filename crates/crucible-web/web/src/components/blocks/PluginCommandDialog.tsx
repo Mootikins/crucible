@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, createEffect } from 'solid-js';
 import { X } from '@/lib/icons';
-import { runPluginCommand, type PluginCommand } from '@/lib/api';
+import type { PluginCommand } from '@/lib/api';
+import { useRunPluginCommand } from '@/lib/query/plugins';
 import {
   commandArgs,
   commandFields,
@@ -91,6 +92,7 @@ const FieldControl: Component<{
 };
 
 export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) => {
+  const runCommand = useRunPluginCommand();
   const [values, setValues] = createSignal<CommandFormValues>({});
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const [running, setRunning] = createSignal(false);
@@ -134,7 +136,7 @@ export const PluginCommandDialog: Component<PluginCommandDialogProps> = (props) 
     setResult(null);
     setFailure(null);
     try {
-      const answer = await runPluginCommand(command.name, args);
+      const answer = await runCommand.mutateAsync({ command: command.name, args });
       setResult(JSON.stringify(answer, null, 2));
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error));

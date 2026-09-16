@@ -9,6 +9,11 @@ import { render, waitFor } from '@solidjs/testing-library';
  * opened a second one for the same URL. Here the blocks subscribe to
  * `pluginEvents()`, the shared root of `lib/query/sse.ts`, and this spec holds
  * that: one source for the blocks and every other reader together.
+ *
+ * The block no longer re-reads for itself either. Its value is a cache entry,
+ * and the stream's route invalidates the pair the frame names, so "re-reads the
+ * block the event names" is now a statement about that route reaching the
+ * entry this block mounted.
  */
 
 const getPluginPublications = vi.fn(
@@ -22,7 +27,10 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 
 const { usePublication } = await import('../usePublication');
 const { pluginEvents, resetSseForTests } = await import('@/lib/query/sse');
+const { installPluginEventRoute } = await import('@/lib/query/routes/plugins');
 const { FakeEventSource, installFakeEventSource } = await import('@/test-utils/sse');
+const { createTestQueryClient } = await import('@/test-utils/query');
+const { setQueryClientForTests } = await import('@/lib/query/client');
 
 /** One block, drawing one plugin's value for one key. */
 function Block(props: { plugin: string; publicationKey: string }) {
@@ -37,11 +45,17 @@ function published(key: string, plugin: string, value: string) {
 
 beforeEach(() => {
   installFakeEventSource();
+  // A fresh cache per case: the entries of one case would otherwise answer the
+  // next one, and the counts below are about who asked the daemon.
+  setQueryClientForTests(createTestQueryClient());
+  // In the app `src/index.tsx` names the route once, at start.
+  installPluginEventRoute();
   getPluginPublications.mockResolvedValue({});
 });
 
 afterEach(() => {
   resetSseForTests();
+  setQueryClientForTests(null);
   vi.clearAllMocks();
 });
 

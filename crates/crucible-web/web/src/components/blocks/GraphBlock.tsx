@@ -1,5 +1,5 @@
 import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
-import { runPluginCommand } from '@/lib/api';
+import { useRunPluginCommand } from '@/lib/query/plugins';
 import { useKilns } from '@/lib/query/kilns';
 import { kilnForPath, noteAbsolutePath } from '@/lib/note-actions';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -58,6 +58,7 @@ function leaf(path: string): string {
 export const GraphBlock: Component<BlockProps> = (props) => {
   const editor = useEditorSafe();
   const kilns = useKilns();
+  const runCommand = useRunPluginCommand();
   const [depth, setDepth] = createSignal(paramNumber(props.params.depth) ?? 1);
   const [elapsed, setElapsed] = createSignal<number | null>(null);
 
@@ -97,15 +98,15 @@ export const GraphBlock: Component<BlockProps> = (props) => {
     async (args): Promise<Neighborhood> => {
       const started = performance.now();
       try {
-        // Third argument: this block declares itself as the plugin it draws
-        // for, the same as `KanbanBlock`. Without it the call defaults to
-        // `APP_CALLER` and the block is indistinguishable from the app, so
-        // the route's per-plugin comparison never runs in production.
-        return (await runPluginCommand(
-          'graph_neighborhood',
+        // `caller`: this block declares itself as the plugin it draws for, the
+        // same as `KanbanBlock`. Without it the call defaults to `APP_CALLER`
+        // and the block is indistinguishable from the app, so the route's
+        // per-plugin comparison never runs in production.
+        return (await runCommand.mutateAsync({
+          command: 'graph_neighborhood',
           args,
-          props.plugin,
-        )) as Neighborhood;
+          caller: props.plugin,
+        })) as Neighborhood;
       } finally {
         setElapsed(performance.now() - started);
       }

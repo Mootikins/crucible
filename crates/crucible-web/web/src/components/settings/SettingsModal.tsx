@@ -1,9 +1,9 @@
-import { Component, For, Show, createEffect, createResource, createSignal, onCleanup } from 'solid-js';
+import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { isCompact } from '@/stores/deviceStore';
 import { Portal, Dynamic } from 'solid-js/web';
 import { X } from '@/lib/icons';
 import { settingsSections, settingsGroups } from './sections';
-import { getPluginOptions } from '@/lib/api';
+import { usePluginOptions } from '@/lib/query/plugins';
 import { WithoutSectionHeaders } from './primitives';
 import { MobileSettings } from './MobileSettings';
 import { createSettingsStack, SettingsStackProvider } from './settings-nav';
@@ -31,34 +31,27 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
   let panelRef: HTMLDivElement | undefined;
 
   /**
-   * The plugins' declared trees, fetched once the dialog opens.
+   * The plugins' declared trees, on the key `PluginPanel` reads.
    *
-   * Keyed on `props.open` so a closed dialog costs nothing: describing every
-   * plugin runs each tree's function-valued fields — `oci` shells out to find
-   * its installed runtimes — so this is a real cost, not a cheap GET.
+   * This dialog used to hold a SECOND copy, fetched on open, so a reload in the
+   * panel left this one describing a version of the tree that no longer
+   * existed. One entry answers both, and a write to any plugin option
+   * invalidates it.
    *
    * A failed fetch leaves the plugin group absent rather than erroring the
-   * dialog. The app's OWN settings must stay reachable when the plugin host is
-   * unhappy; that is when a user most needs them.
+   * dialog: `data` is undefined and `settingsSections` draws the app's own
+   * sections alone. The app's OWN settings must stay reachable when the plugin
+   * host is unhappy; that is when a user most needs them.
    */
-  const [trees, { refetch }] = createResource(
-    () => (props.open ? 'open' : null),
-    async () => {
-      try {
-        return await getPluginOptions();
-      } catch {
-        return {};
-      }
-    },
-  );
+  const trees = usePluginOptions(() => props.open);
 
   // Wrapped rather than passed straight through: `refetch` answers with the
-  // resource's value, and the row's `onChanged` contract is "resolves once the
-  // reloaded tree is in hand" — a value, not a signal.
+  // query's result, and the row's `onChanged` contract is "resolves once the
+  // reloaded tree is in hand" — a value, not an observer.
   const reload = async () => {
-    await refetch();
+    await trees.refetch();
   };
-  const sections = () => settingsSections(trees(), reload);
+  const sections = () => settingsSections(trees.data, reload);
   const active = () => sections().find((s) => s.id === activeId()) ?? sections()[0];
 
   createEffect(() => {

@@ -1,12 +1,11 @@
-import { Component, Show, For, createResource, createSignal } from 'solid-js';
+import { Component, Show, For, createEffect, createSignal } from 'solid-js';
 import {
-  getPlugins,
-  reloadPlugin,
-  installPlugin,
-  removePlugin,
-  getPluginOptions,
-} from '@/lib/api';
-import type { PluginInfo, PluginOptions } from '@/lib/api';
+  useInstallPlugin,
+  usePluginList,
+  usePluginOptions,
+  useReloadPlugin,
+  useRemovePlugin,
+} from '@/lib/query/plugins';
 import { PluginSettings } from './PluginSettings';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
@@ -59,26 +58,27 @@ function stateColor(state: string): string {
 }
 
 export const PluginPanel: Component = () => {
-  const [plugins, { refetch }] = createResource<PluginInfo[]>(async () => {
-    try {
-      return await getPlugins();
-    } catch (err) {
-      notificationActions.addNotification('error', `Failed to load plugins: ${err}`);
-      return [];
-    }
-  });
+  // The one roster, shared with the settings section and the phone's list. It
+  // used to be this panel's private copy, which is why a plugin installed in
+  // settings stayed invisible here until the panel remounted.
+  const plugins = usePluginList();
 
   // Fetched once for every plugin rather than per row: it is one round trip
   // either way, and a row that has no settings must not pay for finding out.
-  // A failure is silence — a plugin list is still useful without settings.
-  const [optionTrees, { refetch: refetchOptions }] = createResource<PluginOptions>(async () => {
-    try {
-      return await getPluginOptions();
-    } catch {
-      return {};
+  // A failure is silence here — a plugin list is still useful without settings.
+  const optionTrees = usePluginOptions();
+  const installMutation = useInstallPlugin();
+  const removeMutation = useRemovePlugin();
+  const reloadMutation = useReloadPlugin();
+  const [expanded, setExpanded] = createSignal<string | null>(null);
+
+  // A refused roster reaches the user rather than reading as "none installed".
+  createEffect(() => {
+    const failure = plugins.error;
+    if (failure) {
+      notificationActions.addNotification('error', `Failed to load plugins: ${failure.message}`);
     }
   });
-  const [expanded, setExpanded] = createSignal<string | null>(null);
 
   const [reloading, setReloading] = createSignal<string | null>(null);
   const [removing, setRemoving] = createSignal<string | null>(null);
@@ -98,7 +98,7 @@ export const PluginPanel: Component = () => {
     }
     setInstalling(true);
     try {
-      const result = await installPlugin({ url });
+      const result = await installMutation.mutateAsync({ url });
       if (result.loaded === false) {
         // The install itself succeeded (clone + installed manifest), but the
         // plugin failed to activate — a green "Installed" here would report a
@@ -116,7 +116,6 @@ export const PluginPanel: Component = () => {
       }
       setInstallUrl('');
       setShowInstall(false);
-      await refetch();
     } catch (err) {
       notificationActions.addNotification('error', `Install failed: ${err}`);
     } finally {
@@ -130,7 +129,7 @@ export const PluginPanel: Component = () => {
     setRemoving(target.name);
     setConfirmRemove(null);
     try {
-      const result = await removePlugin(target.name, target.purge);
+      const result = await removeMutation.mutateAsync({ name: target.name, purge: target.purge });
       if (result.purge_error) {
         // Removal succeeded; only the directory deletion failed.
         notificationActions.addNotification(
@@ -145,7 +144,6 @@ export const PluginPanel: Component = () => {
             : '';
         notificationActions.addNotification('success', `Removed ${target.name}${dirNote}`);
       }
-      await refetch();
     } catch (err) {
       notificationActions.addNotification('error', `Remove failed: ${err}`);
     } finally {
@@ -156,15 +154,14 @@ export const PluginPanel: Component = () => {
   const handleReload = async (name: string) => {
     setReloading(name);
     try {
-      const result = await reloadPlugin(name);
+      const result = await reloadMutation.mutateAsync(name);
       notificationActions.addNotification(
         'success',
         `Reloaded ${name}: ${result.tools}T ${result.commands}C ${result.handlers}H ${result.services}S`,
       );
-      // A reload drops the plugin's options tree and re-registers it, so the
-      // cached one describes a version that no longer exists — its accessors
-      // close over the previous load's state.
-      await Promise.all([refetch(), refetchOptions()]);
+      // The mutation invalidates the roster, the trees and the commands: a
+      // reload drops the plugin's options tree and re-registers it, so the held
+      // one describes a version that no longer exists.
     } catch (err) {
       notificationActions.addNotification('error', `Failed to reload ${name}: ${err}`);
     } finally {
@@ -187,8 +184,8 @@ export const PluginPanel: Component = () => {
           <button
             type="button"
             onClick={() => {
-              void refetch();
-              void refetchOptions();
+              void plugins.refetch();
+              void optionTrees.refetch();
             }}
             class="text-floor text-muted hover:text-shell-ink"
             data-testid="plugins-refresh"
@@ -200,18 +197,29 @@ export const PluginPanel: Component = () => {
 
       <div class="flex-1 overflow-y-auto">
         <Show
-          when={!plugins.loading}
+          when={!plugins.isPending}
           fallback={<div class="p-4 text-sm text-muted-dark">Loading…</div>}
         >
-          <Show
-            when={(plugins() ?? []).length > 0}
-            fallback={
-              <div class="p-4 text-sm text-muted-dark">
-                No plugins discovered. Try <code>cru install &lt;repo&gt;</code>.
+          {/* A refusal is not an empty roster. "No plugins discovered" over a
+              failed read tells the user something false about their install. */}
+          <Show when={plugins.error}>
+            {(failure) => (
+              <div class="p-4 text-sm text-error" data-testid="plugins-error">
+                {failure().message}
               </div>
+            )}
+          </Show>
+          <Show
+            when={(plugins.data ?? []).length > 0}
+            fallback={
+              <Show when={!plugins.error}>
+                <div class="p-4 text-sm text-muted-dark">
+                  No plugins discovered. Try <code>cru install &lt;repo&gt;</code>.
+                </div>
+              </Show>
             }
           >
-            <For each={plugins()}>
+            <For each={plugins.data}>
               {(plugin) => (
                 <div
                   class="px-3 py-2 border-b border-hairline hover:bg-hover-wash"
@@ -277,7 +285,7 @@ export const PluginPanel: Component = () => {
                       is installed, and a plugin's options are meaningless
                       apart from it. Collapsed by default — most plugins
                       declare none, and the row is a list entry first. */}
-                  <Show when={optionTrees()?.[plugin.name]}>
+                  <Show when={optionTrees.data?.[plugin.name]}>
                     {(tree) => (
                       <div class="mt-1">
                         <button
@@ -305,7 +313,7 @@ export const PluginPanel: Component = () => {
                             // reloaded tree is also how it learns what the
                             // plugin actually stored, so it does not read again.
                             onChanged={async () => {
-                              await refetchOptions();
+                              await optionTrees.refetch();
                             }}
                           />
                           </tbody>

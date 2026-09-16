@@ -1,10 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { pluginMountHtml } from '@/lib/markdown';
 import { mountPluginBlocks } from '../mount';
 import { GenericBlock } from '../GenericBlock';
 import { KanbanBlock } from '../KanbanBlock';
 import { lookupBlock, registerBlock } from '../registry';
+import { createTestQueryClient } from '@/test-utils/query';
+import { setQueryClientForTests } from '@/lib/query/client';
 
 // EventSource does not exist in jsdom, and usePublication opens one. A stub is
 // enough: these tests exercise the first read and the render, not the push.
@@ -14,6 +16,13 @@ class StubEventSource {
 }
 beforeEach(() => {
   vi.stubGlobal('EventSource', StubEventSource);
+  // A fresh cache per case. A block's value is a cache entry now, so one case's
+  // publication would answer the next case's block without asking its stub.
+  setQueryClientForTests(createTestQueryClient());
+});
+
+afterEach(() => {
+  setQueryClientForTests(null);
 });
 
 describe('the ```plugin fence', () => {

@@ -1,6 +1,6 @@
 import { Component, Show, createSignal } from 'solid-js';
 import { Package } from '@/lib/icons';
-import { installPlugin } from '@/lib/api';
+import { useInstallPlugin } from '@/lib/query/plugins';
 import { notificationActions } from '@/stores/notificationStore';
 
 /**
@@ -20,14 +20,13 @@ import { notificationActions } from '@/stores/notificationStore';
  * anything is cloned. A second dialog after that would train the user to click
  * through both.
  *
- * After the install, the caller re-reads the plugin trees, so a plugin that
- * declares `cru.plugin.options{}` gets its settings pane immediately. A restart
- * would defeat the point of installing from the UI at all.
+ * The install mutation invalidates the roster, the declared trees and the
+ * commands, so a plugin that declares `cru.plugin.options{}` gets its settings
+ * pane immediately, in every list that draws one. This used to be a callback
+ * the caller had to remember to pass, and the panel's own install forgot.
  */
-export const PluginInstallRows: Component<{
-  /** Re-read the plugin list and the declared trees. */
-  onInstalled: () => void | Promise<unknown>;
-}> = (props) => {
+export const PluginInstallRows: Component = () => {
+  const installMutation = useInstallPlugin();
   const [url, setUrl] = createSignal('');
   const [confirming, setConfirming] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -46,7 +45,7 @@ export const PluginInstallRows: Component<{
     setBusy(true);
     setError(null);
     try {
-      const result = await installPlugin({ url: target });
+      const result = await installMutation.mutateAsync({ url: target });
       setConfirming(null);
       setUrl('');
       if (!result.loaded) {
@@ -56,7 +55,6 @@ export const PluginInstallRows: Component<{
       } else {
         notificationActions.addNotification('success', `Installed ${result.name}`);
       }
-      await props.onInstalled();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

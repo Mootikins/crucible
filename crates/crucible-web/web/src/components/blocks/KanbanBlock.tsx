@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { usePublication } from './usePublication';
-import { runPluginCommand } from '@/lib/api';
+import { useRunPluginCommand } from '@/lib/query/plugins';
 import type { BlockProps } from './registry';
 
 /**
@@ -37,6 +37,7 @@ interface Board {
 
 export const KanbanBlock: Component<BlockProps> = (props) => {
   const board = usePublication<Board>(props.plugin, 'kanban:board');
+  const runCommand = useRunPluginCommand();
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [over, setOver] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -55,20 +56,19 @@ export const KanbanBlock: Component<BlockProps> = (props) => {
 
   const move = async (file: string, to: string) => {
     try {
-      // Third argument: this block declares itself as the plugin it draws
-      // for, so the route can refuse a block reaching for someone else's
-      // command. It is an assertion, not a proof — see
-      // `routes/plugin_caller.rs`.
-      const result = await runPluginCommand(
-        'kanban_move',
-        {
+      // `caller`: this block declares itself as the plugin it draws for, so
+      // the route can refuse a block reaching for someone else's command. It is
+      // an assertion, not a proof — see `routes/plugin_caller.rs`.
+      const result = await runCommand.mutateAsync({
+        command: 'kanban_move',
+        args: {
           file,
           to,
           folder: props.params.folder,
           kiln: props.params.kiln,
         },
-        props.plugin,
-      );
+        caller: props.plugin,
+      });
       // The plugin republishes on success, which pushes `publication_changed`
       // and re-renders this block. Nothing is applied locally: one description
       // of the board, and the plugin owns it.

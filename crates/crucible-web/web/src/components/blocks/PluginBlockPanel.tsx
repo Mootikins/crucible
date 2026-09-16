@@ -1,9 +1,10 @@
-import { Component, For, Show, createResource, createSignal } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { PanelShell } from '../PanelShell';
 import { PanelHeader } from '../PanelHeader';
 import { PluginBlock } from './PluginBlock';
 import { PluginCommandDialog } from './PluginCommandDialog';
-import { getPluginCommands, getPluginPublications, type PluginCommand } from '@/lib/api';
+import type { PluginCommand, PluginPublications } from '@/lib/api';
+import { usePluginCommands, usePluginPublications } from '@/lib/query/plugins';
 
 /**
  * A plugin block as a dockable panel, rather than as a block inside a note.
@@ -22,8 +23,7 @@ import { getPluginCommands, getPluginPublications, type PluginCommand } from '@/
  */
 
 /** Everything published, as `plugin/key` pairs a panel can offer. */
-async function publishedBlocks(): Promise<Array<{ plugin: string; key: string }>> {
-  const all = await getPluginPublications();
+function publishedBlocks(all: PluginPublications): Array<{ plugin: string; key: string }> {
   const out: Array<{ plugin: string; key: string }> = [];
   for (const [key, byPlugin] of Object.entries(all)) {
     for (const plugin of Object.keys(byPlugin as Record<string, unknown>)) {
@@ -37,14 +37,13 @@ async function publishedBlocks(): Promise<Array<{ plugin: string; key: string }>
 /**
  * Every declared command, grouped by plugin through the sort.
  *
- * `getPluginCommands` had no caller at all until this one: the daemon has
- * always known what a plugin can be asked to do, and nothing carried it to a
- * place a person could press. This is that place — the panel host that already
- * exists, rather than a new surface, because the *placement* is the expensive
- * half of offering a primitive as a button and this one is already paid for.
+ * The command list had no caller at all until this one: the daemon has always
+ * known what a plugin can be asked to do, and nothing carried it to a place a
+ * person could press. This is that place — the panel host that already exists,
+ * rather than a new surface, because the *placement* is the expensive half of
+ * offering a primitive as a button and this one is already paid for.
  */
-async function offeredCommands(): Promise<PluginCommand[]> {
-  const commands = await getPluginCommands();
+function offeredCommands(commands: PluginCommand[]): PluginCommand[] {
   return [...commands].sort((a, b) =>
     `${a.plugin}/${a.name}`.localeCompare(`${b.plugin}/${b.name}`),
   );
@@ -62,8 +61,14 @@ function blockNameOf(key: string): string {
 
 export const PluginBlockPanel: Component = () => {
   const [selected, setSelected] = createSignal<{ plugin: string; key: string } | null>(null);
-  const [available] = createResource(publishedBlocks);
-  const [commands] = createResource(offeredCommands);
+  // Everything, rather than one plugin's one key: this panel is the roster of
+  // what a block could draw. The stream's `publication_changed` route narrows
+  // to the pair it names, so this entry is refreshed on a remount rather than
+  // by a push — a new publication adds a row to a list, not a value to a board.
+  const publications = usePluginPublications();
+  const declared = usePluginCommands();
+  const available = createMemo(() => publishedBlocks(publications.data ?? {}));
+  const commands = createMemo(() => offeredCommands(declared.data ?? []));
   const [running, setRunning] = createSignal<PluginCommand | null>(null);
 
   return (
