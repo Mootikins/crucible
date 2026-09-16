@@ -25,5 +25,12 @@ export const menuContent =
 export const menuItem =
   'flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash';
 
+/**
+ * A kebab trigger that opens one of these menus. No border: the icon alone
+ * marks the hit target, so the trigger stays quiet until hover or focus.
+ */
+export const menuTrigger =
+  'inline-flex items-center justify-center h-6 w-6 rounded text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors';
+
 /** Hairline between groups of rows. */
 export const menuSeparator = 'my-1 border-t border-hairline';

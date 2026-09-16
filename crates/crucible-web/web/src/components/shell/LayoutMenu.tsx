@@ -5,7 +5,7 @@ import { windowActions } from '@/stores/windowStore';
 import { closedPanels, openPanelTab } from '@/lib/panel-actions';
 import { resetLayout } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
-import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style';
+import { menuContent, menuItem, menuSeparator, menuTrigger } from '@/components/ui/menu-style';
 import { ChevronRight, MoreHorizontal, RefreshCw } from '@/lib/icons';
 import type { TabContentType } from '@/types/windowTypes';
 
@@ -71,7 +71,7 @@ export const LayoutMenu: Component = () => {
       <Menu.Trigger
         data-testid="layout-menu"
         aria-label="Layout menu"
-        class="inline-flex items-center justify-center h-6 w-6 rounded border border-hairline text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
+        class={menuTrigger}
       >
         <MoreHorizontal class="w-3.5 h-3.5" />
       </Menu.Trigger>

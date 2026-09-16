@@ -3,7 +3,7 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { treeSectionHeader } from '@/components/tree/tree-style';
-import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style';
+import { menuContent, menuItem, menuSeparator, menuTrigger } from '@/components/ui/menu-style';
 import { PROJECT_PARAM } from '@/lib/project-url';
 import { Check, ExternalLink, MoreHorizontal } from '@/lib/icons';
 
@@ -61,7 +61,7 @@ export const ProjectMenu: Component = () => {
       <Menu.Trigger
         data-testid="project-menu"
         aria-label="Project menu"
-        class="inline-flex items-center justify-center h-6 w-6 rounded border border-hairline text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors"
+        class={menuTrigger}
       >
         <MoreHorizontal class="w-3.5 h-3.5" />
       </Menu.Trigger>
