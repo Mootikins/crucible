@@ -13,6 +13,7 @@ import type {
   SerializedTab as CoreSerializedTab,
   SerializedTabGroup as CoreSerializedTabGroup,
 } from '@/windowing/model/serializer';
+import { isLegacyV9 } from '@/windowing/model/serializer';
 import { iconForContentType } from '@/lib/tab-icons';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 
@@ -477,7 +478,7 @@ function migrateV1toV2(v1: any): SerializedLayout {
   // Migrate each edge panel
   for (const pos of ['left', 'right'] as const) {
     const panel = v1.edgePanels[pos];
-    // Absent positions synthesize defaults at the end of deserializeLayout.
+    // The core reader rebuilds an absent position.
     if (!panel) continue;
     if (panel.tabs && Array.isArray(panel.tabs)) {
       // Create new tab group from v1 inline tabs
@@ -525,7 +526,9 @@ function migrateV1toV2(v1: any): SerializedLayout {
  * them).
  */
 function upgradeLegacy(json: unknown): SerializedLayoutV9<TabContentType> {
+  // The core calls this only with a stored payload below v9; each step reads the fields its version had.
   let layout = json as SerializedLayout;
+  const start = layout.version;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
   }
@@ -550,8 +553,9 @@ function upgradeLegacy(json: unknown): SerializedLayoutV9<TabContentType> {
   if (layout.version === 8) {
     layout = migrateV8toV9(layout);
   }
-  // The core reader checks the version that comes back.
-  return layout as SerializedLayoutV9<TabContentType>;
+  if (isLegacyV9<TabContentType>(layout)) return layout;
+  // A version that no step knows (a fraction, say) ends here unchanged.
+  throw new Error(`Legacy layout upgrade from v${start} returned v${layout.version}, not v9`);
 }
 
 /**

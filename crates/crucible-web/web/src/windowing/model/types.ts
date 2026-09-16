@@ -76,8 +76,17 @@ export type EdgePanelPosition = 'left' | 'right';
  */
 export type EdgeMode = 'docked' | 'strip' | 'flyout' | 'hidden';
 
+/**
+ * Every `EdgeMode`, for a check of stored data. `satisfies` refuses a value
+ * outside the union; `types.test.ts` refuses a union member outside the table.
+ */
+export const EDGE_MODES = ['docked', 'strip', 'flyout', 'hidden'] as const satisfies readonly EdgeMode[];
+
 /** The affordance a hidden host leaves on the screen edge. */
 export type EdgeCue = 'grip' | 'none';
+
+/** Every `EdgeCue`, with the same two checks as `EDGE_MODES`. */
+export const EDGE_CUES = ['grip', 'none'] as const satisfies readonly EdgeCue[];
 
 /** How a pane collapsed to its band comes back. */
 export type PaneReveal = 'click' | 'hover';

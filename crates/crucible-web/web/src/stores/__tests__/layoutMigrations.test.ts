@@ -413,6 +413,35 @@ describe('layout v2→v3 migration prunes removed content types', () => {
     });
   });
 
+  it('prunes a current (v10) layout on every restore', () => {
+    withRegistry(() => {
+      const v10 = {
+        version: 10,
+        layout: { id: 'centre', type: 'pane', tabGroupId: 'centre' },
+        tabGroups: {
+          centre: {
+            id: 'centre',
+            tabs: [
+              { id: 'ghost-tab', title: 'Ghost', contentType: 'explorer' },
+              { id: 'bare-chat', title: 'Chat', contentType: 'chat' },
+              { id: 'term-tab', title: 'Terminal', contentType: 'terminal' },
+            ],
+            activeTabId: 'ghost-tab',
+          },
+        },
+        edgePanels: {
+          left: { id: 'left-panel', layout: { id: 'lp', type: 'pane', tabGroupId: null }, mode: 'docked' },
+          right: { id: 'right-panel', layout: { id: 'rp', type: 'pane', tabGroupId: null }, mode: 'strip' },
+        },
+        floatingWindows: [],
+      };
+      const restored = deserializeLayout(v10);
+      const centre = restored.tabGroups['centre'];
+      expect(centre.tabs.map((t) => t.id)).toEqual(['term-tab']);
+      expect(centre.activeTabId).toBe('term-tab');
+    });
+  });
+
   it('does not prune when the registry is empty (defensive)', () => {
     resetGlobalRegistry();
     const restored = deserializeLayout(v2WithGhosts() as never);

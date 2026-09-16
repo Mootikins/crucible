@@ -1,4 +1,5 @@
 import type { Component } from 'solid-js';
+import { EDGE_CUES, EDGE_MODES } from './types';
 import type {
   EdgeCue,
   EdgeMode,
@@ -155,6 +156,19 @@ function migrateV9toV10<C extends string>(v9: SerializedLayoutV9<C>): Serialized
   return { ...v9, version: LAYOUT_VERSION, edgePanels };
 }
 
+/** A stored layout at v9, the last version before edge modes. */
+export function isLegacyV9<C extends string>(s: { version: number }): s is SerializedLayoutV9<C> {
+  return s.version === 9;
+}
+
+/** A stored layout in the current format. */
+export function isCurrentLayout<C extends string>(s: { version: number }): s is SerializedLayout<C> {
+  return s.version === LAYOUT_VERSION;
+}
+
+const isEdgeMode = (value: unknown): value is EdgeMode => EDGE_MODES.some((m) => m === value);
+const isEdgeCue = (value: unknown): value is EdgeCue => EDGE_CUES.some((c) => c === value);
+
 function isSupported(version: number): boolean {
   return Number.isInteger(version) && version >= 1 && version <= LAYOUT_VERSION;
 }
@@ -178,13 +192,19 @@ export function deserializeLayout<C extends string>(
 
   let stored: StoredLayout<C> = json;
   if (stored.version < 9) {
-    stored = hooks.upgradeLegacy(stored);
-    if (stored.version !== 9) throw unsupported(stored.version);
+    // Typed wide on purpose: the hook promises v9, and this check does not trust it.
+    const upgraded: { version: number } = hooks.upgradeLegacy(stored);
+    if (!isLegacyV9<C>(upgraded)) {
+      throw new Error(
+        `Legacy layout upgrade from v${json.version} returned v${upgraded.version}, not v9`,
+      );
+    }
+    stored = upgraded;
   }
-  const current =
-    stored.version === 9
-      ? migrateV9toV10(stored as SerializedLayoutV9<C>)
-      : (stored as SerializedLayout<C>);
+  let current: SerializedLayout<C>;
+  if (isLegacyV9<C>(stored)) current = migrateV9toV10(stored);
+  else if (isCurrentLayout<C>(stored)) current = stored;
+  else throw unsupported(stored.version);
 
   const tabGroups: Record<string, TabGroup<C>> = {};
   for (const [id, group] of Object.entries(current.tabGroups)) {
@@ -217,10 +237,11 @@ export function deserializeLayout<C extends string>(
       // A payload with a null or absent tree (hand-corrupted JSON) must not
       // block the renderer. It degrades to an empty pane.
       layout: panel.layout ?? { id: `${panel.id}-pane`, type: 'pane', tabGroupId: null },
-      // A hand-edited v10 payload can lack the mode. Docked is the safe
-      // reading, the same one the migration gives an open rail.
-      mode: panel.mode ?? 'docked',
-      ...(panel.cue ? { cue: panel.cue } : {}),
+      // A hand-edited payload can lack the mode or hold one this build does
+      // not know. Docked is the safe reading, the same one the migration
+      // gives an open rail. An unknown cue goes, so the default applies.
+      mode: isEdgeMode(panel.mode) ? panel.mode : 'docked',
+      ...(isEdgeCue(panel.cue) ? { cue: panel.cue } : {}),
       width: panel.width,
       height: panel.height,
     };

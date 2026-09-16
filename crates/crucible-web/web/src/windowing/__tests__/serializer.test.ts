@@ -119,13 +119,36 @@ describe('the core reader and its hooks', () => {
     expect(upgradeLegacy).not.toHaveBeenCalled();
   });
 
-  it.each([0, 11, Number.NaN])('refuses version %s', (version) => {
+  it.each([0, 1.5, 11, Number.NaN])('refuses version %s', (version) => {
     expect(() => deserializeLayout({ version }, stubHooks())).toThrow(/Unsupported layout version/);
   });
 
   it('refuses an upgrade that does not reach v9', () => {
     const hooks = stubHooks({ upgradeLegacy: () => ({ ...v9Fixture(), version: 8 as 9 }) });
-    expect(() => deserializeLayout({ version: 2 }, hooks)).toThrow(/Unsupported layout version/);
+    expect(() => deserializeLayout({ version: 2 }, hooks)).toThrow(
+      new Error('Legacy layout upgrade from v2 returned v8, not v9'),
+    );
+  });
+
+  it('reads an unknown mode as docked', () => {
+    const json = serializeLayout(defaultLayoutFixture()) as unknown as {
+      edgePanels: Record<string, Record<string, unknown>>;
+    };
+    json.edgePanels.left!.mode = 'floating';
+    const out = deserializeLayout(json as unknown as SerializedLayout<Kind>, stubHooks());
+    expect(out.edgePanels.left.mode).toBe('docked');
+  });
+
+  it('drops an unknown cue, and keeps a known one', () => {
+    const state = defaultLayoutFixture();
+    state.edgePanels.right.cue = 'grip';
+    const json = serializeLayout(state) as unknown as {
+      edgePanels: Record<string, Record<string, unknown>>;
+    };
+    json.edgePanels.left!.cue = 'glow';
+    const out = deserializeLayout(json as unknown as SerializedLayout<Kind>, stubHooks());
+    expect(out.edgePanels.left).not.toHaveProperty('cue');
+    expect(out.edgePanels.right.cue).toBe('grip');
   });
 
   it('rebuilds an absent rail before the app prunes', () => {
