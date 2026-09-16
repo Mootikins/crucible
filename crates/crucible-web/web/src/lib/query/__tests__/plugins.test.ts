@@ -61,7 +61,7 @@ function routes(): Record<string, () => unknown> {
     'POST /api/plugins': () => ({
       name: 'new-plugin',
       outcome: { kind: 'cloned', dest: '/tmp/new' },
-      plugins_toml: '/tmp/plugins.toml',
+      manifest: '/tmp/plugins.installed.json',
       installed: true,
       loaded: true,
       tools: 1,
@@ -78,7 +78,7 @@ function routes(): Record<string, () => unknown> {
     }),
     'DELETE /api/plugins/demo-plugin': () => ({
       name: 'demo-plugin',
-      plugins_toml: '/tmp/plugins.toml',
+      manifest: '/tmp/plugins.installed.json',
       purged_dir: null,
       purge_error: null,
       kept_dir: '/tmp/demo',

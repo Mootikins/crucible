@@ -36,6 +36,45 @@ async function watchLegacyTitleCalls(page: import('@playwright/test').Page) {
   return calls;
 }
 
+/**
+ * Makes `session.list` answer the generated title from the moment the chat
+ * stream is requested.
+ *
+ * Both routes are registered after `setupBasicMocks`, and Playwright matches
+ * the most recently added route first, so these win over its defaults.
+ */
+async function mockListRenamedAfterTheStreamOpens(
+  page: import('@playwright/test').Page,
+  title: string,
+) {
+  let renamed = false;
+
+  await page.route('**/api/session/list**', (route) =>
+    route.fulfill({
+      json: {
+        sessions: [renamed ? { ...UNTITLED_SESSION, title } : UNTITLED_SESSION],
+        total: 1,
+      },
+    }),
+  );
+
+  await page.route(/\/api\/chat\/events\/.*/, (route) => {
+    renamed = true;
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+      body: `event: title_changed\ndata: ${JSON.stringify({
+        type: 'title_changed',
+        title,
+      })}\n\n`,
+    });
+  });
+}
+
 async function mockUntitledSessionGet(page: import('@playwright/test').Page) {
   await page.route(`**/api/session/${SESSION_ID}`, async (route) => {
     if (route.request().method() === 'GET') {
@@ -50,16 +89,15 @@ test.describe('daemon session auto-titles', () => {
   test('title_changed SSE event renames the session across the UI', async ({ page }) => {
     const generatedTitle = 'Help with project setup';
 
-    await setupBasicMocks(page, {
-      sessions: [UNTITLED_SESSION],
-      sseEvents: [
-        {
-          type: 'title_changed',
-          data: { type: 'title_changed', title: generatedTitle },
-        },
-      ],
-    });
+    // The stream itself is mocked below, together with the listing it renames.
+    await setupBasicMocks(page, { sessions: [UNTITLED_SESSION], sseEvents: [] });
     await mockUntitledSessionGet(page);
+    // The event also invalidates both session-list keys, so the row re-reads
+    // `session.list` right after the rename. A mock that keeps answering
+    // `title: null` overwrites the patch the event just made. No daemon does
+    // that: the daemon renames the session BEFORE it announces the rename.
+    // This route keeps that order. The stream request flips the listing.
+    await mockListRenamedAfterTheStreamOpens(page, generatedTitle);
     const legacyCalls = await watchLegacyTitleCalls(page);
 
     await page.goto('/');

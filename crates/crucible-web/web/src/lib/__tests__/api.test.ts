@@ -910,7 +910,7 @@ describe('plugin endpoints', () => {
         body: {
           name: 'np',
           outcome: { kind: 'cloned', dest: '/tmp/np' },
-          plugins_toml: '/tmp/plugins.toml',
+          manifest: '/tmp/plugins.installed.json',
         },
       },
     });
@@ -930,7 +930,7 @@ describe('plugin endpoints', () => {
     { name: 'removePlugin DELETEs without purge query when purge=false', expectPresent: [] as string[], expectAbsent: ['purge='] },
     { name: 'removePlugin appends ?purge=true when purge=true', purge: true, expectPresent: ['purge=true'], expectAbsent: [] as string[] },
   ])('$name', async ({ purge, expectPresent, expectAbsent }: { purge?: boolean; expectPresent: string[]; expectAbsent: string[] }) => {
-    const mockFetch = createMockFetch({ 'DELETE /api/plugins/my-plugin': { body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: null } } });
+    const mockFetch = createMockFetch({ 'DELETE /api/plugins/my-plugin': { body: { name: 'my-plugin', manifest: '/tmp/plugins.installed.json', purged_dir: null } } });
     global.fetch = mockFetch;
     await removePlugin('my-plugin', purge);
     const url = (await mockFetch.sent(0)).url;

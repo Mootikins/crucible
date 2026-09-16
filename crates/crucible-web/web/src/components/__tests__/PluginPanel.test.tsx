@@ -46,7 +46,7 @@ function routes() {
       return {
         name: 'new-plugin',
         outcome: { kind: 'cloned', dest: '/tmp/new-plugin' },
-        plugins_toml: '/tmp/plugins.toml',
+        manifest: '/tmp/plugins.installed.json',
         installed: true,
         loaded: true,
         tools: 1,
@@ -59,7 +59,7 @@ function routes() {
       removed = new URL(request.url).search;
       return {
         name: 'demo-plugin',
-        plugins_toml: '/tmp/plugins.toml',
+        manifest: '/tmp/plugins.installed.json',
         purged_dir: removed.includes('purge=true') ? '/tmp/demo' : null,
         purge_error: null,
         kept_dir: null,

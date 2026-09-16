@@ -14,9 +14,11 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   subscribeToEvents: () => () => {},
   getSessionHistory: async () => ({ session_id: 's1', history, total_events: history.length }),
+  // `session.get`'s wire shape: `session_id`, `type`, a `kilns` LIST of
+  // registry names, and the model nested under `agent`.
   getSession: async () => ({
-    id: 's1', session_type: 'chat', title: 'T', state: 'active', kiln: '/k', workspace: '/w',
-    agent_model: null, started_at: '', event_count: 0, archived: false,
+    session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
+    agent: { model: null }, started_at: '', event_count: 0, archived: false,
   }),
 }));
 

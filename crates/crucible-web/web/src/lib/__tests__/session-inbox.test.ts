@@ -3,16 +3,16 @@ import { INBOX_SIZE, inboxSessions } from '@/lib/session-inbox';
 import type { Session } from '@/lib/types';
 
 const now = Date.parse('2026-09-11T12:00:00Z');
-const session = (over: Partial<Session>): Session =>
-  ({
-    id: 'x',
-    session_type: 'chat',
-    started_at: new Date(now).toISOString(),
-    last_activity: new Date(now).toISOString(),
-    archived: false,
-    kilns: [],
-    ...over,
-  }) as Session;
+const session = (over: Partial<Session>): Session => ({
+  session_id: 'x',
+  type: 'chat',
+  state: 'active',
+  started_at: new Date(now).toISOString(),
+  last_activity: new Date(now).toISOString(),
+  archived: false,
+  kilns: [],
+  ...over,
+});
 
 const minutesAgo = (m: number) => new Date(now - m * 60_000).toISOString();
 

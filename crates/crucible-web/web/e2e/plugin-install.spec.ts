@@ -55,7 +55,7 @@ test('installs a plugin from a pasted URL and shows the options it declares', as
         json: {
           name: 'fixture-plugin',
           outcome: { kind: 'cloned', dest: '/plugins/fixture-plugin' },
-          plugins_toml: '/config/plugins.toml',
+          manifest: '/config/plugins.installed.json',
           installed: true,
           loaded: true,
           tools: 0,

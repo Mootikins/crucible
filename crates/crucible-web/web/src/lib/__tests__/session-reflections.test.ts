@@ -4,20 +4,19 @@ import type { Session } from '@/lib/types';
 
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
-const session = (over: Partial<Session>): Session =>
-  ({
-    id: 'x',
-    session_type: 'chat',
-    kilns: [],
-    workspace: null,
-    state: 'active',
-    title: null,
-    archived: false,
-    started_at: at(10),
-    last_activity: at(10),
-    event_count: 0,
-    ...over,
-  }) as Session;
+const session = (over: Partial<Session>): Session => ({
+  session_id: 'x',
+  type: 'chat',
+  kilns: [],
+  workspace: null,
+  state: 'active',
+  title: null,
+  archived: false,
+  started_at: at(10),
+  last_activity: at(10),
+  event_count: 0,
+  ...over,
+});
 
 describe('reflectionSessions', () => {
   it('keeps only the sessions a plugin started', () => {

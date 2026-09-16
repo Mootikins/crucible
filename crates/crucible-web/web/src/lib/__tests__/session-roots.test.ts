@@ -23,19 +23,18 @@ const PROJECTS: Project[] = [
   },
 ];
 
-const session = (over: Partial<Session> = {}): Session =>
-  ({
-    id: 's-1',
-    session_type: 'chat',
-    kilns: [],
-    workspace: null,
-    state: 'idle',
-    title: null,
-    agent_model: null,
-    started_at: '2026-01-01T00:00:00Z',
-    event_count: 0,
-    ...over,
-  }) as Session;
+const session = (over: Partial<Session> = {}): Session => ({
+  session_id: 's-1',
+  type: 'chat',
+  kilns: [],
+  workspace: null,
+  state: 'idle',
+  title: null,
+  agent_model: null,
+  started_at: '2026-01-01T00:00:00Z',
+  event_count: 0,
+  ...over,
+});
 
 describe('sessionRoots', () => {
   it('puts the workspace first, then the attached kilns', () => {
