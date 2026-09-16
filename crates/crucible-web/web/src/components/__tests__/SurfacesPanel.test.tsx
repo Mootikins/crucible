@@ -1,20 +1,35 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import type { Surface, SurfaceChangedEvent } from '@/lib/api';
+import { resetSseForTests } from '@/lib/query/sse';
+import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 
 const getSurfacesMock = vi.fn();
 /** Captures the SSE callback so a test can fire a change without a server. */
 let surfaceListener: ((event: SurfaceChangedEvent) => void) | null = null;
 const unsubscribeMock = vi.fn();
 
+/** The capture, which every case but the shared-stream ones runs against. */
+function captureListener(cb: (event: SurfaceChangedEvent) => void): () => void {
+  surfaceListener = cb;
+  return unsubscribeMock;
+}
+
+const subscribeToSurfaceEventsMock = vi.fn(captureListener);
+
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getSurfaces: (...args: unknown[]) => getSurfacesMock(...args),
-  subscribeToSurfaceEvents: (cb: (event: SurfaceChangedEvent) => void) => {
-    surfaceListener = cb;
-    return unsubscribeMock;
-  },
+  subscribeToSurfaceEvents: (cb: (event: SurfaceChangedEvent) => void) =>
+    subscribeToSurfaceEventsMock(cb),
 }));
+
+// Every panel shares one root in `lib/query/sse.ts`, and a root outlives the
+// test that opened it. Forget them between cases, so a source of one test
+// cannot answer the next one.
+afterEach(() => {
+  resetSseForTests();
+});
 
 /** One `surface_changed` frame, as the Rust route serialises it. */
 function changed(over: Partial<SurfaceChangedEvent> = {}): SurfaceChangedEvent {
@@ -196,5 +211,53 @@ describe('SurfacesPanel', () => {
     const many = render(() => <SurfacesPanel />);
     await waitFor(() => expect(many.getByText('Reviews')).toBeTruthy());
     expect(many.container.querySelectorAll('button').length).toBe(2);
+  });
+});
+
+// The stream itself, not the mock of it. `lib/query/sse.ts` owns one source for
+// the surface stream and every panel subscribes to it, so the count of
+// EventSources is one whatever the count of panels on screen.
+describe('the shared surface stream', () => {
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+    subscribeToSurfaceEventsMock.mockImplementation(actual.subscribeToSurfaceEvents);
+    installFakeEventSource();
+    getSurfacesMock.mockResolvedValue([surface([{ id: 'a', text: 'crucible' }])]);
+  });
+
+  afterEach(() => {
+    subscribeToSurfaceEventsMock.mockImplementation(captureListener);
+  });
+
+  it('opens one EventSource for two panels', async () => {
+    render(() => (
+      <>
+        <SurfacesPanel />
+        <SurfacesPanel />
+      </>
+    ));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    expect(FakeEventSource.instances[0]!.url).toBe('/api/surfaces/events');
+  });
+
+  it('gives both panels the same withdrawal off that one source', async () => {
+    const { getAllByText, queryByText } = render(() => (
+      <>
+        <SurfacesPanel />
+        <SurfacesPanel />
+      </>
+    ));
+    await waitFor(() => expect(getAllByText('crucible')).toHaveLength(2));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0]!.emit('surface_changed', {
+      plugin: 'p',
+      name: 'sessions',
+      version: 2,
+      withdrawn: true,
+    });
+
+    await waitFor(() => expect(queryByText('crucible')).toBeNull());
   });
 });

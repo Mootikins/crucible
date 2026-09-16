@@ -1,6 +1,7 @@
 import { Component, For, Show, createResource, createSignal, onCleanup } from 'solid-js';
-import { getSurfaces, subscribeToSurfaceEvents } from '@/lib/api';
+import { getSurfaces } from '@/lib/api';
 import type { Surface, SurfaceRow } from '@/lib/api';
+import { surfaceEvents } from '@/lib/query/sse';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 
@@ -64,7 +65,11 @@ export const SurfacesPanel: Component = () => {
   // already said. Drop it here, and drop a selection that pointed at it —
   // otherwise a plugin that later re-declares the same name silently steals the
   // panel back. A re-declare announces, so the refetch below restores it.
-  const unsubscribe = subscribeToSurfaceEvents((event) => {
+  //
+  // One source for the stream, whatever the count of panels: `surfaceEvents()`
+  // is the shared root of `lib/query/sse.ts`, so a second panel joins the
+  // stream the first one opened rather than starting another.
+  const unsubscribe = surfaceEvents().subscribe((event) => {
     if (event.withdrawn) {
       mutate((prev) => (prev ?? []).filter((s) => s.name !== event.name));
       if (selected() === event.name) setSelected(null);

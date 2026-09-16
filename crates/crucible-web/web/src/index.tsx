@@ -17,12 +17,14 @@ import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
 import { initTheme } from '@/lib/theme';
 import { installSessionEventRoute } from '@/lib/query/routes/session';
+import { installSurfaceEventRoute } from '@/lib/query/routes/surfaces';
 
-// Before any pane opens a stream: the route turns a chat event into the cache
-// write it owes every pane. A pane that subscribes first would otherwise carry
-// its own fold only, and the session list, the history and the pending
-// interactions would stay as they were read.
+// Before any pane opens a stream: a route turns an event into the cache write
+// it owes every pane. A pane that subscribes first would otherwise carry its
+// own fold only, and the session list, the history, the pending interactions
+// and the surface roster would stay as they were read.
 installSessionEventRoute();
+installSurfaceEventRoute();
 
 const root = document.getElementById('root');
 
