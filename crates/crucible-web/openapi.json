@@ -1,0 +1,48 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Crucible web API",
+    "description": "The HTTP API that `cru web` serves. This document is generated from the axum router; do not edit it by hand.",
+    "version": "0.30.0"
+  },
+  "paths": {
+    "/api/models": {
+      "get": {
+        "summary": "All chat models across providers, no session required (draft-state picker).",
+        "description": "Takes no `kiln` parameter, for the reason `list_providers` does not: it\nused to accept a raw `PathBuf` that reached the daemon's classification\nresolver unfloored, and no caller ever sent one.",
+        "operationId": "list_all_models",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ModelsResponse": {
+        "type": "object",
+        "description": "Response for model listings — the session-scoped `list_models` and the\nsession-less `list_all_models` return the same `{ models: [...] }` shape.",
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

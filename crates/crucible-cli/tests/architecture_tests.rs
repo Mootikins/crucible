@@ -251,6 +251,11 @@ fn frontend_api_paths(root: &Path) -> BTreeSet<String> {
 fn backend_api_paths(root: &Path) -> BTreeSet<String> {
     let route_re = Regex::new(r#"\.route\(\s*"([^"]+)""#).unwrap();
     let nest_re = Regex::new(r#"\.nest\(\s*"([^"]+)""#).unwrap();
+    // `utoipa_axum::routes!(handler)` takes the path from the handler's
+    // `#[utoipa::path]` attribute, so a converted route has no `.route("...")`
+    // line to find. The lazy match takes the first `path = "..."` after the
+    // attribute opens.
+    let utoipa_re = Regex::new(r#"(?s)#\[utoipa::path\(.*?path\s*=\s*"([^"]+)""#).unwrap();
 
     let mut sources = Vec::new();
     let routes_dir = root.join("crates/crucible-web/src/routes");
@@ -266,6 +271,14 @@ fn backend_api_paths(root: &Path) -> BTreeSet<String> {
     let mut nest_prefixes = BTreeSet::new();
     for src in &sources {
         for c in route_re.captures_iter(src) {
+            let path = normalize_api_path(&c[1]);
+            if path.starts_with("/api") {
+                absolute.insert(path);
+            } else {
+                relative.insert(path);
+            }
+        }
+        for c in utoipa_re.captures_iter(src) {
             let path = normalize_api_path(&c[1]);
             if path.starts_with("/api") {
                 absolute.insert(path);

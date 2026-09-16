@@ -9,7 +9,7 @@ use crate::WebError;
 
 /// Response for model listings — the session-scoped `list_models` and the
 /// session-less `list_all_models` return the same `{ models: [...] }` shape.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ModelsResponse {
     pub(crate) models: Vec<String>,
 }

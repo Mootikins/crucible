@@ -19,6 +19,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
+use utoipa_axum::router::OpenApiRouter;
 
 pub use crucible_core::config::{CliAppConfig, WebConfig};
 
@@ -80,6 +81,105 @@ pub async fn start_server(
     Ok(())
 }
 
+/// The document's own description: its title and its version.
+///
+/// It is written here because `OpenApiRouter::new()` reads the cargo variables
+/// of `utoipa-axum` itself, which names that crate and its author.
+fn api_document_info() -> utoipa::openapi::OpenApi {
+    use utoipa::openapi::{InfoBuilder, OpenApiBuilder};
+
+    OpenApiBuilder::new()
+        .info(
+            InfoBuilder::new()
+                .title("Crucible web API")
+                .version(env!("CARGO_PKG_VERSION"))
+                .description(Some(
+                    "The HTTP API that `cru web` serves. This document is generated \
+                     from the axum router; do not edit it by hand.",
+                ))
+                .build(),
+        )
+        .build()
+}
+
+/// Every API route, with the OpenAPI document the router itself carries.
+///
+/// A plain `Router` group joins with `.into()`; a group that describes its own
+/// operations is already an `OpenApiRouter`. Task A4 converts the rest.
+///
+/// The state is not applied here, so the caller chooses: `build_router` splits
+/// the pair and serves the router half, `api_spec` keeps the document half.
+fn api_router(
+    web_config: &WebConfig,
+    shell_gate: Arc<ShellGateState>,
+    allowed_origins: Arc<Vec<HeaderValue>>,
+) -> OpenApiRouter<daemon::AppState> {
+    OpenApiRouter::with_openapi(api_document_info())
+        .nest(
+            "/api/shell",
+            shell_routes()
+                .layer(middleware::from_fn_with_state(
+                    shell_gate.clone(),
+                    localhost_only_shell_auth,
+                ))
+                .into(),
+        )
+        // A PTY is full shell access: localhost gate + an Origin allow-list on
+        // the WS upgrade to block Cross-Site WebSocket Hijacking (CORS doesn't
+        // apply to WS handshakes).
+        .nest(
+            "/api/terminal",
+            terminal_routes()
+                .layer(middleware::from_fn_with_state(
+                    shell_gate.clone(),
+                    localhost_only_shell_auth,
+                ))
+                .layer(middleware::from_fn_with_state(
+                    allowed_origins,
+                    websocket_origin_guard,
+                ))
+                .into(),
+        )
+        .merge(agents_routes())
+        .merge(chat_routes().into())
+        .merge(config_routes().into())
+        // Endpoint policy comes from the bind: a loopback bind keeps
+        // `http://localhost:11434` (the local-Ollama path) working, a LAN or
+        // wildcard bind refuses it. `session_routes_fail_closed()` is the harness form; this
+        // must be the `_with` form or the default bind loses local Ollama.
+        .merge(session_routes_with(EndpointPolicy::for_bind_host(&web_config.host)).into())
+        .merge(project_routes().into())
+        .merge(scm_routes().into())
+        .merge(fs_routes().into())
+        .merge(search_routes().into())
+        .merge(plugin_routes().into())
+        .merge(surface_routes().into())
+        .merge(mcp_routes().into())
+        .merge(kiln_routes().into())
+        .merge(canvas_routes().into())
+        .merge(layout_routes().into())
+        .merge(skills_routes().into())
+        .merge(webhook_routes().into())
+        // An unknown API is not an SPA navigation: never answer it with HTML.
+        .route(
+            "/api/{*unmatched}",
+            axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
+        )
+}
+
+/// The OpenAPI document for the API surface.
+///
+/// It comes from the same `api_router` the server serves, so a route cannot
+/// appear in one and not the other. The arguments only decide which handler a
+/// path reaches, never which paths exist, so the defaults describe them all.
+pub fn api_spec() -> utoipa::openapi::OpenApi {
+    let shell_gate = Arc::new(ShellGateState {
+        allow_remote: false,
+        credentials: None,
+    });
+    api_router(&WebConfig::default(), shell_gate, Arc::new(Vec::new())).into_openapi()
+}
+
 /// Assemble the served application from injected runtime state and credentials.
 /// Startup owns filesystem discovery and binding; tests use this same composition.
 pub fn build_router(
@@ -127,56 +227,12 @@ pub fn build_router(
     // API routes get Bearer auth + shell gets an additional localhost-only
     // check (relaxed only by the fail-closed remote-shell opt-in, which
     // requires an API key so bearer/cookie auth still gates every request).
-    let api_routes = Router::new()
-        .nest(
-            "/api/shell",
-            shell_routes().layer(middleware::from_fn_with_state(
-                shell_gate.clone(),
-                localhost_only_shell_auth,
-            )),
-        )
-        // A PTY is full shell access: localhost gate + an Origin allow-list on
-        // the WS upgrade to block Cross-Site WebSocket Hijacking (CORS doesn't
-        // apply to WS handshakes).
-        .nest(
-            "/api/terminal",
-            terminal_routes()
-                .layer(middleware::from_fn_with_state(
-                    shell_gate.clone(),
-                    localhost_only_shell_auth,
-                ))
-                .layer(middleware::from_fn_with_state(
-                    allowed_origins.clone(),
-                    websocket_origin_guard,
-                )),
-        )
-        .merge(agents_routes())
-        .merge(chat_routes())
-        .merge(config_routes())
-        // Endpoint policy comes from the bind: a loopback bind keeps
-        // `http://localhost:11434` (the local-Ollama path) working, a LAN or
-        // wildcard bind refuses it. `session_routes_fail_closed()` is the harness form; this
-        // must be the `_with` form or the default bind loses local Ollama.
-        .merge(session_routes_with(EndpointPolicy::for_bind_host(
-            &web_config.host,
-        )))
-        .merge(project_routes())
-        .merge(scm_routes())
-        .merge(fs_routes())
-        .merge(search_routes())
-        .merge(plugin_routes())
-        .merge(surface_routes())
-        .merge(mcp_routes())
-        .merge(kiln_routes())
-        .merge(canvas_routes())
-        .merge(layout_routes())
-        .merge(skills_routes())
-        .merge(webhook_routes())
-        // An unknown API is not an SPA navigation: never answer it with HTML.
-        .route(
-            "/api/{*unmatched}",
-            axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
-        )
+    //
+    // The document half of the split describes these same routes; `api_spec`
+    // returns it. Here it is dropped, because the server serves the router.
+    let (api_routes, _spec) =
+        api_router(web_config, shell_gate, allowed_origins.clone()).split_for_parts();
+    let api_routes = api_routes
         .with_state(state)
         .layer(middleware::from_fn_with_state(
             api_key_state.clone(),

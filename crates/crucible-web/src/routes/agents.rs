@@ -1,12 +1,15 @@
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, routing::get, Json};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn agents_routes() -> Router<AppState> {
-    Router::new()
+/// The route group. `routes!` carries the path from the `#[utoipa::path]`
+/// attribute beside the handler, so the path is written once.
+pub fn agents_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         .route("/api/agents", get(list_agents))
-        .route("/api/models", get(list_all_models))
+        .routes(routes!(list_all_models))
 }
 
 /// Extract the `profiles` array from the daemon's `agents.list_profiles`
@@ -36,6 +39,11 @@ async fn list_agents(State(state): State<AppState>) -> Result<Json<serde_json::V
 /// Takes no `kiln` parameter, for the reason `list_providers` does not: it
 /// used to accept a raw `PathBuf` that reached the daemon's classification
 /// resolver unfloored, and no caller ever sent one.
+#[utoipa::path(
+    get,
+    path = "/api/models",
+    responses((status = 200, body = ModelsResponse))
+)]
 async fn list_all_models(State(state): State<AppState>) -> Result<Json<ModelsResponse>, WebError> {
     let models = state.daemon.list_all_models(None).await.daemon_err()?;
     Ok(Json(ModelsResponse { models }))

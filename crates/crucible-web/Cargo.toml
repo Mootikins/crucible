@@ -21,6 +21,9 @@ crucible-daemon = { path = "../crucible-daemon", default-features = false }
 
 axum = { workspace = true, features = ["macros", "ws"] }
 tower = { workspace = true }
+# The OpenAPI document is generated from this router, not hand-written.
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
 # `set-header`: the global security-header layer in `server.rs`.
 tower-http = { version = "0.7", features = ["fs", "cors", "set-header"] }
 tokio = { workspace = true }

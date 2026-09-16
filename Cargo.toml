@@ -91,6 +91,12 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 axum = "0.8"
 tower = "0.5"
 
+# The API contract: the OpenAPI document comes from the router, so the path and
+# the response shape stay together. `preserve_order` keeps the generated
+# `openapi.json` diffable.
+utoipa = { version = "5.5", features = ["axum_extras", "chrono", "preserve_order"] }
+utoipa-axum = "0.2"
+
 # MCP protocol
 rmcp = { version = "2.2", features = ["macros", "server"] }
 
