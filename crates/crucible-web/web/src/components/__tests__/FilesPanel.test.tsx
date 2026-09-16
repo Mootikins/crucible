@@ -68,9 +68,11 @@ vi.mock('@/contexts/SessionContext', () => ({
 import { FilesPanel } from '../FilesPanel';
 import { setStore } from '@/stores/windowStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
-import { installFakeEventSource } from '@/test-utils/sse';
+import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
 import { resetKilnsForTests } from '@/lib/query/kilns';
 import { resetSseForTests } from '@/lib/query/sse';
+import { installFsEventRoute } from '@/lib/query/routes/fs';
+import { treeRootActions } from '@/stores/treeRootStore';
 
 let env: TestQueryEnv;
 
@@ -338,6 +340,65 @@ describe('FilesPanel — the navigator does not follow the focused tab', () => {
   // passed with the bug in place. Verified by running this file against the
   // pre-fix component — only the case above discriminates (it failed with
   // `expected 'true' to be 'false'`).
+});
+
+/**
+ * The tree keeps a root that was picked before any session existed.
+ *
+ * This is the ordering `c4-entities.live.spec.ts` meets against the daemon:
+ * the shell loads with no session selected, the user picks a kiln, and the
+ * session list then arrives carrying one live session. The pin of that pick is
+ * held under `NO_SESSION_PIN_KEY`, which is deliberately not a session id — so
+ * the prune that forgets dead sessions' pins forgot this one too, the tree
+ * dropped to "No project or kiln to browse", and the note index lost its only
+ * reader. The daemon's file event then had nothing to refresh.
+ */
+describe('FilesPanel — a root picked before any session', () => {
+  beforeEach(() => {
+    currentSessionValue = null;
+    kilnRoster = [{ path: '/project/kiln', name: 'kiln' }];
+    // The app installs the stream's routes at start (`src/index.tsx`), and
+    // `createTestQueryEnv` forgets them again between cases. Without this the
+    // event below reaches the panel and no cache at all.
+    installFsEventRoute();
+  });
+
+  /** Picks `name` from the root dropdown, the way a user does. */
+  async function pickRoot(trigger: HTMLElement, name: string) {
+    fireEvent.click(trigger);
+    const row = await waitFor(() => {
+      const found = document
+        .querySelector('[data-testid="root-dropdown-popout"]')
+        ?.querySelector('[role="option"]');
+      expect(found?.textContent).toContain(name);
+      return found as HTMLElement;
+    });
+    fireEvent.click(row);
+  }
+
+  it('keeps the root when the session list arrives, and still refreshes on a file event', async () => {
+    const { findByTestId, findByText } = render(() => <FilesPanel />);
+    const trigger = await findByTestId('root-dropdown');
+    await waitFor(() => expect(kilnRoster.length).toBe(1));
+    await pickRoot(trigger, 'kiln');
+    await findByText('readme.md');
+    expect(listNotesMock).toHaveBeenCalledTimes(1);
+
+    // The session list lands. `SessionContext` prunes the pins of sessions
+    // that are gone; this browse belongs to none of them.
+    treeRootActions.prune(['s-1']);
+
+    // The daemon says a note was written into the browsed kiln.
+    onlyEventSource().emit('fs_changed', {
+      type: 'changed',
+      path: '/project/kiln/fresh.md',
+      kind: 'created',
+    });
+
+    // One refetch, into the entry the tree is reading.
+    await waitFor(() => expect(listNotesMock).toHaveBeenCalledTimes(2));
+    expect(listNotesMock).toHaveBeenLastCalledWith('/project/kiln');
+  });
 });
 
 describe('FilesPanel — rendered rows', () => {

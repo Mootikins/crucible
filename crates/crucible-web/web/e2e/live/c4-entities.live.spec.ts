@@ -87,35 +87,20 @@ test.describe('live C4 entities', () => {
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
   });
 
-  // RED, and deliberately left red. The tree does not redraw for a file
-  // written into a kiln that a session has attached.
+  // The tree redraws for a file written into the kiln it browses, without a
+  // page reload and without a poll. Only the daemon can make this claim: the
+  // write below is made by nobody in the browser, and what turns it into a
+  // refetch is the daemon's own file watcher.
   //
-  // Reproduce it with two specs of this run, in this order:
-  //   c2-entities "attaching a kiln refreshes the scope chip in every open pane"
-  //   c4-entities "a file written on disk refreshes every mounted tree"
-  // The second fails with "the write on disk never reached the browser",
-  // expected 1 refetch of `/api/notes`, received 0. On its own, or after any
-  // other spec in this tier, it passes.
-  //
-  // What was measured, with a patched `EventSource` and a plain `fetch` on
-  // `/api/fs/events`:
-  //
-  //  - The DAEMON still sends the event. A bare reader of the stream, with no
-  //    browser at all, gets `event: fs_changed` naming the new file both
-  //    before and after `POST /api/session/{id}/kilns/connect`.
-  //  - The BROWSER still receives it. A fresh page logs the identical
-  //    `fs_changed` payload for the identical path in both cases.
-  //  - Only the refetch differs. Before the attach the page answers the event
-  //    with one `GET /api/notes?kiln=<alpha>`; after it, with nothing. Both
-  //    pages read that key exactly once on the way in, so the entry and its
-  //    reader are the same in both.
-  //
-  // So the event arrives and the cache is not told. The gap is between
-  // `subscribeToFsEvents` and the note list — `routes/fs.ts` or the batcher
-  // in `FilesPanel`, not the daemon and not the transport. A user who
-  // attaches a kiln to a session stops seeing new notes appear in the tree,
-  // which is why this stays a failing test rather than a softened one.
-  test.fixme('a file written on disk refreshes every mounted tree, once, over the stream', async ({
+  // It was `test.fixme` for one run of the suite, because it fails after
+  // `c2-entities` attaches a kiln and passes on its own. The order was not the
+  // cause; a SESSION existing was. A root picked before any session is current
+  // is pinned under `NO_SESSION_PIN_KEY`, and `treeRootStore.prune` — which
+  // forgets the pins of sessions that are gone — dropped that pin as soon as a
+  // non-empty session list arrived. The tree fell back to the roots of a
+  // session it did not have, drew "No project or kiln to browse", and the note
+  // index lost its only reader, so the event had nothing to refresh.
+  test('a file written on disk refreshes every mounted tree, once, over the stream', async ({
     page,
   }) => {
     await installEventSourceSpy(page);

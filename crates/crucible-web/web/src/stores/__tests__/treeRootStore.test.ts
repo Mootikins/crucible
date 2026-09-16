@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { TreeRoot } from '@/lib/tree-root';
-import { pinnedRootKey, treeRootActions, TREE_ROOT_STORAGE_KEY } from '../treeRootStore';
+import {
+  NO_SESSION_PIN_KEY,
+  pinnedRootKey,
+  treeRootActions,
+  TREE_ROOT_STORAGE_KEY,
+} from '../treeRootStore';
 
 const KILN: TreeRoot = { kind: 'kiln', path: '/vault', name: 'Vault' };
 const DOCS: TreeRoot = { kind: 'kiln', path: '/docs', name: 'Docs' };
@@ -10,6 +15,7 @@ describe('treeRootStore', () => {
     localStorage.clear();
     treeRootActions.unpin('s-1');
     treeRootActions.unpin('s-2');
+    treeRootActions.unpin(NO_SESSION_PIN_KEY);
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -59,6 +65,20 @@ describe('treeRootStore', () => {
     treeRootActions.pin('s-1', KILN);
     treeRootActions.prune([]);
     expect(pinnedRootKey('s-1')).toBe('kiln:/vault');
+  });
+
+  // A root picked before any session exists is pinned under a key that is NOT
+  // a session id, so no list of live sessions can ever contain it. Pruning
+  // against such a list therefore threw that pin away, and the tree fell back
+  // to the roots of a session it did not have: "No project or kiln to browse",
+  // a second or two after the user picked a kiln.
+  it('prune keeps the pin a session-less browse made', () => {
+    treeRootActions.pin(NO_SESSION_PIN_KEY, KILN);
+    treeRootActions.pin('s-2', DOCS);
+    treeRootActions.prune(['s-1']);
+    expect(pinnedRootKey(NO_SESSION_PIN_KEY)).toBe('kiln:/vault');
+    // And the pin of a session that is really gone is still forgotten.
+    expect(pinnedRootKey('s-2')).toBeNull();
   });
 
   it('survives a throwing localStorage (private mode) and still updates in-memory', () => {

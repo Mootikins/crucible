@@ -87,12 +87,20 @@ export const treeRootActions = {
    * pick — without this it only ever grows. Called with the live session ids
    * whenever the list refreshes; an empty list is treated as "not loaded yet"
    * and prunes nothing, so a failed fetch cannot wipe every pin.
+   *
+   * The session-less pin is kept whatever the list says. It names no session,
+   * so no list of live sessions can ever hold it, and dropping it threw away
+   * the root of a browse the user had just started: the tree fell back to the
+   * roots of a session it did not have and drew its empty state a second after
+   * a kiln was picked.
    */
   prune(liveSessionIds: readonly string[]): void {
     if (liveSessionIds.length === 0) return;
     const live = new Set(liveSessionIds);
     const current = pins();
-    const kept = Object.entries(current).filter(([id]) => live.has(id));
+    const kept = Object.entries(current).filter(
+      ([id]) => id === NO_SESSION_PIN_KEY || live.has(id),
+    );
     if (kept.length === Object.keys(current).length) return;
     persist(Object.fromEntries(kept));
   },
