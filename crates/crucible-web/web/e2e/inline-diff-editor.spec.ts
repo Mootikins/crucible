@@ -62,7 +62,7 @@ test.describe('Inline diff in editor', () => {
       if (route.request().method() === 'GET') {
         route.fulfill({ json: { content: CURRENT } });
       } else {
-        route.fulfill({ status: 200, body: '' });
+        route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
       }
     });
 
@@ -105,7 +105,7 @@ test.describe('Inline diff in editor', () => {
       if (route.request().method() === 'GET') {
         route.fulfill({ json: { content: CURRENT } });
       } else {
-        route.fulfill({ status: 200, body: '' });
+        route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
       }
     });
 
@@ -209,7 +209,7 @@ test.describe('Inline diff in editor', () => {
     await setupBasicMocks(page);
     await page.route('**/api/kiln/file**', (route) => {
       if (route.request().method() === 'GET') route.fulfill({ json: { content: CURRENT } });
-      else route.fulfill({ status: 200, body: '' });
+      else route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
     });
 
     await page.goto('/');
@@ -263,7 +263,7 @@ test.describe('Inline diff in editor', () => {
         await route.fulfill({ json: { content: onDisk } });
       } else {
         onDisk = (route.request().postDataJSON() as { content: string }).content;
-        await route.fulfill({ status: 200, body: '' });
+        await route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
       }
     });
 

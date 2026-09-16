@@ -39,7 +39,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
       if (route.request().method() === 'PUT') {
         const body = route.request().postDataJSON() as { path: string; content: string };
         saves.push(body);
-        return route.fulfill({ status: 200, body: '' });
+        return route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
       }
       return route.continue();
     });
@@ -101,7 +101,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     await page.route('**/api/kiln/file**', (route) => {
       const m = route.request().method();
       if (m === 'GET') return route.fulfill({ json: { content: INITIAL } });
-      if (m === 'PUT') return route.fulfill({ status: 200, body: '' });
+      if (m === 'PUT') return route.fulfill({ json: { ok: true, content_hash: 'saved-hash' } });
       return route.continue();
     });
 
