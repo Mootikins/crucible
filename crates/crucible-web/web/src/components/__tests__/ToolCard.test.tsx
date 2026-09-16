@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import type { ToolCallDisplay } from '@/lib/types';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 // ===== Mock topology =====
 // DiffViewer / MultiEditDiff are stubbed because their real implementations
@@ -27,14 +28,40 @@ vi.mock('../MultiEditDiff', () => ({
 // these mocks are inert for them. vi.clearAllMocks runs between every test
 // via the global `clearMocks: true` in vite.config.ts.
 const CURRENT = 'top\nlet x = 1;\nbottom\n';
-const getFileContentMock = vi.fn(async (..._a: unknown[]) => CURRENT);
 const openFileWithDiffMock = vi.fn();
 const addNotificationMock = vi.fn();
 
-vi.mock('@/lib/api', async (orig) => ({
-  ...(await orig<Record<string, unknown>>()),
-  getFileContent: (...a: unknown[]) => getFileContentMock(...a),
-}));
+// `@/lib/api` is NOT mocked. The card reads the file through the shared cache
+// of `lib/query/fs.ts`, so the daemon's own route is what answers, and the
+// repeat-click case below counts the reads that reached it.
+let env: TestQueryEnv;
+/** The path of every read the daemon answered, in order. */
+let reads: string[] = [];
+/** How the daemon answers a read. Replaced by the cases that need a delay or a 404. */
+let answerRead: () => unknown = () => ({ content: CURRENT, content_hash: 'hash-1' });
+
+/** A daemon that does not have the file. */
+function missing(): Response {
+  return new Response(JSON.stringify({ error: { code: 404, message: 'no such file' } }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+beforeEach(() => {
+  reads = [];
+  answerRead = () => ({ content: CURRENT, content_hash: 'hash-1' });
+  env = createTestQueryEnv({
+    'GET /api/kiln/file': (request: Request) => {
+      reads.push(new URL(request.url).searchParams.get('path') ?? '');
+      return answerRead();
+    },
+  });
+});
+
+afterEach(() => {
+  env.restore();
+});
 vi.mock('@/lib/file-actions', () => ({
   openFileWithDiff: (...a: unknown[]) => openFileWithDiffMock(...a),
 }));
@@ -515,7 +542,7 @@ describe('ToolCard — Open in editor', () => {
     fireEvent.click(btn);
 
     await waitFor(() => expect(openFileWithDiffMock).toHaveBeenCalledTimes(1));
-    expect(getFileContentMock).toHaveBeenCalledWith('/proj/app.ts');
+    expect(reads).toEqual(['/proj/app.ts']);
     // original = current file; proposed = current with the edit applied.
     expect(openFileWithDiffMock).toHaveBeenCalledWith(
       '/proj/app.ts',
@@ -541,7 +568,7 @@ describe('ToolCard — Open in editor', () => {
   // edit to '' would yield an EMPTY proposed document — a delete-everything
   // diff the user could save over their file.
   it('refuses to open an Edit diff when the file cannot be read', async () => {
-    getFileContentMock.mockRejectedValueOnce(new Error('404'));
+    answerRead = () => missing();
     render(() => <ToolCard toolCall={editTool()} />);
     fireEvent.click(screen.getByText('Edit'));
     fireEvent.click(await screen.findByTestId('tool-open-in-editor'));
@@ -553,7 +580,7 @@ describe('ToolCard — Open in editor', () => {
 
   // A Write carries the whole file, so an unreadable path is just a new file.
   it('opens a Write diff against empty when the file does not exist yet', async () => {
-    getFileContentMock.mockRejectedValueOnce(new Error('404'));
+    answerRead = () => missing();
     const writeTool: ToolCallDisplay = {
       id: 'tc-2',
       name: 'Write',
@@ -570,18 +597,21 @@ describe('ToolCard — Open in editor', () => {
   });
 
   it('ignores repeat clicks while a diff is still being fetched', async () => {
-    let release!: (v: string) => void;
-    getFileContentMock.mockReturnValueOnce(new Promise<string>((r) => { release = r; }));
+    let release!: () => void;
+    answerRead = () =>
+      new Promise((resolve) => {
+        release = () => resolve({ content: CURRENT, content_hash: 'hash-1' });
+      });
     render(() => <ToolCard toolCall={editTool()} />);
     fireEvent.click(screen.getByText('Edit'));
 
     const btn = await screen.findByTestId('tool-open-in-editor');
     fireEvent.click(btn);
     fireEvent.click(btn);
-    release(CURRENT);
+    release();
 
     await waitFor(() => expect(openFileWithDiffMock).toHaveBeenCalledTimes(1));
-    expect(getFileContentMock).toHaveBeenCalledTimes(1);
+    expect(reads).toHaveLength(1);
   });
 });
 

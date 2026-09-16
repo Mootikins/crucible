@@ -9,7 +9,8 @@
  */
 import { Component, Show, For, createSignal, createResource, createMemo } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { getBacklinks, getFileContent } from '@/lib/api';
+import { getBacklinks } from '@/lib/api';
+import { fetchFileContentOnce } from '@/lib/query/fs';
 import type { BacklinksResponse, UnlinkedMention } from '@/lib/types';
 import { blockAtByteOffset, findLinkingBlock, type LinkingBlock } from '@/lib/backlink-context';
 import { insertWikilink, kilnForPath } from '@/lib/note-actions';
@@ -136,7 +137,7 @@ export const BacklinksPanel: Component = () => {
       await Promise.all(
         linked.map(async (entry) => {
           try {
-            const content = await getFileContent(entry.abs_path);
+            const content = await fetchFileContentOnce(entry.abs_path);
             // The daemon's link index gives the exact byte span of the
             // occurrence; the regex scan is the legacy-row fallback.
             const block =

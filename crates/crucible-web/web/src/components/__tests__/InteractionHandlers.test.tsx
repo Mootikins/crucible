@@ -1,16 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, screen } from '@solidjs/testing-library';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { AskInteraction } from '../interactions/AskInteraction';
 import { PopupInteraction } from '../interactions/PopupInteraction';
 import { PermissionInteraction } from '../interactions/PermissionInteraction';
 import { InteractionHandler } from '../interactions/InteractionHandler';
 import type { InteractionOf, InteractionRequest } from '@/lib/types';
 
-// Mock the API module to prevent real network calls
-vi.mock('@/lib/api', () => ({
-  respondToInteraction: vi.fn(),
-  getFileContent: vi.fn().mockResolvedValue(''),
-}));
+// `@/lib/api` is NOT mocked. The permission prompt reads the file on disk
+// through the shared cache of `lib/query/fs.ts`, and the mocked `fetch` below
+// answers the daemon's route — so nothing here reaches the network, and the
+// read the prompt makes is one a test can see.
+let env: TestQueryEnv;
+/** The path of every file read the daemon answered, in order. */
+let reads: string[] = [];
+
+beforeEach(() => {
+  reads = [];
+  env = createTestQueryEnv({
+    'GET /api/kiln/file': (request: Request) => {
+      reads.push(new URL(request.url).searchParams.get('path') ?? '');
+      return { content: 'on disk\n', content_hash: 'hash-1' };
+    },
+  });
+});
+
+afterEach(() => {
+  env.restore();
+});
 
 // Mock DiffViewer used by PermissionInteraction
 vi.mock('@/components/DiffViewer', () => ({
@@ -267,6 +284,24 @@ describe('PermissionInteraction', () => {
     expect(args.textContent).toContain('"api"');
     // The empty-tokens fallback box must not add a misleading "(no arguments)".
     expect(screen.queryByText('(no arguments)')).not.toBeInTheDocument();
+  });
+
+  // The prompt shows what the write would REPLACE, so it reads the file on
+  // disk. It reads it through the same cache entry the editor and the tool
+  // card hold, so a prompt about an open file costs no second read.
+  it('reads the file on disk for a write it is about to approve', async () => {
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-write-1',
+      action_type: 'write',
+      tokens: ['/kiln/notes/a.md'],
+      tool_args: { content: 'typed\n' },
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    await waitFor(() => expect(screen.getByTestId('diff-viewer')).toBeInTheDocument());
+    expect(reads).toEqual(['/kiln/notes/a.md']);
   });
 
   it('keeps the (no arguments) fallback for tool permissions without args', () => {

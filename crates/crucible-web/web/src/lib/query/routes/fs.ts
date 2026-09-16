@@ -15,20 +15,12 @@
  * so the panel and the editor together invalidate one key once.
  */
 import type { FsEvent } from '@/lib/types';
+// One definition of the folder of a path, shared with the readers. A second
+// copy here would let a reader's key and an event's key drift apart, which is
+// a panel that never refreshes and a test that still passes.
+import { folderOf } from '../fs';
 import { keys } from '../keys';
 import { setFsEventRoute, type SseRouteContext } from '../sse';
-
-/**
- * The folder one absolute path is in.
- *
- * A path directly under the root answers the root itself. An empty string
- * there would name a folder nothing lists, so the event would reach no reader.
- */
-function folderOf(path: string): string {
-  const cut = path.lastIndexOf('/');
-  if (cut < 0) return '/';
-  return cut === 0 ? '/' : path.slice(0, cut);
-}
 
 /** The paths one event names: one for a change or a delete, two for a move. */
 function pathsOf(event: FsEvent): string[] {

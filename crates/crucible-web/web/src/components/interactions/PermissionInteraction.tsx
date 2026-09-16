@@ -1,6 +1,6 @@
-import { Component, Show, createSignal, createResource } from 'solid-js';
+import { Component, Show, createSignal } from 'solid-js';
 import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
-import { getFileContent } from '@/lib/api';
+import { useGetFileContent } from '@/lib/query/fs';
 import { DiffViewer } from '@/components/DiffViewer';
 import { btnConsent, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
@@ -96,24 +96,19 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const filePath = () => extractFilePath(props.request);
   const newContent = () => extractNewContent(props.request);
 
-  // Fetch old content when we have a write action with a file path
-  const [oldContent] = createResource(
-    () => {
-      const path = filePath();
-      const content = newContent();
-      if (path && content !== null) return path;
-      return false;
-    },
-    async (path) => {
-      if (typeof path !== 'string') return '';
-      try {
-        return await getFileContent(path);
-      } catch {
-        // File may not exist yet (new file creation) — treat as empty
-        return '';
-      }
-    },
-  );
+  // The file as it is on disk, for the diff beside the proposed write. It is
+  // the same cache entry the editor and the tool card read, so a prompt about
+  // a file already on screen costs no second fetch.
+  const diffPath = () => {
+    const path = filePath();
+    return path && newContent() !== null ? path : null;
+  };
+  const onDisk = useGetFileContent(diffPath);
+
+  // A file that does not exist yet is a new file, so an unreadable path is an
+  // empty baseline rather than a refusal to show the write at all.
+  const oldContent = () => (onDisk.isError ? '' : onDisk.data);
+  const loadingOldContent = () => onDisk.isPending && onDisk.fetchStatus !== 'idle';
 
   const hasDiff = () => {
     return props.request.action_type === 'write' && newContent() !== null && oldContent() !== undefined;
@@ -176,7 +171,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
       </Show>
 
       {/* Diff preview for file write permissions */}
-      <Show when={hasDiff() && !oldContent.loading}>
+      <Show when={hasDiff() && !loadingOldContent()}>
         <div class="mb-4">
           <button
             onClick={() => setShowDiff(!showDiff())}
@@ -207,7 +202,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
       </Show>
 
       {/* Loading state while fetching old content */}
-      <Show when={hasDiff() && oldContent.loading}>
+      <Show when={hasDiff() && loadingOldContent()}>
         <div class="mb-4 text-xs text-muted-dark flex items-center gap-2">
           <span class="inline-block w-3 h-3 border border-muted-dark border-t-transparent rounded-full animate-spin" />
           Loading file for diff...

@@ -9,6 +9,10 @@ import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 
 const EMOJI = ['📝', '🔷', '🟨', '🦀', '📋', '⚙️', '🎨', '🌐', '🌙', '📄', '📂', '📁'];
 
+// `@/lib/api` is NOT mocked. Every read below answers on the wire instead
+// (`createTestQueryEnv`), which is what makes the deduplication assertions
+// mean something: a second panel that fetched behind the cache's back would
+// still be counted here, and a module mock would hide it.
 const listNotesMock = vi.fn();
 // The roster this run's `GET /api/kilns` answers. The panel reads it through
 // `useKilns`, which runs the real `listKilns` against the mocked fetch.
@@ -23,14 +27,19 @@ let projectRoots: unknown[] = [];
 // passed with the bug still in place. Driving the actual store is what makes
 // the assertion mean anything.
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  listNotes: (...args: unknown[]) => listNotesMock(...args),
-  listDir: (...args: unknown[]) => listDirMock(...args),
-  // No SSE in jsdom: return a no-op unsubscribe so onMount doesn't open a
-  // real EventSource.
-  subscribeToFsEvents: () => () => {},
-}));
+/** The daemon's side of every read the panel makes, over the mocked fetch. */
+function fsRoutes() {
+  return {
+    'GET /api/kilns': () => ({ kilns: kilnRoster }),
+    'GET /api/notes': async (request: Request) => ({
+      notes: await listNotesMock(new URL(request.url).searchParams.get('kiln')),
+    }),
+    'GET /api/fs/list': async (request: Request) => {
+      const params = new URL(request.url).searchParams;
+      return listDirMock(params.get('root'), params.get('rel_path') ?? '');
+    },
+  };
+}
 
 // The file tree builds its roster from projects + kilns. Use a KILN-only
 // roster (no projects) so the deterministic fallback selects the kiln root and
@@ -59,6 +68,7 @@ vi.mock('@/contexts/SessionContext', () => ({
 import { FilesPanel } from '../FilesPanel';
 import { setStore } from '@/stores/windowStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
 import { resetKilnsForTests } from '@/lib/query/kilns';
 import { resetSseForTests } from '@/lib/query/sse';
 
@@ -109,7 +119,10 @@ beforeEach(() => {
   localStorage.setItem('crucible.filetree.hideExts', 'false');
   kilnRoster = [{ path: '/project/kiln', name: 'kiln' }];
   resetKilnsForTests();
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: kilnRoster }) });
+  // jsdom has no `EventSource`, and the panel opens the shared filesystem
+  // stream on mount. The fake one stands in for the daemon's.
+  installFakeEventSource();
+  env = createTestQueryEnv(fsRoutes());
   listNotesMock.mockResolvedValue(
     NOTE_NAMES.map((name) => ({
       name,
@@ -247,6 +260,28 @@ describe('FilesPanel — a project root loads once', () => {
 
     expect(container.querySelector('[role="tree"]')).toBe(treeBefore);
     expect(container.contains(readmeRow)).toBe(true);
+  });
+
+  // Two panels on one root is a split, or the phone shell's sheet over the
+  // desktop tree. They used to be two independent loaders: the same folder was
+  // listed twice, and the two could disagree about what was in it. They read
+  // one cache entry per folder now.
+  it('lists each folder once for two panels browsing one root', async () => {
+    const { findAllByText } = render(() => (
+      <>
+        <FilesPanel />
+        <FilesPanel />
+      </>
+    ));
+
+    await waitFor(async () => expect(await findAllByText('README.md')).toHaveLength(2));
+    await waitFor(async () => expect(await findAllByText('main.rs')).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // The root and the one persisted-expanded folder, once each — not once
+    // per panel.
+    expect(listDirMock.mock.calls.map((c) => c[1])).toEqual(['', 'src']);
+    expect(env.fetch.calls('GET /api/fs/list')).toBe(2);
   });
 
   it('fetches each directory exactly once despite the cache-then-fetch double apply', async () => {

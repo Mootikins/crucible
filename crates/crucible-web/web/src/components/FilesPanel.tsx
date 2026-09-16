@@ -3,20 +3,21 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
+import { connectSessionKiln, listNotes } from '@/lib/api';
 import {
-  connectSessionKiln,
-  listNotes,
-  listDir,
-  fsMove,
-  fsMkdir,
-  fsTrash,
-  saveFileContent,
-} from '@/lib/api';
+  fetchDirOnce,
+  invalidateDirsUnder,
+  useFsMkdir,
+  useFsMove,
+  useFsTrash,
+  useListDir,
+  useSaveFileContent,
+} from '@/lib/query/fs';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { useKilns } from '@/lib/query/kilns';
 import { fsEvents } from '@/lib/query/sse';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
-import type { FsEntry } from '@/lib/types';
+import type { FsEntry, FsListing } from '@/lib/types';
 import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
 import { resolveSessionRoot, sessionRoots, type SessionRoot } from '@/lib/session-roots';
 import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
@@ -96,9 +97,21 @@ export const FilesPanel: Component<{
   // on reload, so the panel never opens on an empty Browse menu.
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
+  // Every write the tree makes. Each one invalidates the folders it changed,
+  // so the panel that made the change does not wait for the daemon's event —
+  // and a root the daemon does not watch never sends one.
+  const moveEntry = useFsMove();
+  const makeFolder = useFsMkdir();
+  const trashEntry = useFsTrash();
+  const saveFile = useSaveFileContent();
   const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const [loading, setLoading] = createSignal(false);
+  const [building, setBuilding] = createSignal(false);
+  // The panel is busy while the daemon is answering for the top level AND
+  // while the expanded folders under it are read. The first half belongs to
+  // the query now, so reading only the second would drop the spinner for the
+  // whole of the first fetch — the longest part of opening a big root.
+  const loading = () => building() || topLevel.isFetching;
   const [sort, setSort] = createSignal<SortSpec>(readJson<SortSpec>(SORT_KEY, DEFAULT_SORT));
   const [showHidden, setShowHidden] = createSignal<boolean>(
     readJson<boolean>(SHOW_HIDDEN_KEY, false),
@@ -133,7 +146,11 @@ export const FilesPanel: Component<{
     setShowHidden(next);
     writeJson(SHOW_HIDDEN_KEY, next);
     const r = activeRoot();
-    if (r?.kind === 'project') void loadProjectTree(r);
+    // The listing is keyed by the folder ALONE, because that is all the
+    // daemon's stream says, so the same key must answer differently now. The
+    // invalidation waits a turn: the hook has to take the new toggle before
+    // the refetch reads it, or the refetch asks the old question again.
+    if (r?.kind === 'project') queueMicrotask(() => void refreshProjectTree(r));
   };
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
@@ -218,7 +235,7 @@ export const FilesPanel: Component<{
 
   // ---- data-source discriminant --------------------------------------------
   async function loadKilnTree(kilnPath: string) {
-    setLoading(true);
+    setBuilding(true);
     setError(null);
     try {
       const notes = await listNotes(kilnPath);
@@ -227,36 +244,77 @@ export const FilesPanel: Component<{
       setRawRoot(null);
       setError(e instanceof Error ? e.message : 'Failed to load notes');
     } finally {
-      setLoading(false);
+      setBuilding(false);
     }
   }
 
-  // Load a project root, eagerly re-fetching every persisted-expanded folder
-  // so the tree rehydrates its open branches on reload/refocus. A flat
-  // top-level fetch would discard the loaded subtrees — the machine then
-  // paints the persisted-expanded nodes as empty, which reads as the tree
-  // spontaneously collapsing (the bug this replaces).
+  /**
+   * A root the daemon refused to list.
+   *
+   * A workspace that is not a registered project — `~/.crucible`, a scratch
+   * tmpdir a session was born in — must not strand the tree on an error
+   * banner: remember it as unlistable so the strip stops offering it and the
+   * active root falls through to something browsable.
+   */
+  function failRoot(root: TreeRoot, e: unknown) {
+    setRawRoot(null);
+    unlistable.add(root.path);
+    setError(e instanceof Error && e.message ? e.message : `Failed to list ${root.path}`);
+  }
 
-  async function loadProjectTree(root: TreeRoot) {
-    setLoading(true);
+  /**
+   * The browsed project root, or nothing while a kiln is on screen.
+   *
+   * A kiln's tree comes from `listNotes` in one answer, so only a project has
+   * a top level to hold.
+   */
+  const projectRoot = createMemo<TreeRoot | null>(() => {
+    const root = activeRoot();
+    return root && root.kind === 'project' ? root : null;
+  });
+
+  /**
+   * The top level of the browsed project, as a cache entry.
+   *
+   * It is held under the ABSOLUTE folder, which is the name the daemon's
+   * filesystem stream uses, so a write anywhere in that folder reaches this
+   * panel — and reaches a second panel browsing the same root without a
+   * second fetch. `showHidden` is not in the key, so the toggle invalidates
+   * (`toggleHidden`) rather than keying a second entry the stream cannot name.
+   */
+  const topLevel = useListDir(() => {
+    const root = projectRoot();
+    return root ? { root: root.path, relPath: '', showHidden: showHidden() } : null;
+  });
+
+  // Build the tree from that top level, eagerly re-reading every
+  // persisted-expanded folder so the tree rehydrates its open branches on
+  // reload. A flat top-level build would discard the loaded subtrees — the
+  // machine then paints the persisted-expanded nodes as empty, which reads as
+  // the tree spontaneously collapsing (the bug this replaces).
+  async function buildProjectTree(root: TreeRoot, listing: FsListing) {
+    setBuilding(true);
     setError(null);
     const expanded = new Set(expandedFor(root));
-    let anyTruncated = false;
-    const build = async (rel: string): Promise<Node[]> => {
-      const { entries, truncated } = await listDir(root.path, rel, showHidden());
-      anyTruncated ||= truncated;
-      return Promise.all(
+    let anyTruncated = listing.truncated;
+    const build = async (entries: FsEntry[]): Promise<Node[]> =>
+      Promise.all(
         entries.map(async (e) => {
           const node = fsEntryToNode(e, root.path);
           if (node.isDir && expanded.has(node.relPath)) {
-            node.children = await build(node.relPath);
+            const child = await fetchDirOnce({
+              root: root.path,
+              relPath: node.relPath,
+              showHidden: showHidden(),
+            });
+            anyTruncated ||= child.truncated;
+            node.children = await build(child.entries);
           }
           return node;
         }),
       );
-    };
     try {
-      const children = await build('');
+      const children = await build(listing.entries);
       setRawRoot({ relPath: '', name: '', isDir: true, absPath: root.path, children });
       // Say so rather than presenting a capped folder as complete. Non-fatal,
       // so it rides the same banner as the move/link notices.
@@ -264,22 +322,20 @@ export const FilesPanel: Component<{
         setError(`Some folders have more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`);
       }
     } catch (e) {
-      setRawRoot(null);
-      // A workspace the daemon refuses to list (not a registered project —
-      // e.g. ~/.crucible or a scratch tmpdir a session was born in) must not
-      // strand the tree on an error banner: remember the root as unlistable
-      // so the strip stops offering it and the active root falls through to
-      // something browsable.
-      unlistable.add(root.path);
-      setError(
-        e instanceof Error && e.message
-          ? e.message
-          : `Failed to list ${root.path}`,
-      );
+      failRoot(root, e);
     } finally {
-      setLoading(false);
+      setBuilding(false);
     }
   }
+
+  /**
+   * Re-reads a project root from the daemon.
+   *
+   * The listings are cache entries now, so a refresh is an invalidation: the
+   * top level is observed and re-reads itself, and the rebuild below re-reads
+   * the expanded folders under it.
+   */
+  const refreshProjectTree = (root: TreeRoot) => invalidateDirsUnder(root.path);
 
   // Keyed on the root's identity AS A PATH, not on the memo's object. `roster()`
   // rebuilds fresh TreeRoot objects on every recompute and the kiln query
@@ -290,9 +346,9 @@ export const FilesPanel: Component<{
   // were fetched once per pass.
   //
   // `on`'s handler also runs untracked, which drops a second accidental
-  // dependency: `loadProjectTree` reads `showHidden()` before its first await
-  // (so inside the tracking scope), and `toggleHidden` already reloads
-  // explicitly — tracking it meant every toggle did two full loads.
+  // dependency: the build reads `showHidden()` before its first await (so
+  // inside the tracking scope), and `toggleHidden` already reloads explicitly
+  // — tracking it meant every toggle did two full loads.
   // The key is its OWN memo, and that is the load-bearing part: `on()` narrows
   // what an effect tracks but does not compare the dep's value, so keying it on
   // an inline accessor still re-ran on every `activeRoot` notification. A memo
@@ -308,10 +364,32 @@ export const FilesPanel: Component<{
       if (!key) return;
       const root = activeRoot();
       if (!root) return;
+      // A project root builds from `topLevel` below, which is already asking
+      // for it: starting a second read here is the duplicate fetch this panel
+      // spent three fixes removing.
       if (root.kind === 'kiln') void loadKilnTree(root.path);
-      else void loadProjectTree(root);
     }),
   );
+
+  // `dataUpdatedAt` moves on every answer, including one that equals the last.
+  // Without it a refresh that found no change would leave the expanded folders
+  // unread, so a change DEEPER than the top level would never reach the tree.
+  createEffect(
+    on(
+      () => [topLevel.data, topLevel.dataUpdatedAt] as const,
+      ([listing]) => {
+        const root = projectRoot();
+        if (!root || !listing) return;
+        void buildProjectTree(root, listing);
+      },
+    ),
+  );
+
+  createEffect(() => {
+    const failure = topLevel.error;
+    const root = projectRoot();
+    if (failure && root) failRoot(root, failure);
+  });
 
   // Displayed collection = sorted view of the raw tree. A new identity on
   // raw-tree or sort change reaches the tree machine reactively — it does NOT
@@ -329,7 +407,11 @@ export const FilesPanel: Component<{
 
   // Project lazy loader (kilns build the whole tree so they pass undefined).
   const loadChildren = (root: TreeRoot) => async (details: { node: Node }) => {
-    const { entries, truncated } = await listDir(root.path, details.node.relPath, showHidden());
+    const { entries, truncated } = await fetchDirOnce({
+      root: root.path,
+      relPath: details.node.relPath,
+      showHidden: showHidden(),
+    });
     setError(
       truncated
         ? `${details.node.name} has more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`
@@ -351,7 +433,12 @@ export const FilesPanel: Component<{
     const toRel = moveTargetRel(source, destParentRel);
     void (async () => {
       try {
-        const outcome = await fsMove(root.path, root.kind, source.relPath, toRel);
+        const outcome = await moveEntry.mutateAsync({
+          root: root.path,
+          kind: root.kind,
+          fromRel: source.relPath,
+          toRel,
+        });
         // Kiln .md moves rewrite inbound wikilinks daemon-side; ambiguous
         // ones are deliberately skipped — tell the user instead of silently
         // leaving links pointing elsewhere.
@@ -361,8 +448,7 @@ export const FilesPanel: Component<{
             ? `Moved, but ${skipped} link${skipped === 1 ? '' : 's'} not auto-updated (ambiguous target)`
             : null,
         );
-        if (root.kind === 'kiln') await loadKilnTree(root.path);
-        else await loadProjectTree(root);
+        await reloadRoot(root);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Move failed');
       }
@@ -379,7 +465,7 @@ export const FilesPanel: Component<{
 
   const reloadRoot = async (root: TreeRoot) => {
     if (root.kind === 'kiln') await loadKilnTree(root.path);
-    else await loadProjectTree(root);
+    else await refreshProjectTree(root);
   };
 
   /** Surface a mutation failure in the banner without killing the tree. */
@@ -403,7 +489,12 @@ export const FilesPanel: Component<{
     if (toRel === relPath) return;
     void (async () => {
       try {
-        const outcome = await fsMove(root.path, root.kind, relPath, toRel);
+        const outcome = await moveEntry.mutateAsync({
+          root: root.path,
+          kind: root.kind,
+          fromRel: relPath,
+          toRel,
+        });
         const skipped = outcome.skipped?.length ?? 0;
         setError(
           skipped > 0
@@ -425,7 +516,7 @@ export const FilesPanel: Component<{
     const rel = dirRel ? `${dirRel}/${file}` : file;
     const abs = `${root.path}/${rel}`;
     runMutation(root, async () => {
-      await saveFileContent(abs, '');
+      await saveFile.mutateAsync({ path: abs, content: '' });
       if (dirRel) treeApi?.().expand([dirRel]);
       openFileInEditor(abs, file);
     });
@@ -449,7 +540,7 @@ export const FilesPanel: Component<{
         break;
       case 'refresh':
         // Project-only: refetch this folder (top-level refetch keeps it simple).
-        if (root.kind === 'project') void loadProjectTree(root);
+        if (root.kind === 'project') void refreshProjectTree(root);
         break;
       case 'toggle-hidden':
         toggleHidden();
@@ -468,7 +559,7 @@ export const FilesPanel: Component<{
         if (name === null || !isValidName(name)) break;
         const rel = node.relPath ? `${node.relPath}/${name}` : name;
         runMutation(root, async () => {
-          await fsMkdir(root.path, root.kind, rel);
+          await makeFolder.mutateAsync({ root: root.path, kind: root.kind, relPath: rel });
           treeApi?.().expand([node.relPath]);
         });
         break;
@@ -476,7 +567,11 @@ export const FilesPanel: Component<{
       case 'delete': {
         if (!window.confirm(`Move "${node.name}" to trash?`)) break;
         runMutation(root, async () => {
-          await fsTrash(root.path, root.kind, node.relPath);
+          await trashEntry.mutateAsync({
+            root: root.path,
+            kind: root.kind,
+            relPath: node.relPath,
+          });
           closeTabsUnder(node.absPath, node.isDir);
         });
         break;
@@ -564,7 +659,7 @@ export const FilesPanel: Component<{
     if (invalidate && invalidate.length > 0 && root.kind === 'project') {
       // Defensive path (unused in P1: only kiln dirs are watched). Any loaded
       // folder change -> refetch the whole top level (keeps it simple).
-      void loadProjectTree(root);
+      void refreshProjectTree(root);
     }
   });
 
@@ -593,7 +688,7 @@ export const FilesPanel: Component<{
     // Project roots are refresh-on-interaction: refetch expanded folders on focus.
     const onFocus = () => {
       const root = activeRoot();
-      if (root?.kind === 'project') void loadProjectTree(root);
+      if (root?.kind === 'project') void refreshProjectTree(root);
     };
     window.addEventListener('focus', onFocus);
     onCleanup(() => {
@@ -686,7 +781,7 @@ export const FilesPanel: Component<{
               title="Refresh"
               onClick={() => {
                 const r = activeRoot();
-                if (r) void loadProjectTree(r);
+                if (r) void refreshProjectTree(r);
               }}
               class="p-1 rounded hover:bg-hover-wash text-muted"
             >

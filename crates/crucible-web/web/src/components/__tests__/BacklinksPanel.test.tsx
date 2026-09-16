@@ -34,6 +34,12 @@ import { BacklinksPanel, noteKeyForPath } from '../BacklinksPanel';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
 
+/** The linking note's text on disk: one line, and it names the focused note. */
+const LINKER_NOTE = 'intro line\n\nsee [[notes/focused]] for the rest\n';
+
+/** The path of every file read the daemon answered, in order. */
+let reads: string[] = [];
+
 const RESPONSE: BacklinksResponse = {
   note: { path: 'notes/focused.md', abs_path: '/kiln/notes/focused.md', title: 'Focused Note' },
   linked: [
@@ -55,7 +61,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   resetKilnsForTests();
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [{ path: '/kiln', name: 'kiln' }] }) });
+  reads = [];
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [{ path: '/kiln', name: 'kiln' }] }),
+    // The snippet beside each row is the linking note's own text, read through
+    // the shared file cache rather than a mocked module.
+    'GET /api/kiln/file': (request: Request) => {
+      reads.push(new URL(request.url).searchParams.get('path') ?? '');
+      return { content: LINKER_NOTE, content_hash: 'hash-1' };
+    },
+  });
   activeFilePath = '/kiln/notes/focused.md';
   openFileContent = 'Other Note is mentioned here.';
   getConfigMock.mockResolvedValue({ kiln_path: '/kiln' });
@@ -88,6 +103,11 @@ describe('BacklinksPanel', () => {
     expect(linked[0].textContent).toContain('notes/linker.md');
     // Rows opt into the app-wide hover preview.
     expect(linked[0].getAttribute('data-note')).toBe('linker');
+
+    // The snippet is the line of the linking note that carries the link, read
+    // through the file cache every other panel reads.
+    await waitFor(() => expect(getByTestId('backlinks-snippet').textContent).toContain('see'));
+    expect(reads).toEqual(['/kiln/notes/linker.md']);
 
     const unlinked = getAllByTestId('backlinks-unlinked-item');
     expect(unlinked).toHaveLength(1);

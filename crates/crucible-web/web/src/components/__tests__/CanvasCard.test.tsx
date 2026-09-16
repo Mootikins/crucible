@@ -1,15 +1,37 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
-const getFileContentMock = vi.fn();
-const saveFileContentMock = vi.fn();
+// `@/lib/api` is NOT mocked: the card reads the file through the shared cache
+// of `lib/query/fs.ts`, and the point of several cases below is the COUNT of
+// reads that reach the daemon. A module mock would sit in front of the cache
+// and count the card's calls instead of the daemon's.
+let env: TestQueryEnv;
+/** The path of every read the daemon answered, in order. */
+let reads: string[] = [];
+/** The body of every write the daemon took, in order. */
+let writes: { path: string; content: string }[] = [];
+/** What the daemon answers a read with. Replaced by the failure case. */
+let answerRead: (path: string) => unknown = () => ({
+  content: '# Real note\n',
+  content_hash: 'hash-1',
+});
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getFileContent: (...args: unknown[]) => getFileContentMock(...args),
-  saveFileContent: (...args: unknown[]) => saveFileContentMock(...args),
-}));
+/** The two routes one note card uses: read the bytes, write them back. */
+function fileRoutes() {
+  return {
+    'GET /api/kiln/file': (request: Request) => {
+      const path = new URL(request.url).searchParams.get('path') ?? '';
+      reads.push(path);
+      return answerRead(path);
+    },
+    'PUT /api/kiln/file': async (request: Request) => {
+      writes.push((await request.json()) as { path: string; content: string });
+      return {};
+    },
+  };
+}
 
 // CodeMirror needs layout APIs jsdom lacks; the embed's own behaviour (load,
 // dirty tracking, flush-on-unmount) is what matters here, so stand in a plain
@@ -28,10 +50,14 @@ import { CanvasNoteCard } from '../canvas/CanvasCard';
 
 describe('CanvasNoteCard', () => {
   beforeEach(() => {
-    getFileContentMock.mockReset();
-    saveFileContentMock.mockReset();
-    getFileContentMock.mockResolvedValue('# Real note\n');
-    saveFileContentMock.mockResolvedValue(undefined);
+    reads = [];
+    writes = [];
+    answerRead = () => ({ content: '# Real note\n', content_hash: 'hash-1' });
+    env = createTestQueryEnv(fileRoutes());
+  });
+
+  afterEach(() => {
+    env.restore();
   });
 
   it('loads the real note content', async () => {
@@ -41,7 +67,7 @@ describe('CanvasNoteCard', () => {
 
     const embed = await findByTestId('canvas-note-embed');
     await waitFor(() => expect(embed.textContent).toContain('Real note'));
-    expect(getFileContentMock).toHaveBeenCalledWith('/kiln/Notes/A.md');
+    expect(reads).toEqual(['/kiln/Notes/A.md']);
   });
 
   /** A card is a window onto the file, not a copy — so it is read-only until selected. */
@@ -77,12 +103,12 @@ describe('CanvasNoteCard', () => {
     editor.value = '# Edited\n';
     editor.dispatchEvent(new Event('input', { bubbles: true }));
 
-    await waitFor(() => expect(saveFileContentMock).not.toHaveBeenCalled());
+    await waitFor(() => expect(writes).toEqual([]));
 
     unmount();
 
     await waitFor(() =>
-      expect(saveFileContentMock).toHaveBeenCalledWith('/kiln/Notes/A.md', '# Edited\n'),
+      expect(writes).toEqual([{ path: '/kiln/Notes/A.md', content: '# Edited\n' }]),
     );
   });
 
@@ -111,15 +137,12 @@ describe('CanvasNoteCard', () => {
     ));
 
     await findByTestId('canvas-note-embed');
-    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(reads).toHaveLength(1));
 
     for (let i = 1; i <= 20; i++) setTick(i);
     await new Promise((r) => setTimeout(r, 30));
 
-    expect(
-      getFileContentMock.mock.calls.length,
-      'a card must fetch once, not once per document change',
-    ).toBe(1);
+    expect(reads.length, 'a card must fetch once, not once per document change').toBe(1);
   });
 
   /** The complementary case: a REAL path change must refetch. */
@@ -130,20 +153,28 @@ describe('CanvasNoteCard', () => {
     ));
 
     await findByTestId('canvas-note-embed');
-    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(reads).toHaveLength(1));
 
     setName('B');
-    await waitFor(() => expect(getFileContentMock).toHaveBeenCalledTimes(2));
-    expect(getFileContentMock).toHaveBeenLastCalledWith('/kiln/Notes/B.md');
+    await waitFor(() => expect(reads).toHaveLength(2));
+    expect(reads.at(-1)).toBe('/kiln/Notes/B.md');
   });
 
   it('surfaces a load failure', async () => {
-    getFileContentMock.mockRejectedValue(new Error('File not found'));
+    answerRead = () =>
+      new Response(JSON.stringify({ error: { code: 404, message: 'File not found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     const { findByTestId } = render(() => (
       <CanvasNoteCard absPath="/kiln/Notes/Missing.md" editable={false} />
     ));
 
+    // The banner carries what the read stack says, which is the daemon's
+    // status and the call that failed. The card must not swallow it and paint
+    // an empty note instead.
     const err = await findByTestId('canvas-embed-error');
-    expect(err.textContent).toContain('File not found');
+    expect(err.textContent).toContain('Failed to read file');
+    expect(err.textContent).toContain('404');
   });
 });

@@ -1,7 +1,7 @@
 import { Component, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { CodeMirrorEditor } from '../editor/CodeMirrorEditor';
 import { MarkdownPreview } from '../editor/MarkdownPreview';
-import { getFileContent, saveFileContent } from '@/lib/api';
+import { saveFileOnce, useGetFileContent } from '@/lib/query/fs';
 import { openNoteInEditor } from '@/lib/note-actions';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { Code, Eye } from '@/lib/icons';
@@ -149,8 +149,13 @@ export const CanvasNoteCard: Component<{
   // it only notifies when the path actually changes.
   const path = createMemo(() => props.absPath);
 
+  // The file's bytes, from the one cache every file reader shares. Two cards
+  // showing one note, or a card showing the note the editor has open, now cost
+  // one read between them, and a write by another client reaches all of them.
+  const onDisk = useGetFileContent(path);
+
   createEffect(
-    on(path, (current) => {
+    on(path, () => {
       // Flush before switching. Resetting `content` with a save still queued
       // meant the timer either saw `null` and silently dropped the edit, or
       // fired after the new file loaded and wrote ITS content back over the
@@ -158,11 +163,21 @@ export const CanvasNoteCard: Component<{
       flushPending();
       setError(null);
       setContent(null);
-      getFileContent(current)
-        .then((text: string) => setContent(text))
-        .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
     }),
   );
+
+  // A card the user is typing into keeps its own text: the queued edit is the
+  // newer of the two, and adopting the disk here would delete it mid-keystroke.
+  createEffect(() => {
+    const text = onDisk.data;
+    if (text === undefined || dirty()) return;
+    setContent(text);
+  });
+
+  createEffect(() => {
+    const failure = onDisk.error;
+    if (failure) setError(failure.message);
+  });
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   // The path the pending edit belongs to. A queued save must land on the file
@@ -183,7 +198,7 @@ export const CanvasNoteCard: Component<{
     const target = pendingPath ?? props.absPath;
     if (text === null) return;
     try {
-      await saveFileContent(target, text);
+      await saveFileOnce(target, text);
       if (target === props.absPath) setDirty(false);
       pendingPath = null;
     } catch (e) {

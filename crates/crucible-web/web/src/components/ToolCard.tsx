@@ -5,7 +5,7 @@ import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
 import { extractDiffFromToolCall, applyToolDiff } from '@/lib/tool-diffs';
 import { openFileWithDiff } from '@/lib/file-actions';
-import { getFileContent } from '@/lib/api';
+import { fetchFileContentOnce } from '@/lib/query/fs';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
 import { notificationActions } from '@/stores/notificationStore';
@@ -236,7 +236,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       const wholeFile = d.kind === 'single' && d.oldContent === '';
       let original: string;
       try {
-        original = await getFileContent(d.fileName);
+        original = await fetchFileContentOnce(d.fileName);
       } catch {
         if (!wholeFile) {
           notificationActions.addNotification(
