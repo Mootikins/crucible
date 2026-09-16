@@ -280,8 +280,9 @@
     /* ── Role radii (2026-09-15 refinement, R6) ──────────────────────────
      * One radius per control class. `rounded-control` for inputs, chips and
      * buttons; `rounded-card` for cards, popovers and menus; `rounded-composer`
-     * for the prompt field, fixed so it does not change between one line and
-     * many. Circles stay for icon buttons only. */
+     * for the prompt field once it holds more than one line (at one line it
+     * is a 9999px stadium; see `.composer-surface[data-lines]`). Circles stay
+     * for icon buttons only. */
     --cru-radius-control: 6px;
     --cru-radius-card: 10px;
     --cru-radius-composer: 18px;
@@ -831,29 +832,21 @@
   }
 
   /* ── The composer surface ───────────────────────────────────────────
-     THE RULE. The radius stays at `--radius-composer` (18px) at every
-     height. The border colour steps through three values: hairline at
-     rest, hairline-strong under the pointer, ember while the caret is in
-     the field. There is no shadow.
+     THE RULE. The radius follows the line count: a 9999px stadium while
+     the prompt holds ONE line, so the ends are full semicircles, and
+     `--radius-composer` (18px) once it holds more, because a tall stadium
+     reads wrong. The card states the count as `data-lines`; the rules are
+     in styles/refine-composer.css. The border colour steps through three
+     values: hairline at rest, hairline-strong under the pointer, ember
+     while the caret is in the field. There is no shadow.
 
      The three steps move ONE property, so the control keeps its size and
      its position as its state changes. The field needs no shadow: it sits
      flush at the foot of a panel, and nothing sits behind it to float
      above. The elevation note in this file gives the border that job.
 
-     The field was a 9999px pill, and it squared off to 10px as soon as
-     the text wrapped. A true semicircle takes the clearance away from the
-     first and the last character of a wrapped line. A control that
-     changes shape as you type reads as an animation, not as a field. A
-     `data-multiline` attribute drove that morph. The composer no longer
-     sets that attribute, so no rule reads it.
-
-     The transition carries the border colour only. No radius is left to
-     animate, and the padding no longer moves with the height.
-
-     styles/refine-composer.css repeats the radius and the transition with
-     the same values. That lane file can fold back into this block and
-     change nothing. The docked-state corners stay in the lane file. */
+     The transition carries the border colour only. The padding does not
+     move with the height. */
   .composer-surface {
     border-radius: var(--radius-composer);
     border: 1px solid var(--color-hairline);

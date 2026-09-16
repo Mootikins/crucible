@@ -37,7 +37,8 @@ vi.mock('@/lib/api', () => ({
     Promise.resolve(
       provider.plugin === 'oci'
         ? [
-            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:' },
+            // Flagged by the provider: this is what an untouched session gets.
+            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:', default: true },
             { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
           ]
         : [
@@ -114,7 +115,8 @@ beforeEach(async () => {
     Promise.resolve(
       provider.plugin === 'oci'
         ? [
-            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:' },
+            // Flagged by the provider: this is what an untouched session gets.
+            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:', default: true },
             { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
           ]
         : [
@@ -143,13 +145,16 @@ describe('CenterComposer', () => {
     await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
   });
 
-  it('shows the model chip as Auto, not a "choose one" placeholder', async () => {
+  it('shows the model chip as the provider default, not a "choose one" placeholder', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
     const chip = await waitFor(() => getByTestId('composer-model'));
-    // An unset model IS the Auto row (provider default) — the chip names it
-    // rather than implying a choice is still owed.
-    expect(chip.textContent).toContain('Auto');
+    // An unset model IS the provider default — the chip names the model
+    // that will run, marked as the default, rather than implying a choice
+    // is still owed. The Auto row stays in the list as the way to say so.
+    await waitFor(() => expect(chip.textContent).toContain('llama3.2 · default'));
     expect(chip.textContent).not.toContain('Select model');
+    fireEvent.click(chip);
+    expect(screen.getByText('Auto')).toBeInTheDocument();
   });
 
   // The draft chip and the in-session chip name the same fact and read
@@ -164,19 +169,46 @@ describe('CenterComposer', () => {
   it('shows the model value without an axis label', async () => {
     const { getByTestId } = render(() => <CenterComposer />);
     const chip = await waitFor(() => getByTestId('composer-model'));
-    expect(chip.textContent).toContain('Auto');
+    await waitFor(() => expect(chip.textContent).toContain('llama3.2'));
     expect(chip.textContent).not.toContain('Model ·');
   });
 
-  it('draws the model chip and the mic below the prompt, not inside it', async () => {
-    const { getByTestId } = render(() => <CenterComposer />);
+  it('draws every context chip on the shared row BELOW the capsule, never inside it', async () => {
+    const { getByTestId, queryByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
     const surface = document.querySelector('.composer-surface') as HTMLElement;
+    const row = getByTestId('composer-chip-row');
 
     expect(surface.contains(getByTestId('composer-input'))).toBe(true);
     expect(surface.contains(getByTestId('composer-send'))).toBe(true);
-    expect(surface.contains(getByTestId('composer-model'))).toBe(false);
-    expect(getByTestId('composer-controls').contains(getByTestId('composer-model'))).toBe(true);
+    // The row is the same component the live session draws, under the capsule.
+    expect(surface.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The draft used to draw its chips on a row ABOVE the card.
+    expect(queryByTestId('composer-context')).toBeNull();
+    const ids = ['composer-kiln', 'composer-project', 'composer-target', 'composer-agent', 'composer-model'];
+    for (const id of ids) {
+      expect(surface.contains(getByTestId(id)), `${id} is inside the capsule`).toBe(false);
+      expect(row.contains(getByTestId(id)), `${id} is off the row`).toBe(true);
+    }
+    const order = Array.from(row.querySelectorAll('[data-testid]')).map((e) =>
+      e.getAttribute('data-testid'),
+    );
+    expect(ids.map((id) => order.indexOf(id))).toEqual([...ids.map((id) => order.indexOf(id))].sort((a, b) => a - b));
+  });
+
+  it('reads every untouched axis as its default, marked as such', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-model')).toBeInTheDocument());
+    expect(getByTestId('composer-project').textContent).toContain('Session folder · default');
+    expect(getByTestId('composer-agent').textContent).toContain('Internal agent · default');
+    expect(getByTestId('composer-model').textContent).toContain('· default');
+  });
+
+  it('starts as one line, so the prompt is a pill until the message wraps', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    const textarea = await waitFor(() => getByTestId('composer-input'));
+    expect(textarea.getAttribute('rows')).toBe('1');
+    expect((document.querySelector('.composer-surface') as HTMLElement).getAttribute('data-lines')).toBe('one');
   });
 
   it('marks each ACP agent row with its own icon', async () => {
@@ -434,6 +466,52 @@ describe('CenterComposer', () => {
     expect(await submitWith(getByTestId, 'default env')).toMatchObject({
       isolation: { plugin: 'oci', target: '' },
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // The chips name the ACTUAL default, as the daemon's providers declared it.
+  // 'Project default' said only that a default exists; the user asked what it
+  // is — a container, or this machine.
+  // ---------------------------------------------------------------------------
+
+  it('names the runtime the provider flagged as the project default', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() =>
+      expect(getByTestId('composer-target').textContent).toContain('Container · default'),
+    );
+    // Untouched is still untouched: naming the default sends nothing.
+    expect(await submitWith(getByTestId, 'untouched')).not.toHaveProperty('isolation');
+  });
+
+  it('names this machine as the default when no provider claims the session', async () => {
+    const { getProviderTargets } = await import('@/lib/api');
+    // Profiles only: the provider offers rows but flags none as what an
+    // unset session gets, so an unset session runs here.
+    vi.mocked(getProviderTargets).mockResolvedValue([
+      { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
+    ]);
+
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() =>
+      expect(getByTestId('composer-target').textContent).toContain('This PC · default'),
+    );
+  });
+
+  it('says only that a default applies until the provider has answered', async () => {
+    const { getProviderTargets } = await import('@/lib/api');
+    vi.mocked(getProviderTargets).mockReturnValue(new Promise(() => {}));
+
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-target')).toBeInTheDocument());
+    expect(getByTestId('composer-target').textContent).toContain('Project default');
+    expect(getByTestId('composer-target').textContent).not.toContain('This PC');
+  });
+
+  it('names the current checkout as the workspace default', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() =>
+      expect(getByTestId('composer-workspace-target').textContent).toContain('master · default'),
+    );
   });
 
   // The axes are independent, and this is the combination the oci plugin

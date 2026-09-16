@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, waitFor, fireEvent, screen, within } from '@solidjs/testing-library';
-import { SessionScopeChips } from '../SessionScopeChips';
+import { useSessionScopeChips } from '../SessionScopeChips';
+import { ChipRow } from '@/components/composer/ChipRow';
 import type { Session } from '@/lib/types';
+
+/** The chips as the live composer draws them: on the shared row. */
+const SessionScopeChips = () => {
+  const chips = useSessionScopeChips();
+  return <ChipRow chips={chips()} />;
+};
 
 let mockSession: Session;
 const applySessionScopeMock = vi.fn();

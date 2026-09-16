@@ -3,6 +3,7 @@ import { MicButton } from '@/components/MicButton';
 import { AutocompletePopup } from '@/components/AutocompletePopup';
 import { useAutocomplete } from '@/hooks/useAutocomplete';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
+import { ChipRow, type ComposerChip } from '@/components/composer/ChipRow';
 
 /** Tallest the prompt grows before it scrolls inside itself. */
 const MAX_HEIGHT_PX = 160;
@@ -28,13 +29,12 @@ export interface ComposerCardProps {
    * before the Enter-to-submit default (so a handler can claim Enter).
    */
   onKeyDown?: (e: KeyboardEvent) => void;
-  /** Pickers for the row below the prompt — model, mode, agent. */
-  chips?: JSX.Element;
   /**
-   * The quietest content of the row below, after the mic — session scope on
-   * the live composer. It comes last because it changes least.
+   * The chip row under the capsule, as data. The draft lists its context
+   * (kiln, project, workspace, runtime, agent, model); the live session
+   * lists model, mode, project, kiln and status. Same row, different list.
    */
-  trailing?: JSX.Element;
+  chips?: ComposerChip[];
   /** The commit button — send, or cancel mid-stream. */
   action: JSX.Element;
   /**
@@ -46,7 +46,7 @@ export interface ComposerCardProps {
 
 /**
  * The shared composer: the prompt and its commit button in one surface, with
- * every picker in a quiet row below it.
+ * every picker on ONE chip row below it (`ChipRow`), built from data.
  *
  * The prompt holds ONLY the text and the button. Chips inside the field made
  * the field look like a toolbar: the model id, the mode and the mic all sat
@@ -61,14 +61,18 @@ export interface ComposerCardProps {
  * above the field at exactly the field's width, the way the reference surfaces
  * dock theirs.
  *
- * The in-session chat input and the new-session launchpad share this. They
- * were byte-identical copies down to the class list, differing only in their
- * chips and commit button — and the copies had already diverged in behaviour:
- * only one of them wired up completion.
+ * The in-session chat input and the new-session launchpad share this — the
+ * same capsule and the same chip row, differing only in the chip LIST and
+ * the commit button. They were byte-identical copies once, and the copies
+ * had already diverged: only one wired up completion, and the draft drew its
+ * chips above the field while the session drew them below.
  */
 export const ComposerCard: Component<ComposerCardProps> = (props) => {
   const [textareaRef, setTextareaRef] = createSignal<HTMLTextAreaElement | undefined>();
   const [cardRef, setCardRef] = createSignal<HTMLDivElement | undefined>();
+  // 'one' while the prompt holds a single line, 'many' once it wraps or
+  // breaks. The card reads it to pick its radius (see `refine-composer.css`).
+  const [lines, setLines] = createSignal<'one' | 'many'>('one');
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
 
 
@@ -90,6 +94,29 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
   const resize = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
+    setLines(lineCount(el));
+  };
+
+  /**
+   * One line, or more.
+   *
+   * A hard break is one line too many whatever the width. A soft wrap shows
+   * only in the geometry: with `height: auto` in place, `scrollHeight` is
+   * the content height, and content taller than one line-height plus the
+   * vertical padding has wrapped. jsdom reports no geometry at all, so the
+   * break check comes first and stands on its own.
+   */
+  const lineCount = (el: HTMLTextAreaElement): 'one' | 'many' => {
+    // An empty prompt is one line whatever its placeholder does: Chromium
+    // counts a wrapped placeholder in `scrollHeight`, and a placeholder is
+    // not the message.
+    if (el.value === '') return 'one';
+    if (el.value.includes('\n')) return 'many';
+    const cs = getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight);
+    if (!Number.isFinite(line) || line <= 0) return 'one';
+    const single = line + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    return el.scrollHeight > single + 1 ? 'many' : 'one';
   };
 
   // Re-fit on EVERY value change, not just on keystrokes: a send clears the
@@ -136,12 +163,14 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
     <div class="relative">
       <div
         ref={setCardRef}
-        // ONE padding. The radius no longer changes with the line count, so
-        // there is no arc for the content to clear at one height and not at
-        // another. `data-docked` squares the top edge under a docked card;
-        // both radii live in `refine-composer.css`, which is unlayered and
-        // therefore wins over a Tailwind radius utility here.
+        // ONE padding at every height. The RADIUS follows `data-lines`: a
+        // full stadium while the prompt is one line, the card radius once it
+        // wraps, because a tall stadium reads wrong. `data-docked` squares
+        // the top edge under a docked card. All of the radii live in
+        // `refine-composer.css`, which is unlayered and therefore wins over
+        // a Tailwind radius utility here.
         class="composer-surface flex items-end gap-x-2 px-3.5 py-2"
+        data-lines={lines()}
         data-docked={props.docked ? 'true' : undefined}
         style={cardStyle()}
       >
@@ -184,14 +213,8 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
         {props.action}
       </div>
 
-      {/* The quiet row: the pickers, then whatever the surface considers its
-          most stable fact (the session scope). Chips carry their value only;
-          the icon and the tooltip name the role. The row wraps when a pane is
-          narrower than the chips, so nothing hides behind a scroll edge. */}
-      <div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-1" data-testid="composer-controls">
-        {props.chips}
-        {props.trailing}
-      </div>
+      {/* The chip row, UNDER the capsule on both surfaces. */}
+      <ChipRow chips={props.chips ?? []} />
 
       <Show when={autocomplete.isOpen()}>
         <AutocompletePopup

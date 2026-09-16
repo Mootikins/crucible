@@ -1,24 +1,41 @@
 /* Refinement lane: R1 composer pill + R3 docked permission. Owned by that lane; see docs/Meta/Analysis/2026-09-15 Web UI Review.md. */
 
-/* ── One radius, at every height ───────────────────────────────────────
-   The prompt was a 9999px pill that squared off to 10px the moment the
-   text wrapped. Two problems, and the morph made both worse: a true
-   semicircle costs the first and last characters of a wrapped line their
-   clearance, and a control that changes shape as you type reads as an
-   animation rather than as a field. `--radius-composer` (18px) holds at
-   one line and at ten, so the field keeps one shape while you fill it.
+/* ── A pill at one line, a card at many ──────────────────────────────
+   The prompt is a stadium while it holds one line: a 9999px radius makes
+   the left and right ends full semicircles of the height. The moment
+   the text needs a second line the radius drops to `--radius-composer`
+   (18px), because a stadium as tall as three lines reads as a blob, and
+   a true semicircle costs the first and last characters of every
+   wrapped line their clearance. The card states the count as
+   `data-lines` (ComposerCard.tsx measures it), so the switch is one
+   attribute and these two rules.
 
-   These rules are UNLAYERED on purpose. index.css declares the pill
+   These rules are UNLAYERED on purpose. index.css declares the surface
    inside `@layer components`, and unlayered CSS wins over layered CSS
    whatever the specificity, so this lane needs no `!important` and no
    selector arms race. The border steps (hairline → hairline-strong →
    ember) and the recording gradient stay exactly as index.css sets them;
-   only the radius and the transition change here. */
+   only the radius and the transition change here. The focus treatment
+   is the border itself, so it follows whichever radius is in force. */
 .composer-surface {
   border-radius: var(--radius-composer);
-  /* Border colour only. There is no radius left to animate, and a
-     padding transition went with the morph. */
+  /* Border colour only. The radius switches, it does not animate: a
+     morph between the two shapes reads as an animation, not a field. */
   transition: border-color 140ms ease;
+}
+
+.composer-surface[data-lines='one'] {
+  border-radius: 9999px;
+}
+
+/* The placeholder never wraps. Chromium counts a wrapped placeholder in
+   the textarea's `scrollHeight`, so a long prompt hint in a narrow pane
+   grew the empty field to two lines and broke the pill before a word
+   was typed. A hint is not the message; it clips with an ellipsis. */
+.composer-surface textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── The docked seam ───────────────────────────────────────────────────

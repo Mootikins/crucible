@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onMount } from 'solid-js';
+import { Accessor, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { connectSessionKiln, disconnectSessionKiln, listKilns } from '@/lib/api';
@@ -7,13 +7,15 @@ import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { swrLocal } from '@/lib/local-cache';
-import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
+import type { ChipOption } from '@/components/composer/ChipSelect';
+import type { ComposerChip } from '@/components/composer/ChipRow';
 import { FlaskConical, FolderGit2 } from '@/lib/icons';
 
 /**
- * Session-scope strip below the chat input: the workspace the session acts in
- * and the kilns it knows. Same icons as the launchpad composer (project =
- * FolderGit2, kiln = FlaskConical) so the two surfaces read identically.
+ * The session-scope chips for the live composer's row: the workspace the
+ * session acts in and the kilns it knows. Same icons as the draft composer
+ * (project = FolderGit2, kiln = FlaskConical), and the same row component,
+ * so the two surfaces read identically.
  *
  * The project chip is static. A session's workspace is fixed at creation —
  * the daemon refuses `session.set_workspace` for every session — so the chip
@@ -21,8 +23,11 @@ import { FlaskConical, FolderGit2 } from '@/lib/icons';
  * still attaches and detaches mid-session: the daemon rejects mutations
  * mid-turn, re-checks trust on attach, and rebuilds the agent's tools/prompt
  * on the next turn.
+ *
+ * A hook rather than a component: the row is built from data, and this is
+ * where the live session's scope data comes from. Empty with no session.
  */
-export const SessionScopeChips: Component = () => {
+export function useSessionScopeChips(): Accessor<ComposerChip[]> {
   const { currentSession, applySessionScope } = useSessionSafe();
   const { isStreaming } = useChatSafe();
 
@@ -120,7 +125,7 @@ export const SessionScopeChips: Component = () => {
    * leaves it plausible that note search still works. It does not: the daemon
    * does not register the knowledge tools for a kiln-less session.
    */
-  const emptyKilnNote = () => (
+  const emptyKilnNote = (
     <div
       class="px-3 py-2 text-xs text-muted-dark border-t border-hairline"
       data-testid="scope-kiln-empty"
@@ -145,36 +150,33 @@ export const SessionScopeChips: Component = () => {
     }
   };
 
-  return (
-    <Show when={session()}>
-      {/* No margin of its own: this sits inside the composer's control row,
-          which owns the spacing for everything on it. */}
-      <div class="contents" data-testid="context-chips">
-        {/* Same footprint as the ChipSelect trigger beside it, minus the caret:
-            it is a label, not a control, and must not look like one. The
-            title carries the full path, as the kiln rows carry theirs. */}
-        <span
-          class="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs max-w-[220px] text-shell-body"
-          title={workspace() ?? 'Session folder — unique to this session'}
-          data-testid="scope-project"
-        >
-          <FolderGit2 class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />
-          <span class="truncate">{projectLabel()}</span>
-        </span>
-        <ChipSelect
-          name="kiln"
-          icon={FlaskConical}
-          multi
-          options={kilnOptions()}
-          value={kilnChipValue()}
-          selected={selectedKilns()}
-          triggerLabel={kilnTriggerLabel()}
-          onSelect={toggleKiln}
-          disabled={disabled()}
-          testid="scope-kiln"
-          footer={selectedKilns().length === 0 ? emptyKilnNote() : undefined}
-        />
-      </div>
-    </Show>
-  );
-};
+  return () => {
+    if (!session()) return [];
+    return [
+      {
+        key: 'project',
+        label: 'Project',
+        value: projectLabel(),
+        // The title carries the full path, as the kiln rows carry theirs.
+        title: workspace() ?? 'Session folder — unique to this session',
+        icon: FolderGit2,
+        testid: 'scope-project',
+        render: 'static',
+      },
+      {
+        key: 'kiln',
+        label: 'Kiln',
+        value: kilnChipValue(),
+        valueLabel: kilnTriggerLabel(),
+        icon: FlaskConical,
+        options: kilnOptions(),
+        onSelect: toggleKiln,
+        multi: true,
+        selected: selectedKilns(),
+        disabled: disabled(),
+        testid: 'scope-kiln',
+        select: { footer: selectedKilns().length === 0 ? emptyKilnNote : undefined },
+      },
+    ];
+  };
+}

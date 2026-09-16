@@ -87,6 +87,8 @@ export const ChipSelect: Component<{
   /** Override the trigger's text outright (e.g. multi mode showing the anchor
    * item's name + "+N" instead of the default count badge). */
   triggerLabel?: string;
+  /** Muted word after the text — `docs · default` says what '' resolves to. */
+  triggerHint?: string;
   /** Always-visible footer action (Cursor's "Add repo" idiom): a labeled row
    * that flips inline into an input + confirm button. Unlike `create`, this
    * is DISCOVERABLE — it does not require typing into the filter first. */
@@ -439,6 +441,10 @@ export const ChipSelect: Component<{
             <span class="text-muted-dark">{props.role} · </span>
           </Show>
           {display()}
+          <Show when={props.triggerHint}>
+            {' · '}
+            <span class="text-muted-dark">{props.triggerHint}</span>
+          </Show>
         </span>
         {/* Quiet at rest, full strength once the pointer or the popout is on
             it. The chip is a control, so the caret has to be findable — but a

@@ -28,7 +28,8 @@ import { syncRecentsFromServer } from '@/lib/recent-files';
 import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
-import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
+import type { ChipOption } from '@/components/composer/ChipSelect';
+import type { ComposerChip } from '@/components/composer/ChipRow';
 import { iconForAgent } from '@/lib/agent-icons';
 import {
   ArrowUp,
@@ -55,9 +56,10 @@ const PROVIDER_ICONS: Record<string, Component<{ class?: string }>> = {
 const iconForProvider = (plugin: string) => PROVIDER_ICONS[plugin] ?? FlaskConical;
 
 /**
- * The session-creation surface — the content of a "New Session" tab. Context
- * chips (kiln / project / agent) over a prompt box with the model picker in
- * its footer. Nothing touches the daemon until the first message is sent
+ * The session-creation surface — the content of a "New Session" tab. The
+ * shared composer: a prompt capsule with the context chips (kiln / project /
+ * workspace / runtime / agent / model) on the chip row under it, the same
+ * row the live session draws. Nothing touches the daemon until the first message is sent
  * (lazy creation); the created chat docks right per WS-220 and this tab
  * closes behind it, leaving the center as the editing surface.
  *
@@ -257,21 +259,6 @@ export const CenterComposer: Component<{
   const selectedKilnPath = () => kilnPathForName(kilnsForCreate()[0], kilns());
 
   /**
-   * What the closed chip reads.
-   *
-   * Spelled out rather than left to ChipSelect's value→option lookup, because
-   * the '' row is conditional. A `placeholder` cannot do this job: ChipSelect
-   * shows a placeholder for ANY empty value, so it would read "No kiln" even
-   * when '' does resolve to the configured default — the chip would deny a
-   * kiln the session is about to get. Every branch here is the truth about
-   * what `kilnsForCreate` will send.
-   */
-  const kilnTriggerLabel = () => {
-    if (kiln() === 'none') return 'No kiln';
-    return kiln() || defaultKilnName() || 'No kiln';
-  };
-
-  /**
    * Re-enumerate every provider on one axis for the selected project.
    *
    * Providers answer per-project — a branch list belongs to a repo — so this
@@ -284,13 +271,19 @@ export const CenterComposer: Component<{
     providers: TargetProvider[],
     ws: string,
     set: (v: Record<string, ProviderTarget[]>) => void,
+    ready: (v: boolean) => void,
   ) => {
-    if (providers.length === 0) return set({});
+    ready(false);
+    if (providers.length === 0) {
+      set({});
+      return ready(true);
+    }
     void Promise.all(
       providers.map((p) => getProviderTargets(p, ws || undefined).then((t) => [p.plugin, t] as const)),
     ).then((entries) => {
       if (workspace() !== ws) return;
       set(Object.fromEntries(entries));
+      ready(true);
     });
   };
 
@@ -300,8 +293,8 @@ export const CenterComposer: Component<{
       // exist in this one. Clearing is the only safe answer; keeping it would
       // silently resolve against a repo the user did not pick it in.
       setWsTarget('');
-      loadTargets(wsp, ws, setWsTargets);
-      loadTargets(rtp, ws, setRtTargets);
+      loadTargets(wsp, ws, setWsTargets, setWsReady);
+      loadTargets(rtp, ws, setRtTargets, setRtReady);
     }),
   );
 
@@ -348,6 +341,58 @@ export const CenterComposer: Component<{
     { value: HOST, label: 'This PC', icon: Monitor, hint: 'no isolation' },
     ...axisOptions(rtProviders(), rtTargets()),
   ];
+
+  // Whether each axis's answer for the selected project has landed. Until it
+  // has, the chip says only that the project's default applies; naming the
+  // previous project's default in the meantime would name the wrong one.
+  const [wsReady, setWsReady] = createSignal(false);
+  const [rtReady, setRtReady] = createSignal(false);
+
+  /** The provider row carrying `flag`, if any provider on the axis set one. */
+  const flaggedTarget = (
+    providers: TargetProvider[],
+    targets: Record<string, ProviderTarget[]>,
+    flag: 'default' | 'current',
+  ): { provider: TargetProvider; target: ProviderTarget } | undefined => {
+    for (const provider of providers) {
+      const target = (targets[provider.plugin] ?? []).find((t) => t[flag]);
+      if (target) return { provider, target };
+    }
+    return undefined;
+  };
+
+  /**
+   * What an untouched runtime chip actually gets, named.
+   *
+   * Read off the providers, never derived here: the provider that would
+   * claim the session when it says nothing flags that row `default` (the
+   * oci plugin's unnamed row — its devcontainer or configured image, by its
+   * own precedence). No provider flagging one means no provider claims the
+   * session, and the daemon then runs it on this machine — the one rule the
+   * client states, because it is structural rather than policy: with no claim
+   * there is nothing else the process could run in.
+   */
+  const defaultRuntimeLabel = () => {
+    if (!rtReady()) return 'Project default';
+    const hit = flaggedTarget(rtProviders(), rtTargets(), 'default');
+    if (!hit) return 'This PC · default';
+    const name =
+      hit.target.label === 'Default'
+        ? hit.provider.label
+        : `${hit.provider.label} · ${hit.target.label}`;
+    return `${name} · default`;
+  };
+
+  /**
+   * What an untouched workspace chip gets: the checkout the project already
+   * is, which the worktree provider marks `current`. A project no provider
+   * answers for has no name to show, so the generic placeholder stays.
+   */
+  const defaultWorkspaceLabel = () => {
+    if (!wsReady()) return 'Project default';
+    const hit = flaggedTarget(wsProviders(), wsTargets(), 'current');
+    return hit ? `${hit.target.label} · default` : 'Project default';
+  };
 
   /** The label for a chosen spec, looked up through any submenu. */
   const specLabel = (options: ChipOption[], spec: string): string | undefined => {
@@ -442,96 +487,9 @@ export const CenterComposer: Component<{
     ...models().map((m) => ({ value: m, label: m })),
   ];
 
-  return (
-    <div class="flex-1 h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto" data-testid="center-composer">
-      <Show
-        when={!busy()}
-        fallback={
-          <div class="w-full max-w-2xl flex flex-col gap-4" data-testid="composer-pending">
-            <div class="user-quote">
-              <p class="whitespace-pre-wrap break-words">{message().trim()}</p>
-            </div>
-            <WorkingDots />
-          </div>
-        }
-      >
-        <div class="w-full max-w-2xl flex flex-col gap-2">
-          {/* Context chips — session scope reads as a sentence above the box. */}
-          <div class="flex items-center justify-center gap-1 flex-wrap" data-testid="composer-context">
-            <ChipSelect
-              name="kiln"
-              icon={FlaskConical}
-              options={kilnOptions()}
-              value={kiln()}
-              onSelect={setKiln}
-              triggerLabel={kilnTriggerLabel()}
-              disabled={busy()}
-              testid="composer-kiln"
-            />
-            <ChipSelect
-              name="project"
-              icon={FolderGit2}
-              options={
-                cloning()
-                  ? [{ value: workspace(), label: 'Cloning…', disabled: true }]
-                  : projectOptions()
-              }
-              value={workspace()}
-              onSelect={setWorkspace}
-              disabled={busy() || cloning()}
-              placeholder={cloning() ? 'Cloning…' : undefined}
-              testid="composer-project"
-              searchThreshold={1}
-              create={{
-                when: isGitRepoUrl,
-                label: (url) => `Clone ${url} as new project`,
-                run: cloneAndSelect,
-              }}
-              action={{
-                label: 'Clone a repository…',
-                placeholder: 'github.com/owner/repo or git URL',
-                buttonLabel: 'Clone',
-                validate: isGitRepoUrl,
-                run: cloneAndSelect,
-              }}
-            />
-            {/* The WORKSPACE axis — where the session's files live. Shown only
-                when a provider actually offers something for this project, so
-                a repo-less folder gets no chip rather than an empty one. This
-                replaces the old branch chip, which called `scm.worktree_add`
-                from here and confirmed with `window.confirm`; both are now the
-                worktree plugin's business and neither is in the frontend. */}
-            <Show when={wsOptions().length > 0}>
-              <ChipSelect
-                name="workspace"
-                icon={GitBranch}
-                options={wsOptions()}
-                value={wsTarget()}
-                onSelect={setWsTarget}
-                disabled={busy()}
-                // 'Project default' and not the axis name: the chip already wears the role, so
-                // an unset value has to say what happens instead of repeating it.
-                placeholder={specLabel(wsOptions(), wsTarget()) ?? 'Project default'}
-                testid="composer-workspace-target"
-                optionTestidPrefix="workspace-target"
-              />
-            </Show>
-            {/* The RUNTIME axis — where the process runs (Cursor's "Run on"
-                menu). One chip where there used to be two: a hardcoded target
-                picker whose only enabled row was "This machine", and a separate
-                isolation toggle. They were always the same question, and the
-                answer is now whatever providers published. */}
-            <ChipSelect
-              name="run on"
-              icon={Monitor}
-              options={runtimeOptions()}
-              value={runtime()}
-              onSelect={setRuntime}
-              disabled={busy()}
-              placeholder={specLabel(runtimeOptions(), runtime()) ?? 'Project default'}
-              testid="composer-target"
-              optionTestidPrefix="runtime-target"
-              footer={
+  /** The runtime chip's footer: the remote-control state, read-only. Built
+   * once; the chip list below is rebuilt on every signal it reads. */
+  const remoteControlFooter = (
                 <div class="m-1.5 mt-1 rounded-md border border-hairline bg-surface-base p-2.5">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-medium text-shell-ink">Remote control</span>
@@ -560,23 +518,153 @@ export const CenterComposer: Component<{
                     init.lua.
                   </p>
                 </div>
-              }
-            />
-            <ChipSelect
-              name="agent"
-              // The trigger wears the SELECTED agent's mark, so the chosen
-              // agent is readable without opening the picker.
-              icon={iconForAgent(agentName())}
-              options={agentOptions()}
-              value={agentName()}
-              onSelect={setAgentName}
-              disabled={busy()}
-              testid="composer-agent"
-            />
-          </div>
+  );
 
-          {/* The composer card — shared with the in-session chat input, so
-              `/command` and `[[note]]` completion work here too. */}
+  /**
+   * The draft's chip row, as data for the shared `ChipRow`.
+   *
+   * Every entry is one axis of `session.create`, and '' on every one means
+   * "untouched", shown as what that resolves to. The workspace chip appears
+   * only when a provider offers something for this project, so a repo-less
+   * folder gets no chip rather than an empty one. The WORKSPACE axis is
+   * where the session's files live; the RUNTIME axis is where its process
+   * runs (Cursor's "Run on" menu) — one chip where there used to be a
+   * hardcoded target picker and a separate isolation toggle. Both render
+   * what providers published and hand the pick back on create.
+   */
+  // The row marks a default itself (`<label> · default`), so a label that
+  // already carries the word hands over the bare name. The generic "Project
+  // default" (no provider has answered yet) is not a name and stays as it
+  // is, unmarked.
+  const bareDefault = (label: string) =>
+    label === 'Project default' ? undefined : label.replace(/ · default$/, '');
+
+  const draftChips = (): ComposerChip[] => [
+    {
+      key: 'kiln',
+      label: 'Kiln',
+      value: kiln(),
+      defaultLabel: defaultKilnName() ?? 'No kiln',
+      icon: FlaskConical,
+      options: kilnOptions(),
+      onSelect: setKiln,
+      disabled: busy(),
+      testid: 'composer-kiln',
+    },
+    {
+      key: 'project',
+      label: 'Project',
+      value: workspace(),
+      defaultLabel: cloning() ? 'Cloning…' : 'Session folder',
+      valueLabel: cloning() ? 'Cloning…' : undefined,
+      icon: FolderGit2,
+      options: cloning()
+        ? [{ value: workspace(), label: 'Cloning…', disabled: true }]
+        : projectOptions(),
+      onSelect: setWorkspace,
+      disabled: busy() || cloning(),
+      testid: 'composer-project',
+      select: {
+        searchThreshold: 1,
+        create: {
+          when: isGitRepoUrl,
+          label: (url) => `Clone ${url} as new project`,
+          run: cloneAndSelect,
+        },
+        action: {
+          label: 'Clone a repository…',
+          placeholder: 'github.com/owner/repo or git URL',
+          buttonLabel: 'Clone',
+          validate: isGitRepoUrl,
+          run: cloneAndSelect,
+        },
+      },
+    },
+    ...(wsOptions().length > 0
+      ? [
+          {
+            key: 'workspaceTarget',
+            label: 'Workspace',
+            value: wsTarget(),
+            // The actual default and not the axis name: the chip already
+            // wears the role, so an unset value says what happens instead.
+            defaultLabel: bareDefault(defaultWorkspaceLabel()),
+            valueLabel: specLabel(wsOptions(), wsTarget()),
+            select: {
+              optionTestidPrefix: 'workspace-target',
+              placeholder: bareDefault(defaultWorkspaceLabel()) ? undefined : defaultWorkspaceLabel(),
+            },
+            icon: GitBranch,
+            options: wsOptions(),
+            onSelect: setWsTarget,
+            disabled: busy(),
+            testid: 'composer-workspace-target',
+          } satisfies ComposerChip,
+        ]
+      : []),
+    {
+      key: 'runtime',
+      label: 'Run on',
+      value: runtime(),
+      defaultLabel: bareDefault(defaultRuntimeLabel()),
+      valueLabel: specLabel(runtimeOptions(), runtime()),
+      select: {
+        optionTestidPrefix: 'runtime-target',
+        footer: remoteControlFooter,
+        placeholder: bareDefault(defaultRuntimeLabel()) ? undefined : defaultRuntimeLabel(),
+      },
+      icon: Monitor,
+      options: runtimeOptions(),
+      onSelect: setRuntime,
+      disabled: busy(),
+      testid: 'composer-target',
+    },
+    {
+      key: 'agent',
+      label: 'Agent',
+      value: agentName(),
+      defaultLabel: 'Internal agent',
+      // The trigger wears the SELECTED agent's mark, so the chosen agent is
+      // readable without opening the picker.
+      icon: iconForAgent(agentName()),
+      options: agentOptions(),
+      onSelect: setAgentName,
+      disabled: busy(),
+      testid: 'composer-agent',
+    },
+    ...(isAcp()
+      ? []
+      : [
+          {
+            key: 'model',
+            label: 'Model',
+            value: model(),
+            defaultLabel: defaultModel() || 'Auto',
+            options: modelOptions(),
+            onSelect: setModel,
+            disabled: busy(),
+            testid: 'composer-model',
+          } satisfies ComposerChip,
+        ]),
+  ];
+
+  return (
+    <div class="flex-1 h-full bg-shell-bg flex flex-col items-center justify-center p-6 overflow-y-auto" data-testid="center-composer">
+      <Show
+        when={!busy()}
+        fallback={
+          <div class="w-full max-w-2xl flex flex-col gap-4" data-testid="composer-pending">
+            <div class="user-quote">
+              <p class="whitespace-pre-wrap break-words">{message().trim()}</p>
+            </div>
+            <WorkingDots />
+          </div>
+        }
+      >
+        <div class="w-full max-w-2xl">
+          {/* The composer card — shared with the in-session chat input: the
+              same capsule, the same chip row under it, and `/command` and
+              `[[note]]` completion. Only the chip LIST differs. */}
           <ComposerCard
             value={message}
             setValue={setMessage}
@@ -585,21 +673,12 @@ export const CenterComposer: Component<{
             kilnPath={selectedKilnPath}
             placeholder="Plan, build, ask — a session starts with your first message"
             ariaLabel="First message"
-            rows={3}
+            // One line at rest, so the draft is a pill until the message
+            // needs a second line — the same shape the in-session prompt has.
+            rows={1}
             testid="composer-input"
             onSubmit={() => void submit()}
-            chips={
-              <Show when={!isAcp()}>
-                <ChipSelect
-                  name="model"
-                  options={modelOptions()}
-                  value={model()}
-                  onSelect={setModel}
-                  disabled={busy()}
-                  testid="composer-model"
-                />
-              </Show>
-            }
+            chips={draftChips()}
             action={
               <button
                 type="button"

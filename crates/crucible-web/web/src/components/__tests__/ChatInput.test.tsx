@@ -238,25 +238,24 @@ describe('ChatInput — the prompt carries only the message', () => {
   /** The bordered prompt surface. */
   const surface = () => document.querySelector('.composer-surface') as HTMLElement;
 
-  it('draws the model picker below the prompt and keeps the mic in it', () => {
+  it('keeps the mic in the prompt and every chip out of it', () => {
     render(() => <ChatInput />);
-    expect(surface().contains(screen.getByTestId('model-picker-button'))).toBe(false);
     expect(surface().contains(screen.getByTestId('mic-button-mock'))).toBe(true);
-    const row = screen.getByTestId('composer-controls');
-    expect(row.contains(screen.getByTestId('model-picker-button'))).toBe(true);
-    expect(row.contains(screen.getByTestId('chat-mode-control-mock'))).toBe(true);
+    for (const id of ['model-picker-button', 'chat-mode-control-mock', 'scope-project', 'scope-kiln']) {
+      expect(surface().contains(screen.getByTestId(id)), `${id} is inside the capsule`).toBe(false);
+    }
   });
 
-  it('shares that row with the session scope, scope last', () => {
+  it('draws the shared chip row BELOW the capsule: model, mode, then the scope', () => {
     render(() => <ChatInput />);
-    const row = screen.getByTestId('composer-controls');
-    const chips = screen.getByTestId('context-chips');
-    expect(row.contains(chips)).toBe(true);
-    // The quietest thing on the row comes after the pickers.
-    expect(
-      screen.getByTestId('model-picker-button').compareDocumentPosition(chips) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    const row = screen.getByTestId('composer-chip-row');
+    expect(surface().compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const ids = Array.from(row.querySelectorAll('[data-testid]')).map((e) =>
+      e.getAttribute('data-testid'),
+    );
+    expect(ids.indexOf('model-picker-button')).toBeLessThan(ids.indexOf('chat-mode-control-mock'));
+    expect(ids.indexOf('chat-mode-control-mock')).toBeLessThan(ids.indexOf('scope-project'));
+    expect(ids.indexOf('scope-project')).toBeLessThan(ids.indexOf('scope-kiln'));
   });
 
   it('shows the model value without an axis label', () => {
@@ -307,11 +306,11 @@ describe('ChatInput — a pending request docks on the prompt', () => {
 });
 
 describe('ChatInput — session context chips', () => {
-  it('shows the kiln chip for the current session', () => {
+  it('shows the kiln chip for the current session on the shared row', () => {
     render(() => <ChatInput />);
-    const chips = screen.getByTestId('context-chips');
-    expect(chips).toBeInTheDocument();
-    expect(chips.textContent).toContain('test-kiln');
+    const row = screen.getByTestId('composer-chip-row');
+    expect(row.contains(screen.getByTestId('scope-kiln'))).toBe(true);
+    expect(screen.getByTestId('scope-kiln').textContent).toContain('test-kiln');
   });
 
   it('floating session (workspace: null) reads "Session folder" for the project chip', () => {

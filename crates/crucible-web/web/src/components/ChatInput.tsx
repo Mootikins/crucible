@@ -1,11 +1,11 @@
 import { Component, createSignal, Show, onCleanup } from 'solid-js';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { ChatModeControl, nextChatMode } from './ChatModeControl';
-import { SessionScopeChips } from './SessionScopeChips';
+import { nextChatMode } from './ChatModeControl';
+import { useSessionScopeChips } from './SessionScopeChips';
 import { SessionStatusChips } from './SessionStatusChips';
-import { ChipSelect } from '@/components/composer/ChipSelect';
 import { ComposerCard } from '@/components/composer/ComposerCard';
+import type { ComposerChip } from '@/components/composer/ChipRow';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln } from '@/lib/session-scope';
@@ -119,6 +119,34 @@ export const ChatInput: Component = () => {
     void switchModel(model);
   };
 
+  const scopeChips = useSessionScopeChips();
+  // Created ONCE. The list below is rebuilt on every signal it reads, and a
+  // component created inside it would remount (and refetch) each time.
+  const statusChips = <SessionStatusChips />;
+
+  /**
+   * The live session's chip row, as data for the shared `ChipRow`: the
+   * model, the mode, then the session's scope (project, kiln — attach and
+   * detach mid-session, Crucible Shell design 4a/5a) and the plugin status
+   * chips (review policy and the like). The same row the draft draws, with
+   * fewer and simpler chips.
+   */
+  const liveChips = (): ComposerChip[] => [
+    {
+      key: 'model',
+      label: 'Model',
+      value: currentSession()?.agent_model ?? '',
+      options: availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) })),
+      onSelect: handleModelSelect,
+      disabled: !session() || isLoading(),
+      testid: 'model-picker-button',
+      select: { placeholder: currentModel(), optionTestidPrefix: 'model-option' },
+    },
+    { key: 'mode', label: 'Mode', value: chatMode(), render: 'mode' },
+    ...scopeChips(),
+    { key: 'status', label: 'Status', value: '', render: 'custom', element: statusChips },
+  ];
+
   return (
     <form
       ref={formRef}
@@ -192,40 +220,7 @@ export const ChatInput: Component = () => {
         testid="chat-input"
         onSubmit={() => void handleSubmit()}
         onKeyDown={handleKeyDown}
-        chips={
-          <>
-            <ChipSelect
-              name="model"
-              options={availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) }))}
-              value={currentSession()?.agent_model ?? ''}
-              onSelect={handleModelSelect}
-              placeholder={currentModel()}
-              disabled={!session() || isLoading()}
-              testid="model-picker-button"
-              optionTestidPrefix="model-option"
-            />
-            <ChatModeControl />
-          </>
-        }
-        // Session scope shares the row with the pickers: the kilns the session
-        // knows and the workspace it acts in — attach/detach mid-session
-        // (Crucible Shell design 4a/5a).
-        //
-        // LAST on the row, and deliberately borderless. It is the quietest
-        // thing in the strip so the prompt stays the loudest, which is the
-        // whole reason the reference surfaces leave their branch and machine
-        // chips bare.
-        // The plugin status chips (review policy and the like) sit FIRST on
-        // the row, because a chip that says the agent waits on your review is
-        // a thing to read before you type. They used to sit above the prompt,
-        // which put them between the transcript and the docked permission
-        // card. The scope chips stay last: they are the quietest thing here.
-        trailing={
-          <>
-            <SessionStatusChips />
-            <SessionScopeChips />
-          </>
-        }
+        chips={liveChips()}
         action={
           <Show
             when={isStreaming()}
