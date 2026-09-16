@@ -118,9 +118,12 @@ test.describe('cross-zone tab drag and drop', () => {
     await page.mouse.move(from.x + 30, from.y + 30, { steps: 5 });
 
     // While the pointer is down, the drag overlay shows the tab title.
-    await expect(page.locator('text="Two"').last()).toBeVisible();
+    const overlay = page.getByTestId('drag-overlay');
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toHaveText('Two');
 
     await page.mouse.up();
+    await expect(overlay).toHaveCount(0);
 
     // The release lands inside the same bar, which may reorder it. The tab
     // stays in the rail either way.
@@ -140,40 +143,59 @@ test.describe('cross-zone tab drag and drop', () => {
  * row and requires that it never moves. A repeat count only shows that a race
  * is rare; this shows that it is absent.
  */
+/**
+ * Open the right rail, and read the left edge of its tab body on twenty
+ * frames in a row. The body sits INSIDE the frame that the tween moves. The
+ * ribbon sits outside it and never moves, so a probe on the ribbon would
+ * pass with the tween on.
+ */
+async function sampleRightRailOpening(page: Page): Promise<number[]> {
+  const lefts = await page.evaluate(async () => {
+    const store = (window as unknown as Record<string, any>).__windowStore;
+    const actions = (window as unknown as Record<string, any>).__windowActions;
+    // Toggle in the same turn that the sampling starts in: the tween's
+    // first frame is what a click would otherwise race.
+    if (store.edgePanels.right.mode !== 'docked') actions.toggleEdgePanel('right');
+
+    const probe = () => {
+      const el = document.querySelector('[data-testid="edge-host-right"] [data-testid="content-gamma"]');
+      return el ? Math.round(el.getBoundingClientRect().left) : -1;
+    };
+    const seen: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      seen.push(probe());
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    return seen;
+  });
+  expect(lefts.filter((n) => n < 0), 'the probe was not in the page').toEqual([]);
+  return [...new Set(lefts)];
+}
+
+// `contextOptions`, not the top-level `reducedMotion` option: the config sets
+// `contextOptions.reducedMotion`, and that value wins over the top-level one.
 test.describe('the edge panel under a reduced-motion preference', () => {
-  test.use({ reducedMotion: 'reduce' });
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
   test('opens without moving its controls across frames', async ({ page }) => {
-    // Sample from INSIDE the animating frame: the rail's tab body. The ribbon
-    // sits outside it and never moves, so it would pass with the tween on.
-    const lefts = await page.evaluate(async () => {
-      const store = (window as unknown as Record<string, any>).__windowStore;
-      const actions = (window as unknown as Record<string, any>).__windowActions;
-      // Toggle in the same turn that the sampling starts in: the tween's
-      // first frame is what a click would otherwise race.
-      if (store.edgePanels.right.mode !== 'docked') actions.toggleEdgePanel('right');
-
-      const probe = () => {
-        const el = document.querySelector(
-          '[data-testid="edge-host-right"] [data-testid="content-gamma"]',
-        );
-        return el ? Math.round(el.getBoundingClientRect().left) : -1;
-      };
-      const seen: number[] = [];
-      for (let i = 0; i < 20; i++) {
-        seen.push(probe());
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
-      }
-      return seen;
-    });
-
-    expect(lefts.filter((n) => n < 0), 'the probe was not in the page').toEqual([]);
-    const distinct = [...new Set(lefts)];
+    const distinct = await sampleRightRailOpening(page);
     expect(
       distinct.length,
       `the control moved across frames (positions seen: ${distinct.join(', ')}). ` +
         'The panel still tweens under a reduced-motion preference.',
     ).toBe(1);
+  });
+});
+
+// The control for the gate above: with no preference the rail tweens, so the
+// same probe sees the body move. Without it, a probe that never moves would
+// pass the gate for the wrong reason.
+test.describe('the edge panel with no motion preference', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } });
+
+  test('moves its body across frames while it opens', async ({ page }) => {
+    const distinct = await sampleRightRailOpening(page);
+    expect(distinct.length, `positions seen: ${distinct.join(', ')}`).toBeGreaterThan(1);
   });
 });
 

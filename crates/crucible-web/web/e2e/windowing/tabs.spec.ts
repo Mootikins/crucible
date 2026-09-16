@@ -166,11 +166,14 @@ test.describe('tab reorder within one bar', () => {
 
     // The drag overlay names the tab. It proves the drag is past its
     // threshold, so the absence check below is not vacuous.
-    await expect(page.locator('text="Two"').last()).toBeVisible();
+    const overlay = page.getByTestId('drag-overlay');
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toHaveText('Two');
 
     // The reorder indicator is TabBar's 2px by 20px bar.
     await expect(page.locator('[class*="w-0.5"][class*="h-5"][class*="bg-primary"]')).toHaveCount(0);
 
     await page.mouse.up();
+    await expect(overlay).toHaveCount(0);
   });
 });

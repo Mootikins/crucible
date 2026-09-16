@@ -98,6 +98,8 @@ test.describe('Windowing in the app', () => {
     });
 
     // An emptied center pane is void — no composer splash, no tab strip.
+    // The empty pane shows first, so the absence checks below are not vacuous.
+    await expect(page.getByTestId('empty-pane')).toBeVisible();
     await expect(page.getByTestId('center-composer')).toHaveCount(0);
     await expect(page.getByTestId('composer-input')).toHaveCount(0);
   });

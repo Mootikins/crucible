@@ -71,6 +71,33 @@ describe('e2e architecture discipline', () => {
     );
   });
 
+  // -- Core windowing specs know no app -----------------------------------
+  //
+  // e2e/windowing/ drives the harness page, which mounts the window manager
+  // with no app and no server. An API mock, an app fixture or an app
+  // navigation helper there means the spec tests the app, not the core.
+  const APP_COUPLING = /mock-api|helpers\/fixtures|helpers\/nav|page\.route\(/;
+
+  it('core windowing specs use no API mock and no app helper', () => {
+    const coreFiles = ALL_E2E_FILES.filter((f) => f.startsWith('windowing/'));
+    expect(coreFiles.length, 'expected to find core windowing specs').toBeGreaterThan(0);
+    const offenders = coreFiles.filter((f) => APP_COUPLING.test(read(f)));
+    expect(
+      offenders,
+      `Core windowing specs open the harness. Move an app rule to an app spec in e2e/:\n` +
+        offenders.join('\n'),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [`import { setupBasicMocks } from '../helpers/mock-api';`],
+    [`import { MOCK_SESSION } from '../helpers/fixtures';`],
+    [`import { appReady } from '../helpers/nav';`],
+    [`await page.route('**/api/layout', handler);`],
+  ])('the app coupling matcher flags %s', (src) => {
+    expect(APP_COUPLING.test(src)).toBe(true);
+  });
+
   // -- A5b: story specs use semantic locators -----------------------------
   //
   // CodeMirror (`.cm-*`) and xterm.js (`.xterm`) render their editor/terminal

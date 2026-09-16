@@ -49,7 +49,7 @@ function DragOverlayContent() {
 
   return (
     <Show when={data()?.type === 'tab' || data()?.type === 'newTab'}>
-      <div class="px-2.5 py-1.5 bg-surface-overlay border border-hairline-strong rounded shadow-lg text-xs text-shell-ink flex items-center gap-1.5 opacity-90">
+      <div data-testid="drag-overlay" class="px-2.5 py-1.5 bg-surface-overlay border border-hairline-strong rounded shadow-lg text-xs text-shell-ink flex items-center gap-1.5 opacity-90">
         <span class="font-medium truncate max-w-(--cru-measure-tab)" title={title()}>
           {elideTabTitle(title())}
         </span>

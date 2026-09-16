@@ -3,8 +3,9 @@ import { setupBasicMocks } from './helpers/mock-api';
 import { appReady } from './helpers/nav';
 
 /**
- * The app's fixed rails (WS-324): the last Sessions panel does not close,
- * and the layout menu on the left rail puts a closed panel back.
+ * The app's fixed rails (WS-324): the last Sessions panel and the last Files
+ * panel do not close, though a user may move them. The layout menu on the
+ * left rail puts a closed panel back.
  *
  * These are app rules. The core lets every tab close; the app's window
  * policy refuses the last Sessions and Files tabs.
@@ -86,10 +87,48 @@ test('removeTab on the last Sessions tab does nothing', async ({ page }) => {
   await expect(page.getByTestId('session-list')).toBeAttached();
 });
 
+test('the last Files tab does not close', async ({ page }) => {
+  await windowAction(page, 'setEdgePanelCollapsed', 'right', false);
+  const filesTab = page.getByTestId('edge-tab-right-files-tab');
+  await expect(filesTab).toBeVisible();
+  await expect(filesTab.getByRole('button', { name: 'Close tab' })).toHaveCount(0);
+
+  const group = (await groupOf(page, 'files-tab'))!;
+  expect(await windowAction(page, 'canCloseTab', group, 'files-tab')).toBe(false);
+  await windowAction(page, 'removeTab', group, 'files-tab');
+  expect(await groupOf(page, 'files-tab')).toBe(group);
+  await expect(filesTab).toBeVisible();
+});
+
+test('the last Sessions tab may move out of its rail', async ({ page }) => {
+  // The rule refuses a close, not a move. Moving the tab is how a user
+  // empties the rail, and the rail then shows its collapsed strip.
+  const leftGroup = (await groupOf(page, 'sessions-tab'))!;
+  const centreGroup = await page.evaluate(() => {
+    const store = (window as unknown as Record<string, any>).__windowStore;
+    const first = (n: any): string | null =>
+      n.type === 'pane' ? (n.tabGroupId ?? null) : (first(n.first) ?? first(n.second));
+    return first(store.layout);
+  });
+  expect(centreGroup).not.toBeNull();
+
+  await windowAction(page, 'moveTab', leftGroup, centreGroup, 'sessions-tab');
+
+  await expect(page.getByTestId('edge-collapsed-drop-left')).toBeVisible();
+  await expect(page.getByTestId('edge-tabbar-left')).not.toBeVisible();
+  expect(await leftTabIds(page)).toEqual([]);
+  expect(await groupOf(page, 'sessions-tab')).toBe(centreGroup);
+  await expect(page.locator('[data-tab-id="sessions-tab"]:not([data-testid^="edge-tab-"])')).toBeVisible();
+});
+
 test('the layout menu re-adds a closed panel', async ({ page }) => {
-  const group = await groupOf(page, 'backlinks-tab');
-  expect(group, 'the default layout opens Backlinks').not.toBeNull();
-  await windowAction(page, 'removeTab', group, 'backlinks-tab');
+  // Close Backlinks the way a user does: the close button on its tab.
+  await windowAction(page, 'setEdgePanelCollapsed', 'right', false);
+  const backlinksTab = page.getByTestId('edge-tab-right-backlinks-tab');
+  await expect(backlinksTab).toBeVisible();
+  await backlinksTab.hover();
+  await backlinksTab.getByRole('button', { name: 'Close tab' }).click();
+  await expect(backlinksTab).toHaveCount(0);
   expect(await groupOf(page, 'backlinks-tab')).toBeNull();
 
   await page.getByTestId('layout-menu').click();

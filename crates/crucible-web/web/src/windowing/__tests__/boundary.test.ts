@@ -40,6 +40,37 @@ function offendersIn(file: string, src: string): string[] {
   return specifiers(src).filter((spec) => !allowed(file, spec));
 }
 
+const SRC = join(ROOT, '..');
+const TESTING = join(ROOT, 'testing');
+
+/**
+ * The imports of `src` that reach the neutral policy, for a file at `file`.
+ *
+ * `src/windowing/testing/` is test support. The harness page and the tests
+ * may import it. A production module that imports it puts the neutral
+ * policy into `dist/`.
+ */
+function testingImportsIn(file: string, src: string): string[] {
+  return specifiers(src).filter((spec) => {
+    if (spec.startsWith('.')) {
+      const target = resolve(dirname(file), spec);
+      return target === TESTING || target.startsWith(TESTING + sep);
+    }
+    return spec === '@/windowing/testing' || spec.startsWith('@/windowing/testing/');
+  });
+}
+
+/** True for a file that may use test support: tests, the harness, the support itself. */
+function isTestSupport(file: string): boolean {
+  const parts = relative(SRC, file).split(sep);
+  return (
+    parts[0] === 'test-harness' ||
+    parts.includes('__tests__') ||
+    /\.test\.[^.]+$/.test(file) ||
+    file.startsWith(TESTING + sep)
+  );
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -60,6 +91,35 @@ describe('windowing core boundary', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('keeps the neutral policy out of production code', () => {
+    const offenders: string[] = [];
+    for (const file of walk(SRC).filter((f) => !isTestSupport(f))) {
+      for (const spec of testingImportsIn(file, readFileSync(file, 'utf8'))) {
+        offenders.push(`${relative(SRC, file)} -> ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  describe('the testing matcher', () => {
+    it.each([
+      ['an alias import', join(SRC, 'App.tsx'), `import { neutralPolicy } from '@/windowing/testing/neutralPolicy';`],
+      ['a relative import', join(ROOT, 'store', 'probe.ts'), `import { neutralSeed } from '../testing/neutralPolicy';`],
+      ['a dynamic import', join(SRC, 'App.tsx'), `const m = await import('@/windowing/testing/neutralPolicy');`],
+    ])('flags %s', (_name, file, src) => {
+      expect(testingImportsIn(file, src)).toHaveLength(1);
+    });
+
+    it('treats tests, the harness and the support folder as test support', () => {
+      expect(isTestSupport(join(SRC, 'test-harness', 'windowing-harness.tsx'))).toBe(true);
+      expect(isTestSupport(join(ROOT, '__tests__', 'policy.test.ts'))).toBe(true);
+      expect(isTestSupport(join(SRC, 'lib', 'x.test.tsx'))).toBe(true);
+      expect(isTestSupport(join(TESTING, 'neutralPolicy.ts'))).toBe(true);
+      expect(isTestSupport(join(SRC, 'App.tsx'))).toBe(false);
+      expect(isTestSupport(join(ROOT, 'store', 'index.ts'))).toBe(false);
+    });
   });
 
   describe('the matcher', () => {

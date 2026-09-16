@@ -95,8 +95,11 @@ export default defineConfig(({ mode }) => ({
         'e2e/**',
         'src/test/**',
         'src/test-utils/**',
-        // Dev/test-only editor harness (served only in dev, never in dist).
+        // Dev/test-only harness pages (served only in dev, never in dist), and
+        // the neutral window policy that the windowing harness and the core
+        // unit tests share. boundary.test.ts keeps that policy out of app code.
         'src/test-harness/**',
+        'src/windowing/testing/**',
         'src/**/*.d.ts',
         'src/**/index.ts',
         '*.config.ts',
