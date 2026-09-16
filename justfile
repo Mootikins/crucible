@@ -145,6 +145,14 @@ lint what="all":
                 exit 1
             }
             bunx tsc --noEmit -p tsconfig.json
+            # The committed contract must match the committed document.
+            fresh="$(mktemp)"
+            trap 'rm -f "$fresh"' EXIT
+            bunx openapi-typescript ../openapi.json --output "$fresh" --root-types --alphabetize
+            diff -u src/lib/api-schema.d.ts "$fresh" || {
+                echo "src/lib/api-schema.d.ts is stale; run just web-contract" >&2
+                exit 1
+            }
             ;;
         dead)
             # Include tests: --production misclassifies lazy-loaded dependencies.

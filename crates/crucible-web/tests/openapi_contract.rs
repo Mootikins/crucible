@@ -4,6 +4,10 @@
 //! derive, the `#[utoipa::path]` attribute, the `OpenApiRouter`, this test and
 //! the committed `openapi.json`. Later tasks add the other routes.
 //!
+//! Task A3 adds the staleness gate: the committed `openapi.json` must equal
+//! the document this router builds, and `just lint types` holds the generated
+//! TypeScript to the same rule.
+//!
 //! Task A11 adds the streams: every SSE route names `text/event-stream` and
 //! the event union it carries, and the browser's event-name lists are compared
 //! against those unions in both directions.
@@ -50,14 +54,79 @@ fn the_spec_describes_list_all_models() {
     );
 }
 
+/// The spelling the writer uses, so a diff is a real difference.
+fn rendered_document() -> String {
+    let mut document = serde_json::to_string_pretty(&api_spec()).expect("the spec serialises");
+    document.push('\n');
+    document
+}
+
+/// The committed document says what the router says.
+///
+/// `openapi.json` drifts whenever a handler changes and nobody runs the
+/// writer, and the generated TypeScript then describes a route that no longer
+/// exists. This test is the gate; `just lint types` gates the TypeScript half.
+#[test]
+fn the_committed_openapi_json_is_current() {
+    let path = openapi_json_path();
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("the test reads {}: {error}", path.display()));
+
+    let rendered = rendered_document();
+    if committed == rendered {
+        return;
+    }
+
+    // Not `assert_eq!`: the two documents run to thousands of lines, and the
+    // reader needs the first line that differs, not both copies of the file.
+    let (line, committed_line, rendered_line) = first_difference(&committed, &rendered);
+    panic!(
+        "{} is stale; run `just web-contract`\n\
+         line {line}\n\
+         committed: {committed_line}\n\
+         router:    {rendered_line}",
+        path.display()
+    );
+}
+
+/// The first line that differs, as `(line number, committed, rendered)`.
+///
+/// A missing line reads as `<end of file>` so that a truncated document names
+/// the place it stops rather than an empty string.
+fn first_difference(committed: &str, rendered: &str) -> (usize, String, String) {
+    let mut committed_lines = committed.lines();
+    let mut rendered_lines = rendered.lines();
+    let mut line = 0;
+    loop {
+        line += 1;
+        let left = committed_lines.next();
+        let right = rendered_lines.next();
+        if left == right {
+            if left.is_none() {
+                return (
+                    line,
+                    "<end of file>".to_string(),
+                    "<end of file>".to_string(),
+                );
+            }
+            continue;
+        }
+        let shown = |entry: Option<&str>| {
+            entry.map_or_else(
+                || "<end of file>".to_string(),
+                |text| text.trim().to_string(),
+            )
+        };
+        return (line, shown(left), shown(right));
+    }
+}
+
 /// The writer, not a test. `--ignored` keeps it out of the normal run.
 #[test]
 #[ignore = "writer: it regenerates crates/crucible-web/openapi.json"]
 fn write_openapi_json() {
     let path = openapi_json_path();
-    let mut document = serde_json::to_string_pretty(&api_spec()).expect("the spec serialises");
-    document.push('\n');
-    std::fs::write(&path, document).expect("the writer writes openapi.json");
+    std::fs::write(&path, rendered_document()).expect("the writer writes openapi.json");
     println!("wrote {}", path.display());
 }
 
