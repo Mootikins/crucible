@@ -13,59 +13,14 @@ import {
 } from '../sse';
 import { getQueryClient, setQueryClientForTests } from '../client';
 import { getBus } from '../../bus';
-
-/**
- * The `EventSource` of a test. jsdom has none, so every stream under test
- * builds one of these instead and the test drives it by hand.
- */
-class FakeEventSource {
-  static instances: FakeEventSource[] = [];
-
-  readonly listeners = new Map<string, Set<(event: MessageEvent) => void>>();
-  closed = false;
-  onopen: ((event: Event) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-
-  constructor(readonly url: string) {
-    FakeEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
-    let perType = this.listeners.get(type);
-    if (!perType) this.listeners.set(type, (perType = new Set()));
-    perType.add(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: MessageEvent) => void): void {
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  close(): void {
-    this.closed = true;
-  }
-
-  /** Acts as the server: the stream is open. */
-  open(): void {
-    this.onopen?.(new Event('open'));
-  }
-
-  /** Acts as the server: one frame of the named type arrives. */
-  emit(type: string, data: unknown): void {
-    for (const listener of [...(this.listeners.get(type) ?? [])]) {
-      listener({ data: JSON.stringify(data) } as MessageEvent);
-    }
-  }
-}
-
-/** The one source the test expects, with a clear failure when there are more. */
-function onlySource(): FakeEventSource {
-  expect(FakeEventSource.instances).toHaveLength(1);
-  return FakeEventSource.instances[0]!;
-}
+import {
+  FakeEventSource,
+  installFakeEventSource,
+  onlyEventSource as onlySource,
+} from '@/test-utils/sse';
 
 beforeEach(() => {
-  FakeEventSource.instances = [];
-  vi.stubGlobal('EventSource', FakeEventSource);
+  installFakeEventSource();
   setQueryClientForTests(new QueryClient());
 });
 
