@@ -5,7 +5,7 @@ import {
   windowActions,
   findEdgePanelForGroup,
 } from '@/windowing/store';
-import type { WindowPolicy } from '@/windowing/store';
+import type { WindowActions, WindowPolicy } from '@/windowing/store';
 import type { Tab, TabContentType, WindowState } from '@/types/windowTypes';
 import { defaultLayout } from './defaultLayout';
 import { ensureFixedRails, isLastFixedRailTab } from './fixedRails';
@@ -60,10 +60,17 @@ export const appWindowPolicy: WindowPolicy<TabContentType> = {
 
 configureWindowing(appWindowPolicy);
 
-// The core store holds any content type. App code reads app content types, and
-// only the app writes to this store, so the narrower type is true here.
+// The core store and actions take any content type. Only the app configures
+// and writes this store, so `typedStore` and `typedActions` narrow both to the
+// app content types, and the narrower types are true here.
 const typedStore = windowStore as WindowState;
-export { typedStore as windowStore, setStore, windowActions, findEdgePanelForGroup };
+const typedActions = windowActions as WindowActions<TabContentType>;
+export {
+  typedStore as windowStore,
+  setStore,
+  typedActions as windowActions,
+  findEdgePanelForGroup,
+};
 
 if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).__windowActions = windowActions;

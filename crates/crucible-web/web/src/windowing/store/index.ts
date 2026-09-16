@@ -20,7 +20,12 @@ export function policy(): WindowPolicy {
   return configured;
 }
 
-/** Replace every field of the store with the fields of `next`. */
+/**
+ * Replace every field of the store with the fields of `next`.
+ *
+ * `Object.assign` merges. Every key of `WindowState` is required, so the merge
+ * replaces the whole state. A future optional key needs an explicit delete.
+ */
 function replaceState(next: WindowState): void {
   setStore(produce((s) => Object.assign(s, next)));
 }
@@ -47,37 +52,38 @@ export function resetWindowingForTest(): void {
   replaceState(emptyState());
 }
 
-export type WindowActions = TabActions & LayoutActions & FloatingWindowActions;
-
-const context = { store, setStore };
-const actions: WindowActions = {
-  ...createTabActions(context, policy),
-  ...createLayoutActions(context, policy),
-  ...createFloatingWindowActions(context),
-};
+export type WindowActions<C extends string = string> = TabActions<C> &
+  LayoutActions<C> &
+  FloatingWindowActions;
 
 /**
  * Wrap each action so that a call before `configureWindowing` throws.
  *
- * An action that finds nothing to do returns before it reads the policy, so
- * without this guard an early call would pass in silence. The wrappers are
- * cached, so one action keeps one identity.
+ * Most actions never read the policy. Without the wrapper, such an action
+ * changes the store before configuration, and `configureWindowing` then
+ * erases that change in silence. The wrappers are plain properties, so
+ * `vi.spyOn` replaces them like any other method.
  */
-const guarded = new Map<PropertyKey, unknown>();
-export const windowActions: WindowActions = new Proxy(actions, {
-  get(target, key, receiver) {
-    const value: unknown = Reflect.get(target, key, receiver);
-    if (typeof value !== 'function') return value;
-    let wrapper = guarded.get(key);
-    if (!wrapper) {
-      wrapper = (...args: unknown[]) => {
-        policy();
-        return Reflect.apply(value, target, args);
-      };
-      guarded.set(key, wrapper);
-    }
-    return wrapper;
-  },
+function requirePolicy<T extends object>(actions: T): T {
+  const wrapped = Object.entries(actions).map(([key, action]: [string, unknown]) => [
+    key,
+    typeof action === 'function'
+      ? (...args: unknown[]) => {
+          policy();
+          return Reflect.apply(action, actions, args);
+        }
+      : action,
+  ]);
+  // Object.fromEntries loses the key types. Each key keeps its name, and each
+  // wrapper takes and returns what its action does, so the shape is still T.
+  return Object.fromEntries(wrapped) as T;
+}
+
+const context = { store, setStore };
+export const windowActions: WindowActions = requirePolicy({
+  ...createTabActions(context, policy),
+  ...createLayoutActions(context, policy),
+  ...createFloatingWindowActions(context),
 });
 
 export { store as windowStore, setStore };

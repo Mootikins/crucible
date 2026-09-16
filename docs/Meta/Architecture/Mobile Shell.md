@@ -319,7 +319,7 @@ All of them now go through `lib/tab-host.ts`:
 | Site | What breaks on the compact shell without the seam |
 |---|---|
 | `FileViewerPanel.tsx:334-346` | writes `isModified` only into `windowStore`, so no dirty dot and **no close guard** — edits can be lost |
-| `tabActions.ts:17` (`syncActiveSession`) | the ONLY writer of `statusBarStore.activeSessionId`; `SessionContext.tsx:259-262` follows it, so a tab switch would not change `currentSession` |
+| `appWindowPolicy.onActiveTabChange` in `src/stores/windowStore.ts` | the ONLY writer of `statusBarStore.activeSessionId`; `SessionContext.tsx:259-262` follows it, so a tab switch would not change `currentSession` |
 | `ChatContext.tsx:242-244` | the tab title never updates |
 | `SessionContext.tsx:394-396,418-420` | deleting or archiving a session leaves its tab open |
 | `draft-session.ts:37-43,90` | `findDraftTab` and `closeDraftTab` miss the compact draft; the draft stays open after send |

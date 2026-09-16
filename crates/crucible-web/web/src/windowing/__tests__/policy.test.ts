@@ -21,6 +21,21 @@ describe('WindowPolicy', () => {
     expect(() => windowActions.splitPane('x', 'horizontal')).toThrow(/configureWindowing/);
   });
 
+  it('lets a spy replace an action', () => {
+    configureWindowing(stubPolicy());
+    // A call before the spy, as the app makes before a test spies.
+    windowActions.toggleEdgePanel('left');
+    const spy = vi.spyOn(windowActions, 'toggleEdgePanel').mockImplementation(() => {});
+    try {
+      const before = windowStore.edgePanels.left.mode;
+      windowActions.toggleEdgePanel('left');
+      expect(spy).toHaveBeenCalledWith('left');
+      expect(windowStore.edgePanels.left.mode).toBe(before);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('seeds the store from the policy', () => {
     configureWindowing(stubPolicy());
     expect(windowStore.tabGroups[centreGroupId()]!.tabs.map((t) => t.id)).toEqual(['t1']);

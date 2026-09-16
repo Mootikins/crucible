@@ -1,11 +1,7 @@
 // src/lib/__tests__/keyboard-shortcuts.test.ts
 import { describe, it, expect } from 'vitest';
 import { shortcutLabel, DEFAULT_SHORTCUTS } from '../keyboard-shortcuts';
-import { matchShortcut as matchIn, type ShortcutAction } from '@/windowing/shortcuts';
-
-/** Match against the app table unless a test names its own. */
-const matchShortcut = (e: KeyboardEvent, shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS) =>
-  matchIn(e, shortcuts);
+import { matchShortcut, type ShortcutAction } from '@/windowing/shortcuts';
 
 describe('keyboard-shortcuts', () => {
   describe('matchShortcut', () => {
@@ -18,7 +14,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('closeActiveTab');
     });
 
@@ -31,7 +27,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('nextTab');
     });
 
@@ -44,7 +40,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('newSession');
     });
 
@@ -60,17 +56,17 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      expect(matchShortcut(event)).toBe('newSession');
+      expect(matchShortcut(event, DEFAULT_SHORTCUTS)).toBe('newSession');
     });
 
     it('matches the Ctrl+Shift+E panel toggle with an uppercase key', () => {
       const make = (key: string) =>
         ({ key, ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }) as KeyboardEvent;
-      expect(matchShortcut(make('E'))).toBe('toggleRightPanel');
+      expect(matchShortcut(make('E'), DEFAULT_SHORTCUTS)).toBe('toggleRightPanel');
       // Ctrl+Shift+B was the bottom dock's toggle. The dock is gone, and so
       // is the binding — a shortcut for a region that cannot exist is a key
       // the next feature cannot have.
-      expect(matchShortcut(make('B'))).toBeNull();
+      expect(matchShortcut(make('B'), DEFAULT_SHORTCUTS)).toBeNull();
     });
 
     it('keeps named keys exact (shift+tab is cycleMode, not a char match)', () => {
@@ -81,7 +77,7 @@ describe('keyboard-shortcuts', () => {
         altKey: false,
         metaKey: false,
       } as KeyboardEvent;
-      expect(matchShortcut(event)).toBe('cycleMode');
+      expect(matchShortcut(event, DEFAULT_SHORTCUTS)).toBe('cycleMode');
     });
 
     it('matches Ctrl+P to openCommandPalette', () => {
@@ -93,7 +89,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('openCommandPalette');
     });
 
@@ -106,7 +102,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      expect(matchShortcut(event)).toBe('openNoteSwitcher');
+      expect(matchShortcut(event, DEFAULT_SHORTCUTS)).toBe('openNoteSwitcher');
     });
 
     it('matches Escape (no modifiers) to closeOverlay', () => {
@@ -118,7 +114,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('closeOverlay');
     });
 
@@ -131,7 +127,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('cycleMode');
     });
 
@@ -144,7 +140,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: true,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBe('closeActiveTab');
     });
 
@@ -157,7 +153,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBeNull();
     });
 
@@ -170,7 +166,7 @@ describe('keyboard-shortcuts', () => {
         metaKey: false,
       } as KeyboardEvent;
 
-      const result = matchShortcut(event);
+      const result = matchShortcut(event, DEFAULT_SHORTCUTS);
       expect(result).toBeNull();
     });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { primaryEdgeGroupId } from '@/windowing/model/tree';
+import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
@@ -17,6 +17,18 @@ describe('defaultLayout default seed', () => {
         group.activeTabId
       );
     }
+  });
+
+  // One centre group, one on the left rail, and two on the right rail: the
+  // file tree and the terminal under it.
+  it('seeds 4 tab groups: 1 in the centre and 3 on the rails', () => {
+    const state = defaultLayout();
+    expect(Object.keys(state.tabGroups)).toHaveLength(4);
+    expect(collectLeafGroupIds(state.layout)).toHaveLength(1);
+    const railGroups = (['left', 'right'] as const).flatMap((pos) =>
+      collectLeafGroupIds(state.edgePanels[pos].layout),
+    );
+    expect(railGroups).toHaveLength(3);
   });
 
   it('the right edge panel opens to Files', () => {
