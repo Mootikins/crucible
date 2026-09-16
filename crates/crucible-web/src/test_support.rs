@@ -953,11 +953,26 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
         "models.list" => json!({"models": ["ollama/llama3.2", "openai/gpt-4o"]}),
-        "agents.list_profiles" => json!({
-            "profiles": [
-                {"name": "claude", "description": "Claude Code via ACP", "command": "npx", "is_builtin": true, "available": false},
-                {"name": "opencode", "description": "OpenCode AI (Go)", "command": "opencode", "is_builtin": true, "available": true},
-            ]
+        // SERIALISED from the daemon's own reply type, never hand-written, so
+        // a route test that reads the rows back is a round trip rather than an
+        // agreement between this file and the route.
+        "agents.list_profiles" => as_rpc_result(crucible_daemon::AgentProfilesReply {
+            profiles: vec![
+                crucible_daemon::AgentProfileEntry {
+                    name: "claude".to_string(),
+                    description: "Claude Code via ACP".to_string(),
+                    command: "npx".to_string(),
+                    is_builtin: true,
+                    available: false,
+                },
+                crucible_daemon::AgentProfileEntry {
+                    name: "opencode".to_string(),
+                    description: "OpenCode AI (Go)".to_string(),
+                    command: "opencode".to_string(),
+                    is_builtin: true,
+                    available: true,
+                },
+            ],
         }),
         // Name "missing" is unknown (null); anything else resolves.
         "agents.resolve_profile" => {
@@ -1272,32 +1287,52 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "comment_id": param_str(msg, "comment_id"),
             "resolved": true,
         }),
-        "skills.list" => json!({
-            "skills": [
-                {
-                    "name": "test-skill",
-                    "scope": "user",
-                    "description": "A test skill",
-                    "shadowed_count": 0,
-                }
-            ]
+        "skills.list" => as_rpc_result(crucible_daemon::SkillsReply {
+            skills: vec![crucible_daemon::SkillSummary {
+                name: "test-skill".to_string(),
+                scope: "user".to_string(),
+                description: "A test skill".to_string(),
+                shadowed_count: 0,
+            }],
         }),
-        "skills.get" => json!({
-            "name": "test-skill",
-            "scope": "user",
-            "description": "A test skill",
-            "source_path": "/tmp/skill.md",
-            "agent": Value::Null,
-            "license": Value::Null,
-            "body": "# Test Skill\n\nContent.",
+        "skills.get" => as_rpc_result(crucible_daemon::SkillDetail {
+            name: "test-skill".to_string(),
+            scope: "user".to_string(),
+            description: "A test skill".to_string(),
+            source_path: "/tmp/skill.md".to_string(),
+            agent: None,
+            license: None,
+            body: "# Test Skill\n\nContent.".to_string(),
         }),
-        "skills.search" => json!({
-            "skills": [
+        "skills.search" => as_rpc_result(crucible_daemon::SkillsReply {
+            skills: vec![crucible_daemon::SkillSummary {
+                name: "matched-skill".to_string(),
+                scope: "user".to_string(),
+                description: "Matched".to_string(),
+                shadowed_count: 0,
+            }],
+        }),
+        // A daemon with no MCP server running. The stopped arm writes ONE key,
+        // which is what makes the route test's "and nothing else" assertion
+        // mean something.
+        "mcp.status" => as_rpc_result(crucible_daemon::McpStatus::Stopped(
+            crucible_daemon::McpStopped { running: false },
+        )),
+        "webhook.receive" => as_rpc_result(crucible_daemon::WebhookReceiveReply {
+            status: "ok".to_string(),
+        }),
+        // One permission request, in the daemon's own wire shape, so the web
+        // route's normalisation is exercised on a real `InteractionRequest`
+        // rather than on a shape this file invented.
+        "session.pending_interactions" => json!({
+            "pending": [
                 {
-                    "name": "matched-skill",
-                    "scope": "user",
-                    "description": "Matched",
-                    "shadowed_count": 0,
+                    "session_id": "session-001",
+                    "request_id": "req-001",
+                    "request": {
+                        "kind": "permission",
+                        "action": { "type": "bash", "tokens": ["ls"] },
+                    },
                 }
             ]
         }),

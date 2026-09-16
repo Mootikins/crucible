@@ -99,8 +99,6 @@ crates/crucible-cli/proptest-regressions/
 *.txt
 # ...but generated test-tier manifests are required by architecture tests on CI
 !assets/test-tiers/*.txt
-# ...and so is the OpenAPI completeness baseline that A5 to A10 shrink
-!crates/crucible-web/tests/openapi_baseline/*.txt
 .ruff_cache/
 .playwright-mcp/
 reproduce.jsonl

@@ -527,7 +527,7 @@ impl DaemonClient {
         &self,
         kiln_path: &Path,
         scope_filter: Option<&str>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crate::SkillsReply> {
         self.typed_call(
             "skills.list",
             super::types::SkillsListRequest {
@@ -539,7 +539,7 @@ impl DaemonClient {
     }
 
     /// Get a single skill by name with full body.
-    pub async fn skills_get(&self, name: &str, kiln_path: &Path) -> Result<serde_json::Value> {
+    pub async fn skills_get(&self, name: &str, kiln_path: &Path) -> Result<crate::SkillDetail> {
         self.typed_call(
             "skills.get",
             super::types::SkillsGetRequest {
@@ -556,7 +556,7 @@ impl DaemonClient {
         query: &str,
         kiln_path: &Path,
         limit: Option<usize>,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<crate::SkillsReply> {
         self.typed_call(
             "skills.search",
             super::types::SkillsSearchRequest {

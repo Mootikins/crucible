@@ -8,16 +8,26 @@
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, Json};
+use crucible_daemon::ConfigSaveReply;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-#[derive(Serialize)]
+/// What `GET /api/config` answers.
+///
+/// Three of its fields stay open objects. The effective config, the origin
+/// rows and the control tree are the daemon's vocabulary, declared in Lua and
+/// in the store; a fixed shape here would make this layer a second owner of
+/// them, and a key a newer daemon adds would not reach the browser at all.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ConfigResponse {
     kiln_path: String,
     /// Non-loopback terminal/shell access is active (opt-in + API key) —
     /// the terminal panel connects from LAN clients only when this is true.
     remote_shell: bool,
     /// The daemon's effective config, whole and unrewritten.
+    #[schema(value_type = Object)]
     config: serde_json::Value,
     /// Where `init.lua` and `settings.json` live, so a lock can offer a jump
     /// to the file that holds a key. Absent when the daemon booted from a
@@ -28,26 +38,40 @@ struct ConfigResponse {
     /// renders a lock from; the effective config's own `provenance` map is
     /// the same fact in the store's enum shape, and serving both would be two
     /// spellings of one answer.
+    #[schema(value_type = Object)]
     origins: serde_json::Value,
     /// The declared control tree the settings UI renders, as
     /// `config.controls` gives it: `{options, read_only}`. Served here rather
     /// than from a second endpoint because a control and the value it shows
     /// are one screen, and two fetches could disagree about which keys exist.
+    #[schema(value_type = Object)]
     controls: serde_json::Value,
 }
 
 /// The values one save carries, in the shape `config.save` takes.
-#[derive(Deserialize)]
+///
+/// The keys are config leaf paths and the values are whatever those leaves
+/// hold, so the map stays open: which leaves exist is the daemon's answer.
+#[derive(Debug, Deserialize, ToSchema)]
 struct SaveRequest {
+    #[schema(value_type = Object)]
     values: serde_json::Map<String, serde_json::Value>,
 }
 
-pub fn config_routes() -> Router<AppState> {
-    Router::new().route("/api/config", get(get_config).post(save_config))
+pub fn config_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(get_config, save_config))
 }
 
 /// `GET /api/config` — the effective config, its per-leaf provenance, and the
 /// two fields this route has always served.
+#[utoipa::path(
+    get,
+    path = "/api/config",
+    responses(
+        (status = 200, body = ConfigResponse),
+        (status = 502, description = "The daemon could not report its config"),
+    )
+)]
 async fn get_config(State(state): State<AppState>) -> Result<Json<ConfigResponse>, WebError> {
     let effective = state.daemon.config_effective().await.daemon_err()?;
     let origins = state.daemon.config_origins().await.daemon_err()?;
@@ -74,10 +98,19 @@ async fn get_config(State(state): State<AppState>) -> Result<Json<ConfigResponse
 /// an HTTP error because refusal is per leaf — the siblings the user changed
 /// in the same click did save — and because the caller needs the file and the
 /// line the daemon named, which an error status cannot carry.
+#[utoipa::path(
+    post,
+    path = "/api/config",
+    request_body = SaveRequest,
+    responses(
+        (status = 200, body = ConfigSaveReply),
+        (status = 502, description = "The daemon could not save the values"),
+    )
+)]
 async fn save_config(
     State(state): State<AppState>,
     Json(request): Json<SaveRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ConfigSaveReply>, WebError> {
     let saved = state
         .daemon
         .config_save(request.values)
@@ -171,6 +204,72 @@ mod tests {
         let json = get_config_json(CliAppConfig::default()).await;
         assert!(json.get("kiln_path").is_some());
         assert!(json.get("remote_shell").is_some());
+    }
+
+    /// The body reads back into the type the route declares, with the three
+    /// open fields still carrying the daemon's own vocabulary.
+    #[tokio::test]
+    async fn get_config_answers_the_declared_shape() {
+        let json = get_config_json(CliAppConfig::default()).await;
+
+        let parsed: ConfigResponse =
+            serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
+        assert_eq!(parsed.kiln_path, MOCK_DAEMON_KILN_PATH);
+        assert!(!parsed.remote_shell);
+        assert_eq!(parsed.config_root.as_deref(), Some("/daemon/config"));
+        assert_eq!(
+            parsed.config["chat"]["model"],
+            serde_json::json!("daemon-model")
+        );
+        assert!(parsed.origins.is_array(), "{json}");
+        assert!(parsed.controls["options"].is_object(), "{json}");
+    }
+
+    /// The refusal envelope reads back into the type the DAEMON declares, so
+    /// a row that lost the file or the line fails here rather than in a
+    /// browser that cannot offer the jump.
+    #[tokio::test]
+    async fn save_config_answers_the_declared_shape() {
+        let (_, body, _) = post_config(serde_json::json!({ MOCK_PINNED_KEY: { "leaf": 1 } })).await;
+
+        let parsed: crucible_daemon::ConfigSaveReply =
+            serde_json::from_value(body.clone()).unwrap_or_else(|e| panic!("{e}: {body}"));
+        assert!(!parsed.ok);
+        assert!(parsed.rejected.is_empty());
+        assert_eq!(parsed.refused.len(), 1);
+        assert_eq!(parsed.refused[0].key, format!("{MOCK_PINNED_KEY}.leaf"));
+        assert_eq!(parsed.refused[0].pin.source, "lua");
+        assert_eq!(parsed.refused[0].pin.file.as_deref(), Some(MOCK_PIN_FILE));
+        assert_eq!(parsed.refused[0].pin.line, Some(12));
+    }
+
+    /// The refusal row flattens its pin, so the file and the line sit beside
+    /// `key` on the wire rather than under a nested object.
+    #[test]
+    fn a_refusal_row_round_trips_with_its_pin_flattened() {
+        let row = crucible_core::config::PinnedLeaf {
+            key: "chat.model".to_string(),
+            pin: crucible_core::config::SourceOrigin {
+                source: "lua".to_string(),
+                file: Some("/config/init.lua".to_string()),
+                line: Some(12),
+            },
+        };
+        let wire = serde_json::to_value(&row).expect("the row serialises");
+        assert_eq!(
+            wire,
+            serde_json::json!({
+                "key": "chat.model",
+                "source": "lua",
+                "file": "/config/init.lua",
+                "line": 12,
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<crucible_core::config::PinnedLeaf>(wire)
+                .expect("the row parses"),
+            row
+        );
     }
 
     /// The daemon's copy is the live one: it holds what `init.lua` set and

@@ -17,6 +17,49 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
+/// What `mcp.status` answers: the server is up, or it is not.
+///
+/// Untagged, because the two arms are told apart by `running` and the wire
+/// has always spelled them that way. The stopped arm carries `running` ALONE:
+/// a stopped server has no transport, no port and no kiln, and writing those
+/// keys as null would say it has them and they are empty.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum McpStatus {
+    /// A server is serving a kiln. Listed first so a payload that carries the
+    /// running keys never reads as the stopped arm, which ignores them.
+    Running(McpRunning),
+    /// No server is running.
+    Stopped(McpStopped),
+}
+
+/// The running arm of [`McpStatus`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpRunning {
+    /// Always `true`.
+    pub running: bool,
+    /// Transport type: `sse` or `stdio`.
+    pub transport: String,
+    /// The SSE port, or `null` under stdio. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub port: Option<u16>,
+    /// The kiln path the server serves.
+    pub kiln_path: String,
+    /// Whether the server task has already finished, which is how a crashed
+    /// server reads while the manager still calls itself running.
+    pub finished: bool,
+}
+
+/// The stopped arm of [`McpStatus`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct McpStopped {
+    /// Always `false`.
+    pub running: bool,
+}
+
 /// State of the MCP server
 enum McpServerState {
     /// Server is not running
@@ -204,29 +247,23 @@ impl McpServerManager {
     }
 
     /// Get the current status of the MCP server.
-    pub async fn status(&self) -> serde_json::Value {
+    pub async fn status(&self) -> McpStatus {
         let state = self.state.lock().await;
 
         match &*state {
-            McpServerState::Stopped => {
-                serde_json::json!({
-                    "running": false,
-                })
-            }
+            McpServerState::Stopped => McpStatus::Stopped(McpStopped { running: false }),
             McpServerState::Running {
                 transport,
                 port,
                 kiln_path,
                 handle,
-            } => {
-                serde_json::json!({
-                    "running": true,
-                    "transport": transport,
-                    "port": port,
-                    "kiln_path": kiln_path,
-                    "finished": handle.is_finished(),
-                })
-            }
+            } => McpStatus::Running(McpRunning {
+                running: true,
+                transport: transport.clone(),
+                port: *port,
+                kiln_path: kiln_path.clone(),
+                finished: handle.is_finished(),
+            }),
         }
     }
 }

@@ -1,11 +1,12 @@
-use super::session_commands::{execute_command, list_commands};
+use super::session_commands::{
+    __path_execute_command, __path_list_commands, execute_command, list_commands,
+};
 use super::session_status::{__path_session_status, session_status};
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
@@ -420,10 +421,10 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         .routes(routes!(review::comment))
         .routes(routes!(review::resolve_comment))
         .routes(routes!(export_session))
-        .route("/api/session/{id}/command", post(execute_command))
+        .routes(routes!(execute_command))
         // Session-independent: the command set is static, so the composer can
         // fetch it once instead of per session.
-        .route("/api/commands", get(list_commands))
+        .routes(routes!(list_commands))
         .layer(Extension(policy))
 }
 #[derive(Debug, Deserialize, ToSchema)]

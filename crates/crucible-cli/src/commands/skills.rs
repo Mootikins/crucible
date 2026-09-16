@@ -37,11 +37,10 @@ async fn list(
     format: OutputFormat,
 ) -> Result<()> {
     let client = daemon_client().await?;
-    let response = client
+    let skills = client
         .skills_list(&config.kiln_path, scope_filter.as_deref())
-        .await?;
-
-    let skills = response["skills"].as_array().unwrap_or(&vec![]).to_vec();
+        .await?
+        .skills;
 
     if skills.is_empty() {
         println!("No skills discovered.");
@@ -57,10 +56,10 @@ async fn list(
             let output: Vec<SkillOutput> = skills
                 .iter()
                 .map(|skill| SkillOutput {
-                    name: skill["name"].as_str().unwrap_or("unknown").to_string(),
-                    scope: skill["scope"].as_str().unwrap_or("unknown").to_string(),
-                    description: skill["description"].as_str().unwrap_or("").to_string(),
-                    shadowed_count: skill["shadowed_count"].as_u64(),
+                    name: skill.name.clone(),
+                    scope: skill.scope.clone(),
+                    description: skill.description.clone(),
+                    shadowed_count: Some(skill.shadowed_count as u64),
                 })
                 .collect();
             println!("{}", serde_json::to_string_pretty(&output)?);
@@ -69,13 +68,12 @@ async fn list(
             let rows: Vec<Vec<String>> = skills
                 .iter()
                 .map(|skill| {
-                    let shadowed = skill["shadowed_count"].as_u64().unwrap_or(0);
                     vec![
-                        skill["name"].as_str().unwrap_or("unknown").to_string(),
-                        skill["scope"].as_str().unwrap_or("unknown").to_string(),
-                        skill["description"].as_str().unwrap_or("").to_string(),
-                        if shadowed > 0 {
-                            shadowed.to_string()
+                        skill.name.clone(),
+                        skill.scope.clone(),
+                        skill.description.clone(),
+                        if skill.shadowed_count > 0 {
+                            skill.shadowed_count.to_string()
                         } else {
                             String::new()
                         },
@@ -91,15 +89,10 @@ async fn list(
             println!("Discovered {} skill(s):\n", skills.len());
 
             for skill in skills {
-                let name = skill["name"].as_str().unwrap_or("unknown");
-                let scope = skill["scope"].as_str().unwrap_or("unknown");
-                let description = skill["description"].as_str().unwrap_or("");
-                let shadowed_count = skill["shadowed_count"].as_u64().unwrap_or(0);
-
-                println!("  {} [{}]", name, scope);
-                println!("    {}", description);
-                if shadowed_count > 0 {
-                    println!("    (shadows {} other(s))", shadowed_count);
+                println!("  {} [{}]", skill.name, skill.scope);
+                println!("    {}", skill.description);
+                if skill.shadowed_count > 0 {
+                    println!("    (shadows {} other(s))", skill.shadowed_count);
                 }
                 println!();
             }
@@ -114,26 +107,20 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
     let client = daemon_client().await?;
     // A missing skill surfaces as an RPC error from the daemon, so `?` above
     // is the not-found path — no fallback listing here.
-    let response = client.skills_get(&name, &config.kiln_path).await?;
+    let skill = client.skills_get(&name, &config.kiln_path).await?;
 
-    println!("Name: {}", response["name"].as_str().unwrap_or("unknown"));
-    println!("Scope: {}", response["scope"].as_str().unwrap_or("unknown"));
-    println!(
-        "Description: {}",
-        response["description"].as_str().unwrap_or("")
-    );
-    println!(
-        "Source: {}",
-        response["source_path"].as_str().unwrap_or("unknown")
-    );
-    if let Some(agent) = response["agent"].as_str() {
+    println!("Name: {}", skill.name);
+    println!("Scope: {}", skill.scope);
+    println!("Description: {}", skill.description);
+    println!("Source: {}", skill.source_path);
+    if let Some(agent) = &skill.agent {
         println!("Agent: {}", agent);
     }
-    if let Some(license) = response["license"].as_str() {
+    if let Some(license) = &skill.license {
         println!("License: {}", license);
     }
     println!("\n--- Instructions ---\n");
-    println!("{}", response["body"].as_str().unwrap_or(""));
+    println!("{}", skill.body);
 
     Ok(())
 }
@@ -143,22 +130,18 @@ async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
     let client = daemon_client().await?;
-    let response = client
+    let matches = client
         .skills_search(&query, &config.kiln_path, Some(limit))
-        .await?;
-
-    let matches = response["skills"].as_array().unwrap_or(&vec![]).to_vec();
+        .await?
+        .skills;
 
     if matches.is_empty() {
         println!("\nNo skills matched '{}'", query);
     } else {
         println!("\nFound {} matching skill(s):\n", matches.len());
         for skill in matches {
-            let name = skill["name"].as_str().unwrap_or("unknown");
-            let scope = skill["scope"].as_str().unwrap_or("unknown");
-            let description = skill["description"].as_str().unwrap_or("");
-            println!("  {} [{}]", name, scope);
-            println!("    {}", description);
+            println!("  {} [{}]", skill.name, skill.scope);
+            println!("    {}", skill.description);
             println!();
         }
     }

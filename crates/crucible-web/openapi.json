@@ -6,6 +6,28 @@
     "version": "0.30.0"
   },
   "paths": {
+    "/api/agents": {
+      "get": {
+        "summary": "ACP agent profiles with probed availability, for the session-creation\nagent picker.",
+        "description": "Served through the SWR catalog cache — the daemon probe takes ~0.5s and\nmust not gate every splash render.",
+        "operationId": "list_agents",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentListResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the agent profiles"
+          }
+        }
+      }
+    },
     "/api/backlinks": {
       "get": {
         "summary": "`GET /api/backlinks?kiln=&note=` — linked + unlinked mentions for a note.",
@@ -164,6 +186,110 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/chat/send": {
+      "post": {
+        "summary": "Start a turn in a session.",
+        "operationId": "send_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The message is empty"
+          },
+          "502": {
+            "description": "The daemon could not accept the message"
+          }
+        }
+      }
+    },
+    "/api/commands": {
+      "get": {
+        "summary": "`GET /api/commands` — the slash commands the web composer can complete.",
+        "description": "Session-independent: the set is static, so the composer fetches it once\nrather than per session.",
+        "operationId": "list_commands",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "`GET /api/config` — the effective config, its per-leaf provenance, and the\ntwo fields this route has always served.",
+        "operationId": "get_config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not report its config"
+          }
+        }
+      },
+      "post": {
+        "summary": "`POST /api/config` — save values as the user's durable preference.",
+        "description": "The body and the answer are `config.save`'s own: `{values}` in,\n`{ok, refused, rejected}` out. A refusal rides in the answer rather than in\nan HTTP error because refusal is per leaf — the siblings the user changed\nin the same click did save — and because the caller needs the file and the\nline the daemon named, which an error status cannot carry.",
+        "operationId": "save_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigSaveReply"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not save the values"
           }
         }
       }
@@ -390,6 +516,61 @@
           },
           "502": {
             "description": "The daemon could not trash the entry, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/interaction/respond": {
+      "post": {
+        "summary": "Answer one pending interaction.",
+        "operationId": "interaction_respond",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteractionResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InteractionRespondResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The response does not name an interaction kind the daemon knows"
+          },
+          "502": {
+            "description": "The daemon could not take the response"
+          }
+        }
+      }
+    },
+    "/api/interactions/pending": {
+      "get": {
+        "summary": "Aggregate pending interactions across all sessions, with each request\nnormalized to the same flat shape the SSE path delivers — the Inbox\nrenders both sources through one component.",
+        "operationId": "pending_interactions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInteractionsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the pending interactions"
           }
         }
       }
@@ -729,6 +910,28 @@
           },
           "500": {
             "description": "The stored layout could not be deleted"
+          }
+        }
+      }
+    },
+    "/api/mcp/status": {
+      "get": {
+        "summary": "Whether the daemon is serving an MCP surface, and where.",
+        "description": "The daemon's own answer, forwarded: the two arms and the keys each one\nwrites belong to the manager that holds the server, not to this route.",
+        "operationId": "mcp_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpStatus"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not report the MCP status"
           }
         }
       }
@@ -1915,6 +2118,48 @@
           },
           "502": {
             "description": "The daemon could not cancel the turn"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/command": {
+      "post": {
+        "summary": "Run one slash command in a session.",
+        "operationId": "execute_command",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to run the command in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not serve the command"
           }
         }
       }
@@ -3156,6 +3401,142 @@
         }
       }
     },
+    "/api/skills": {
+      "get": {
+        "summary": "The skills a kiln discovers, optionally narrowed to one scope.",
+        "operationId": "list_skills",
+        "parameters": [
+          {
+            "name": "kiln",
+            "in": "query",
+            "description": "The kiln to discover skills from.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "Keep only the skills this discovery scope found.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsReply"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not discover the skills"
+          }
+        }
+      }
+    },
+    "/api/skills/search": {
+      "get": {
+        "summary": "The same rows `GET /api/skills` answers, narrowed by a query string.",
+        "operationId": "search_skills",
+        "parameters": [
+          {
+            "name": "kiln",
+            "in": "query",
+            "description": "The kiln to search.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "The query, matched case-insensitively against name and description.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many rows to answer with. The daemon's own default applies when\nthe caller names none.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsReply"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not search the skills"
+          }
+        }
+      }
+    },
+    "/api/skills/{name}": {
+      "get": {
+        "summary": "One skill, with the Markdown body a summary row omits.",
+        "operationId": "get_skill",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The skill's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kiln",
+            "in": "query",
+            "description": "The kiln to discover the skill from.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No skill of that name is discoverable from this kiln"
+          },
+          "502": {
+            "description": "The daemon could not read the skill"
+          }
+        }
+      }
+    },
     "/api/surfaces": {
       "get": {
         "summary": "`GET /api/surfaces` — every declared surface, rows included.",
@@ -3196,10 +3577,106 @@
           }
         }
       }
+    },
+    "/api/terminal/ws": {
+      "get": {
+        "summary": "Open a PTY and speak it over a WebSocket.",
+        "description": "The router nests under `/api/terminal`, so the document reads this path as\n`/api/terminal/ws`. There is no 200: the handler either upgrades or\nrefuses, and the frames that follow are not an HTTP body. Client frames are\nJSON text (`{\"t\":\"i\",\"d\":\"…\"}` for input, `{\"t\":\"r\",\"cols\":N,\"rows\":N}` for\na resize); server frames are binary PTY output.",
+        "operationId": "terminal_ws",
+        "parameters": [
+          {
+            "name": "cwd",
+            "in": "query",
+            "description": "Where to start the shell. The CLIENT knows which workspace the user is\nlooking at; the server does not, and its own cwd is a bad guess (see\n[`shell_cwd`]).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "The connection upgrades to a WebSocket carrying the PTY"
+          },
+          "403": {
+            "description": "The caller is not on loopback, or the Origin is not allowed"
+          },
+          "503": {
+            "description": "Every concurrent PTY slot is taken"
+          }
+        }
+      }
+    },
+    "/api/webhook/{name}": {
+      "post": {
+        "summary": "Take one signed delivery and turn it into a `webhook:received` event.",
+        "description": "The body is the sender's own document, so the request body stays an open\nobject: this route verifies the signature over the bytes as received and\nforwards them, and describing a shape here would claim it reads them.",
+        "operationId": "handle_webhook",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The configured webhook's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookReceiveReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid UTF-8 JSON"
+          },
+          "401": {
+            "description": "The delivery carries no valid signature, or the webhook has no configured secret"
+          },
+          "415": {
+            "description": "The delivery was not sent as application/json"
+          },
+          "502": {
+            "description": "The daemon could not take the delivery"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AgentListResponse": {
+        "type": "object",
+        "description": "The agent picker's list.\n\nThe key is `agents`, where the daemon's own answer says `profiles`: this\nroute names the list after what the picker shows, and the ROW is the\ndaemon's, so a probed field cannot be dropped on the way through.",
+        "required": [
+          "agents"
+        ],
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileEntry"
+            }
+          }
+        }
+      },
       "AgentOptionChoiceRow": {
         "type": "object",
         "description": "One choice in an agent's select option.",
@@ -3330,6 +3807,38 @@
               "$ref": "#/components/schemas/AgentOptionRow"
             },
             "description": "Empty until the first message, and empty for an internal agent always:\nan agent advertises nothing until the daemon connects to it."
+          }
+        }
+      },
+      "AgentProfileEntry": {
+        "type": "object",
+        "description": "One ACP agent profile, with the availability probe's verdict.",
+        "required": [
+          "name",
+          "description",
+          "command",
+          "is_builtin",
+          "available"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "The profile's description, or an empty string when it declares none."
+          },
+          "command": {
+            "type": "string",
+            "description": "The command that spawns the agent, or an empty string when the profile\nnames none. A profile with no command can never spawn, so it is never\navailable."
+          },
+          "is_builtin": {
+            "type": "boolean",
+            "description": "Whether the daemon ships this profile, rather than a config declaring it."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether the probe found the command on PATH and it answered `--version`."
           }
         }
       },
@@ -4313,6 +4822,39 @@
           "args": {}
         }
       },
+      "CommandResponse": {
+        "type": "object",
+        "description": "What one slash command produced.\n\nA command the server does not know, and a command used wrongly, both come\nback here with `type` reading `error`: the composer prints the text either\nway, and neither is a transport failure.",
+        "required": [
+          "result",
+          "type"
+        ],
+        "properties": {
+          "result": {
+            "type": "string",
+            "description": "The text the composer prints."
+          },
+          "type": {
+            "type": "string",
+            "description": "`success` or `error`."
+          }
+        }
+      },
+      "CommandsResponse": {
+        "type": "object",
+        "description": "The command set the composer completes from.",
+        "required": [
+          "commands"
+        ],
+        "properties": {
+          "commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlashCommand"
+            }
+          }
+        }
+      },
       "CommentAuthorRow": {
         "type": "string",
         "description": "Who wrote a comment.",
@@ -4363,6 +4905,74 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "description": "What `GET /api/config` answers.\n\nThree of its fields stay open objects. The effective config, the origin\nrows and the control tree are the daemon's vocabulary, declared in Lua and\nin the store; a fixed shape here would make this layer a second owner of\nthem, and a key a newer daemon adds would not reach the browser at all.",
+        "required": [
+          "kiln_path",
+          "remote_shell",
+          "config",
+          "origins",
+          "controls"
+        ],
+        "properties": {
+          "kiln_path": {
+            "type": "string"
+          },
+          "remote_shell": {
+            "type": "boolean",
+            "description": "Non-loopback terminal/shell access is active (opt-in + API key) —\nthe terminal panel connects from LAN clients only when this is true."
+          },
+          "config": {
+            "type": "object",
+            "description": "The daemon's effective config, whole and unrewritten."
+          },
+          "config_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where `init.lua` and `settings.json` live, so a lock can offer a jump\nto the file that holds a key. Absent when the daemon booted from a\nconfig value rather than a file."
+          },
+          "origins": {
+            "type": "object",
+            "description": "One row per recorded leaf: `{key, value, source, file?, line?}`, as\n`config.origin` gives them. The flat shape is what a settings control\nrenders a lock from; the effective config's own `provenance` map is\nthe same fact in the store's enum shape, and serving both would be two\nspellings of one answer."
+          },
+          "controls": {
+            "type": "object",
+            "description": "The declared control tree the settings UI renders, as\n`config.controls` gives it: `{options, read_only}`. Served here rather\nthan from a second endpoint because a control and the value it shows\nare one screen, and two fetches could disagree about which keys exist."
+          }
+        }
+      },
+      "ConfigSaveReply": {
+        "type": "object",
+        "description": "What `config.save` answers.\n\nA refusal rides in the answer rather than in an error: refusal is per leaf,\nthe siblings the caller changed in the same call did save, and `refused`\ncarries the file and the line a human's config holds the key on.",
+        "required": [
+          "ok",
+          "refused",
+          "rejected"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Whether every leaf the caller sent reached the `Settings` layer."
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PinnedLeaf"
+            },
+            "description": "The leaves a pin refused, each with the source that holds it."
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The top-level keys that name where the daemon acts, which no save may\nwrite. They are dropped rather than refused, so they are reported apart\nfrom `refused`."
           }
         }
       },
@@ -4579,6 +5189,18 @@
           }
         ],
         "description": "Why one edit could not be applied. The index is the caller's edit index."
+      },
+      "ExecuteCommandRequest": {
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The command line, with or without its leading slash."
+          }
+        }
       },
       "FileEntryRow": {
         "type": "object",
@@ -5163,6 +5785,39 @@
           }
         }
       },
+      "InteractionRespondResponse": {
+        "type": "object",
+        "description": "The answer this route gives when the daemon took the response.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Always `true`. A refusal is an error status, not a `false`."
+          }
+        }
+      },
+      "InteractionResponseRequest": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "request_id",
+          "response"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "response": {
+            "type": "object",
+            "description": "The answer, in the kind-tagged shape `InteractionResponse` takes.\n\nOpen, because the vocabulary belongs to the daemon's interaction types\nand an unreadable answer must come back as this route's 400 naming the\ndeserialiser's own complaint, not as axum's plain-text rejection."
+          }
+        }
+      },
       "KilnFileResponse": {
         "type": "object",
         "description": "What `GET /api/kiln/file` answers.",
@@ -5333,6 +5988,70 @@
             "format": "int32",
             "description": "One past the last line, 1-based, exclusive.",
             "minimum": 0
+          }
+        }
+      },
+      "McpRunning": {
+        "type": "object",
+        "description": "The running arm of [`McpStatus`].",
+        "required": [
+          "running",
+          "transport",
+          "port",
+          "kiln_path",
+          "finished"
+        ],
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "description": "Always `true`."
+          },
+          "transport": {
+            "type": "string",
+            "description": "Transport type: `sse` or `stdio`."
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The SSE port, or `null` under stdio. Always written.",
+            "minimum": 0
+          },
+          "kiln_path": {
+            "type": "string",
+            "description": "The kiln path the server serves."
+          },
+          "finished": {
+            "type": "boolean",
+            "description": "Whether the server task has already finished, which is how a crashed\nserver reads while the manager still calls itself running."
+          }
+        }
+      },
+      "McpStatus": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/McpRunning",
+            "description": "A server is serving a kiln. Listed first so a payload that carries the\nrunning keys never reads as the stopped arm, which ignores them."
+          },
+          {
+            "$ref": "#/components/schemas/McpStopped",
+            "description": "No server is running."
+          }
+        ],
+        "description": "What `mcp.status` answers: the server is up, or it is not.\n\nUntagged, because the two arms are told apart by `running` and the wire\nhas always spelled them that way. The stopped arm carries `running` ALONE:\na stopped server has no transport, no port and no kiln, and writing those\nkeys as null would say it has them and they are empty."
+      },
+      "McpStopped": {
+        "type": "object",
+        "description": "The stopped arm of [`McpStatus`].",
+        "required": [
+          "running"
+        ],
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "description": "Always `false`."
           }
         }
       },
@@ -5647,6 +6366,65 @@
             "description": "The disk hash the caller last read. Present, it gates: the batch is\nrefused with 409 and `stale_base: true` when the file moved on, even\nwhen every anchor applies. Absent, the anchors alone decide; the outbox\nreplay sends no base, because it edits the note's current text."
           }
         }
+      },
+      "PendingInteraction": {
+        "type": "object",
+        "description": "One interaction a session is waiting on an answer to.",
+        "required": [
+          "session_id",
+          "request_id",
+          "request"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "The session that asked."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The identifier an answer must carry back."
+          },
+          "request": {
+            "type": "object",
+            "description": "The request, in the flat shape the SSE path delivers.\n\nDeliberately open: `normalize_interaction` writes one object per\ninteraction kind — a permission request carries `tokens` and maybe\n`diffs`, an ask carries the question's own fields — and the kinds are\nthe daemon's to add to. `kind` tells the browser which one it has."
+          }
+        }
+      },
+      "PendingInteractionsResponse": {
+        "type": "object",
+        "description": "The interactions every session is waiting on, in one list.",
+        "required": [
+          "pending"
+        ],
+        "properties": {
+          "pending": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingInteraction"
+            }
+          }
+        }
+      },
+      "PinnedLeaf": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SourceOrigin",
+            "description": "The source that holds the leaf, with the file and line when it has\nthem, so the caller can offer a jump to that line."
+          },
+          {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "The dot-joined leaf path the caller asked to save."
+              }
+            }
+          }
+        ],
+        "description": "One leaf `config.save` refuses, and what pins it."
       },
       "PluginCommandRow": {
         "type": "object",
@@ -6942,6 +7720,18 @@
           }
         }
       },
+      "SaveRequest": {
+        "type": "object",
+        "description": "The values one save carries, in the shape `config.save` takes.\n\nThe keys are config leaf paths and the values are whatever those leaves\nhold, so the map stays open: which leaves exist is the daemon's answer.",
+        "required": [
+          "values"
+        ],
+        "properties": {
+          "values": {
+            "type": "object"
+          }
+        }
+      },
       "ScmCloneResponse": {
         "type": "object",
         "description": "Response for the `scm.clone` RPC.",
@@ -7042,6 +7832,33 @@
               "null"
             ],
             "description": "The block's text, or `null` when there is none. Always written."
+          }
+        }
+      },
+      "SendMessageRequest": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "content"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "SendMessageResponse": {
+        "type": "object",
+        "description": "The identifier the daemon minted for the turn this request started.\n\nOne key, because the browser correlates the SSE events that follow with it\nand needs nothing else to do so.",
+        "required": [
+          "message_id"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string"
           }
         }
       },
@@ -7687,6 +8504,96 @@
           }
         }
       },
+      "SkillDetail": {
+        "type": "object",
+        "description": "What `skills.get` answers: one skill, with the body a summary omits.",
+        "required": [
+          "name",
+          "scope",
+          "description",
+          "source_path",
+          "agent",
+          "license",
+          "body"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "The discovery scope the skill came from, as `SkillScope` spells it."
+          },
+          "description": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string",
+            "description": "Where the skill file sits on disk."
+          },
+          "agent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent the skill declares, when it declares one. Always written."
+          },
+          "license": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The licence the skill declares, when it declares one. Always written."
+          },
+          "body": {
+            "type": "string",
+            "description": "The skill's Markdown body, without its frontmatter."
+          }
+        }
+      },
+      "SkillSummary": {
+        "type": "object",
+        "description": "One skill in a `skills.list` or `skills.search` answer.\n\nThe two RPCs answer the same row, because a list and a search are the same\nquestion asked of two different sets. A second row type here would let one\nof them grow a field the other cannot report.",
+        "required": [
+          "name",
+          "scope",
+          "description",
+          "shadowed_count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The skill's name, which is also the key `skills.get` takes."
+          },
+          "scope": {
+            "type": "string",
+            "description": "The discovery scope the skill came from, as `SkillScope` spells it."
+          },
+          "description": {
+            "type": "string"
+          },
+          "shadowed_count": {
+            "type": "integer",
+            "description": "How many same-named skills this one shadows.",
+            "minimum": 0
+          }
+        }
+      },
+      "SkillsReply": {
+        "type": "object",
+        "description": "What `skills.list` and `skills.search` answer.",
+        "required": [
+          "skills"
+        ],
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillSummary"
+            }
+          }
+        }
+      },
       "SkipReason": {
         "type": "string",
         "description": "Why one inbound reference was left as it was.\n\nA closed set, because the browser prints a sentence per reason. It was four\nstring literals spelled in five places, so a fifth reason could reach a\nclient whose reader has no arm for it. `every_skip_reason_reaches_the_wire`\n(`crucible-web`) walks an exhaustive match, so a new variant fails to\ncompile until somebody decides what the client says about it.",
@@ -7714,6 +8621,57 @@
           },
           "reason": {
             "$ref": "#/components/schemas/SkipReason"
+          }
+        }
+      },
+      "SlashCommand": {
+        "type": "object",
+        "description": "One slash command, as both the `/help` text and the web autocomplete see it.",
+        "required": [
+          "name",
+          "args",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Bare name, no leading slash."
+          },
+          "args": {
+            "type": "string",
+            "description": "Argument placeholder shown in help/completion, empty when nullary."
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "SourceOrigin": {
+        "type": "object",
+        "description": "Where one leaf came from, in the shape the wire uses.\n\nOne projection serves two callers: `config.origin` answers with it, and a\n`config.save` refusal names the pin with it. Two projections would let the\nrefusal name a file the origin does not.\n`Deserialize` as well as `Serialize`: `config.save`'s refusal travels back\nover the RPC into a typed reply, and a `&'static str` cannot be read from a\ndocument. The value is still [`ConfigSource::short`]'s, written once.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "The one-word source name, as [`ConfigSource::short`] gives it."
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The file the source names, when it names one."
+          },
+          "line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The line inside `file`, when the source recorded one.",
+            "minimum": 0
           }
         }
       },
@@ -7982,6 +8940,19 @@
                 "description": "Where in the note the hit sits, or `null` when the hit names the whole\nnote. Always written, so `null` reads as \"the whole note\" and never as\n\"unknown\"."
               }
             ]
+          }
+        }
+      },
+      "WebhookReceiveReply": {
+        "type": "object",
+        "description": "What `webhook.receive` answers.\n\nAcceptance only: the delivery became a `webhook:received` event, and\nwhether a plugin was listening is not this answer's business. Every refusal\nis an HTTP error at the ingress route, which never reaches this RPC.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Always `ok`."
           }
         }
       },

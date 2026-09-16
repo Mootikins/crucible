@@ -13,8 +13,8 @@
 //! against those unions in both directions.
 //!
 //! Task A4 adds the completeness gate: the router and the browser must both
-//! name only routes the document describes. Two of its three tests are
-//! `#[ignore]`d until A10 finishes converting the route groups.
+//! name only routes the document describes. Task A10 converted the last route
+//! group, so all three of its tests demand an empty missing list.
 //!
 //! To regenerate the committed document, run:
 //! `cargo test -p crucible-web --test openapi_contract -- --ignored write_openapi_json`
@@ -300,13 +300,11 @@ fn every_stream_route_answers_with_an_event_stream() {
 // stays green while the client calls a route it cannot see. Three tests close
 // that hole:
 //
-//   1. every route the router registers has an operation — `#[ignore]` until
-//      A10, because A5 to A10 convert the route groups that make it green;
-//   2. every `/api` path the browser asks for has an operation — `#[ignore]`
-//      for the same reason;
-//   3. every `/api` path the browser asks for reaches a route — green today,
-//      because a registered route serves its path whether or not the document
-//      describes it.
+//   1. every route the router registers has an operation;
+//   2. every `/api` path the browser asks for has an operation;
+//   3. every `/api` path the browser asks for reaches a route, which holds
+//      even for a route the document does not describe, because a registered
+//      route serves its path either way.
 //
 // They replace `every_frontend_api_path_has_a_backend_route`
 // (`crates/crucible-cli/tests/architecture_tests.rs`), which read one file,
@@ -734,8 +732,7 @@ fn undescribed_routes() -> Vec<String> {
         .collect()
 }
 
-/// Every route the router registers has an operation in the document, except
-/// the ones the baseline still allows.
+/// Every route the router registers has an operation in the document.
 ///
 /// This is the test that makes "a route added in Rust fails `bun run
 /// typecheck`" true: an undescribed route reaches no generated type, so
@@ -743,12 +740,14 @@ fn undescribed_routes() -> Vec<String> {
 #[test]
 fn every_route_the_router_serves_is_in_the_document() {
     let missing = undescribed_routes();
-    assert_within_baseline(
-        ROUTE_BASELINE,
-        &missing,
-        "routes the router serves have no OpenAPI operation",
-        "Give the handler a `#[utoipa::path]` and register it with \
-         `.routes(routes!(handler))`",
+
+    assert!(
+        missing.is_empty(),
+        "{} routes the router serves have no OpenAPI operation. Give the \
+         handler a `#[utoipa::path]` and register it with \
+         `.routes(routes!(handler))`:\n  - {}",
+        missing.len(),
+        missing.join("\n  - ")
     );
 }
 
@@ -948,8 +947,7 @@ fn client_paths_outside(served: &BTreeSet<String>) -> Vec<String> {
     outside
 }
 
-/// Every `/api` path the browser asks for has an operation in the document,
-/// except the ones the baseline still allows.
+/// Every `/api` path the browser asks for has an operation in the document.
 ///
 /// This runs the direction the deleted regex scan ran, and fixes what it
 /// missed: it compares against the generated document rather than a second
@@ -957,35 +955,35 @@ fn client_paths_outside(served: &BTreeSet<String>) -> Vec<String> {
 #[test]
 fn every_api_path_the_client_calls_is_in_the_document() {
     let missing = undescribed_client_paths();
-    assert_within_baseline(
-        CLIENT_BASELINE,
-        &missing,
-        "`/api` paths the browser calls have no OpenAPI operation",
-        "Give the route a `#[utoipa::path]`, or fix the client path",
+
+    assert!(
+        missing.is_empty(),
+        "{} `/api` paths the browser calls have no OpenAPI operation. Give \
+         the route a `#[utoipa::path]`, or fix the client path:\n  - {}",
+        missing.len(),
+        missing.join("\n  - ")
     );
 }
 
 /// Every `/api` path the browser asks for reaches a route.
 ///
 /// This is the claim the deleted regex scan made, and the one that does not
-/// wait on the document: a route that is registered but not yet described
-/// still serves the path. It compares against the nest-resolved scan joined
-/// to the document, so a route reads the same before and after its group
-/// converts.
+/// read the document alone: a route the document leaves out still serves its
+/// path. It compares against the nest-resolved scan joined to the document, so
+/// an allow-listed path reads the same as a described one.
 ///
 /// It also holds the scan honest. A scan that quietly stopped reading a file
-/// would let the two baseline gates pass with a shorter missing list, which
-/// looks like progress; here the same loss names the paths that suddenly
-/// reach nothing.
+/// would shorten the other two gates' missing lists, which looks like
+/// progress; here the same loss names the paths that suddenly reach nothing.
 #[test]
 fn every_api_path_the_client_calls_reaches_a_route() {
     let registered = routes_the_router_serves();
 
     // The allow-list is the route scan's own sanity check. Every entry is a
-    // `.route(…)` call that no task converts, so a scan that stops finding
-    // them has broken, and every missing list would shrink for the wrong
-    // reason. The check lives here because this test never waits on a
-    // baseline.
+    // `.route(…)` call that stays outside the document, so a scan that stops
+    // finding them has broken, and the other two gates would pass for the
+    // wrong reason. The check lives here because this test compares against
+    // the scan rather than against the document alone.
     for (path, reason) in PATHS_OUTSIDE_THE_DOCUMENT {
         assert!(
             registered.iter().any(|(_, found)| found == path),
@@ -1007,113 +1005,5 @@ fn every_api_path_the_client_calls_reaches_a_route() {
          the client path, or fix the scan that reads them:\n  - {}",
         missing.len(),
         missing.join("\n  - ")
-    );
-}
-
-// --- The shrinking baseline -------------------------------------------------
-//
-// A5 to A10 convert one route group each. Until they finish, most routes have
-// no operation, so the two gates above cannot demand an empty missing list.
-// They demand instead that the missing list stays inside a committed
-// baseline, which each task shrinks.
-//
-// A gate that only shrinks its own allowance would rot upward, so
-// `the_openapi_baseline_only_shrinks` fails the moment a baseline line stops
-// being missing. The two rules together mean the files can only lose lines.
-
-/// The routes that have no operation yet, one `METHOD /path` per line.
-const ROUTE_BASELINE: &str = "tests/openapi_baseline/routes.txt";
-
-/// The client paths that have no operation yet, one `module  /path` per line.
-const CLIENT_BASELINE: &str = "tests/openapi_baseline/client.txt";
-
-fn baseline_path(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
-
-/// A baseline file's entries, ignoring blank lines and `#` comments.
-///
-/// An absent file is an empty baseline, not an error. A10 deletes both files,
-/// and the two gates then demand that nothing is missing at all.
-fn baseline_entries(relative: &str) -> BTreeSet<String> {
-    let path = baseline_path(relative);
-    let Ok(contents) = std::fs::read_to_string(&path) else {
-        return BTreeSet::new();
-    };
-    contents
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_string)
-        .collect()
-}
-
-/// The missing list stays inside the baseline.
-///
-/// `problem` names what the entries are; `remedy` says what to do about a new
-/// one. The passing report says how much of the baseline is left, so a task
-/// that converts a group can see its own progress with `--no-capture`.
-fn assert_within_baseline(relative: &str, missing: &[String], problem: &str, remedy: &str) {
-    let baseline = baseline_entries(relative);
-    let unexpected: Vec<&String> = missing
-        .iter()
-        .filter(|entry| !baseline.contains(*entry))
-        .collect();
-
-    assert!(
-        unexpected.is_empty(),
-        "{} {problem}, and {relative} does not allow them. {remedy}:\n  - {}",
-        unexpected.len(),
-        unexpected
-            .iter()
-            .map(|entry| entry.as_str())
-            .collect::<Vec<_>>()
-            .join("\n  - ")
-    );
-
-    if baseline.is_empty() {
-        return;
-    }
-    let mut left: Vec<&String> = baseline.iter().collect();
-    left.sort();
-    println!(
-        "{relative} still allows {} of these:\n  - {}",
-        left.len(),
-        left.iter()
-            .map(|entry| entry.as_str())
-            .collect::<Vec<_>>()
-            .join("\n  - ")
-    );
-}
-
-/// A baseline never holds a line that is no longer missing.
-///
-/// Without this, converting a route group would leave its lines behind, the
-/// files would stop describing the work that is left, and a route that
-/// regressed to undescribed would pass on a stale allowance.
-#[test]
-fn the_openapi_baseline_only_shrinks() {
-    let mut stale: Vec<String> = Vec::new();
-    for (relative, missing) in [
-        (ROUTE_BASELINE, undescribed_routes()),
-        (CLIENT_BASELINE, undescribed_client_paths()),
-    ] {
-        let current: BTreeSet<String> = missing.into_iter().collect();
-        stale.extend(
-            baseline_entries(relative)
-                .into_iter()
-                .filter(|entry| !current.contains(entry))
-                .map(|entry| format!("{relative}  {entry}")),
-        );
-    }
-    stale.sort();
-
-    assert!(
-        stale.is_empty(),
-        "{} baseline lines name something that now has an OpenAPI operation. \
-         The baselines only shrink, so remove these lines (and delete a file \
-         that becomes empty):\n  - {}",
-        stale.len(),
-        stale.join("\n  - ")
     );
 }

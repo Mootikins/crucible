@@ -10,8 +10,6 @@ use crate::services::daemon::AppState;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
-    routing::get,
-    Router,
 };
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Deserialize;
@@ -19,6 +17,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, warn};
+use utoipa::IntoParams;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 /// Cap on concurrent PTY sessions. Each session spawns a shell child plus a
 /// dedicated blocking OS thread, so an unbounded count is a fork-bomb / thread
@@ -58,8 +58,8 @@ pub(crate) struct KeepAlive {
     cwd: Option<String>,
 }
 
-pub fn terminal_routes() -> Router<AppState> {
-    Router::new().route("/ws", get(terminal_ws))
+pub fn terminal_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(terminal_ws))
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,7 +72,8 @@ enum ClientMsg {
 }
 
 /// Query parameters on the PTY upgrade.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub(crate) struct TerminalParams {
     /// Where to start the shell. The CLIENT knows which workspace the user is
     /// looking at; the server does not, and its own cwd is a bad guess (see
@@ -80,6 +81,23 @@ pub(crate) struct TerminalParams {
     cwd: Option<String>,
 }
 
+/// Open a PTY and speak it over a WebSocket.
+///
+/// The router nests under `/api/terminal`, so the document reads this path as
+/// `/api/terminal/ws`. There is no 200: the handler either upgrades or
+/// refuses, and the frames that follow are not an HTTP body. Client frames are
+/// JSON text (`{"t":"i","d":"…"}` for input, `{"t":"r","cols":N,"rows":N}` for
+/// a resize); server frames are binary PTY output.
+#[utoipa::path(
+    get,
+    path = "/ws",
+    params(TerminalParams),
+    responses(
+        (status = 101, description = "The connection upgrades to a WebSocket carrying the PTY"),
+        (status = 403, description = "The caller is not on loopback, or the Origin is not allowed"),
+        (status = 503, description = "Every concurrent PTY slot is taken"),
+    )
+)]
 async fn terminal_ws(
     ws: WebSocketUpgrade,
     axum::extract::Query(params): axum::extract::Query<TerminalParams>,

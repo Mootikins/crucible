@@ -5,14 +5,15 @@ use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
-    Extension, Json, Router,
+    Extension, Json,
 };
 use crucible_daemon::webhook::{
     default_secrets_path, Signature, WebhookSecrets, SIGNATURE_HEADERS,
 };
+use crucible_daemon::WebhookReceiveReply;
 use std::collections::HashMap;
 use std::sync::Arc;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 /// Webhook ingress: `POST /api/webhook/{name}` turns a request into a
 /// `webhook:received` event on every plugin's stream.
@@ -34,7 +35,7 @@ use std::sync::Arc;
 /// [webhooks.ci]
 /// secret = "at-least-16-bytes-of-secret"
 /// ```
-pub fn webhook_routes() -> Router<AppState> {
+pub fn webhook_routes() -> OpenApiRouter<AppState> {
     webhook_routes_with_secrets(Arc::new(WebhookSecrets::load(
         default_secrets_path().as_deref(),
     )))
@@ -42,9 +43,9 @@ pub fn webhook_routes() -> Router<AppState> {
 
 /// [`webhook_routes`] with the secret store injected — tests must use this, so
 /// they never read the developer's real `webhooks.toml`.
-fn webhook_routes_with_secrets(secrets: Arc<WebhookSecrets>) -> Router<AppState> {
-    Router::new()
-        .route("/api/webhook/{name}", post(handle_webhook))
+fn webhook_routes_with_secrets(secrets: Arc<WebhookSecrets>) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(handle_webhook))
         .layer(Extension(secrets))
 }
 
@@ -65,6 +66,24 @@ fn is_redacted(name: &str) -> bool {
 // cannot: axum resolves a handler through `IntoResponse` on the error type,
 // which `Response` implements and `Box<Response>` does not, so boxing here
 // stops the route compiling at all.
+/// Take one signed delivery and turn it into a `webhook:received` event.
+///
+/// The body is the sender's own document, so the request body stays an open
+/// object: this route verifies the signature over the bytes as received and
+/// forwards them, and describing a shape here would claim it reads them.
+#[utoipa::path(
+    post,
+    path = "/api/webhook/{name}",
+    params(("name" = String, Path, description = "The configured webhook's name")),
+    request_body(content = Object, content_type = "application/json"),
+    responses(
+        (status = 200, body = WebhookReceiveReply),
+        (status = 400, description = "The body is not valid UTF-8 JSON"),
+        (status = 401, description = "The delivery carries no valid signature, or the webhook has no configured secret"),
+        (status = 415, description = "The delivery was not sent as application/json"),
+        (status = 502, description = "The daemon could not take the delivery"),
+    )
+)]
 #[allow(clippy::result_large_err)]
 async fn handle_webhook(
     State(state): State<AppState>,
@@ -72,7 +91,7 @@ async fn handle_webhook(
     Path(name): Path<String>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<serde_json::Value>, Response> {
+) -> Result<Json<WebhookReceiveReply>, Response> {
     // A CORS-safelisted content type (text/plain, form-urlencoded, multipart)
     // makes a cross-origin POST a *simple* request: the browser sends it with
     // no preflight and no opportunity to refuse. Demanding application/json
@@ -185,7 +204,7 @@ mod tests {
         body: &str,
     ) -> StatusCode {
         let (_mock, client) = start_mock_daemon().await;
-        let app = webhook_routes_with_secrets(secrets).with_state(build_mock_state(client));
+        let app = webhook_router(secrets, client);
 
         let mut builder = Request::builder().method("POST").uri("/api/webhook/ci");
         if let Some(content_type) = content_type {
@@ -197,6 +216,17 @@ mod tests {
         let request = builder.body(Body::from(body.to_string())).unwrap();
 
         app.oneshot(request).await.unwrap().status()
+    }
+
+    /// The served half of the group, with the mock daemon behind it. The
+    /// document half is the OpenAPI contract test's business, not a route
+    /// test's.
+    fn webhook_router(
+        secrets: Arc<WebhookSecrets>,
+        client: crucible_daemon::DaemonClient,
+    ) -> axum::Router {
+        let (router, _document) = webhook_routes_with_secrets(secrets).split_for_parts();
+        router.with_state(build_mock_state(client))
     }
 
     fn now() -> i64 {
@@ -377,7 +407,7 @@ mod tests {
         // stream; neither the operator's API key nor any signature — in any of
         // the headers we accept one from — may ride along.
         let (mock, client) = start_mock_daemon().await;
-        let app = webhook_routes_with_secrets(secrets()).with_state(build_mock_state(client));
+        let app = webhook_router(secrets(), client);
 
         let signature = sign(SECRET, now(), BODY.as_bytes());
         let request = Request::builder()
@@ -412,7 +442,7 @@ mod tests {
     #[tokio::test]
     async fn raw_body_is_forwarded_byte_for_byte() {
         let (mock, client) = start_mock_daemon().await;
-        let app = webhook_routes_with_secrets(secrets()).with_state(build_mock_state(client));
+        let app = webhook_router(secrets(), client);
 
         // Whitespace and escapes that a reserialize would normalise away —
         // the daemon must see exactly what was signed.

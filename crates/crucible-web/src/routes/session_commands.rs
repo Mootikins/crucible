@@ -8,26 +8,38 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(super) struct ExecuteCommandRequest {
+    /// The command line, with or without its leading slash.
     command: String,
 }
 
-#[derive(Debug, Serialize)]
+/// What one slash command produced.
+///
+/// A command the server does not know, and a command used wrongly, both come
+/// back here with `type` reading `error`: the composer prints the text either
+/// way, and neither is a transport failure.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(super) struct CommandResponse {
+    /// The text the composer prints.
     result: String,
+    /// `success` or `error`.
     #[serde(rename = "type")]
     response_type: String,
 }
 
 /// One slash command, as both the `/help` text and the web autocomplete see it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub(super) struct SlashCommand {
     /// Bare name, no leading slash.
+    #[schema(value_type = String)]
     pub name: &'static str,
     /// Argument placeholder shown in help/completion, empty when nullary.
+    #[schema(value_type = String)]
     pub args: &'static str,
+    #[schema(value_type = String)]
     pub description: &'static str,
 }
 
@@ -81,12 +93,22 @@ impl SlashCommand {
     }
 }
 
-#[derive(Debug, Serialize)]
+/// The command set the composer completes from.
+#[derive(Debug, Serialize, ToSchema)]
 pub(super) struct CommandsResponse {
+    #[schema(value_type = Vec<SlashCommand>)]
     commands: &'static [SlashCommand],
 }
 
 /// `GET /api/commands` — the slash commands the web composer can complete.
+///
+/// Session-independent: the set is static, so the composer fetches it once
+/// rather than per session.
+#[utoipa::path(
+    get,
+    path = "/api/commands",
+    responses((status = 200, body = CommandsResponse))
+)]
 pub(super) async fn list_commands() -> Json<CommandsResponse> {
     Json(CommandsResponse {
         commands: SLASH_COMMANDS,
@@ -113,6 +135,17 @@ fn session_scope_kilns(session: &serde_json::Value) -> Vec<crucible_core::config
         .unwrap_or_default()
 }
 
+/// Run one slash command in a session.
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/command",
+    params(("id" = String, Path, description = "The session to run the command in")),
+    request_body = ExecuteCommandRequest,
+    responses(
+        (status = 200, body = CommandResponse),
+        (status = 502, description = "The daemon could not serve the command"),
+    )
+)]
 pub(super) async fn execute_command(
     State(state): State<AppState>,
     Path(id): Path<String>,

@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ACP agent profiles with probed availability, for the session-creation
+         *     agent picker.
+         * @description Served through the SWR catalog cache — the daemon probe takes ~0.5s and
+         *     must not gate every splash render.
+         */
+        get: operations["list_agents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backlinks": {
         parameters: {
             query?: never;
@@ -76,6 +98,72 @@ export interface paths {
         get: operations["event_stream"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a turn in a session. */
+        post: operations["send_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/commands` — the slash commands the web composer can complete.
+         * @description Session-independent: the set is static, so the composer fetches it once
+         *     rather than per session.
+         */
+        get: operations["list_commands"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/config` — the effective config, its per-leaf provenance, and the
+         *     two fields this route has always served.
+         */
+        get: operations["get_config"];
+        put?: never;
+        /**
+         * `POST /api/config` — save values as the user's durable preference.
+         * @description The body and the answer are `config.save`'s own: `{values}` in,
+         *     `{ok, refused, rejected}` out. A refusal rides in the answer rather than in
+         *     an HTTP error because refusal is per leaf — the siblings the user changed
+         *     in the same click did save — and because the caller needs the file and the
+         *     line the daemon named, which an error status cannot carry.
+         */
+        post: operations["save_config"];
         delete?: never;
         options?: never;
         head?: never;
@@ -213,6 +301,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/interaction/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer one pending interaction. */
+        post: operations["interaction_respond"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/interactions/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aggregate pending interactions across all sessions, with each request
+         *     normalized to the same flat shape the SSE path delivers — the Inbox
+         *     renders both sources through one component.
+         */
+        get: operations["pending_interactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kiln/file": {
         parameters: {
             query?: never;
@@ -335,6 +461,27 @@ export interface paths {
          * @description Idempotent: deleting a layout that is not there succeeds.
          */
         delete: operations["reset_layout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether the daemon is serving an MCP surface, and where.
+         * @description The daemon's own answer, forwarded: the two arms and the keys each one
+         *     writes belong to the manager that holds the server, not to this route.
+         */
+        get: operations["mcp_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -956,6 +1103,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run one slash command in a session. */
+        post: operations["execute_command"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/config/agent-options": {
         parameters: {
             query?: never;
@@ -1518,6 +1682,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The skills a kiln discovers, optionally narrowed to one scope. */
+        get: operations["list_skills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One skill, with the Markdown body a summary row omits. */
+        get: operations["get_skill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The same rows `GET /api/skills` answers, narrowed by a query string. */
+        get: operations["search_skills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/surfaces": {
         parameters: {
             query?: never;
@@ -1560,10 +1775,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/terminal/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open a PTY and speak it over a WebSocket.
+         * @description The router nests under `/api/terminal`, so the document reads this path as
+         *     `/api/terminal/ws`. There is no 200: the handler either upgrades or
+         *     refuses, and the frames that follow are not an HTTP body. Client frames are
+         *     JSON text (`{"t":"i","d":"…"}` for input, `{"t":"r","cols":N,"rows":N}` for
+         *     a resize); server frames are binary PTY output.
+         */
+        get: operations["terminal_ws"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhook/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take one signed delivery and turn it into a `webhook:received` event.
+         * @description The body is the sender's own document, so the request body stays an open
+         *     object: this route verifies the signature over the bytes as received and
+         *     forwards them, and describing a shape here would claim it reads them.
+         */
+        post: operations["handle_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description The agent picker's list.
+         *
+         *     The key is `agents`, where the daemon's own answer says `profiles`: this
+         *     route names the list after what the picker shows, and the ROW is the
+         *     daemon's, so a probed field cannot be dropped on the way through.
+         */
+        AgentListResponse: {
+            agents: components["schemas"]["AgentProfileEntry"][];
+        };
         /** @description One choice in an agent's select option. */
         AgentOptionChoiceRow: {
             /** @description What to show for it. */
@@ -1614,6 +1885,22 @@ export interface components {
              */
             options: components["schemas"]["AgentOptionRow"][];
             session_id: string;
+        };
+        /** @description One ACP agent profile, with the availability probe's verdict. */
+        AgentProfileEntry: {
+            /** @description Whether the probe found the command on PATH and it answered `--version`. */
+            available: boolean;
+            /**
+             * @description The command that spawns the agent, or an empty string when the profile
+             *     names none. A profile with no command can never spawn, so it is never
+             *     available.
+             */
+            command: string;
+            /** @description The profile's description, or an empty string when it declares none. */
+            description: string;
+            /** @description Whether the daemon ships this profile, rather than a config declaring it. */
+            is_builtin: boolean;
+            name: string;
         };
         /** @description One change: the text expected, and what replaces it. */
         AnchoredEdit: {
@@ -1960,6 +2247,23 @@ export interface components {
             name: string;
         };
         /**
+         * @description What one slash command produced.
+         *
+         *     A command the server does not know, and a command used wrongly, both come
+         *     back here with `type` reading `error`: the composer prints the text either
+         *     way, and neither is a transport failure.
+         */
+        CommandResponse: {
+            /** @description The text the composer prints. */
+            result: string;
+            /** @description `success` or `error`. */
+            type: string;
+        };
+        /** @description The command set the composer completes from. */
+        CommandsResponse: {
+            commands: components["schemas"]["SlashCommand"][];
+        };
+        /**
          * @description Who wrote a comment.
          * @enum {string}
          */
@@ -1991,6 +2295,64 @@ export interface components {
             /** @description Absolute, or relative to the session's tracked root. */
             path: string;
             root?: string | null;
+        };
+        /**
+         * @description What `GET /api/config` answers.
+         *
+         *     Three of its fields stay open objects. The effective config, the origin
+         *     rows and the control tree are the daemon's vocabulary, declared in Lua and
+         *     in the store; a fixed shape here would make this layer a second owner of
+         *     them, and a key a newer daemon adds would not reach the browser at all.
+         */
+        ConfigResponse: {
+            /** @description The daemon's effective config, whole and unrewritten. */
+            config: Record<string, never>;
+            /**
+             * @description Where `init.lua` and `settings.json` live, so a lock can offer a jump
+             *     to the file that holds a key. Absent when the daemon booted from a
+             *     config value rather than a file.
+             */
+            config_root?: string | null;
+            /**
+             * @description The declared control tree the settings UI renders, as
+             *     `config.controls` gives it: `{options, read_only}`. Served here rather
+             *     than from a second endpoint because a control and the value it shows
+             *     are one screen, and two fetches could disagree about which keys exist.
+             */
+            controls: Record<string, never>;
+            kiln_path: string;
+            /**
+             * @description One row per recorded leaf: `{key, value, source, file?, line?}`, as
+             *     `config.origin` gives them. The flat shape is what a settings control
+             *     renders a lock from; the effective config's own `provenance` map is
+             *     the same fact in the store's enum shape, and serving both would be two
+             *     spellings of one answer.
+             */
+            origins: Record<string, never>;
+            /**
+             * @description Non-loopback terminal/shell access is active (opt-in + API key) —
+             *     the terminal panel connects from LAN clients only when this is true.
+             */
+            remote_shell: boolean;
+        };
+        /**
+         * @description What `config.save` answers.
+         *
+         *     A refusal rides in the answer rather than in an error: refusal is per leaf,
+         *     the siblings the caller changed in the same call did save, and `refused`
+         *     carries the file and the line a human's config holds the key on.
+         */
+        ConfigSaveReply: {
+            /** @description Whether every leaf the caller sent reached the `Settings` layer. */
+            ok: boolean;
+            /** @description The leaves a pin refused, each with the source that holds it. */
+            refused: components["schemas"]["PinnedLeaf"][];
+            /**
+             * @description The top-level keys that name where the daemon acts, which no save may
+             *     write. They are dropped rather than refused, so they are reported apart
+             *     from `refused`.
+             */
+            rejected: string[];
         };
         ContextStrategyResponse: {
             /**
@@ -2059,6 +2421,10 @@ export interface components {
             index: number;
             /** @enum {string} */
             reason: "empty_expect";
+        };
+        ExecuteCommandRequest: {
+            /** @description The command line, with or without its leading slash. */
+            command: string;
         };
         /** @description One entry of a kiln's file listing. */
         FileEntryRow: {
@@ -2365,6 +2731,23 @@ export interface components {
             /** @description Plugin URL (e.g. "user/repo" or full git URL). */
             url: string;
         };
+        /** @description The answer this route gives when the daemon took the response. */
+        InteractionRespondResponse: {
+            /** @description Always `true`. A refusal is an error status, not a `false`. */
+            ok: boolean;
+        };
+        InteractionResponseRequest: {
+            request_id: string;
+            /**
+             * @description The answer, in the kind-tagged shape `InteractionResponse` takes.
+             *
+             *     Open, because the vocabulary belongs to the daemon's interaction types
+             *     and an unreadable answer must come back as this route's 400 naming the
+             *     deserialiser's own complaint, not as axum's plain-text rejection.
+             */
+            response: Record<string, never>;
+            session_id: string;
+        };
         /** @description What `GET /api/kiln/file` answers. */
         KilnFileResponse: {
             content: string;
@@ -2478,6 +2861,39 @@ export interface components {
              * @description First line, 1-based, inclusive.
              */
             start: number;
+        };
+        /** @description The running arm of [`McpStatus`]. */
+        McpRunning: {
+            /**
+             * @description Whether the server task has already finished, which is how a crashed
+             *     server reads while the manager still calls itself running.
+             */
+            finished: boolean;
+            /** @description The kiln path the server serves. */
+            kiln_path: string;
+            /**
+             * Format: int32
+             * @description The SSE port, or `null` under stdio. Always written.
+             */
+            port: number | null;
+            /** @description Always `true`. */
+            running: boolean;
+            /** @description Transport type: `sse` or `stdio`. */
+            transport: string;
+        };
+        /**
+         * @description What `mcp.status` answers: the server is up, or it is not.
+         *
+         *     Untagged, because the two arms are told apart by `running` and the wire
+         *     has always spelled them that way. The stopped arm carries `running` ALONE:
+         *     a stopped server has no transport, no port and no kiln, and writing those
+         *     keys as null would say it has them and they are empty.
+         */
+        McpStatus: components["schemas"]["McpRunning"] | components["schemas"]["McpStopped"];
+        /** @description The stopped arm of [`McpStatus`]. */
+        McpStopped: {
+            /** @description Always `false`. */
+            running: boolean;
         };
         /**
          * @description A cluster both sides changed differently.
@@ -2641,6 +3057,31 @@ export interface components {
             base_hash?: string | null;
             edits: components["schemas"]["AnchoredEdit"][];
             path: string;
+        };
+        /** @description One interaction a session is waiting on an answer to. */
+        PendingInteraction: {
+            /**
+             * @description The request, in the flat shape the SSE path delivers.
+             *
+             *     Deliberately open: `normalize_interaction` writes one object per
+             *     interaction kind — a permission request carries `tokens` and maybe
+             *     `diffs`, an ask carries the question's own fields — and the kinds are
+             *     the daemon's to add to. `kind` tells the browser which one it has.
+             */
+            request: Record<string, never>;
+            /** @description The identifier an answer must carry back. */
+            request_id: string;
+            /** @description The session that asked. */
+            session_id: string;
+        };
+        /** @description The interactions every session is waiting on, in one list. */
+        PendingInteractionsResponse: {
+            pending: components["schemas"]["PendingInteraction"][];
+        };
+        /** @description One leaf `config.save` refuses, and what pins it. */
+        PinnedLeaf: components["schemas"]["SourceOrigin"] & {
+            /** @description The dot-joined leaf path the caller asked to save. */
+            key: string;
         };
         /**
          * @description One executable primitive a plugin declared, and the arguments it takes.
@@ -3343,6 +3784,15 @@ export interface components {
             failed: components["schemas"]["ReviewFailureRow"][];
             session_id: string;
         };
+        /**
+         * @description The values one save carries, in the shape `config.save` takes.
+         *
+         *     The keys are config leaf paths and the values are whatever those leaves
+         *     hold, so the map stays open: which leaves exist is the daemon's answer.
+         */
+        SaveRequest: {
+            values: Record<string, never>;
+        };
         /** @description Response for the `scm.clone` RPC. */
         ScmCloneResponse: {
             /** @description Absolute path of the freshly cloned repository. */
@@ -3391,6 +3841,19 @@ export interface components {
             score: number;
             /** @description The block's text, or `null` when there is none. Always written. */
             snippet: string | null;
+        };
+        SendMessageRequest: {
+            content: string;
+            session_id: string;
+        };
+        /**
+         * @description The identifier the daemon minted for the turn this request started.
+         *
+         *     One key, because the browser correlates the SSE events that follow with it
+         *     and needs nothing else to do so.
+         */
+        SendMessageResponse: {
+            message_id: string;
         };
         /**
          * @description The agent record `session.get` nests inside a session.
@@ -3655,6 +4118,41 @@ export interface components {
             /** Format: int64 */
             timeout_secs?: number | null;
         };
+        /** @description What `skills.get` answers: one skill, with the body a summary omits. */
+        SkillDetail: {
+            /** @description The agent the skill declares, when it declares one. Always written. */
+            agent: string | null;
+            /** @description The skill's Markdown body, without its frontmatter. */
+            body: string;
+            description: string;
+            /** @description The licence the skill declares, when it declares one. Always written. */
+            license: string | null;
+            name: string;
+            /** @description The discovery scope the skill came from, as `SkillScope` spells it. */
+            scope: string;
+            /** @description Where the skill file sits on disk. */
+            source_path: string;
+        };
+        /** @description What `skills.list` and `skills.search` answer. */
+        SkillsReply: {
+            skills: components["schemas"]["SkillSummary"][];
+        };
+        /**
+         * @description One skill in a `skills.list` or `skills.search` answer.
+         *
+         *     The two RPCs answer the same row, because a list and a search are the same
+         *     question asked of two different sets. A second row type here would let one
+         *     of them grow a field the other cannot report.
+         */
+        SkillSummary: {
+            description: string;
+            /** @description The skill's name, which is also the key `skills.get` takes. */
+            name: string;
+            /** @description The discovery scope the skill came from, as `SkillScope` spells it. */
+            scope: string;
+            /** @description How many same-named skills this one shadows. */
+            shadowed_count: number;
+        };
         /** @description One inbound reference that was intentionally left untouched. */
         SkippedRef: {
             raw_target: string;
@@ -3672,6 +4170,35 @@ export interface components {
          * @enum {string}
          */
         SkipReason: "ambiguous" | "stale-span" | "canvas-no-exact-match" | "canvas-unreadable";
+        /** @description One slash command, as both the `/help` text and the web autocomplete see it. */
+        SlashCommand: {
+            /** @description Argument placeholder shown in help/completion, empty when nullary. */
+            args: string;
+            description: string;
+            /** @description Bare name, no leading slash. */
+            name: string;
+        };
+        /**
+         * @description Where one leaf came from, in the shape the wire uses.
+         *
+         *     One projection serves two callers: `config.origin` answers with it, and a
+         *     `config.save` refusal names the pin with it. Two projections would let the
+         *     refusal name a file the origin does not.
+         *     `Deserialize` as well as `Serialize`: `config.save`'s refusal travels back
+         *     over the RPC into a typed reply, and a `&'static str` cannot be read from a
+         *     document. The value is still [`ConfigSource::short`]'s, written once.
+         */
+        SourceOrigin: {
+            /** @description The file the source names, when it names one. */
+            file?: string | null;
+            /**
+             * Format: int32
+             * @description The line inside `file`, when the source recorded one.
+             */
+            line?: number | null;
+            /** @description The one-word source name, as [`ConfigSource::short`] gives it. */
+            source: string;
+        };
         /**
          * @description A surface changed, delivered to the browser.
          *
@@ -3803,6 +4330,17 @@ export interface components {
              */
             score: number;
         };
+        /**
+         * @description What `webhook.receive` answers.
+         *
+         *     Acceptance only: the delivery became a `webhook:received` event, and
+         *     whether a plugin was listening is not this answer's business. Every refusal
+         *     is an HTTP error at the ingress route, which never reaches this RPC.
+         */
+        WebhookReceiveReply: {
+            /** @description Always `ok`. */
+            status: string;
+        };
         /** @description One wikilink target. */
         WikilinkRow: {
             target: string;
@@ -3823,10 +4361,12 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAgentListResponse = components['schemas']['AgentListResponse'];
 export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
 export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
 export type SchemaAgentOptionRow = components['schemas']['AgentOptionRow'];
 export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResponse'];
+export type SchemaAgentProfileEntry = components['schemas']['AgentProfileEntry'];
 export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
 export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
@@ -3845,12 +4385,17 @@ export type SchemaChatEvent = components['schemas']['ChatEvent'];
 export type SchemaCloneRequest = components['schemas']['CloneRequest'];
 export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
+export type SchemaCommandResponse = components['schemas']['CommandResponse'];
+export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
 export type SchemaCommentRequest = components['schemas']['CommentRequest'];
+export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
+export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
+export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
 export type SchemaFileWriteResponse = components['schemas']['FileWriteResponse'];
@@ -3870,6 +4415,8 @@ export type SchemaGrepHit = components['schemas']['GrepHit'];
 export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
 export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
+export type SchemaInteractionRespondResponse = components['schemas']['InteractionRespondResponse'];
+export type SchemaInteractionResponseRequest = components['schemas']['InteractionResponseRequest'];
 export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
 export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
 export type SchemaKilnGraphResponse = components['schemas']['KilnGraphResponse'];
@@ -3879,6 +4426,9 @@ export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
+export type SchemaMcpRunning = components['schemas']['McpRunning'];
+export type SchemaMcpStatus = components['schemas']['McpStatus'];
+export type SchemaMcpStopped = components['schemas']['McpStopped'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeResponse = components['schemas']['ModeResponse'];
@@ -3890,6 +4440,9 @@ export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse']
 export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
 export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
+export type SchemaPendingInteraction = components['schemas']['PendingInteraction'];
+export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
+export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
 export type SchemaPluginCommandRow = components['schemas']['PluginCommandRow'];
 export type SchemaPluginCommandsResponse = components['schemas']['PluginCommandsResponse'];
 export type SchemaPluginInstallOutcomeRow = components['schemas']['PluginInstallOutcomeRow'];
@@ -3940,10 +4493,13 @@ export type SchemaReviewStateResponse = components['schemas']['ReviewStateRespon
 export type SchemaReviewStateRow = components['schemas']['ReviewStateRow'];
 export type SchemaReviewStatesResponse = components['schemas']['ReviewStatesResponse'];
 export type SchemaReviewUndoRejectResponse = components['schemas']['ReviewUndoRejectResponse'];
+export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
+export type SchemaSendMessageRequest = components['schemas']['SendMessageRequest'];
+export type SchemaSendMessageResponse = components['schemas']['SendMessageResponse'];
 export type SchemaSessionAgentRow = components['schemas']['SessionAgentRow'];
 export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
@@ -3967,8 +4523,13 @@ export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
 export type SchemaShellEvent = components['schemas']['ShellEvent'];
 export type SchemaShellExecRequest = components['schemas']['ShellExecRequest'];
+export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillsReply = components['schemas']['SkillsReply'];
+export type SchemaSkillSummary = components['schemas']['SkillSummary'];
 export type SchemaSkippedRef = components['schemas']['SkippedRef'];
 export type SchemaSkipReason = components['schemas']['SkipReason'];
+export type SchemaSlashCommand = components['schemas']['SlashCommand'];
+export type SchemaSourceOrigin = components['schemas']['SourceOrigin'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
 export type SchemaSurfaceLineRow = components['schemas']['SurfaceLineRow'];
 export type SchemaSurfaceListResponse = components['schemas']['SurfaceListResponse'];
@@ -3981,10 +4542,37 @@ export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
 export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
+export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentListResponse"];
+                };
+            };
+            /** @description The daemon could not list the agent profiles */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_backlinks: {
         parameters: {
             query: {
@@ -4157,6 +4745,118 @@ export interface operations {
                 content: {
                     "text/event-stream": components["schemas"]["ChatEvent"];
                 };
+            };
+        };
+    };
+    send_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
+            /** @description The message is empty */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not accept the message */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_commands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandsResponse"];
+                };
+            };
+        };
+    };
+    get_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+            /** @description The daemon could not report its config */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    save_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigSaveReply"];
+                };
+            };
+            /** @description The daemon could not save the values */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4371,6 +5071,69 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not trash the entry, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    interaction_respond: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InteractionResponseRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteractionRespondResponse"];
+                };
+            };
+            /** @description The response does not name an interaction kind the daemon knows */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not take the response */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    pending_interactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingInteractionsResponse"];
+                };
+            };
+            /** @description The daemon could not list the pending interactions */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -4777,6 +5540,32 @@ export interface operations {
             };
             /** @description The stored layout could not be deleted */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mcp_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpStatus"];
+                };
+            };
+            /** @description The daemon could not report the MCP status */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5907,6 +6696,39 @@ export interface operations {
                 };
             };
             /** @description The daemon could not cancel the turn */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    execute_command: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to run the command in */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteCommandRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResponse"];
+                };
+            };
+            /** @description The daemon could not serve the command */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -7061,6 +7883,112 @@ export interface operations {
             };
         };
     };
+    list_skills: {
+        parameters: {
+            query: {
+                /** @description The kiln to discover skills from. */
+                kiln: string;
+                /** @description Keep only the skills this discovery scope found. */
+                scope?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillsReply"];
+                };
+            };
+            /** @description The daemon could not discover the skills */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_skill: {
+        parameters: {
+            query: {
+                /** @description The kiln to discover the skill from. */
+                kiln: string;
+            };
+            header?: never;
+            path: {
+                /** @description The skill's name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description No skill of that name is discoverable from this kiln */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the skill */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_skills: {
+        parameters: {
+            query: {
+                /** @description The kiln to search. */
+                kiln: string;
+                /**
+                 * @description How many rows to answer with. The daemon's own default applies when
+                 *     the caller names none.
+                 */
+                limit?: number;
+                /** @description The query, matched case-insensitively against name and description. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillsReply"];
+                };
+            };
+            /** @description The daemon could not search the skills */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_surfaces: {
         parameters: {
             query?: never;
@@ -7103,6 +8031,99 @@ export interface operations {
                 content: {
                     "text/event-stream": components["schemas"]["SurfaceChangedEvent"];
                 };
+            };
+        };
+    };
+    terminal_ws: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Where to start the shell. The CLIENT knows which workspace the user is
+                 *     looking at; the server does not, and its own cwd is a bad guess (see
+                 *     [`shell_cwd`]).
+                 */
+                cwd?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The connection upgrades to a WebSocket carrying the PTY */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller is not on loopback, or the Origin is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Every concurrent PTY slot is taken */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    handle_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The configured webhook's name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookReceiveReply"];
+                };
+            };
+            /** @description The body is not valid UTF-8 JSON */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The delivery carries no valid signature, or the webhook has no configured secret */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The delivery was not sent as application/json */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not take the delivery */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

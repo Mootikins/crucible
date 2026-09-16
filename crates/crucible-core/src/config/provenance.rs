@@ -167,10 +167,14 @@ pub enum ConfigSource {
 /// One projection serves two callers: `config.origin` answers with it, and a
 /// `config.save` refusal names the pin with it. Two projections would let the
 /// refusal name a file the origin does not.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// `Deserialize` as well as `Serialize`: `config.save`'s refusal travels back
+/// over the RPC into a typed reply, and a `&'static str` cannot be read from a
+/// document. The value is still [`ConfigSource::short`]'s, written once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SourceOrigin {
     /// The one-word source name, as [`ConfigSource::short`] gives it.
-    pub source: &'static str,
+    pub source: String,
     /// The file the source names, when it names one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
@@ -342,7 +346,7 @@ impl ConfigSource {
             | ConfigSource::Rpc { .. } => (None, None),
         };
         SourceOrigin {
-            source: self.short(),
+            source: self.short().to_string(),
             file,
             line,
         }

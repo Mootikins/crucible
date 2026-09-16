@@ -4,33 +4,53 @@ use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
     response::sse::{Event, Sse},
-    routing::{get, post},
     Json,
 };
 use futures::stream::Stream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn chat_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/chat/send", post(send_message))
+        .routes(routes!(send_message))
         .routes(routes!(event_stream))
-        .route("/api/interaction/respond", post(interaction_respond))
-        .route("/api/interactions/pending", get(pending_interactions))
+        .routes(routes!(interaction_respond))
+        .routes(routes!(pending_interactions))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct SendMessageRequest {
     session_id: String,
     content: String,
 }
 
+/// The identifier the daemon minted for the turn this request started.
+///
+/// One key, because the browser correlates the SSE events that follow with it
+/// and needs nothing else to do so.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SendMessageResponse {
+    message_id: String,
+}
+
+/// Start a turn in a session.
+#[utoipa::path(
+    post,
+    path = "/api/chat/send",
+    request_body = SendMessageRequest,
+    responses(
+        (status = 200, body = SendMessageResponse),
+        (status = 400, description = "The message is empty"),
+        (status = 502, description = "The daemon could not accept the message"),
+    )
+)]
 async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SendMessageResponse>, WebError> {
     if req.content.trim().is_empty() {
         return Err(WebError::Chat("Message cannot be empty".to_string()));
     }
@@ -41,7 +61,7 @@ async fn send_message(
         .await
         .daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "message_id": message_id })))
+    Ok(Json(SendMessageResponse { message_id }))
 }
 
 /// The session's live event stream.
@@ -105,19 +125,50 @@ async fn event_stream(
     Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }
 
+/// One interaction a session is waiting on an answer to.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct PendingInteraction {
+    /// The session that asked.
+    session_id: String,
+    /// The identifier an answer must carry back.
+    request_id: String,
+    /// The request, in the flat shape the SSE path delivers.
+    ///
+    /// Deliberately open: `normalize_interaction` writes one object per
+    /// interaction kind — a permission request carries `tokens` and maybe
+    /// `diffs`, an ask carries the question's own fields — and the kinds are
+    /// the daemon's to add to. `kind` tells the browser which one it has.
+    #[schema(value_type = Object)]
+    request: serde_json::Value,
+}
+
+/// The interactions every session is waiting on, in one list.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct PendingInteractionsResponse {
+    pending: Vec<PendingInteraction>,
+}
+
 /// Aggregate pending interactions across all sessions, with each request
 /// normalized to the same flat shape the SSE path delivers — the Inbox
 /// renders both sources through one component.
+#[utoipa::path(
+    get,
+    path = "/api/interactions/pending",
+    responses(
+        (status = 200, body = PendingInteractionsResponse),
+        (status = 502, description = "The daemon could not list the pending interactions"),
+    )
+)]
 async fn pending_interactions(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<PendingInteractionsResponse>, WebError> {
     let raw = state
         .daemon
         .session_pending_interactions()
         .await
         .daemon_err()?;
 
-    let pending: Vec<serde_json::Value> = raw["pending"]
+    let pending: Vec<PendingInteraction> = raw["pending"]
         .as_array()
         .map(|items| {
             items
@@ -129,24 +180,37 @@ async fn pending_interactions(
                         "request_id": item["request_id"],
                         "request": item["request"],
                     });
-                    serde_json::json!({
-                        "session_id": item["session_id"],
-                        "request_id": item["request_id"],
-                        "request": crate::events::normalize_interaction(&wire),
-                    })
+                    PendingInteraction {
+                        session_id: item["session_id"].as_str().unwrap_or_default().to_string(),
+                        request_id: item["request_id"].as_str().unwrap_or_default().to_string(),
+                        request: crate::events::normalize_interaction(&wire),
+                    }
                 })
                 .collect()
         })
         .unwrap_or_default();
 
-    Ok(Json(serde_json::json!({ "pending": pending })))
+    Ok(Json(PendingInteractionsResponse { pending }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct InteractionResponseRequest {
     session_id: String,
     request_id: String,
+    /// The answer, in the kind-tagged shape `InteractionResponse` takes.
+    ///
+    /// Open, because the vocabulary belongs to the daemon's interaction types
+    /// and an unreadable answer must come back as this route's 400 naming the
+    /// deserialiser's own complaint, not as axum's plain-text rejection.
+    #[schema(value_type = Object)]
     response: serde_json::Value,
+}
+
+/// The answer this route gives when the daemon took the response.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct InteractionRespondResponse {
+    /// Always `true`. A refusal is an error status, not a `false`.
+    ok: bool,
 }
 
 /// Infer the `kind` tag for a bare response object.
@@ -178,10 +242,21 @@ fn tag_interaction_response(mut value: serde_json::Value) -> serde_json::Value {
     value
 }
 
+/// Answer one pending interaction.
+#[utoipa::path(
+    post,
+    path = "/api/interaction/respond",
+    request_body = InteractionResponseRequest,
+    responses(
+        (status = 200, body = InteractionRespondResponse),
+        (status = 400, description = "The response does not name an interaction kind the daemon knows"),
+        (status = 502, description = "The daemon could not take the response"),
+    )
+)]
 async fn interaction_respond(
     State(state): State<AppState>,
     Json(req): Json<InteractionResponseRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<InteractionRespondResponse>, WebError> {
     let response: crucible_core::interaction::InteractionResponse =
         serde_json::from_value(tag_interaction_response(req.response))
             .map_err(|e| WebError::Chat(format!("Invalid interaction response: {e}")))?;
@@ -192,13 +267,75 @@ async fn interaction_respond(
         .await
         .daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(InteractionRespondResponse { ok: true }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::tag_interaction_response;
+    use super::*;
+    use crate::test_support::request_json;
     use crucible_core::interaction::InteractionResponse;
+
+    #[tokio::test]
+    async fn send_message_answers_the_declared_shape() {
+        let (status, json) = request_json(
+            "POST",
+            "/api/chat/send",
+            Some(serde_json::json!({ "session_id": "s-1", "content": "hello" })),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+
+        let parsed: SendMessageResponse =
+            serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
+        assert_eq!(parsed.message_id, "msg-001");
+    }
+
+    #[tokio::test]
+    async fn interaction_respond_answers_the_declared_shape() {
+        let (status, json) = request_json(
+            "POST",
+            "/api/interaction/respond",
+            Some(serde_json::json!({
+                "session_id": "s-1",
+                "request_id": "r-1",
+                "response": { "kind": "permission", "allowed": true, "scope": "once" },
+            })),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+
+        let parsed: InteractionRespondResponse =
+            serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
+        assert!(parsed.ok);
+    }
+
+    /// The daemon names the session and the request; this route replaces the
+    /// request body with the flat shape the Inbox renders, and keeps the two
+    /// identifiers beside it.
+    #[tokio::test]
+    async fn pending_interactions_answers_the_declared_shape() {
+        let (status, json) = request_json("GET", "/api/interactions/pending", None).await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+
+        let parsed: PendingInteractionsResponse =
+            serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
+        assert_eq!(parsed.pending.len(), 1);
+        let entry = &parsed.pending[0];
+        assert_eq!(entry.session_id, "session-001");
+        assert_eq!(entry.request_id, "req-001");
+        assert_eq!(
+            entry.request["kind"],
+            serde_json::json!("permission"),
+            "the request arrives normalised: {json}"
+        );
+        assert_eq!(
+            entry.request["id"],
+            serde_json::json!("req-001"),
+            "the normalised request carries the id an answer quotes: {json}"
+        );
+        assert_eq!(entry.request["tokens"], serde_json::json!(["ls"]), "{json}");
+    }
 
     /// The exact objects the frontend POSTs (PermResponse/AskResponse/
     /// PopupResponse in web/src/lib/types.ts) must deserialize into the

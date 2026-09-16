@@ -298,25 +298,25 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Safe McpStatus =>
         mcp_status()
-        -> serde_json::Value = mcp_status();
+        -> crucible_daemon::McpStatus = mcp_status();
     }
 
     forward_rpc! {
         Safe SkillsList =>
         skills_list(kiln: &Path, scope_filter: Option<&str> => scope_filter.map(str::to_owned))
-        -> serde_json::Value = skills_list(&kiln, scope_filter.as_deref());
+        -> crucible_daemon::SkillsReply = skills_list(&kiln, scope_filter.as_deref());
     }
 
     forward_rpc! {
         Safe SkillsGet =>
         skills_get(name: &str, kiln: &Path)
-        -> serde_json::Value = skills_get(&name, &kiln);
+        -> crucible_daemon::SkillDetail = skills_get(&name, &kiln);
     }
 
     forward_rpc! {
         Safe SkillsSearch =>
         skills_search(query: &str, kiln: &Path, limit: Option<usize>)
-        -> serde_json::Value = skills_search(&query, &kiln, limit);
+        -> crucible_daemon::SkillsReply = skills_search(&query, &kiln, limit);
     }
 
     forward_rpc! {
@@ -649,7 +649,7 @@ impl ReconnectingDaemon {
     forward_rpc! {
         Once WebhookReceive =>
         webhook_receive(name: String, headers: std::collections::HashMap<String, String>, body: String)
-        -> serde_json::Value = call("webhook.receive", serde_json::json!({ "name": name, "headers": headers, "body": body, }));
+        -> crucible_daemon::WebhookReceiveReply = webhook_receive(name, headers, body);
     }
 
     forward_rpc! {

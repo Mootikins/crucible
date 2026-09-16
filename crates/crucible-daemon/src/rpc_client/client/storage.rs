@@ -670,8 +670,25 @@ impl DaemonClient {
     }
 
     /// Get the status of the daemon-managed MCP server.
-    pub async fn mcp_status(&self) -> Result<serde_json::Value> {
+    pub async fn mcp_status(&self) -> Result<crate::McpStatus> {
         self.typed_call("mcp.status", EmptyParams {}).await
+    }
+
+    /// Turn one verified webhook delivery into a `webhook:received` event.
+    ///
+    /// The ingress route has already checked the signature over the bytes as
+    /// received, so `body` reaches the daemon as the sender wrote it.
+    pub async fn webhook_receive(
+        &self,
+        name: String,
+        headers: std::collections::HashMap<String, String>,
+        body: String,
+    ) -> Result<crate::WebhookReceiveReply> {
+        self.typed_call(
+            "webhook.receive",
+            serde_json::json!({ "name": name, "headers": headers, "body": body }),
+        )
+        .await
     }
 
     // =========================================================================

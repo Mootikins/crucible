@@ -3,6 +3,86 @@ use crate::empty_providers::EmptyEmbeddingProvider;
 use crate::rpc_helpers::typed_params;
 use crucible_core::enrichment::EmbeddingProvider;
 
+/// One skill in a `skills.list` or `skills.search` answer.
+///
+/// The two RPCs answer the same row, because a list and a search are the same
+/// question asked of two different sets. A second row type here would let one
+/// of them grow a field the other cannot report.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillSummary {
+    /// The skill's name, which is also the key `skills.get` takes.
+    pub name: String,
+    /// The discovery scope the skill came from, as `SkillScope` spells it.
+    pub scope: String,
+    pub description: String,
+    /// How many same-named skills this one shadows.
+    pub shadowed_count: usize,
+}
+
+/// What `skills.list` and `skills.search` answer.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillsReply {
+    pub skills: Vec<SkillSummary>,
+}
+
+/// What `skills.get` answers: one skill, with the body a summary omits.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkillDetail {
+    pub name: String,
+    /// The discovery scope the skill came from, as `SkillScope` spells it.
+    pub scope: String,
+    pub description: String,
+    /// Where the skill file sits on disk.
+    pub source_path: String,
+    /// The agent the skill declares, when it declares one. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub agent: Option<String>,
+    /// The licence the skill declares, when it declares one. Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
+    pub license: Option<String>,
+    /// The skill's Markdown body, without its frontmatter.
+    pub body: String,
+}
+
+/// One ACP agent profile, with the availability probe's verdict.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProfileEntry {
+    pub name: String,
+    /// The profile's description, or an empty string when it declares none.
+    pub description: String,
+    /// The command that spawns the agent, or an empty string when the profile
+    /// names none. A profile with no command can never spawn, so it is never
+    /// available.
+    pub command: String,
+    /// Whether the daemon ships this profile, rather than a config declaring it.
+    pub is_builtin: bool,
+    /// Whether the probe found the command on PATH and it answered `--version`.
+    pub available: bool,
+}
+
+/// What `agents.list_profiles` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AgentProfilesReply {
+    pub profiles: Vec<AgentProfileEntry>,
+}
+
+/// Answer with `value` as JSON, or report the serialisation failure.
+///
+/// The reply types here hold only strings, numbers, booleans and vectors of
+/// those, so the error arm is unreachable in practice. It exists because an
+/// `expect` here would take the daemon down over a reply nobody can act on.
+fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
+    match serde_json::to_value(value) {
+        Ok(value) => Response::success(id, value),
+        Err(e) => Response::error(id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
 pub(crate) async fn handle_mcp_start(
     req: Request,
     km: &Arc<KilnManager>,
@@ -61,8 +141,7 @@ pub(crate) async fn handle_mcp_stop(req: Request, mcp_mgr: &Arc<McpServerManager
 }
 
 pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManager>) -> Response {
-    let status = mcp_mgr.status().await;
-    Response::success(req.id, status)
+    reply(req.id, mcp_mgr.status().await)
 }
 
 /// Discover the skills visible from `kiln_path`, off the async runtime.
@@ -93,7 +172,7 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
 
     match result {
         Ok(Ok(skills)) => {
-            let mut entries: Vec<serde_json::Value> = skills
+            let mut skills: Vec<SkillSummary> = skills
                 .iter()
                 .filter(|(_, resolved)| {
                     if let Some(ref filter) = scope_filter {
@@ -102,22 +181,15 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
                         true
                     }
                 })
-                .map(|(name, resolved)| {
-                    serde_json::json!({
-                        "name": name,
-                        "scope": resolved.skill.source.scope.to_string(),
-                        "description": resolved.skill.description,
-                        "shadowed_count": resolved.shadowed.len(),
-                    })
+                .map(|(name, resolved)| SkillSummary {
+                    name: name.clone(),
+                    scope: resolved.skill.source.scope.to_string(),
+                    description: resolved.skill.description.clone(),
+                    shadowed_count: resolved.shadowed.len(),
                 })
                 .collect();
-            entries.sort_by(|a, b| {
-                a["name"]
-                    .as_str()
-                    .unwrap_or("")
-                    .cmp(b["name"].as_str().unwrap_or(""))
-            });
-            Response::success(req.id, serde_json::json!({ "skills": entries }))
+            skills.sort_by(|a, b| a.name.cmp(&b.name));
+            reply(req.id, SkillsReply { skills })
         }
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -138,17 +210,17 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
         Ok(Ok(skills)) => match skills.get(&name) {
             Some(resolved) => {
                 let skill = &resolved.skill;
-                Response::success(
+                reply(
                     req.id,
-                    serde_json::json!({
-                        "name": skill.name,
-                        "scope": skill.source.scope.to_string(),
-                        "description": skill.description,
-                        "source_path": skill.source.path.to_string_lossy(),
-                        "agent": skill.source.agent,
-                        "license": skill.license,
-                        "body": skill.body,
-                    }),
+                    SkillDetail {
+                        name: skill.name.clone(),
+                        scope: skill.source.scope.to_string(),
+                        description: skill.description.clone(),
+                        source_path: skill.source.path.to_string_lossy().into_owned(),
+                        agent: skill.source.agent.clone(),
+                        license: skill.license.clone(),
+                        body: skill.body.clone(),
+                    },
                 )
             }
             None => Response::error(req.id, INVALID_PARAMS, format!("Skill not found: {}", name)),
@@ -172,7 +244,7 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
     match result {
         Ok(Ok(skills)) => {
             let query_lower = query.to_lowercase();
-            let matches: Vec<serde_json::Value> = skills
+            let matches: Vec<SkillSummary> = skills
                 .iter()
                 .filter(|(name, resolved)| {
                     name.to_lowercase().contains(&query_lower)
@@ -183,16 +255,14 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
                             .contains(&query_lower)
                 })
                 .take(limit)
-                .map(|(name, resolved)| {
-                    serde_json::json!({
-                        "name": name,
-                        "scope": resolved.skill.source.scope.to_string(),
-                        "description": resolved.skill.description,
-                        "shadowed_count": resolved.shadowed.len(),
-                    })
+                .map(|(name, resolved)| SkillSummary {
+                    name: name.clone(),
+                    scope: resolved.skill.source.scope.to_string(),
+                    description: resolved.skill.description.clone(),
+                    shadowed_count: resolved.shadowed.len(),
                 })
                 .collect();
-            Response::success(req.id, serde_json::json!({ "skills": matches }))
+            reply(req.id, SkillsReply { skills: matches })
         }
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -214,23 +284,18 @@ pub(crate) async fn handle_agents_list_profiles(
         let is_builtin = builtins.contains_key(&name);
         async move {
             let available = probe_profile_availability(&profile).await;
-            serde_json::json!({
-                "name": name,
-                "description": profile.description.clone().unwrap_or_default(),
-                "command": profile.command.clone().unwrap_or_default(),
-                "is_builtin": is_builtin,
-                "available": available,
-            })
+            AgentProfileEntry {
+                name,
+                description: profile.description.clone().unwrap_or_default(),
+                command: profile.command.clone().unwrap_or_default(),
+                is_builtin,
+                available,
+            }
         }
     });
-    let mut entries: Vec<serde_json::Value> = futures::future::join_all(probes).await;
-    entries.sort_by(|a, b| {
-        a["name"]
-            .as_str()
-            .unwrap_or("")
-            .cmp(b["name"].as_str().unwrap_or(""))
-    });
-    Response::success(req.id, serde_json::json!({ "profiles": entries }))
+    let mut profiles: Vec<AgentProfileEntry> = futures::future::join_all(probes).await;
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    reply(req.id, AgentProfilesReply { profiles })
 }
 
 /// The agent cards a session started from the request's workspace would

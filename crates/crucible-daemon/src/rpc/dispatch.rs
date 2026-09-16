@@ -1968,11 +1968,16 @@ impl RpcDispatcher {
             );
         }
         self.persist_saved_settings(saved.accepted, &saved.withheld)?;
-        Ok(serde_json::json!({
-            "ok": saved.refused.is_empty(),
-            "refused": saved.refused,
-            "rejected": saved.withheld,
-        }))
+        serde_json::to_value(ConfigSaveReply {
+            ok: saved.refused.is_empty(),
+            refused: saved.refused,
+            rejected: saved.withheld,
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
 
     /// Write what the save accepted to `settings.json`, so it outlives the
@@ -2300,8 +2305,45 @@ impl RpcDispatcher {
         // Best-effort broadcast — no subscribers is fine
         crate::event_emitter::emit_event(&self.ctx.event_tx, event);
 
-        Ok(serde_json::json!({ "status": "ok" }))
+        serde_json::to_value(WebhookReceiveReply {
+            status: "ok".to_string(),
+        })
+        .map_err(|e| RpcError {
+            code: INTERNAL_ERROR,
+            message: e.to_string(),
+            data: None,
+        })
     }
+}
+
+/// What `config.save` answers.
+///
+/// A refusal rides in the answer rather than in an error: refusal is per leaf,
+/// the siblings the caller changed in the same call did save, and `refused`
+/// carries the file and the line a human's config holds the key on.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigSaveReply {
+    /// Whether every leaf the caller sent reached the `Settings` layer.
+    pub ok: bool,
+    /// The leaves a pin refused, each with the source that holds it.
+    pub refused: Vec<crucible_core::config::PinnedLeaf>,
+    /// The top-level keys that name where the daemon acts, which no save may
+    /// write. They are dropped rather than refused, so they are reported apart
+    /// from `refused`.
+    pub rejected: Vec<String>,
+}
+
+/// What `webhook.receive` answers.
+///
+/// Acceptance only: the delivery became a `webhook:received` event, and
+/// whether a plugin was listening is not this answer's business. Every refusal
+/// is an HTTP error at the ingress route, which never reaches this RPC.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct WebhookReceiveReply {
+    /// Always `ok`.
+    pub status: String,
 }
 
 /// The values a config write carries. `config.set` and `config.save` take the

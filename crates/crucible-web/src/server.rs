@@ -104,8 +104,8 @@ fn api_document_info() -> utoipa::openapi::OpenApi {
 
 /// Every API route, with the OpenAPI document the router itself carries.
 ///
-/// A plain `Router` group joins with `.into()`; a group that describes its own
-/// operations is already an `OpenApiRouter`. Task A4 converts the rest.
+/// Every group is an `OpenApiRouter` and carries its own operations, so the
+/// document and the served router cannot name different routes.
 ///
 /// The state is not applied here, so the caller chooses: `build_router` splits
 /// the pair and serves the router half, `api_spec` keeps the document half.
@@ -135,12 +135,11 @@ fn api_router(
                 .layer(middleware::from_fn_with_state(
                     allowed_origins,
                     websocket_origin_guard,
-                ))
-                .into(),
+                )),
         )
         .merge(agents_routes())
         .merge(chat_routes())
-        .merge(config_routes().into())
+        .merge(config_routes())
         // Endpoint policy comes from the bind: a loopback bind keeps
         // `http://localhost:11434` (the local-Ollama path) working, a LAN or
         // wildcard bind refuses it. `session_routes_fail_closed()` is the harness form; this
@@ -154,12 +153,12 @@ fn api_router(
         .merge(search_routes())
         .merge(plugin_routes())
         .merge(surface_routes())
-        .merge(mcp_routes().into())
+        .merge(mcp_routes())
         .merge(kiln_routes())
         .merge(canvas_routes())
         .merge(layout_routes())
-        .merge(skills_routes().into())
-        .merge(webhook_routes().into())
+        .merge(skills_routes())
+        .merge(webhook_routes())
         // An unknown API is not an SPA navigation: never answer it with HTML.
         .route(
             "/api/{*unmatched}",

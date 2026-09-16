@@ -141,6 +141,14 @@ pub use scm::ScmCloneResponse;
 // verbatim, so they read the type rather than keeping a second copy of it.
 pub use server::fs::{FsEntry, FsListing, FsMoveReply, FsTrashReply};
 pub use server::note_refactor::{SkipReason, SkippedRef};
+// The wire shapes of the `skills.*`, `agents.list_profiles`, `mcp.status`,
+// `config.save` and `webhook.receive` RPCs. The web routes forward them
+// verbatim, so they read the type rather than keeping a second copy of it.
+pub use mcp_server::{McpRunning, McpStatus, McpStopped};
+pub use rpc::{ConfigSaveReply, WebhookReceiveReply};
+pub use server::platform::{
+    AgentProfileEntry, AgentProfilesReply, SkillDetail, SkillSummary, SkillsReply,
+};
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};

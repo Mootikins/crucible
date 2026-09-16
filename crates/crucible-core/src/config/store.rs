@@ -8,7 +8,7 @@
 //! withheld from every merge and reported, because the RPC socket has no
 //! authentication and these keys answer *where the daemon acts*.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::config::{CliAppConfig, ConfigError, LOCATION_CONFIG_KEYS};
@@ -16,7 +16,8 @@ use super::merge::{flatten_leaves, nest_leaves, set_leaf};
 use super::provenance::{ConfigSource, LeafOrigin, ProvenanceMap, SourceOrigin};
 
 /// One leaf `config.save` refuses, and what pins it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PinnedLeaf {
     /// The dot-joined leaf path the caller asked to save.
     pub key: String,
@@ -1298,9 +1299,9 @@ mod tests {
                 saved
                     .refused
                     .iter()
-                    .map(|leaf| (leaf.key.as_str(), leaf.pin.source))
+                    .map(|leaf| (leaf.key.as_str(), leaf.pin.source.as_str()))
                     .collect::<Vec<_>>(),
-                vec![("chat.model", pin.source)],
+                vec![("chat.model", pin.source.as_str())],
                 "'{}' must refuse the leaf it pins, and name itself",
                 tag.short()
             );
@@ -1801,7 +1802,7 @@ mod tests {
                      writes into its own cwd instead of the configured location"
                 );
                 assert_eq!(
-                    store.pin(key).map(|pin| pin.source),
+                    store.pin(key).map(|pin| pin.source).as_deref(),
                     Some("lua"),
                     "the {door} erased the pin on '{key}', so a save could write over \
                      the line that configured it"

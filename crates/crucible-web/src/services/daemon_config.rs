@@ -72,18 +72,20 @@ impl ReconnectingDaemon {
     pub async fn config_save(
         &self,
         values: serde_json::Map<String, serde_json::Value>,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.forward_rpc(ReplayPolicy::Once, RpcMethod::ConfigSave, move |daemon| {
-            let values = values.clone();
-            Box::pin(async move {
-                daemon
-                    .call(
-                        RpcMethod::ConfigSave.as_str(),
-                        serde_json::json!({ "values": values }),
-                    )
-                    .await
+    ) -> anyhow::Result<crucible_daemon::ConfigSaveReply> {
+        let answer = self
+            .forward_rpc(ReplayPolicy::Once, RpcMethod::ConfigSave, move |daemon| {
+                let values = values.clone();
+                Box::pin(async move {
+                    daemon
+                        .call(
+                            RpcMethod::ConfigSave.as_str(),
+                            serde_json::json!({ "values": values }),
+                        )
+                        .await
+                })
             })
-        })
-        .await
+            .await?;
+        Ok(serde_json::from_value(answer)?)
     }
 }
