@@ -223,8 +223,9 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
    * the user opened stays open. The flip moves panels between sides; it does
    * not open or stow anything.
    *
-   * `mode` used to stay with the SIDE, to make one gesture work: with
-   * the right rail stowed, one flip put the tree on the visible left. But it
+   * The collapse flag (`isCollapsed`, now `mode`) used to stay with the SIDE,
+   * to make one gesture work: with the right rail stowed, one flip put the
+   * tree on the visible left. But it
    * separated a panel's collapse from its width and its contents, so a flip
    * silently opened one panel and stowed the other. It also broke the
    * involution — two presses could land somewhere other than the start.

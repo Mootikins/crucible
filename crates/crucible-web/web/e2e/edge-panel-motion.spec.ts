@@ -48,7 +48,7 @@ test.describe('the edge panel under a reduced-motion preference', () => {
 
       // Toggle in the same turn we start sampling in: the tween's first frame
       // is precisely what a click would otherwise race.
-      if (store.edgePanels?.right?.mode === 'strip') actions.toggleEdgePanel('right');
+      if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
 
       const probe = () => {
         const el = document.querySelector('[data-testid="root-dropdown"]');

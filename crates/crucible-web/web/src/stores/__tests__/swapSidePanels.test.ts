@@ -78,6 +78,22 @@ describe('swapSidePanels', () => {
     expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
+  // A hidden rail keeps its cue on its new side. The cue describes how that
+  // panel comes back, so it belongs to the panel, not to the side.
+  it('carries a hidden rail’s cue across with its mode', () => {
+    setStore('edgePanels', 'left', 'mode', 'hidden');
+    setStore('edgePanels', 'left', 'cue', 'none');
+    setStore('edgePanels', 'right', 'mode', 'docked');
+    setStore('edgePanels', 'right', 'cue', undefined);
+
+    windowActions.swapSidePanels();
+
+    expect(windowStore.edgePanels.right.mode).toBe('hidden');
+    expect(windowStore.edgePanels.right.cue).toBe('none');
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
+    expect(windowStore.edgePanels.left.cue).toBeUndefined();
+  });
+
   // Collapse and width describe the same panel, so they must not separate.
   // A 320px panel that a user stowed is a stowed 320px panel on its new side.
   it('carries collapse and width together, so they stay on one panel', () => {

@@ -50,7 +50,7 @@ test('picking a non-workspace project from the root dropdown browses it', async 
   await page.evaluate(() => {
     const store = (window as unknown as Record<string, any>).__windowStore;
     const actions = (window as unknown as Record<string, any>).__windowActions;
-    if (store.edgePanels?.right?.mode === 'strip') actions.toggleEdgePanel('right');
+    if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
     const firstGroup = (node: any): string | null => {
       if (!node || typeof node !== 'object') return null;
       if (node.type === 'pane') return node.tabGroupId ?? null;
