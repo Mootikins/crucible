@@ -1,8 +1,11 @@
 import { produce } from 'solid-js/store';
 import type {
+  EdgeCue,
+  EdgeMode,
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
   LayoutNode,
+  PaneReveal,
   TabGroup,
 } from '../model/types';
 import { isEdgeCollapsed } from '../model/types';
@@ -29,6 +32,13 @@ export interface LayoutActions<C extends string = string> {
   toggleEdgePanel(position: EdgePanelPosition): void;
   swapSidePanels(): void;
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
+  /**
+   * Set how a rail presents. `cue` changes only when given: the cue is a
+   * stored preference, and only the `hidden` mode reads it.
+   */
+  setEdgeMode(position: EdgePanelPosition, mode: EdgeMode, opts?: { cue?: EdgeCue }): void;
+  /** Set how a pane opens from its band. The pane can be in the centre or in a rail. */
+  setPaneReveal(paneId: string, reveal: PaneReveal): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
   setPaneCollapsed(
@@ -66,6 +76,11 @@ export function createLayoutActions<C extends string>(
     }
   };
 
+  /**
+   * The rail toggle knows two modes only. Any mode that is not `docked`
+   * goes to `docked`, and `docked` goes to `strip`. The toggle thus never
+   * enters `flyout` or `hidden`, and it always brings a hidden rail back.
+   */
   const toggleEdgePanel = (position: EdgePanelPosition) => {
     setStore(
       produce((s) => {
@@ -147,6 +162,38 @@ export function createLayoutActions<C extends string>(
     collapsed: boolean
   ) => {
     setStore('edgePanels', position, 'mode', collapsed ? 'strip' : 'docked');
+  };
+
+  const setEdgeMode = (
+    position: EdgePanelPosition,
+    mode: EdgeMode,
+    opts?: { cue?: EdgeCue },
+  ) => {
+    setStore(
+      produce((s) => {
+        const panel = s.edgePanels[position];
+        panel.mode = mode;
+        if (opts?.cue !== undefined) panel.cue = opts.cue;
+      })
+    );
+  };
+
+  const setPaneReveal = (paneId: string, reveal: PaneReveal) => {
+    setStore(
+      produce((s) => {
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) => {
+            // Mutated in place, as setPaneCollapsed does, so the panes
+            // around this one keep their nodes.
+            const pane = findPaneInLayout(root, paneId);
+            if (pane) pane.reveal = reveal;
+            return root;
+          }
+        );
+      })
+    );
   };
 
   const setEdgePanelActiveTab = (
@@ -356,6 +403,8 @@ export function createLayoutActions<C extends string>(
     toggleEdgePanel,
     swapSidePanels,
     setEdgePanelCollapsed,
+    setEdgeMode,
+    setPaneReveal,
     setEdgePanelActiveTab,
     setEdgePanelSize,
     setPaneCollapsed,
