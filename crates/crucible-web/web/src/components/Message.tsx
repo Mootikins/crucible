@@ -7,6 +7,7 @@ import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { Component, Show, createSignal } from 'solid-js';
 import { Copy, Check, Pencil } from 'lucide-solid';
 import { PrecognitionBadge } from './PrecognitionBadge';
+import { TurnGutter } from './TurnGutter';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { sessionDefaultKiln } from '@/lib/session-scope';
@@ -73,14 +74,20 @@ export const Message: Component<MessageProps> = (props) => {
 
   return (
     <div
-      class="group relative mb-5 flex justify-start"
+      // The row is content + gutter. `items-start` puts the gutter at the top
+      // of the turn; the gap between rows belongs to the list, not here.
+      class="group relative flex items-start gap-1 justify-start"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
+      <div class="min-w-0 flex-1">
       <div
         class={
           isUser()
-            ? 'user-quote'
+            ? // The bubble sizes to its text (`.user-quote`) — except while
+              // the editor is open, where a fit-content box would collapse
+              // around a textarea's intrinsic width.
+              `user-quote${isEditing() ? ' w-full' : ''}`
             : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
         }
       >
@@ -131,8 +138,30 @@ export const Message: Component<MessageProps> = (props) => {
             // while clicking it did nothing at all.
             data-kiln={sessionKiln() || undefined}
             onClick={handleMarkdownClick}
-            innerHTML={renderPlainWithWikilinks(props.message.content)}
-          />
+          >
+            <span innerHTML={renderPlainWithWikilinks(props.message.content)} />
+
+            {/* The time the message was sent, INLINE at the end of the last
+                line — the trailer a chat app puts there, not a caption on a
+                row of its own.
+
+                It is always in the document and only its opacity answers the
+                hover, which is the whole no-reflow rule: a stamp that ENTERS
+                the flow on hover re-wraps the last line under the pointer,
+                and a stamp taken OUT of the flow needs reserved padding to
+                sit in, which is the dead space this pass removes. Reserving
+                the room inline costs the tail of one line and no height at
+                all. The date appears once the message is not from today. */}
+            <Show when={isUser() && props.message.timestamp}>
+              <span
+                class="ml-2 align-baseline text-floor leading-none text-muted-dark opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+                data-testid="message-time"
+                title={new Date(props.message.timestamp).toLocaleString()}
+              >
+                {formatMessageTime(props.message.timestamp)}
+              </span>
+            </Show>
+          </p>
         </Show>
         <Show when={isUser() && hasPrecognition()}>
           <PrecognitionBadge
@@ -140,25 +169,13 @@ export const Message: Component<MessageProps> = (props) => {
             notes={props.message.precognition!.notes}
           />
         </Show>
-
-        {/* The time the message was sent: quiet, in the flow, right under
-            the bubble, always visible. It was a hover-only label floating at
-            the bubble's bottom-left, which read as a stray caption. The date
-            only appears once it is not today. */}
-        <Show when={isUser() && props.message.timestamp}>
-          <div
-            class="mt-1 text-right text-floor leading-none text-muted-dark"
-            data-testid="message-time"
-            title={new Date(props.message.timestamp).toLocaleString()}
-          >
-            {formatMessageTime(props.message.timestamp)}
-          </div>
-        </Show>
+      </div>
       </div>
 
-      {/* Hover actions */}
-      <Show when={!isSystem()}>
-        <div class="absolute right-0 -bottom-5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150">
+      {/* The gutter is drawn for a system row too, empty: it is what holds
+          every row's reading edge on the same line. */}
+      <TurnGutter>
+        <Show when={!isSystem()}>
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
@@ -179,8 +196,8 @@ export const Message: Component<MessageProps> = (props) => {
               <Pencil size={14} />
             </button>
           </Show>
-        </div>
-      </Show>
+        </Show>
+      </TurnGutter>
     </div>
   );
 };

@@ -15,8 +15,10 @@ export const ChatContent: Component = () => {
       <div class="flex-1 min-h-0 flex flex-col">
         <Show when={isLoadingHistory()}>
           {/* Skeleton mirrors the real transcript: full-width, left-aligned
-              rows (no bubble-era right-aligned fakes). */}
-          <div class="flex flex-col gap-3 p-4">
+              rows (no bubble-era right-aligned fakes), spaced on the same
+              rhythm the loaded transcript uses, so nothing shifts when the
+              history arrives. */}
+          <div class="flex flex-col gap-[var(--cru-turn-gap)] p-4">
             <div class="animate-pulse bg-surface-elevated rounded-md h-8 w-full" />
             <div class="animate-pulse bg-surface-elevated rounded-md h-16 w-full" />
             <div class="animate-pulse bg-surface-elevated rounded-md h-8 w-3/4" />

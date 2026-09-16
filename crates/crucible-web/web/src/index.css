@@ -111,6 +111,24 @@
     /* 64rem, up from 46rem: a wide chat pane kept adding empty margins past
      * 736px while the editor beside it took the width. Was too small. */
     --cru-measure-chat: 64rem;
+
+    /* ── The transcript's rhythm and its gutter ─────────────────────
+     * Two LAYOUT names, which the rest of the contract deliberately avoids.
+     * They are here because each one is a rhythm the reader sees, and each
+     * one had three conflicting values in three components before it.
+     *
+     * `--cru-turn-gap` is the ONLY vertical space between two transcript
+     * rows. It used to be `mb-5` under a prompt, `mb-6` under a turn, and a
+     * `pb-5` strip that reserved room for a footer nobody could see — so the
+     * distance between two rows depended on which kind came first, and the
+     * biggest gap in the transcript was empty on purpose.
+     *
+     * `--cru-turn-gutter` is the column at the RIGHT of every row that holds
+     * that row's actions, and the assistant's elapsed time beside them. It is
+     * taken OUT of the chat measure rather than added to it, so the reading
+     * column keeps the same left and right edges as the composer below. */
+    --cru-turn-gap: 1.25rem;
+    --cru-turn-gutter: 5.25rem;
     /* Three row heights (R6): desktop list rows, palette rows, touch rows.
      * The first two scale with the reader, because a row holds a line of text
      * and a taller line needs a taller row. */
@@ -755,7 +773,11 @@
      DraftSessionPanel pending-preview, which shows the same look.) */
   .user-quote {
     display: block;
-    width: 100%;
+    /* Sized to its text, clamped by the reading column it sits in. A prompt
+       of three words used to draw a box the whole width of the pane, which
+       read as dead space with a sentence in one corner. */
+    width: fit-content;
+    max-width: 100%;
     border-radius: 8px;
     border: 1px solid var(--color-hairline-strong);
     background: var(--color-surface-elevated);

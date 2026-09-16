@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import type { Message as MessageType } from '@/lib/types';
 
@@ -243,15 +245,100 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(old)).toBe(expected);
   });
 
-  it('shows the sent time under the user bubble, always visible', async () => {
+  it('shows the sent time at the end of the prompt', async () => {
     const ts = NOW - 5 * 60_000;
     render(() => <Message message={{ id: 'u1', role: 'user', content: 'hi', timestamp: ts }} />);
     const { formatMessageTime } = await import('@/lib/format-time');
     const time = screen.getByTestId('message-time');
     expect(time.textContent).toBe(formatMessageTime(ts, NOW));
-    // In the flow and always on: no hover gate, no absolute float.
-    expect(time.className).not.toContain('opacity-0');
-    expect(time.className).not.toContain('absolute');
+  });
+});
+
+// ── The stamp: hover-only, and the box never moves ───────────────────
+//
+// The time is INLINE, at the end of the last line of the prompt, and it is
+// always in the document. Only its opacity answers the hover. That is the
+// whole no-reflow rule: a stamp that enters the flow on hover re-wraps the
+// last line, and a stamp that leaves the flow needs reserved padding, which
+// is the dead space this pass removes.
+
+describe('Message — the sent time', () => {
+  it('is hidden at rest and revealed on hover or keyboard focus', () => {
+    render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
+    const time = screen.getByTestId('message-time');
+    expect(time.className).toContain('opacity-0');
+    expect(time.className).toContain('group-hover:opacity-100');
+    expect(time.className).toContain('group-focus-within:opacity-100');
+    // A phone has no hover, so the stamp cannot be gated behind one there.
+    expect(time.className).toContain('[@media(hover:none)]:opacity-100');
+  });
+
+  it('changes NOTHING but opacity between rest and hover', () => {
+    // The bubble's box must measure the same with and without the pointer on
+    // it. Any other state-gated utility — a margin, a display, a position —
+    // would move an edge.
+    render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
+    const time = screen.getByTestId('message-time');
+    const stateGated = time.className
+      .split(/\s+/)
+      .filter((c) => /^(group-hover:|group-focus-within:|\[@media\(hover:none\)\]:)/.test(c))
+      // The media variant carries a colon of its own, so the UTILITY is
+      // what follows the LAST one.
+      .map((c) => c.slice(c.lastIndexOf(':') + 1));
+    expect(stateGated.length).toBeGreaterThan(0);
+    expect(stateGated.filter((c) => !c.startsWith('opacity-'))).toEqual([]);
+  });
+
+  it('sits inside the prompt paragraph, so the last line reflows around it', () => {
+    const { container } = render(() => (
+      <Message message={makeMessage({ role: 'user', content: 'a prompt', timestamp: Date.now() })} />
+    ));
+    const paragraph = container.querySelector('.user-quote p');
+    expect(paragraph).not.toBeNull();
+    expect(paragraph!.querySelector('[data-testid="message-time"]')).not.toBeNull();
+  });
+});
+
+// ── The bubble's width ─────────────────────────────────────
+
+describe('Message — the prompt sizes to its text', () => {
+  it('declares fit-content with a clamp, not a full-width block', () => {
+    // Read the rule rather than the class list: `.user-quote` is a component
+    // rule, and the draft composer's pending preview wears the same class, so
+    // the two surfaces cannot drift apart.
+    const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
+    const rule = /\.user-quote\s*\{([\s\S]*?)\}/.exec(css);
+    expect(rule, '.user-quote is missing from index.css').not.toBeNull();
+    expect(rule![1]).toMatch(/width:\s*fit-content/);
+    expect(rule![1]).toMatch(/max-width:\s*100%/);
+    // A bare `width: 100%` — the rule this pass replaced. `max-width` is
+    // the clamp and must survive, so the boundary rejects the hyphen.
+    expect(rule![1]).not.toMatch(/(?<!-)width:\s*100%/);
+  });
+});
+
+// ── The gutter ───────────────────────────────────────────
+
+describe('Message — the right-hand gutter', () => {
+  it('holds the actions in a column beside the prompt, never under it', () => {
+    const { container } = render(() => <Message message={makeMessage({ role: 'user' })} />);
+    const gutter = screen.getByTestId('turn-gutter');
+    expect(gutter).toContainElement(screen.getByTitle('Copy message'));
+    expect(gutter).toContainElement(screen.getByTitle('Edit message'));
+    // A fixed column out of the reading measure, not a strip hung below it.
+    expect(gutter.className).toContain('w-[var(--cru-turn-gutter)]');
+    expect(gutter.className).toContain('shrink-0');
+    expect(gutter.className).not.toContain('absolute');
+    // The turn reserves no vertical room for a footer any more.
+    const row = container.querySelector('[data-testid="message-user"]') as HTMLElement;
+    expect(row.className).not.toMatch(/\bpb-5\b/);
+    expect(row.className).not.toMatch(/\bmb-\d/);
+  });
+
+  it('keeps the column on a system row so the reading edge does not move', () => {
+    render(() => <Message message={makeMessage({ role: 'system', content: 'sys' })} />);
+    const gutter = screen.getByTestId('turn-gutter');
+    expect(gutter.textContent).toBe('');
   });
 });
 

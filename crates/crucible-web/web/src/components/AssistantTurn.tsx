@@ -1,9 +1,10 @@
 /**
  * One assistant TURN — everything the agent did for a single user prompt:
  * interleaved text segments and tool-call groups, rendered as one block with
- * ONE meta row (token usage + timestamp) for the whole response, the way
- * other agent UIs treat a response as a unit. Individual segments carry no
- * chrome of their own.
+ * ONE meta row (the token usage) for the whole response, the way other agent
+ * UIs treat a response as a unit. Individual segments carry no chrome of
+ * their own, and the turn's actions and elapsed time sit in the transcript's
+ * right-hand column (`TurnGutter`) rather than under the turn.
  *
  * Structure comes in as id lists (not message objects): each part resolves
  * its live message from the store by id, so streaming token appends update
@@ -15,6 +16,7 @@ import { kilnPathOf } from '@/stores/kilnStore';
 import { Copy, Check, RefreshCw } from 'lucide-solid';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
+import { TurnGutter } from './TurnGutter';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { Message as MessageType, TokenUsage } from '@/lib/types';
@@ -223,8 +225,10 @@ export const AssistantTurn: Component<{
 
   return (
     <div
-      // `pb-5` reserves the room the always-visible footer takes at `-bottom-5`.
-      class="group relative mb-6 pb-5"
+      // Content + gutter, the same row a prompt draws. The turn reserves no
+      // room of its own any more: the footer that `pb-5` and `mb-6` held open
+      // moved into the column on the right, and the list owns the gap.
+      class="group relative flex items-start gap-1"
       data-testid="assistant-turn"
       data-role="assistant-turn"
       // Same kiln the click handler uses, declared for the document-level
@@ -232,6 +236,7 @@ export const AssistantTurn: Component<{
       // which is not necessarily the one the status bar points at.
       data-kiln={sessionKiln() || undefined}
     >
+      <div class="min-w-0 flex-1">
       <div class="flex flex-col gap-1.5">
         <For each={props.parts}>
           {(part) => {
@@ -274,18 +279,30 @@ export const AssistantTurn: Component<{
       </div>
 
       {/* ONE meta row for the whole response — never per segment. Tiny and
-          muted, out of the reading flow: usage · time, hairline-quiet. */}
+          muted, out of the reading flow: the token usage, hairline-quiet.
+          The elapsed time is NOT here — it is a measurement of the turn, so
+          it reads beside the turn's actions in the gutter. */}
       <Show when={!turnInFlight() && usage()}>
         <div class="mt-2 flex items-center gap-1.5 text-floor leading-none text-muted-dark">
           <span>{formatTokenUsage(usage()!)}</span>
         </div>
       </Show>
+      </div>
 
-      {/* Actions for the whole turn. Always visible: a row that appears on
-          hover is a row a reader cannot find, and on a phone there is no
-          hover at all. */}
-      <Show when={!turnInFlight()}>
-        <div class="absolute left-0 -bottom-5 flex items-center gap-0.5">
+      {/* The turn's column: how long it took, then what you can do with it. */}
+      <TurnGutter>
+        <Show when={!turnInFlight()}>
+          {/* How long the turn took, when the daemon told us when it ended.
+              A turn rebuilt from history has no end, so it keeps the clock
+              time; the tooltip carries the full date either way. */}
+          <Show when={firstMessage()?.timestamp}>
+            <span
+              class="mr-1 text-right text-floor leading-tight text-muted-dark"
+              title={new Date(firstMessage()!.timestamp).toLocaleString()}
+            >
+              {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
+            </span>
+          </Show>
           <button
             type="button"
             class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash transition-colors"
@@ -306,19 +323,8 @@ export const AssistantTurn: Component<{
               <RefreshCw size={14} />
             </button>
           </Show>
-          {/* How long the turn took, when the daemon told us when it ended.
-              A turn rebuilt from history has no end, so it keeps the clock
-              time; the tooltip carries the full date either way. */}
-          <Show when={firstMessage()?.timestamp}>
-            <span
-              class="ml-1 text-floor leading-none text-muted-dark"
-              title={new Date(firstMessage()!.timestamp).toLocaleString()}
-            >
-              {turnDuration() ?? formatAbsoluteTime(firstMessage()!.timestamp)}
-            </span>
-          </Show>
-        </div>
-      </Show>
+        </Show>
+      </TurnGutter>
     </div>
   );
 };

@@ -383,21 +383,51 @@ describe('AssistantTurn — data-kiln', () => {
   });
 });
 
-describe('AssistantTurn — the footer is always there', () => {
-  it('shows the actions without a hover', () => {
+describe('AssistantTurn — the right-hand gutter', () => {
+  it('holds the actions in the same column every turn kind uses', () => {
     messagesAccessor = () => [textMsg('a1', 'done', { usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } })];
-    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    const copy = screen.getByTitle('Copy response');
-    expect(copy.parentElement!.className).not.toContain('opacity-0');
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
+    const gutter = screen.getByTestId('turn-gutter');
+    expect(gutter).toContainElement(screen.getByTitle('Copy response'));
+    expect(gutter).toContainElement(screen.getByTitle('Regenerate response'));
+    expect(gutter.className).toContain('w-[var(--cru-turn-gutter)]');
+    expect(gutter.className).toContain('shrink-0');
   });
 
-  it('shows how long the turn took when the daemon stamped its end', async () => {
+  it('is revealed on hover or focus, and is always on where there is no hover', () => {
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const gutter = screen.getByTestId('turn-gutter');
+    expect(gutter.className).toContain('opacity-0');
+    expect(gutter.className).toContain('group-hover:opacity-100');
+    expect(gutter.className).toContain('group-focus-within:opacity-100');
+    expect(gutter.className).toContain('[@media(hover:none)]:opacity-100');
+  });
+
+  it('reserves NO vertical room for a footer', () => {
+    // `mb-6` + `pb-5` existed only to hold a strip hung under the turn. The
+    // strip is gone, so the room it needed is gone with it and the rhythm
+    // between turns comes from one token in the list.
+    messagesAccessor = () => [textMsg('a1', 'done')];
+    const { container } = render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    const turn = container.querySelector('[data-testid="assistant-turn"]') as HTMLElement;
+    expect(turn.className).not.toMatch(/\bpb-5\b/);
+    expect(turn.className).not.toMatch(/\bmb-\d/);
+    expect(turn.className).not.toMatch(/-bottom-5/);
+  });
+
+  it('shows how long the turn took, LEFT of the buttons', async () => {
     const start = Date.now() - 60_000;
     messagesAccessor = () => [
       textMsg('a1', 'done', { timestamp: start, completedAt: start + 4_200 }),
     ];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    expect(screen.getByText('4.2 s')).toBeInTheDocument();
+    const elapsed = screen.getByText('4.2 s');
+    const gutter = screen.getByTestId('turn-gutter');
+    expect(gutter).toContainElement(elapsed);
+    // DOM order decides the reading order: the measurement, then the actions.
+    const copy = screen.getByTitle('Copy response');
+    expect(elapsed.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const { formatAbsoluteTime } = await import('@/lib/format-time');
     expect(screen.queryByText(formatAbsoluteTime(start))).toBeNull();
   });

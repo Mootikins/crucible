@@ -41,6 +41,25 @@ afterEach(() => {
   messagesAccessor = () => mockMessages;
 });
 
+// ── The rhythm between turns ──────────────────────────────────
+//
+// The distance between two turns used to depend on which kind came first: a
+// prompt carried `mb-5`, a turn carried `mb-6` plus a `pb-5` strip nobody
+// could see. The list owns the rhythm now, and it spends ONE token.
+
+describe('MessageList — one rhythm token', () => {
+  it('spaces the rows from --cru-turn-gap, and no row adds a margin of its own', () => {
+    mockMessages = [msg('u1', 'user', 'hi'), msg('a1', 'assistant', 'answer')];
+    const { getByTestId, container } = render(() => <MessageList />);
+    const column = getByTestId('message-list').firstElementChild as HTMLElement;
+    expect(column.className).toContain('gap-[var(--cru-turn-gap)]');
+    expect(column.className).toContain('flex-col');
+    for (const row of container.querySelectorAll('[data-role]')) {
+      expect((row as HTMLElement).className).not.toMatch(/\bmb-\d/);
+    }
+  });
+});
+
 describe('MessageList structural rows', () => {
   it('collapses consecutive tool calls into one block', () => {
     mockMessages = [

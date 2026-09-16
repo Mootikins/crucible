@@ -211,7 +211,10 @@ export const MessageList: Component = () => {
       }}
       data-testid="message-list"
     >
-      <div class="mx-auto w-full max-w-[var(--chat-measure)]">
+      {/* ONE rhythm for the whole transcript. Every row is content + gutter,
+          and nothing inside a row adds a margin, so the only vertical space
+          between two turns is this gap. */}
+      <div class="mx-auto flex w-full max-w-[var(--chat-measure)] flex-col gap-[var(--cru-turn-gap)]">
       <For each={rows()}>
         {(row) => {
           if (row.kind === 'turn') {
