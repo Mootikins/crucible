@@ -1,4 +1,4 @@
-import { Component, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { WhisperProvider } from '@/contexts/WhisperContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { ProjectProvider } from '@/contexts/ProjectContext';
@@ -10,7 +10,7 @@ import { shellActions } from '@/stores/shellStore';
 import { registerPanels } from '@/lib/register-panels';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import type { TabContentType } from '@/types/windowTypes';
-import { getConfig } from '@/lib/api';
+import { useConfig } from '@/lib/query/config';
 import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 import { isCompact } from '@/stores/deviceStore';
 import { matchShortcut } from '@/windowing';
@@ -85,7 +85,19 @@ const App: Component = () => {
   };
   const [isExportDialogOpen, setIsExportDialogOpen] = createSignal(false);
   const [isSettingsOpen, setIsSettingsOpen] = createSignal(false);
-  const [kilnPath, setKilnPath] = createSignal<string | undefined>(undefined);
+  // The shared config query, not a fetch of its own: every other surface that
+  // wants the default kiln reads the same key, so the shell asks once.
+  const config = useConfig();
+  const kilnPath = () => config.data?.kiln_path;
+
+  // Seed the shell header/status bar before any session is selected. It runs
+  // in an effect rather than in `onMount` because the answer can arrive after
+  // the mount, and a seeded bar must not be overwritten.
+  createEffect(() => {
+    const path = kilnPath();
+    if (path === undefined) return;
+    if (!statusBarStore.kilnPath()) statusBarActions.setKilnPath(path ?? null);
+  });
 
   const paletteCommands: PaletteCommand[] = [
     {
@@ -230,16 +242,6 @@ const App: Component = () => {
   ];
 
   onMount(() => {
-    getConfig()
-      .then((cfg) => {
-        setKilnPath(cfg.kiln_path);
-        // Seed the shell header/status bar before any session is selected.
-        if (!statusBarStore.kilnPath()) {
-          statusBarActions.setKilnPath(cfg.kiln_path ?? null);
-        }
-      })
-      .catch(() => {});
-
     // Poll the daemon's pending-interaction aggregate so the Inbox badge
     // covers sessions without an open tab (WS-302).
     const stopAttentionPolling = attentionActions.startPolling();

@@ -22,7 +22,8 @@ import {
 import { PanelShell } from '../PanelShell';
 import { IconButton } from '../ui/IconButton';
 import { Crosshair, Settings } from '@/lib/icons';
-import { getConfig, getKilnGraph } from '@/lib/api';
+import { getKilnGraph } from '@/lib/api';
+import { fetchConfigOnce } from '@/lib/query/config';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { openFileInEditor } from '@/lib/file-actions';
 import { kilnRoot, noteAbsolutePath } from '@/lib/note-actions';
@@ -268,7 +269,7 @@ export const GraphPanel: Component = () => {
     void (async () => {
       try {
         const kilnPath =
-          statusBarStore.kilnPath() ?? (await getConfig()).kiln_path ?? null;
+          statusBarStore.kilnPath() ?? (await fetchConfigOnce()).kiln_path ?? null;
         if (!kilnPath) {
           setError('No kiln configured');
           return;

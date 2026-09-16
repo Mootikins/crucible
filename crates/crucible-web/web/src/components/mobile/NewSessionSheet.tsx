@@ -7,7 +7,6 @@ import { draftCreateParams, HOST_RUNTIME } from '@/lib/session-draft';
 import { iconForAgent } from '@/lib/agent-icons';
 import { attachableKilns, kilnNameForPath } from '@/lib/kiln-registry';
 import {
-  getConfig,
   getProviderTargets,
   getTargetProviders,
   listAgents,
@@ -18,6 +17,7 @@ import {
 } from '@/lib/api';
 import type { AgentProfileEntry, Project } from '@/lib/types';
 import { useKilns } from '@/lib/query/kilns';
+import { useConfig } from '@/lib/query/config';
 import { ChevronRight } from '@/lib/icons';
 
 type Step = 'agent' | 'context' | 'prompt';
@@ -55,7 +55,8 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
   const [projects, setProjects] = createSignal<Project[]>([]);
-  const [defaultKilnPath, setDefaultKilnPath] = createSignal('');
+  const configQuery = useConfig();
+  const defaultKilnPath = () => configQuery.data?.kiln_path ?? '';
   const [wsProviders, setWsProviders] = createSignal<TargetProvider[]>([]);
   const [rtProviders, setRtProviders] = createSignal<TargetProvider[]>([]);
   const [wsTargets, setWsTargets] = createSignal<ProviderTarget[]>([]);
@@ -69,7 +70,6 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [runtime, setRuntime] = createSignal('');
 
   onMount(() => {
-    void getConfig().then((c) => setDefaultKilnPath(c?.kiln_path ?? '')).catch(() => {});
     void listAgents().then(setAgents).catch(() => {});
     void listAllModels().then(setModels).catch(() => {});
     void listProjects().then(setProjects).catch(() => {});

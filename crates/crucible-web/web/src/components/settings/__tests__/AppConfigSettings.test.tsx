@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor, fireEvent, screen } from '@solidjs/testing-library';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetConfigForTests } from '@/lib/query/config';
 import { AppConfigSettingsSection } from '../AppConfigSettings';
 
 /**
@@ -67,16 +69,13 @@ const ANSWER = {
   },
 };
 
-const getConfigMock = vi.fn(async () => ANSWER);
-const saveConfigMock = vi.fn(async (_values: Record<string, unknown>) => ({
-  ok: true,
-  refused: [] as unknown[],
-  rejected: [] as string[],
-}));
-vi.mock('@/lib/api', () => ({
-  getConfig: () => getConfigMock(),
-  saveConfig: (values: Record<string, unknown>) => saveConfigMock(values),
-}));
+/**
+ * The pane reads and writes through the shared config query, so the real
+ * `getConfig` and `saveConfig` run against this fetch. The saved body is kept
+ * to be asserted: what the daemon receives is the thing under test.
+ */
+let env: TestQueryEnv;
+let saved: unknown[] = [];
 
 const openFileAtLineMock = vi.fn();
 vi.mock('@/lib/file-actions', () => ({
@@ -87,8 +86,24 @@ vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: vi.fn() },
 }));
 
+beforeEach(() => {
+  localStorage.clear();
+  resetConfigForTests();
+  saved = [];
+  env = createTestQueryEnv({
+    'GET /api/config': () => ANSWER,
+    'POST /api/config': async (request) => {
+      saved.push(await request.json());
+      return { ok: true, refused: [], rejected: [] };
+    },
+  });
+});
+
 afterEach(() => {
   cleanup();
+  env.restore();
+  resetConfigForTests();
+  localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -150,10 +165,12 @@ describe('the app-config settings pane', () => {
     expect(control.disabled, 'nothing pins this leaf').toBe(false);
 
     fireEvent.change(control, { target: { value: 'http://elsewhere:11434' } });
-    await waitFor(() => expect(saveConfigMock).toHaveBeenCalled());
-    expect(saveConfigMock).toHaveBeenCalledWith({
-      chat: { endpoint: 'http://elsewhere:11434' },
-    });
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toEqual({ values: { chat: { endpoint: 'http://elsewhere:11434' } } });
+
+    // The save invalidates the read, so the pane ends up showing what the
+    // daemon holds rather than what was typed at it.
+    await waitFor(() => expect(env.fetch.calls('GET /api/config')).toBe(2));
   });
 
   it('shows a leaf that takes no control, with the reason it takes none', async () => {

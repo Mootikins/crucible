@@ -1,12 +1,12 @@
-import { Component, For, Index, Show, createResource, createSignal } from 'solid-js';
+import { Component, For, Index, Show, createSignal } from 'solid-js';
 import { ExternalLink, FileLock } from '@/lib/icons';
+import type { AppConfigNode, ConfigOrigin } from '@/lib/api';
 import {
-  getConfig,
-  saveConfig,
-  type AppConfigNode,
-  type Config,
-  type ConfigOrigin,
-} from '@/lib/api';
+  patchCachedConfig,
+  refetchConfig,
+  useConfig,
+  useSaveConfig,
+} from '@/lib/query/config';
 import { openFileAtLine } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { useSettingsStack } from './settings-nav';
@@ -425,12 +425,13 @@ const ReadOnlyRows: Component<{
  * stacked settings tab) passes nothing and the jump still opens the tab.
  */
 export const AppConfigSettingsSection: Component<{ onClose?: () => void }> = (props) => {
-  const [answer, { mutate, refetch }] = createResource<Config>(() => getConfig());
+  const answer = useConfig();
+  const saving = useSaveConfig();
   const [failure, setFailure] = createSignal<string | null>(null);
 
-  const controls = () => answer()?.controls;
-  const effective = () => answer()?.config;
-  const origins = () => answer()?.origins ?? [];
+  const controls = () => answer.data?.controls;
+  const effective = () => answer.data?.config;
+  const origins = () => answer.data?.origins ?? [];
 
   const jump = (origin: ConfigOrigin) => {
     if (!origin.file) return;
@@ -443,10 +444,13 @@ export const AppConfigSettingsSection: Component<{ onClose?: () => void }> = (pr
     // Optimistic, then reconciled against what the daemon actually holds: a
     // save can be refused per leaf, and the pane must end up showing the
     // stored value rather than what was typed at it.
-    const previous = answer();
-    mutate((held) => (held ? { ...held, config: withValueAt(held.config, path, value) } : held));
+    const previous = answer.data;
+    patchCachedConfig((held) => ({ ...held, config: withValueAt(held.config, path, value) }));
     try {
-      const result = await saveConfig(nestValue(path, value));
+      // The mutation invalidates `['config']` on success, so the daemon's own
+      // answer — values AND provenance, which a save changes — replaces the
+      // guess without a second read here.
+      const result = await saving.mutateAsync(nestValue(path, value));
       const refused = result.refused?.[0];
       if (refused) {
         const where = refused.file
@@ -456,18 +460,18 @@ export const AppConfigSettingsSection: Component<{ onClose?: () => void }> = (pr
         notificationActions.addNotification('error', `${path}: not saved${where}`);
       }
     } catch (err) {
-      mutate(() => previous);
+      // A refused save leaves nothing invalidated, so the guess is put back by
+      // hand and the read is asked again for the state the daemon really has.
+      if (previous) patchCachedConfig(() => previous);
+      refetchConfig();
       setFailure(`${path}: ${err}`);
       notificationActions.addNotification('error', `${path}: ${err}`);
     }
-    // Whatever happened, the daemon's answer replaces the guess — including
-    // the provenance, which a save changes.
-    await refetch();
   };
 
   return (
     <>
-      <Show when={answer.loading && !answer()}>
+      <Show when={answer.isPending && !answer.data}>
         <tr>
           <td colSpan={2} class="py-3 text-center text-sm text-muted-dark">
             Loading configuration…

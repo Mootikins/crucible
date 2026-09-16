@@ -14,7 +14,6 @@ import { PanelShell } from './PanelShell';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
-  getConfig,
   grepSearch,
   searchSessions,
   semanticSearch,
@@ -22,8 +21,8 @@ import {
   type SemanticHit,
 } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
-import { swrLocal } from '@/lib/local-cache';
 import { useKilns } from '@/lib/query/kilns';
+import { useConfig } from '@/lib/query/config';
 import { openFileInEditor } from '@/lib/file-actions';
 import { pathBasename } from '@/stores/statusBarStore';
 import { kilnLabel } from '@/lib/kiln-label';
@@ -156,7 +155,8 @@ export const SearchPanel: Component = () => {
   const { projects } = useProjectSafe();
   const { selectSession, currentSession } = useSessionSafe();
 
-  const [kilnPath, setKilnPath] = createSignal('');
+  const configQuery = useConfig();
+  const kilnPath = () => configQuery.data?.kiln_path ?? '';
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
   const [query, setQuery] = createSignal('');
@@ -199,7 +199,6 @@ export const SearchPanel: Component = () => {
   ]);
 
   onMount(() => {
-    swrLocal('config', getConfig, (cfg) => cfg?.kiln_path && setKilnPath(cfg.kiln_path));
     queueMicrotask(() => inputRef?.focus());
     const onFocus = () => { inputRef?.focus(); inputRef?.select(); };
     window.addEventListener('crucible:focus-search', onFocus);

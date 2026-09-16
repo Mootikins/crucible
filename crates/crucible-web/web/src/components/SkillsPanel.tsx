@@ -1,12 +1,13 @@
 import { Component, Show, For, createSignal, createResource, createMemo, onCleanup } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { listSkills, searchSkills, getSkill, getConfig } from '@/lib/api';
+import { listSkills, searchSkills, getSkill } from '@/lib/api';
 import type { SkillSummary, SkillDetail } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
+import { fetchConfigOnce } from '@/lib/query/config';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -22,7 +23,9 @@ function useKilnPath() {
     const kiln = sess ? kilnPathOf(sessionDefaultKiln(sess)) : null;
     if (kiln) return kiln;
     try {
-      const config = await getConfig();
+      // The shared config query, awaited: the resource fetcher cannot mount an
+      // observer, and the rest of the shell has usually asked already.
+      const config = await fetchConfigOnce();
       return config.kiln_path || null;
     } catch {
       return null;

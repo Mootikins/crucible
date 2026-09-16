@@ -1,4 +1,4 @@
-import { getConfig } from '@/lib/api';
+import { fetchConfigOnce } from '@/lib/query/config';
 import type { OfflineStore } from '@/lib/offline/store';
 
 /**
@@ -27,7 +27,9 @@ const IDENTITY_KEY = 'daemon-identity';
 export async function daemonIdentity(store?: OfflineStore): Promise<string> {
   const origin = typeof location === 'undefined' ? '' : location.origin;
   try {
-    const config = await getConfig();
+    // The shared config query, awaited. A drain asks for the identity once per
+    // queued write, and every one of those used to be its own request.
+    const config = await fetchConfigOnce();
     const identity = `${origin}|${config?.config_root ?? config?.kiln_path ?? ''}`;
     // Remembered while the daemon can still be asked, because the one moment
     // this is needed — stamping a write queued OFFLINE — is the one moment it

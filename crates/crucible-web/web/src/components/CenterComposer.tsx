@@ -1,7 +1,6 @@
 import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
-  getConfig,
   getProviderTargets,
   getTargetProviders,
   isGitRepoUrl,
@@ -24,6 +23,7 @@ import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-re
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
 import { useKilns } from '@/lib/query/kilns';
+import { useConfig } from '@/lib/query/config';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -83,9 +83,12 @@ export const CenterComposer: Component<{
   // `config.kiln_path` — a PATH, and the only path left on this axis. It is
   // useful solely as a lookup key into the kiln list to recover the default's
   // registry NAME; nothing sends it anywhere.
-  const [defaultKilnPath, setDefaultKilnPath] = createSignal('');
+  // The config chips paint their last-known value too: `useConfig` keeps the
+  // `swrLocal('config')` storage key, and shares one request with the shell.
+  const configQuery = useConfig();
+  const defaultKilnPath = () => configQuery.data?.kiln_path ?? '';
   const [defaultModel, setDefaultModel] = createSignal('');
-  const [remoteShell, setRemoteShell] = createSignal(false);
+  const remoteShell = () => configQuery.data?.remote_shell === true;
 
   // The two axes, both contributed by plugins. WORKSPACE answers where the
   // session's files live (a worktree, a checkout on another machine); RUNTIME
@@ -125,10 +128,6 @@ export const CenterComposer: Component<{
     // No barrier, no blank chips: every source paints its LAST-KNOWN value
     // synchronously (swrLocal) and the fetch corrects it — a hard reload
     // shows real labels immediately instead of "Loading…"/fallback text.
-    swrLocal('config', getConfig, (cfg) => {
-      if (cfg?.kiln_path) setDefaultKilnPath(cfg.kiln_path);
-      setRemoteShell(cfg?.remote_shell === true);
-    });
     swrLocal('targets-workspace', () => getTargetProviders('workspace'), (p) => {
       if (p) setWsProviders(p);
     });
