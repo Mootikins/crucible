@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
+import { getBus } from '@/lib/bus';
 import {
   APP_CALLER,
   PLUGIN_CALLER_HEADER,
@@ -133,7 +134,7 @@ describe('a refusal', () => {
 describe('a 401', () => {
   it('asks for the key, and once only inside the throttle window', async () => {
     const prompted = vi.fn();
-    window.addEventListener('crucible:auth-required', prompted);
+    const stopListening = getBus().on('authRequired', prompted);
     global.fetch = createMockFetch({ 'GET /api/models': { status: 401 } });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -143,7 +144,7 @@ describe('a 401', () => {
     }
 
     expect(prompted).toHaveBeenCalledTimes(1);
-    window.removeEventListener('crucible:auth-required', prompted);
+    stopListening();
   });
 
   it('raises no toast beside the prompt, which would say the same twice', async () => {

@@ -1,5 +1,6 @@
 import type { components } from './api-schema';
 import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from './api-client';
+import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import type {
   AgentProfileEntry,
@@ -240,11 +241,11 @@ export async function login(key: string): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key }),
     });
-    // The success counterpart to `crucible:auth-required`. Modules that gave up
-    // on a 401 need a signal to re-ask; without one, anything that cached a
-    // failure stayed broken for the life of the page even after signing in
-    // (the terminal's availability check did exactly that).
-    if (res.ok) window.dispatchEvent(new CustomEvent('crucible:auth-ok'));
+    // The success counterpart to `authRequired`. Modules that gave up on a 401
+    // need a signal to re-ask; without one, anything that cached a failure
+    // stayed broken for the life of the page even after signing in (the
+    // terminal's availability check did exactly that).
+    if (res.ok) getBus().emit('authOk', {});
     return res.ok;
   } catch {
     return false;

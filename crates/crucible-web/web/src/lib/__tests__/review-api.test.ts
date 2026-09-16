@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
+import { getBus } from '@/lib/bus';
 import { resetAuthThrottleForTests } from '../api-client';
 import {
   addReviewComment,
@@ -192,7 +193,7 @@ describe('review REST surface', () => {
     // no 401 branch the write just failed and nothing ever asked them to sign
     // back in.
     const prompted = vi.fn();
-    window.addEventListener('crucible:auth-required', prompted);
+    const stopListening = getBus().on('authRequired', prompted);
     global.fetch = createMockFetch({
       'POST /api/session/s1/review/state': { status: 401 },
     });
@@ -200,7 +201,7 @@ describe('review REST surface', () => {
     await expect(setHunkState('s1', 'h1', 'accepted')).rejects.toThrow();
 
     expect(prompted).toHaveBeenCalled();
-    window.removeEventListener('crucible:auth-required', prompted);
+    stopListening();
   });
 
   it('falls back to the status when the body is empty', async () => {

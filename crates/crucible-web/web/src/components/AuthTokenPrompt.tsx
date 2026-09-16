@@ -1,5 +1,6 @@
-import { Component, Show, createSignal, onCleanup } from 'solid-js';
+import { Component, Show, createSignal } from 'solid-js';
 import { login } from '@/lib/api';
+import { getBus } from '@/lib/bus';
 
 interface AuthTokenPromptProps {
   /** Called after a successful sign-in. Defaults to a full reload so every
@@ -8,8 +9,8 @@ interface AuthTokenPromptProps {
 }
 
 /**
- * Modal that appears when the server rejects API calls with 401
- * (`crucible:auth-required`, dispatched by the api layer). The pasted key is
+ * Modal that appears when the server rejects API calls with 401 (`authRequired`
+ * on the bus, emitted by the api layer). The pasted key is
  * exchanged for an HttpOnly session cookie via POST /api/auth/login — it is
  * never stored where page JS can read it and never travels in a URL. The key
  * lives in `~/.config/crucible/api_key` on the machine running `cru web`
@@ -20,9 +21,9 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
   const [value, setValue] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
 
-  const onAuthRequired = () => setOpen(true);
-  window.addEventListener('crucible:auth-required', onAuthRequired);
-  onCleanup(() => window.removeEventListener('crucible:auth-required', onAuthRequired));
+  // `on` binds the removal to this component's owner, so there is no
+  // `onCleanup` here.
+  getBus().on('authRequired', () => setOpen(true));
 
   const save = async () => {
     const key = value().trim();

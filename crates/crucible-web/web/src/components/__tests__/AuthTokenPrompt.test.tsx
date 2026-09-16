@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import { createMockFetch, type MockFetch } from '@/test-utils/mock-fetch';
+import { getBus, resetBusForTests } from '@/lib/bus';
 
 import { AuthTokenPrompt } from '../AuthTokenPrompt';
 
@@ -37,6 +38,9 @@ beforeEach(() => {
 
 afterEach(() => {
   global.fetch = realFetch;
+  // The prompt subscribes on render; a handler left behind would open the
+  // modal of the next test.
+  resetBusForTests();
 });
 
 describe('AuthTokenPrompt', () => {
@@ -44,14 +48,14 @@ describe('AuthTokenPrompt', () => {
     render(() => <AuthTokenPrompt onSaved={() => {}} />);
     expect(screen.queryByTestId('auth-token-prompt')).not.toBeInTheDocument();
 
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+    getBus().emit('authRequired', {});
     expect(screen.getByTestId('auth-token-prompt')).toBeInTheDocument();
   });
 
   it('exchanges the pasted key via login() and invokes onSaved on success', async () => {
     const onSaved = vi.fn();
     render(() => <AuthTokenPrompt onSaved={onSaved} />);
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+    getBus().emit('authRequired', {});
 
     fireEvent.input(screen.getByTestId('auth-token-input'), {
       target: { value: '  my-secret-key  ' },
@@ -69,7 +73,7 @@ describe('AuthTokenPrompt', () => {
     accepts = false;
     const onSaved = vi.fn();
     render(() => <AuthTokenPrompt onSaved={onSaved} />);
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+    getBus().emit('authRequired', {});
 
     fireEvent.input(screen.getByTestId('auth-token-input'), {
       target: { value: 'wrong-key' },
@@ -86,7 +90,7 @@ describe('AuthTokenPrompt', () => {
   it('does not submit an empty key', () => {
     const onSaved = vi.fn();
     render(() => <AuthTokenPrompt onSaved={onSaved} />);
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+    getBus().emit('authRequired', {});
 
     fireEvent.click(screen.getByTestId('auth-token-save'));
     expect(sent).toEqual([]);
@@ -95,7 +99,7 @@ describe('AuthTokenPrompt', () => {
 
   it('cancel dismisses without calling login', () => {
     render(() => <AuthTokenPrompt onSaved={() => {}} />);
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
+    getBus().emit('authRequired', {});
 
     fireEvent.click(screen.getByText('Cancel'));
     expect(screen.queryByTestId('auth-token-prompt')).not.toBeInTheDocument();

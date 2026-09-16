@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetConfigForTests } from '@/lib/query/config';
-import { terminalAllowed, terminalDenied } from '../terminal-availability';
+import { login } from '@/lib/api';
+import {
+  installAuthOkListener,
+  terminalAllowed,
+  terminalDenied,
+} from '../terminal-availability';
 
 /**
  * The module holds no state of its own any more: it reads the shared config
@@ -23,6 +28,9 @@ beforeEach(() => {
   localStorage.clear();
   resetConfigForTests();
   browsingFromTheLan();
+  // The previous case's `restore()` cleared the bus, which took the handler
+  // the module subscribed at import.
+  installAuthOkListener();
 });
 
 afterEach(() => {
@@ -72,6 +80,7 @@ describe('terminal availability', () => {
               status: 401,
               headers: { 'Content-Type': 'application/json' },
             }),
+      'POST /api/auth/login': { status: 200 },
     });
 
     // The refusal has to LAND before the sign-in, which is the order the app
@@ -80,10 +89,12 @@ describe('terminal availability', () => {
     await vi.waitFor(() => expect(terminalAllowed()).toBe(false));
     await vi.waitFor(() => expect(env.client.getQueryState(['config'])?.status).toBe('error'));
 
-    // What `login()` dispatches on success. Covers the case the token prompt's
-    // reload does not: dismissed prompt, authenticated later or in another tab.
+    // The real `login()`, not a hand-made event: the emit site and this
+    // listener must agree on one name, and only the real call proves it.
+    // Covers the case the token prompt's reload does not: dismissed prompt,
+    // authenticated later or in another tab.
     signedIn = true;
-    window.dispatchEvent(new CustomEvent('crucible:auth-ok'));
+    expect(await login('the-key')).toBe(true);
 
     await vi.waitFor(() => expect(terminalAllowed()).toBe(true));
     expect(env.fetch.calls('GET /api/config')).toBe(2);

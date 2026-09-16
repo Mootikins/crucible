@@ -8,6 +8,7 @@
  * for anything that still reaches it.
  */
 import { configSnapshot, refetchConfig } from '@/lib/query/config';
+import { getBus } from '@/lib/bus';
 
 function isLocalhost(): boolean {
   const h = window.location.hostname;
@@ -39,14 +40,27 @@ function remoteShell(): boolean | undefined {
   return configSnapshot()?.remote_shell;
 }
 
-// Signing in is the event that turns the 401 above into an answer. Without
-// this, a user who dismissed the token prompt and authenticated later — or in
-// another tab — kept a terminal that refused for no stated reason. It
-// invalidates rather than waiting for `staleTime`, because new credentials are
-// new information.
-if (typeof window !== 'undefined') {
-  window.addEventListener('crucible:auth-ok', () => refetchConfig());
+/** The one handler, hoisted so a second `install` call adds no second copy. */
+const refetchOnSignIn = () => refetchConfig();
+
+/**
+ * Subscribes this module to the sign-in event.
+ *
+ * Signing in is the event that turns the 401 above into an answer. Without
+ * this, a user who dismissed the token prompt and authenticated later, or in
+ * another tab, kept a terminal that refused for no stated reason. It
+ * invalidates rather than waiting for `staleTime`, because new credentials are
+ * new information.
+ *
+ * The module calls it at import, which is the production path. A test calls it
+ * again, because the bus reset between cases removes every handler, this one
+ * with them.
+ */
+export function installAuthOkListener(): void {
+  getBus().on('authOk', refetchOnSignIn);
 }
+
+installAuthOkListener();
 
 /** Terminal is usable from this client. */
 export const terminalAllowed = () => {

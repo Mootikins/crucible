@@ -21,6 +21,7 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from './api-schema';
 import { notificationActions } from '@/stores/notificationStore';
+import { getBus } from '@/lib/bus';
 
 /**
  * The header a caller declares itself in, on the plugin routes.
@@ -89,20 +90,16 @@ const lateBoundFetch = (request: Request): Promise<Response> => globalThis.fetch
 /**
  * Throttled so a burst of parallel 401s produces one prompt, not a storm.
  *
- * Still a `window` event rather than a `bus` one: `AuthTokenPrompt` and
- * `terminal-availability` both listen on `window`, and the bus migration of
- * those two listeners is not this task's.
+ * `AuthTokenPrompt` is the listener. The bus carries the event, so the prompt
+ * and this module share one typed name instead of a `window` CustomEvent
+ * string that neither side can check.
  */
 let lastAuthNotify = 0;
 function notifyAuthRequired(): void {
-  try {
-    const now = Date.now();
-    if (now - lastAuthNotify < 5000) return;
-    lastAuthNotify = now;
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
-  } catch {
-    // non-browser context
-  }
+  const now = Date.now();
+  if (now - lastAuthNotify < 5000) return;
+  lastAuthNotify = now;
+  getBus().emit('authRequired', {});
 }
 
 /** Forgets the throttle, so one test's 401 does not silence the next one's. */
