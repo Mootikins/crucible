@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor, fireEvent, screen } from '@solidjs/testing-library';
 import { SearchPanel } from '../SearchPanel';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 const selectSessionMock = vi.fn();
 vi.mock('@/contexts/ProjectContext', () => ({
@@ -9,13 +11,6 @@ vi.mock('@/contexts/ProjectContext', () => ({
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({ selectSession: selectSessionMock, currentSession: () => undefined }),
 }));
-// swrLocal just runs the fetcher and pipes it to the setter.
-vi.mock('@/lib/local-cache', () => ({
-  swrLocal: (_k: string, fetcher: () => Promise<unknown>, setter: (v: unknown) => void) => {
-    void fetcher().then(setter);
-  },
-}));
-
 const searchSessionsMock = vi.fn(
   async (_q: string, _kiln?: string | string[], _limit?: number) => [
     { id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' },
@@ -43,15 +38,30 @@ const grepMock = vi.fn(async (root: string, _q: string, opts?: { glob?: string }
   };
 });
 
-vi.mock('@/lib/api', () => ({
+// The kiln roster is NOT stubbed here: `useKilns` runs the real `listKilns`
+// against the mocked fetch below, so the scope picker is driven by an answer
+// the daemon could give.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getConfig: vi.fn(async () => ({ kiln_path: '/kilns/main' })),
-  listKilns: vi.fn(async () => [{ path: '/kilns/main', name: 'main' }]),
   grepSearch: (...a: [string, string, { glob?: string }?]) => grepMock(...a),
   searchSessions: (...a: Parameters<typeof searchSessionsMock>) => searchSessionsMock(...a),
 }));
 
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [{ path: '/kilns/main', name: 'main' }] }),
+  });
+});
+
 afterEach(() => {
   cleanup();
+  env.restore();
+  resetKilnsForTests();
   vi.clearAllMocks();
 });
 

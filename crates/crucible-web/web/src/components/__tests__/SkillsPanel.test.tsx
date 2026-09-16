@@ -30,16 +30,12 @@ const searchSkillsMock = vi.fn();
 const getSkillMock = vi.fn();
 const getConfigMock = vi.fn().mockResolvedValue({ kiln_path: '/tmp/k' });
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   listSkills: (...args: unknown[]) => listSkillsMock(...args),
   searchSkills: (...args: unknown[]) => searchSkillsMock(...args),
   getSkill: (...args: unknown[]) => getSkillMock(...args),
   getConfig: () => getConfigMock(),
-  // The panel resolves a kiln *name* to a directory through the registry
-  // store, which fetches this. An empty registry is the case under test:
-  // nothing claims the session's name, `kilnPathOf` answers null, and the
-  // panel falls back to the configured `kiln_path` below.
-  listKilns: () => Promise.resolve([]),
 }));
 
 const addNotificationMock = vi.fn();
@@ -49,6 +45,25 @@ vi.mock('@/stores/notificationStore', () => ({
 
 // Import after mocks.
 import { SkillsPanel } from '../SkillsPanel';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+// The panel resolves a kiln NAME to a directory through `kilnPathOf`, which
+// reads the shared kiln query. An empty registry is the case under test:
+// nothing claims the session's name, `kilnPathOf` answers null, and the panel
+// falls back to the configured `kiln_path`.
+let kilnEnv: TestQueryEnv;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+});
+
+afterEach(() => {
+  kilnEnv.restore();
+  resetKilnsForTests();
+});
 
 describe('SkillsPanel', () => {
   beforeEach(() => {

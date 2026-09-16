@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@solidjs/testing-library';
 import type { BacklinksResponse } from '@/lib/types';
 
@@ -14,10 +14,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
   getConfig: (...args: unknown[]) => getConfigMock(...args),
-  // The panel derives its kiln from the focused file's own path, so it needs
-  // the kiln roster to attribute that file to a kiln. Must come AFTER the
-  // spread, or the real implementation wins.
-  listKilns: async () => [{ path: '/kiln' }],
 }));
 
 vi.mock('@/lib/file-actions', async (importOriginal) => ({
@@ -35,6 +31,8 @@ vi.mock('@/contexts/EditorContext', () => ({
 }));
 
 import { BacklinksPanel, noteKeyForPath } from '../BacklinksPanel';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 const RESPONSE: BacklinksResponse = {
   note: { path: 'notes/focused.md', abs_path: '/kiln/notes/focused.md', title: 'Focused Note' },
@@ -44,8 +42,20 @@ const RESPONSE: BacklinksResponse = {
   unlinked: [{ mention: 'Other Note', target: 'Other Note', offset: 0 }],
 };
 
+// The panel derives its kiln from the focused file's own path, so `useKilns`
+// must attribute that file to a kiln. The real `listKilns` runs against this.
+let env: TestQueryEnv;
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  resetKilnsForTests();
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [{ path: '/kiln', name: 'kiln' }] }) });
   activeFilePath = '/kiln/notes/focused.md';
   openFileContent = 'Other Note is mentioned here.';
   getConfigMock.mockResolvedValue({ kiln_path: '/kiln' });

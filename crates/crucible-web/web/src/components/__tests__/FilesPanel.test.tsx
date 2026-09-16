@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@solidjs/testing-library';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 
 // The old test read FilesPanel.tsx as a string and asserted the SOURCE did not
 // contain emoji and did contain Lucide identifiers ("FileText", "Folder", …).
@@ -10,7 +10,9 @@ import { render, fireEvent } from '@solidjs/testing-library';
 const EMOJI = ['📝', '🔷', '🟨', '🦀', '📋', '⚙️', '🎨', '🌐', '🌙', '📄', '📂', '📁'];
 
 const listNotesMock = vi.fn();
-const listKilnsMock = vi.fn();
+// The roster this run's `GET /api/kilns` answers. The panel reads it through
+// `useKilns`, which runs the real `listKilns` against the mocked fetch.
+let kilnRoster: unknown[] = [];
 const listDirMock = vi.fn();
 // Mutable so one describe can browse a PROJECT root (lazy, listDir) while the
 // rest use the kiln fallback (eager, listNotes).
@@ -24,7 +26,6 @@ let projectRoots: unknown[] = [];
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   listNotes: (...args: unknown[]) => listNotesMock(...args),
-  listKilns: (...args: unknown[]) => listKilnsMock(...args),
   listDir: (...args: unknown[]) => listDirMock(...args),
   // No SSE in jsdom: return a no-op unsubscribe so onMount doesn't open a
   // real EventSource.
@@ -57,6 +58,10 @@ vi.mock('@/contexts/SessionContext', () => ({
 
 import { FilesPanel } from '../FilesPanel';
 import { setStore } from '@/stores/windowStore';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+let env: TestQueryEnv;
 
 /** Focus a file tab, the way opening a file in the editor does. */
 function focusFileTab(filePath: string) {
@@ -101,7 +106,9 @@ beforeEach(() => {
   // These assertions match full filenames; keep extensions visible (the tree
   // hides `.md` by default now).
   localStorage.setItem('crucible.filetree.hideExts', 'false');
-  listKilnsMock.mockResolvedValue([{ path: '/project/kiln', name: 'kiln' }]);
+  kilnRoster = [{ path: '/project/kiln', name: 'kiln' }];
+  resetKilnsForTests();
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: kilnRoster }) });
   listNotesMock.mockResolvedValue(
     NOTE_NAMES.map((name) => ({
       name,
@@ -111,6 +118,11 @@ beforeEach(() => {
       updated_at: '',
     })),
   );
+});
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
 });
 
 /**
@@ -134,7 +146,7 @@ describe('FilesPanel — one always-visible root selector', () => {
     // No session, no projects, no kilns: the emptiest state the panel has.
     currentSessionValue = null;
     projectRoots = [];
-    listKilnsMock.mockResolvedValue([]);
+    kilnRoster = [];
     const { findByTestId } = render(() => <FilesPanel />);
     const trigger = await findByTestId('root-dropdown');
     expect(trigger.textContent).toContain('No roots');
@@ -146,7 +158,7 @@ describe('FilesPanel — one always-visible root selector', () => {
     // already owns, rather than holding a second copy of its open flag.
     currentSessionValue = null;
     projectRoots = [];
-    listKilnsMock.mockResolvedValue([]);
+    kilnRoster = [];
     const { findByTestId } = render(() => <FilesPanel />);
 
     const empty = await findByTestId('files-empty');
@@ -163,7 +175,8 @@ describe('FilesPanel — one always-visible root selector', () => {
   it('names the browsed root on the trigger', async () => {
     const { findByTestId } = render(() => <FilesPanel />);
     const trigger = await findByTestId('root-dropdown');
-    expect(trigger.textContent).toContain('kiln');
+    // The roster arrives with the kiln query, one tick after the first paint.
+    await waitFor(() => expect(trigger.textContent).toContain('kiln'));
   });
 
   // Attaching is a separate, explicit gesture from browsing: picking a root
@@ -178,8 +191,8 @@ describe('FilesPanel — one always-visible root selector', () => {
 });
 
 describe('FilesPanel — a project root loads once', () => {
-  // `swrLocal` applies twice by design (cached value, then fetched), so
-  // `setKilns` fires twice per mount. `activeRoot` is a memo over a rebuilt
+  // The kiln query answers twice by design (stored list, then fetched), so
+  // the roster changes twice per mount. `activeRoot` is a memo over a rebuilt
   // roster, so it handed back a NEW TreeRoot object each time and the
   // identity-keyed loader effect re-ran — refetching the root and every
   // persisted-expanded folder. That was the duplicate /api/fs/list per expand.
@@ -190,8 +203,8 @@ describe('FilesPanel — a project root loads once', () => {
     projectRoots = [{ path: '/proj', name: 'proj', kilns: [], repository: null }];
     // This describe browses a PROJECT root, so the session acts in it.
     currentSessionValue = { id: 's-1', kilns: [], workspace: '/proj' };
-    // A cached kilns value makes swrLocal apply synchronously AND again from
-    // the response — the double-apply this guards against.
+    // A cached kilns value paints synchronously AND is corrected by the
+    // response — the double-apply this guards against.
     localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));
     localStorage.setItem('crucible.filetree.expanded.project:/proj', JSON.stringify(['src']));
     listDirMock.mockImplementation(async (_root: string, rel: string) => ({

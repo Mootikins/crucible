@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import type { ConnectionStatus } from '@/lib/types';
@@ -80,9 +80,9 @@ vi.mock('../ChatModeControl', () => ({
 }));
 vi.mock('../AutocompletePopup', () => ({ AutocompletePopup: () => <div /> }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   executeCommand: vi.fn(async () => ({ result: '', type: 'success' })),
-  listKilns: vi.fn(async () => []),
   listProjects: vi.fn(async () => []),
   connectSessionKiln: vi.fn(),
   disconnectSessionKiln: vi.fn(),
@@ -97,9 +97,22 @@ vi.mock('@/lib/review-api', () => ({
 }));
 
 const { ChatInput } = await import('../ChatInput');
+const { createTestQueryEnv } = await import('@/test-utils/query');
+const { resetKilnsForTests } = await import('@/lib/query/kilns');
+
+// The roster the scope chips read through the shared kiln query.
+let kilnEnv: ReturnType<typeof createTestQueryEnv>;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+});
 
 afterEach(() => {
   cleanup();
+  kilnEnv.restore();
+  resetKilnsForTests();
   setConnectionStatus('connected');
   setError(null);
   mockRetryConnection.mockClear();

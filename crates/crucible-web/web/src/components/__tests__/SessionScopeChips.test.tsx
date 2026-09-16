@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor, fireEvent, screen, within } from '@solidjs/testing-library';
 import { useSessionScopeChips } from '../SessionScopeChips';
 import { ChipRow, type ComposerChip } from '@/components/composer/ChipRow';
 import type { Session } from '@/lib/types';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 /** The chips as the live composer draws them: on the shared row. */
 const SessionScopeChips = () => {
@@ -33,19 +35,35 @@ const disconnectMock = vi.fn().mockResolvedValue({
   workspace: null,
 });
 // No `setSessionWorkspace` here: the chip must have no path to it.
-vi.mock('@/lib/api', () => ({
-  listKilns: vi.fn().mockResolvedValue([
-    { path: '/kilns/main', name: 'main', registered: true },
-    { path: '/kilns/extra', name: 'extra', registered: true },
-    // An open directory the registration floor refuses. It is LABELLED here
-    // on purpose: the daemon sends an empty name with `registered: false`
-    // today, and a fixture that copied that would pass against a picker which
-    // only checks the label. The flag is the authority.
-    { path: '/home/u/.crucible/sessions', name: 'sessions', registered: false },
-  ]),
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   connectSessionKiln: (...args: unknown[]) => connectMock(...args),
   disconnectSessionKiln: (...args: unknown[]) => disconnectMock(...args),
 }));
+
+// The roster the chips read through `useKilns`, which runs the real
+// `listKilns` against the mocked fetch.
+const KILNS = [
+  { path: '/kilns/main', name: 'main', registered: true },
+  { path: '/kilns/extra', name: 'extra', registered: true },
+  // An open directory the registration floor refuses. It is LABELLED here on
+  // purpose: the daemon sends an empty name with `registered: false` today,
+  // and a fixture that copied that would pass against a picker which only
+  // checks the label. The flag is the authority.
+  { path: '/home/u/.crucible/sessions', name: 'sessions', registered: false },
+];
+
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  // The last-known roster, so the chips paint their rows on the first render
+  // the way a reload does. The fetch below still runs and still corrects it —
+  // the first spec here waits for exactly that.
+  localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
+});
 
 const baseSession = (): Session => ({
   id: 's1',
@@ -64,6 +82,8 @@ const baseSession = (): Session => ({
 
 afterEach(() => {
   cleanup();
+  env.restore();
+  resetKilnsForTests();
   vi.clearAllMocks();
 });
 

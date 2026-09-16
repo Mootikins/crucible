@@ -5,7 +5,6 @@ import {
   createMemo,
   createSignal,
   onCleanup,
-  onMount,
   untrack,
 } from 'solid-js';
 import { AlertTriangle, FileText, Pencil } from '@/lib/icons';
@@ -15,12 +14,12 @@ import { EditorWithPreview } from './editor/EditorWithPreview';
 import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
-import { listKilns, rawFileUrl } from '@/lib/api';
+import { rawFileUrl } from '@/lib/api';
 import { tabHost } from '@/lib/tab-host';
 import { isCompact } from '@/stores/deviceStore';
 import { hit } from '@/lib/touch';
 import { compactEditorMode, setCompactEditorMode } from '@/stores/editorModeStore';
-import { swrLocal } from '@/lib/local-cache';
+import { fetchKilnsOnce, useKilns } from '@/lib/query/kilns';
 import { PanelShell } from './PanelShell';
 import { ImageViewer } from './ImageViewer';
 import { Menu } from '@ark-ui/solid';
@@ -68,30 +67,30 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // kiln (a canvas card, a search hit, a hover popover) used to land in
   // whichever kiln the status bar pointed at, which is one kiln serving
   // another kiln's data.
-  const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
+  const kilnsQuery = useKilns();
+  const kilns = (): { path: string }[] => kilnsQuery.data ?? [];
 
   /** Vim is a desktop default. A phone has no `Escape` and no modifier row,
    * and one shared key cannot serve both shells. */
   const effectiveVimMode = () =>
     isCompact() ? settings.editor.vimModeCompact : settings.editor.vimMode;
-  // Kept as a promise as well as a signal. `swrLocal` applies nothing
-  // synchronously on a cold start (first run, cleared storage, private mode),
-  // and a click in that window has no kiln to resolve against — it would toast
-  // a misleading "Note not found" and never retry. Follow-link awaits this.
-  let kilnsReady: Promise<void> | undefined;
-  onMount(() => {
-    kilnsReady = Promise.resolve(swrLocal('kilns', listKilns, setKilns)).then(() => undefined);
-  });
-
   const owningKiln = (path?: string) => (path ? kilnForPath(path, kilns()) : undefined);
 
-  /** Resolve the owning kiln, waiting for the roster on a cold start. */
+  /**
+   * Resolve the owning kiln, waiting for the roster on a cold start.
+   *
+   * The query paints nothing on a cold start (first run, cleared storage,
+   * private mode), and a click in that window has no kiln to resolve against —
+   * it would toast a misleading "Note not found" and never retry. This awaits
+   * the fetch the query is already running, and reads the answer it returns
+   * rather than the store, which the observer updates a tick later.
+   */
   const owningKilnAsync = async (path?: string) => {
     if (!path) return undefined;
     const immediate = owningKiln(path);
     if (immediate || kilns().length > 0) return immediate;
-    await kilnsReady?.catch(() => undefined);
-    return owningKiln(path);
+    const roster = await fetchKilnsOnce().catch(() => []);
+    return kilnForPath(path, roster);
   };
 
   type EditorMenuAction = 'cut' | 'copy' | 'paste' | 'select-all' | 'copy-file-path';

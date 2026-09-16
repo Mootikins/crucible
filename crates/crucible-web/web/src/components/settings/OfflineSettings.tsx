@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, onMount } from 'solid-js';
-import { listKilns } from '@/lib/api';
+import { useKilns } from '@/lib/query/kilns';
 import { kilnLabel } from '@/lib/kiln-label';
 import { kept, keptActions, keptMode, type OfflineMode } from '@/lib/offline/kept';
 import { cacheKiln, dropKiln, kilnSize, pendingCount, syncNow } from '@/lib/offline/sync';
@@ -24,7 +24,8 @@ function readableSize(bytes: number): string {
  * not spend it without being asked.
  */
 export const OfflineSettingsSection: Component = () => {
-  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  const kilnsQuery = useKilns();
+  const kilns = (): KilnListEntry[] => kilnsQuery.data ?? [];
   const [sizes, setSizes] = createSignal<Record<string, { notes: number; attachments: number }>>({});
   const [busy, setBusy] = createSignal<Record<string, string>>({});
   const [queued, setQueued] = createSignal(0);
@@ -37,7 +38,6 @@ export const OfflineSettingsSection: Component = () => {
   };
 
   onMount(() => {
-    void listKilns().then(setKilns).catch(() => {});
     void refreshSizes();
   });
 

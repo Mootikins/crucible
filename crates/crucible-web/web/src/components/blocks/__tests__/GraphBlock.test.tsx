@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 
 /**
@@ -15,14 +15,15 @@ import { render, fireEvent, waitFor } from '@solidjs/testing-library';
  */
 const mocks = vi.hoisted(() => ({
   runPluginCommand: vi.fn(),
-  listKilns: vi.fn(),
   activeFile: vi.fn<() => string | null>(),
   openFileInEditor: vi.fn(),
 }));
 
-vi.mock('@/lib/api', () => ({
+// `listKilns` is NOT stubbed: the block reads the roster through `useKilns`,
+// which runs the real one against the mocked fetch below.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   runPluginCommand: mocks.runPluginCommand,
-  listKilns: mocks.listKilns,
 }));
 
 vi.mock('@/lib/file-actions', () => ({
@@ -34,6 +35,12 @@ vi.mock('@/contexts/EditorContext', () => ({
 }));
 
 import { GraphBlock } from '../GraphBlock';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+const KILNS = [{ path: '/vault', name: 'vault' }];
+
+let env: TestQueryEnv;
 
 const NEIGHBOURHOOD = {
   root: 'Meta/Canvas.md',
@@ -44,9 +51,19 @@ const NEIGHBOURHOOD = {
 };
 
 beforeEach(() => {
-  mocks.listKilns.mockResolvedValue([{ path: '/vault' }]);
+  localStorage.clear();
+  resetKilnsForTests();
+  // The roster paints on the first render, the way a reload does; the fetch
+  // below runs and answers the same list.
+  localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
   mocks.activeFile.mockReturnValue(null);
   mocks.runPluginCommand.mockResolvedValue(NEIGHBOURHOOD);
+});
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
 });
 
 describe('GraphBlock', () => {

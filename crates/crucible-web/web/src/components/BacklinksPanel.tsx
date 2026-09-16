@@ -18,7 +18,7 @@ import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { RefreshCw } from '@/lib/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { listKilns } from '@/lib/api';
+import { useKilns } from '@/lib/query/kilns';
 import { isMarkdownPath } from '@/lib/markdown-path';
 
 /**
@@ -31,11 +31,11 @@ import { isMarkdownPath } from '@/lib/markdown-path';
  * another, and its rows then resolved in a third.
  */
 function useKilnPath(focusedFile: () => string | undefined) {
-  const [kilns] = createResource(listKilns);
+  const kilns = useKilns();
   return createMemo(() => {
     const path = focusedFile();
     if (!path) return null;
-    return kilnForPath(path, kilns() ?? []) ?? null;
+    return kilnForPath(path, kilns.data ?? []) ?? null;
   });
 }
 

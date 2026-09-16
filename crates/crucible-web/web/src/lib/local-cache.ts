@@ -8,6 +8,32 @@
 
 const PREFIX = 'crucible:cache:';
 
+/**
+ * The last value stored under one key, or `null` — nothing stored it, or the
+ * entry is corrupt, or the browser refuses storage (private mode).
+ *
+ * Exported because the query layer keeps the same behaviour under the same
+ * keys: a hook seeds its cache from here and writes back on a successful
+ * fetch, so storage has one owner rather than one per entity module.
+ */
+export function readLocalCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(PREFIX + key);
+    return raw === null ? null : (JSON.parse(raw) as T);
+  } catch {
+    return null;
+  }
+}
+
+/** Stores one value, and does nothing when the browser refuses storage. */
+export function writeLocalCache<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+  } catch {
+    /* private mode / quota: the live value still reached the caller */
+  }
+}
+
 /** Apply the cached value (if any) synchronously, then fetch, re-apply, and
  * persist. Fetch failures keep the cached value on screen. */
 export function swrLocal<T>(
@@ -15,20 +41,12 @@ export function swrLocal<T>(
   fetcher: () => Promise<T>,
   apply: (value: T) => void,
 ): void {
-  try {
-    const raw = localStorage.getItem(PREFIX + key);
-    if (raw !== null) apply(JSON.parse(raw) as T);
-  } catch {
-    /* corrupt entry or private mode: fall through to the fetch */
-  }
+  const cached = readLocalCache<T>(key);
+  if (cached !== null) apply(cached);
   void fetcher()
     .then((value) => {
       apply(value);
-      try {
-        localStorage.setItem(PREFIX + key, JSON.stringify(value));
-      } catch {
-        /* private mode / quota: live value still applied */
-      }
+      writeLocalCache(key, value);
     })
     .catch(() => {
       /* offline / server gone: last-known value stands */

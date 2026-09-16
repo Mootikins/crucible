@@ -7,7 +7,6 @@ import {
   connectSessionKiln,
   listNotes,
   listDir,
-  listKilns,
   subscribeToFsEvents,
   fsMove,
   fsMkdir,
@@ -15,9 +14,9 @@ import {
   saveFileContent,
 } from '@/lib/api';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
-import { swrLocal } from '@/lib/local-cache';
+import { useKilns } from '@/lib/query/kilns';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
-import type { KilnListEntry, FsEntry } from '@/lib/types';
+import type { FsEntry } from '@/lib/types';
 import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
 import { resolveSessionRoot, sessionRoots, type SessionRoot } from '@/lib/session-roots';
 import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
@@ -93,7 +92,10 @@ export const FilesPanel: Component<{
   const { projects } = useProjectSafe();
   const { applySessionScope, currentSession } = useSessionSafe();
 
-  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  // The shell's one kiln roster. Its last-known list paints the tree's roots
+  // on reload, so the panel never opens on an empty Browse menu.
+  const kilnsQuery = useKilns();
+  const kilns = () => kilnsQuery.data ?? [];
   const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -136,11 +138,6 @@ export const FilesPanel: Component<{
 
   // Live machine api (set by FileTreeView.apiRef); powers toolbar actions.
   let treeApi: UseTreeViewReturn<Node> | null = null;
-
-  onMount(() => {
-    // Last-known kilns paint the roster immediately on reload.
-    swrLocal('kilns', listKilns, setKilns);
-  });
 
   // Every registered project, worktree and kiln, plus the branches and clone
   // action the dropdown adds. The session's own roots lead the same list.
@@ -285,9 +282,9 @@ export const FilesPanel: Component<{
   }
 
   // Keyed on the root's identity AS A PATH, not on the memo's object. `roster()`
-  // rebuilds fresh TreeRoot objects on every recompute and `swrLocal` applies
-  // twice by design (cached value, then fetched), so `setKilns` fires twice per
-  // mount — and an identity-keyed effect refetched the root plus every
+  // rebuilds fresh TreeRoot objects on every recompute and the kiln query
+  // answers twice by design (stored list, then fetched), so the roster changes
+  // twice per mount — and an identity-keyed effect refetched the root plus every
   // persisted-expanded folder a second time. That was the duplicate
   // `/api/fs/list` per expand: folders already in the persisted-expanded set
   // were fetched once per pass.

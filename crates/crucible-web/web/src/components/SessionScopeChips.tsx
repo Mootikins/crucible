@@ -1,13 +1,12 @@
-import { Accessor, createSignal, onMount } from 'solid-js';
+import { Accessor, createSignal } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
-import { connectSessionKiln, disconnectSessionKiln, listKilns } from '@/lib/api';
-import type { KilnListEntry } from '@/lib/types';
+import { connectSessionKiln, disconnectSessionKiln } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { attachableKilns } from '@/lib/kiln-registry';
-import { swrLocal } from '@/lib/local-cache';
+import { useKilns } from '@/lib/query/kilns';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { FlaskConical, FolderGit2 } from '@/lib/icons';
@@ -32,7 +31,9 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
   const { currentSession, applySessionScope } = useSessionSafe();
   const { isStreaming } = useChatSafe();
 
-  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  // The shell's one roster; its last-known list paints the chips on reload.
+  const kilnsQuery = useKilns();
+  const kilns = () => kilnsQuery.data ?? [];
   const [busy, setBusy] = createSignal(false);
 
   const session = () => currentSession();
@@ -41,11 +42,6 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
     return s ? sessionWorkspace(s) : null;
   };
   const disabled = () => busy() || isStreaming();
-
-  onMount(() => {
-    // Last-known values paint instantly on reload (same as the composer).
-    swrLocal('kilns', listKilns, setKilns);
-  });
 
   const mutate = async (action: () => Promise<Parameters<typeof applySessionScope>[0]>) => {
     if (disabled()) return;

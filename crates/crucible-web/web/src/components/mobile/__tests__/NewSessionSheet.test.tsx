@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 
 const created = vi.hoisted(() => ({ params: [] as unknown[], opts: [] as unknown[] }));
@@ -11,11 +11,13 @@ vi.mock('@/contexts/SessionContext', () => ({
     },
   }),
 }));
-vi.mock('@/lib/api', () => ({
+// `listKilns` is NOT stubbed: the sheet reads the roster through `useKilns`,
+// which runs the real one against the mocked fetch below.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getConfig: () => Promise.resolve({ kiln_path: '/kilns/home' }),
   listAgents: () => Promise.resolve([{ name: 'claude', description: 'ACP agent' }]),
   listAllModels: () => Promise.resolve(['sonnet', 'opus']),
-  listKilns: () => Promise.resolve([{ path: '/kilns/home', name: 'home' }]),
   listProjects: () => Promise.resolve([{ path: '/work/alpha', name: 'alpha', kilns: [] }]),
   getTargetProviders: () => Promise.resolve([]),
   getProviderTargets: () => Promise.resolve([]),
@@ -23,10 +25,25 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/lib/draft-session', () => ({ closeDraftTab: vi.fn() }));
 
 import { NewSessionSheet } from '@/components/mobile/NewSessionSheet';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+const KILNS = [{ path: '/kilns/home', name: 'home' }];
+
+let env: TestQueryEnv;
 
 beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
   created.params = [];
   created.opts = [];
+});
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
 });
 
 describe('NewSessionSheet', () => {

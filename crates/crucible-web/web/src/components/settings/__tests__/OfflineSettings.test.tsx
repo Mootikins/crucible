@@ -1,13 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 
 const calls = vi.hoisted(() => ({ cached: [] as string[], dropped: [] as string[] }));
-vi.mock('@/lib/api', () => ({
-  listKilns: async () => [
-    { path: '/kilns/notes', name: 'notes' },
-    { path: '/kilns/work', name: 'work' },
-  ],
-}));
 vi.mock('@/lib/offline/sync', () => ({
   cacheKiln: async (kiln: string) => {
     calls.cached.push(kiln);
@@ -23,11 +17,31 @@ vi.mock('@/lib/offline/sync', () => ({
 
 import { OfflineSettingsSection } from '@/components/settings/OfflineSettings';
 import { KEPT_KILNS_KEY, keptMode } from '@/lib/offline/kept';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+// `useKilns` runs the real `listKilns` against this fetch, so the section is
+// driven by the answer the daemon would give rather than by a stubbed module.
+let env: TestQueryEnv;
 
 beforeEach(() => {
   localStorage.clear();
+  resetKilnsForTests();
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({
+      kilns: [
+        { path: '/kilns/notes', name: 'notes' },
+        { path: '/kilns/work', name: 'work' },
+      ],
+    }),
+  });
   calls.cached = [];
   calls.dropped = [];
+});
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
 });
 
 describe('the Offline settings group', () => {

@@ -3,6 +3,8 @@ import { render, screen, cleanup, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 // FileViewerPanel calls useEditorSafe() + useSettingsSafe() unconditionally.
 // The editor's reactive shape varies per test (empty for "rendering", a dirty
@@ -38,14 +40,10 @@ vi.mock('@/components/editor/EditorWithPreview', () => ({
   },
 }));
 
-// Mock EditorContext — FileViewerPanel calls useEditorSafe()
-// The kilns the panel believes in. Autosave applies to files inside one.
-let kilnsValue: { path: string }[] = [{ path: '/kiln' }];
-vi.mock('@/lib/local-cache', () => ({
-  swrLocal: (key: string, _fetch: unknown, apply: (v: unknown) => void) => {
-    if (key === 'kilns') apply(kilnsValue);
-  },
-}));
+// The kilns the panel believes in. Autosave applies to files inside one. The
+// panel reads them through `useKilns`, so the roster arrives over the mocked
+// fetch rather than from a stubbed module.
+let kilnsValue: { path: string; name?: string }[] = [{ path: '/kiln', name: 'kiln' }];
 
 vi.mock('@/contexts/EditorContext', () => ({
   useEditorSafe: () => ({
@@ -104,6 +102,7 @@ vi.mock('@/stores/windowStore', () => ({
 // Dynamically import after mocks are in place
 const { default: FileViewerPanel } = await import('../FileViewerPanel');
 
+
 // Web test convention: unmount between tests so Solid reactive roots don't
 // leak across describes.
 afterEach(cleanup);
@@ -112,8 +111,23 @@ afterEach(cleanup);
 // via registerPanels(); reset it before EVERY test (not just that describe) so
 // the "rendering" describe can never inherit a registry populated by an earlier
 // run, regardless of describe order.
+let env: TestQueryEnv;
+
 beforeEach(() => {
   resetGlobalRegistry();
+  localStorage.clear();
+  resetKilnsForTests();
+  // The last-known roster, which the query paints on the first render — the
+  // same cold-load path a reload takes. The save-UX tests run on fake timers,
+  // where the fetch's own microtasks never get to run, so a roster that only
+  // arrived over the wire would leave every file outside every kiln.
+  localStorage.setItem('crucible:cache:kilns', JSON.stringify(kilnsValue));
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: kilnsValue }) });
+});
+
+afterEach(() => {
+  env.restore();
+  resetKilnsForTests();
 });
 
 describe('FileViewerPanel — panel registry', () => {

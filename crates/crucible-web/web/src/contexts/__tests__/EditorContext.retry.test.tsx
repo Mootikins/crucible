@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 /**
@@ -13,7 +13,10 @@ const getNote = vi.fn(async () => ({
   name: '', path: '', content: '', title: null, tags: [], updated_at: '',
 }));
 
-vi.mock('@/lib/api', () => ({
+// `listKilns` is NOT stubbed: the context resolves a path's kiln through the
+// shared kiln query, which runs the real one against the mocked fetch.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer, which wants the hash the
   // buffer was read at; the endpoint underneath is the same.
   getFileWithHash: async (p: string) => ({
@@ -30,7 +33,6 @@ vi.mock('@/lib/api', () => ({
     return { ok: true, content_hash: 'written' };
   },
   getNote: () => getNote(),
-  listKilns: async () => [{ path: '/home/user/kiln' }],
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: '/home/user/kiln', config_root: '/etc/crucible' }),
   listNotes: async () => [],
@@ -38,6 +40,24 @@ vi.mock('@/lib/api', () => ({
 
 const KILN = '/home/user/kiln';
 const PATH = `${KILN}/notes/dirty.md`;
+
+const { createTestQueryEnv } = await import('@/test-utils/query');
+const { resetKilnsForTests } = await import('@/lib/query/kilns');
+
+// The roster `kilnOf` resolves an open path against, over the mocked fetch.
+let kilnEnv: ReturnType<typeof createTestQueryEnv>;
+
+beforeEach(() => {
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+  });
+});
+
+afterEach(() => {
+  kilnEnv.restore();
+  resetKilnsForTests();
+});
 
 const { EditorProvider, useEditor } = await import('../EditorContext');
 

@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import { createSignal, Show } from 'solid-js';
+import { createTestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 // Regression for the open-file refcount leak: FileViewerPanel's open effect
 // must depend ONLY on props.filePath. openFile() starts with a reactive store
@@ -12,7 +14,8 @@ import { createSignal, Show } from 'solid-js';
 // effect, stubbing only the heavy editor child and side-effecting stores.
 
 const getFileContent = vi.fn(async (_p: string) => 'content\n');
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer, which asks for the hash the
   // buffer was read at; the endpoint underneath is unchanged.
   getFileWithHash: async (p: string) => ({ content: await getFileContent(p), content_hash: 'h' }),
@@ -22,8 +25,6 @@ vi.mock('@/lib/api', () => ({
   listNotes: async () => [],
   saveFileContent: vi.fn(async () => {}),
   getNote: vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' })),
-  // The panel asks which kiln owns the open file, so links resolve there.
-  listKilns: vi.fn(async () => []),
 }));
 vi.mock('../editor/EditorWithPreview', () => ({
   EditorWithPreview: () => <div data-testid="editor-stub" />,
@@ -48,10 +49,21 @@ const flush = async () => {
   await Promise.resolve();
 };
 
+// The panel asks which kiln owns the open file. Nothing here is in one, and
+// the empty roster now arrives over the fetch instead of from a module stub.
+let kilnEnv: ReturnType<typeof createTestQueryEnv>;
+
 describe('FileViewerPanel — open refcount does not leak', () => {
   beforeEach(() => {
+    resetKilnsForTests();
+    kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
     getFileContent.mockClear();
     getFileContent.mockResolvedValue('content\n');
+  });
+
+  afterEach(() => {
+    kilnEnv.restore();
+    resetKilnsForTests();
   });
 
   it('evicts the buffer when a single mounted panel unmounts (self-load must not double-count)', async () => {

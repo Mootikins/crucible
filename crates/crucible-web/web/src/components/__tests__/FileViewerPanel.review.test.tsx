@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, waitFor } from '@solidjs/testing-library';
 import type { ComposedHunk } from '@/lib/review-types';
+import { createTestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 const FILE_PATH = '/repo/src/a.rs';
 const CONTENT = ['one', 'two', 'three', 'four', 'five', 'six'].join('\n');
@@ -43,8 +45,8 @@ vi.mock('@/stores/windowStore', () => ({
   windowStore: { tabGroups: {}, layout: { id: 'p', type: 'pane', tabGroupId: null } },
   setStore: vi.fn(),
 }));
-vi.mock('@/lib/api', () => ({
-  listKilns: vi.fn(async () => []),
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   subscribeToEvents: () => () => {},
 }));
 const listReviewHunks = vi.fn();
@@ -85,12 +87,20 @@ const seed = async (hunks: ComposedHunk[]) => {
   await reviewActions.refresh('s1');
 };
 
+// The panel asks which kiln owns the open file. Nothing here is in one, and
+// the empty roster now arrives over the fetch instead of from a module stub.
+let kilnEnv: ReturnType<typeof createTestQueryEnv>;
+
 beforeEach(() => {
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
   listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
 });
 
 afterEach(() => {
   cleanup();
+  kilnEnv.restore();
+  resetKilnsForTests();
   __resetReviewStore();
   vi.clearAllMocks();
 });

@@ -10,7 +10,8 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile, FsEvent } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { listKilns, subscribeToFsEvents } from '@/lib/api';
+import { subscribeToFsEvents } from '@/lib/api';
+import { fetchKilnsOnce } from '@/lib/query/kilns';
 import { kilnForPath } from '@/lib/note-actions';
 import {
   hasQueuedWriting,
@@ -55,12 +56,11 @@ export const EditorProvider: ParentComponent = (props) => {
   // `background` opens the buffer WITHOUT making it the active file —
   // transient surfaces (wikilink hover windows) must not steal focus, or
   // everything keyed on activeFile (backlinks panel) flickers per hover.
-  /** Which kiln owns a path, for the offline layer. Cached: the roster is
-   * small and this runs on every open and save. */
-  let kilnRoster: { path: string }[] | null = null;
+  /** Which kiln owns a path, for the offline layer. The shared query holds the
+   * roster, which this runs against on every open and save. */
   const kilnOf = async (path: string): Promise<string | null> => {
-    if (!kilnRoster) kilnRoster = await listKilns().catch(() => []);
-    return kilnForPath(path, kilnRoster) ?? null;
+    const roster = await fetchKilnsOnce().catch(() => []);
+    return kilnForPath(path, roster) ?? null;
   };
 
   const openFile = async (path: string, opts?: { background?: boolean }) => {

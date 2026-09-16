@@ -7,7 +7,6 @@ import {
   isGitRepoUrl,
   listAgents,
   listAllModels,
-  listKilns,
   listProjects,
   listProviders,
   scmClone,
@@ -16,11 +15,7 @@ import {
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
-import type {
-  AgentProfileEntry,
-  KilnListEntry,
-  Project,
-} from '@/lib/types';
+import type { AgentProfileEntry, Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
@@ -28,6 +23,7 @@ import { syncRecentsFromServer } from '@/lib/recent-files';
 import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
+import { useKilns } from '@/lib/query/kilns';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -79,7 +75,10 @@ export const CenterComposer: Component<{
 
   const [agents, setAgents] = createSignal<AgentProfileEntry[]>([]);
   const [models, setModels] = createSignal<string[]>([]);
-  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
+  // One shared query, not this component's own fetch: the composer, the files
+  // panel, the search panel and the scope chips all read the same roster.
+  const kilnsQuery = useKilns();
+  const kilns = () => kilnsQuery.data ?? [];
   const [projects, setProjects] = createSignal<Project[]>([]);
   // `config.kiln_path` — a PATH, and the only path left on this axis. It is
   // useful solely as a lookup key into the kiln list to recover the default's
@@ -140,7 +139,6 @@ export const CenterComposer: Component<{
     swrLocal('models', () => listAllModels(), (mo) =>
       setModels(mo.filter((m) => !m.startsWith('[error]'))),
     );
-    swrLocal('kilns', listKilns, setKilns);
     swrLocal('projects', () => listProjects(), setProjects);
     swrLocal('providers', () => listProviders(), (providers) => {
       const first = providers.find((p) => p.available);

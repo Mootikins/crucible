@@ -43,7 +43,10 @@ const diskSays = (event: FsEvent) => {
   for (const listener of [...fsListeners]) listener(event);
 };
 
-vi.mock('@/lib/api', () => ({
+// `listKilns` is NOT stubbed: the context resolves a path's kiln through the
+// shared kiln query, which runs the real one against the mocked fetch.
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer now, which asks for the hash
   // the buffer was read at; the transport underneath is the same endpoint.
   getFileWithHash: async (p: string) => ({
@@ -58,7 +61,6 @@ vi.mock('@/lib/api', () => ({
   saveFileIfUnchanged: (p: string, c: string, base: string, baseText?: string) =>
     guardedSave(p, c, base, baseText),
   getNote: () => getNote(),
-  listKilns: async () => [{ path: KILN }],
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   listNotes: async () => [],
@@ -78,6 +80,24 @@ vi.mock('@/lib/conflicts', () => ({
   openConflict: (path?: string | null) => openConflict(path),
   conflictActions: { refresh: () => refreshConflicts() },
 }));
+
+const { createTestQueryEnv } = await import('@/test-utils/query');
+const { resetKilnsForTests } = await import('@/lib/query/kilns');
+
+// The roster `kilnOf` resolves an open path against, over the mocked fetch.
+let kilnEnv: ReturnType<typeof createTestQueryEnv>;
+
+beforeEach(() => {
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+  });
+});
+
+afterEach(() => {
+  kilnEnv.restore();
+  resetKilnsForTests();
+});
 
 const { EditorProvider, useEditor } = await import('../EditorContext');
 const { pendingConflicts, setOfflineStore, syncNow } = await import('@/lib/offline/sync');

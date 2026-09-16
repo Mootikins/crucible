@@ -1,9 +1,10 @@
-import { Component, For, Show, createSignal, onMount } from 'solid-js';
+import { Component, For, Show } from 'solid-js';
 import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { listKilns, resolveNotePath } from '@/lib/api';
+import { resolveNotePath } from '@/lib/api';
+import { useKilns } from '@/lib/query/kilns';
 import { kilnForPath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
@@ -61,9 +62,9 @@ export const EditorPanel: Component = () => {
   // The kiln owning the file on screen, from the file's own path — not the
   // configured default, which resolved a buffer's links in a kiln that had
   // nothing to do with it.
-  const [kilns, setKilns] = createSignal<{ path: string }[]>([]);
-  onMount(() => void listKilns().then(setKilns).catch(() => undefined));
-  const owningKiln = (path?: string) => (path ? kilnForPath(path, kilns()) : undefined);
+  const kilnsQuery = useKilns();
+  const owningKiln = (path?: string) =>
+    path ? kilnForPath(path, kilnsQuery.data ?? []) : undefined;
 
   // Follow a [[wikilink]]: resolve the target and open it as another editor
   // tab (this panel owns its own tab strip, unlike FileViewerPanel which opens

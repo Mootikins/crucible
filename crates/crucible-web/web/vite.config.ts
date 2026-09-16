@@ -84,7 +84,19 @@ export default defineConfig(({ mode }) => ({
         // inlined: externalized, their compiled machine.mjs hits a TDZ
         // ("Cannot access 'send' before initialization") under vitest's ESM
         // loader, and they must share the test's browser build of solid-js.
-        inline: [/solid-js/, /@solidjs\//, /@solid-primitives/, /@zag-js/, /@ark-ui/],
+        // @tanstack/solid-query is the same rule with a quieter symptom: its
+        // result is a Solid store, so externalized it builds that store with
+        // the OTHER copy of solid-js. Every read answers the current value,
+        // which is why an awaited assertion passes, but no component ever
+        // subscribes — a panel driven by a query renders once and stays empty.
+        inline: [
+          /solid-js/,
+          /@solidjs\//,
+          /@solid-primitives/,
+          /@zag-js/,
+          /@ark-ui/,
+          /@tanstack\/solid-query/,
+        ],
       },
     },
     coverage: {

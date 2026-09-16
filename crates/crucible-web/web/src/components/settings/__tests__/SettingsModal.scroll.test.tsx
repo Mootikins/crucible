@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, screen } from '@solidjs/testing-library';
 
 /**
@@ -18,7 +18,8 @@ import { render, cleanup, fireEvent, screen } from '@solidjs/testing-library';
  * section may bring a second scroll container or a full-height box.
  */
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => false }));
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getPluginOptions: vi.fn(async () => ({
     widget: {
       type: 'group',
@@ -35,7 +36,6 @@ vi.mock('@/lib/api', () => ({
   getMcpStatus: vi.fn(async () => ({ servers: [] })),
   login: vi.fn(async () => true),
   resetLayout: vi.fn(async () => {}),
-  listKilns: vi.fn(async () => []),
   getContextStrategy: vi.fn(async () => ({ strategy: 'default' })),
   setContextStrategy: vi.fn(async () => {}),
   getConfig: vi.fn(async () => ({
@@ -71,8 +71,21 @@ vi.mock('@/contexts/SessionContext', () => ({
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { settingsSections } from '@/components/settings/sections';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+// The Offline section lists the roster, which arrives over the fetch.
+let kilnEnv: TestQueryEnv;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+});
 
 afterEach(() => {
+  kilnEnv.restore();
+  resetKilnsForTests();
   cleanup();
 });
 

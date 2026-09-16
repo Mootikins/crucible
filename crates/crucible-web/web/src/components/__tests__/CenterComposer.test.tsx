@@ -1,6 +1,25 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, screen, waitFor, fireEvent, within } from '@solidjs/testing-library';
 import { CenterComposer } from '../CenterComposer';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
+
+// The registry: `name` is the key every other call answers to, `path` is where
+// it lives (the documented exception). `helios` is the configured default, so
+// it appears here too — a default the registry cannot name is its own case,
+// tested below. The composer reads it through `useKilns`, so the real
+// `listKilns` runs against this answer.
+const KILNS = [
+  { path: '/home/user/kilns/helios', name: 'helios', registered: true },
+  { path: '/home/user/kilns/other', name: 'other', registered: true },
+  // An open directory the registration floor refuses. LABELLED on purpose: the
+  // daemon sends an empty name beside `registered: false` today, and a fixture
+  // that copied that would pass against a picker which only checks the label.
+  // The flag is the authority.
+  { path: '/home/user/.crucible/sessions', name: 'sessions', registered: false },
+];
+
+let env: TestQueryEnv;
 
 const createSessionMock = vi.fn().mockResolvedValue({ id: 'sess-1' });
 vi.mock('@/contexts/SessionContext', () => ({
@@ -12,7 +31,8 @@ vi.mock('@/lib/file-actions', () => ({
   openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getConfig: vi.fn().mockResolvedValue({
     kiln_path: '/home/user/kilns/helios',
   }),
@@ -58,19 +78,6 @@ vi.mock('@/lib/api', () => ({
     { name: 'claude', description: 'Claude Code via ACP', command: 'npx', is_builtin: true, available: true },
   ]),
   listAllModels: vi.fn().mockResolvedValue(['ollama/llama3.2', 'openai/gpt-4o']),
-  // The registry: `name` is the key every other call answers to, `path` is
-  // where it lives (the documented exception). `helios` is the configured
-  // default, so it appears here too — a default the registry cannot name is
-  // its own case, tested below.
-  listKilns: vi.fn().mockResolvedValue([
-    { path: '/home/user/kilns/helios', name: 'helios', registered: true },
-    { path: '/home/user/kilns/other', name: 'other', registered: true },
-    // An open directory the registration floor refuses. LABELLED on purpose:
-    // the daemon sends an empty name beside `registered: false` today, and a
-    // fixture that copied that would pass against a picker which only checks
-    // the label. The flag is the authority.
-    { path: '/home/user/.crucible/sessions', name: 'sessions', registered: false },
-  ]),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
   listProviders: vi.fn().mockResolvedValue([
     { name: 'ollama', available: true, default_model: 'llama3.2' },
@@ -91,6 +98,8 @@ vi.mock('@/lib/api', () => ({
 // silently started asserting against an empty menu.
 beforeEach(async () => {
   localStorage.clear();
+  resetKilnsForTests();
+  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();
 
@@ -138,7 +147,11 @@ beforeEach(async () => {
     ),
   );
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  env.restore();
+  resetKilnsForTests();
+});
 
 describe('CenterComposer', () => {
   it('renders the input, context chips, and quick actions', async () => {

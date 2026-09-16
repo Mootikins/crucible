@@ -3,6 +3,8 @@ import { render, screen, cleanup } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import type { InteractionRequest } from '@/lib/types';
 import { ChatInput } from '../ChatInput';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetKilnsForTests } from '@/lib/query/kilns';
 
 /** The request the composer is parked on, or none. */
 const [pending, setPending] = createSignal<InteractionRequest | null>(null);
@@ -96,15 +98,16 @@ vi.mock('../AutocompletePopup', () => ({
   AutocompletePopup: () => <div data-testid="autocomplete-popup-mock" />,
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   // Mock must match CommandResult (api.ts): { result, type }. The daemon's
   // CommandResponse (web/routes/session_commands.rs) always sets `type` to
   // "success" | "error"; a successful command returns "success".
   executeCommand: vi.fn(async () => ({ result: 'Command executed', type: 'success' })),
   // The docked permission card reads the file it is about to overwrite.
   getFileContent: vi.fn(async () => ''),
-  // SessionScopeChips (rendered inside ChatInput) loads these on mount.
-  listKilns: vi.fn(async () => []),
+  // SessionScopeChips (rendered inside ChatInput) loads this on mount. Its
+  // kiln roster is NOT stubbed here: it arrives over the fetch below.
   listProjects: vi.fn(async () => []),
   connectSessionKiln: vi.fn(),
   disconnectSessionKiln: vi.fn(),
@@ -120,8 +123,19 @@ vi.mock('@/lib/review-api', () => ({
   listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
 }));
 
+// The roster the scope chips read through the shared kiln query.
+let kilnEnv: TestQueryEnv;
+
+beforeEach(() => {
+  localStorage.clear();
+  resetKilnsForTests();
+  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+});
+
 afterEach(() => {
   cleanup();
+  kilnEnv.restore();
+  resetKilnsForTests();
   setPending(null);
   workspace = null;
 });

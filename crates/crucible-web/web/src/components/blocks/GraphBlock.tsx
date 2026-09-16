@@ -1,5 +1,6 @@
 import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
-import { listKilns, runPluginCommand } from '@/lib/api';
+import { runPluginCommand } from '@/lib/api';
+import { useKilns } from '@/lib/query/kilns';
 import { kilnForPath, noteAbsolutePath } from '@/lib/note-actions';
 import { openFileInEditor } from '@/lib/file-actions';
 import { useEditorSafe } from '@/contexts/EditorContext';
@@ -56,7 +57,7 @@ function leaf(path: string): string {
 
 export const GraphBlock: Component<BlockProps> = (props) => {
   const editor = useEditorSafe();
-  const [kilns] = createResource(listKilns);
+  const kilns = useKilns();
   const [depth, setDepth] = createSignal(paramNumber(props.params.depth) ?? 1);
   const [elapsed, setElapsed] = createSignal<number | null>(null);
 
@@ -72,7 +73,7 @@ export const GraphBlock: Component<BlockProps> = (props) => {
   const kiln = createMemo(() => {
     const file = editor.activeFile();
     if (!file) return undefined;
-    return kilnForPath(file, kilns() ?? []);
+    return kilnForPath(file, kilns.data ?? []);
   });
 
   /** The note to read around: the fence's own, else whatever has focus. */
