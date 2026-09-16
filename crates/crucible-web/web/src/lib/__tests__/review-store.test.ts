@@ -1,18 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
-import type { ChatEvent } from '@/lib/types';
+import { FakeEventSource, installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
+import { sessionEvents, resetSseForTests } from '@/lib/query/sse';
 import type { ComposedHunk } from '@/lib/review-types';
-
-// One captured SSE handler per subscribe call, so a test can push a daemon
-// event into the store the way the daemon would.
-const handlers: ((e: ChatEvent) => void)[] = [];
-const closes = vi.fn();
-vi.mock('@/lib/api', () => ({
-  subscribeToEvents: (_id: string, onEvent: (e: ChatEvent) => void) => {
-    handlers.push(onEvent);
-    return () => closes();
-  },
-}));
 
 const listReviewHunks = vi.fn();
 const setHunkState = vi.fn(async () => ({ hunk_id: 'h1', state: 'accepted' as const }));
@@ -71,7 +61,7 @@ const answer = (hunks: ComposedHunk[], comments: unknown[] = []) =>
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
-  handlers.length = 0;
+  installFakeEventSource();
   answer([]);
   // clearMocks wipes call history, not implementations — a test that installs
   // a never-resolving one would otherwise hang every test after it.
@@ -80,7 +70,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The store first, because dropping a binding unsubscribes it; the roots
+  // after, so a source of this case cannot answer the next one.
   __resetReviewStore();
+  resetSseForTests();
   vi.clearAllMocks();
 });
 
@@ -267,19 +260,58 @@ describe('subscription lifecycle', () => {
     return dispose;
   };
 
+  /**
+   * Stands in for `ChatProvider`, which reads the same stream for the
+   * transcript. It is the other half of the fault this suite exists to find:
+   * a chat pane and a changes panel on one session used to hold one
+   * `EventSource` each.
+   */
+  const bindChatPane = (id: string) => sessionEvents(id).subscribe(() => {});
+
+  it('a chat pane and the changes panel share ONE EventSource', async () => {
+    const stopChat = bindChatPane('s1');
+    const dispose = bind(() => 's1');
+    await settle();
+
+    // `onlyEventSource` fails with the count, which is the number that names
+    // the fault: two sources means the panel went around the shared root.
+    expect(onlyEventSource().url).toBe('/api/chat/events/s1');
+
+    dispose();
+    stopChat();
+    await settle();
+    expect(onlyEventSource().closed).toBe(true);
+  });
+
+  it('a second panel on the same session opens no second source', async () => {
+    const d1 = bind(() => 's1');
+    await settle();
+    const opened = FakeEventSource.instances.length;
+
+    const d2 = bind(() => 's1');
+    await settle();
+    expect(FakeEventSource.instances).toHaveLength(opened);
+
+    d1();
+    d2();
+    await settle();
+  });
+
   it('two consumers share ONE stream and one initial fetch', async () => {
     const d1 = bind(() => 's1');
     const d2 = bind(() => 's1');
     await settle();
-    expect(handlers).toHaveLength(1);
+    expect(FakeEventSource.instances).toHaveLength(1);
     expect(listReviewHunks).toHaveBeenCalledTimes(1);
 
     // The stream outlives the first consumer — the panel closing must not
     // blind the editor.
     d1();
-    expect(closes).not.toHaveBeenCalled();
+    await settle();
+    expect(onlyEventSource().closed).toBe(false);
     d2();
-    expect(closes).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(onlyEventSource().closed).toBe(true);
     // ...and the slot is deleted, not left as an empty husk per session ever
     // visited.
     expect(reviewStore.session('s1').loaded).toBe(false);
@@ -289,9 +321,10 @@ describe('subscription lifecycle', () => {
     const dispose = bind(() => 's1');
     await settle();
     listReviewHunks.mockClear();
+    const source = onlyEventSource();
 
     for (let i = 0; i < 5; i++) {
-      handlers[0]({ type: 'session_event', event: 'review_changed', data: {} });
+      source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
     }
     expect(listReviewHunks).not.toHaveBeenCalled();
     await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
@@ -303,12 +336,13 @@ describe('subscription lifecycle', () => {
     const dispose = bind(() => 's1');
     await settle();
     listReviewHunks.mockClear();
+    const source = onlyEventSource();
 
-    handlers[0]({ type: 'tool_result', id: 'x', result: '' } as unknown as ChatEvent);
+    source.emit('tool_result', { type: 'tool_result', id: 'x', result: '' });
     await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
     expect(listReviewHunks).toHaveBeenCalledTimes(1);
 
-    handlers[0]({ type: 'message_complete' } as unknown as ChatEvent);
+    source.emit('message_complete', { type: 'message_complete' });
     await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
     expect(listReviewHunks).toHaveBeenCalledTimes(2);
     dispose();
@@ -318,8 +352,9 @@ describe('subscription lifecycle', () => {
     const dispose = bind(() => 's1');
     await settle();
     listReviewHunks.mockClear();
+    const source = onlyEventSource();
 
-    handlers[0]({
+    source.emit('session_event', {
       type: 'session_event',
       event: 'review_gate',
       data: { blocked: true, tool: 'edit_file', path: '/repo/src/a.rs' },
@@ -332,7 +367,11 @@ describe('subscription lifecycle', () => {
     // Not debounced: a held agent is exactly when the user needs the queue.
     expect(listReviewHunks).toHaveBeenCalledTimes(1);
 
-    handlers[0]({ type: 'session_event', event: 'review_gate', data: { blocked: false } });
+    source.emit('session_event', {
+      type: 'session_event',
+      event: 'review_gate',
+      data: { blocked: false },
+    });
     expect(reviewStore.session('s1').gate?.blocked).toBe(false);
     dispose();
   });
@@ -347,8 +386,9 @@ describe('subscription lifecycle', () => {
     setId('s2');
     await settle();
     // Exactly one close: the old session's stream, not the new one's.
-    expect(closes).toHaveBeenCalledTimes(1);
-    expect(handlers).toHaveLength(2);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[0].closed).toBe(true);
+    expect(FakeEventSource.instances[1].closed).toBe(false);
     dispose();
   });
 });

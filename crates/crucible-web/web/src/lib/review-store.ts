@@ -12,13 +12,17 @@
  * open at once and a delegated child ledger is addressed by the CHILD's
  * session id, so a single-slot store would cross their queues.
  *
- * Consumers call `useReviewSession(() => id)`. The subscription is refcounted,
- * so the panel, the editor, and every ToolCard on screen share ONE fetch and
- * ONE EventSource per session.
+ * Consumers call `useReviewSession(() => id)`. One binding serves every
+ * consumer of a session, so the panel, the editor and every ToolCard on screen
+ * share ONE fetch. The stream under it is `sessionEvents(id)`, the shared root
+ * of `lib/query/sse.ts`, which the chat pane reads too: a session with a
+ * transcript and a changes panel holds ONE `EventSource`, not two.
  */
 import { createEffect, createSignal, on, onCleanup, type Accessor } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { subscribeToEvents } from './api';
+import { createSingletonRoot } from '@solid-primitives/rootless';
+import { sessionEvents } from './query/sse';
+import type { ChatEvent } from './types';
 import {
   addReviewComment,
   listReviewHunks,
@@ -102,12 +106,8 @@ export const REVIEW_REFRESH_DEBOUNCE_MS = 150;
 
 const [sessions, setSessions] = createStore<Record<string, ReviewSessionState>>({});
 
-interface Subscription {
-  refs: number;
-  close: () => void;
-  timer: ReturnType<typeof setTimeout> | null;
-}
-const subs = new Map<string, Subscription>();
+/** The pending coalesced refresh of each bound session. */
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function ensureSlot(id: string): void {
   if (!sessions[id]) setSessions(id, { ...EMPTY });
@@ -433,101 +433,141 @@ export const reviewActions = {
 // Subscription
 // =============================================================================
 
+/** Coalesces a burst of "the diff may have moved" events into one listing. */
 function scheduleRefresh(id: string): void {
-  const sub = subs.get(id);
-  if (!sub) return;
-  if (sub.timer) clearTimeout(sub.timer);
-  sub.timer = setTimeout(() => {
-    sub.timer = null;
-    void reviewActions.refresh(id);
-  }, REVIEW_REFRESH_DEBOUNCE_MS);
+  const pending = timers.get(id);
+  if (pending) clearTimeout(pending);
+  timers.set(
+    id,
+    setTimeout(() => {
+      timers.delete(id);
+      void reviewActions.refresh(id);
+    }, REVIEW_REFRESH_DEBOUNCE_MS),
+  );
 }
 
-function retain(id: string): () => void {
-  const existing = subs.get(id);
-  if (existing) {
-    existing.refs += 1;
-    return () => release(id);
-  }
-
-  ensureSlot(id);
-  const close = subscribeToEvents(id, (event) => {
-    switch (event.type) {
-      case 'session_event': {
-        const data = (event.data ?? {}) as Record<string, unknown>;
-        if (event.event === 'review_gate') {
-          setSessions(id, 'gate', {
-            blocked: data.blocked === true,
-            tool: typeof data.tool === 'string' ? data.tool : '',
-            path: typeof data.path === 'string' ? data.path : null,
-          });
-          // A block means there is something to review RIGHT NOW; do not make
-          // the user wait out the debounce to find out what.
-          void reviewActions.refresh(id);
-          return;
-        }
-        if (event.event === 'review_changed') scheduleRefresh(id);
+/**
+ * Folds one chat event of a session into its review slot.
+ *
+ * The stream carries every event of the session, and the transcript reads the
+ * same frames for its own fold. These four are the ones that move the composed
+ * diff; the rest belong to the pane.
+ */
+function foldEvent(id: string, event: ChatEvent): void {
+  switch (event.type) {
+    case 'session_event': {
+      const data = (event.data ?? {}) as Record<string, unknown>;
+      if (event.event === 'review_gate') {
+        setSessions(id, 'gate', {
+          blocked: data.blocked === true,
+          tool: typeof data.tool === 'string' ? data.tool : '',
+          path: typeof data.path === 'string' ? data.path : null,
+        });
+        // A block means there is something to review RIGHT NOW; do not make
+        // the user wait out the debounce to find out what.
+        void reviewActions.refresh(id);
         return;
       }
-      // No event announces "the agent just created hunks" — `review_changed`
-      // only fires for review ACTIONS. Without these two the queue would stay
-      // empty until the user clicked something, which is precisely backwards.
-      case 'tool_result':
-      case 'message_complete':
-        scheduleRefresh(id);
-        return;
-      case 'connection':
-        // Events are dropped, not replayed, across a reconnect.
-        if (event.status === 'connected') scheduleRefresh(id);
-        return;
+      if (event.event === 'review_changed') scheduleRefresh(id);
+      return;
     }
-  });
-
-  subs.set(id, { refs: 1, close, timer: null });
-  void reviewActions.refresh(id);
-  return () => release(id);
+    // No event announces "the agent just created hunks" — `review_changed`
+    // only fires for review ACTIONS. Without these two the queue would stay
+    // empty until the user clicked something, which is precisely backwards.
+    case 'tool_result':
+    case 'message_complete':
+      scheduleRefresh(id);
+      return;
+    case 'connection':
+      // Events are dropped, not replayed, across a reconnect.
+      if (event.status === 'connected') scheduleRefresh(id);
+      return;
+  }
 }
 
-function release(id: string): void {
-  const sub = subs.get(id);
-  if (!sub) return;
-  sub.refs -= 1;
-  if (sub.refs > 0) return;
-  if (sub.timer) clearTimeout(sub.timer);
-  sub.close();
-  subs.delete(id);
-  // Drop the key rather than leaving an empty record behind — a store path set
-  // to undefined keeps the key, so every session visited would leak a slot.
-  setSessions(
-    produce((s) => {
-      delete s[id];
-    }),
-  );
+/** The one binding of a session, and the way to drop it whatever the count. */
+interface SessionBinding {
+  /**
+   * Counts this consumer in, and builds the binding for the first of them.
+   * It registers the count-out with the caller's reactive owner, so a consumer
+   * that goes away needs no bookkeeping of its own.
+   */
+  enter: () => void;
+  /** Drops the binding whatever the count says. Only the test seam runs it. */
+  dispose: () => void;
+}
+
+const bindings = new Map<string, SessionBinding>();
+
+/**
+ * The binding of a session: its slot, its first listing and its place on the
+ * shared stream.
+ *
+ * `createSingletonRoot` counts the consumers. The store held its own `refs`
+ * count before, over its own `EventSource`; both are gone. The count that
+ * closes the stream now lives in `lib/query/sse.ts`, where the chat pane is
+ * counted beside the panel, and the count here decides one thing the stream
+ * cannot: when the SLOT goes, since a slot per session ever visited is a leak.
+ *
+ * The root is detached (`createSingletonRoot(factory, null)`). Without that it
+ * would belong to the owner of whichever consumer asked first, and that
+ * component going away would delete the slot under every other consumer.
+ */
+function sessionBinding(id: string): SessionBinding {
+  const existing = bindings.get(id);
+  if (existing) return existing;
+
+  const binding: SessionBinding = { enter: () => {}, dispose: () => {} };
+  binding.enter = createSingletonRoot((dispose) => {
+    binding.dispose = dispose;
+    ensureSlot(id);
+    const unsubscribe = sessionEvents(id).subscribe((event) => foldEvent(id, event));
+    void reviewActions.refresh(id);
+    onCleanup(() => {
+      // Only when this binding is still the one on file: the test seam may
+      // have dropped it already and a later consumer built its successor.
+      if (bindings.get(id) === binding) bindings.delete(id);
+      unsubscribe();
+      const pending = timers.get(id);
+      if (pending) clearTimeout(pending);
+      timers.delete(id);
+      // Drop the key rather than leaving an empty record behind — a store path
+      // set to undefined keeps the key, so every session visited would leak a
+      // slot.
+      setSessions(
+        produce((state) => {
+          delete state[id];
+        }),
+      );
+    });
+  }, null);
+
+  bindings.set(id, binding);
+  return binding;
 }
 
 /**
  * Bind a component's lifetime to a session's review state.
  *
- * Retains on the id it is given and releases the previous one, so following
- * the active session across tabs never leaks a subscription.
+ * Enters the binding of the id it is given and leaves the previous one, so
+ * following the active session across tabs never leaks a subscription.
  */
 export function useReviewSession(sessionId: Accessor<string | undefined | null>): void {
   createEffect(
     on(sessionId, (id) => {
-      if (!id) return;
-      const dispose = retain(id);
-      onCleanup(dispose);
+      // `enter` registers its own cleanup on this effect, which runs before
+      // the next id and when the component goes.
+      if (id) sessionBinding(id).enter();
     }),
   );
 }
 
-/** Test seam: drop every subscription and slot. */
+/** Test seam: drop every binding and slot. */
 export function __resetReviewStore(): void {
-  for (const [id, sub] of subs) {
-    if (sub.timer) clearTimeout(sub.timer);
-    sub.close();
-    subs.delete(id);
-  }
+  for (const binding of [...bindings.values()]) binding.dispose();
+  bindings.clear();
+  for (const pending of timers.values()) clearTimeout(pending);
+  timers.clear();
   setSessions(produce((s) => Object.keys(s).forEach((k) => delete s[k])));
   setToolNames(produce((s) => Object.keys(s).forEach((k) => delete s[k])));
   setPendingReveal(null);

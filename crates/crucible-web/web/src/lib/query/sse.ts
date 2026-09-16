@@ -17,12 +17,12 @@
  *
  * Refcount by subscriber, not by reactive owner. The plan names
  * `createSingletonRoot`, whose count is the number of reactive owners that
- * read it. That is the wrong unit for two of the consumers: `review-store.ts`
- * subscribes from module scope, where there is no owner to count, and every
- * consumer already holds an unsubscribe function it must be able to run on its
- * own. Its count would therefore never fall to zero and no source would ever
- * close, so this module counts subscribers and owns one detached
- * `createRoot` per stream instead.
+ * read it. That is the wrong unit here: every consumer holds an unsubscribe
+ * function it runs itself, and `ChatContext` runs it to rebind the same pane
+ * to another session, with no owner going away to be counted out. Such a count
+ * would therefore never fall to zero and no source would ever close, so this
+ * module counts subscribers and owns one detached `createRoot` per stream
+ * instead.
  */
 import { createRoot, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
