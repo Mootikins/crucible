@@ -95,7 +95,10 @@ export function folderOf(path: string): string {
  */
 export function absFolderPath(root: string, relPath = ''): string {
   const base = root.replace(/\/+$/, '');
-  const rel = relPath.replace(/^\/+|\/+$/g, '');
+  // A caller spells the folder it is already in as `''` or as `.`, and `./x`
+  // is the same folder as `x`. Left alone, a dot names `<root>/.`, which is a
+  // folder the daemon never says — so the key would be one no event reaches.
+  const rel = relPath.replace(/^\.(?=$|\/)/, '').replace(/^\/+|\/+$/g, '');
   if (!rel) return base || '/';
   return `${base}/${rel}`;
 }
@@ -234,6 +237,23 @@ function invalidateFolders(client: QueryClient, folders: string[]): Promise<void
 }
 
 /**
+ * Every path one write moved, and the folder each of them is in.
+ *
+ * A move and a trash change the BYTES at a path as much as they change the
+ * listing around it: the old path holds nothing now, and the new one holds
+ * what was at the old one. A reader of either is holding an answer about a
+ * file that is no longer there, so this names the file keys as well — the
+ * same pair the stream's route names, for the same reason.
+ */
+function invalidatePaths(client: QueryClient, paths: string[]): Promise<void> {
+  const each = [...new Set(paths)];
+  return Promise.all([
+    ...each.map((path) => client.invalidateQueries({ queryKey: keys.fsFile(path) })),
+    invalidateFolders(client, each.map(folderOf)),
+  ]).then(() => undefined);
+}
+
+/**
  * Writes a whole file, then makes the entries it changed wrong.
  *
  * The daemon writes what it is given, so this is the unguarded path: the
@@ -263,8 +283,9 @@ export function useSaveFileContent(): UseMutationResult<void, Error, SaveFilePar
 /**
  * Moves or renames one path inside one root.
  *
- * Both ends are invalidated, and a rename inside one folder names that folder
- * once: two invalidations of one listing are two refetches for one move.
+ * Both ends are invalidated — the bytes and the listing at each — and a rename
+ * inside one folder names that folder once: two invalidations of one listing
+ * are two refetches for one move.
  */
 export function useFsMove(): UseMutationResult<FsMoveOutcome, Error, FsMoveParams> {
   return useMutation(
@@ -272,9 +293,9 @@ export function useFsMove(): UseMutationResult<FsMoveOutcome, Error, FsMoveParam
       mutationFn: ({ root, kind, fromRel, toRel }: FsMoveParams) =>
         fsMove(root, kind, fromRel, toRel),
       onSuccess: (_outcome: FsMoveOutcome, { root, fromRel, toRel }: FsMoveParams) =>
-        invalidateFolders(getQueryClient(), [
-          folderOf(absFolderPath(root, fromRel)),
-          folderOf(absFolderPath(root, toRel)),
+        invalidatePaths(getQueryClient(), [
+          absFolderPath(root, fromRel),
+          absFolderPath(root, toRel),
         ]),
     }),
     getQueryClient,
@@ -293,13 +314,13 @@ export function useFsMkdir(): UseMutationResult<void, Error, FsPathParams> {
   );
 }
 
-/** Moves one path to the root's trash; its folder is asked for again. */
+/** Moves one path to the root's trash; its bytes and its folder are asked for again. */
 export function useFsTrash(): UseMutationResult<void, Error, FsPathParams> {
   return useMutation(
     () => ({
       mutationFn: ({ root, kind, relPath }: FsPathParams) => fsTrash(root, kind, relPath),
       onSuccess: (_result: void, { root, relPath }: FsPathParams) =>
-        invalidateFolders(getQueryClient(), [folderOf(absFolderPath(root, relPath))]),
+        invalidatePaths(getQueryClient(), [absFolderPath(root, relPath)]),
     }),
     getQueryClient,
   );

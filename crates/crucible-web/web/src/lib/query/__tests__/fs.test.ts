@@ -14,6 +14,7 @@ import {
   useFsMove,
   useFsTrash,
   useGetFileContent,
+  useGetFileWithHash,
   useListDir,
   useSaveFileContent,
 } from '../fs';
@@ -101,6 +102,11 @@ describe('absFolderPath', () => {
       ['/proj', 'src/deep'],
       ['/proj/', 'src/'],
       ['/', 'src'],
+      // `.` is how a caller spells the root it is already in, and `./src` is
+      // the same folder as `src`. Left alone they name `/proj/.`, which is a
+      // folder the daemon never says and no event can reach.
+      ['/proj', '.'],
+      ['/proj', './src'],
     ];
     for (const [root, rel] of cases) {
       const folder = absFolderPath(root, rel);
@@ -112,6 +118,12 @@ describe('absFolderPath', () => {
     expect(absFolderPath('/proj', '')).toBe('/proj');
     expect(absFolderPath('/proj/', '')).toBe('/proj');
     expect(absFolderPath('/', '')).toBe('/');
+  });
+
+  it('reads a dot as the folder it stands for', () => {
+    expect(absFolderPath('/proj', '.')).toBe('/proj');
+    expect(absFolderPath('/proj', './')).toBe('/proj');
+    expect(absFolderPath('/proj', './src')).toBe('/proj/src');
   });
 });
 
@@ -251,6 +263,39 @@ describe('the filesystem writes', () => {
 
     await waitFor(() => expect(listCount('src')).toBe(2));
     expect(listCount('dst')).toBe(1);
+  });
+
+  /** Mounts a reader of one file's bytes and waits for the first answer. */
+  async function readFile(path: string) {
+    const query = inRoot(() => useGetFileWithHash(() => path));
+    await waitFor(() => expect(query.data).toBeDefined());
+    return query;
+  }
+
+  // The bytes at the old path are gone, and the bytes at the new path are the
+  // ones that moved. A reader of either holds an answer about a file that is
+  // no longer there, so the mover says so rather than leaving the panel stale
+  // until the daemon's event lands — or forever, on an unwatched root.
+  it('makes the file at both ends of a move wrong', async () => {
+    env = createTestQueryEnv(fsRoutes());
+    await readFile('/proj/src/a.md');
+    await readFile('/proj/dst/a.md');
+    expect(env.fetch.calls('GET /api/kiln/file')).toBe(2);
+    const move = inRoot(() => useFsMove());
+
+    await move.mutateAsync({ root: ROOT, kind: 'project', fromRel: 'src/a.md', toRel: 'dst/a.md' });
+
+    await waitFor(() => expect(env.fetch.calls('GET /api/kiln/file')).toBe(4));
+  });
+
+  it('makes the trashed file wrong', async () => {
+    env = createTestQueryEnv(fsRoutes());
+    await readFile('/proj/src/a.md');
+    const trash = inRoot(() => useFsTrash());
+
+    await trash.mutateAsync({ root: ROOT, kind: 'project', relPath: 'src/a.md' });
+
+    await waitFor(() => expect(env.fetch.calls('GET /api/kiln/file')).toBe(2));
   });
 
   // A save writes bytes AND a row: the listing beside it carries the size and
