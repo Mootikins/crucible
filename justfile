@@ -294,9 +294,18 @@ web-build pwa="on":
 test-hermetic tier="quick":
     @scripts/check-test-hermeticity.sh {{tier}}
 
-# Args pass through. live covers real server headers; e2e uses Vite.
-# Web tests: e2e (default) | unit | coverage | live | stories | hero
-web-test tier="e2e" *args:
+# Args pass through.
+# Web tests: ui (default) | unit | coverage | live | stories | hero
+#
+# `ui`, not `e2e`. That tier mocks every API route in the browser, so it proves
+# what the components do with an answer the spec wrote — a component test in a
+# real browser, which is worth having and is not end to end. Calling it `e2e`
+# made the suite look like it covered the chain, and four defects on the session
+# path shipped through a green run of it.
+#
+# `live` is the end-to-end tier: the `cru` this tree builds, the bundle this
+# tree builds, a temp kiln, a fake model server, and no mocks.
+web-test tier="ui" *args:
     #!/usr/bin/env bash
     set -euo pipefail
     tier="$1"; shift
@@ -307,7 +316,7 @@ web-test tier="e2e" *args:
             if [ "$tier" = coverage ]; then extra=(--coverage); fi
             cd "$web" && bun install && bunx vitest run "${extra[@]}" "$@"
             ;;
-        e2e)
+        ui)
             out="$(mktemp -d /tmp/crucible-pw-XXXXXX)"
             trap 'rm -rf "$out"' EXIT
             cd "$web"
@@ -318,6 +327,9 @@ web-test tier="e2e" *args:
             cd "$web" && bunx playwright test --project=stories --reporter=line "$@"
             ;;
         live)
+            # BOTH, in this order, EVERY time. The live setup refuses a binary
+            # older than the sources and a dist older than the frontend, so a
+            # skipped build here is a failed run rather than a stale pass.
             cargo build -p crucible-cli --bin cru
             cd "$web" && bun install && bun run build
             bunx playwright test --config=playwright.live.config.ts "$@"
@@ -328,16 +340,21 @@ web-test tier="e2e" *args:
             cd "$web" && bun install && bun run build
             bunx playwright test --config=playwright.hero.config.ts "$@"
             ;;
+        e2e)
+            echo "The mocked browser tier is now \`ui\`: it mocks the API, so it is not end to end."
+            echo "Run \`just web-test ui\` for it, or \`just web-test live\` for the real chain."
+            exit 1
+            ;;
         *)
             echo "Unknown web test tier: $tier"
-            echo "Valid tiers: unit coverage e2e stories live hero"
+            echo "Valid tiers: unit coverage ui stories live hero"
             exit 1
             ;;
     esac
 
 # Keep Rust tiers before web builds; clean-clone packaging/sharding are workflow-specific.
 # Run all local CI gates before committing; GitHub uses the same recipes
-ci: luau-lsp (lint "all") (test "ci") (test "gated") (test "features") (test "doc") (web-test "coverage") (web-test "e2e") (web-test "live")
+ci: luau-lsp (lint "all") (test "ci") (test "gated") (test "features") (test "doc") (web-test "coverage") (web-test "ui") (web-test "live")
     @echo "CI checks passed!"
 
 # Keep this in sync with the checker required by the shipped-Lua gates.

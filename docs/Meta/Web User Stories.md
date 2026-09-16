@@ -12,9 +12,30 @@ Stories for the two web surfaces that matter now: **chat** and **kiln/note editi
 | Tier | Mechanism | Determinism |
 |------|-----------|-------------|
 | **W1 unit** | vitest + @solidjs/testing-library (jsdom, mocked fetch) | full |
-| **W2 e2e-mock** | Playwright against `bun run dev`, `page.route()` + mock SSE frames | full |
+| **W2 ui** | Playwright against `bun run dev`, `page.route()` + mock SSE frames (`just web-test ui`) | full |
 | **W3 visual** | Playwright `toHaveScreenshot()` baselines at key states; video+trace ON for story specs | full (pixel-tolerant) |
-| **W4 e2e-live** | Playwright against real `cru web` + daemon + `mock-acp-agent` + temp kiln | deterministic agent, real stack |
+| **W4 e2e-live** | Playwright against the `cru` and the bundle this tree just built, a real daemon, a temp kiln and a fake model server (`just web-test live`) | deterministic model, real stack |
+
+**W2 is `ui`, not `e2e`.** It mocks every API route in the browser, so it proves
+what a component does with an answer the spec itself wrote. That is worth
+having and it is not end to end. The name said otherwise for a year, and four
+defects on the session path shipped through a green run of it.
+
+**W4 is the only end-to-end tier, and it is strict about what "the product"
+means.** The setup runs the `cru` this tree built and serves the `dist` this
+tree built, and fails the run when either is absent or older than its sources —
+no fallback to a `cru` on PATH. It is hermetic: own HOME, own XDG roots, own
+`CRUCIBLE_HOME` and config dir, provider credentials and proxies dropped, and a
+fake Ollama server as the only model the daemon can reach.
+`e2e/live/lane-guard.live.spec.ts` asserts each of those from inside the run.
+
+The live tier's session coverage: `session-path.live.spec.ts` (a draft becomes a
+real session, its first turn is answered, and the files panel lists the
+session's own folder; every kiln the chip offers attaches and detaches; a
+session read after a daemon restart carries its modes and its model; the kiln
+switches mid-session), `session-management.live.spec.ts` and
+`session-lifecycle.live.spec.ts` (both converted from mocked specs that asserted
+only that a request fired).
 
 W2 specs double as **image sequences**: `screenshot()` after each scripted step into the test's artifact dir; W3 pins the key frames; video records the whole story.
 
@@ -29,7 +50,7 @@ The tiers only help if scenarios move between them deliberately. These rules dec
 
 Until a GAP meets all three, leave it marked GAP with a one-line note on what blocks automation.
 
-**Graduate a mock tier (W2 e2e-mock) to the live tier (W4 e2e-live) when the assertion depends on state that crosses the daemon boundary** — real session persistence, resume from history, kiln-file bytes on disk, or cross-console visibility with the TUI. W2's `page.route()` mocks fake the daemon's responses; only W4 (real `cru web` + daemon + temp kiln) proves the state is actually there. If a story's "then" is "the same state is visible on disk / from the other console", it belongs in W4.
+**Graduate a ui-tier scenario (W2) to the live tier (W4) when the assertion depends on anything the daemon decides** — real session persistence, resume from history, kiln-file bytes on disk, whether a call is admitted at all, or cross-console visibility with the TUI. W2's `page.route()` mocks answer 200 because the fixture says 200, so a refusal is invisible there by construction. If a story's "then" is "the daemon accepted it", "the same state is visible on disk" or "the other console sees it", it belongs in W4.
 
 **Every new feature adds a story and a tier before it merges.** A behavior with no WS entry and no tier is untested by definition. Add the story (with acceptance criteria), pick the lowest tier that can prove it, and — if it crosses the daemon boundary — add the W4 leg too.
 

@@ -29,7 +29,7 @@ install for you:
 | `jq` | the justfile resolves the cargo target directory with it | not checked — install it yourself |
 | `cargo-nextest` | the Rust test runner; `cargo test` is not the supported path | installs |
 | `cargo-deny` | dependency licence gate (`just lint license`) | installs |
-| Playwright chromium | web E2E tests (`just web-test`) | installs |
+| Playwright chromium | web browser tests (`just web-test ui`, `just web-test live`) | installs |
 
 Without `jq`, any recipe that runs the built
 `cru` binary — including `just ci`, via `test plugins` — fails.
@@ -97,7 +97,8 @@ just test -p crucible-core -E 'test(wikilink)'  # a filtered subset of one crate
 just test doc                             # doctests (nextest cannot run these)
 just test plugins                         # every shipped plugin's Lua suite
 just web-test unit                        # web unit tests (Vitest)
-just web-test                             # web E2E tests (Playwright)
+just web-test ui                          # web browser tests, API mocked (Playwright)
+just web-test live                        # end to end: the cru and the bundle this tree just built
 just lint types                           # web typecheck, no emit
 just lint docs                            # validate the docs/ kiln (also run by `just ci`)
 ```

@@ -1,28 +1,40 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Live-tier Playwright config (WS-201/202/205/206).
+ * The end-to-end tier. The only one that earns the name.
  *
  * Boots a REAL `cru web` + auto-spawned daemon against an isolated Unix socket
  * and a TempDir kiln (globalSetup), then tears the process tree down
  * (globalTeardown). No Vite webServer — the specs hit the live server whose URL
  * is published by globalSetup into e2e/live/.live-state.json.
  *
- * If no `cru` binary is found, globalSetup writes { skip: true } and every spec
- * skips cleanly (see e2e/live/_state.ts).
+ * STRICT AND HERMETIC, and both words are load-bearing:
  *
- * Deterministic by construction: these specs exercise the kiln/notes endpoints
- * (daemon → filesystem), which need no LLM. Live streaming/permission (WS-101/
- * 104) are intentionally NOT here — the web session route hardcodes the internal
- * agent, so the mock-acp-agent is unreachable and there is no deterministic
- * in-tree provider; those flows are covered at the mock tier.
+ *  - Strict. The setup runs the `cru` this tree built and serves the `dist`
+ *    this tree built, and fails the run when either is absent or older than its
+ *    sources. There is no PATH fallback: a tier that silently tested an
+ *    installed binary reported a pass for code it never ran. `just web-test
+ *    live` builds both, in that order, every time.
+ *  - Hermetic. Own HOME, own XDG roots, own CRUCIBLE_HOME and config dir, every
+ *    inherited CRUCIBLE_*, provider credential and proxy variable dropped, and
+ *    a fake Ollama server as the only model the daemon can reach.
+ *
+ * `lane-guard.live.spec.ts` asserts all of that from inside the run: the served
+ * bundle carries this run's stamp, the web process and the daemon are the built
+ * binary, the daemon's environment is the tier's own, and a real turn landed on
+ * the fake.
+ *
+ * Determinism comes from the fake model server (`fake-ollama.ts`), so turns
+ * belong here now — `session-path.live.spec.ts` drives a whole session,
+ * composer to reply.
  *
  * THREE projects, because "live" now means three different things:
  *
- *  - `live`   — e2e/live/*.live.spec.ts: the kiln/notes endpoint suite.
+ *  - `live`   — e2e/live/*.live.spec.ts: the lane guard, the session path and
+ *               the kiln/notes endpoint suite.
  *  - `live-compact` — the conflict leg again, on a phone-shaped viewport.
  *  - `served` — tests/*.pw.ts: the BUILT bundle as the Rust server hands it
- *               over, headers and all. The mock tier cannot cover these at
+ *               over, headers and all. The ui tier cannot cover these at
  *               all: its baseURL is the Vite dev server, which emits no CSP,
  *               no nosniff and no Referrer-Policy and never touches an axum
  *               route — so a CSP that breaks the product passes there
@@ -52,7 +64,7 @@ export default defineConfig({
   // for WS-206 IS this failure firing, and re-opens the investigation — it is
   // not CI hygiene to tune away.
   //
-  // The unit, e2e and Rust tiers stay zero-retry: nothing there is eventually
+  // The unit, ui and Rust tiers stay zero-retry: nothing there is eventually
   // consistent, so a retry would genuinely mask a defect.
   retries: 2,
   reporter: 'line',

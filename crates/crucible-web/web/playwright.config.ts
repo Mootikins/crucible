@@ -1,18 +1,27 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright configuration for Crucible web UI E2E tests.
+ * Playwright configuration for Crucible's UI tier — `just web-test ui`.
+ *
+ * UI, not E2E. Every spec under this config runs against the Vite dev server
+ * with the API mocked in the browser (`e2e/helpers/mock-api.ts`, `page.route`),
+ * so what it proves is what a component does with an answer the spec itself
+ * wrote. That is a component test in a real browser: fast, precise about
+ * layout, drag, focus and keyboard, and structurally unable to see a daemon
+ * that refuses a call. It was called `e2e` for a year, and four defects on the
+ * session path shipped through a green run of it.
  *
  * Two projects share one Vite dev server (mocked backend):
- *  - `chromium`  — the fast default suite (screenshots/video only on failure).
+ *  - `ui`        — the fast default suite (screenshots/video only on failure).
  *                  Ignores e2e/stories/ and e2e/live/.
  *  - `stories`   — user-story suites in e2e/stories/. video + trace ALWAYS on,
  *                  plus per-step screenshots (image sequence per story) written
  *                  by the story.step() helper. These double as visual baselines
  *                  via toHaveScreenshot().
  *
- * The live tier (e2e/live/) has its own config (playwright.live.config.ts): it
- * boots a real `cru web` + daemon + mock-acp-agent instead of the Vite server.
+ * The end-to-end tier is `e2e/live/` under playwright.live.config.ts: the `cru`
+ * binary and the bundle this tree just built, a real daemon, a temp kiln and a
+ * fake model server — and no `page.route` anywhere.
  */
 /**
  * Kept in lockstep with vite.config.ts, which reads the same variable.
@@ -113,7 +122,9 @@ export default defineConfig({
 
   projects: [
     {
-      name: 'chromium',
+      // `ui`, not `chromium`: the browser was never the point, the mocked API
+      // is. A run's project column now says which tier reported the result.
+      name: 'ui',
       testIgnore: ['**/stories/**', '**/live/**'],
       use: { ...devices['Desktop Chrome'] },
     },

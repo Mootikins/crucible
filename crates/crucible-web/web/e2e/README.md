@@ -1,6 +1,23 @@
-# Crucible Web UI E2E Tests
+# Crucible Web UI Tests (the `ui` tier)
 
-End-to-end tests for the Crucible web interface using Playwright.
+Browser tests for the Crucible web interface using Playwright, with the API
+mocked in the page.
+
+**These are not end-to-end tests.** Every spec in this directory answers its own
+API calls through `page.route`, so each proves what a component does with an
+answer the spec itself wrote: layout, drag, focus, keyboard, rendering. A daemon
+that refuses a call is invisible here by construction. The tier was called `e2e`
+for a year, and four defects on the session path shipped through a green run of
+it.
+
+Run it with `just web-test ui`.
+
+**The end-to-end tier is `e2e/live/`**, under `playwright.live.config.ts` and
+`just web-test live`: the `cru` binary and the bundle this tree just built, a
+real daemon, a temp kiln, a fake model server, and no `page.route` anywhere. A
+scenario whose "then" is "the daemon accepted it", "the bytes are on disk" or
+"the other console sees it" belongs there — see `session-path.live.spec.ts` for
+the session journey and `lane-guard.live.spec.ts` for the lane's own guards.
 
 ## Running
 
@@ -26,8 +43,9 @@ End-to-end tests for the Crucible web interface using Playwright.
 ### Commands
 
 ```bash
-bun run test:e2e          # Headless, all specs
-bun run test:e2e:ui       # Playwright UI mode
+just web-test ui          # the mocked-API tier, headless
+just web-test live        # the end-to-end tier (builds cru and dist first)
+bun run test:e2e:ui       # Playwright UI mode (the package script keeps its old name)
 bun run test:e2e:headed   # Headed browser
 bunx playwright test e2e/chat-happy-path.spec.ts   # Single spec
 bunx playwright show-report                          # View last HTML report
@@ -61,8 +79,8 @@ Grouped by area. See each file for details.
 
 | Spec                            | Covers                                                                |
 | ------------------------------- | --------------------------------------------------------------------- |
-| `session-management.spec.ts`    | Session list, create, switch, delete                                  |
-| `session-lifecycle.spec.ts`     | Pause / resume / end transitions                                      |
+| _(moved)_ `live/session-management.live.spec.ts` | Session list, lazy create, switch — against the real daemon |
+| `session-lifecycle.spec.ts`     | Reload persistence and two DOM-absence contracts (resume, archive and delete moved to `live/session-lifecycle.live.spec.ts`) |
 | `session-filter.spec.ts`        | Search/filter the session list                                        |
 | `session-button-position.spec.ts` | Button placement in session panel doesn't shift across states       |
 | `new-session-chat-tab.spec.ts`  | New session opens its chat in a tab automatically                     |
