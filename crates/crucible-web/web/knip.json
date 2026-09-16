@@ -7,9 +7,6 @@
     "src/**/*.{ts,tsx,css}",
     "e2e/**/*.ts"
   ],
-  "ignoreDependencies": [
-    "openapi-fetch"
-  ],
   "vitest": {
     "config": [
       "vite.config.ts"

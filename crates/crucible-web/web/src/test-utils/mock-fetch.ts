@@ -29,6 +29,22 @@ export type MockFetchRoute = (request: Request) => unknown;
 /** What a test gives one `"METHOD /path"` key. */
 export type MockFetchAnswer = MockFetchHandler | MockFetchRoute;
 
+/**
+ * One call, in the parts a test asserts on.
+ *
+ * `path` and `query` are split because the generated client serialises a query
+ * itself: a test names the route by its path and asks the query for one
+ * parameter, rather than matching a whole URL character by character.
+ * `body` is the parsed JSON body, or `undefined` when the call sent none.
+ */
+export interface SentRequest {
+  path: string;
+  query: URLSearchParams;
+  method: string;
+  headers: Headers;
+  body: unknown;
+}
+
 /** What `createMockFetch` answers: a `fetch` a test can also question. */
 export type MockFetch = Mock<typeof fetch> & {
   /**
@@ -37,6 +53,17 @@ export type MockFetch = Mock<typeof fetch> & {
    * that matched no route counts under the key it asked for.
    */
   calls(key: string): number;
+  /**
+   * The nth call, in parts.
+   *
+   * `fetch` takes either a URL and an init or one `Request`, and the generated
+   * client sends the `Request` form. This reads the same values off both, so a
+   * test asserts what went on the wire rather than which overload built it.
+   *
+   * It answers a promise because a `Request` gives its body as a stream. The
+   * read starts as the call arrives, so it never waits on the answer.
+   */
+  sent(index: number): Promise<SentRequest>;
 };
 
 /**
@@ -58,9 +85,38 @@ function fixedResponse(handler: MockFetchHandler): Response {
   });
 }
 
-/** Builds the `Request` one function route reads. */
-function requestOf(url: string, init: RequestInit | undefined): Request {
+/**
+ * Builds the `Request` of one call, whichever overload the caller used.
+ *
+ * The URL of that `Request` is absolute, because the `Request` constructor
+ * refuses a relative one; a caller that fetches a relative path resolves
+ * against `http://localhost`.
+ */
+function requestOf(input: RequestInfo | URL, init: RequestInit | undefined): Request {
+  if (input instanceof Request) return input;
+  const url = typeof input === 'string' ? input : input.toString();
   return new Request(new URL(url, 'http://localhost'), init);
+}
+
+/** Reads one call into the parts a test asserts on. */
+async function sentPartsOf(request: Request): Promise<SentRequest> {
+  const url = new URL(request.url);
+  const text = request.body === null ? '' : await request.clone().text();
+  let body: unknown;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  return {
+    path: url.pathname,
+    query: url.searchParams,
+    method: request.method,
+    headers: request.headers,
+    body,
+  };
 }
 
 /**
@@ -80,14 +136,18 @@ function requestOf(url: string, init: RequestInit | undefined): Request {
  */
 export function createMockFetch(handlers: Record<string, MockFetchAnswer>): MockFetch {
   const counts = new Map<string, number>();
+  const sent: Promise<SentRequest>[] = [];
 
   const mock = vi.fn<typeof fetch>(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input.toString();
-    const method = (init?.method || 'GET').toUpperCase();
+    const request = requestOf(input, init);
+    // Started, not awaited: a route that answers a promise the test resolves
+    // by hand must be reached in this same turn, or the test holds a resolver
+    // nothing ever assigned.
+    sent.push(sentPartsOf(request));
 
     // The key names the path alone, so one route answers every query string.
-    const path = new URL(url, 'http://localhost').pathname;
-    const key = `${method} ${path}`;
+    const path = new URL(request.url).pathname;
+    const key = `${request.method} ${path}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
 
     const handler = handlers[key];
@@ -102,12 +162,17 @@ export function createMockFetch(handlers: Record<string, MockFetchAnswer>): Mock
 
     if (typeof handler !== 'function') return fixedResponse(handler);
 
-    const answer = await handler(requestOf(url, init));
+    const answer = await handler(request.clone());
     if (answer instanceof Response) return answer;
     return fixedResponse({ body: answer });
   });
 
   return Object.assign(mock, {
     calls: (key: string) => counts.get(key) ?? 0,
+    sent: async (index: number) => {
+      const parts = sent[index];
+      if (!parts) throw new Error(`the mock fetch took no call number ${index}`);
+      return await parts;
+    },
   });
 }

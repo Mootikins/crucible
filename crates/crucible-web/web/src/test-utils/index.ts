@@ -15,6 +15,7 @@ export {
   type MockFetchAnswer,
   type MockFetchHandler,
   type MockFetchRoute,
+  type SentRequest,
 } from './mock-fetch';
 export {
   withQueryClient,
