@@ -949,7 +949,11 @@ function mapSession(raw: RawSession): Session {
     kilns: raw.kilns ?? [],
     workspace: raw.workspace ?? null,
     state: raw.state,
-    title: raw.title,
+    // `?? null`, because a session nobody has named yet comes back from the
+    // create route with no title at all, while every other route sends the
+    // null. One shape either way: a pane that compares the two must not read
+    // an absent title as a change.
+    title: raw.title ?? null,
     agent_model: raw.agent_model ?? raw.agent?.model ?? null,
     agent_mode: raw.agent?.mode ?? null,
     started_at: raw.started_at,

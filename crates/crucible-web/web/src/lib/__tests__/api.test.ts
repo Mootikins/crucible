@@ -155,6 +155,22 @@ describe('createSession', () => {
     expect(session.event_count).toBe(0); // ?? 0 fallback
   });
 
+  it('maps an absent title to null, as every other route sends it', async () => {
+    // The create route answers a session nobody has named with NO title field.
+    // Left as `undefined`, that record differs from the same record read back
+    // later, and a pane that compares the two reads an absent title as a
+    // change: the draft's first turn was drawn twice because of it.
+    const rawNoTitle = { ...rawSession, title: undefined };
+    const mockFetch = createMockFetch({
+      'POST /api/session': { body: rawNoTitle },
+    });
+    global.fetch = mockFetch;
+
+    const session = await createSession({ kilns: ['default'] });
+
+    expect(session.title).toBeNull();
+  });
+
   it('throws on non-ok response', async () => {
     const mockFetch = createMockFetch({
       'POST /api/session': { status: 422 },

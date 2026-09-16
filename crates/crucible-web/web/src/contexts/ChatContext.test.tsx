@@ -6,6 +6,7 @@ import * as api from '@/lib/api';
 import { resetSseForTests } from '@/lib/query/sse';
 import type { QueryClient } from '@tanstack/solid-query';
 import { queryClientOptions, setQueryClientForTests } from '@/lib/query/client';
+import { keys } from '@/lib/query/keys';
 import { createTestQueryClient } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
@@ -405,6 +406,49 @@ describe('draft first-message handoff', () => {
     expect(screen.getByTestId('loading').textContent).toBe('loading');
     // The POST is still gated — only the rendering is immediate.
     expect(mockSendChatMessage).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regression. `useCreateSession` seeds `['session', id]` with the daemon's
+   * create reply, and that reply carries no title for a session nobody named
+   * yet. The bootstrap reads that seeded record, so it wrote `undefined` over
+   * a title signal holding `null`. The two values differ, so the signal
+   * notified — and the bind effect read that signal through the attention
+   * mirror, so it re-ran for the SAME session and staged the first message a
+   * second time. The user saw their own turn twice.
+   */
+  it('draws the staged turn once when the seeded record carries no title', async () => {
+    const seeded = { ...mockSession, title: undefined } as unknown as Session;
+    queryClient.setQueryData(keys.session(mockSession.id), seeded);
+    mockGetSession.mockResolvedValue(seeded);
+    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
+    mockSubscribeToEvents.mockImplementation(() => () => {});
+    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+
+    const { setPendingFirstMessage } = await import('@/lib/draft-session');
+    setPendingFirstMessage(mockSession.id, 'first message from draft');
+
+    render(() => (
+      <TestWrapper>
+        <TestConsumer />
+      </TestWrapper>
+    ));
+
+    // The staged turn goes up at once, as the case above proves.
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+    // The bootstrap writes the title before it reads the history, so a history
+    // read is the mark that the write has happened. Then let every effect the
+    // write queued run.
+    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    for (let flush = 0; flush < 5; flush += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const userTurns = screen
+      .getAllByRole('listitem')
+      .filter((item) => item.getAttribute('data-role') === 'user');
+    expect(userTurns.length).toBe(1);
+    expect(screen.getByTestId('count').textContent).toBe('2');
   });
 });
 

@@ -4,7 +4,9 @@ import {
   ParentComponent,
   createSignal,
   createEffect,
+  on,
   onCleanup,
+  untrack,
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import type {
@@ -128,7 +130,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const setIsStreaming = (value: boolean) => {
     setIsStreamingRaw(value);
     if (props.sessionId) {
-      attentionActions.report(props.sessionId, { isStreaming: value, title: sessionTitle() });
+      attentionActions.report(props.sessionId, {
+        isStreaming: value,
+        title: untrack(sessionTitle),
+      });
     }
   };
   const setPendingInteraction = (request: InteractionRequest | null) => {
@@ -136,7 +141,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (props.sessionId) {
       attentionActions.report(props.sessionId, {
         pendingInteraction: request,
-        title: sessionTitle(),
+        title: untrack(sessionTitle),
       });
     }
   };
@@ -481,9 +486,18 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
   };
 
-  createEffect(() => {
-    const newSessionId = props.sessionId;
-    
+  /**
+   * Binds this pane to one session: the stream, the bootstrap, the history and
+   * the staged first message.
+   *
+   * `on` names the ONE dependency, and it is not a tidiness: the body reports
+   * to the attention store, which reads the title, and the bootstrap writes
+   * that title. A plain effect therefore tracked a signal its own bootstrap
+   * changed, re-ran for the same session, and staged the draft's first message
+   * a second time — the user saw their own turn twice. The reads inside are
+   * deliberately untracked; only a new session id may bind again.
+   */
+  createEffect(on(() => props.sessionId, (newSessionId) => {
     if (streamUnsubscribe) {
       streamUnsubscribe();
       streamUnsubscribe = null;
@@ -584,7 +598,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         if (message) void dispatchTurn(message, temps);
       });
     }
-  });
+  }));
 
   /**
    * Puts the persisted transcript on screen, once for each bind.
