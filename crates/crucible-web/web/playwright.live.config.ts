@@ -30,8 +30,13 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * THREE projects, because "live" now means three different things:
  *
- *  - `live`   — e2e/live/*.live.spec.ts: the lane guard, the session path and
- *               the kiln/notes endpoint suite.
+ *  - `live`   — e2e/live/*.live.spec.ts: the lane guard, the session path, the
+ *               kiln/notes endpoint suite, and the contract sweep
+ *               (`contract.live.spec.ts`), which builds one test per operation
+ *               in `crates/crucible-web/openapi.json` at run time. The sweep
+ *               needs no entry of its own here: `testMatch` already takes it,
+ *               which is the point — a route added in Rust joins this project
+ *               without a config edit.
  *  - `live-compact` — the conflict leg again, on a phone-shaped viewport.
  *  - `served` — tests/*.pw.ts: the BUILT bundle as the Rust server hands it
  *               over, headers and all. The ui tier cannot cover these at
