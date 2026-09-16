@@ -2,8 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import type { Session, ChatEvent } from '@/lib/types';
-import { setQueryClientForTests } from '@/lib/query/client';
-import { createTestQueryClient } from '@/test-utils/query';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { ReviewAwareMode } from '@/lib/review-types';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
@@ -11,11 +10,13 @@ vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({ currentSession }),
 }));
 
+// Only `subscribeToEvents` is stubbed, and only because the review store
+// still opens its own stream. The status slots and the mode list are read
+// through `lib/query/`, so they answer the ROUTES below — which is what proves
+// the chips ask about the session they are pointed at.
 const handlers: ((e: ChatEvent) => void)[] = [];
-const listModes = vi.fn();
-vi.mock('@/lib/api', () => ({
-  getSessionStatus: vi.fn(async () => []),
-  listModes: (...a: unknown[]) => listModes(...a),
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   subscribeToEvents: (_id: string, onEvent: (e: ChatEvent) => void) => {
     handlers.push(onEvent);
     return () => {};
@@ -46,8 +47,17 @@ const session = (id = 's1'): Session => ({
   event_count: 0,
 });
 
-const modes = (current: string, ...list: ReviewAwareMode[]) =>
-  listModes.mockResolvedValue({ current_mode_id: current, modes: list });
+const MODES = 'GET /api/session/s1/modes';
+
+let env: TestQueryEnv;
+/** What the mode route answers this case, which each test names up front. */
+let modeReply: { current_mode_id: string; modes: ReviewAwareMode[] };
+/** Holds the SECOND session's mode list open, for the case that needs a gap. */
+let secondSessionModes: Promise<void>;
+
+const modes = (current: string, ...list: ReviewAwareMode[]) => {
+  modeReply = { current_mode_id: current, modes: list };
+};
 
 const mode = (id: string, review_policy?: ReviewAwareMode['review_policy']): ReviewAwareMode => ({
   id,
@@ -59,19 +69,28 @@ const mode = (id: string, review_policy?: ReviewAwareMode['review_policy']): Rev
 });
 
 beforeEach(() => {
-  // The mode list is a query now, and its cache outlives one case. A fresh
-  // client per case keeps one session's answer from serving the next one.
-  setQueryClientForTests(createTestQueryClient());
   handlers.length = 0;
   listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
   modes('ask', mode('ask'));
+  // The mode list is a query, and its cache outlives one case. A fresh client
+  // per case keeps one session's answer from serving the next one.
+  secondSessionModes = Promise.resolve();
+  env = createTestQueryEnv({
+    'GET /api/session/s1/status': () => ({ status: [] }),
+    'GET /api/session/s2/status': () => ({ status: [] }),
+    [MODES]: () => modeReply,
+    'GET /api/session/s2/modes': async () => {
+      await secondSessionModes;
+      return { current_mode_id: 'plan', modes: [mode('plan', 'none')] };
+    },
+  });
 });
 
 afterEach(() => {
   cleanup();
   setCurrentSession(undefined);
   __resetReviewStore();
-  setQueryClientForTests(null);
+  env?.restore();
   vi.clearAllMocks();
 });
 
@@ -102,7 +121,7 @@ describe('SessionStatusChips — effective review policy', () => {
     modes('plan', mode('plan', 'none'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
-    await waitFor(() => expect(listModes).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(MODES)).toBe(1));
     expect(screen.queryByTestId('session-review-policy')).toBeNull();
   });
 
@@ -110,7 +129,7 @@ describe('SessionStatusChips — effective review policy', () => {
     modes('ask', mode('ask'));
     setCurrentSession(session());
     render(() => <SessionStatusChips />);
-    await waitFor(() => expect(listModes).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(MODES)).toBe(1));
     expect(screen.queryByTestId('session-review-policy')).toBeNull();
   });
 
@@ -120,11 +139,16 @@ describe('SessionStatusChips — effective review policy', () => {
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-status').dataset.reviewPolicy).toBeDefined());
 
-    let release: (v: unknown) => void = () => {};
-    listModes.mockImplementation(() => new Promise((r) => (release = r as (v: unknown) => void)));
+    // The second session's mode list is held open on purpose: the assertion
+    // has to fall inside the window a stale policy could sit in.
+    let release: () => void = () => {};
+    secondSessionModes = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
     setCurrentSession(session('s2'));
     await waitFor(() => expect(screen.queryByTestId('session-status')?.dataset.reviewPolicy).toBeUndefined());
-    release({ current_mode_id: 'plan', modes: [mode('plan', 'none')] });
+    release();
   });
 });
 
@@ -201,6 +225,6 @@ describe('SessionStatusChips — waiting on review', () => {
   it('no session means no chips at all', () => {
     render(() => <SessionStatusChips />);
     expect(screen.queryByTestId('session-status')).toBeNull();
-    expect(listModes).not.toHaveBeenCalled();
+    expect(env.fetch.calls(MODES)).toBe(0);
   });
 });

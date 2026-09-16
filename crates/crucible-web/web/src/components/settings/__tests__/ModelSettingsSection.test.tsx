@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
 
 /**
@@ -11,21 +11,10 @@ import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
  * answers a session can give and check what gets drawn, because that is where
  * the old bug was visible and nowhere else.
  */
-const listKnobs = vi.fn();
-const listAgentOptions = vi.fn();
-const setAgentOption = vi.fn();
-
-vi.mock('@/lib/api', () => ({
-  listKnobs: (...a: unknown[]) => listKnobs(...a),
-  listAgentOptions: (...a: unknown[]) => listAgentOptions(...a),
-  setAgentOption: (...a: unknown[]) => setAgentOption(...a),
-  getPrecognition: vi.fn(async () => true),
-  setPrecognition: vi.fn(async () => {}),
-  getPlugins: vi.fn(async () => []),
-  reloadPlugin: vi.fn(async () => {}),
-  login: vi.fn(async () => true),
-}));
-
+// No `vi.mock('@/lib/api')`. The panel reads the daemon through
+// `lib/query/session-config.ts` now, so each case answers ROUTES: that is what
+// proves the panel asks for the right thing, and it is the only way to see
+// that a re-read follows a write.
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
     currentSession: () => ({ id: 's1', title: 'T' }),
@@ -33,6 +22,27 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 
 import { ModelSettingsSection } from '../ModelSettings';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
+
+const KNOBS = 'GET /api/session/s1/knobs';
+const OPTIONS = 'GET /api/session/s1/config/agent-options';
+const SET_OPTION = 'POST /api/session/s1/config/agent-options';
+const PRECOG = 'GET /api/session/s1/config/precognition';
+
+let env: TestQueryEnv;
+
+/** Installs a fresh cache and a fetch answering the panel's three reads. */
+function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
+  env = createTestQueryEnv({
+    [KNOBS]: () => ALL_SUPPORTED,
+    [OPTIONS]: () => ({ session_id: 's1', options: [] }),
+    [PRECOG]: () => ({ precognition_enabled: true }),
+    [SET_OPTION]: () => new Response(null, { status: 204 }),
+    ...routes,
+  });
+  return env;
+}
 
 /** What the daemon answers for a session that has every setting. */
 const ALL_SUPPORTED = {
@@ -48,21 +58,18 @@ const ONE_UNSUPPORTED = {
   knobs: [{ id: 'precognition', supported: false }],
 };
 
-beforeEach(() => {
-  listKnobs.mockResolvedValue(ALL_SUPPORTED);
-  listAgentOptions.mockResolvedValue({ options: [] });
-  setAgentOption.mockResolvedValue(undefined);
-});
 afterEach(() => {
   cleanup();
+  env?.restore();
   vi.clearAllMocks();
 });
 
 describe('ModelSettingsSection', () => {
   it('draws the controls a session supports', async () => {
+    serve();
     render(() => <ModelSettingsSection />);
 
-    await waitFor(() => expect(listKnobs).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(env.fetch.calls(KNOBS)).toBe(1));
     // `waitFor`, not a bare assertion: the call landing is not the render
     // landing, and asserting between the two passes against a panel that
     // never drew anything.
@@ -70,14 +77,14 @@ describe('ModelSettingsSection', () => {
   });
 
   it('draws no control for a setting the session does not have', async () => {
-    listKnobs.mockResolvedValue(ONE_UNSUPPORTED);
+    serve({ [KNOBS]: () => ONE_UNSUPPORTED });
     render(() => <ModelSettingsSection />);
 
-    await waitFor(() => expect(listKnobs).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(env.fetch.calls(KNOBS)).toBe(1));
     // The agent-options loop is never gated on the knob list, so waiting on it
     // means the absence below is a decision rather than a render that has yet
     // to happen.
-    await waitFor(() => expect(listAgentOptions).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(env.fetch.calls(OPTIONS)).toBe(1));
 
     expect(screen.queryByText('Precognition')).toBeNull();
   });
@@ -90,14 +97,14 @@ describe('ModelSettingsSection', () => {
     // Stated as an empty list rather than a failed call on purpose: a failed
     // call is hidden by the panel's error path, so it would pass with no
     // gating at all and prove nothing.
-    listKnobs.mockResolvedValue({ knobs: [] });
+    serve({ [KNOBS]: () => ({ knobs: [] }) });
     render(() => <ModelSettingsSection />);
 
     // Wait for the agent-options loop, which is never gated on the knob list,
     // so the absence below is a decision and not a render that has yet to
     // happen. Asserting straight after the call was made passed against a
     // panel with no gating at all.
-    await waitFor(() => expect(listAgentOptions).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(env.fetch.calls(OPTIONS)).toBe(1));
 
     expect(screen.queryByText('Precognition')).toBeNull();
   });
@@ -124,7 +131,14 @@ describe('ModelSettingsSection agent options', () => {
   };
 
   it('draws an option it has never heard of, and sends the choice back', async () => {
-    listAgentOptions.mockResolvedValue({ options: [REASONING] });
+    let sent: { option_id: string; value: string } | null = null;
+    serve({
+      [OPTIONS]: () => ({ session_id: 's1', options: [REASONING] }),
+      [SET_OPTION]: async (request) => {
+        sent = (await request.json()) as { option_id: string; value: string };
+        return new Response(null, { status: 204 });
+      },
+    });
     render(() => <ModelSettingsSection />);
 
     await waitFor(() => expect(screen.getByText('Reasoning')).toBeTruthy());
@@ -135,16 +149,20 @@ describe('ModelSettingsSection agent options', () => {
     select.value = 'high';
     select.dispatchEvent(new Event('change', { bubbles: true }));
 
-    await waitFor(() =>
-      expect(setAgentOption).toHaveBeenCalledWith('s1', 'thought_level', 'high'),
-    );
+    await waitFor(() => expect(sent).toEqual({ option_id: 'thought_level', value: 'high' }));
+    // The agent is the authority on what the value became, so the list is
+    // re-read rather than patched.
+    await waitFor(() => expect(env.fetch.calls(OPTIONS)).toBe(2));
   });
 
   it('draws a toggle for a boolean option', async () => {
-    listAgentOptions.mockResolvedValue({
-      options: [
-        { id: 'verbose', name: 'Verbose', description: null, category: null, kind: 'toggle', current: false },
-      ],
+    serve({
+      [OPTIONS]: () => ({
+        session_id: 's1',
+        options: [
+          { id: 'verbose', name: 'Verbose', description: null, category: null, kind: 'toggle', current: false },
+        ],
+      }),
     });
     render(() => <ModelSettingsSection />);
 
@@ -152,7 +170,7 @@ describe('ModelSettingsSection agent options', () => {
   });
 
   it('draws nothing when the agent advertised nothing', async () => {
-    listAgentOptions.mockResolvedValue({ options: [] });
+    serve();
     render(() => <ModelSettingsSection />);
 
     // Anchor on an ungated row so the absence is a decision, not a pending

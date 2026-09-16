@@ -11,14 +11,11 @@
 // backend route; `routes/session_config/tests.rs` proves each route round-trips
 // its value under the daemon's field name. This file is the last leg: without it
 // the API is wider than the UI, which is reachable-but-unreachable.
-import { Component, createSignal, onMount } from 'solid-js';
+import { Component, createSignal } from 'solid-js';
 
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import {
-  getContextStrategy,
-  setContextStrategy,
-} from '@/lib/api';
+import { useGetContextStrategy, useSetContextStrategy } from '@/lib/query/session-config';
 
 import { SettingRow, SettingsSectionState } from './primitives';
 
@@ -39,32 +36,16 @@ const CONTEXT_STRATEGIES = ['truncate', 'summarize'];
 export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
 
-  const [contextStrategy, setContextStrategySig] = createSignal('');
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
+  const sessionId = () => session.currentSession()?.id ?? null;
+  // Keyed by session, so the panel follows the selection instead of holding
+  // the strategy of whichever session it was opened on.
+  const strategyQuery = useGetContextStrategy(sessionId);
+  const contextStrategy = () => strategyQuery.data ?? '';
+  const setStrategy = useSetContextStrategy();
 
-  const fail = (what: string) => (err: unknown) =>
-    setError(err instanceof Error ? err.message : `Failed to set ${what}`);
-
-
-  const loadSettings = async () => {
-    const s = session.currentSession();
-    if (!s) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      setContextStrategySig((await getContextStrategy(s.id)) ?? '');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load advanced settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadSettings);
+  /** The failure of one write, which is not the failure of the read. */
+  const [writeError, setWriteError] = createSignal<string | null>(null);
+  const error = () => writeError() ?? strategyQuery.error?.message ?? null;
 
   const options = (known: string[], current: string) =>
     current && !known.includes(current) ? [current, ...known] : known;
@@ -73,7 +54,7 @@ export const AdvancedSessionSettingsSection: Component = () => {
     <SettingsSectionState
       title="Advanced Session"
       icon={Sliders}
-      loading={loading()}
+      loading={strategyQuery.isLoading}
       error={error()}
       loadingMessage="Loading advanced settings…"
       requiresSession
@@ -86,13 +67,17 @@ export const AdvancedSessionSettingsSection: Component = () => {
           data-testid="context-strategy-select"
           onChange={async (e) => {
             const val = (e.target as HTMLSelectElement).value;
-            setContextStrategySig(val);
-            const s = session.currentSession();
-            if (!s) return;
+            const id = sessionId();
+            if (!id) return;
+            setWriteError(null);
             try {
-              await setContextStrategy(s.id, val);
+              // The hook holds the new value and re-reads it: the daemon may
+              // store a name other than the one this dropdown sent.
+              await setStrategy.mutateAsync({ id, strategy: val });
             } catch (err) {
-              fail('context strategy')(err);
+              setWriteError(
+                err instanceof Error ? err.message : 'Failed to set context strategy',
+              );
             }
           }}
           class={`cru-select ${inputClass} w-32`}

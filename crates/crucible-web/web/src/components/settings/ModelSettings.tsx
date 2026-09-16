@@ -2,39 +2,41 @@
 //
 // The model section: the settings the DAEMON says this session supports, plus
 // the settings an external agent declares for itself.
-import { Component, Show, For, createSignal, onMount } from 'solid-js';
+import { Component, Show, For, createSignal } from 'solid-js';
 import { Brain } from '@/lib/icons';
 
 import { SettingRow, SettingsSectionState } from './primitives';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import type { AgentConfigOption } from '@/lib/types';
 import {
-  getPrecognition,
-  setPrecognition as apiSetPrecognition,
-  listKnobs,
-  listAgentOptions,
-  setAgentOption as apiSetAgentOption,
-} from '@/lib/api';
+  useAgentOptions,
+  useGetPrecognition,
+  useSessionKnobs,
+  useSetAgentOption,
+  useSetPrecognition,
+} from '@/lib/query/session-config';
 
 export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
+  const sessionId = () => session.currentSession()?.id ?? null;
 
-  const [precognition, setPrecognition] = createSignal(true);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
+  /** The failure of one write, which is not the failure of a read. */
+  const [writeError, setWriteError] = createSignal<string | null>(null);
+
   /**
    * Which settings this session actually has.
    *
-   * Empty until the daemon answers, and a control is drawn only once it says
-   * so. An ACP session runs its own turn loop, so the daemon's caps and
-   * context policy describe work it does not do, and the daemon refuses
-   * those settings outright.
+   * A control is drawn only once the daemon says so. An ACP session runs its
+   * own turn loop, so the daemon's caps and context policy describe work it
+   * does not do, and the daemon refuses those settings outright.
    *
    * Defaulting to "hidden" rather than "shown" is deliberate: a control that
    * appears and then errors is worse than one that appears a moment late.
    */
-  const [supported, setSupported] = createSignal<Set<string>>(new Set());
-  const has = (id: string) => supported().has(id);
+  const knobs = useSessionKnobs(sessionId);
+  const has = (id: string) =>
+    knobs.data?.knobs.some((knob) => knob.id === id && knob.supported) === true;
+
   /**
    * The settings the external agent advertised for itself.
    *
@@ -43,36 +45,23 @@ export const ModelSettingsSection: Component = () => {
    * first message, because an agent says what it has when the daemon
    * connects to it.
    */
-  const [agentOptions, setAgentOptions] = createSignal<AgentConfigOption[]>([]);
+  const options = useAgentOptions(sessionId);
+  const agentOptions = () => options.data?.options ?? [];
+  const precognitionQuery = useGetPrecognition(sessionId);
+  const precognition = () => precognitionQuery.data !== false;
 
-  const loadSettings = async () => {
-    const s = session.currentSession();
-    if (!s) {
-      setLoading(false);
-      return;
-    }
+  const setOption = useSetAgentOption();
+  const setPrecognition = useSetPrecognition();
 
-    setLoading(true);
-    setError(null);
-    try {
-      const [knobs, agentOpts, precog] = await Promise.all([
-        listKnobs(s.id),
-        // An older daemon has no such method; an empty list is the right
-        // answer there, and is what an internal session gives anyway.
-        listAgentOptions(s.id).catch(() => ({ options: [] as AgentConfigOption[] })),
-        getPrecognition(s.id),
-      ]);
-      setSupported(new Set(knobs.knobs.filter((k) => k.supported).map((k) => k.id)));
-      setAgentOptions(agentOpts.options);
-      setPrecognition(precog);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadSettings);
+  // The three reads are keyed by session, so the panel reopened on a session
+  // it already read paints at once and no longer shows a loading barrier.
+  const loading = () =>
+    knobs.isLoading || options.isLoading || precognitionQuery.isLoading;
+  const error = () =>
+    writeError() ??
+    knobs.error?.message ??
+    precognitionQuery.error?.message ??
+    null;
 
   const inputClass = 'bg-control border border-hairline rounded px-2 py-1 text-sm text-shell-ink focus:border-primary focus-ring';
 
@@ -81,31 +70,29 @@ export const ModelSettingsSection: Component = () => {
    *
    * The agent is the only authority on what the value became — it may clamp
    * or normalise what it is sent — so the list is re-read rather than
-   * updated optimistically.
+   * updated optimistically. The hook owns that re-read.
    */
   const handleAgentOption = async (option: AgentConfigOption, value: string) => {
-    const s = session.currentSession();
-    if (!s) return;
+    const id = sessionId();
+    if (!id) return;
+    setWriteError(null);
     try {
-      await apiSetAgentOption(s.id, option.id, value);
-      const fresh = await listAgentOptions(s.id);
-      setAgentOptions(fresh.options);
+      await setOption.mutateAsync({ id, optionId: option.id, value });
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to set ${option.name}`);
+      setWriteError(err instanceof Error ? err.message : `Failed to set ${option.name}`);
     }
   };
 
   const handlePrecognitionToggle = async () => {
-    const s = session.currentSession();
-    if (!s) return;
-
-    const newVal = !precognition();
-    setPrecognition(newVal);
+    const id = sessionId();
+    if (!id) return;
+    setWriteError(null);
     try {
-      await apiSetPrecognition(s.id, newVal);
+      // The hook moves the toggle first and puts it back if the daemon
+      // refuses, so nothing here touches the value.
+      await setPrecognition.mutateAsync({ id, enabled: !precognition() });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set precognition');
-      setPrecognition(!newVal); // revert
+      setWriteError(err instanceof Error ? err.message : 'Failed to set precognition');
     }
   };
 

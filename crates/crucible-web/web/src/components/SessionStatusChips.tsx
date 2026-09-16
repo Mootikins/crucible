@@ -1,7 +1,7 @@
-import { Component, For, Show, createEffect, createSignal, on } from 'solid-js';
+import { Component, For, Show } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { getSessionStatus, type SessionStatusSlot } from '@/lib/api';
 import { useSessionModes } from '@/lib/query/modes';
+import { useSessionStatus } from '@/lib/query/session-config';
 import { reviewStore, useReviewSession } from '@/lib/review-store';
 import {
   type ReviewAwareMode,
@@ -34,7 +34,6 @@ const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
-  const [slots, setSlots] = createSignal<SessionStatusSlot[]>([]);
 
   const sessionId = () => currentSession()?.id;
   useReviewSession(sessionId);
@@ -43,23 +42,13 @@ export const SessionStatusChips: Component = () => {
   // the moment one of them failed.
   const modes = useSessionModes(() => sessionId() ?? null);
 
-  // No SSE event carries plugin status, so the fetch hangs off the session id.
+  // No SSE event carries plugin status, so the read hangs off the session id.
   // Scoped to the ACTIVE session rather than polling every open one: this is a
-  // per-session daemon round trip.
-  createEffect(
-    on(sessionId, (id) => {
-      // Clear first: the previous session's chips must never linger over a
-      // new one while its fetch is in flight.
-      setSlots([]);
-      if (!id) return;
-      getSessionStatus(id)
-        .then((next) => currentSession()?.id === id && setSlots(next))
-        // A failed status fetch is "no chips", never a notification. The
-        // request fails on every daemon reconnect, and a session with
-        // nothing to say is the normal case anyway.
-        .catch(() => currentSession()?.id === id && setSlots([]));
-    }),
-  );
+  // per-session daemon round trip. The key carries that id, so the previous
+  // session's chips cannot linger over a new one while its read is in flight,
+  // and a refused read is no chips rather than a notification.
+  const status = useSessionStatus(() => sessionId() ?? null);
+  const slots = () => status.data ?? [];
 
   // The EFFECTIVE review policy, straight from the daemon's mode descriptor.
   //
