@@ -1015,6 +1015,15 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 // here because the fixture session is not blocked — an absent
                 // key means something different to the store than a null one.
                 "gate": null,
+                // A key `ReviewHunksResponse` does not model.
+                //
+                // Invented here, because the daemon's review results grow keys
+                // faster than the web route follows: `degraded` and `gate` both
+                // arrived after the route was written. The route named its reply
+                // in task A6, so such a key now stops at the web layer, and
+                // `tests/route_contract_tests/review.rs` holds that behaviour
+                // where a reader can see it.
+                "a_key_the_web_does_not_model": 7,
             })
         }
         "review.rebase" => json!({

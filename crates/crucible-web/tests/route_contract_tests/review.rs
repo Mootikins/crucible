@@ -1,12 +1,22 @@
 //! Review route contract tests.
 //!
-//! These seven routes are a pure passthrough in both directions, so the type
-//! system proves nothing about them: the daemon's result objects are
-//! `serde_json::Value` all the way to the browser precisely so a key the
-//! daemon grows (`degraded`, `gate`) reaches a frontend that reads it without
-//! a rebuild here. That freedom has a price — the shape is only pinned by
-//! these assertions, and by `web/src/lib/__tests__/review-api.test.ts` on the
-//! other side of the same wire.
+//! These seven routes forward a request untouched and answer a **named
+//! struct**. Task A6 named the replies (`routes/session/review.rs`), so the
+//! daemon's result no longer travels as `serde_json::Value`: the route reads
+//! the daemon's object into its reply type and writes that type back. A key
+//! the daemon grows therefore reaches the browser only after someone adds a
+//! field for it, which is the opposite of what this file used to promise.
+//! `list_hunks_drops_a_daemon_key_the_reply_does_not_model` states the new
+//! rule where a reader meets it.
+//!
+//! What holds the reply to the daemon is
+//! `src/routes/session/review_shape_tests.rs`. It builds the core types the
+//! daemon serialises — `ComposedHunk`, `Comment`, `RootStatus`, `Integrity`,
+//! `GateBlock` — pushes each through its row and demands the same JSON back,
+//! so a new field in `crucible-core` fails a test instead of going missing.
+//! These tests pin the HTTP surface around it: the path, the query, the
+//! statuses, and what reaches the daemon. `web/src/lib/__tests__/review-api.test.ts`
+//! holds the other side of the same wire.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -42,8 +52,9 @@ async fn call(method: &str, uri: &str, body: Option<Value>) -> (MockDaemon, Stat
     (mock, status, json)
 }
 
+/// The listing carries the session, its hunks and its comments.
 #[tokio::test]
-async fn list_hunks_forwards_the_daemon_result_verbatim() {
+async fn list_hunks_answers_the_sessions_hunks_and_comments() {
     let (mock, status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -53,28 +64,65 @@ async fn list_hunks_forwards_the_daemon_result_verbatim() {
     assert_eq!(json["comments"][0]["id"], "comment-1");
 }
 
-/// The forward-compatibility claim, made concrete: `degraded` was added to the
-/// daemon's result after this crate's review code was written and reaches the
-/// browser anyway, because nothing between them names the fields.
+/// The named reply answers every key it models, and drops the one it does not.
+///
+/// The mock daemon sends `a_key_the_web_does_not_model` for exactly this test.
+/// The request still succeeds — an unknown key is not a decode failure — and
+/// the key stops here. To carry a new daemon key to the browser, add a field
+/// to `ReviewHunksResponse`; nothing else will.
 #[tokio::test]
-async fn list_hunks_passes_through_keys_this_crate_never_names() {
+async fn list_hunks_drops_a_daemon_key_the_reply_does_not_model() {
+    let (_mock, status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
+
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert!(
+        json.get("a_key_the_web_does_not_model").is_none(),
+        "the reply names its fields, so an unmodelled key must stop here: {json}"
+    );
+
+    let keys: Vec<&str> = json
+        .as_object()
+        .expect("the reply is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            "session_id",
+            "scope",
+            "hunks",
+            "comments",
+            "degraded",
+            "integrity",
+            "gate",
+        ],
+        "the body carries the fields `ReviewHunksResponse` declares, in order"
+    );
+}
+
+/// Three keys the browser reads, held by name because each one carries a
+/// distinction that a reply struct can lose.
+#[tokio::test]
+async fn list_hunks_keeps_the_keys_the_panel_reads() {
     let (_mock, _status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
 
     assert!(
         json.get("degraded").is_some(),
-        "a key the route does not model must still reach the client: {json}"
+        "a broken root must reach the client: {json}"
     );
     // `gate` specifically, and specifically its null-ness: the store treats an
     // absent key as "leave the chip alone" and a null one as "clear it", so a
     // layer that dropped a null on the floor would silently strand a stale
-    // "waiting on review" chip.
+    // "waiting on review" chip. The field is `required` in the OpenAPI
+    // document for the same reason.
     assert!(
         json.get("gate").is_some_and(Value::is_null),
-        "an explicit null must survive the forward, not be elided: {json}"
+        "an explicit null must survive the reply, not be elided: {json}"
     );
     assert!(
         json["hunks"][0].get("reapplied").is_some(),
-        "hunk fields are forwarded whole, not remapped: {json}"
+        "hunk fields keep their own names, and none is dropped: {json}"
     );
     // The unscoped losses `degraded` cannot carry, because they are exactly
     // the ones with no root left to name.
@@ -182,9 +230,9 @@ async fn set_states_forwards_the_ids_in_order() {
     assert_eq!(params["session_id"], "s1");
     assert_eq!(params["hunk_ids"], json!(["h3", "h1", "h2"]));
     assert_eq!(params["state"], "rejected");
-    // The daemon's answer is forwarded whole: the ids that applied and the
-    // ids it refused, each with its reason, so the client never re-lists to
-    // learn which was which.
+    // The reply names both halves of the daemon's answer: the ids that
+    // applied and the ids it refused, each with its reason, so the client
+    // never re-lists to learn which was which.
     assert_eq!(json["state"], "rejected");
     assert_eq!(json["applied"], json!(["h3", "h1", "h2"]));
     assert!(json.get("failed").is_some_and(Value::is_array), "{json}");
