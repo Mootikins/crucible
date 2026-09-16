@@ -201,6 +201,14 @@ struct SessionSearchResponse {
     matches: Vec<SessionSearchMatch>,
     /// How many matches the reply carries.
     total: usize,
+    /// Why the search looked at nothing, when it looked at nothing.
+    ///
+    /// The daemon writes it for a search with no kiln scope
+    /// (`server/session/list.rs:206`), and only then. An unscoped search is
+    /// the one case where an empty result is not a statement about the
+    /// corpus, so the sentence has to reach the caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 /// One persisted session event, as `session.resume_from_storage` replays it.
@@ -259,13 +267,25 @@ struct SessionLifecycleResponse {
 /// The warm path answers the state change. The cold path reloads the session
 /// from the store and answers its history, because that call is also what
 /// `GET /api/session/{id}/history` serves.
+///
+/// **`Restored` must stay first.** The daemon sends no tag, so the variants
+/// are told apart by their fields, and `Live`'s required fields
+/// (`session_id`, `state`) are a subset of `Restored`'s. An untagged enum
+/// takes the first variant that fits, so with the order reversed every
+/// restored history would read back as a bare state change and every event
+/// would be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`
+/// holds the order.
+///
+/// `deny_unknown_fields` would be the other way to separate them, and it is
+/// not used here: these are daemon replies, and refusing a field a newer
+/// daemon added would turn an extension into a 502 on three healthy routes.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(untagged)]
 enum ResumeSessionResponse {
-    /// The session was resident and merely paused.
-    Live(SessionLifecycleResponse),
     /// The session came back from the store.
     Restored(Box<SessionHistoryResponse>),
+    /// The session was resident and merely paused.
+    Live(SessionLifecycleResponse),
 }
 
 /// The session scope that a kiln or workspace mutation echoes.

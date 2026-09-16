@@ -49,8 +49,27 @@ async fn list_sessions_answers_the_declared_shape() {
 
 #[tokio::test]
 async fn search_sessions_answers_the_declared_shape() {
-    let found: SessionSearchResponse = shape("GET", "/api/sessions/search?q=x", None).await;
+    let found: SessionSearchResponse =
+        shape("GET", "/api/sessions/search?q=x&kiln=notes", None).await;
     assert_eq!(found.matches[0].session_id, "s1");
+    assert_eq!(found.note, None);
+}
+
+/// A search with no kiln scope answers a note instead of results, and the
+/// note has to cross.
+///
+/// The daemon writes it (`server/session/list.rs:206`) because an unscoped
+/// search is the one case where "no matches" is not an answer about the
+/// corpus: nothing was searched. A reply struct that drops the field turns
+/// that sentence into silence.
+#[tokio::test]
+async fn an_unscoped_search_carries_the_daemon_s_note() {
+    let found: SessionSearchResponse = shape("GET", "/api/sessions/search?q=x", None).await;
+    assert!(found.matches.is_empty());
+    assert_eq!(
+        found.note.as_deref(),
+        Some("Specify 'kilns' to scope the search to sessions that share one")
+    );
 }
 
 #[tokio::test]
@@ -87,6 +106,57 @@ async fn resume_session_answers_the_declared_shape() {
     match resumed {
         ResumeSessionResponse::Live(live) => assert_eq!(live.state, "active"),
         ResumeSessionResponse::Restored(_) => panic!("the warm path answered the stored history"),
+    }
+}
+
+/// The cold path answers the restored history, and it reads back as
+/// `Restored`.
+///
+/// The warm path's shape is a subset of this one, so an untagged union that
+/// tried the live variant first would answer `Live` here and silently drop
+/// every event. The test names the payload it expects by variant, not by
+/// field, because that is the mistake it exists to catch.
+#[tokio::test]
+async fn a_cold_resume_answers_the_restored_history() {
+    use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon_with_errors};
+    use tower::ServiceExt;
+
+    // A session the daemon no longer holds: the warm `session.resume` fails
+    // and the route reloads it from the store.
+    let mut errors = crate::test_support::MockErrors::new();
+    errors.insert(
+        "session.resume".to_string(),
+        (-32000, "Session is not resident".to_string()),
+    );
+    let (_mock, client) = start_mock_daemon_with_errors(errors).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!("{SESSION}/resume"))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let resumed: ResumeSessionResponse =
+        serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}\n{json}"));
+
+    match resumed {
+        ResumeSessionResponse::Restored(history) => {
+            assert_eq!(history.history[0].event, "user_message");
+        }
+        ResumeSessionResponse::Live(_) => {
+            panic!("the stored history decoded as the live state change: {json}")
+        }
     }
 }
 
@@ -288,6 +358,56 @@ fn a_session_row_writes_back_the_object_session_list_sent() {
     // The three fields `session.get` omits are absent there and present here,
     // and neither spelling turns into the other.
     assert!(written.get("agent").is_none());
+}
+
+/// The two resume shapes read back as the variant that wrote them.
+///
+/// This is the gate on the variant order in `ResumeSessionResponse`. The live
+/// shape's required fields are a subset of the restored one's, so an untagged
+/// union that lists `Live` first answers `Live` for a restored history and
+/// drops every event, with no error anywhere. Both directions are asserted,
+/// because only one of them fails when the order is wrong.
+#[test]
+fn a_restored_payload_does_not_read_as_a_live_one() {
+    let restored = json!({
+        "session_id": "test-session-001",
+        "type": "chat",
+        "state": "active",
+        "kilns": ["test-kiln"],
+        "history": [{
+            "type": "event",
+            "session_id": "test-session-001",
+            "event": "user_message",
+            "data": {"content": "hello"},
+            "timestamp": "2026-01-01T00:00:00Z",
+            "seq": 1
+        }],
+        "total_events": 1
+    });
+    let decoded: ResumeSessionResponse =
+        serde_json::from_value(restored.clone()).expect("the union reads the stored history");
+    match decoded {
+        ResumeSessionResponse::Restored(history) => assert_eq!(history.total_events, 1),
+        ResumeSessionResponse::Live(_) => panic!("the stored history read as a state change"),
+    }
+
+    let live = json!({
+        "session_id": "test-session-001",
+        "previous_state": "paused",
+        "state": "active"
+    });
+    let decoded: ResumeSessionResponse =
+        serde_json::from_value(live.clone()).expect("the union reads the state change");
+    match decoded {
+        ResumeSessionResponse::Live(state) => assert_eq!(state.state, "active"),
+        ResumeSessionResponse::Restored(_) => panic!("the state change read as a stored history"),
+    }
+
+    // Neither variant rewrites what it read: `untagged` writes the inner value.
+    for sent in [restored, live] {
+        let decoded: ResumeSessionResponse = serde_json::from_value(sent.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), sent);
+    }
 }
 
 /// The scope echo survives its struct. `workspace` is `null` for a session

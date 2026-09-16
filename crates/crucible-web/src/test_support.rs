@@ -616,11 +616,28 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "title": "Merkle tree sync design"
         }),
         // `{matches, total}` of transcript LINES, not of sessions
-        // (`server/session/list.rs:277`).
-        "session.search" => json!({
-            "matches": [{"session_id": "s1", "line": 12, "context": "Test Session"}],
-            "total": 1
-        }),
+        // (`server/session/list.rs:277`). A search with no kiln scope searched
+        // nothing, and the daemon says so in a `note` rather than answering a
+        // bare empty list (`:206`).
+        "session.search" => {
+            let scoped = msg
+                .get("params")
+                .and_then(|p| p.get("kilns"))
+                .and_then(|v| v.as_array())
+                .is_some_and(|kilns| !kilns.is_empty());
+            if scoped {
+                json!({
+                    "matches": [{"session_id": "s1", "line": 12, "context": "Test Session"}],
+                    "total": 1
+                })
+            } else {
+                json!({
+                    "matches": [],
+                    "total": 0,
+                    "note": "Specify 'kilns' to scope the search to sessions that share one"
+                })
+            }
+        }
         // Mirrors the daemon's real response shape: a `history` array of
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
