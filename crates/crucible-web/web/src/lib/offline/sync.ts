@@ -78,6 +78,10 @@ export const networkSource: MirrorSource = {
   // what the editor holds. Joining here is what makes a kept kiln readable:
   // unjoined, every read 404s and every note lands under a key no lookup asks
   // for, so the kiln caches nothing and reports every file as failed.
+  // Deliberately the raw read and not `lib/query/notes.ts`. Filling a mirror
+  // for offline use is the one caller that wants what the daemon holds RIGHT
+  // NOW, not what a panel was answered five minutes ago — and it drains on a
+  // timer outside any component, so there is no reader for a cache to serve.
   listNotes: async (kiln) =>
     (await listNotes(kiln)).map((note) => ({
       name: note.name,

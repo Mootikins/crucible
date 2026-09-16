@@ -20,6 +20,9 @@ import type { FsEvent } from '@/lib/types';
 // a panel that never refreshes and a test that still passes.
 import { folderOf } from '../fs';
 import { keys } from '../keys';
+// Same reasoning as `folderOf` above: the rule for which entries a written
+// note makes wrong belongs beside those entries, not in a second copy here.
+import { invalidateNotesUnder } from '../notes';
 import { setFsEventRoute, type SseRouteContext } from '../sse';
 
 /** The paths one event names: one for a change or a delete, two for a move. */
@@ -49,6 +52,14 @@ function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
   for (const folder of folders) {
     void client.invalidateQueries({ queryKey: keys.fsDir(folder) });
   }
+
+  // A markdown file is a NOTE, and a kiln's note entries are questions about
+  // the kiln rather than about one file: which notes it holds, what a link in
+  // it resolves to, what links to what. The one that matters is a held MISS —
+  // a link written before the note it names resolves to nothing, and without
+  // this nothing ever dropped that answer, so the link read as broken long
+  // after the note was on disk.
+  void invalidateNotesUnder(paths);
 }
 
 /**

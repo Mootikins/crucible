@@ -8,6 +8,7 @@ import {
   resolveNotePath,
 } from '@/lib/api';
 import type { GraphDto } from '@/lib/graph/types';
+import { isMarkdownPath } from '@/lib/markdown-path';
 import type { BacklinksResponse, FileEntry, NoteEntry } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -49,6 +50,23 @@ export interface ResolvedNote {
 export const KILN_NOTES_STALE_MS = 5_000;
 
 /**
+ * How long a MISS is reused.
+ *
+ * Holding a miss is the point of `resolveOptions`: the hover preview asks
+ * about every link under the pointer, and the daemon answers a name it cannot
+ * place by walking the whole kiln. But the commonest miss is a link to a note
+ * that does not exist YET — written a moment before the note is — and holding
+ * that for the app-wide five minutes leaves the link broken on screen long
+ * after the note is on disk.
+ *
+ * The filesystem stream drops it properly (`invalidateNotesUnder`, called from
+ * that stream's route). This is the belt to that pair of braces: it covers a
+ * note created somewhere the daemon does not watch, and the seconds between
+ * the write and the event.
+ */
+export const MISS_STALE_MS = 5_000;
+
+/**
  * The name one target is held under.
  *
  * A wikilink target is case-insensitive — the daemon matches a filename stem
@@ -60,6 +78,14 @@ export const KILN_NOTES_STALE_MS = 5_000;
 function targetKey(name: string): string {
   return name.toLowerCase();
 }
+
+/**
+ * The app-wide freshness window, from `lib/query/client.ts`.
+ *
+ * Named here because one option below has to choose between it and a shorter
+ * one, and a query that sets `staleTime` at all loses the default.
+ */
+const DEFAULT_STALE_MS = 5 * 60 * 1000;
 
 /** The options of one kiln's note index. */
 function notesOptions(kiln: string) {
@@ -80,6 +106,11 @@ function resolveOptions(kiln: string, name: string) {
   return {
     queryKey: keys.notesResolve(kiln, targetKey(name)),
     queryFn: (): Promise<ResolvedNote | null> => resolveNotePath(kiln, name).catch(() => null),
+    // A miss is held for seconds and a hit for the app-wide window: a note
+    // does not move under a link that resolved, but a link that resolved to
+    // nothing is usually one whose note is about to be written.
+    staleTime: (query: { state: { data?: ResolvedNote | null } }) =>
+      query.state.data === null ? MISS_STALE_MS : DEFAULT_STALE_MS,
   };
 }
 
@@ -157,10 +188,52 @@ export function fetchResolvedNoteOnce(kiln: string, name: string): Promise<Resol
   return getQueryClient().fetchQuery(resolveOptions(kiln, name));
 }
 
-/** Drops every held resolution. The test seam, and what a rename invalidates. */
+/** Drops every held resolution, whatever kiln it belongs to. The test seam. */
 export function invalidateResolvedNotes(): Promise<void> {
   return getQueryClient()
     .invalidateQueries({ queryKey: ['notes', 'resolve'] })
+    .then(() => undefined);
+}
+
+/** Whether one absolute path lies inside one kiln root. */
+function isUnder(path: string, kiln: string): boolean {
+  const root = kiln.replace(/\/+$/, '');
+  // The separator is part of the test. Without it `/kiln-archive/a.md` reads
+  // as a file inside `/kiln`, and writing in one vault would drop what is held
+  // about its similarly named sibling.
+  return root !== '' && path.startsWith(`${root}/`);
+}
+
+/**
+ * Drops everything held about the kilns that these paths are in.
+ *
+ * The filesystem stream calls it for every markdown file that is written,
+ * moved or deleted. Everything here answers a question ABOUT A KILN rather
+ * than about one file — which notes it holds, what a link in it resolves to,
+ * what links to what — and a note appearing or leaving changes all of them.
+ *
+ * The one that matters most is a held MISS. A link is written before the note
+ * it names, the hover preview resolves it to nothing, and nothing else was
+ * ever going to drop that answer: the link read as broken for five minutes
+ * after the note was on disk.
+ *
+ * The kiln comes from the KEY, not from the roster. Every key in this module
+ * carries its kiln in the same position, an event carries an absolute path,
+ * and containment is a prefix test — so this reaches exactly the entries that
+ * are held, and needs no second cache to be loaded first.
+ */
+export function invalidateNotesUnder(paths: readonly string[]): Promise<void> {
+  const notes = paths.filter((path) => isMarkdownPath(path));
+  if (notes.length === 0) return Promise.resolve();
+
+  return getQueryClient()
+    .invalidateQueries({
+      predicate: (query) => {
+        const [family, , kiln] = query.queryKey as unknown[];
+        if (family !== 'notes' || typeof kiln !== 'string') return false;
+        return notes.some((path) => isUnder(path, kiln));
+      },
+    })
     .then(() => undefined);
 }
 

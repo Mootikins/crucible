@@ -5,6 +5,8 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { keys } from '../keys';
 import {
   KILN_NOTES_STALE_MS,
+  MISS_STALE_MS,
+  invalidateNotesUnder,
   fetchKilnNotesOnce,
   fetchNotesOnce,
   fetchResolvedNoteOnce,
@@ -196,6 +198,34 @@ describe('useResolveNotePath', () => {
     expect(countOf('resolve')).toBe(1);
   });
 
+  /**
+   * A miss goes stale in seconds, a hit does not.
+   *
+   * A held miss is the point — the hover preview asks about every link under
+   * the pointer, and the daemon answers a name it cannot place by walking the
+   * whole kiln. But the commonest miss is a link to a note that does not exist
+   * YET, written a moment before the note is, and holding that for the
+   * app-wide five minutes leaves the link broken on screen long after the note
+   * is on disk.
+   */
+  it('goes stale within seconds for a miss, and not for a hit', async () => {
+    env = createTestQueryEnv(noteRoutes());
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    await fetchResolvedNoteOnce(KILN, 'ghost');
+    await fetchResolvedNoteOnce(KILN, 'rust');
+    expect(countOf('resolve')).toBe(2);
+
+    vi.setSystemTime(Date.now() + MISS_STALE_MS + 1);
+    await fetchResolvedNoteOnce(KILN, 'ghost');
+    await fetchResolvedNoteOnce(KILN, 'rust');
+
+    // The miss is asked again; the hit is not. A note does not move under a
+    // link that resolved, and re-asking is a walk of the whole kiln.
+    expect(asked.filter((seen) => seen.route === 'resolve' && seen.name === 'ghost')).toHaveLength(2);
+    expect(asked.filter((seen) => seen.route === 'resolve' && seen.name === 'rust')).toHaveLength(1);
+  });
+
   // A wikilink target is case-insensitive — the daemon matches a stem by
   // lowercase — so `[[Rust]]` and `[[rust]]` are one question and must not be
   // two entries and two walks.
@@ -285,5 +315,62 @@ describe('useListKilnNotes', () => {
     await fetchKilnNotesOnce(KILN);
 
     expect(countOf('kilnNotes')).toBe(2);
+  });
+
+});
+
+describe('invalidateNotesUnder', () => {
+  /**
+   * A note written on disk makes everything held about its kiln wrong.
+   *
+   * The commonest case is the one that made this necessary: a link to a note
+   * that does not exist yet, hovered, held as a miss, and then the note is
+   * created. Nothing else was going to drop that miss, so the link read as
+   * broken for five minutes after the note was on disk.
+   */
+  it('drops what is held about the kiln a written note is in', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchNotesOnce(KILN);
+    await fetchResolvedNoteOnce(KILN, 'ghost');
+    await fetchKilnNotesOnce(KILN);
+    expect(countOf('notes')).toBe(1);
+
+    await invalidateNotesUnder([`${KILN}/Ghost.md`]);
+
+    await fetchNotesOnce(KILN);
+    await fetchResolvedNoteOnce(KILN, 'ghost');
+    await fetchKilnNotesOnce(KILN);
+    expect(countOf('notes')).toBe(2);
+    expect(countOf('resolve')).toBe(2);
+    expect(countOf('kilnNotes')).toBe(2);
+  });
+
+  // The negative: the kiln is a PREFIX of the path, so a note written in one
+  // vault leaves the other vault's index and resolutions alone.
+  it('leaves another kiln alone', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchNotesOnce(KILN);
+    await fetchNotesOnce(OTHER);
+
+    await invalidateNotesUnder([`${OTHER}/Ghost.md`]);
+
+    await fetchNotesOnce(KILN);
+    await fetchNotesOnce(OTHER);
+    expect(asked.filter((seen) => seen.route === 'notes' && seen.kiln === KILN)).toHaveLength(1);
+    expect(asked.filter((seen) => seen.route === 'notes' && seen.kiln === OTHER)).toHaveLength(2);
+  });
+
+  // A kiln that is a string prefix of another is not a parent of it.
+  it('does not read a sibling kiln as a parent of one', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchNotesOnce(KILN);
+
+    await invalidateNotesUnder([`${KILN}-archive/Ghost.md`]);
+
+    await fetchNotesOnce(KILN);
+    expect(countOf('notes')).toBe(1);
   });
 });

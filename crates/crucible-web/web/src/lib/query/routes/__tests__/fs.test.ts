@@ -26,8 +26,12 @@ beforeEach(() => {
   env = createTestQueryEnv();
   installFsEventRoute();
   invalidated = [];
+  // Only the calls that NAME a key. The route also invalidates by predicate,
+  // for the entries whose key it cannot spell from a path alone; those are
+  // driven against the real cache in the second block below, because a spy
+  // never runs the predicate that decides what they reach.
   vi.spyOn(env.client, 'invalidateQueries').mockImplementation((filters) => {
-    invalidated.push((filters?.queryKey ?? []) as QueryKey);
+    if (filters?.queryKey) invalidated.push(filters.queryKey as QueryKey);
     return Promise.resolve();
   });
 });
@@ -117,5 +121,77 @@ describe('the fs event route', () => {
     source.emit('fs_changed', { type: 'changed', kind: 'modified' });
 
     expect(invalidated).toEqual([]);
+  });
+});
+
+/**
+ * A markdown file is a NOTE, and the kiln's note entries are wrong when one
+ * appears, moves or goes.
+ *
+ * These cases drive the REAL cache rather than a spy, because what is under
+ * test is which held entries the route reaches — and a spy over
+ * `invalidateQueries` never runs the predicate that decides.
+ */
+describe('the fs event route and the notes of a kiln', () => {
+  const KILN = '/kiln';
+
+  /** Puts a note index and a resolved MISS in the cache, both fresh. */
+  function hold(): void {
+    env.client.setQueryData(keys.notesList(KILN), []);
+    env.client.setQueryData(keys.notesResolve(KILN, 'ghost'), null);
+    env.client.setQueryData(keys.notesList('/other'), []);
+  }
+
+  const isStale = (key: QueryKey) =>
+    env.client.getQueryCache().find({ queryKey: key })!.isStale();
+
+  beforeEach(() => {
+    // The default spy answers every invalidation without performing it.
+    vi.restoreAllMocks();
+    hold();
+  });
+
+  /**
+   * The failure this exists for: a link written before the note it names is
+   * resolved to nothing, that miss is held, and nothing else was ever going to
+   * drop it. The link read as broken for five minutes after the note was on
+   * disk.
+   */
+  it('drops the index and the held misses of the kiln a note was written in', () => {
+    const source = openStream();
+
+    source.emit('fs_changed', { type: 'changed', path: `${KILN}/Ghost.md`, kind: 'created' });
+
+    expect(isStale(keys.notesList(KILN))).toBe(true);
+    expect(isStale(keys.notesResolve(KILN, 'ghost'))).toBe(true);
+  });
+
+  it('drops them at both ends of a move', () => {
+    env.client.setQueryData(keys.notesList('/other'), []);
+    const source = openStream();
+
+    source.emit('fs_moved', { type: 'moved', from: `${KILN}/a.md`, to: '/other/a.md' });
+
+    expect(isStale(keys.notesList(KILN))).toBe(true);
+    expect(isStale(keys.notesList('/other'))).toBe(true);
+  });
+
+  // The negative, twice over: a file that is not a note changes no note
+  // entry, and a note in one vault changes nothing about another.
+  it('leaves the notes of a kiln alone when the file is not a note', () => {
+    const source = openStream();
+
+    source.emit('fs_changed', { type: 'changed', path: `${KILN}/src/main.rs`, kind: 'modified' });
+
+    expect(isStale(keys.notesList(KILN))).toBe(false);
+    expect(isStale(keys.notesResolve(KILN, 'ghost'))).toBe(false);
+  });
+
+  it('leaves another kiln alone', () => {
+    const source = openStream();
+
+    source.emit('fs_changed', { type: 'changed', path: `${KILN}/Ghost.md`, kind: 'created' });
+
+    expect(isStale(keys.notesList('/other'))).toBe(false);
   });
 });
