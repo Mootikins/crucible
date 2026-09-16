@@ -90,8 +90,10 @@ describe('Message — role rendering', () => {
     ));
     const outer = container.querySelector('[data-testid="message-system"]') as HTMLElement;
     expect(outer).toBeInTheDocument();
-    // The row is a COLUMN now, so the leading edge comes from the cross axis.
-    expect(outer.className).toContain('items-start');
+    // The column aligns to the trailing edge for a prompt; a notice spans
+    // the whole measure, so the edge cannot show on it.
+    const notice = outer.firstElementChild as HTMLElement;
+    expect(notice.className).toContain('w-full');
     expect(screen.getByText('sys note')).toBeInTheDocument();
     // System messages don't render copy/edit buttons
     expect(screen.queryByTitle('Copy message')).not.toBeInTheDocument();
@@ -255,25 +257,20 @@ describe('formatRelativeTime', () => {
   });
 });
 
-// ── The meta row, after T3 Code's user turn ──────────────────────────
-//
-// T3 puts a user message's actions on a row of their OWN, under the bubble,
-// aligned with the bubble's edge and separated from it by one 4px gap. The
-// row is always in the document and only its opacity answers the hover, so
-// the bubble above it never moves. We copy that arrangement; the one change
-// is the edge it aligns to, because our prompt sits on the LEFT of the
-// transcript rather than the right.
+// ── The meta row under the prompt ─────────────────────────────────────
 
 describe('Message — the meta row under the prompt', () => {
-  it('stacks under the bubble in DOM order, and draws no fixed side column', () => {
+  it('stacks under the bubble on the trailing edge, and draws no fixed side column', () => {
     const { container } = render(() => <Message message={makeMessage({ role: 'user' })} />);
     const row = container.querySelector('[data-testid="message-user"]') as HTMLElement;
     const bubble = container.querySelector('.user-quote') as HTMLElement;
     const meta = screen.getByTestId('turn-meta');
-    // A column, not content-beside-gutter.
     expect(row.className).toContain('flex-col');
-    expect(row.className).toContain('items-start');
+    expect(row.className).toContain('items-end');
+    expect(row.className).not.toContain('items-start');
     expect(bubble.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The row's contents sit at the trailing edge too.
+    expect(meta.className).toContain('justify-end');
     // The right-hand column is gone, in the markup and in the tokens.
     expect(screen.queryByTestId('turn-gutter')).toBeNull();
     expect(meta.className).not.toContain('cru-turn-gutter');
@@ -297,13 +294,13 @@ describe('Message — the meta row under the prompt', () => {
     }
   });
 
-  it('orders the actions first and the sent time after them, as T3 does', () => {
+  it('puts the sent time first and the actions at the outer edge', () => {
     render(() => <Message message={makeMessage({ role: 'user', timestamp: Date.now() })} />);
     const meta = screen.getByTestId('turn-meta');
     const time = screen.getByTestId('message-time');
     expect(meta).toContainElement(time);
     const copy = screen.getByTitle('Copy message');
-    expect(copy.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(time.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('is hidden at rest and fades in on hover or keyboard focus', () => {
@@ -395,6 +392,17 @@ describe('Message — the prompt sizes to its text', () => {
     // the clamp and must survive, so the boundary rejects the hyphen.
     expect(rule![1]).not.toMatch(/(?<!-)width:\s*100%/);
   });
+
+  it('draws a whole-pixel box, so the rows under it land on whole pixels too', () => {
+    // A 35.6px bubble put every row after it on a .6 pixel.
+    const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
+    const rule = /\.user-quote\s*\{([\s\S]*?)\}/.exec(css)!;
+    expect(rule[1]).toMatch(/padding:\s*0\.375rem 0\.6875rem/);
+    expect(rule[1]).toMatch(/line-height:\s*1\.25rem/);
+    // The prose beside it: 1.6 on 13px is 20.8px; 21px keeps the answer's
+    // rows on whole pixels as well.
+    expect(css).toMatch(/--cru-leading-reading:\s*1\.3125rem/);
+  });
 });
 
 // ── The row's own rhythm ──────────────────────────────────
@@ -405,7 +413,6 @@ describe('Message — the row spends no vertical space of its own', () => {
     const row = container.querySelector('[data-testid="message-user"]') as HTMLElement;
     expect(row.className).not.toMatch(/\bpb-5\b/);
     expect(row.className).not.toMatch(/\bmb-\d/);
-    // The gap between the bubble and its meta row is T3's single 4px step.
     expect(row.className).toContain('gap-1');
   });
 });

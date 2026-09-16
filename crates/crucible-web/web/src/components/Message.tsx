@@ -75,13 +75,9 @@ export const Message: Component<MessageProps> = (props) => {
 
   return (
     <div
-      // T3's user turn: a COLUMN of bubble then meta row, with one 4px step
-      // between them. `items-start` keeps both boxes on the transcript's
-      // leading edge — T3 stacks them on the trailing edge because its prompt
-      // sits on the right of the pane; ours sits on the left, so the two rows
-      // line up down the same edge the assistant's text uses. The gap between
-      // transcript rows belongs to the list, not here.
-      class="group flex flex-col items-start gap-1"
+      // Bubble, then meta row, as one right-aligned group. The gap between
+      // transcript rows belongs to the list.
+      class="group flex flex-col items-end gap-1"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
     >
@@ -154,15 +150,18 @@ export const Message: Component<MessageProps> = (props) => {
         </Show>
       </div>
 
-      {/* The meta row, under the bubble. A system notice is a record rather
-          than a turn: it offers nothing to do and carries no stamp, so it
-          draws no row at all rather than an empty one. */}
+      {/* A system notice offers nothing to do and carries no stamp, so it draws no row. */}
       <Show when={!isSystem()}>
-        <TurnMeta>
-          {/* T3's order, read outward from the text: what you can DO with the
-              turn first, then what the turn IS. The buttons sit closer
-              together (2px) than the measurement beside them (8px), so the
-              pair reads as one control and the stamp as a caption. */}
+        <TurnMeta class="justify-end pe-1">
+          {/* The stamp sits outside the bubble, so the bubble measures the same with or without one. */}
+          <Show when={isUser() && props.message.timestamp}>
+            <span
+              data-testid="message-time"
+              title={new Date(props.message.timestamp).toLocaleString()}
+            >
+              {formatMessageTime(props.message.timestamp)}
+            </span>
+          </Show>
           <div class="flex items-center gap-0.5">
             <IconButton
               size="sm"
@@ -185,18 +184,6 @@ export const Message: Component<MessageProps> = (props) => {
               </IconButton>
             </Show>
           </div>
-          {/* The time the prompt was sent. It lives OUTSIDE the bubble, so the
-              bubble's box measures the same whether or not a stamp exists and
-              whether or not the pointer is on it. The date appears once the
-              message is not from today. */}
-          <Show when={isUser() && props.message.timestamp}>
-            <span
-              data-testid="message-time"
-              title={new Date(props.message.timestamp).toLocaleString()}
-            >
-              {formatMessageTime(props.message.timestamp)}
-            </span>
-          </Show>
         </TurnMeta>
       </Show>
     </div>

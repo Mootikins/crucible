@@ -383,13 +383,7 @@ describe('AssistantTurn — data-kiln', () => {
   });
 });
 
-// ── The meta row, after T3 Code's assistant turn ─────────────────────
-//
-// T3 gives an assistant turn ONE meta row at the bottom of the text, aligned
-// with the prose rather than pushed to an edge: the copy action first, the
-// measurements after it. The row fades in on hover, except on the turn that
-// ends the transcript, where T3 keeps it on. We copy that, and add our own
-// two measurements (elapsed, tokens) to the row T3 gives a timestamp.
+// ── The meta row under the turn ───────────────────────────────────────
 
 describe('AssistantTurn — the meta row', () => {
   it('sits at the bottom of the turn, after the text, in the reading column', () => {
@@ -432,7 +426,7 @@ describe('AssistantTurn — the meta row', () => {
     expect(meta.className).toContain('group-hover:pointer-events-auto');
   });
 
-  it('stays on for the turn that ends the transcript, the way T3 keeps it', () => {
+  it('stays on for the turn that ends the transcript', () => {
     messagesAccessor = () => [textMsg('a1', 'done')];
     render(() => <AssistantTurn parts={[textPart('a1')]} isLast={true} />);
     const meta = screen.getByTestId('turn-meta');

@@ -1,10 +1,9 @@
 /**
  * One assistant TURN — everything the agent did for a single user prompt:
  * interleaved text segments and tool-call groups, rendered as one block with
- * ONE meta row for the whole response, the way other agent UIs treat a
- * response as a unit. Individual segments carry no chrome of their own, and
- * the turn's actions and its two measurements share that one row at the
- * bottom of the turn (`TurnMeta`), the arrangement T3 Code uses.
+ * ONE meta row for the whole response: individual segments carry no chrome
+ * of their own, and the turn's actions and its two measurements share that
+ * one row at the bottom of the turn (`TurnMeta`).
  *
  * Structure comes in as id lists (not message objects): each part resolves
  * its live message from the store by id, so streaming token appends update
@@ -279,12 +278,7 @@ export const AssistantTurn: Component<{
         </Show>
       </div>
 
-      {/* ONE meta row for the whole response — never per segment, and never
-          two strips. T3 puts the copy action and the timestamp on a single
-          row at the bottom of the turn, aligned with the prose; ours carries
-          the same shape with our two measurements in the timestamp's place.
-          The last turn in the transcript keeps its row on (T3's
-          `alwaysVisible`), because there the row is the answer's footer. */}
+      {/* One meta row for the whole response; the last turn keeps it on. */}
       <Show when={!turnInFlight()}>
         <div class="mt-1.5">
           <TurnMeta always={props.isLast}>
