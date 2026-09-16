@@ -1,45 +1,31 @@
 // src/components/settings/McpStatus.tsx
 //
 // What the daemon reports about its MCP connections, as key/value rows.
-import { Component, For, createSignal, onMount } from 'solid-js';
+import { Component, For } from 'solid-js';
 import { Link2 } from '@/lib/icons';
 
 import { SettingsSectionState } from './primitives';
-import { getMcpStatus } from '@/lib/api';
+import { useMcpStatus } from '@/lib/query/mcp';
 
 export const McpStatusSection: Component = () => {
-  const [status, setStatus] = createSignal<Record<string, unknown> | null>(null);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal<string | null>(null);
-
-  const loadStatus = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getMcpStatus();
-      setStatus(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load MCP status');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadStatus);
+  // The three signals this section kept — a value, a loading flag and an error
+  // string — are the shape a query already has, and the pane asked the daemon
+  // again every time the dialog opened.
+  const status = useMcpStatus();
 
   return (
     <SettingsSectionState
       title="MCP Status"
       icon={Link2}
-      loading={loading()}
-      error={error()}
+      loading={status.isPending}
+      error={status.error?.message ?? null}
       loadingMessage="Loading MCP status…"
-      onRetry={loadStatus}
+      onRetry={() => void status.refetch()}
       hideContentOnError
-      isEmpty={!status()}
+      isEmpty={!status.data}
       emptyMessage="No MCP status available."
     >
-      <For each={Object.entries(status()!)}>
+      <For each={Object.entries(status.data ?? {})}>
         {([key, value]) => (
           <tr class="border-b border-hairline">
             <td class="py-2.5 text-shell-body text-sm">{key}</td>

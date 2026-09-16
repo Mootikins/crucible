@@ -33,7 +33,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   getPlugins: vi.fn(async () => []),
   reloadPlugin: vi.fn(async () => {}),
   installPlugin: vi.fn(async () => ({})),
-  getMcpStatus: vi.fn(async () => ({ servers: [] })),
   login: vi.fn(async () => true),
   resetLayout: vi.fn(async () => {}),
   getContextStrategy: vi.fn(async () => ({ strategy: 'default' })),
@@ -80,7 +79,12 @@ let kilnEnv: TestQueryEnv;
 beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
-  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+  kilnEnv = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [] }),
+    // `getMcpStatus` is NOT stubbed: the MCP section reads it through
+    // `useMcpStatus`, which runs the real one against this route.
+    'GET /api/mcp/status': () => ({ servers: [] }),
+  });
 });
 
 afterEach(() => {

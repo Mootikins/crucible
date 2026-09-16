@@ -23,7 +23,6 @@ vi.mock('@/lib/api', () => ({
   setPrecognition: vi.fn(async () => {}),
   getPlugins: vi.fn(async () => []),
   reloadPlugin: vi.fn(async () => {}),
-  getMcpStatus: vi.fn(async () => ({ servers: [] })),
   login: vi.fn(async () => true),
 }));
 
