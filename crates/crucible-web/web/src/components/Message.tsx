@@ -34,7 +34,7 @@ export const Message: Component<MessageProps> = (props) => {
    */
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
-    const s = sessionCtx.sessions().find((x) => x.id === sid);
+    const s = sessionCtx.sessions().find((x) => x.session_id === sid);
     return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
   };
   const handleMarkdownClick = makeMarkdownClickHandler();

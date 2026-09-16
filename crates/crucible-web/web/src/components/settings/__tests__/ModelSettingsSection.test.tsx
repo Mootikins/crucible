@@ -17,7 +17,7 @@ import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
 // that a re-read follows a write.
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
-    currentSession: () => ({ id: 's1', title: 'T' }),
+    currentSession: () => ({ session_id: 's1', title: 'T' }),
   }),
 }));
 

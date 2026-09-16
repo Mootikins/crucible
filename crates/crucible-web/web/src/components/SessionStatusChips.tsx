@@ -35,7 +35,7 @@ const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
 
-  const sessionId = () => currentSession()?.id;
+  const sessionId = () => currentSession()?.session_id;
   useReviewSession(sessionId);
   // The chat pane reads this same list for its mode control. This component
   // used to fetch a second copy of it on every mount, and the two disagreed

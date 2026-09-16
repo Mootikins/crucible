@@ -3,9 +3,9 @@ import { resolveSessionRoot, sessionRoots } from '../session-roots';
 import type { KilnListEntry, Project, Session } from '@/lib/types';
 
 const KILNS: KilnListEntry[] = [
-  { path: '/home/me/docs', name: 'docs' },
-  { path: '/home/me/notes', name: 'notes' },
-  { path: '/home/me/archive', name: 'archive' },
+  { path: '/home/me/docs', name: 'docs', last_access_secs_ago: null, open: true, registered: true },
+  { path: '/home/me/notes', name: 'notes', last_access_secs_ago: null, open: true, registered: true },
+  { path: '/home/me/archive', name: 'archive', last_access_secs_ago: null, open: true, registered: true },
 ];
 
 const PROJECTS: Project[] = [
@@ -32,7 +32,6 @@ const session = (over: Partial<Session> = {}): Session =>
     state: 'idle',
     title: null,
     agent_model: null,
-    agent_mode: null,
     started_at: '2026-01-01T00:00:00Z',
     event_count: 0,
     ...over,

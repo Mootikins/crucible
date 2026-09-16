@@ -9,7 +9,6 @@ import {
   executeCommand,
   listProviders,
   switchModel,
-  saveNote,
   respondToInteraction,
   searchSessions,
   listModels,
@@ -33,7 +32,6 @@ import {
   getPrecognition,
   setPrecognition,
   exportSession,
-  executeShell,
   getPlugins,
   reloadPlugin,
   installPlugin,
@@ -45,8 +43,6 @@ import {
   listKilns,
   listDir,
   listNotes,
-  getNote,
-  searchVectors,
   registerProject,
   unregisterProject,
   listProjects,
@@ -127,8 +123,8 @@ describe('createSession', () => {
     const session = await createSession({ kilns: ['default'] });
 
     // Verify mapSession field mapping: session_id → id, type → session_type
-    expect(session.id).toBe('ses-abc');
-    expect(session.session_type).toBe('chat');
+    expect(session.session_id).toBe('ses-abc');
+    expect(session.type).toBe('chat');
     expect(session.kilns).toEqual(['default']);
     expect(session.workspace).toBe('ws-1');
     expect(session.state).toBe('active');
@@ -138,37 +134,35 @@ describe('createSession', () => {
     expect(session.event_count).toBe(5);
   });
 
-  it('maps null agent_model and missing event_count with defaults', async () => {
-    const rawNoOptionals = {
-      ...rawSession,
-      agent_model: null,
-      event_count: undefined,
-    };
+  // The create route does not send `event_count` or `agent_model`: the
+  // contract marks both optional, and the client no longer substitutes a
+  // zero or a null for them. A reader that wants a number says so itself.
+  it('passes the create reply through, absences included', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/session': { body: rawNoOptionals },
+      'POST /api/session': {
+        body: { ...rawSession, agent_model: null, event_count: undefined },
+      },
     });
     global.fetch = mockFetch;
 
     const session = await createSession({ kilns: ['default'] });
 
     expect(session.agent_model).toBeNull();
-    expect(session.event_count).toBe(0); // ?? 0 fallback
+    expect(session.event_count).toBeUndefined();
   });
 
-  it('maps an absent title to null, as every other route sends it', async () => {
-    // The create route answers a session nobody has named with NO title field.
-    // Left as `undefined`, that record differs from the same record read back
-    // later, and a pane that compares the two reads an absent title as a
-    // change: the draft's first turn was drawn twice because of it.
-    const rawNoTitle = { ...rawSession, title: undefined };
+  // A session nobody has named comes back from the create route with NO title
+  // field, and from every other route with an explicit null. `title` is
+  // optional AND nullable in the document for exactly that reason.
+  it('leaves an absent title absent rather than minting a null', async () => {
     const mockFetch = createMockFetch({
-      'POST /api/session': { body: rawNoTitle },
+      'POST /api/session': { body: { ...rawSession, title: undefined } },
     });
     global.fetch = mockFetch;
 
     const session = await createSession({ kilns: ['default'] });
 
-    expect(session.title).toBeNull();
+    expect(session.title).toBeUndefined();
   });
 
   it('throws on non-ok response', async () => {
@@ -214,8 +208,8 @@ describe('listSessions', () => {
     const sessions = await listSessions();
 
     expect(sessions).toHaveLength(1);
-    expect(sessions[0].id).toBe('ses-abc');
-    expect(sessions[0].session_type).toBe('chat');
+    expect(sessions[0].session_id).toBe('ses-abc');
+    expect(sessions[0].type).toBe('chat');
     // Verify URL had no query string
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/session/list');
@@ -255,14 +249,15 @@ describe('getSession', () => {
 
     const session = await getSession('ses-abc');
 
-    expect(session.id).toBe('ses-abc');
-    expect(session.session_type).toBe('chat');
+    expect(session.session_id).toBe('ses-abc');
+    expect(session.type).toBe('chat');
   });
 
-  // Regression: session.get returns the NESTED agent shape (`agent.model`) with
-  // no top-level `agent_model` — unlike session.list. mapSession must read the
-  // nested model or getSession()'s model is silently null against the real daemon.
-  it('maps model/mode from the nested agent object (session.get shape)', async () => {
+  // `session.get` answers the NESTED agent record (`agent.model`, `agent.mode`)
+  // and no top-level `agent_model` — unlike `session.list`. The row carries
+  // both spellings, so a reader that wants the model of a session it fetched
+  // reads `agent.model`.
+  it('carries the nested agent record session.get answers', async () => {
     const mockFetch = createMockFetch({
       'GET /api/session/ses-get': {
         body: {
@@ -281,8 +276,9 @@ describe('getSession', () => {
 
     const session = await getSession('ses-get');
 
-    expect(session.agent_model).toBe('ollama:mistral');
-    expect(session.agent_mode).toBe('edit');
+    expect(session.agent_model).toBeUndefined();
+    expect(session.agent?.model).toBe('ollama:mistral');
+    expect(session.agent?.mode).toBe('edit');
   });
 });
 
@@ -363,25 +359,6 @@ describe('switchModel', () => {
 });
 
 // =============================================================================
-// saveNote
-// =============================================================================
-
-describe('saveNote', () => {
-  it('sends PUT to /api/notes/{name} with kiln and content in body', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/notes/My%20Note': { body: {} },
-    });
-    global.fetch = mockFetch;
-
-    await saveNote('My Note', 'default', '# Hello\nWorld');
-
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('PUT');
-    expect(JSON.parse(init!.body as string)).toEqual({ kiln: 'default', content: '# Hello\nWorld' });
-  });
-});
-
-// =============================================================================
 // respondToInteraction
 // =============================================================================
 
@@ -418,23 +395,46 @@ describe('respondToInteraction', () => {
 // =============================================================================
 
 describe('searchSessions', () => {
-  it('sends query params and maps raw sessions', async () => {
+  // The route answers MATCHED LINES under `matches`, not a bare array of
+  // sessions. Reading it as sessions is what left every hit untitled: each
+  // field the panel read was undefined.
+  it('reads the matched lines the route answers', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': { body: [rawSession] },
+      'GET /api/sessions/search': {
+        body: { matches: [{ session_id: 'ses-abc', line: 12, context: 'the refactor' }], total: 1 },
+      },
     });
     global.fetch = mockFetch;
 
-    const sessions = await searchSessions('refactor');
+    const found = await searchSessions('refactor');
 
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0].id).toBe('ses-abc');
+    expect(found.matches).toHaveLength(1);
+    expect(found.matches[0].session_id).toBe('ses-abc');
+    expect(found.matches[0].line).toBe(12);
+    expect(found.matches[0].context).toBe('the refactor');
+    expect(found.total).toBe(1);
     const [url] = mockFetch.mock.calls[0];
     expect(url).toContain('q=refactor');
   });
 
+  // An unscoped search searches nothing, and the daemon says so in a sentence
+  // the panel has to be able to show.
+  it('carries the daemon note an unscoped search answers', async () => {
+    global.fetch = createMockFetch({
+      'GET /api/sessions/search': {
+        body: { matches: [], total: 0, note: "Specify 'kilns' to scope the search" },
+      },
+    });
+
+    const found = await searchSessions('refactor');
+
+    expect(found.matches).toEqual([]);
+    expect(found.note).toBe("Specify 'kilns' to scope the search");
+  });
+
   it('appends kiln and limit when provided', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': { body: [] },
+      'GET /api/sessions/search': { body: { matches: [], total: 0 } },
     });
     global.fetch = mockFetch;
 
@@ -449,7 +449,7 @@ describe('searchSessions', () => {
   // all of them — `kiln` repeats rather than one member standing in.
   it('repeats kiln for every kiln in the scope', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/sessions/search': { body: [] },
+      'GET /api/sessions/search': { body: { matches: [], total: 0 } },
     });
     global.fetch = mockFetch;
 
@@ -1086,61 +1086,6 @@ describe('MCP / kilns / notes / search', () => {
     await expect(listNotes('default')).rejects.toThrow('database locked');
   });
 
-  it('getNote fetches and returns the note content', async () => {
-    // GET /api/notes/{name} serializes a ParsedNote: it carries path/title/
-    // tags/links_to/content_hash and does NOT send name/content/updated_at
-    // (see NoteContent doc in types.ts). The fixture mirrors the real payload
-    // so a getNote passthrough/mapping regression can actually surface.
-    const note = {
-      path: '/hello.md',
-      title: 'Hi',
-      tags: [],
-      links_to: [],
-      content_hash: 'sha256:abc',
-    };
-    global.fetch = createMockFetch({
-      'GET /api/notes/Hello': { body: note },
-    });
-    expect(await getNote('Hello', 'default')).toEqual(note);
-  });
-
-  it('searchVectors POSTs vector + optional limit', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/search/vectors': { body: { results: [{ id: 'r1' }] } },
-    });
-    global.fetch = mockFetch;
-    const results = await searchVectors('default', [0.1, 0.2], 5);
-    expect(results).toEqual([{ id: 'r1' }]);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
-      kiln: 'default',
-      vector: [0.1, 0.2],
-      limit: 5,
-    });
-  });
-
-  it('searchVectors omits limit when undefined', async () => {
-    const mockFetch = createMockFetch({
-      'POST /api/search/vectors': { body: { results: [] } },
-    });
-    global.fetch = mockFetch;
-    await searchVectors('default', [0.5]);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
-      kiln: 'default',
-      vector: [0.5],
-    });
-  });
-
-  it('saveNote includes kiln + content in body', async () => {
-    const mockFetch = createMockFetch({
-      'PUT /api/notes/Foo': { body: {} },
-    });
-    global.fetch = mockFetch;
-    await saveNote('Foo', 'kiln1', 'body');
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
-      kiln: 'kiln1',
-      content: 'body',
-    });
-  });
 });
 
 // =============================================================================
@@ -1578,141 +1523,7 @@ describe('subscribeToEvents', () => {
   });
 });
 
-// =============================================================================
-// executeShell — POST + manual SSE parsing over ReadableStream
-// =============================================================================
 
-describe('executeShell', () => {
-  /** Build a Response whose body streams the given text chunks. */
-  function streamResponse(chunks: string[], status = 200): Response {
-    const encoder = new TextEncoder();
-    let i = 0;
-    const stream = new ReadableStream({
-      pull(controller) {
-        if (i < chunks.length) {
-          controller.enqueue(encoder.encode(chunks[i]));
-          i++;
-        } else {
-          controller.close();
-        }
-      },
-    });
-    return new Response(stream, {
-      status,
-      headers: { 'Content-Type': 'text/event-stream' },
-    });
-  }
-
-  it('parses stdout/stderr/exit events and calls onDone', async () => {
-    global.fetch = vi.fn(async () => streamResponse([
-      'data: {"type":"stdout","data":"hello\\n"}\n\n',
-      'data: {"type":"exit","code":0}\n\n',
-    ])) as typeof fetch;
-
-    const events: unknown[] = [];
-    let done = false;
-    executeShell('echo hello', (e) => events.push(e), () => { done = true; });
-
-    // Wait for the stream to fully drain (deterministic, no fixed sleep).
-    await vi.waitFor(() => expect(done).toBe(true));
-
-    expect(events).toEqual([
-      { type: 'stdout', data: 'hello\n' },
-      { type: 'exit', code: 0 },
-    ]);
-    expect(done).toBe(true);
-  });
-
-  it('reports an error event on non-ok HTTP status', async () => {
-    global.fetch = vi.fn(async () => streamResponse([], 500)) as typeof fetch;
-    const events: unknown[] = [];
-    let done = false;
-    executeShell('bad', (e) => events.push(e), () => { done = true; });
-    await vi.waitFor(() => expect(done).toBe(true));
-    expect(events[0]).toMatchObject({ type: 'error' });
-    expect(done).toBe(true);
-  });
-
-  it('ignores malformed SSE data without crashing', async () => {
-    global.fetch = vi.fn(async () => streamResponse([
-      'data: not-valid-json\n\n',
-      'data: {"type":"exit","code":0}\n\n',
-    ])) as typeof fetch;
-    const events: unknown[] = [];
-    executeShell('cmd', (e) => events.push(e));
-    // Only the parseable line came through.
-    await vi.waitFor(() => expect(events).toEqual([{ type: 'exit', code: 0 }]));
-  });
-
-  it('passes cwd and timeout in body when provided', async () => {
-    const mockFetch = vi.fn(async () => streamResponse([])) as ReturnType<typeof vi.fn>;
-    global.fetch = mockFetch as typeof fetch;
-    executeShell('ls', () => {}, undefined, '/tmp', 30);
-    await vi.waitFor(() => expect(mockFetch.mock.calls.length).toBe(1));
-    const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init.body as string)).toEqual({
-      command: 'ls',
-      cwd: '/tmp',
-      timeout_secs: 30,
-    });
-  });
-
-  it('returns an AbortController that cancels the request silently', async () => {
-    let aborted = false;
-    global.fetch = vi.fn((_input, init?: RequestInit) => {
-      return new Promise<Response>((_, reject) => {
-        init?.signal?.addEventListener('abort', () => {
-          aborted = true;
-          reject(new DOMException('aborted', 'AbortError'));
-        });
-      });
-    }) as typeof fetch;
-
-    const events: unknown[] = [];
-    let done = false;
-    const controller = executeShell('sleep 100', (e) => events.push(e), () => { done = true; });
-
-    controller.abort();
-    // Wait for the rejection handler to run (deterministic).
-    await vi.waitFor(() => expect(done).toBe(true));
-
-    expect(aborted).toBe(true);
-    // Abort should NOT emit an error event — it's user-initiated.
-    expect(events).toEqual([]);
-    expect(done).toBe(true);
-  });
-
-  it('reports an error event when the fetch promise rejects', async () => {
-    global.fetch = vi.fn(async () => {
-      throw new TypeError('network unreachable');
-    }) as typeof fetch;
-    const events: unknown[] = [];
-    let done = false;
-    executeShell('cmd', (e) => events.push(e), () => { done = true; });
-    await vi.waitFor(() => expect(done).toBe(true));
-    expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('network unreachable') });
-    expect(done).toBe(true);
-  });
-
-  it('reports an error event when response body is null', async () => {
-    // Exercises the `if (!reader)` branch at api.ts:583-587. Build a Response
-    // whose .body is null (ok status, but no stream).
-    global.fetch = vi.fn(async () => {
-      // The Response constructor with `null` body yields null .body.
-      return new Response(null, { status: 200 });
-    }) as typeof fetch;
-    const events: unknown[] = [];
-    let done = false;
-    executeShell('cmd', (e) => events.push(e), () => { done = true; });
-    await vi.waitFor(() => expect(done).toBe(true));
-    expect(events).toEqual([{ type: 'error', message: 'No response body' }]);
-    expect(done).toBe(true);
-  });
-});
-
-
-// =============================================================================
-// The caller-identity header
 // =============================================================================
 //
 // The server refuses a plugin-route request that names nobody, so a call site

@@ -66,7 +66,7 @@ export function notesToTree(notes: NoteEntry[], kilnAbsRoot: string): FileTreeNo
       name: segments[segments.length - 1],
       isDir: false,
       absPath: noteAbsolutePath(note.path, kilnAbsRoot),
-      modified: toEpoch(note.updated_at),
+      modified: toEpoch(note.updated_at ?? undefined),
     });
   }
 

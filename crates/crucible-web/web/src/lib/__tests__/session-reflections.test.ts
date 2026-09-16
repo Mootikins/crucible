@@ -22,23 +22,23 @@ const session = (over: Partial<Session>): Session =>
 describe('reflectionSessions', () => {
   it('keeps only the sessions a plugin started', () => {
     const list = [
-      session({ id: 'chat', session_type: 'chat' }),
-      session({ id: 'pass', session_type: 'plugin' }),
-      session({ id: 'flow', session_type: 'workflow' }),
+      session({ session_id: 'chat', type: 'chat' }),
+      session({ session_id: 'pass', type: 'plugin' }),
+      session({ session_id: 'flow', type: 'workflow' }),
     ];
-    expect(reflectionSessions(list).map((s) => s.id)).toEqual(['pass']);
+    expect(reflectionSessions(list).map((s) => s.session_id)).toEqual(['pass']);
   });
 
   it('leaves out an archived pass', () => {
-    const list = [session({ id: 'old', session_type: 'plugin', archived: true })];
+    const list = [session({ session_id: 'old', type: 'plugin', archived: true })];
     expect(reflectionSessions(list)).toEqual([]);
   });
 
   it('puts the freshest first', () => {
     const list = [
-      session({ id: 'older', session_type: 'plugin', last_activity: at(60) }),
-      session({ id: 'newer', session_type: 'plugin', last_activity: at(1) }),
+      session({ session_id: 'older', type: 'plugin', last_activity: at(60) }),
+      session({ session_id: 'newer', type: 'plugin', last_activity: at(1) }),
     ];
-    expect(reflectionSessions(list).map((s) => s.id)).toEqual(['newer', 'older']);
+    expect(reflectionSessions(list).map((s) => s.session_id)).toEqual(['newer', 'older']);
   });
 });

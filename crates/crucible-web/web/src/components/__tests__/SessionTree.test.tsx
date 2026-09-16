@@ -4,14 +4,13 @@ import { SessionTree } from '../SessionTree';
 import type { Project, Session } from '@/lib/types';
 
 const session = (over: Partial<Session>): Session => ({
-  id: 'sid',
-  session_type: 'chat',
+  session_id: 'sid',
+  type: 'chat',
   kilns: ['/kilns/main'],
   workspace: '/kilns/main',
   state: 'active',
   title: 'a session',
   agent_model: 'm',
-  agent_mode: null,
   started_at: '2026-07-22T10:00:00Z',
   last_activity: '2026-07-22T10:00:00Z',
   event_count: 0,
@@ -59,9 +58,9 @@ describe('SessionTree', () => {
       project('/other', 'other'),
     ];
     const sessions = [
-      session({ id: 's-main', workspace: '/repo' }),
-      session({ id: 's-wt', workspace: '/repo/tree/feat/x' }),
-      session({ id: 's-none', workspace: '/kilns/main' }), // workspace == kiln → no project
+      session({ session_id: 's-main', workspace: '/repo' }),
+      session({ session_id: 's-wt', workspace: '/repo/tree/feat/x' }),
+      session({ session_id: 's-none', workspace: '/kilns/main' }), // workspace == kiln → no project
     ];
     const { getByTestId, queryByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
@@ -93,9 +92,9 @@ describe('SessionTree', () => {
   it('shows a kiln only on the row whose kiln differs from its siblings', () => {
     const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
     const sessions = [
-      session({ id: 'a', workspace: '/repo', kilns: ['/kilns/docs'] }),
-      session({ id: 'b', workspace: '/repo', kilns: ['/kilns/docs'] }),
-      session({ id: 'odd', workspace: '/repo', kilns: ['/kilns/scratch'] }),
+      session({ session_id: 'a', workspace: '/repo', kilns: ['/kilns/docs'] }),
+      session({ session_id: 'b', workspace: '/repo', kilns: ['/kilns/docs'] }),
+      session({ session_id: 'odd', workspace: '/repo', kilns: ['/kilns/scratch'] }),
     ];
     const { getByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
@@ -107,7 +106,7 @@ describe('SessionTree', () => {
 
   it('collapsing a group hides its rows and persists', () => {
     const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
-    const sessions = [session({ id: 's1', workspace: '/repo' })];
+    const sessions = [session({ session_id: 's1', workspace: '/repo' })];
     const { getByTestId, queryByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
@@ -120,8 +119,8 @@ describe('SessionTree', () => {
   it('orders sessions inside a group by recency, newest first', () => {
     const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
     const sessions = [
-      session({ id: 'old', workspace: '/repo', last_activity: '2026-07-20T10:00:00Z' }),
-      session({ id: 'new', workspace: '/repo', last_activity: '2026-07-22T10:00:00Z' }),
+      session({ session_id: 'old', workspace: '/repo', last_activity: '2026-07-20T10:00:00Z' }),
+      session({ session_id: 'new', workspace: '/repo', last_activity: '2026-07-22T10:00:00Z' }),
     ];
     const { getByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
@@ -135,7 +134,7 @@ describe('SessionTree', () => {
 
   it('gives the whole group row ONE action — toggle', () => {
     const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
-    const sessions = [session({ id: 's1', workspace: '/repo' })];
+    const sessions = [session({ session_id: 's1', workspace: '/repo' })];
     const { getByTestId, getByText } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} />
     ));
@@ -154,7 +153,7 @@ describe('SessionTree', () => {
   // which would claim an attachment the session does not have.
   it('a kiln-less session row carries no kiln name', () => {
     const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
-    const sessions = [session({ id: 'tools-only', kilns: [], workspace: '/repo' })];
+    const sessions = [session({ session_id: 'tools-only', kilns: [], workspace: '/repo' })];
     const kilnName = (p: string) => (p ? p.split('/').pop()! : 'Home kiln');
     const { getByTestId } = render(() => (
       <SessionTree sessions={sessions} projects={projects} {...baseProps} kilnName={kilnName} />
@@ -166,9 +165,9 @@ describe('SessionTree', () => {
 describe('SessionTree — New Session belongs to the project', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
   const sessions = [
-    session({ id: 's-main', workspace: '/repo' }),
-    session({ id: 's-other', workspace: '/other' }),
-    session({ id: 's-loose', workspace: '/kilns/main' }), // no project
+    session({ session_id: 's-main', workspace: '/repo' }),
+    session({ session_id: 's-other', workspace: '/other' }),
+    session({ session_id: 's-loose', workspace: '/kilns/main' }), // no project
   ];
 
   it('offers New Session on each project row, aimed at that project', () => {
@@ -194,8 +193,8 @@ describe('SessionTree — New Session belongs to the project', () => {
     const onNewSession = vi.fn();
     const dupes = [project('/work/api', 'api'), project('/oss/api', 'api')];
     const twice = [
-      session({ id: 's-work', workspace: '/work/api' }),
-      session({ id: 's-oss', workspace: '/oss/api' }),
+      session({ session_id: 's-work', workspace: '/work/api' }),
+      session({ session_id: 's-oss', workspace: '/oss/api' }),
     ];
     const { getByTestId } = render(() => (
       <SessionTree sessions={twice} projects={dupes} {...baseProps} onNewSession={onNewSession} />
@@ -234,8 +233,8 @@ describe('SessionTree — New Session belongs to the project', () => {
 describe('SessionTree — the project row context menu', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
   const sessions = [
-    session({ id: 's-main', workspace: '/repo' }),
-    session({ id: 's-other', workspace: '/other' }),
+    session({ session_id: 's-main', workspace: '/repo' }),
+    session({ session_id: 's-other', workspace: '/other' }),
   ];
 
   // The menu renders through a Portal, so it lives on `document`, not inside
@@ -358,7 +357,7 @@ describe('SessionTree — the project row context menu', () => {
   it('leaves the project-less group to the browser menu', async () => {
     const { getByTestId } = render(() => (
       <SessionTree
-        sessions={[...sessions, session({ id: 's-loose', workspace: '/kilns/main' })]}
+        sessions={[...sessions, session({ session_id: 's-loose', workspace: '/kilns/main' })]}
         projects={projects}
         {...baseProps}
       />
@@ -387,7 +386,7 @@ describe('SessionTree — every registered project is listed', () => {
     project('/other', 'other'),
     project('/third', 'third'),
   ];
-  const sessions = [session({ id: 's-main', workspace: '/repo' })];
+  const sessions = [session({ session_id: 's-main', workspace: '/repo' })];
 
   it('lists a project before it has a session: no chevron, no count, New Session on the row', () => {
     const { getByTestId, queryByTestId } = render(() => (
@@ -433,7 +432,7 @@ describe('SessionTree — every registered project is listed', () => {
   it('keeps the project-less bucket in the main list', () => {
     const { getByTestId } = render(() => (
       <SessionTree
-        sessions={[...sessions, session({ id: 's-loose', workspace: '/kilns/main' })]}
+        sessions={[...sessions, session({ session_id: 's-loose', workspace: '/kilns/main' })]}
         projects={projects}
         {...baseProps}
       />
@@ -446,8 +445,8 @@ describe('SessionTree — every registered project is listed', () => {
 describe('SessionTree — the open session is never hidden', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
   const sessions = [
-    session({ id: 's-main', workspace: '/repo' }),
-    session({ id: 's-other', workspace: '/other' }),
+    session({ session_id: 's-main', workspace: '/repo' }),
+    session({ session_id: 's-other', workspace: '/other' }),
   ];
 
   it('opens a collapsed group that holds the current session', () => {
@@ -476,11 +475,11 @@ describe('SessionTree — the open session is never hidden', () => {
 
 describe('SessionTree — the Inbox above the project tier', () => {
   const projects = [project('/repo', 'crucible'), project('/other', 'other')];
-  const inboxed = session({ id: 's-inbox', workspace: '/repo' });
-  const onlyInbox = session({ id: 's-only-inbox', workspace: '/other' });
+  const inboxed = session({ session_id: 's-inbox', workspace: '/repo' });
+  const onlyInbox = session({ session_id: 's-only-inbox', workspace: '/other' });
   const sessions = [
     inboxed,
-    session({ id: 's-tree', workspace: '/repo', last_activity: '2026-07-21T10:00:00Z' }),
+    session({ session_id: 's-tree', workspace: '/repo', last_activity: '2026-07-21T10:00:00Z' }),
     onlyInbox,
   ];
   const draw = (over: Record<string, unknown> = {}) =>
@@ -519,7 +518,7 @@ describe('SessionTree — the Inbox above the project tier', () => {
   });
 
   it('hides the project-less group once every session in it is in the Inbox', () => {
-    const loose = session({ id: 's-loose', workspace: '/scratch/chat-1' });
+    const loose = session({ session_id: 's-loose', workspace: '/scratch/chat-1' });
     const { queryByText } = render(() => (
       <SessionTree sessions={[loose]} projects={projects} inbox={[loose]} {...baseProps} />
     ));
@@ -527,7 +526,7 @@ describe('SessionTree — the Inbox above the project tier', () => {
   });
 
   it('keeps the project-less group while a session is left under it to unfold', () => {
-    const loose = session({ id: 's-loose', workspace: '/scratch/chat-1' });
+    const loose = session({ session_id: 's-loose', workspace: '/scratch/chat-1' });
     const { getByText } = render(() => (
       <SessionTree sessions={[loose]} projects={projects} inbox={[]} {...baseProps} />
     ));

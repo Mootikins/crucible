@@ -16,10 +16,10 @@ import type { Session } from '@/lib/types';
  */
 export function reflectionSessions(sessions: readonly Session[]): Session[] {
   return sessions
-    .filter((s) => !s.archived && s.session_type === 'plugin')
+    .filter((s) => !s.archived && s.type === 'plugin')
     .sort(
       (a, b) =>
-        (Date.parse(b.last_activity ?? b.started_at) || 0) -
-        (Date.parse(a.last_activity ?? a.started_at) || 0),
+        (Date.parse(b.last_activity ?? b.started_at ?? '') || 0) -
+        (Date.parse(a.last_activity ?? a.started_at ?? '') || 0),
     );
 }

@@ -105,14 +105,13 @@ function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
 }
 
 const session = (id = 's1'): Session => ({
-  id,
-  session_type: 'chat',
+  session_id: id,
+  type: 'chat',
   kilns: ['/repo'],
   workspace: '/repo',
   state: 'active',
   title: null,
   agent_model: null,
-  agent_mode: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
 });

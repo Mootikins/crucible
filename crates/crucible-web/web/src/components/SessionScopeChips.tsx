@@ -80,7 +80,7 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
     const ws = workspace();
     if (!ws) return 'Session folder';
     const base = pathBasename(ws);
-    const id = session()?.id;
+    const id = session()?.session_id;
     if (!base || (id && base === id)) return 'Session folder';
     return base;
   };
@@ -159,9 +159,9 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
     const s = session();
     if (!s) return;
     if (s.kilns.includes(name)) {
-      void mutate(() => disconnect.mutateAsync({ id: s.id, kiln: name }));
+      void mutate(() => disconnect.mutateAsync({ id: s.session_id, kiln: name }));
     } else {
-      void mutate(() => connect.mutateAsync({ id: s.id, kiln: name }));
+      void mutate(() => connect.mutateAsync({ id: s.session_id, kiln: name }));
     }
   };
 

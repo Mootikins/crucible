@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
-import type { Surface, SurfaceChangedEvent } from '@/lib/api';
+import type { Surface, SurfaceChangedEvent, SurfaceRow } from '@/lib/api';
 import { installSurfaceEventRoute } from '@/lib/query/routes/surfaces';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
@@ -64,7 +64,7 @@ describe('SurfacesPanel', () => {
   it('draws the declared rows and their detail', async () => {
     served = [
       surface([
-        { id: 's1', text: 'crucible', mark: 'busy' },
+        { id: 's1', text: 'crucible', mark: 'busy', detail: null },
         { id: 's2', text: 'web-fix', detail: 'waiting', mark: 'blocked' },
       ]),
     ];
@@ -82,8 +82,8 @@ describe('SurfacesPanel', () => {
   it('colours a row from its declared mark', async () => {
     served = [
       surface([
-        { id: 'a', text: 'busy row', mark: 'busy' },
-        { id: 'b', text: 'failed row', mark: 'failed' },
+        { id: 'a', text: 'busy row', mark: 'busy', detail: null },
+        { id: 'b', text: 'failed row', mark: 'failed', detail: null },
       ]),
     ];
 
@@ -96,7 +96,14 @@ describe('SurfacesPanel', () => {
   // A mark this build has no colour for must say nothing, rather than assert
   // that something is wrong.
   it('renders an unknown mark as blank rather than a placeholder', async () => {
-    served = [surface([{ id: 'a', text: 'odd row', mark: 'sideways' }])];
+    // `SurfaceMarkRow` is a closed enum in the document, so this value can
+    // only reach a browser from a daemon this build does not know. The cast
+    // says that out loud; the assertion is that the panel degrades.
+    served = [
+      surface([
+        { id: 'a', text: 'odd row', detail: null, mark: 'sideways' as SurfaceRow['mark'] },
+      ]),
+    ];
 
     const { container, getByText } = render(() => <SurfacesPanel />);
 
@@ -108,12 +115,12 @@ describe('SurfacesPanel', () => {
   // The event carries a version and no rows, so the only correct response is to
   // ask again. If this regressed, a browser panel would show stale rows forever.
   it('refetches when a surface changes', async () => {
-    served = [surface([{ id: 'a', text: 'first' }])];
+    served = [surface([{ id: 'a', text: 'first', detail: null, mark: null }])];
     const { getByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('first')).toBeTruthy());
     expect(fetches()).toBe(1);
 
-    served = [surface([{ id: 'b', text: 'second' }], { version: 2 })];
+    served = [surface([{ id: 'b', text: 'second', detail: null, mark: null }], { version: 2 })];
     (await stream()).emit('surface_changed', changed());
 
     await waitFor(() => expect(getByText('second')).toBeTruthy());
@@ -124,7 +131,7 @@ describe('SurfacesPanel', () => {
   // so the panel goes without asking: there is no content left to fetch, and a
   // refetch would spend a round trip to be told what the event already said.
   it('drops a withdrawn surface without refetching', async () => {
-    served = [surface([{ id: 'a', text: 'crucible' }])];
+    served = [surface([{ id: 'a', text: 'crucible', detail: null, mark: null }])];
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
     expect(fetches()).toBe(1);
@@ -140,8 +147,8 @@ describe('SurfacesPanel', () => {
   // plugin's panel. That panel must keep its rows.
   it('leaves another plugin panel drawn when one is withdrawn', async () => {
     served = [
-      surface([{ id: 'a', text: 'crucible' }]),
-      surface([{ id: 'b', text: 'review queue' }], { name: 'reviews', title: 'Reviews' }),
+      surface([{ id: 'a', text: 'crucible', detail: null, mark: null }]),
+      surface([{ id: 'b', text: 'review queue', detail: null, mark: null }], { name: 'reviews', title: 'Reviews' }),
     ];
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
@@ -157,8 +164,8 @@ describe('SurfacesPanel', () => {
   // names one of them, and the other one's panel must survive it.
   it('keeps a second plugin surface of the same name', async () => {
     served = [
-      surface([{ id: 'a', text: 'crucible' }]),
-      surface([{ id: 'b', text: 'other plugin' }], { plugin: 'q', title: 'Sessions (q)' }),
+      surface([{ id: 'a', text: 'crucible', detail: null, mark: null }]),
+      surface([{ id: 'b', text: 'other plugin', detail: null, mark: null }], { plugin: 'q', title: 'Sessions (q)' }),
     ];
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('crucible')).toBeTruthy());
@@ -175,8 +182,8 @@ describe('SurfacesPanel', () => {
   // steal the panel back from whatever the user had selected.
   it('forgets a selection that named the withdrawn surface', async () => {
     served = [
-      surface([{ id: 'a', text: 'crucible' }]),
-      surface([{ id: 'b', text: 'review queue' }], { name: 'reviews', title: 'Reviews' }),
+      surface([{ id: 'a', text: 'crucible', detail: null, mark: null }]),
+      surface([{ id: 'b', text: 'review queue', detail: null, mark: null }], { name: 'reviews', title: 'Reviews' }),
     ];
     const { getByText, queryByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('Reviews')).toBeTruthy());
@@ -191,8 +198,8 @@ describe('SurfacesPanel', () => {
     // The plugin comes back with the same name. The panel must stay where the
     // browser put it, not jump to a stale selection.
     served = [
-      surface([{ id: 'a', text: 'crucible' }]),
-      surface([{ id: 'c', text: 'new review' }], { name: 'reviews', title: 'Reviews' }),
+      surface([{ id: 'a', text: 'crucible', detail: null, mark: null }]),
+      surface([{ id: 'c', text: 'new review', detail: null, mark: null }], { name: 'reviews', title: 'Reviews' }),
     ];
     source.emit('surface_changed', changed({ name: 'reviews' }));
 
@@ -223,7 +230,7 @@ describe('SurfacesPanel', () => {
   // rather than a new roster. That sharing is the point of the migration, and
   // it is what the previous single case quietly relied on not happening.
   it('offers no chooser for a single surface', async () => {
-    served = [surface([{ id: 'a', text: 'one' }])];
+    served = [surface([{ id: 'a', text: 'one', detail: null, mark: null }])];
     const { container, getByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('one')).toBeTruthy());
     expect(container.querySelectorAll('button').length).toBe(0);
@@ -231,8 +238,8 @@ describe('SurfacesPanel', () => {
 
   it('offers one chooser button per surface when there is more than one', async () => {
     served = [
-      surface([{ id: 'a', text: 'one' }]),
-      surface([{ id: 'b', text: 'two' }], { name: 'reviews', title: 'Reviews' }),
+      surface([{ id: 'a', text: 'one', detail: null, mark: null }]),
+      surface([{ id: 'b', text: 'two', detail: null, mark: null }], { name: 'reviews', title: 'Reviews' }),
     ];
     const { container, getByText } = render(() => <SurfacesPanel />);
     await waitFor(() => expect(getByText('Reviews')).toBeTruthy());
@@ -245,7 +252,7 @@ describe('SurfacesPanel', () => {
 // whatever the count of panels on screen.
 describe('the shared surface stream', () => {
   beforeEach(() => {
-    served = [surface([{ id: 'a', text: 'crucible' }])];
+    served = [surface([{ id: 'a', text: 'crucible', detail: null, mark: null }])];
   });
 
   it('opens one EventSource for two panels', async () => {

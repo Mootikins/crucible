@@ -17,13 +17,10 @@
  * cost the agent a duplicate tool description every turn.
  */
 import { request } from './api';
-import type {
-  CommentAuthor,
-  ComposedHunk,
-  ReviewComment,
-  ReviewScope,
-  ReviewState,
-} from './review-types';
+import type { components } from './api-schema';
+import type { ReviewScope, ReviewState } from './review-types';
+
+type Schemas = components['schemas'];
 
 /** Path prefix, matching the `session` route group's `modes`/`mode`/`status`. */
 const base = (sessionId: string) => `/api/session/${encodeURIComponent(sessionId)}/review`;
@@ -41,40 +38,24 @@ function jsonBody(body: unknown): { headers: Record<string, string>; body: strin
   };
 }
 
-/** A root whose attribution the daemon can no longer vouch for. */
-export interface DegradedRoot {
-  root: string;
-  /** Why. `null`/absent is intact; the string is shown to the user verbatim. */
-  degraded?: string | null;
-}
+/** A root whose attribution the daemon can no longer vouch for. `degraded` is
+ * null when the root is intact; the string is shown to the user verbatim. */
+export type DegradedRoot = Schemas['ReviewRootRow'];
 
-/** One journal record the daemon could not read back. */
-export interface IntegritySkip {
-  record: { kind: 'session' } | { kind: 'root'; root: string } | { kind: 'informational' };
-  /** 1-based line in `review.jsonl`. */
-  line: number;
-  reason: string;
-}
+/** One journal record the daemon could not read back. `line` is 1-based in
+ * `review.jsonl`. */
+export type IntegritySkip = Schemas['ReviewSkipRow'];
 
 /**
  * The list response.
  *
- * `degraded`, `integrity` and `gate` are optional because the daemon grows
- * them on its own schedule and the bridge forwards the object untyped — a key
- * this file has not heard of must not break the panel.
+ * `scope` is the scope the daemon answered under — a store that switched scope
+ * while this listing was in flight uses it to drop the stale answer. `gate` is
+ * non-null only while a turn is parked on the review gate, and carries the
+ * tool and the path and nothing else: a gate that is present IS a blocked
+ * turn, so a separate `blocked` flag said the same thing twice.
  */
-export interface ReviewHunksResponse {
-  session_id?: string;
-  /** The scope the daemon answered under. A store that switched scope while
-   * this listing was in flight uses it to drop the stale answer. */
-  scope?: ReviewScope;
-  hunks: ComposedHunk[];
-  comments: ReviewComment[];
-  degraded?: DegradedRoot[];
-  integrity?: { skips: IntegritySkip[] };
-  /** Present and non-null only while a turn is parked on the review gate. */
-  gate?: { blocked: boolean; tool: string; path: string | null } | null;
-}
+export type ReviewHunksResponse = Schemas['ReviewHunksResponse'];
 
 /**
  * The composed diff under one scope. Always named on the wire, so the answer
@@ -95,7 +76,7 @@ export function setHunkState(
   sessionId: string,
   hunkId: string,
   state: ReviewState,
-): Promise<{ hunk_id: string; state: ReviewState }> {
+): Promise<Schemas['ReviewStateResponse']> {
   return request('POST', `${base(sessionId)}/state`, {
     errorMessage: 'Failed to record review decision',
     includeErrorText: true,
@@ -111,11 +92,7 @@ export function setHunkState(
  * for each. The caller shows `failed` and keeps the rest, rather than
  * re-listing to learn which was which.
  */
-export interface BulkOutcome {
-  session_id?: string;
-  applied: string[];
-  failed: { hunk_id: string; reason: string }[];
-}
+export type BulkOutcome = Schemas['ReviewUndoRejectResponse'];
 
 /**
  * One decision over several hunks, as ONE daemon call.
@@ -127,7 +104,7 @@ export function setHunkStates(
   sessionId: string,
   hunkIds: string[],
   state: ReviewState,
-): Promise<BulkOutcome & { state: ReviewState }> {
+): Promise<Schemas['ReviewStatesResponse']> {
   return request('POST', `${base(sessionId)}/states`, {
     errorMessage: 'Failed to record review decision',
     includeErrorText: true,
@@ -142,7 +119,7 @@ export function setHunkStates(
  * pops it. An empty stack answers two empty lists. The `{}` body is the same
  * preflight rule as `rebaseReview` and `resolveReviewComment`.
  */
-export function undoReject(sessionId: string): Promise<BulkOutcome> {
+export function undoReject(sessionId: string): Promise<Schemas['ReviewUndoRejectResponse']> {
   return request('POST', `${base(sessionId)}/undo-reject`, {
     errorMessage: 'Failed to undo the reject',
     includeErrorText: true,
@@ -151,7 +128,7 @@ export function undoReject(sessionId: string): Promise<BulkOutcome> {
 }
 
 /** The release for a degraded root; nothing else clears one. */
-export function rebaseReview(sessionId: string): Promise<{ roots: DegradedRoot[] }> {
+export function rebaseReview(sessionId: string): Promise<Schemas['ReviewRebaseResponse']> {
   return request('POST', `${base(sessionId)}/rebase`, {
     errorMessage: 'Failed to rebase review',
     includeErrorText: true,
@@ -159,22 +136,19 @@ export function rebaseReview(sessionId: string): Promise<{ roots: DegradedRoot[]
   });
 }
 
-export interface NewComment {
-  /** Absolute, or relative to the session's single tracked root. */
-  path: string;
-  /** 1-based. */
-  line_start: number;
-  /** 1-based, exclusive. Defaults server-side to `line_start + 1`. */
-  line_end?: number;
-  body: string;
-  root?: string;
-  author?: CommentAuthor;
-}
+/**
+ * A comment to add.
+ *
+ * `line_start` is 1-based and `line_end` is 1-based exclusive, defaulting
+ * server-side to `line_start + 1`. `path` is absolute, or relative to the
+ * session's single tracked root.
+ */
+export type NewComment = Schemas['CommentRequest'];
 
 export function addReviewComment(
   sessionId: string,
   comment: NewComment,
-): Promise<{ comment: ReviewComment }> {
+): Promise<Schemas['ReviewCommentResponse']> {
   return request('POST', `${base(sessionId)}/comment`, {
     errorMessage: 'Failed to comment',
     includeErrorText: true,
@@ -189,7 +163,7 @@ export function addReviewComment(
 export function resolveReviewComment(
   sessionId: string,
   commentId: string,
-): Promise<{ comment_id: string }> {
+): Promise<Schemas['ReviewResolveCommentResponse']> {
   return request('POST', `${base(sessionId)}/comment/${encodeURIComponent(commentId)}/resolve`, {
     errorMessage: 'Failed to resolve comment',
     includeErrorText: true,

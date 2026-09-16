@@ -28,14 +28,13 @@ const LIST = 'GET /api/session/list';
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
-    id,
-    session_type: 'chat',
+    session_id: id,
+    type: 'chat',
     kilns: ['main'],
     workspace: '/repos/app',
     state: 'active',
     title: `Session ${id}`,
     agent_model: 'openai/gpt-4o',
-    agent_mode: null,
     started_at: '2026-09-15T00:00:00Z',
     last_activity: null,
     event_count: 0,
@@ -45,33 +44,13 @@ function session(id: string, over: Partial<Session> = {}): Session {
 }
 
 /**
- * One session as the daemon sends it.
+ * What the daemon's list route answers.
  *
- * The route answers the daemon's field names — `session_id`, `type`, the
- * nested `agent` — and `lib/api.ts` maps them. A test that answered the
- * mapped shape would prove the cache holds what the test put in it, not what
- * the daemon said.
+ * The rows go on the wire unchanged: `Session` IS `SessionRow` now, so there
+ * is no second spelling for a fixture to convert between.
  */
-function wire(row: Session): Record<string, unknown> {
-  return {
-    session_id: row.id,
-    type: row.session_type,
-    kilns: row.kilns,
-    workspace: row.workspace,
-    state: row.state,
-    title: row.title,
-    agent_model: row.agent_model,
-    agent: row.agent_mode === null ? null : { mode: row.agent_mode },
-    started_at: row.started_at,
-    last_activity: row.last_activity ?? null,
-    event_count: row.event_count,
-    archived: row.archived,
-  };
-}
-
-/** What the daemon's list route answers. */
-function listReply(rows: Session[]): { sessions: Record<string, unknown>[]; total: number } {
-  return { sessions: rows.map(wire), total: rows.length };
+function listReply(rows: Session[]): { sessions: Session[]; total: number } {
+  return { sessions: rows, total: rows.length };
 }
 
 /** True when the request asked for the archived rows too. */
@@ -309,7 +288,7 @@ describe('useCreateSession', () => {
       'POST /api/session': async (request) => {
         sent = await request.json();
         rows = [created, existing];
-        return wire(created);
+        return created;
       },
     });
 
@@ -409,7 +388,7 @@ describe('useExportSession', () => {
 describe('useSession and fetchSessionOnce', () => {
   it('read one session, and answer the second caller from the cache', async () => {
     const row = session('s-1');
-    env = createTestQueryEnv({ 'GET /api/session/s-1': () => wire(row) });
+    env = createTestQueryEnv({ 'GET /api/session/s-1': () => row });
 
     const query = inRoot(() => useSession(() => 's-1'));
 
@@ -419,7 +398,7 @@ describe('useSession and fetchSessionOnce', () => {
   });
 
   it('asks for nothing until there is a session to ask about', async () => {
-    env = createTestQueryEnv({ 'GET /api/session/s-1': () => wire(session('s-1')) });
+    env = createTestQueryEnv({ 'GET /api/session/s-1': () => session('s-1') });
 
     const query = inRoot(() => useSession(() => null));
 

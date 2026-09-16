@@ -16,7 +16,7 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   getSessionHistory: async () => ({ session_id: 's1', history, total_events: history.length }),
   getSession: async () => ({
     id: 's1', session_type: 'chat', title: 'T', state: 'active', kiln: '/k', workspace: '/w',
-    agent_model: null, agent_mode: null, started_at: '', event_count: 0, archived: false,
+    agent_model: null, started_at: '', event_count: 0, archived: false,
   }),
 }));
 

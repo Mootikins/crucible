@@ -1,3 +1,4 @@
+import type { components } from './api-schema';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import { notificationActions } from '@/stores/notificationStore';
 import type {
@@ -8,7 +9,6 @@ import type {
   Project,
   FileEntry,
   NoteEntry,
-  NoteContent,
   BacklinksResponse,
   ProviderInfo,
   KilnListEntry,
@@ -19,24 +19,35 @@ import type {
   AgentConfigOptions,
 } from './types';
 
-export interface Config {
-  kiln_path: string;
-  /** Server allows non-loopback terminal/shell (opt-in env + API key). */
-  remote_shell?: boolean;
-  /** The daemon's effective config, whole. Shapes come from the daemon. */
-  config?: Record<string, unknown>;
-  /** Where `init.lua` and `settings.json` live, when the daemon booted from a file. */
-  config_root?: string | null;
-  /** One row per recorded leaf, so a control can render its source. */
-  origins?: ConfigOrigin[];
-  /** The declared control tree the settings UI renders. */
-  controls?: AppConfigControls;
-}
+/**
+ * Wire shapes below are aliases into the generated contract
+ * (`api-schema.d.ts`, written from `openapi.json`, written from the axum
+ * router). A shape the document cannot describe — a plugin's own vocabulary,
+ * or a value the browser assembles — keeps its hand-written form and says so.
+ */
+type Schemas = components['schemas'];
+
+/**
+ * What `GET /api/config` answers.
+ *
+ * Two of its fields are open objects on the wire, so the generated type says
+ * only "an object" for them. `config` is the daemon's effective config and
+ * `controls` is the control tree Lua declares; both are the daemon's
+ * vocabulary, and a fixed shape in Rust would make this layer a second owner
+ * of them. The narrowing below is the browser's READING of those two objects,
+ * not a second contract — everything else comes from the document, including
+ * `origins`, which the route does declare.
+ */
+export type Config = Omit<Schemas['ConfigResponse'], 'config' | 'controls'> & {
+  config: Record<string, unknown>;
+  controls: AppConfigControls;
+};
 
 /**
  * What the app config offers a settings UI: the controls, and the leaves that
  * take none.
  *
+ * Hand-written, because `ConfigResponse.controls` is `serde_json::Value`.
  * `options` is the SAME node shape a plugin's tree uses, which is the point —
  * one renderer draws both. `read_only` is the app config's own half: a leaf
  * with no control still shows, with the reason it has none.
@@ -64,46 +75,22 @@ export interface AppConfigNode extends Omit<PluginOptionNode, 'args' | 'values'>
   args?: AppConfigNode[];
 }
 
-/** Where one config leaf came from, as `config.origin` reports it. */
-export interface ConfigOrigin {
-  /** Dot-joined leaf path, e.g. `chat.model`. */
-  key: string;
-  value: unknown;
-  /**
-   * One word, and the complete set: `default`, `plugin`, `settings`, `toml`,
-   * `lua`, `registered`, `cli`, `rpc`.
-   *
-   * This is `ConfigSource::short` in `crucible-core`, NOT the serde variant
-   * name. The two are now proved equal by
-   * `every_variant_serialises_as_the_word_short_names_it`, but they were not:
-   * this comment said `plugin_default`, which is what that variant spelled
-   * itself on the `config.effective` wire, while the word arriving in THIS
-   * field was always `plugin`.
-   */
-  source: string;
-  /** The file the source names, when it names one. */
-  file?: string;
-  /** The line inside `file`, when the source recorded one. */
-  line?: number;
-  /**
-   * Whether a save of this leaf would be refused.
-   *
-   * The daemon's answer, never re-derived here from `source`: which layers pin
-   * IS the refusal rule, and a copy of it in the browser would go wrong the
-   * moment a layer is added.
-   */
-  pinned?: boolean;
-}
+/**
+ * Where one config leaf came from, as `config.origin` reports it.
+ *
+ * `source` is one word, and the complete set: `default`, `plugin`, `settings`,
+ * `toml`, `lua`, `registered`, `cli`, `rpc`. That is `ConfigSource::short` in
+ * `crucible-core`, NOT the serde variant name. `pinned` is the daemon's answer
+ * to "would a save of this leaf be refused", never re-derived here from
+ * `source`: which layers pin IS the refusal rule, and a copy of it in the
+ * browser would go wrong the moment a layer is added.
+ */
+export type ConfigOrigin = Schemas['ConfigOriginRow'];
 
-/** What one save did: the leaves that landed, and the leaves that could not. */
-export interface ConfigSaveResult {
-  /** False when anything was refused or withheld. */
-  ok: boolean;
-  /** Leaves a higher layer holds, each naming the file and line that holds it. */
-  refused: ConfigOrigin[];
-  /** Keys naming where the daemon acts; those are changed in the config file. */
-  rejected: string[];
-}
+/** What one save did: the leaves that landed, and the leaves that could not.
+ * `ok` is false when anything was refused or withheld; `refused` names the
+ * file and line of the higher layer that holds each leaf. */
+export type ConfigSaveResult = Schemas['ConfigSaveReply'];
 
 /**
  * What plugins published about themselves, as `key -> plugin -> value`.
@@ -112,11 +99,14 @@ export interface ConfigSaveResult {
  * kind added later needs no change in this file — a plugin states what it
  * offers and clients render it.
  */
-export type PluginPublications = Record<string, Record<string, unknown>>;
+export type PluginPublications = Schemas['PluginPublicationsResponse']['publications'];
 
 
 /**
  * A plugin that provides session targets on one of the two axes.
+ *
+ * Hand-written: providers arrive as the RESULT of a plugin command, which the
+ * daemon forwards without parsing, so no route declares this shape.
  *
  * **workspace** answers *where do the files live?* — a worktree, a checkout on
  * another machine. **runtime** answers *where does the process run?* — a
@@ -144,7 +134,8 @@ export interface TargetProvider {
   resolve_command?: string;
 }
 
-/** One target a provider offered. */
+/** One target a provider offered. Hand-written for the same reason as
+ * `TargetProvider`: a plugin command answers it, not a route. */
 export interface ProviderTarget {
   value: string;
   label: string;
@@ -175,12 +166,15 @@ export interface ProviderTarget {
 /**
  * One node of a plugin's settings tree.
  *
- * A projection of the plugin's Lua declaration, and deliberately shallow: the
- * renderer switches on `type` and reads `name`/`desc`, and knows nothing about
- * any particular option. `type` stays a plain string for the same reason
- * `level` does on a status slot — the moment this becomes a union, a plugin
- * declaring a widget kind added later renders as nothing instead of
- * degrading to a sensible default.
+ * Hand-written: `PluginOptionsResponse.options` is an open map on the wire,
+ * because the tree is a projection of a plugin's Lua declaration and the
+ * daemon does not model it.
+ *
+ * Deliberately shallow: the renderer switches on `type` and reads
+ * `name`/`desc`, and knows nothing about any particular option. `type` stays a
+ * plain string for the same reason `level` does on a status slot — the moment
+ * this becomes a union, a plugin declaring a widget kind added later renders
+ * as nothing instead of degrading to a sensible default.
  *
  * `args` is present on groups. `values` on a select, already ordered by the
  * daemon. `writable` is false when no `set` is inherited, so a read-only
@@ -213,13 +207,9 @@ export type PluginOptions = Record<string, PluginOptionNode>;
  * plugin needs a frontend change to be visible at all, which is the thing this
  * channel exists to avoid.
  */
-export interface SessionStatusSlot {
-  key: string;
-  plugin: string;
-  text: string;
-  level: string;
-}
+export type SessionStatusSlot = Schemas['SessionStatusSlot'];
 
+/** Client-only: how `request()` spells a verb. No route declares it. */
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 // =============================================================================
@@ -499,21 +489,16 @@ export async function sendChatMessage(
 }
 
 /**
- * Subscribe to SSE events for a session.
- * Returns a cleanup function that closes the EventSource.
+ * The SSE `event:` names `subscribeToEvents` installs a listener for.
  *
- * Call this BEFORE sending a message so no events are missed.
- * Automatically reconnects on disconnect with exponential backoff.
- */
-/**
- * The set of SSE event types the daemon emits and the frontend listens for.
- * Exported so tests can assert this list stays in sync with the reducer's
- * switch (in `chatEventReducer.ts`). When a new ChatEvent variant is added,
- * append it here and the reducer test will catch missing reducer handling.
+ * `satisfies` binds the tuple to the generated `ChatEvent` union, so a name
+ * that is not a variant fails to compile. `MissingSseEventType` below closes
+ * the other direction: a variant added in Rust and not listed here makes
+ * `_SSE_EVENT_TYPES_ARE_COMPLETE` unassignable, which is the check the old
+ * "append it here" comment asked a human to perform.
  *
- * A Rust test now holds the other half of that contract:
- * `every_sse_event_name_is_in_the_document` compares this list against the
- * `ChatEvent` schema in the generated OpenAPI document, in both directions.
+ * `connection` is absent on purpose: the client mints it, the daemon never
+ * sends it, so there is no server event to listen for.
  */
 export const SSE_EVENT_TYPES = [
   'token',
@@ -538,8 +523,23 @@ export const SSE_EVENT_TYPES = [
   'precognition_result',
   'mode_changed',
   'title_changed',
-] as const;
+] as const satisfies readonly Schemas['ChatEvent']['type'][];
 
+/** Every daemon event name the tuple above forgot. Empty, or the build stops. */
+type MissingSseEventType = Exclude<
+  Schemas['ChatEvent']['type'],
+  (typeof SSE_EVENT_TYPES)[number]
+>;
+const _SSE_EVENT_TYPES_ARE_COMPLETE: [MissingSseEventType] extends [never] ? true : never = true;
+void _SSE_EVENT_TYPES_ARE_COMPLETE;
+
+/**
+ * Subscribe to SSE events for a session.
+ * Returns a cleanup function that closes the EventSource.
+ *
+ * Call this BEFORE sending a message so no events are missed.
+ * Automatically reconnects on disconnect with exponential backoff.
+ */
 export function subscribeToEvents(
   sessionId: string,
   onEvent: (event: ChatEvent) => void,
@@ -619,11 +619,17 @@ export function subscribeToEvents(
 /**
  * Respond to an interaction request from the agent.
  */
-export interface PendingInteractionEntry {
-  session_id: string;
-  request_id: string;
+/**
+ * One correlated request waiting for an answer.
+ *
+ * `request` is an open object on the wire — the web route forwards the daemon's
+ * body untouched — so the generated type knows none of its fields. It is
+ * narrowed here to the union `crucible-core` actually serializes, which is what
+ * every renderer switches on.
+ */
+export type PendingInteractionEntry = Omit<Schemas['PendingInteraction'], 'request'> & {
   request: import('./types').InteractionRequest;
-}
+};
 
 /**
  * Aggregate pending interactions across all sessions (Inbox poll).
@@ -679,34 +685,21 @@ export async function saveConfig(values: Record<string, unknown>): Promise<Confi
 }
 
 
-/** One executable primitive a plugin declared, and the arguments it takes. */
-export interface PluginCommand {
-  plugin: string;
-  name: string;
-  description?: string;
-  hint?: string;
-  /**
-   * The declared parameters, as the JSON Schema `signature.rs` emits.
-   *
-   * Read it with `commandFields` in `@/lib/command-form`, which turns it into
-   * the controls a dialog draws. It stays `unknown` here because the schema is
-   * open-ended and this file hand-writes its types with no codegen behind
-   * them — narrowing happens once, in the reader, rather than by a cast here.
-   */
-  parameters?: unknown;
-  /**
-   * Whether running this changes state a user could lose: `'read'` or
-   * `'write'`.
-   *
-   * **Declared by the plugin and verified by nothing.** Present it as a claim
-   * the plugin makes — a `read` badge that reads as a guarantee teaches a user
-   * to trust a promise nothing keeps. A command that declares nothing arrives
-   * as `'write'`, because an undeclared command is unknown and unknown must
-   * cost a question rather than a file. See
-   * `crates/crucible-lua/src/command_effect.rs`.
-   */
-  effect?: 'read' | 'write';
-}
+/**
+ * One executable primitive a plugin declared, and the arguments it takes.
+ *
+ * `parameters` is the JSON Schema `signature.rs` emits, and stays `unknown`:
+ * read it with `commandFields` in `@/lib/command-form`, which turns it into the
+ * controls a dialog draws.
+ *
+ * `effect` — `read` or `write` — is **declared by the plugin and verified by
+ * nothing.** Present it as a claim the plugin makes; a `read` badge that reads
+ * as a guarantee teaches a user to trust a promise nothing keeps. A command
+ * that declares nothing arrives as `write`, because an undeclared command is
+ * unknown and unknown must cost a question rather than a file. See
+ * `crates/crucible-lua/src/command_effect.rs`.
+ */
+export type PluginCommand = Schemas['PluginCommandRow'];
 
 /**
  * Every command loaded plugins declared.
@@ -926,57 +919,15 @@ export async function resolveWorkspaceTarget(spec: string, workspace?: string): 
 // Session Endpoints
 // =============================================================================
 
-interface RawSession {
-  session_id: string;
-  type: Session['session_type'];
-  kilns?: string[];
-  /** `null` when the session has no workspace; absent in older payloads. */
-  workspace?: string | null;
-  state: Session['state'];
-  title: string | null;
-  // Two endpoint shapes: session.list sends a flattened top-level `agent_model`;
-  // session.get sends the nested `agent` object (model/mode live inside it) and
-  // NO top-level agent_model. mapSession reads both so getSession()'s model
-  // isn't silently null.
-  agent_model?: string | null;
-  agent?: { model?: string | null; mode?: string | null } | null;
-  started_at: string;
-  last_activity?: string | null;
-  event_count?: number;
-  archived?: boolean;
-}
-
-function mapSession(raw: RawSession): Session {
-  return {
-    id: raw.session_id,
-    session_type: raw.type,
-    kilns: raw.kilns ?? [],
-    workspace: raw.workspace ?? null,
-    state: raw.state,
-    // `?? null`, because a session nobody has named yet comes back from the
-    // create route with no title at all, while every other route sends the
-    // null. One shape either way: a pane that compares the two must not read
-    // an absent title as a change.
-    title: raw.title ?? null,
-    agent_model: raw.agent_model ?? raw.agent?.model ?? null,
-    agent_mode: raw.agent?.mode ?? null,
-    started_at: raw.started_at,
-    last_activity: raw.last_activity ?? null,
-    event_count: raw.event_count ?? 0,
-    archived: raw.archived ?? false,
-  };
-}
 
 export async function createSession(params: CreateSessionParams): Promise<Session> {
-  return mapSession(
-    await request<RawSession>('POST', '/api/session', {
-      errorMessage: 'Failed to create session',
-      // The daemon's reason rides the error; `SessionContext.createSession`
-      // is the one that toasts it, so no `notify` here or it shows twice.
-      includeErrorText: true,
-      ...jsonRequest(params),
-    }),
-  );
+  return request<Session>('POST', '/api/session', {
+    errorMessage: 'Failed to create session',
+    // The daemon's reason rides the error; `SessionContext.createSession`
+    // is the one that toasts it, so no `notify` here or it shows twice.
+    includeErrorText: true,
+    ...jsonRequest(params),
+  });
 }
 
 /** List sessions with optional filters. */
@@ -1012,50 +963,74 @@ export async function listSessions(filters?: {
   const qs = params.toString();
   const url = qs ? `/api/session/list?${qs}` : '/api/session/list';
 
-  const data = await request<{ sessions: RawSession[]; total: number }>('GET', url, {
+  const data = await request<Schemas['SessionListResponse']>('GET', url, {
     errorMessage: 'Failed to list sessions',
   });
-  return expectList(data.sessions, 'sessions', 'Failed to list sessions').map(mapSession);
+  return expectList(data.sessions, 'sessions', 'Failed to list sessions');
 }
+
+/**
+ * What `GET /api/sessions/search` answers.
+ *
+ * `matches` holds transcript LINES, not sessions: the daemon answers the line
+ * it matched on, and a caller that wants the session reads `session_id` and
+ * asks for it. `note` carries the daemon's sentence when the search was
+ * unscoped and therefore searched nothing.
+ */
+export type SessionSearchResponse = Schemas['SessionSearchResponse'];
 
 /**
  * Search sessions by title/content.
  *
+ * Answers MATCHED LINES, not sessions. This call used to declare an array of
+ * sessions and map it through `mapSession`, so every field it read was
+ * `undefined` and a hit rendered as an untitled row with no date.
+ *
  * `kilns` is the scope, and the scope rule is kiln-set *overlap* — a result
  * needs to share at least one kiln with it. Pass the caller's whole set, not
- * one member: a member stands only for the sessions that share that member.
+ * one member: a member stands only for the sessions that share that member. An
+ * unscoped search matches nothing and says so in `note`.
  */
 export async function searchSessions(
   query: string,
   kilns?: string | string[],
   limit?: number,
-): Promise<Session[]> {
+): Promise<SessionSearchResponse> {
   const params = new URLSearchParams({ q: query });
   for (const kiln of typeof kilns === 'string' ? [kilns] : kilns ?? []) {
     if (kiln) params.append('kiln', kiln);
   }
   if (limit !== undefined) params.set('limit', limit.toString());
 
-  const data = await request<RawSession[]>('GET', `/api/sessions/search?${params.toString()}`, {
-    errorMessage: 'Failed to search sessions',
-  });
-  // A BARE array here, not a field on an object. Same failure either way.
-  return expectList(data, 'results', 'Failed to search sessions').map(mapSession);
+  const data = await request<SessionSearchResponse>(
+    'GET',
+    `/api/sessions/search?${params.toString()}`,
+    { errorMessage: 'Failed to search sessions' },
+  );
+  return {
+    ...data,
+    matches: expectList(data.matches, 'matches', 'Failed to search sessions'),
+  };
 }
 
 export async function getSession(id: string): Promise<Session> {
-  return mapSession(
-    await request<RawSession>('GET', `/api/session/${encodeURIComponent(id)}`, {
-      errorMessage: 'Failed to get session',
-    }),
-  );
+  return request<Session>('GET', `/api/session/${encodeURIComponent(id)}`, {
+    errorMessage: 'Failed to get session',
+  });
 }
 
 // =============================================================================
 // Content Search (ripgrep) — POST /api/search/grep
 // =============================================================================
 
-/** One matched line. `matchStart`/`matchEnd` are char offsets into `text`. */
+/**
+ * One matched line, in the panel's own camelCase.
+ *
+ * Client-only: `grepSearch` maps the wire's `GrepHit` (snake_case, with
+ * `rel_path`/`match_start`/`match_end`) onto this. The mapping is the reason
+ * the type is hand-written — the panel reads one spelling and the document
+ * keeps the other.
+ */
 export interface GrepHit {
   path: string;
   relPath: string;
@@ -1069,14 +1044,6 @@ export interface GrepResponse {
   truncated: boolean;
 }
 
-interface RawGrepHit {
-  path: string;
-  rel_path: string;
-  line: number;
-  text: string;
-  match_start: number;
-  match_end: number;
-}
 
 /**
  * Ripgrep content search over an absolute `root` (must be inside a registered
@@ -1088,7 +1055,7 @@ export async function grepSearch(
   query: string,
   opts?: { glob?: string; limit?: number; caseInsensitive?: boolean },
 ): Promise<GrepResponse> {
-  const data = await request<{ hits: RawGrepHit[]; truncated: boolean }>(
+  const data = await request<Schemas['GrepSearchResponse']>(
     'POST',
     '/api/search/grep',
     {
@@ -1128,12 +1095,6 @@ export interface SemanticHit {
   score: number;
 }
 
-interface RawSemanticHit {
-  path: string;
-  rel_path: string;
-  document_id: string;
-  score: number;
-}
 
 /**
  * Semantic (vector) search over a kiln's processed notes: the daemon embeds
@@ -1146,7 +1107,7 @@ export async function semanticSearch(
   query: string,
   limit = 20,
 ): Promise<SemanticHit[]> {
-  const data = await request<{ results: RawSemanticHit[] }>('POST', '/api/search/semantic', {
+  const data = await request<Schemas['SemanticSearchResponse']>('POST', '/api/search/semantic', {
     errorMessage: 'Semantic search failed',
     ...jsonRequest({ kiln, query, limit }),
   });
@@ -1317,28 +1278,21 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
   });
 }
 
-/** Raw daemon event from session.jsonl (SessionEventMessage format). */
-interface DaemonHistoryEvent {
-  /** Always "event" for persisted events. */
-  type: string;
-  session_id: string;
-  /** Event kind: "user_message", "message_complete", "text_delta", "thinking", "tool_call", etc. */
-  event: string;
-  data: {
-    content?: string;
-    full_response?: string;
-    message_id?: string;
-    [key: string]: unknown;
-  };
-  timestamp?: string;
-  seq?: number;
-}
+/**
+ * One recorded daemon event from `session.jsonl`.
+ *
+ * `data` is `unknown` on the wire: the payload differs per `event`, the daemon
+ * owns the vocabulary, and a reader narrows what it needs.
+ */
+export type DaemonHistoryEvent = Schemas['SessionHistoryEvent'];
 
-export interface SessionHistoryResponse {
-  session_id: string;
-  history: DaemonHistoryEvent[];
-  total_events: number;
-}
+/**
+ * What `GET /api/session/{id}/history` answers.
+ *
+ * It carries the session's `type`, `state` and `kilns` beside the events, so a
+ * resume does not need a second `session.get` to learn what it resumed.
+ */
+export type SessionHistoryResponse = Schemas['SessionHistoryResponse'];
 
 export async function getSessionHistory(
   sessionId: string,
@@ -1368,13 +1322,9 @@ export async function listProviders(): Promise<ProviderInfo[]> {
   return expectList(data.providers, 'providers', 'Failed to list providers');
 }
 
-/** Session scope echoed by kiln/workspace mutations. */
-export interface SessionScope {
-  session_id: string;
-  kilns: string[];
-  /** `null` when the session has no workspace — see `sessionWorkspace()`. */
-  workspace: string | null;
-}
+/** Session scope echoed by kiln mutations. `workspace` is `null` when the
+ * session has none — see `sessionWorkspace()`. */
+export type SessionScope = Schemas['SessionScopeResponse'];
 
 /** Attach a kiln to the session's kiln set. Idempotent. */
 export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
@@ -1397,17 +1347,6 @@ export async function disconnectSessionKiln(
   );
 }
 
-/** Set (string) or detach (null) the session's workspace. */
-export async function setSessionWorkspace(
-  sessionId: string,
-  workspace: string | null,
-): Promise<SessionScope> {
-  return request<SessionScope>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/workspace`,
-    { errorMessage: 'Failed to update workspace', ...jsonRequest({ workspace }) },
-  );
-}
 
 /** List ACP agent profiles with probed availability. */
 export async function listAgents(): Promise<AgentProfileEntry[]> {
@@ -1511,10 +1450,7 @@ export async function exportSession(sessionId: string): Promise<string> {
 // Slash Command Execution
 // =============================================================================
 
-export interface CommandResult {
-  result: string;
-  type: string;
-}
+export type CommandResult = Schemas['CommandResponse'];
 
 /** Execute a slash command in a session. */
 export async function executeCommand(sessionId: string, command: string): Promise<CommandResult> {
@@ -1524,12 +1460,9 @@ export async function executeCommand(sessionId: string, command: string): Promis
   });
 }
 
-export interface SlashCommand {
-  name: string;
-  /** Argument placeholder, empty for nullary commands. */
-  args: string;
-  description: string;
-}
+/** One completable slash command. `args` is the argument placeholder, empty
+ * for nullary commands. */
+export type SlashCommand = Schemas['SlashCommand'];
 
 /**
  * The slash commands the composer can complete.
@@ -1547,96 +1480,6 @@ export async function listSlashCommands(): Promise<SlashCommand[]> {
 }
 
 // =============================================================================
-// Shell Execution Endpoints
-// =============================================================================
-
-export interface ShellEvent {
-  type: 'stdout' | 'stderr' | 'exit' | 'error';
-  data?: string;
-  code?: number;
-  message?: string;
-}
-
-/**
- * Execute a shell command and stream SSE events.
- * Uses fetch + ReadableStream since POST SSE can't use EventSource (GET-only).
- * Returns an AbortController to cancel the request.
- */
-export function executeShell(
-  command: string,
-  onEvent: (event: ShellEvent) => void,
-  onDone?: () => void,
-  cwd?: string,
-  timeoutSecs?: number,
-): AbortController {
-  const controller = new AbortController();
-
-  const body: Record<string, unknown> = { command };
-  if (cwd) body.cwd = cwd;
-  if (timeoutSecs !== undefined) body.timeout_secs = timeoutSecs;
-
-  fetch('/api/shell/exec', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        onEvent({ type: 'error', message: `HTTP ${res.status}: ${res.statusText}` });
-        onDone?.();
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        onEvent({ type: 'error', message: 'No response body' });
-        onDone?.();
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Parse SSE lines: "data: {...}\n\n"
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith(':')) continue;
-          if (trimmed.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(trimmed.slice(6)) as ShellEvent;
-              onEvent(parsed);
-            } catch {
-              // Ignore malformed SSE data
-            }
-          }
-        }
-      }
-
-      onDone?.();
-    })
-    .catch((err) => {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        // User cancelled — not an error
-        onDone?.();
-        return;
-      }
-      onEvent({ type: 'error', message: String(err) });
-      onDone?.();
-    });
-
-  return controller;
-}
-// =============================================================================
 // Plugin Endpoints
 // =============================================================================
 
@@ -1647,43 +1490,24 @@ export function executeShell(
  * carries provenance (source), lifecycle state, capability counts, and
  * an absolute `dir`.
  */
-/** One row of a plugin surface. The mark is declared; the client picks the glyph. */
-export interface SurfaceRow {
-  id: string;
-  text: string;
-  detail?: string | null;
-  /** `busy` | `blocked` | `ok` | `failed`, or null. Unknown values render blank. */
-  mark?: string | null;
-}
+/** One row of a plugin surface. The mark is declared; the client picks the
+ * glyph. An unknown mark renders blank. */
+export type SurfaceRow = Schemas['SurfaceLineRow'];
 
-/** A panel a plugin declared, as the daemon reports it. */
-export interface Surface {
-  plugin: string;
-  name: string;
-  title: string;
-  /** Only `list` today. A shape arrives with its renderer, never before it. */
-  shape: string;
-  session?: string | null;
-  version: number;
-  rows: SurfaceRow[];
-}
+/** A panel a plugin declared, as the daemon reports it. `shape` is `list`
+ * today — a shape arrives with its renderer, never before it. */
+export type Surface = Schemas['SurfaceRow'];
 
-/** A surface changed: identity and version, never the rows. */
-export interface SurfaceChangedEvent {
-  plugin: string;
-  name: string;
-  version: number;
-  session?: string | null;
-  /**
-   * The surface is gone: drop it, and do not refetch.
-   *
-   * The daemon sets this when it drops the entry, and omits the field
-   * otherwise — so absent means present. This is the one change that is
-   * actionable on its own: every other event withholds the rows so the browser
-   * has to ask, and a withdrawal has nothing left to ask for.
-   */
-  withdrawn?: boolean;
-}
+/**
+ * A surface changed: identity and version, never the rows.
+ *
+ * `withdrawn` says the surface is gone: drop it, and do not refetch. The daemon
+ * sets it when it drops the entry and omits the field otherwise, so absent
+ * means present. This is the one change that is actionable on its own — every
+ * other event withholds the rows so the browser has to ask, and a withdrawal
+ * has nothing left to ask for.
+ */
+export type SurfaceChangedEvent = Schemas['SurfaceChangedEvent'];
 
 /**
  * Every surface a plugin declared (`GET /api/surfaces`).
@@ -1745,30 +1569,17 @@ export function subscribeToSurfaceEvents(
   };
 }
 
-export interface PluginInfo {
-  name: string;
-  /** Null when the plugin has no `spec.luau`: the version is declared in its fragment. */
-  version: string | null;
-  source: 'User' | 'Runtime' | 'EnvPath' | 'Builtin' | string;
-  state: 'Active' | 'Error' | 'Disabled' | string;
-  /** Why the plugin is not Active. Null for healthy plugins. */
-  last_error?: string | null;
-  dir: string;
-  tools: number;
-  commands: number;
-  handlers: number;
-  services: number;
-}
+/**
+ * Rich plugin metadata from `GET /api/plugins`.
+ *
+ * `version` is null when the plugin has no `spec.luau`: the version is declared
+ * in its fragment. `last_error` says why a plugin is not Active, and is null
+ * for a healthy one.
+ */
+export type PluginInfo = Schemas['PluginRow'];
 
 /** Plugin reload response (counts of reloaded capabilities). */
-export interface PluginReloadResult {
-  name: string;
-  reloaded: boolean;
-  tools: number;
-  commands: number;
-  handlers: number;
-  services: number;
-}
+export type PluginReloadResult = Schemas['PluginReloadResponse'];
 
 /** List discovered plugins with rich metadata. */
 export async function getPlugins(): Promise<PluginInfo[]> {
@@ -1786,25 +1597,17 @@ export async function reloadPlugin(name: string): Promise<PluginReloadResult> {
   );
 }
 
-export interface InstallPluginParams {
-  url: string;
-  branch?: string;
-  pin?: string;
-}
+export type InstallPluginParams = Schemas['InstallRequest'];
 
-export interface InstallPluginResult {
-  name: string;
-  outcome: { kind: 'cloned'; dest: string } | { kind: 'already_present' } | { kind: 'disabled' };
-  plugins_toml: string;
-  installed: boolean;
-  // Whether the plugin actually activated on the running daemon. "Installed"
-  // must not read as success while the plugin sits broken in the daemon.
-  loaded: boolean;
-  tools: number;
-  commands: number;
-  services: number;
-  error: string | null;
-}
+/**
+ * What an install did.
+ *
+ * `manifest` is the path of the file the install wrote — the field is NOT
+ * `plugins_toml`, which is what this file used to call it. `loaded` says
+ * whether the plugin actually activated on the running daemon: "installed"
+ * must not read as success while the plugin sits broken.
+ */
+export type InstallPluginResult = Schemas['PluginInstallResponse'];
 
 /**
  * Install a plugin by URL. Synchronous — can take 10+ seconds for a
@@ -1817,16 +1620,15 @@ export async function installPlugin(params: InstallPluginParams): Promise<Instal
   });
 }
 
-export interface RemovePluginResult {
-  name: string;
-  plugins_toml: string;
-  purged_dir: string | null;
-  // The TOML removal succeeded but deleting the directory failed.
-  purge_error: string | null;
-  // Removed without purge: the directory remains and loads again on the
-  // next daemon restart or plugin install.
-  kept_dir: string | null;
-}
+/**
+ * What a remove did.
+ *
+ * `purge_error` is set when the manifest removal succeeded but deleting the
+ * directory failed. `kept_dir` is set when the plugin was removed without a
+ * purge: the directory remains and loads again on the next daemon restart or
+ * plugin install.
+ */
+export type RemovePluginResult = Schemas['PluginRemoveResponse'];
 
 /** Remove a plugin by name. If `purge`, the cloned directory is also deleted. */
 export async function removePlugin(name: string, purge = false): Promise<RemovePluginResult> {
@@ -1844,22 +1646,9 @@ export async function removePlugin(name: string, purge = false): Promise<RemoveP
 // Skills Endpoints
 // =============================================================================
 
-export interface SkillSummary {
-  name: string;
-  scope: string;
-  description: string;
-  shadowed_count: number;
-}
+export type SkillSummary = Schemas['SkillSummary'];
 
-export interface SkillDetail {
-  name: string;
-  scope: string;
-  description: string;
-  source_path: string;
-  agent?: string | null;
-  license?: string | null;
-  body: string;
-}
+export type SkillDetail = Schemas['SkillDetail'];
 
 /** List skills discovered for a kiln, optionally filtered by scope. */
 export async function listSkills(kiln: string, scope?: string): Promise<SkillSummary[]> {
@@ -1900,8 +1689,17 @@ export async function searchSkills(
 // =============================================================================
 
 /** Get MCP server status. */
-export async function getMcpStatus(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>('GET', '/api/mcp/status', {
+/**
+ * Whether the kiln's MCP server runs, and how to reach it.
+ *
+ * A two-arm union, not one open record: a stopped server answers `running`
+ * alone, and only a running one names its transport, its port and its kiln.
+ * Narrow on `running` before reading the rest.
+ */
+export type McpStatus = Schemas['McpStatus'];
+
+export async function getMcpStatus(): Promise<McpStatus> {
+  return request<McpStatus>('GET', '/api/mcp/status', {
     errorMessage: 'Failed to get MCP status',
   });
 }
@@ -1952,13 +1750,6 @@ export async function resolveNotePath(
   });
 }
 
-export async function getNote(name: string, kiln: string): Promise<NoteContent> {
-  const params = new URLSearchParams({ kiln });
-  return request<NoteContent>('GET', `/api/notes/${encodeURIComponent(name)}?${params.toString()}`, {
-    errorMessage: 'Failed to get note',
-    includeErrorText: true,
-  });
-}
 
 /**
  * Linked + unlinked mentions for a note. `note` accepts a note name or
@@ -1972,31 +1763,6 @@ export async function getBacklinks(kiln: string, note: string): Promise<Backlink
   });
 }
 
-export async function saveNote(name: string, kiln: string, content: string): Promise<void> {
-  await request<void>('PUT', `/api/notes/${encodeURIComponent(name)}`, {
-    errorMessage: 'Failed to save note',
-    parseAs: 'none',
-    includeErrorText: true,
-    ...jsonRequest({ kiln, content }),
-  });
-}
-
-/** Perform a vector search. */
-export async function searchVectors(
-  kiln: string,
-  vector: number[],
-  limit?: number,
-): Promise<unknown[]> {
-  const body: Record<string, unknown> = { kiln, vector };
-  if (limit !== undefined) body.limit = limit;
-
-  return (
-    await request<{ results: unknown[] }>('POST', '/api/search/vectors', {
-      errorMessage: 'Failed to search vectors',
-      ...jsonRequest(body),
-    })
-  ).results;
-}
 
 // =============================================================================
 // Project Endpoints
@@ -2030,10 +1796,7 @@ export async function listProjects(): Promise<Project[]> {
 
 
 
-export interface ScmCloneResponse {
-  path: string;
-  project: Project;
-}
+export type ScmCloneResponse = Schemas['ScmCloneResponse'];
 
 /** True when the add-project input reads as a REMOTE git repo rather than a
  * local path: https/ssh URLs and `owner/repo` GitHub shorthand. */
@@ -2137,13 +1900,7 @@ export async function saveFileContent(path: string, content: string): Promise<vo
  * without diffing anything again. This is the only shape the browser has for a
  * conflict; there is no second definition of it here.
  */
-export interface MergeRegion {
-  start_line: number;
-  end_line: number;
-  base: string;
-  ours: string;
-  theirs: string;
-}
+export type MergeRegion = Schemas['MergeRegion'];
 
 /**
  * What a guarded save answers.
@@ -2225,31 +1982,25 @@ export async function saveFileIfUnchanged(
   return { ok: true, content_hash: body.content_hash ?? '' };
 }
 
-/** One anchored edit: replace `expect` with `replace`, matched whole-line. */
-export interface AnchoredEdit {
-  expect: string;
-  replace: string;
-  /** Which match, when `expect` appears more than once. Zero-based. */
-  occurrence?: number;
-}
+/** One anchored edit: replace `expect` with `replace`, matched whole-line.
+ * `occurrence` picks which match, zero-based, when `expect` appears twice. */
+export type AnchoredEdit = Schemas['AnchoredEdit'];
 
-/** Why one edit could not be applied. `index` is the caller's edit index. */
-interface EditRefusal {
-  reason: string;
-  index: number;
-  matches?: number;
-  other?: number;
-}
-
-export interface PatchRefused {
+/**
+ * What a refused patch answers.
+ *
+ * `failed` names why each edit could not be applied, and which arm carries
+ * `matches` or `other`. It is empty when the base alone refused the batch: no
+ * anchor was read.
+ * `stale_base` says the file moved on since `base_hash`, which makes the daemon
+ * refuse before it reads an anchor, even one that still applies.
+ */
+export type PatchRefused = Extract<Schemas['FileWriteConflict'], { failed: unknown }> & {
+  /** The route's `ok` is a `bool` field it only ever sets false, so the union
+   * above cannot discriminate on it. Pinning it here is what lets a caller
+   * write `if (!answer.ok)`. */
   ok: false;
-  /** Empty when the base alone refused the batch: no anchor was read. */
-  failed: EditRefusal[];
-  current_hash: string;
-  /** The file moved on since `base_hash` was read. The daemon refuses the
-   * batch before it reads an anchor, even one that still applies. */
-  stale_base: boolean;
-}
+};
 
 /**
  * Change a note's LINES, or change nothing.
@@ -2365,15 +2116,9 @@ export async function resetLayout(): Promise<void> {
 // Recently Opened Files (server-side, stored next to the layout blob)
 // =============================================================================
 
-interface RawRecent {
-  abs_path: string;
-  name: string;
-  opened_at: number;
-}
-
 /** Server-persisted recents, newest first. */
 export async function fetchRecents(): Promise<{ absPath: string; name: string }[]> {
-  const raw = await request<{ recents: RawRecent[] }>('GET', '/api/recents', {
+  const raw = await request<Schemas['RecentsResponse']>('GET', '/api/recents', {
     errorMessage: 'Failed to load recents',
   });
   return raw.recents.map((r) => ({ absPath: r.abs_path, name: r.name }));
@@ -2425,14 +2170,14 @@ export async function listDir(
   });
 }
 
-/** Outcome of a move: kiln `.md` moves carry the wikilink-rewrite report. */
-export interface FsMoveOutcome {
-  moved: boolean;
-  /** Sources whose inbound links were rewritten (kiln .md moves only). */
-  rewritten_sources?: string[];
-  /** Inbound links intentionally left untouched (ambiguous / stale). */
-  skipped?: { source_path: string; raw_target: string; reason: string }[];
-}
+/**
+ * Outcome of a move: kiln `.md` moves carry the wikilink-rewrite report.
+ *
+ * `rewritten_sources` names the sources whose inbound links were rewritten;
+ * `skipped` names the inbound links intentionally left untouched (ambiguous or
+ * stale).
+ */
+export type FsMoveOutcome = Schemas['FsMoveReply'];
 
 /**
  * Move/rename a file or directory within one root (daemon `fs.move` — the

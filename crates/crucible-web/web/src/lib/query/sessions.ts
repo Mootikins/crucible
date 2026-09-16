@@ -173,7 +173,7 @@ function cachedRow(client: QueryClient, id: string): Session | undefined {
   for (const includeArchived of [false, true]) {
     const row = client
       .getQueryData<Session[]>(keys.sessions(includeArchived))
-      ?.find((session) => session.id === id);
+      ?.find((session) => session.session_id === id);
     if (row) return row;
   }
   return undefined;
@@ -191,7 +191,7 @@ export function patchCachedSession(id: string, patch: Partial<Session>): void {
   const client = seededClient();
   for (const includeArchived of [false, true]) {
     writeList(client, includeArchived, (held) =>
-      held.map((session) => (session.id === id ? { ...session, ...patch } : session)),
+      held.map((session) => (session.session_id === id ? { ...session, ...patch } : session)),
     );
   }
   client.setQueryData<Session>(keys.session(id), (held) =>
@@ -209,7 +209,7 @@ export function patchCachedSession(id: string, patch: Partial<Session>): void {
 export function dropCachedSession(id: string): void {
   const client = seededClient();
   for (const includeArchived of [false, true]) {
-    writeList(client, includeArchived, (held) => held.filter((session) => session.id !== id));
+    writeList(client, includeArchived, (held) => held.filter((session) => session.session_id !== id));
   }
   client.removeQueries({ queryKey: keys.session(id) });
 }
@@ -226,11 +226,11 @@ function moveBetweenLists(client: QueryClient, id: string, archived: boolean): v
   const row = cachedRow(client, id);
 
   writeList(client, true, (held) =>
-    held.map((session) => (session.id === id ? { ...session, archived } : session)),
+    held.map((session) => (session.session_id === id ? { ...session, archived } : session)),
   );
   writeList(client, false, (held) => {
-    if (archived) return held.filter((session) => session.id !== id);
-    if (!row || held.some((session) => session.id === id)) return held;
+    if (archived) return held.filter((session) => session.session_id !== id);
+    if (!row || held.some((session) => session.session_id === id)) return held;
     return [{ ...row, archived: false }, ...held];
   });
 }
@@ -251,7 +251,7 @@ export function useCreateSession(): UseMutationResult<Session, Error, CreateSess
         for (const includeArchived of [false, true]) {
           writeList(client, includeArchived, (held) => [created, ...held]);
         }
-        client.setQueryData(keys.session(created.id), created);
+        client.setQueryData(keys.session(created.session_id), created);
         return invalidateLists(client);
       },
     }),

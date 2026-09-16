@@ -1,3 +1,4 @@
+import type { SessionSearchResponse } from '@/lib/api';
 import type {
   Session,
   SessionState,
@@ -11,14 +12,13 @@ import type {
  * Matches the Session interface from lib/types.ts
  */
 export const mockSession = {
-  id: 'session-001',
-  session_type: 'chat' as SessionType,
+  session_id: 'session-001',
+  type: 'chat' as SessionType,
   kilns: ['default'],
   workspace: 'workspace-001',
   state: 'active' as SessionState,
   title: 'Test Session',
   agent_model: 'ollama:neural-chat',
-  agent_mode: null,
   started_at: '2026-03-10T10:00:00Z',
   event_count: 42,
 } satisfies Session;
@@ -66,6 +66,7 @@ export const mockNotes: NoteEntry[] = [
     name: 'Getting Started',
     path: '/docs/getting-started.md',
     title: 'Getting Started with Crucible',
+    properties: {},
     tags: ['guide', 'intro'],
     updated_at: '2026-03-09T15:30:00Z',
   },
@@ -73,6 +74,7 @@ export const mockNotes: NoteEntry[] = [
     name: 'Architecture',
     path: '/docs/architecture.md',
     title: 'System Architecture',
+    properties: {},
     tags: ['architecture', 'design'],
     updated_at: '2026-03-08T12:00:00Z',
   },
@@ -80,6 +82,7 @@ export const mockNotes: NoteEntry[] = [
     name: 'API Reference',
     path: '/docs/api-reference.md',
     title: 'API Reference',
+    properties: {},
     tags: ['api', 'reference'],
     updated_at: '2026-03-07T09:45:00Z',
   },
@@ -87,32 +90,15 @@ export const mockNotes: NoteEntry[] = [
 
 /**
  * Mock session search results for testing.
+ *
+ * Matched LINES, not sessions: `GET /api/sessions/search` answers the
+ * transcript line it matched on, and a caller that wants the session reads
+ * `session_id` and asks for it.
  */
-export const mockSearchResults = {
-  sessions: [
-    {
-      id: 'session-001',
-      title: 'Test Session',
-      kilns: ['default'],
-      workspace: 'workspace-001',
-      state: 'active' as SessionState,
-      session_type: 'chat' as SessionType,
-      started_at: '2026-03-10T10:00:00Z',
-      agent_model: 'ollama:neural-chat',
-      agent_mode: null,
-      event_count: 42,
-    },
-    {
-      id: 'session-002',
-      title: 'Another Session',
-      kilns: ['default'],
-      workspace: 'workspace-001',
-      state: 'paused' as SessionState,
-      session_type: 'agent' as SessionType,
-      started_at: '2026-03-09T14:30:00Z',
-      agent_model: 'openai:gpt-4',
-      agent_mode: null,
-      event_count: 28,
-    },
+export const mockSearchResults: SessionSearchResponse = {
+  matches: [
+    { session_id: 'session-001', line: 12, context: 'the refactor landed' },
+    { session_id: 'session-002', line: 0, context: 'Another Session' },
   ],
+  total: 2,
 };

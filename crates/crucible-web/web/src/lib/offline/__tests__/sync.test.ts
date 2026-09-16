@@ -276,7 +276,8 @@ describe('editNote', () => {
     expect(out).toEqual({
       queued: false,
       ok: false,
-      failed: [{ reason: 'the line is not in the queued text', index: 0 }],
+      // The daemon's own word for it: the anchor is not in the text.
+      failed: [{ reason: 'not_found', index: 0 }],
       current_hash: '',
       stale_base: false,
     });

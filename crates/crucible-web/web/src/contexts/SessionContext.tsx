@@ -87,7 +87,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // hand-written generation counter that used to guard this read is gone: a
   // late answer lands on the key of the session that asked for it, so it can
   // no longer overwrite the list of the session the user moved to.
-  const modelsQuery = useSessionModels(() => currentSession()?.id ?? null);
+  const modelsQuery = useSessionModels(() => currentSession()?.session_id ?? null);
   /**
    * The models the picker offers.
    *
@@ -133,7 +133,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // archived sessions, and pruning against it would forget their pins.
   createEffect(() => {
     const list = sessionsQuery.data;
-    if (list && includeArchived()) treeRootActions.prune(list.map((s) => s.id));
+    if (list && includeArchived()) treeRootActions.prune(list.map((s) => s.session_id));
   });
 
   /**
@@ -156,7 +156,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const patchSessionById = (sessionId: string, patch: Partial<Session>): void => {
     patchCachedSession(sessionId, patch);
     const current = currentSession();
-    if (current?.id === sessionId) setCurrentSession({ ...current, ...patch });
+    if (current?.session_id === sessionId) setCurrentSession({ ...current, ...patch });
   };
 
   // Kiln/workspace mutations echo the updated scope; fold it into the cache
@@ -209,7 +209,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         // resolution rather than parsing "provider_key/model" strings here.
         if (opts?.model) {
           try {
-            await switching.mutateAsync({ id: created.id, modelId: opts.model });
+            await switching.mutateAsync({ id: created.session_id, modelId: opts.model });
             created.agent_model = opts.model;
           } catch (err) {
             notificationActions.addNotification(
@@ -223,10 +223,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         // Must be staged BEFORE open-session mounts the ChatProvider that
         // consumes it (lazy creation: draft surface → first message).
         if (opts?.initialMessage) {
-          setPendingFirstMessage(created.id, opts.initialMessage);
+          setPendingFirstMessage(created.session_id, opts.initialMessage);
         }
         window.dispatchEvent(new CustomEvent('crucible:open-session', {
-          detail: { sessionId: created.id, title: created.title || 'New Session' },
+          detail: { sessionId: created.session_id, title: created.title || 'New Session' },
         }));
         // Non-blocking: the model list is picker chrome — don't hold the
         // draft surface (and the first message) hostage to a models.list RPC.
@@ -256,7 +256,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
    * so it must not re-dispatch, or a restored tab would try to open itself.
    */
   const adoptSession = async (id: string) => {
-    if (currentSession()?.id === id) return;
+    if (currentSession()?.session_id === id) return;
     try {
       // A read, through the same key the pane's own bootstrap reads, so a
       // restored pane and this context ask the daemon once between them. The
@@ -284,9 +284,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   });
 
   const selectSession = async (id: string) => {
-    const existing = sessions().find((s) => s.id === id);
+    const existing = sessions().find((s) => s.session_id === id);
     if (existing) {
-      if (!(await fetchSessionOnce(existing.id).then(() => true).catch(() => false))) {
+      if (!(await fetchSessionOnce(existing.session_id).then(() => true).catch(() => false))) {
         // The row can come from the last-known localStorage seed — the daemon
         // may have deleted the session since. The daemon reads a stored
         // session too, so a failed read means it is really gone: drop the dead
@@ -356,7 +356,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await pause.mutateAsync(session.id);
+      await pause.mutateAsync(session.session_id);
       updateCurrentSessionState('paused');
     }, {
       errorMessage: 'Failed to pause session',
@@ -369,7 +369,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await resume.mutateAsync(session.id);
+      await resume.mutateAsync(session.session_id);
       updateCurrentSessionState('active');
     }, {
       errorMessage: 'Failed to resume session',
@@ -382,7 +382,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await end.mutateAsync(session.id);
+      await end.mutateAsync(session.session_id);
       setCurrentSession(null);
     }, {
       errorMessage: 'Failed to end session',
@@ -394,7 +394,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const closeTabFor = (sessionId: string) => {
     const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
     if (openTab) tabHost().remove(openTab.id);
-    if (currentSession()?.id === sessionId) setCurrentSession(null);
+    if (currentSession()?.session_id === sessionId) setCurrentSession(null);
   };
 
   const deleteSession = async (sessionId: string) => {
@@ -436,7 +436,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return false;
 
     try {
-      return await cancel.mutateAsync(session.id);
+      return await cancel.mutateAsync(session.session_id);
     } catch (err) {
       console.error('Failed to cancel operation:', err);
       return false;
@@ -453,7 +453,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
    * showed the same sentence twice.
    */
   const refreshModels = async (_sessionOverride?: Session) => {
-    if (!currentSession()?.id) return;
+    if (!currentSession()?.session_id) return;
     await modelsQuery.refetch();
   };
 
@@ -462,11 +462,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await switching.mutateAsync({ id: session.id, modelId });
+      await switching.mutateAsync({ id: session.session_id, modelId });
       // The cached rows are patched by the mutation; this is the selection's
       // own copy of the same field.
       const current = currentSession();
-      if (current?.id === session.id) setCurrentSession({ ...current, agent_model: modelId });
+      if (current?.session_id === session.session_id) setCurrentSession({ ...current, agent_model: modelId });
     }, {
       errorMessage: 'Failed to switch model',
       logPrefix: 'Failed to switch model',
@@ -478,7 +478,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await rename.mutateAsync({ id: session.id, title });
+      await rename.mutateAsync({ id: session.session_id, title });
       setCurrentSession({ ...session, title });
     }, {
       errorMessage: 'Failed to set session title',

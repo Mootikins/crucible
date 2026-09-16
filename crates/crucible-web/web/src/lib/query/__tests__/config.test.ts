@@ -14,8 +14,17 @@ import {
 /** The storage key `swrLocal('config')` wrote, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:config';
 
-const LIVE: Config = { kiln_path: '/kilns/live' };
-const STORED: Config = { kiln_path: '/kilns/stored' };
+/** Every field `GET /api/config` declares; the route sends them all. */
+const config = (kilnPath: string): Config => ({
+  kiln_path: kilnPath,
+  remote_shell: false,
+  config: {},
+  origins: [],
+  controls: { options: { type: 'group' }, read_only: [] },
+});
+
+const LIVE: Config = config('/kilns/live');
+const STORED: Config = config('/kilns/stored');
 
 /** What one save answers when the daemon holds every leaf it was given. */
 const SAVED = { ok: true, refused: [], rejected: [] };
@@ -108,7 +117,7 @@ describe('useSaveConfig', () => {
       'GET /api/config': () => answer,
       'POST /api/config': async (request) => {
         sent = await request.json();
-        answer = { kiln_path: '/kilns/saved' };
+        answer = config('/kilns/saved');
         return SAVED;
       },
     });
@@ -121,7 +130,7 @@ describe('useSaveConfig', () => {
     await both.save.mutateAsync({ ui: { theme: 'light' } });
 
     expect(sent).toEqual({ values: { ui: { theme: 'light' } } });
-    await vi.waitFor(() => expect(both.query.data).toEqual({ kiln_path: '/kilns/saved' }));
+    await vi.waitFor(() => expect(both.query.data).toEqual(config('/kilns/saved')));
     expect(env.fetch.calls('GET /api/config')).toBe(2);
   });
 

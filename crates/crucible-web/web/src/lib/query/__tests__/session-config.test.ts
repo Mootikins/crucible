@@ -24,16 +24,23 @@ const STRATEGY = 'GET /api/session/s-1/config/context-strategy';
 const SET_STRATEGY = 'PUT /api/session/s-1/config/context-strategy';
 const STATUS = 'GET /api/session/s-1/status';
 
+/**
+ * One advertised agent option.
+ *
+ * `kind` and `current` are one tagged pair on the wire: a toggle carries a
+ * boolean and no choices, a select carries a string and its choices. Building
+ * them separately is what the contract refuses.
+ */
 function option(id: string, current: string | boolean): AgentConfigOption {
-  return {
-    id,
-    name: id,
-    description: null,
-    category: null,
-    kind: typeof current === 'boolean' ? 'toggle' : 'select',
-    current,
-    choices: [{ value: 'low', name: 'low' }, { value: 'high', name: 'high' }],
-  };
+  const head = { id, name: id, description: null, category: null };
+  return typeof current === 'boolean'
+    ? { ...head, kind: 'toggle', current }
+    : {
+        ...head,
+        kind: 'select',
+        current,
+        choices: [{ value: 'low', name: 'low' }, { value: 'high', name: 'high' }],
+      };
 }
 
 let env: TestQueryEnv;

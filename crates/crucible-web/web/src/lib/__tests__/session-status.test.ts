@@ -10,22 +10,22 @@ describe('sessionStatus', () => {
   });
 
   it('reads a session nothing is happening in as idle', () => {
-    expect(sessionStatus({ id: 's1' })).toBe('idle');
+    expect(sessionStatus({ session_id: 's1' })).toBe('idle');
   });
 
   it('reads a streaming session as working', () => {
     attentionActions.report('s1', { isStreaming: true });
-    expect(sessionStatus({ id: 's1' })).toBe('working');
+    expect(sessionStatus({ session_id: 's1' })).toBe('working');
   });
 
   it('reads a blocked session as waiting', () => {
     attentionActions.report('s1', { pendingInteraction: ASK });
-    expect(sessionStatus({ id: 's1' })).toBe('waiting');
+    expect(sessionStatus({ session_id: 's1' })).toBe('waiting');
   });
 
   it('calls a session that streams AND blocks waiting — the human is the blocker', () => {
     attentionActions.report('s1', { isStreaming: true, pendingInteraction: ASK });
-    expect(sessionStatus({ id: 's1' })).toBe('waiting');
+    expect(sessionStatus({ session_id: 's1' })).toBe('waiting');
   });
 });
 

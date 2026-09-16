@@ -12,9 +12,9 @@ const kilnCollection = () =>
   makeFileCollection(
     notesToTree(
       [
-        { name: 'Systems.md', path: 'Meta/Systems.md', title: null, tags: [], updated_at: '' },
-        { name: 'Roadmap.md', path: 'Meta/Roadmap.md', title: null, tags: [], updated_at: '' },
-        { name: 'README.md', path: 'README.md', title: null, tags: [], updated_at: '' },
+        { name: 'Systems.md', path: 'Meta/Systems.md', title: null, tags: [], updated_at: '', properties: {} },
+        { name: 'Roadmap.md', path: 'Meta/Roadmap.md', title: null, tags: [], updated_at: '', properties: {} },
+        { name: 'README.md', path: 'README.md', title: null, tags: [], updated_at: '', properties: {} },
       ],
       KILN,
     ),

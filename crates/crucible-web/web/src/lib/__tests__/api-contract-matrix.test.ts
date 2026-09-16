@@ -20,7 +20,6 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/session/s%2Fx/mode', () => api.setSessionMode('s/x', 'plan'), {}, undefined, { mode: 'plan' }],
     ['/api/session/s%2Fx/kilns/connect', () => api.connectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
     ['/api/session/s%2Fx/kilns/disconnect', () => api.disconnectSessionKiln('s/x', 'k'), scope, scope, { kiln: 'k' }],
-    ['/api/session/s%2Fx/workspace', () => api.setSessionWorkspace('s/x', null), scope, scope, { workspace: null }],
     ['/api/agents', api.listAgents, { agents: [{ name: 'a' }] }, [{ name: 'a' }]],
     ['/api/models', api.listAllModels, { models: ['m'] }, ['m']],
     ['/api/session/s%2Fx/config/context-strategy', () => api.getContextStrategy('s/x'), { context_strategy: null }, null],

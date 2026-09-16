@@ -193,7 +193,7 @@ export const FilesPanel: Component<{
    * the session list out of this panel.
    */
   const activeRoot = createMemo<SessionRoot | null>(() =>
-    resolveSessionRoot(roots(), pinnedRootKey(currentSession()?.id ?? NO_SESSION_PIN_KEY)),
+    resolveSessionRoot(roots(), pinnedRootKey(currentSession()?.session_id ?? NO_SESSION_PIN_KEY)),
   );
 
   /**
@@ -214,7 +214,7 @@ export const FilesPanel: Component<{
     // No session yet: pin under the session-less key so a cold-start pick
     // still browses. A sessionless browse dies the moment a session appears
     // (its pin map is per-session), which is the right lifetime.
-    const id = currentSession()?.id ?? NO_SESSION_PIN_KEY;
+    const id = currentSession()?.session_id ?? NO_SESSION_PIN_KEY;
     treeRootActions.pin(id, r);
   };
 
@@ -227,7 +227,7 @@ export const FilesPanel: Component<{
    * refetch.
    */
   const attachRoot = (r: SessionRoot) => {
-    const id = currentSession()?.id;
+    const id = currentSession()?.session_id;
     if (!id || r.kind !== 'kiln') return;
     void (async () => {
       try {

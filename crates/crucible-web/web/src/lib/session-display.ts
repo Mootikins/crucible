@@ -26,7 +26,7 @@ export function sessionDisplayTitle(
   session: Pick<Session, 'title' | 'started_at'>,
 ): string {
   if (session.title && session.title.trim() !== '') return session.title;
-  const started = new Date(session.started_at);
+  const started = new Date(session.started_at ?? '');
   if (!Number.isNaN(started.getTime())) {
     const date = started.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     const time = started.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });

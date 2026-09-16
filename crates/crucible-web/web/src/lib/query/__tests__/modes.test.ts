@@ -16,7 +16,14 @@ const SET = 'POST /api/session/s-1/mode';
 function modes(current: string, ...ids: string[]): SessionModes {
   return {
     current_mode_id: current,
-    modes: ids.map((id) => ({ id, name: id, description: null, icon: null, color: null })),
+    modes: ids.map((id) => ({
+      id,
+      name: id,
+      description: null,
+      icon: null,
+      color: null,
+      review_policy: 'none' as const,
+    })),
   };
 }
 

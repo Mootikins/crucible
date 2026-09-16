@@ -83,7 +83,7 @@ const InboxPanel: Component = () => {
 
   const titleFor = (entry: SessionAttention) => {
     if (entry.title) return entry.title;
-    const session = rows().find((s) => s.id === entry.sessionId);
+    const session = rows().find((s) => s.session_id === entry.sessionId);
     return session ? sessionDisplayTitle(session) : `Session ${entry.sessionId.slice(-8)}`;
   };
 
@@ -140,7 +140,7 @@ const InboxPanel: Component = () => {
     for (const session of targets) {
       setClearProgress(`Deleting ${done + 1}/${targets.length}…`);
       // Keep going — a single failed delete shouldn't strand the rest.
-      await remove.mutateAsync(session.id).catch(() => {});
+      await remove.mutateAsync(session.session_id).catch(() => {});
       done += 1;
     }
     setClearProgress(null);
@@ -155,13 +155,13 @@ const InboxPanel: Component = () => {
         <button
           type="button"
           class="flex-1 min-w-0 text-left cursor-pointer"
-          onClick={() => openSession(session.id)}
+          onClick={() => openSession(session.session_id)}
         >
           <span class="block text-reading font-semibold truncate">
             {sessionDisplayTitle(session)}
           </span>
           <span class="block text-floor text-muted-dark truncate">
-            {relativeTime(session.last_activity ?? session.started_at)}
+            {relativeTime(session.last_activity ?? session.started_at ?? '')}
             {session.agent_model ? ` · ${session.agent_model}` : ''}
             {session.event_count ? ` · ${session.event_count} events` : ''}
           </span>
@@ -178,22 +178,22 @@ const InboxPanel: Component = () => {
             type="button"
             class="font-mono text-floor text-muted-dark hover:text-ok cursor-pointer flex-none opacity-0 group-hover:opacity-100 transition-opacity"
             title="Restore to recent sessions"
-            onClick={() => void restoreSession(session.id)}
+            onClick={() => void restoreSession(session.session_id)}
           >
             RESTORE
           </button>
           <button
             type="button"
             class={`font-mono text-floor cursor-pointer flex-none transition-opacity ${
-              pendingDelete() === session.id
+              pendingDelete() === session.session_id
                 ? 'text-error opacity-100'
                 : 'text-muted-dark hover:text-error opacity-0 group-hover:opacity-100'
             }`}
             title="Delete session permanently"
             onBlur={() => setPendingDelete(null)}
-            onClick={() => void deleteArchived(session.id)}
+            onClick={() => void deleteArchived(session.session_id)}
           >
-            {pendingDelete() === session.id ? 'SURE?' : 'DELETE'}
+            {pendingDelete() === session.session_id ? 'SURE?' : 'DELETE'}
           </button>
         </Show>
       </div>

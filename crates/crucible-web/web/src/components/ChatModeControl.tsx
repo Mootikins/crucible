@@ -26,9 +26,9 @@ type IconComponent = Component<{ class?: string }>;
  * offers no way to change mode at all.
  */
 export const FALLBACK_MODES: ModeDescriptor[] = [
-  { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-  { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
-  { id: 'auto', name: 'Auto', description: null, icon: null, color: null },
+  { id: 'ask', name: 'Ask', description: null, icon: null, color: null, review_policy: 'none' },
+  { id: 'plan', name: 'Plan', description: null, icon: null, color: null, review_policy: 'none' },
+  { id: 'auto', name: 'Auto', description: null, icon: null, color: null, review_policy: 'none' },
 ];
 
 /**

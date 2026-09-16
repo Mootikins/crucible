@@ -15,7 +15,14 @@ const SEND = 'POST /api/chat/send';
 
 /** One history document, as `GET /api/session/{id}/history` answers it. */
 function history(id: string, events: SessionHistoryResponse['history'] = []): SessionHistoryResponse {
-  return { session_id: id, history: events, total_events: events.length };
+  return {
+    session_id: id,
+    type: 'chat',
+    state: 'active',
+    kilns: [],
+    history: events,
+    total_events: events.length,
+  };
 }
 
 /** One persisted user turn, as the daemon records it. */
@@ -137,7 +144,9 @@ describe('useSessionHistory', () => {
     stop();
 
     await vi.waitFor(() => expect(query.data?.history).toHaveLength(1));
-    expect(query.data?.history[0].data?.content).toBe('from the other pane');
+    expect((query.data?.history[0].data as { content?: string }).content).toBe(
+      'from the other pane',
+    );
     expect(env.fetch.calls(FIRST)).toBe(1);
   });
 });

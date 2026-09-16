@@ -48,7 +48,7 @@ export const SessionsTab: Component = () => {
 
   const active = createMemo(() => sessions().filter((s) => !s.archived));
   const inbox = createMemo(() => inboxSessions(active()));
-  const inboxIds = createMemo(() => new Set(inbox().map((s) => s.id)));
+  const inboxIds = createMemo(() => new Set(inbox().map((s) => s.session_id)));
   /**
    * The passes a plugin ran for itself — see `lib/session-reflections.ts`.
    *
@@ -60,11 +60,11 @@ export const SessionsTab: Component = () => {
   /** Every session of the chosen project, Inbox members included. */
   const inScope = createMemo(() => {
     const target = chosen();
-    const all = [...active()].filter((s) => s.session_type !== 'plugin').sort(byRecency);
+    const all = [...active()].filter((s) => s.type !== 'plugin').sort(byRecency);
     return target === ALL_PROJECTS ? all : all.filter((s) => sessionWorkspace(s) === target);
   });
   /** The rows the project list draws: `inScope` minus what the Inbox shows. */
-  const listed = createMemo(() => inScope().filter((s) => !inboxIds().has(s.id)));
+  const listed = createMemo(() => inScope().filter((s) => !inboxIds().has(s.session_id)));
 
   const projectOf = (s: Session) => {
     const workspace = sessionWorkspace(s);
@@ -78,12 +78,12 @@ export const SessionsTab: Component = () => {
     <button
       type="button"
       class={`${treeRow} w-full h-11 px-3 flex items-center gap-2 rounded text-left transition-colors focus-ring ${
-        currentSession()?.id === props.session.id
+        currentSession()?.session_id === props.session.session_id
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
       }`}
-      data-session-id={props.session.id}
-      onClick={() => void selectSession(props.session.id)}
+      data-session-id={props.session.session_id}
+      onClick={() => void selectSession(props.session.session_id)}
     >
       <SessionStatusDot status={sessionStatus(props.session)} />
       {/* No text size here: the row takes it from the density attribute, so

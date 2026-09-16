@@ -26,6 +26,7 @@ const INVENTED = {
   plugin: 'spectrometer',
   name: 'spectrometer_calibrate',
   description: 'Calibrate against a reference sample',
+  hint: null,
   effect: 'write' as const,
   parameters: {
     type: 'object',
@@ -137,7 +138,14 @@ describe('PluginCommandDialog', () => {
   it('offers a Run button for a command that declares no parameters', async () => {
     const { getByText, container } = render(() => (
       <PluginCommandDialog
-        command={{ plugin: 'p', name: 'bare', effect: 'read' }}
+        command={{
+          plugin: 'p',
+          name: 'bare',
+          description: '',
+          hint: null,
+          effect: 'read',
+          parameters: null,
+        }}
         onClose={() => {}}
       />
     ));

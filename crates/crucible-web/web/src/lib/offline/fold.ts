@@ -23,7 +23,7 @@ export type FoldOutcome = { ok: true; text: string } | { ok: false; index: numbe
 export function applyAnchoredEdits(text: string, edits: AnchoredEdit[]): FoldOutcome {
   const lines = text.split('\n');
   for (const [index, edit] of edits.entries()) {
-    const at = lineOf(lines, edit.expect, edit.occurrence);
+    const at = lineOf(lines, edit.expect, edit.occurrence ?? undefined);
     if (at === -1) return { ok: false, index };
     // A CRLF line keeps its ending: the compare dropped it, so put it back.
     lines[at] = lines[at].endsWith('\r') ? `${edit.replace}\r` : edit.replace;

@@ -63,8 +63,8 @@ export const SessionRow: Component<{
           ? 'bg-primary/10 text-shell-ink'
           : 'hover:bg-hover-wash text-shell-body'
       }`}
-      data-testid={`session-item-${props.session.id}`}
-      data-session-id={props.session.id}
+      data-testid={`session-item-${props.session.session_id}`}
+      data-session-id={props.session.session_id}
     >
       {/* The same 14px leading slot a section's chevron sits in. */}
       <span class="w-3.5 shrink-0 flex justify-center" aria-hidden="true">
@@ -221,7 +221,7 @@ export const SessionTree: Component<{
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed(), { equals: false });
   const [inboxOpen, setInboxOpen] = createSignal(true);
   const inbox = () => props.inbox ?? [];
-  const shownAbove = createMemo(() => new Set(inbox().map((s) => s.id)));
+  const shownAbove = createMemo(() => new Set(inbox().map((s) => s.session_id)));
   const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   /**
    * The project row the open context menu acts on.
@@ -256,7 +256,7 @@ export const SessionTree: Component<{
    * was; the exception lasts as long as the selection does.
    */
   const isCollapsed = (g: SessionGroup) =>
-    collapsed().has(g.key) && !g.rows.some((s) => s.id === props.currentSessionId);
+    collapsed().has(g.key) && !g.rows.some((s) => s.session_id === props.currentSessionId);
 
   const toggle = (key: string) => {
     setCollapsed((prev) => {
@@ -360,7 +360,7 @@ export const SessionTree: Component<{
     const all = [...byKey.values(), none];
     for (const g of all) {
       g.sessions.sort(byRecency);
-      g.rows = g.sessions.filter((s) => !shownAbove().has(s.id));
+      g.rows = g.sessions.filter((s) => !shownAbove().has(s.session_id));
     }
     // Every registered project is listed, with or without a session. The
     // project-less group has no New Session of its own, so it draws only
@@ -370,7 +370,7 @@ export const SessionTree: Component<{
 
   /** The project an inbox row names: the group its workspace falls in. */
   const projectLabelOf = (s: Session): string | null => {
-    const g = allGroups().find((x) => x.sessions.some((m) => m.id === s.id));
+    const g = allGroups().find((x) => x.sessions.some((m) => m.session_id === s.session_id));
     return g?.projectPath ? g.name : null;
   };
 
@@ -413,12 +413,12 @@ export const SessionTree: Component<{
   /** The section, like a group, does not hide the open session. */
   const projectsOpen = () =>
     projectsOpenRaw() ||
-    groups().some((g) => g.rows.some((s) => s.id === props.currentSessionId));
+    groups().some((g) => g.rows.some((s) => s.session_id === props.currentSessionId));
 
   /** The fold, like a group, does not hide the open session. */
   const foldOpen = () =>
     idleOpen() ||
-    offScope().some((g) => g.rows.some((s) => s.id === props.currentSessionId));
+    offScope().some((g) => g.rows.some((s) => s.session_id === props.currentSessionId));
 
   /**
    * Capture-phase router for the single hoisted context trigger.
@@ -438,7 +438,7 @@ export const SessionTree: Component<{
       const target = e.target instanceof Element ? e.target : null;
       const sessionId = target?.closest('[data-session-id]')?.getAttribute('data-session-id');
       if (sessionId) {
-        const session = props.sessions.find((x) => x.id === sessionId);
+        const session = props.sessions.find((x) => x.session_id === sessionId);
         if (session) {
           setMenuTarget({ kind: 'session', session });
           return true;
@@ -472,9 +472,9 @@ export const SessionTree: Component<{
     const t = menuTarget();
     if (!t) return;
     if (t.kind === 'session') {
-      if (value === 'open-session') props.onSelectSession(t.session.id);
-      else if (value === 'archive-session') props.onArchiveSession(t.session.id);
-      else if (value === 'delete-session') props.onDeleteSession(t.session.id);
+      if (value === 'open-session') props.onSelectSession(t.session.session_id);
+      else if (value === 'archive-session') props.onArchiveSession(t.session.session_id);
+      else if (value === 'delete-session') props.onDeleteSession(t.session.session_id);
       return;
     }
     if (value === 'new-session') props.onNewSession(t.group.projectPath);
@@ -573,13 +573,13 @@ export const SessionTree: Component<{
             {(s) => (
               <SessionRow
                 session={s}
-                selected={props.currentSessionId === s.id}
+                selected={props.currentSessionId === s.session_id}
                 branch={branchOfSession(s)}
                 kilnLabel={kilnNameOf(s)}
                 projectLabel={projectLabelOf(s)}
-                onSelect={() => props.onSelectSession(s.id)}
-                onArchive={() => props.onArchiveSession(s.id)}
-                onDelete={() => props.onDeleteSession(s.id)}
+                onSelect={() => props.onSelectSession(s.session_id)}
+                onArchive={() => props.onArchiveSession(s.session_id)}
+                onDelete={() => props.onDeleteSession(s.session_id)}
               />
             )}
           </For>
@@ -607,13 +607,13 @@ export const SessionTree: Component<{
                     {(s) => (
                       <SessionRow
                         session={s}
-                        selected={props.currentSessionId === s.id}
+                        selected={props.currentSessionId === s.session_id}
                         branch={branchOfSession(s)}
                         kilnLabel={kilnNameOf(s)}
                         showKiln={kilnNameOf(s) !== dominantKiln(g)}
-                        onSelect={() => props.onSelectSession(s.id)}
-                        onArchive={() => props.onArchiveSession(s.id)}
-                        onDelete={() => props.onDeleteSession(s.id)}
+                        onSelect={() => props.onSelectSession(s.session_id)}
+                        onArchive={() => props.onArchiveSession(s.session_id)}
+                        onDelete={() => props.onDeleteSession(s.session_id)}
                       />
                     )}
                   </For>
@@ -644,13 +644,13 @@ export const SessionTree: Component<{
                     {(sn) => (
                       <SessionRow
                         session={sn}
-                        selected={props.currentSessionId === sn.id}
+                        selected={props.currentSessionId === sn.session_id}
                         branch={branchOfSession(sn)}
                         kilnLabel={kilnNameOf(sn)}
                         showKiln={kilnNameOf(sn) !== dominantKiln(g)}
-                        onSelect={() => props.onSelectSession(sn.id)}
-                        onArchive={() => props.onArchiveSession(sn.id)}
-                        onDelete={() => props.onDeleteSession(sn.id)}
+                        onSelect={() => props.onSelectSession(sn.session_id)}
+                        onArchive={() => props.onArchiveSession(sn.session_id)}
+                        onDelete={() => props.onDeleteSession(sn.session_id)}
                       />
                     )}
                   </For>

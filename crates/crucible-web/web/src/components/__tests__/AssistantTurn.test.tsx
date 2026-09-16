@@ -21,7 +21,7 @@ vi.mock('@/contexts/ChatContext', () => ({
   }),
 }));
 
-let sessionsAccessor: () => Array<{ id: string; kilns: string[] }> = () => [];
+let sessionsAccessor: () => Array<{ session_id: string; kilns: string[] }> = () => [];
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
     sessions: () => sessionsAccessor(),
@@ -357,7 +357,7 @@ describe('AssistantTurn — data-kiln', () => {
   // relative directory that does not exist.
   it('is the kiln DIRECTORY, joined from the session s registry name', async () => {
     messagesAccessor = () => [textMsg('a1', 'body')];
-    sessionsAccessor = () => [{ id: 's1', kilns: ['vault'] }];
+    sessionsAccessor = () => [{ session_id: 's1', kilns: ['vault'] }];
     const { container } = render(() => (
       <AssistantTurn parts={[textPart('a1')]} isLast={false} />
     ));
@@ -374,7 +374,7 @@ describe('AssistantTurn — data-kiln', () => {
   // caller's own default rather than to a corpus nobody chose.
   it('is absent for a kiln the registry cannot place', async () => {
     messagesAccessor = () => [textMsg('a1', 'body')];
-    sessionsAccessor = () => [{ id: 's1', kilns: ['ghost'] }];
+    sessionsAccessor = () => [{ session_id: 's1', kilns: ['ghost'] }];
     const { container } = render(() => (
       <AssistantTurn parts={[textPart('a1')]} isLast={false} />
     ));

@@ -14,6 +14,7 @@ const mockNotes: NoteEntry[] = [
   {
     name: 'Architecture',
     path: '/kiln/Architecture.md',
+    properties: {},
     title: 'Architecture',
     tags: ['meta'],
     updated_at: '2026-07-10T10:00:00Z',
@@ -21,6 +22,7 @@ const mockNotes: NoteEntry[] = [
   {
     name: 'Roadmap',
     path: '/kiln/Meta/Roadmap.md',
+    properties: {},
     title: 'Roadmap',
     tags: [],
     updated_at: '2026-07-12T10:00:00Z',

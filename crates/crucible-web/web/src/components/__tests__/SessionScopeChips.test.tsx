@@ -72,8 +72,8 @@ beforeEach(() => {
 });
 
 const baseSession = (): Session => ({
-  id: 's1',
-  session_type: 'chat',
+  session_id: 's1',
+  type: 'chat',
   // Registry NAMES, which is what a session's kiln set is on the wire.
   kilns: ['main'],
   // Floating: the daemon says outright that this session has no workspace.
@@ -81,7 +81,6 @@ const baseSession = (): Session => ({
   state: 'active',
   title: null,
   agent_model: null,
-  agent_mode: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
 });
@@ -116,7 +115,7 @@ describe('SessionScopeChips', () => {
   // id stays in the title for whoever needs the actual directory.
   it("an ephemeral session's own folder reads as one, with the path in the title", () => {
     const id = 'chat-8f2c1a04-77bd-4c19-9a13-2b6e5d0f41aa';
-    mockSession = { ...baseSession(), id, workspace: `/data/workspaces/${id}` };
+    mockSession = { ...baseSession(), session_id: id, workspace: `/data/workspaces/${id}` };
     render(() => <SessionScopeChips />);
     const chip = screen.getByTestId('scope-project');
     expect(chip.textContent).toContain('Session folder');

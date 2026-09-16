@@ -120,7 +120,7 @@ describe('RootDropdown', () => {
   it('renders grouped section headers with the expected option counts', () => {
     const groups = buildRoster(
       [project('/p1', 'P1'), project('/p2', 'P2')],
-      [{ path: '/vault', name: 'Vault' }],
+      [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true }],
     );
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={() => {}} />
@@ -155,7 +155,9 @@ describe('RootDropdown', () => {
     await Promise.resolve();
     expect(getByTestId('root-dropdown').textContent).toContain('crucible');
 
-    setKilns([{ path: '/vault', name: 'docs' }]);
+    setKilns([
+      { path: '/vault', name: 'docs', registered: true, open: true, last_access_secs_ago: null },
+    ]);
     await Promise.resolve();
     expect(getByTestId('root-dropdown').textContent).toContain('docs');
 
@@ -165,7 +167,7 @@ describe('RootDropdown', () => {
   });
 
   it('calls onSelect with the resolved TreeRoot when an option is picked', () => {
-    const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault' }]);
+    const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true }]);
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={onSelect} />
@@ -198,8 +200,8 @@ describe('RootDropdown', () => {
     const groups = buildRoster(
       [project('/home/me/crucible', 'crucible'), project('/p2', 'other')],
       [
-        { path: '/vault', name: 'Vault' },
-        { path: '/archive', name: 'Archive' },
+        { path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true },
+        { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true },
       ],
     );
     const { getByTestId } = render(() => (
@@ -224,7 +226,7 @@ describe('RootDropdown', () => {
   // because picking one must never read as widening what the agent can see.
   it('marks roots the session does not own as browse-only', () => {
     const groups = buildRoster([project('/home/me/crucible', 'crucible')], [
-      { path: '/archive', name: 'Archive' },
+      { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true },
     ]);
     const { getByTestId } = render(() => (
       <RootDropdown

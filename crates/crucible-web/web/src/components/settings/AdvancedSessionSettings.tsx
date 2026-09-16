@@ -36,7 +36,7 @@ const CONTEXT_STRATEGIES = ['truncate', 'summarize'];
 export const AdvancedSessionSettingsSection: Component = () => {
   const session = useSessionSafe();
 
-  const sessionId = () => session.currentSession()?.id ?? null;
+  const sessionId = () => session.currentSession()?.session_id ?? null;
   // Keyed by session, so the panel follows the selection instead of holding
   // the strategy of whichever session it was opened on.
   const strategyQuery = useGetContextStrategy(sessionId);

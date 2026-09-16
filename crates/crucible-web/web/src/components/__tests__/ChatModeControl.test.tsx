@@ -5,9 +5,9 @@ import type { ModeDescriptor } from '@/lib/types';
 const mockSwitchMode = vi.fn();
 let currentMode = 'ask';
 let modes: ModeDescriptor[] = [
-  { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-  { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
-  { id: 'auto', name: 'Auto', description: null, icon: null, color: null },
+  { id: 'ask', name: 'Ask', description: null, icon: null, color: null , review_policy: 'none' },
+  { id: 'plan', name: 'Plan', description: null, icon: null, color: null , review_policy: 'none' },
+  { id: 'auto', name: 'Auto', description: null, icon: null, color: null , review_policy: 'none' },
 ];
 
 vi.mock('@/contexts/ChatContext', () => ({
@@ -24,9 +24,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   currentMode = 'ask';
   modes = [
-    { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-    { id: 'plan', name: 'Plan', description: null, icon: null, color: null },
-    { id: 'auto', name: 'Auto', description: null, icon: null, color: null },
+    { id: 'ask', name: 'Ask', description: null, icon: null, color: null , review_policy: 'none' },
+    { id: 'plan', name: 'Plan', description: null, icon: null, color: null , review_policy: 'none' },
+    { id: 'auto', name: 'Auto', description: null, icon: null, color: null , review_policy: 'none' },
   ];
 });
 
@@ -62,8 +62,8 @@ describe('ChatModeControl — the trigger', () => {
 
   it('names a Lua-declared mode it has no icon for', () => {
     modes = [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null },
+      { id: 'ask', name: 'Ask', description: null, icon: null, color: null , review_policy: 'none' },
+      { id: 'review', name: 'Review', description: null, icon: null, color: null , review_policy: 'none' },
     ];
     currentMode = 'review';
     render(() => <ChatModeControl />);
@@ -149,7 +149,7 @@ describe('ChatModeControl — the rows', () => {
 
   it('prefers the description the daemon sent', () => {
     modes = [
-      { id: 'ask', name: 'Ask', description: 'Asks about everything', icon: null, color: null },
+      { id: 'ask', name: 'Ask', description: 'Asks about everything', icon: null, color: null , review_policy: 'none' },
     ];
     render(() => <ChatModeControl />);
     fireEvent.click(trigger());
@@ -158,8 +158,8 @@ describe('ChatModeControl — the rows', () => {
 
   it('draws a Lua-declared mode as its name alone, with no icon slot', () => {
     modes = [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null },
+      { id: 'ask', name: 'Ask', description: null, icon: null, color: null , review_policy: 'none' },
+      { id: 'review', name: 'Review', description: null, icon: null, color: null , review_policy: 'none' },
     ];
     render(() => <ChatModeControl />);
     fireEvent.click(trigger());
@@ -170,7 +170,7 @@ describe('ChatModeControl — the rows', () => {
 
   it('maps an icon name the daemon sent for a Lua-declared mode', () => {
     modes = [
-      { id: 'review', name: 'Review', description: null, icon: 'eye', color: null },
+      { id: 'review', name: 'Review', description: null, icon: 'eye', color: null , review_policy: 'none' },
     ];
     currentMode = 'review';
     render(() => <ChatModeControl />);
@@ -204,9 +204,9 @@ describe('ChatModeControl — the rows', () => {
   // ones. The rows show the agent's human labels, and switching sends the id.
   it("renders an ACP agent's own modes by their declared names", () => {
     modes = [
-      { id: 'default', name: 'Manual', description: null, icon: null, color: null },
-      { id: 'acceptEdits', name: 'Accept edits', description: null, icon: null, color: null },
-      { id: 'bypassPermissions', name: 'Bypass permissions', description: null, icon: null, color: null },
+      { id: 'default', name: 'Manual', description: null, icon: null, color: null , review_policy: 'none' },
+      { id: 'acceptEdits', name: 'Accept edits', description: null, icon: null, color: null , review_policy: 'none' },
+      { id: 'bypassPermissions', name: 'Bypass permissions', description: null, icon: null, color: null , review_policy: 'none' },
     ];
     currentMode = 'default';
 

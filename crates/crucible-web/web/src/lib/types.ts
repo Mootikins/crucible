@@ -1,7 +1,25 @@
-import type { StopReason } from './stop-reason';
+import type { components } from './api-schema';
 
-/** Token usage data for a completed message */
+/**
+ * Every wire shape below is an alias into the generated contract.
+ *
+ * `api-schema.d.ts` is produced from `crates/crucible-web/openapi.json`, which
+ * `utoipa` writes from the axum router. A shape declared twice drifts; a shape
+ * aliased once cannot. The names stay the ones the app already imports, so a
+ * component reads `Session` and gets `SessionRow`.
+ *
+ * A type that describes CLIENT state keeps its hand-written form, and says so
+ * on its declaration. Those shapes never cross the wire, so the daemon has no
+ * opinion about them and the document cannot carry them.
+ */
+type Schemas = components['schemas'];
+
+/** Token usage data for a completed message.
+ *
+ * Client-local: the reducer folds `message_complete`'s snake_case counters into
+ * this camelCase record, and nothing sends it back. */
 export interface TokenUsage {
+
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -51,237 +69,98 @@ export interface Message {
 // Session Types (matching Rust SessionSummary)
 // =============================================================================
 
-export type SessionState = 'active' | 'paused' | 'compacting' | 'ended';
-export type SessionType = 'chat' | 'agent' | 'workflow' | 'plugin';
+export type SessionState = Schemas['SessionRow']['state'];
+/** A session type prefix, such as `chat`. Open on the wire: the daemon names
+ * the types and a client that closed the set would drop a new one. */
+export type SessionType = Schemas['SessionRow']['type'];
 
-export interface Session {
-  id: string;
-  session_type: SessionType;
-  /**
-   * Every kiln this session can query, by registry NAME — flat,
-   * order-preserving, no member privileged. `kilns[0]` is only read for the
-   * one thing that still needs exactly one: a display label.
-   *
-   * Names, not paths. A name is what the daemon accepts back (`session.create`,
-   * `session.connect_kiln`, the search filter) because it resolves against the
-   * `[kilns]` registry; a path names a directory the registration floor never
-   * saw. Anything here that needs a DIRECTORY — grep, wikilink resolution,
-   * note listing — joins through `kilnPathForName()` against `GET /api/kilns`,
-   * and treats an unresolved name as no directory rather than as the root.
-   */
-  kilns: string[];
-  /**
-   * Where the session acts, or `null` when it has no workspace at all —
-   * a tools-only agent, or one whose workspace was detached. Read it through
-   * `sessionWorkspace()`, which also folds the empty string a pre-nullable
-   * payload carries.
-   */
-  workspace: string | null;
-  state: SessionState;
-  title: string | null;
-  agent_model: string | null;
-  /** Persisted session mode (normal/plan/auto); null when never set. */
-  agent_mode: string | null;
-  started_at: string; // ISO datetime
-  /** ISO datetime of the last session event; null/absent for legacy sessions. */
-  last_activity?: string | null;
-  event_count: number;
-  archived?: boolean;
-}
+/**
+ * One session, as every session route answers with it.
+ *
+ * The id is `session_id` and the type is `type`; the browser used to rename
+ * both through `mapSession`, and the two spellings disagreed about which
+ * fields a create reply carries. `kilns` holds registry NAMES, not paths —
+ * anything that needs a DIRECTORY joins through `kilnPathForName()` against
+ * `GET /api/kilns`, and treats an unresolved name as no directory rather than
+ * as the root. `workspace` is `null` when the session has none at all; read it
+ * through `sessionWorkspace()`, which also folds the empty string a
+ * pre-nullable payload carries.
+ */
+export type Session = Schemas['SessionRow'];
 
-export interface CreateSessionParams {
-  session_type?: SessionType;
-  /**
-   * The session's kiln set, by registry NAME. Omitted or empty is a literal
-   * empty set — a session with no corpus — NOT a request for a default; the
-   * daemon stopped substituting its data root, which is the parent of the
-   * session store.
-   */
-  kilns?: string[];
-  workspace?: string;
-  provider?: string;
-  model?: string;
-  endpoint?: string;
-  /** "internal" (default) or "acp". */
-  agent_type?: string;
-  /** ACP agent profile name; required when agent_type is "acp". */
-  agent_name?: string;
-  /** Internal-agent card name, resolved in the session's scope by the daemon. */
-  agent_card?: string;
-  /**
-   * The RUNTIME axis — where the session's process runs. Forwarded untouched:
-   * `false` = unisolated even if the project asks otherwise, `true` = the
-   * server's default, a string = a named profile, and `{plugin, target}` = a
-   * target addressed to the provider that offered it. Omit to let the server
-   * resolve normally — omitted and `false` are different instructions.
-   *
-   * Loosely typed on purpose. The daemon forwards this to whichever plugin
-   * claims it without parsing it, so a shape only a future provider
-   * understands has to survive the trip.
-   */
-  isolation?: string | boolean | { plugin: string; target?: string };
-  /**
-   * The WORKSPACE axis — where the session's files live, as a
-   * `provider:target` spec (e.g. `worktree:feat/x`). The daemon resolves it to
-   * a path *before* creating the session, so a target it cannot resolve
-   * refuses the create rather than silently running against the main checkout.
-   */
+/**
+ * The body of `POST /api/session`, with the two fields the document cannot
+ * carry as they are.
+ *
+ * `isolation` is `Option<serde_json::Value>` in Rust and is forwarded to
+ * whichever plugin claims it without being parsed, so the document says only
+ * "an object". The union here is what the daemon actually accepts: `false` =
+ * unisolated even if the project asks otherwise, `true` = the server's
+ * default, a string = a named profile, `{plugin, target}` = a target addressed
+ * to the provider that offered it. Omitted and `false` are different
+ * instructions.
+ *
+ * `workspace_target` is NOT in the generated contract, and that is a drift the
+ * contract exposed rather than one it caused: `CreateSessionRequest` in
+ * `routes/session/mod.rs` declares no such field, so serde drops what the
+ * composer sends. The field stays named here because the composer still sends
+ * it; making it arrive needs the route to take it, which is a Rust change.
+ */
+export type CreateSessionParams = Omit<Schemas['CreateSessionRequest'], 'isolation'> & {
+  isolation?: string | boolean | { plugin: string; target?: string } | null;
   workspace_target?: string;
-}
+};
 
 /** ACP agent profile entry from GET /api/agents. */
-export interface AgentProfileEntry {
-  name: string;
-  description: string;
-  command: string;
-  is_builtin: boolean;
-  /** Probed daemon-side: binary found on PATH and answering. */
-  available: boolean;
-}
+export type AgentProfileEntry = Schemas['AgentProfileEntry'];
 
-export interface ProviderInfo {
-  name: string;
-  provider_type: string;
-  available: boolean;
-  default_model: string | null;
-  models: string[];
-  endpoint?: string;
-  reason?: string;
-  is_local: boolean;
-}
+/** One provider and its models, from `GET /api/providers`. `endpoint` and
+ * `reason` are nullable, not merely absent. */
+export type ProviderInfo = Schemas['ProviderRow'];
 
 // =============================================================================
 // File Entry Types
 // =============================================================================
 
-export interface FileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-}
+export type FileEntry = Schemas['FileEntryRow'];
 
-export interface NoteEntry {
-  name: string;
-  /**
-   * RELATIVE to the kiln root, not absolute.
-   *
-   * Every consumer joins it: `notesToTree(notes, kilnAbsRoot)` strips a
-   * leading slash and rebuilds from the root it was handed. Code that passes
-   * this straight to a path-taking endpoint gets a 404 — `GET /api/kiln/file`
-   * answers "File not within any open kiln" for a bare `Seed.md`.
-   */
-  path: string;
-  title: string | null;
-  tags: string[];
-  updated_at: string;
-}
-
-export interface NoteContent {
-  /** Several fields are NOT sent by GET /api/notes/{name} — the daemon payload
-   * carries only path/title/tags/links_to/wikilinks/content_hash. Derive display names
-   * by falling through title → name → file stem; content/updated_at are
-   * absent (typing them required yielded `undefined` at runtime). */
-  name?: string;
-  path: string;
-  content?: string;
-  title: string | null;
-  tags: string[];
-  updated_at?: string;
-}
-
-/** A note that wikilinks to the focused note. */
-interface BacklinkEntry {
-  name: string;
-  path: string;
-  abs_path: string;
-  title: string | null;
-  /** Byte span of the first link occurrence in the source (from the
-   * daemon's link index); absent for span-less legacy index rows. */
-  span_start?: number;
-  span_end?: number;
-}
+/**
+ * One note's metadata, from `GET /api/notes`.
+ *
+ * `path` is RELATIVE to the kiln root, not absolute. Every consumer joins it:
+ * `notesToTree(notes, kilnAbsRoot)` strips a leading slash and rebuilds from
+ * the root it was handed. Code that passes this straight to a path-taking
+ * endpoint gets a 404 — `GET /api/kiln/file` answers "File not within any open
+ * kiln" for a bare `Seed.md`.
+ */
+export type NoteEntry = Schemas['NoteMetadataRow'];
 
 /** A plain-text mention of another note inside the focused note. */
-export interface UnlinkedMention {
-  mention: string;
-  target: string;
-  offset: number;
-}
+export type UnlinkedMention = Schemas['UnlinkedMentionRow'];
 
 /** Response of `GET /api/backlinks` — linked + unlinked mentions for a note. */
-export interface BacklinksResponse {
-  note: { path: string; abs_path: string; title: string | null };
-  linked: BacklinkEntry[];
-  unlinked: UnlinkedMention[];
-}
+export type BacklinksResponse = Schemas['BacklinksResponse'];
 
 // =============================================================================
 // Project Types
 // =============================================================================
 
-interface KilnInfo {
-  path: string;
-  name: string | null;
-}
-
-/** SCM info attached to a Project when git detection found a repo.
- * Wire shape of crucible-core's `RepositoryInfo` (snake_case contract). */
-interface RepositoryInfo {
-  /** Repo root — for worktrees, the MAIN checkout's root. */
-  root: string;
-  remote_url?: string;
-  is_worktree?: boolean;
-  main_repo_git_dir?: string;
-}
-
-export interface Project {
-  path: string;
-  name: string;
-  kilns: KilnInfo[];
-  last_accessed: string; // ISO datetime
-  repository?: RepositoryInfo;
-}
+export type Project = Schemas['Project'];
 
 /**
- * One entry of `GET /api/kilns`. The daemon's `handle_kiln_list`
- * (crucible-daemon/src/server/kiln.rs) emits objects — `{ path, name,
- * registered, last_access_secs_ago }` — surfaced verbatim by the web route
- * (routes/search.rs). NOT a bare string (the pre-file-tree `listKilns` mock
- * asserted a fictional string payload; see api.test.ts).
+ * One entry of `GET /api/kilns`.
+ *
+ * `registered` says whether the kiln registry answers for this directory, and
+ * therefore whether `name` is a name `POST /kilns/connect` accepts. The daemon
+ * publishes no name it cannot resolve: a row it cannot name is an open
+ * directory the registration floor refuses, and it arrives as `false` with an
+ * empty name. No picker may offer such a row — see `attachableKilns`.
+ *
+ * `open` says whether the daemon currently holds the kiln open. A registered
+ * kiln is listed whether or not it is open, and a closed row is not a dead
+ * one: the first request that addresses the kiln opens it.
  */
-export interface KilnListEntry {
-  path: string;
-  name: string | null;
-  /**
-   * Whether the kiln registry answers for this directory, and therefore
-   * whether `name` is a name `POST /kilns/connect` accepts.
-   *
-   * The daemon publishes no name it cannot resolve: a row it cannot name is
-   * an open directory the registration floor refuses (the daemon data root,
-   * the session store, a home directory), and it arrives here as `false` with
-   * an empty `name`. No picker may offer such a row — see `attachableKilns`.
-   *
-   * Optional because an older daemon omits it. Absent is NOT `false`: treating
-   * it as false would empty the picker against a daemon that works.
-   */
-  registered?: boolean;
-  /**
-   * Whether the daemon currently holds this kiln open.
-   *
-   * A registered kiln is listed whether or not it is open, because "which
-   * directories are kilns" is a question about the registry and this listing
-   * is what every kiln-addressed route checks a path against. A closed row is
-   * not a dead one: the first request that addresses the kiln opens it. Before
-   * this field existed the listing held only open kilns, so a daemon restart
-   * turned a registered kiln into a 404.
-   *
-   * Optional for the same reason as `registered`: an older daemon omits it,
-   * and everything it listed was open.
-   */
-  open?: boolean;
-  /** Seconds since the last access, or absent while the kiln is closed. */
-  last_access_secs_ago?: number;
-}
+export type KilnListEntry = Schemas['KilnRow'];
 
 // =============================================================================
 // File-System Explorer Types (Phase 1 web file tree)
@@ -289,54 +168,42 @@ export interface KilnListEntry {
 
 /**
  * One directory entry from `GET /api/fs/list` (daemon `fs.list_dir`).
- * Wire shape is snake_case (Rust `FsEntry`); every field name is part of the
- * cross-language contract and must not drift.
+ *
+ * `status` is the git/diff decoration seam and is `unknown` on the wire: the
+ * daemon forwards whatever the decorator put there, so a reader narrows it
+ * rather than trusting a shape declared here.
  */
-export interface FsEntry {
-  name: string;
-  rel_path: string;
-  is_dir: boolean;
-  size: number;
-  /** Unix epoch seconds; `null` when the platform cannot report it. */
-  modified: number | null;
-  /** Phase-2/3 git/diff decoration seam — always `null` in Phase 1. */
-  status: string | null;
-}
+export type FsEntry = Schemas['FsEntry'];
 
 /**
  * One level of a directory, plus whether the daemon's per-directory cap cut it
  * short. `truncated` exists because `target/debug/deps` is 1.47M entries: the
  * listing has to be able to say "there is more" rather than looking complete.
  */
-export interface FsListing {
-  entries: FsEntry[];
-  truncated: boolean;
-}
+export type FsListing = Schemas['FsListing'];
 
 /**
  * A live filesystem-change event delivered over `GET /api/fs/events` (SSE).
- * Discriminated union mirroring the Rust `FsEvent` (web/fs_events.rs); paths
- * are ABSOLUTE. `moved` is decomposed into remove+add by the reconciler, so a
- * platform that emits `deleted`+`changed{created}` instead converges to the
- * same tree.
+ * Paths are ABSOLUTE. `moved` is decomposed into remove+add by the reconciler,
+ * so a platform that emits `deleted`+`changed` instead converges to the same
+ * tree.
  */
-export type FsEvent =
-  | { type: 'changed'; path: string; kind: 'created' | 'modified' }
-  | { type: 'deleted'; path: string }
-  | { type: 'moved'; from: string; to: string };
+export type FsEvent = Schemas['FsEvent'];
 
 // =============================================================================
 // TUI Feature Types (for web port)
 // =============================================================================
 
-/** Thinking block with streaming state */
+/** Thinking block with streaming state. Client-local: the reducer builds it
+ * from `thinking` deltas and nothing sends it back. */
 interface ThinkingBlock {
   content: string;
   isStreaming: boolean;
   tokenCount?: number;
 }
 
-/** Tool call display with execution status */
+/** Tool call display with execution status. Client-local: the reducer folds
+ * several stream events into one card, so no route answers this shape. */
 export interface ToolCallDisplay {
   id: string;
   name: string;
@@ -370,7 +237,8 @@ interface ToolDisplay {
   primary?: string;
 }
 
-/** Subagent event (background task) */
+/** Subagent event (background task). Client-local: the store collapses the
+ * three `subagent_*` stream events into one row. */
 export interface SubagentEvent {
   id: string;
   prompt: string;
@@ -384,26 +252,17 @@ export interface SubagentEvent {
  * see `session.list_modes` for what a given session actually offers. */
 export type ChatMode = string;
 
-/** One mode a session may enter, as the daemon describes it. */
-export interface ModeDescriptor {
-  id: string;
-  name: string;
-  description: string | null;
-  icon: string | null;
-  color: string | null;
-}
+/**
+ * One mode a session may enter, as the daemon describes it.
+ *
+ * `review_policy` is part of the shape, not an extra: the daemon degrades it
+ * per agent capability before sending it, so what arrives is what will
+ * actually happen. `lib/review-types.ts` re-exports the policy values.
+ */
+export type ModeDescriptor = Schemas['ModeRow'];
 
 /** Response of `GET /api/session/{id}/modes`. */
-export interface SessionModes {
-  current_mode_id: string;
-  modes: ModeDescriptor[];
-}
-
-/** One session setting, and whether this session can change it. */
-interface KnobDescriptor {
-  id: string;
-  supported: boolean;
-}
+export type SessionModes = Schemas['SessionModesResponse'];
 
 /**
  * Which settings a session can change.
@@ -411,45 +270,30 @@ interface KnobDescriptor {
  * Not every agent has every setting: ACP has no temperature and no token cap,
  * so a panel that draws a fixed list offers controls the daemon refuses.
  */
-export interface SessionKnobSupport {
-  knobs: KnobDescriptor[];
-}
-
-/** One choice in an agent's select option. */
-interface AgentOptionChoice {
-  value: string;
-  name: string;
-}
+export type SessionKnobSupport = Schemas['SessionKnobsResponse'];
 
 /**
  * A setting an external agent advertised for itself.
  *
- * Not one of Crucible's: it belongs to the agent, a different agent
- * advertises different ones, and the daemon does not interpret them. The
- * panel renders what it is given and sends the chosen value back.
+ * Not one of Crucible's: it belongs to the agent, a different agent advertises
+ * different ones, and the daemon does not interpret them. The panel renders
+ * what it is given and sends the chosen value back.
+ *
+ * `kind` and `current` are one tagged pair, not two fields: a `select` carries
+ * a string `current` and its `choices`, a `toggle` carries a boolean `current`
+ * and no choices. Narrow on `kind` before reading either.
  */
-export interface AgentConfigOption {
-  id: string;
-  name: string;
-  description: string | null;
-  category: string | null;
-  kind: 'select' | 'toggle';
-  current: string | boolean;
-  choices?: AgentOptionChoice[];
-}
+export type AgentConfigOption = Schemas['AgentOptionRow'];
 
-export interface AgentConfigOptions {
-  session_id: string;
-  options: AgentConfigOption[];
-}
+export type AgentConfigOptions = Schemas['AgentOptionsResponse'];
 
-/** Context window usage */
+/** Context window usage. Client-local: held as a signal, never sent. */
 export interface ContextUsage {
   used: number;
   total: number;
 }
 
-/** Notification type */
+/** Notification type. Client-local: the toast store's own vocabulary. */
 export type NotificationType = 'info' | 'warning' | 'error' | 'success';
 
 /** Notification message */
@@ -473,234 +317,40 @@ export interface Notification {
 
 
 // =============================================================================
-// SSE Event Types (from Rust backend events.rs)
+// SSE Event Types (generated from the Rust `ChatEvent` in events.rs)
 // =============================================================================
 
-/** Token/chunk of the response */
-interface TokenEvent {
-  type: 'token';
-  content: string;
-}
-
-/** Tool call event (from daemon tool_call event) */
-interface ToolCallEvent {
-  type: 'tool_call';
-  id: string;
-  title: string;
-  arguments?: unknown;
-  /** Daemon's projection of which argument matters. Absent on replayed events. */
-  display?: ToolDisplay;
-  /** Which layer granted permission without asking, if any. */
-  auto_approved?: string;
-}
-
-/** Tool call result streaming delta */
-interface ToolResultDeltaEvent {
-  type: 'tool_result_delta';
-  id: string;
-  delta: string;
-}
-
-/** Tool call result streaming complete */
-interface ToolResultCompleteEvent {
-  type: 'tool_result_complete';
-  id: string;
-}
-
-/** Tool call result error */
-interface ToolResultErrorEvent {
-  type: 'tool_result_error';
-  id: string;
-  error: string;
-}
-
-/** Tool call result */
-interface ToolResultEvent {
-  type: 'tool_result';
-  id: string;
-  result?: string;
-  /**
-   * True if this tool signaled an early-stop (the agent turn ended after
-   * this batch via the daemon's conjunctive terminate check). UI renders
-   * this as a badge on the tool card.
-   */
-  terminate?: boolean;
-}
-
-/** Subagent spawned event */
-interface SubagentSpawnedEvent {
-  type: 'subagent_spawned';
-  id: string;
-  prompt: string;
-}
-
-/** Subagent completed event */
-interface SubagentCompletedEvent {
-  type: 'subagent_completed';
-  id: string;
-  summary: string;
-}
-
-/** Subagent failed event */
-interface SubagentFailedEvent {
-  type: 'subagent_failed';
-  id: string;
-  error: string;
-}
-
-/** Delegation spawned event */
-interface DelegationSpawnedEvent {
-  type: 'delegation_spawned';
-  id: string;
-  prompt: string;
-  target_agent?: string;
-}
-
-/** Delegation completed event */
-interface DelegationCompletedEvent {
-  type: 'delegation_completed';
-  id: string;
-  summary: string;
-}
-
-/** Delegation failed event */
-interface DelegationFailedEvent {
-  type: 'delegation_failed';
-  id: string;
-  error: string;
-}
-
-/** Agent is thinking/reasoning */
-interface ThinkingEvent {
-  type: 'thinking';
-  content: string;
-}
-
-/** Context usage event */
-interface ContextUsageEvent {
-  type: 'context_usage';
-  used: number;
-  total: number;
-}
-
-/** Precognition result event */
-interface PrecognitionResultEvent {
-  type: 'precognition_result';
-  notes_count: number;
-  notes: { name: string; relevance: number }[];
-}
-
-/** Mode changed event */
-interface ModeChangedEvent {
-  type: 'mode_changed';
-  mode: ChatMode;
-}
-
-/** Session title changed (daemon-side topic auto-title or manual rename) */
-interface TitleChangedEvent {
-  type: 'title_changed';
-  title: string;
-}
-
 /**
- * A pre-tool narration segment finished (text → tool boundary). Carries the
- * turn's message_id and the segment's 0-based index so the client can build a
- * canonical bubble id that matches history reconstruction.
+ * Transport health of the chat event stream.
+ *
+ * `reconnecting` means the stream dropped and a backoff timer is running — the
+ * surface owes the user a retry control, because the wait is skippable.
  */
-interface SegmentCompleteEvent {
-  type: 'segment_complete';
-  message_id: string;
-  index: number;
-  content: string;
-}
-
-/** Message is complete */
-interface MessageCompleteEvent {
-  type: 'message_complete';
-  id: string;
-  content: string;
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  cache_read_tokens?: number;
-  cache_creation_tokens?: number;
-  /**
-   * Why the turn ended. Absent when the daemon reported none: an older
-   * recording, or a stream that closed without a terminal event.
-   */
-  stop_reason?: StopReason;
-  /**
-   * The note to draw under a reply the provider cut off, worded by the daemon.
-   * Absent when the reason needs none, which is every normal turn.
-   *
-   * The page must not derive it from `stop_reason`: `StopReason::user_notice`
-   * is the only wording, and the copy that used to live here drifted from it.
-   */
-  stop_notice?: string;
-}
-
-/** An error occurred */
-interface ErrorEvent {
-  type: 'error';
-  code: string;
-  message: string;
-}
-
-/**
- * Transport-level connection status (SSE reconnecting/connected). Client-synthesized,
- * never from the daemon. Must NOT be routed through the daemon-error path — a
- * reconnect must not corrupt an in-flight streaming message.
- */
-/** Transport health of the chat event stream. `reconnecting` means the stream
- *  dropped and a backoff timer is running — the surface owes the user a retry
- *  control, because the wait is skippable. */
 export type ConnectionStatus = 'reconnecting' | 'connected';
 
+/**
+ * Client-synthesized, never from the daemon.
+ *
+ * `subscribeToEvents` mints it when the `EventSource` drops and again when it
+ * reopens, so it is deliberately absent from the generated union. It must NOT
+ * be routed through the daemon-error path: a reconnect must not corrupt an
+ * in-flight streaming message.
+ */
 interface ConnectionEvent {
   type: 'connection';
   status: ConnectionStatus;
   message?: string;
 }
 
-/** An interaction is requested from the user */
-interface InteractionRequestedEvent {
-  type: 'interaction_requested';
-  id: string;
-  [key: string]: unknown;
-}
+/**
+ * Everything a chat stream handler receives.
+ *
+ * The daemon's half comes from the contract, so a variant added in Rust
+ * reaches the reducer's exhaustiveness check without anyone editing a list
+ * here. `ConnectionEvent` is the client's own half — see above.
+ */
+export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
 
-/** A session-level event (state change, etc.) */
-interface SessionEventData {
-  type: 'session_event';
-  event: string;
-  data: unknown;
-}
-
-/** Union of all SSE event types */
-export type ChatEvent =
-  | TokenEvent
-  | ToolCallEvent
-  | ToolResultEvent
-  | ToolResultDeltaEvent
-  | ToolResultCompleteEvent
-  | ToolResultErrorEvent
-  | ThinkingEvent
-  | SegmentCompleteEvent
-  | MessageCompleteEvent
-  | ErrorEvent
-  | ConnectionEvent
-  | InteractionRequestedEvent
-  | SessionEventData
-  | SubagentSpawnedEvent
-  | SubagentCompletedEvent
-  | SubagentFailedEvent
-  | DelegationSpawnedEvent
-  | DelegationCompletedEvent
-  | DelegationFailedEvent
-  | ContextUsageEvent
-  | PrecognitionResultEvent
-  | ModeChangedEvent
-  | TitleChangedEvent;
 
 
 // =============================================================================
@@ -713,6 +363,11 @@ export type ChatEvent =
 // `interaction-coverage.test.ts` here, which fails when a kind has no renderer
 // — three of seven rendered in the browser is the state those guards exist to
 // stop recurring.
+//
+// They stay hand-written because the contract cannot carry them: the web route
+// forwards the body as an opaque object (`PendingInteraction.request` is
+// `serde_json::Value`), so the document describes it as an open object and
+// knows none of these fields. The owner is `crucible-core`, not `crucible-web`.
 
 /** Format hint carried by `edit` and `show`. */
 type ArtifactFormat = 'markdown' | 'code' | 'json' | 'plain';
@@ -903,7 +558,9 @@ export type InteractionResponse =
 // Editor Types
 // =============================================================================
 
-/** A file open in the editor */
+/** A file open in the editor. Client-local: the dirty flag, the base hash
+ * and the base text are what the browser holds so a stale save can be merged
+ * rather than refused. No route answers this shape. */
 export interface EditorFile {
   path: string;
   content: string;

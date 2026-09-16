@@ -1,85 +1,54 @@
 /**
  * JSON Canvas 1.0 — https://jsoncanvas.org
  *
- * Mirrors `crucible_core::canvas`. Unknown keys are preserved on the Rust side
- * and round-trip through here untouched, so anything this file does not model
- * still survives a save. That matters: Obsidian plugins write keys outside the
- * spec, and dropping them would quietly destroy work authored elsewhere.
+ * Every wire shape here is an alias into the generated contract, which
+ * `utoipa` writes from `crucible_core::canvas`. Unknown keys are preserved on
+ * the Rust side and ride the `[key: string]: unknown` index signature through
+ * here untouched, so anything the spec does not model still survives a save.
+ * That matters: Obsidian plugins write keys outside the spec, and dropping
+ * them would quietly destroy work authored elsewhere.
  */
+import type { components } from './api-schema';
 
-export type CanvasColor = string;
+type Schemas = components['schemas'];
 
-export type CanvasSide = 'top' | 'right' | 'bottom' | 'left';
-export type CanvasEnd = 'none' | 'arrow';
-type CanvasBackgroundStyle = 'cover' | 'ratio' | 'repeat';
+export type CanvasColor = Schemas['CanvasColor'];
 
-interface NodeBase {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color?: CanvasColor;
-  /** Keys outside the spec ride along here on the wire. */
-  [key: string]: unknown;
-}
+export type CanvasSide = Schemas['CanvasSide'];
+export type CanvasEnd = Schemas['CanvasEnd'];
 
-interface TextNode extends NodeBase {
-  type: 'text';
-  text: string;
-}
+/**
+ * One node, with `type` open across the four kinds.
+ *
+ * The document describes the node as one object whose `type` is an enum, not
+ * as a tagged union, because the Rust type keeps unknown keys. So `text`,
+ * `file`, `url` and `label` are reached through the index signature and a
+ * reader narrows them, rather than four interfaces claiming a discrimination
+ * the wire does not carry.
+ */
+export type CanvasNode = Schemas['CanvasNode'];
 
-export interface FileNode extends NodeBase {
-  type: 'file';
-  /** Kiln-relative. Empty when the server redacted a rejected reference. */
-  file: string;
-  subpath?: string;
-}
+/** A node whose `type` is `file`: `file` is kiln-relative, and empty when the
+ * server redacted a rejected reference. */
+export type FileNode = CanvasNode & { type: 'file'; file: string; subpath?: string };
 
-interface LinkNode extends NodeBase {
-  type: 'link';
-  url: string;
-}
-
-export interface GroupNode extends NodeBase {
+/** A node whose `type` is `group`. Groups have no child list; membership IS
+ * geometric containment — see `groupMembers`. */
+export type GroupNode = CanvasNode & {
   type: 'group';
   label?: string;
   background?: string;
-  backgroundStyle?: CanvasBackgroundStyle;
-}
+  backgroundStyle?: 'cover' | 'ratio' | 'repeat';
+};
 
-export type CanvasNode = TextNode | FileNode | LinkNode | GroupNode;
+export type CanvasEdge = Schemas['CanvasEdge'];
 
-export interface CanvasEdge {
-  id: string;
-  fromNode: string;
-  fromSide?: CanvasSide;
-  fromEnd?: CanvasEnd;
-  toNode: string;
-  toSide?: CanvasSide;
-  toEnd?: CanvasEnd;
-  color?: CanvasColor;
-  label?: string;
-  [key: string]: unknown;
-}
-
-export interface CanvasDoc {
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
-  [key: string]: unknown;
-}
+export type CanvasDoc = Schemas['Canvas'];
 
 /** A reference the server refused. The offending path is deliberately absent. */
-export interface RejectedRef {
-  nodeId: string;
-  reason: string;
-}
+export type RejectedRef = Schemas['RejectedRefDto'];
 
-export interface CanvasResponse {
-  canvas: CanvasDoc;
-  rejected: RejectedRef[];
-  kiln: string;
-}
+export type CanvasResponse = Schemas['CanvasResponse'];
 
 /**
  * The six preset slots, mapped to theme tokens rather than raw hex so a canvas
@@ -102,7 +71,7 @@ const PRESET_COLORS: Record<string, string> = {
   '6': 'var(--color-canvas-purple, #ae90d6)',
 };
 
-export function resolveCanvasColor(color: CanvasColor | undefined): string | undefined {
+export function resolveCanvasColor(color: CanvasColor | null | undefined): string | undefined {
   if (!color) return undefined;
   return PRESET_COLORS[color] ?? (color.startsWith('#') ? color : undefined);
 }
@@ -115,6 +84,7 @@ export function toEndOf(edge: CanvasEdge): CanvasEnd {
   return edge.toEnd ?? 'arrow';
 }
 
+/** A box on the canvas. Client-local geometry: nothing sends or receives it. */
 export interface Rect {
   x: number;
   y: number;

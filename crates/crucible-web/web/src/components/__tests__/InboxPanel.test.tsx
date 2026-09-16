@@ -167,14 +167,13 @@ describe('the list the inbox shares with the rail', () => {
     // What the rail's own reader put there.
     served.client.setQueryData(keys.sessions(false), [
       {
-        id: 's-1',
-        session_type: 'chat',
+        session_id: 's-1',
+        type: 'chat',
         kilns: ['main'],
         workspace: '/repos/app',
         state: 'active',
         title: 'Session s-1',
         agent_model: null,
-        agent_mode: null,
         started_at: '2026-09-15T00:00:00Z',
         last_activity: '2026-09-15T00:00:00Z',
         event_count: 0,

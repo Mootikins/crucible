@@ -35,14 +35,13 @@ const { SessionStatusChips } = await import('../SessionStatusChips');
 const { __resetReviewStore } = await import('@/lib/review-store');
 
 const session = (id = 's1'): Session => ({
-  id,
-  session_type: 'chat',
+  session_id: id,
+  type: 'chat',
   kilns: ['/repo'],
   workspace: '/repo',
   state: 'active',
   title: null,
   agent_model: null,
-  agent_mode: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
 });
@@ -59,13 +58,16 @@ const modes = (current: string, ...list: ReviewAwareMode[]) => {
   modeReply = { current_mode_id: current, modes: list };
 };
 
-const mode = (id: string, review_policy?: ReviewAwareMode['review_policy']): ReviewAwareMode => ({
+const mode = (
+  id: string,
+  review_policy: ReviewAwareMode['review_policy'] = 'none',
+): ReviewAwareMode => ({
   id,
   name: id,
   description: null,
   icon: null,
   color: null,
-  ...(review_policy ? { review_policy } : {}),
+  review_policy,
 });
 
 beforeEach(() => {

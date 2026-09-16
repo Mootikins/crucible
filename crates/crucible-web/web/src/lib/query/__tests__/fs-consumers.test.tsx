@@ -44,7 +44,7 @@ vi.mock('@/contexts/ProjectContext', () => ({
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
-    currentSession: () => ({ id: 's-1', kilns: ['kiln'], workspace: null }),
+    currentSession: () => ({ session_id: 's-1', kilns: ['kiln'], workspace: null }),
     applySessionScope: () => {},
   }),
 }));

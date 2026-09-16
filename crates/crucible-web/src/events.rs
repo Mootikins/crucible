@@ -901,85 +901,19 @@ mod tests {
     }
 
     // ── Cross-language drift guard ───────────────────────────────────
+    //
+    // This used to scan `api.ts` for `SSE_EVENT_TYPES` and compare the strings
+    // to the ones `event_name()` spells. Two generated gates replace it, and
+    // neither reads a source file:
+    //
+    // - `openapi_contract::every_sse_event_name_is_in_the_document` compares
+    //   `event_name()` to the tag the same enum serialises under, and the set
+    //   of tags to the document `utoipa` derives from the enum.
+    // - `web/src/lib/api.ts` binds `SSE_EVENT_TYPES` to the generated
+    //   `ChatEvent` union with `satisfies` and an `Exclude` check, so
+    //   `bun run typecheck` fails both for a name that is not a variant and
+    //   for a variant the tuple forgot.
 
-    /// Text between two markers, or a panic naming the marker that moved.
-    fn between<'a>(src: &'a str, start: &str, end: &str) -> &'a str {
-        let from = src
-            .find(start)
-            .unwrap_or_else(|| panic!("scan marker `{start}` not found — fix this test"))
-            + start.len();
-        let rest = &src[from..];
-        let to = rest
-            .find(end)
-            .unwrap_or_else(|| panic!("scan marker `{end}` not found — fix this test"));
-        &rest[..to]
-    }
-
-    /// Every quoted lowercase-ish literal in `src`, in either language: Rust
-    /// `"…"` and TypeScript `'…'` both yield their contents.
-    fn quoted_wire_literals(src: &str, quote: char) -> std::collections::BTreeSet<String> {
-        let mut out = std::collections::BTreeSet::new();
-        let mut rest = src;
-        while let Some(open) = rest.find(quote) {
-            rest = &rest[open + 1..];
-            let Some(close) = rest.find(quote) else { break };
-            let lit = &rest[..close];
-            rest = &rest[close + 1..];
-            if !lit.is_empty()
-                && lit
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.' || c == ':')
-            {
-                out.insert(lit.to_string());
-            }
-        }
-        out
-    }
-
-    /// `event_name()` decides the SSE event name; `SSE_EVENT_TYPES` decides which
-    /// names the browser registers a listener for. A name in one and not the
-    /// other is a silently undelivered event — that is how `tool_call_start`
-    /// ended up in `api.ts` with no Rust arm, and the existing TS-side guard
-    /// (`chatEventReducer.test.ts`) compares TS to TS so it passed throughout.
-    ///
-    /// Source-scanning both is ugly; it is also the only check that spans the
-    /// languages, and `rpc/dispatch.rs` sets the precedent.
-    #[test]
-    fn sse_event_names_match_the_frontend_listener_list() {
-        let rust = quoted_wire_literals(
-            between(
-                include_str!("events.rs"),
-                "pub fn event_name(&self) -> &'static str {",
-                "\n    }\n",
-            ),
-            '"',
-        );
-        let ts = quoted_wire_literals(
-            between(
-                include_str!("../web/src/lib/api.ts"),
-                "export const SSE_EVENT_TYPES = [",
-                "] as const;",
-            ),
-            '\'',
-        );
-        assert!(
-            !rust.is_empty() && !ts.is_empty(),
-            "source markers moved — fix this test (rust: {}, ts: {})",
-            rust.len(),
-            ts.len(),
-        );
-
-        let rust_only: Vec<_> = rust.difference(&ts).collect();
-        let ts_only: Vec<_> = ts.difference(&rust).collect();
-        assert!(
-            rust_only.is_empty(),
-            "emitted by event_name() but no browser listener: {rust_only:?}"
-        );
-        assert!(
-            ts_only.is_empty(),
-            "browser listens but Rust never emits: {ts_only:?}"
-        );
-    }
 
     /// `ended` with an `"error: "` reason is the only thing on the wire that
     /// produces `ChatEvent::Error`. Before this, `ChatEvent::Error` was

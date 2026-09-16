@@ -10,7 +10,7 @@ import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 // reach the right control and the right route.
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
-    currentSession: () => ({ id: 's1' }),
+    currentSession: () => ({ session_id: 's1' }),
   }),
 }));
 

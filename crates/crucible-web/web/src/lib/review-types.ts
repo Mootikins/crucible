@@ -1,35 +1,27 @@
 /**
  * Wire types for the attributed-diff review surface.
  *
- * These mirror `crucible_core::session::{ComposedHunk, Comment, ReviewState}`
- * and `crucible_core::types::mode::ReviewPolicy` field-for-field, in the
- * daemon's snake_case serialization. They live here rather than in
- * `lib/types.ts` so the review surface can ship as one self-contained slice.
+ * Every shape here is an alias into the generated contract. They live in this
+ * file rather than in `lib/types.ts` so the review surface can ship as one
+ * self-contained slice, and the two helper functions below travel with them.
  *
  * One deliberate absence: there is no `external` field. Rust exposes it as
  * `ComposedHunk::is_external()`, a method, so it never crosses the wire —
  * `tool_call_ids.length === 0` IS the definition. `isExternal()` below is the
  * single place that knowledge lives on this side.
  */
-import type { ModeDescriptor } from './types';
+import type { components } from './api-schema';
 
-/** Per-composed-hunk review state. Matches the Rust enum's snake_case wire form. */
-export type ReviewState = 'unreviewed' | 'accepted' | 'rejected';
+type Schemas = components['schemas'];
+
+/** Per-composed-hunk review state. */
+export type ReviewState = Schemas['ReviewStateRow'];
 
 /**
- * Which hunks a review lists: the session's, or the current turn's. Mirrors
- * `crucible_core::session::ReviewScope`. The daemon decides membership; the
- * browser only names the scope it wants.
+ * Which hunks a review lists: the session's, or the current turn's. The daemon
+ * decides membership; the browser only names the scope it wants.
  */
-export type ReviewScope = 'session' | 'turn';
-
-/** 1-based, half-open — `start` is the first line, `end` is one PAST the last. */
-interface LineRange {
-  start: number;
-  end: number;
-}
-
-export type CommentAuthor = 'human' | 'agent';
+export type ReviewScope = Schemas['ReviewScopeRow'];
 
 /**
  * A hunk of the composed diff (`session_base` → current worktree).
@@ -37,44 +29,17 @@ export type CommentAuthor = 'human' | 'agent';
  * The action unit of review. `before_content`/`after_content` are whole
  * newline-terminated blocks (empty for a pure insertion / deletion). They are
  * the original and the document of the merge view `HunkMergeView` mounts.
+ * `base_range` and `current_range` are 1-based and half-open: `start` is the
+ * first line and `end` is one PAST the last.
+ *
+ * `reapplied` says the agent re-applied a change the user rejected. It is
+ * derived by the daemon, never client-settable, and such a hunk still reports
+ * `state: 'unreviewed'` — it adds no decision, only the history that makes the
+ * grind visible instead of showing a fresh-looking hunk each round.
  */
-export interface ComposedHunk {
-  /** Content-derived, stable across line shifts. The only handle for mutations. */
-  id: string;
-  /** Repository top level the hunk belongs to. */
-  root: string;
-  /** Path relative to `root`. */
-  path: string;
-  /** Range in `session_base` coordinates. */
-  base_range: LineRange;
-  /** Range in current-worktree coordinates — where it lives in the open buffer. */
-  current_range: LineRange;
-  before_content: string;
-  after_content: string;
-  /** Tool calls that contributed, in ledger order. Many-to-many, informational. */
-  tool_call_ids: string[];
-  state: ReviewState;
-  /**
-   * The agent re-applied a change the user rejected.
-   *
-   * Derived by the daemon, never client-settable. Such a hunk always reports
-   * `state: 'unreviewed'`, so this adds no decision — only the history that
-   * makes the grind visible instead of showing a fresh-looking hunk each round.
-   */
-  reapplied: boolean;
-}
+export type ComposedHunk = Schemas['ReviewHunkRow'];
 
-export interface ReviewComment {
-  id: string;
-  root: string;
-  path: string;
-  base_tree: string;
-  line_range: LineRange;
-  body: string;
-  author: CommentAuthor;
-  resolved: boolean;
-  created_at: string;
-}
+export type ReviewComment = Schemas['ReviewCommentRow'];
 
 /**
  * Effective review policy for the session's current mode.
@@ -85,18 +50,17 @@ export interface ReviewComment {
  * Rendering the configured policy instead would be a lie about a safety
  * property, so nothing on this side re-derives it from the mode id.
  */
-export type ReviewPolicy = 'none' | 'post_turn' | 'pre_write';
+export type ReviewPolicy = Schemas['ReviewPolicyRow'];
 
 /**
- * `ModeDescriptor` as daemons carrying the review feature send it.
+ * A mode, named from the review surface.
  *
- * Optional because `review_policy` is `#[serde(default)]` on the Rust side and
- * an older daemon simply omits it. Absent means "this daemon has no opinion" —
- * the UI shows no policy chip rather than guessing one.
+ * `review_policy` is now a required member of `ModeDescriptor` itself, because
+ * the route declares it: the daemon always sends it. The alias stays so the
+ * review components keep reading one name, and so the two files do not import
+ * each other in a cycle.
  */
-export interface ReviewAwareMode extends ModeDescriptor {
-  review_policy?: ReviewPolicy;
-}
+export type ReviewAwareMode = Schemas['ModeRow'];
 
 /**
  * A hunk nobody's ledger claims: the user's own editor, an async formatter, a

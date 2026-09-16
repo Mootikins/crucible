@@ -19,13 +19,13 @@ const PROVIDERS = 'GET /api/providers';
 function wire(over: Partial<Session> & { id: string }): Record<string, unknown> {
   return {
     session_id: over.id,
-    type: over.session_type ?? 'chat',
+    type: over.type ?? 'chat',
     kilns: over.kilns ?? ['main'],
     workspace: over.workspace ?? '/repos/app',
     state: over.state ?? 'active',
     title: over.title ?? 'Test Session',
     agent_model: over.agent_model ?? null,
-    agent: over.agent_mode ? { mode: over.agent_mode } : null,
+    agent: over.agent ? { mode: over.agent } : null,
     started_at: over.started_at ?? '2026-09-15T00:00:00Z',
     last_activity: over.last_activity ?? null,
     event_count: over.event_count ?? 0,
@@ -508,7 +508,7 @@ describe('the model list of the selected session', () => {
 describe('adopting the focused pane’s session', () => {
   function Probe() {
     const ctx = useSession();
-    return <span data-testid="current">{ctx.currentSession()?.id ?? 'none'}</span>;
+    return <span data-testid="current">{ctx.currentSession()?.session_id ?? 'none'}</span>;
   }
 
   function mount() {
@@ -592,7 +592,7 @@ describe('the model list of a session that was not just created', () => {
     props.onCtx(ctx);
     return (
       <>
-        <span data-testid="current">{ctx.currentSession()?.id ?? 'none'}</span>
+        <span data-testid="current">{ctx.currentSession()?.session_id ?? 'none'}</span>
         <span data-testid="models">{ctx.availableModels().join(',')}</span>
       </>
     );
@@ -698,7 +698,9 @@ describe('the list every reader shares', () => {
   it('paints the list this browser stored before the daemon answers', async () => {
     localStorage.setItem(
       'crucible:cache:sessions',
-      JSON.stringify([{ id: 's-stored', kilns: [], workspace: null, state: 'active' }]),
+      JSON.stringify([
+        { session_id: 's-stored', type: 'chat', kilns: [], workspace: null, state: 'active' },
+      ]),
     );
     let release: (() => void) | undefined;
     const answered = new Promise<void>((resolve) => {
@@ -714,7 +716,7 @@ describe('the list every reader shares', () => {
     let ctx!: ReturnType<typeof useSession>;
     function Probe() {
       ctx = useSession();
-      return <span data-testid="ids">{ctx.sessions().map((s) => s.id).join(',')}</span>;
+      return <span data-testid="ids">{ctx.sessions().map((s) => s.session_id).join(',')}</span>;
     }
     render(() => (
       <SessionProvider initialKiln="/kilns/main">
@@ -733,7 +735,7 @@ describe('the mutations every reader shares', () => {
   function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
     const ctx = useSession();
     props.onCtx(ctx);
-    return <span data-testid="ids">{ctx.sessions().map((s) => s.id).join(',')}</span>;
+    return <span data-testid="ids">{ctx.sessions().map((s) => s.session_id).join(',')}</span>;
   }
 
   async function mountWith(routes: Record<string, MockFetchAnswer>) {

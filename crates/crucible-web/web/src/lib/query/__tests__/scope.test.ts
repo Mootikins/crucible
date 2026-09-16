@@ -16,14 +16,13 @@ const STORAGE_KEY = 'crucible:cache:sessions';
 
 function session(id: string, over: Partial<Session> = {}): Session {
   return {
-    id,
-    session_type: 'chat',
+    session_id: id,
+    type: 'chat',
     kilns: ['main'],
     workspace: '/repos/app',
     state: 'active',
     title: `Session ${id}`,
     agent_model: null,
-    agent_mode: null,
     started_at: '2026-09-15T00:00:00Z',
     last_activity: null,
     event_count: 0,
@@ -35,8 +34,8 @@ function session(id: string, over: Partial<Session> = {}): Session {
 /** One session as the daemon sends it; `lib/api.ts` maps the field names. */
 function wire(row: Session): Record<string, unknown> {
   return {
-    session_id: row.id,
-    type: row.session_type,
+    session_id: row.session_id,
+    type: row.type,
     kilns: row.kilns,
     workspace: row.workspace,
     state: row.state,

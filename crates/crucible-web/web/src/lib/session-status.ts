@@ -28,8 +28,8 @@ export type SessionStatus = 'working' | 'waiting' | 'idle';
  * `waiting` beats `working`. A session that streams AND blocks on a human is,
  * to that human, blocked.
  */
-export function sessionStatus(session: Pick<Session, 'id'>): SessionStatus {
-  const entry = attentionStore.get(session.id);
+export function sessionStatus(session: Pick<Session, 'session_id'>): SessionStatus {
+  const entry = attentionStore.get(session.session_id);
   if (entry?.pendingInteraction) return 'waiting';
   if (entry?.isStreaming) return 'working';
   return 'idle';

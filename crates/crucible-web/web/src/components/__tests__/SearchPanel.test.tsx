@@ -61,7 +61,12 @@ beforeEach(() => {
         kilns: params.getAll('kiln'),
         limit: params.get('limit'),
       });
-      return [{ id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' }];
+      // Matched LINES under `matches` — the route answers the transcript line
+      // it found, not the session.
+      return {
+        matches: [{ session_id: 's1', line: 7, context: 'we agreed on Trust session' }],
+        total: 1,
+      };
     },
   });
 });
@@ -88,7 +93,9 @@ describe('SearchPanel', () => {
     // Note + file hits render; a session hit renders.
     await waitFor(() => expect(screen.getAllByTestId('search-hit').length).toBe(2));
     await waitFor(() =>
-      expect(screen.getByTestId('search-session-hit').textContent).toContain('Trust session'),
+      expect(screen.getByTestId('search-session-hit').textContent).toContain(
+        'we agreed on Trust session',
+      ),
     );
   });
 

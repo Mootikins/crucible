@@ -9,14 +9,13 @@ vi.mock('@/contexts/SessionContext', () => ({
     // every required field (agent_mode) plus the optional last_activity /
     // archived to be present.
     currentSession: (): Session => ({
-      id: 's1',
-      session_type: 'chat',
+      session_id: 's1',
+      type: 'chat',
       kilns: ['/tmp/k'],
       workspace: '/tmp/k',
       state: 'active',
       title: null,
       agent_model: null,
-      agent_mode: null,
       started_at: '',
       last_activity: null,
       event_count: 0,

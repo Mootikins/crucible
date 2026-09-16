@@ -8,7 +8,13 @@ const project = (path: string, name: string, kilns: Project['kilns'] = []): Proj
   kilns,
   last_accessed: '',
 });
-const kiln = (path: string, name: string | null = null): KilnListEntry => ({ path, name });
+const kiln = (path: string, name = ''): KilnListEntry => ({
+  path,
+  name,
+  registered: true,
+  open: true,
+  last_access_secs_ago: null,
+});
 
 const kilnRoots = (groups: ReturnType<typeof buildRoster>) =>
   groups.find((g) => g.label === 'Kilns')!.roots;
@@ -31,7 +37,7 @@ describe('buildRoster', () => {
     };
     const main: Project = {
       ...project('/home/me/crucible', 'crucible'),
-      repository: { root: '/home/me/crucible' },
+      repository: { root: '/home/me/crucible', is_worktree: false },
     };
     const groups = buildRoster([main, wt], []);
     expect(groups[0].roots.map((r) => r.path)).toEqual(['/home/me/crucible']);
@@ -61,7 +67,7 @@ describe('buildRoster', () => {
   });
 
   it('uses kiln names, falling back to basename on null', () => {
-    const groups = buildRoster([], [kiln('/vault', 'My Vault'), kiln('/other/docs', null)]);
+    const groups = buildRoster([], [kiln('/vault', 'My Vault'), kiln('/other/docs', '')]);
     expect(kilnRoots(groups)).toEqual([
       { kind: 'kiln', path: '/vault', name: 'My Vault' },
       { kind: 'kiln', path: '/other/docs', name: 'docs' },
@@ -104,7 +110,7 @@ describe('buildRoster', () => {
     // the descriptive name.
     const groups = buildRoster(
       [project('/home/user/crucible', 'crucible', [{ path: '/home/user/crucible/docs', name: 'crucible-docs' }])],
-      [kiln('crucible-docs', null), kiln('/home/user/crucible/docs', 'crucible-docs')],
+      [kiln('crucible-docs', ''), kiln('/home/user/crucible/docs', 'crucible-docs')],
     );
     const docsRoots = kilnRoots(groups).filter((r) => r.path === '/home/user/crucible/docs');
     expect(docsRoots).toHaveLength(1);
@@ -114,14 +120,14 @@ describe('buildRoster', () => {
   });
 
   it('keeps a name-only kiln when nothing maps the name to a path', () => {
-    const groups = buildRoster([], [kiln('solo-kiln', null)]);
+    const groups = buildRoster([], [kiln('solo-kiln', '')]);
     expect(kilnRoots(groups)).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln' }]);
   });
 
   it('names an unnamed kiln by its directory basename', () => {
     // A kiln is a directory CONTAINING a .crucible — never a path at/under
     // one. Fixtures model that shape.
-    const groups = buildRoster([], [kiln('/home/user/notes', null)]);
+    const groups = buildRoster([], [kiln('/home/user/notes', '')]);
     const roots = kilnRoots(groups);
     expect(roots).toHaveLength(1);
     expect(roots[0].name).toBe('notes');

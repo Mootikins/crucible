@@ -22,7 +22,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crucible_web::fs_events::FsEvent;
 use crucible_web::server::api_spec;
+use crucible_web::ChatEvent;
 
 /// The document is JSON, so the test reads it as JSON.
 fn spec_json() -> serde_json::Value {
@@ -152,34 +154,6 @@ fn web_src(relative: &str) -> PathBuf {
         .join(relative)
 }
 
-/// Read a `const NAME = ['a', 'b'] as const;` array of strings out of a
-/// TypeScript source file.
-///
-/// A regex, not a parser: the two lists this test reads are literal string
-/// arrays with no interpolation, and a TypeScript parser in a Rust test costs
-/// more than it proves.
-fn typescript_string_list(source: &str, name: &str) -> Vec<String> {
-    let opening = format!("{name} = [");
-    let start = source
-        .find(&opening)
-        .unwrap_or_else(|| panic!("`{name}` is not declared in the file"))
-        + opening.len();
-    let length = source[start..]
-        .find(']')
-        .unwrap_or_else(|| panic!("`{name}` has no closing bracket"));
-
-    source[start..start + length]
-        .split(',')
-        .map(|entry| {
-            entry
-                .trim()
-                .trim_matches('\'')
-                .trim_matches('"')
-                .to_string()
-        })
-        .filter(|entry| !entry.is_empty())
-        .collect()
-}
 
 /// Every `type` tag value an internally-tagged enum schema can take.
 ///
@@ -218,46 +192,176 @@ fn discriminator_values(schema: &serde_json::Value) -> Vec<String> {
     found
 }
 
-/// The browser's event-name lists and the Rust enums say the same thing.
+/// One value of every `ChatEvent` variant.
 ///
-/// The check runs both ways on purpose. `api.ts` asked a human to append a
-/// name whenever a `ChatEvent` variant arrived; a name in Rust and not in
-/// TypeScript is the failure that comment could not catch.
+/// The list is held complete by the document: the assertions below compare it
+/// to the union `utoipa` derives from the enum, so a variant added in Rust and
+/// not added here fails as a name the document has and this list does not.
+fn one_chat_event_per_variant() -> Vec<ChatEvent> {
+    vec![
+        ChatEvent::Token {
+            content: String::new(),
+        },
+        ChatEvent::ToolCall {
+            id: String::new(),
+            title: String::new(),
+            arguments: None,
+        },
+        ChatEvent::ToolResult {
+            id: String::new(),
+            result: None,
+            terminate: false,
+        },
+        ChatEvent::ToolResultDelta {
+            id: String::new(),
+            delta: String::new(),
+        },
+        ChatEvent::ToolResultComplete { id: String::new() },
+        ChatEvent::ToolResultError {
+            id: String::new(),
+            error: String::new(),
+        },
+        ChatEvent::Thinking {
+            content: String::new(),
+        },
+        ChatEvent::SegmentComplete {
+            message_id: String::new(),
+            index: 0,
+            content: String::new(),
+        },
+        ChatEvent::MessageComplete {
+            id: String::new(),
+            content: String::new(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            total_tokens: None,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            stop_reason: None,
+            stop_notice: None,
+        },
+        ChatEvent::Error {
+            code: String::new(),
+            message: String::new(),
+        },
+        ChatEvent::InteractionRequested {
+            id: String::new(),
+            request: serde_json::json!({}),
+        },
+        ChatEvent::SubagentSpawned {
+            id: String::new(),
+            prompt: String::new(),
+        },
+        ChatEvent::SubagentCompleted {
+            id: String::new(),
+            summary: String::new(),
+        },
+        ChatEvent::SubagentFailed {
+            id: String::new(),
+            error: String::new(),
+        },
+        ChatEvent::DelegationSpawned {
+            id: String::new(),
+            prompt: String::new(),
+            target_agent: None,
+        },
+        ChatEvent::DelegationCompleted {
+            id: String::new(),
+            summary: String::new(),
+        },
+        ChatEvent::DelegationFailed {
+            id: String::new(),
+            error: String::new(),
+        },
+        ChatEvent::ContextUsage { used: 0, total: 0 },
+        ChatEvent::PrecognitionResult {
+            notes_count: 0,
+            notes: Vec::new(),
+        },
+        ChatEvent::ModeChanged {
+            mode: String::new(),
+        },
+        ChatEvent::TitleChanged {
+            title: String::new(),
+        },
+        ChatEvent::SessionEvent {
+            event: String::new(),
+            data: serde_json::Value::Null,
+        },
+    ]
+}
+
+/// The serde tag one event serialises under.
+fn serde_tag(event: &impl serde::Serialize) -> String {
+    serde_json::to_value(event).expect("the event serialises")["type"]
+        .as_str()
+        .expect("an internally-tagged enum carries a `type` string")
+        .to_string()
+}
+
+/// The SSE `event:` name and the payload's `type` tag name the same event.
+///
+/// The browser installs a listener per `event_name()` and then switches on the
+/// payload's `type`, so the two have to agree or a listener fires for a shape
+/// its handler cannot read. The document stands in for the tag, because
+/// `utoipa` derives it from the same enum the serde tag comes from.
+///
+/// The browser's own side of this contract is no longer read here.
+/// `SSE_EVENT_TYPES` in `web/src/lib/api.ts` is now bound to the generated
+/// `ChatEvent` union by a `satisfies` clause and an `Exclude` check, so
+/// `bun run typecheck` fails in both directions and this test does not have to
+/// parse TypeScript to say the same thing.
 #[test]
 fn every_sse_event_name_is_in_the_document() {
     let spec = spec_json();
-    let api_ts = std::fs::read_to_string(web_src("lib/api.ts")).expect("the test reads api.ts");
 
-    let chat_names: Vec<String> = typescript_string_list(&api_ts, "SSE_EVENT_TYPES");
-    assert_eq!(chat_names.len(), 22, "`SSE_EVENT_TYPES` lost a name");
-    let chat_tags = discriminator_values(&spec["components"]["schemas"]["ChatEvent"]);
-    let mut expected = chat_names.clone();
-    expected.sort();
-    expected.dedup();
+    let chat = one_chat_event_per_variant();
+    for event in &chat {
+        assert_eq!(
+            event.event_name(),
+            serde_tag(event),
+            "`ChatEvent::event_name` and the serde tag disagree"
+        );
+    }
+    let mut chat_names: Vec<String> = chat.iter().map(serde_tag).collect();
+    chat_names.sort();
+    chat_names.dedup();
     assert_eq!(
-        chat_tags, expected,
-        "`ChatEvent` and `SSE_EVENT_TYPES` name different events"
+        discriminator_values(&spec["components"]["schemas"]["ChatEvent"]),
+        chat_names,
+        "`ChatEvent` and the document name different events"
     );
 
     // The filesystem stream's SSE `event:` names carry an `fs_` prefix that the
     // serde tag does not: `fs_changed` on the wire envelope, `changed` in the
     // payload. `FsEvent::event_name` writes the prefix, so the test strips it.
-    let fs_names: Vec<String> = typescript_string_list(&api_ts, "FS_SSE_EVENT_TYPES")
-        .iter()
-        .map(|name| {
-            name.strip_prefix("fs_")
-                .unwrap_or_else(|| panic!("`{name}` is not an `fs_` event name"))
-                .to_string()
-        })
-        .collect();
-    assert_eq!(fs_names.len(), 3, "`FS_SSE_EVENT_TYPES` lost a name");
-    let fs_tags = discriminator_values(&spec["components"]["schemas"]["FsEvent"]);
-    let mut expected = fs_names.clone();
-    expected.sort();
-    expected.dedup();
+    let fs = vec![
+        FsEvent::Changed {
+            path: String::new(),
+            kind: String::new(),
+        },
+        FsEvent::Deleted {
+            path: String::new(),
+        },
+        FsEvent::Moved {
+            from: String::new(),
+            to: String::new(),
+        },
+    ];
+    for event in &fs {
+        assert_eq!(
+            event.event_name().strip_prefix("fs_"),
+            Some(serde_tag(event).as_str()),
+            "`FsEvent::event_name` and the serde tag disagree"
+        );
+    }
+    let mut fs_names: Vec<String> = fs.iter().map(serde_tag).collect();
+    fs_names.sort();
+    fs_names.dedup();
     assert_eq!(
-        fs_tags, expected,
-        "`FsEvent` and `FS_SSE_EVENT_TYPES` name different events"
+        discriminator_values(&spec["components"]["schemas"]["FsEvent"]),
+        fs_names,
+        "`FsEvent` and the document name different events"
     );
 }
 

@@ -48,14 +48,13 @@ vi.mock('@/components/DiffViewer', () => ({
 const { MessageList } = await import('../MessageList');
 
 const activeSession = (): Session => ({
-  id: 's1',
-  session_type: 'chat',
+  session_id: 's1',
+  type: 'chat',
   kilns: ['/repo'],
   workspace: '/repo',
   state: 'active',
   title: null,
   agent_model: null,
-  agent_mode: null,
   started_at: '2026-01-01T00:00:00Z',
   event_count: 0,
 });

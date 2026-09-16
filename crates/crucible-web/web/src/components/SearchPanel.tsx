@@ -20,7 +20,6 @@ import { useConfig } from '@/lib/query/config';
 import { openFileInEditor } from '@/lib/file-actions';
 import { pathBasename } from '@/stores/statusBarStore';
 import { kilnLabel } from '@/lib/kiln-label';
-import { relativeTime } from '@/lib/format-time';
 import { placePopup, type PopupPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
 import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
@@ -243,7 +242,13 @@ export const SearchPanel: Component = () => {
   const semanticHits = () => semanticNotes.data ?? [];
   const noteHits = (): GrepHit[] => grepNotes.data?.hits ?? [];
   const fileHits = (): GrepHit[] => grepFiles.data?.hits ?? [];
-  const sessionHits = () => sessionSearch.data ?? [];
+  /**
+   * The transcript lines that matched, and the daemon's note when the search
+   * was unscoped. A match names its session; the panel shows the line, because
+   * the line is what the query found.
+   */
+  const sessionHits = () => sessionSearch.data?.matches ?? [];
+  const sessionNote = () => sessionSearch.data?.note ?? null;
 
   const busy = () =>
     semanticNotes.isFetching ||
@@ -383,17 +388,25 @@ export const SearchPanel: Component = () => {
           </For>
         </Show>
 
+        {/* The daemon's own sentence for a search that scoped to no kiln and
+            therefore searched nothing. "No results" would be a lie there. */}
+        <Show when={sessionNote()}>
+          <div class="px-3 py-1.5 text-floor text-muted-dark" data-testid="search-session-note">
+            {sessionNote()}
+          </div>
+        </Show>
+
         <Show when={sessionHits().length > 0}>
           <div class={treeSectionHeader}>Sessions · {counts().sessions}</div>
           <For each={sessionHits()}>
-            {(s) => (
-              <button type="button" onClick={() => selectSession(s.id)} title={s.title ?? 'Untitled session'}
+            {(match) => (
+              <button type="button" onClick={() => selectSession(match.session_id)} title={match.session_id}
                 class="w-full text-left px-3 py-1.5 rounded hover:bg-hover-wash transition-colors flex items-center gap-1.5"
                 data-testid="search-session-hit">
                 <ClipboardList class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
-                <span class="text-xs text-shell-body truncate">{s.title ?? 'Untitled session'}</span>
-                <Show when={s.started_at}>
-                  <span class="text-floor text-muted-dark shrink-0 ml-auto pl-2">{relativeTime(s.started_at!)}</span>
+                <span class="text-xs text-shell-body truncate">{match.context}</span>
+                <Show when={match.line > 0}>
+                  <span class="text-floor text-muted-dark shrink-0 ml-auto pl-2">L{match.line}</span>
                 </Show>
               </button>
             )}

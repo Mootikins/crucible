@@ -30,7 +30,7 @@ vi.mock('@/contexts/ProjectContext', () => ({
   }),
 }));
 vi.mock('@/lib/session-status', () => ({
-  sessionStatus: (s: Session) => (state.waiting.includes(s.id) ? 'waiting' : 'idle'),
+  sessionStatus: (s: Session) => (state.waiting.includes(s.session_id) ? 'waiting' : 'idle'),
   STATUS_RANK: { waiting: 0, working: 1, idle: 2 },
 }));
 
@@ -41,7 +41,8 @@ const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString(
 
 const session = (id: string, workspace: string, title: string, ageMinutes = 60): Session =>
   ({
-    id,
+    session_id: id,
+    type: 'chat',
     title,
     started_at: minutesAgo(ageMinutes),
     last_activity: minutesAgo(ageMinutes),
@@ -154,7 +155,7 @@ describe('SessionsTab', () => {
     state.currentProject = null;
     state.sessions = [
       ...state.sessions,
-      { ...session('p1', '', 'Reflection: yesterday'), session_type: 'plugin', workspace: null },
+      { ...session('p1', '', 'Reflection: yesterday'), type: 'plugin', workspace: null },
     ];
     render(() => <SessionsTab />);
     const section = screen.getByTestId('compact-reflections');

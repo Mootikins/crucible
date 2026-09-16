@@ -34,7 +34,7 @@ export const ChatInput: Component = () => {
   // Bound to the accessor, not to an id: the composer outlives the session on
   // screen, so a command typed after a tab switch must reach the session the
   // user is looking at.
-  const runCommand = useExecuteCommand(() => session()?.id ?? '');
+  const runCommand = useExecuteCommand(() => session()?.session_id ?? '');
   // Sending is allowed whenever a session is selected and no turn is in flight.
   // Lifecycle state (paused/ended) is NOT a gate: the daemon transparently
   // revives an idle session on send, so an ended session is never a dead end.

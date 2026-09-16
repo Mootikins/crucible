@@ -9,8 +9,8 @@ import { useKilns, fetchKilnsOnce, kilnsSnapshot, resetKilnsForTests } from '../
 /** The storage key `swrLocal('kilns')` wrote, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:kilns';
 
-const MAIN: KilnListEntry[] = [{ name: 'main', path: '/kilns/main' }];
-const STORED: KilnListEntry[] = [{ name: 'stored', path: '/kilns/stored' }];
+const MAIN: KilnListEntry[] = [{ name: 'main', path: '/kilns/main', last_access_secs_ago: null, open: true, registered: true }];
+const STORED: KilnListEntry[] = [{ name: 'stored', path: '/kilns/stored', last_access_secs_ago: null, open: true, registered: true }];
 
 /** The envelope `GET /api/kilns` answers; `listKilns` unwraps `kilns`. */
 function kilnsBody(kilns: KilnListEntry[]): { kilns: KilnListEntry[] } {

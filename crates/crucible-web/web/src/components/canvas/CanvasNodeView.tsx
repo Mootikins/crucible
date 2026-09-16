@@ -51,7 +51,7 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
       <Switch>
         <Match when={props.node.type === 'text'}>
           <CanvasTextCard
-            text={(props.node as { text: string }).text}
+            text={String(props.node.text ?? '')}
             nodeId={props.node.id}
             kiln={props.kiln}
             editable={props.editable ?? false}
@@ -61,7 +61,7 @@ export const CanvasNodeView: Component<CanvasNodeViewProps> = (props) => {
 
         <Match when={props.node.type === 'link'}>
           <LinkCard
-            url={(props.node as { url: string }).url}
+            url={String(props.node.url ?? '')}
             interactive={props.focused ?? false}
           />
         </Match>

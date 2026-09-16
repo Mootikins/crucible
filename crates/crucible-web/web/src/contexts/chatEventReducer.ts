@@ -287,8 +287,8 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           promptTokens: event.prompt_tokens ?? 0,
           completionTokens: event.completion_tokens ?? 0,
           totalTokens: event.total_tokens,
-          cacheReadTokens: event.cache_read_tokens,
-          cacheCreationTokens: event.cache_creation_tokens,
+          cacheReadTokens: event.cache_read_tokens ?? undefined,
+          cacheCreationTokens: event.cache_creation_tokens ?? undefined,
         } : undefined;
         // event.id is the TURN id (same one the user message carries), so
         // the assistant entry takes the derived response id — identical to
@@ -460,7 +460,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           id: event.id,
           prompt: event.prompt,
           status: 'spawned',
-          targetAgent: event.target_agent,
+          targetAgent: event.target_agent ?? undefined,
         }]);
         break;
 
@@ -509,7 +509,12 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           deps.updateMessage(lastUser.id, {
             precognition: {
               notesCount: event.notes_count,
-              notes: event.notes,
+              // `notes` is `#[serde(default)]` in Rust, so an older recording
+              // carries the count and no list.
+              notes: (event.notes ?? []).map((note) => ({
+                name: note.name,
+                relevance: note.relevance ?? 0,
+              })),
             },
           });
         }

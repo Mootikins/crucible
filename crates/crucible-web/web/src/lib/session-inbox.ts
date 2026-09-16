@@ -4,7 +4,8 @@ import type { Session } from '@/lib/types';
 export const INBOX_SIZE = 5;
 
 /** Milliseconds since the epoch of a session's last message, 0 when unreadable. */
-export const touchedAt = (s: Session): number => Date.parse(s.last_activity ?? s.started_at) || 0;
+export const touchedAt = (s: Session): number =>
+  Date.parse(s.last_activity ?? s.started_at ?? '') || 0;
 
 /** Newest first. */
 export const byRecency = (a: Session, b: Session) => touchedAt(b) - touchedAt(a);
@@ -24,7 +25,7 @@ export const byRecency = (a: Session, b: Session) => touchedAt(b) - touchedAt(a)
  */
 export function inboxSessions(sessions: readonly Session[]): Session[] {
   return sessions
-    .filter((s) => !s.archived && s.session_type !== 'plugin')
+    .filter((s) => !s.archived && s.type !== 'plugin')
     .sort(byRecency)
     .slice(0, INBOX_SIZE);
 }

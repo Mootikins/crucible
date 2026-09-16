@@ -21,7 +21,7 @@ import type {
   ConnectionStatus,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
-import type { SessionHistoryResponse } from '@/lib/api';
+import type { DaemonHistoryEvent, SessionHistoryResponse } from '@/lib/api';
 import {
   generateMessageId,
   turnResponseId,
@@ -342,7 +342,17 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
     // Real event times, so a reloaded turn shows the same duration the
     // live one did. A missing stamp falls back to the old synthetic spacing.
-    const eventTime = (evt: { timestamp?: string }): number | undefined => {
+    /**
+     * One recorded event's payload.
+     *
+     * `data` is `unknown` on the wire: its shape differs per `event`, the
+     * daemon owns that vocabulary, and the route forwards the object whole.
+     * Every read below narrows through here rather than trusting a field.
+     */
+    const payload = (evt: DaemonHistoryEvent): Record<string, unknown> =>
+      (evt.data ?? {}) as Record<string, unknown>;
+
+    const eventTime = (evt: { timestamp?: string | null }): number | undefined => {
       const n = evt.timestamp ? Date.parse(evt.timestamp) : NaN;
       return Number.isNaN(n) ? undefined : n;
     };
@@ -351,20 +361,20 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // time), the same stamp a live placeholder gets when the turn is sent.
     let turnStart: number | undefined;
     for (const evt of response.history) {
-      if (evt.event === 'user_message' && evt.data?.content) {
+      const data = payload(evt);
+      if (evt.event === 'user_message' && typeof data.content === 'string') {
         turnStart = eventTime(evt);
         // New turn: drop any segments a prior turn left uncollected.
         pendingSegments = [];
         loadedMessages.push({
-          id: evt.data.message_id as string || `user-${loadedMessages.length}`,
+          id: (data.message_id as string) || `user-${loadedMessages.length}`,
           role: 'user',
-          content: evt.data.content,
+          content: data.content,
           timestamp: turnStart ?? synthetic(),
         });
       } else if (evt.event === 'segment_complete') {
         // Canonical id derivation identical to the live reducer's, so a
         // reloaded segment bubble carries the same id it streamed under.
-        const data = (evt.data ?? {}) as Record<string, unknown>;
         const content = typeof data.content === 'string' ? data.content : '';
         const index = typeof data.index === 'number' ? data.index : Number(data.index ?? 0);
         const messageId = typeof data.message_id === 'string' ? data.message_id : undefined;
@@ -379,7 +389,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         // Reconstruct tool entries so past tool activity stays visible in
         // the transcript after a reload (they used to vanish at turn end).
         // Canonical daemon payload: {call_id, tool, args}.
-        const data = (evt.data ?? {}) as Record<string, unknown>;
         const callId = String(data.call_id ?? `hist-${loadedMessages.length}`);
         const name = String(data.tool ?? 'tool');
         const args = data.args;
@@ -397,7 +406,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           },
         });
       } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
-        const data = (evt.data ?? {}) as Record<string, unknown>;
         const callId = String(data.call_id ?? '');
         const target = findToolMessage(callId);
         if (target?.toolCall) {
@@ -415,7 +423,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         // Field mapping mirrors the SSE path (which normalises in Rust):
         // the persisted payload is a PrecognitionNoteInfo, so `title`/`score`
         // become `name`/`relevance` here.
-        const data = (evt.data ?? {}) as Record<string, unknown>;
         const lastUser = [...loadedMessages].reverse().find((m) => m.role === 'user');
         if (lastUser) {
           const notes = (Array.isArray(data.notes) ? data.notes : [])
@@ -433,14 +440,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             notes,
           };
         }
-      } else if (evt.event === 'message_complete' && evt.data?.full_response) {
+      } else if (evt.event === 'message_complete' && typeof data.full_response === 'string') {
         // The persisted full_response is the WHOLE turn; strip the prefix
         // already rendered as segment bubbles (same helper the live reducer
         // uses). Skip an empty trailing bubble when segments covered the
         // whole turn — the live reducer adds none in that case either.
         const hadSegments = pendingSegments.length > 0;
         const finalContent = stripFrozenPrefix(
-          evt.data.full_response as string,
+          data.full_response,
           pendingSegments,
         );
         pendingSegments = [];
@@ -448,8 +455,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           loadedMessages.push({
             // Same derivation the live reducer uses, so a reloaded transcript
             // carries identical ids to the one that streamed.
-            id: evt.data.message_id
-              ? turnResponseId(evt.data.message_id as string)
+            id: data.message_id
+              ? turnResponseId(data.message_id as string)
               : `assistant-${loadedMessages.length}`,
             role: 'assistant',
             content: finalContent,

@@ -18,7 +18,7 @@ import {
 
 export const ModelSettingsSection: Component = () => {
   const session = useSessionSafe();
-  const sessionId = () => session.currentSession()?.id ?? null;
+  const sessionId = () => session.currentSession()?.session_id ?? null;
 
   /** The failure of one write, which is not the failure of a read. */
   const [writeError, setWriteError] = createSignal<string | null>(null);
@@ -159,7 +159,7 @@ export const ModelSettingsSection: Component = () => {
                 data-testid={`agent-option-${option.id}`}
                 class={`${inputClass} w-40`}
               >
-                <For each={option.choices ?? []}>
+                <For each={option.kind === 'select' ? option.choices : []}>
                   {(choice) => <option value={choice.value}>{choice.name}</option>}
                 </For>
               </select>

@@ -31,7 +31,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
     kiln: '/k',
     workspace: '/w',
     agent_model: null,
-    agent_mode: null,
     started_at: '',
     event_count: 0,
     archived: false,

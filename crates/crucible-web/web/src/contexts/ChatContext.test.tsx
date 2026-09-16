@@ -80,14 +80,13 @@ const mockGetSessionHistory = api.getSessionHistory as ReturnType<typeof vi.fn>;
 const mockListSessions = api.listSessions as ReturnType<typeof vi.fn>;
 
 const mockSession: Session = {
-  id: 'test-session-1',
-  session_type: 'chat',
+  session_id: 'test-session-1',
+  type: 'chat',
   kilns: ['/tmp/test-kiln'],
   workspace: '/tmp/test-workspace',
   state: 'active',
   title: 'Test Session',
   agent_model: 'test-model',
-  agent_mode: null,
   started_at: new Date().toISOString(),
   event_count: 0,
 };
@@ -123,7 +122,7 @@ function TokenConsumer(props: { onMessages: (messages: { content: string }[]) =>
 
 function TestWrapper(props: { children: any; session?: Session | null }) {
   const [session] = createSignal(props.session !== undefined ? props.session : mockSession);
-  return <ChatProvider sessionId={session()?.id ?? ''}>{props.children}</ChatProvider>;
+  return <ChatProvider sessionId={session()?.session_id ?? ''}>{props.children}</ChatProvider>;
 }
 
 describe('ChatContext', () => {
@@ -376,7 +375,7 @@ describe('draft first-message handoff', () => {
     // open). Drain it so it can't leak into later tests as a phantom
     // optimistic turn.
     const { consumePendingFirstMessage } = await import('@/lib/draft-session');
-    consumePendingFirstMessage(mockSession.id);
+    consumePendingFirstMessage(mockSession.session_id);
   });
 
   it('renders the user message and working indicator immediately, before bootstrap and SSE resolve', async () => {
@@ -389,7 +388,7 @@ describe('draft first-message handoff', () => {
     mockSendChatMessage.mockResolvedValue('msg-turn-1');
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
-    setPendingFirstMessage(mockSession.id, 'first message from draft');
+    setPendingFirstMessage(mockSession.session_id, 'first message from draft');
 
     render(() => (
       <TestWrapper>
@@ -419,14 +418,14 @@ describe('draft first-message handoff', () => {
    */
   it('draws the staged turn once when the seeded record carries no title', async () => {
     const seeded = { ...mockSession, title: undefined } as unknown as Session;
-    queryClient.setQueryData(keys.session(mockSession.id), seeded);
+    queryClient.setQueryData(keys.session(mockSession.session_id), seeded);
     mockGetSession.mockResolvedValue(seeded);
     mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
     mockSubscribeToEvents.mockImplementation(() => () => {});
     mockSendChatMessage.mockResolvedValue('msg-turn-1');
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
-    setPendingFirstMessage(mockSession.id, 'first message from draft');
+    setPendingFirstMessage(mockSession.session_id, 'first message from draft');
 
     render(() => (
       <TestWrapper>
@@ -454,14 +453,13 @@ describe('draft first-message handoff', () => {
 
 describe('session switching', () => {
   const mockSession2: Session = {
-    id: 'test-session-2',
-    session_type: 'chat',
+    session_id: 'test-session-2',
+    type: 'chat',
     kilns: ['/tmp/test-kiln'],
     workspace: '/tmp/test-workspace',
     state: 'active',
     title: 'Test Session 2',
     agent_model: 'test-model',
-    agent_mode: null,
     started_at: new Date().toISOString(),
     event_count: 0,
   };
@@ -469,7 +467,7 @@ describe('session switching', () => {
   function DynamicTestWrapper(props: { children: any }) {
     const [session, setSession] = createSignal<Session | null>(mockSession);
     return (
-      <ChatProvider sessionId={session()?.id ?? ''}>
+      <ChatProvider sessionId={session()?.session_id ?? ''}>
         {props.children}
         <button data-testid="switch-session" onClick={() => setSession(mockSession2)}>Switch</button>
         <button data-testid="clear-session" onClick={() => setSession(null)}>Clear</button>
@@ -966,7 +964,12 @@ describe('mode hydration', () => {
     // is kept out of the way here: the persisted string is then the only
     // source the chip has, which is the path this case is about.
     (api.listModes as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('daemon down'));
-    mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
+    // `session.get` nests the persisted mode under `agent`; nothing sends a
+    // top-level `agent_mode`.
+    mockGetSession.mockResolvedValue({
+      ...mockSession,
+      agent: { model: 'ollama:neural-chat', mode: 'review' },
+    });
 
     let mode: () => string = () => '';
     const Probe = () => {
@@ -1004,7 +1007,12 @@ describe('mode hydration', () => {
     // clamps to a mode that still exists. When they disagree — a `review`
     // session whose declaration was removed — the daemon's answer is the one
     // that describes what will actually run.
-    mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
+    // `session.get` nests the persisted mode under `agent`; nothing sends a
+    // top-level `agent_mode`.
+    mockGetSession.mockResolvedValue({
+      ...mockSession,
+      agent: { model: 'ollama:neural-chat', mode: 'review' },
+    });
     (api.listModes as ReturnType<typeof vi.fn>).mockResolvedValue({
       current_mode_id: 'ask',
       modes: [
@@ -1153,7 +1161,7 @@ describe('the shared session stream', () => {
 
   afterEach(async () => {
     const { consumePendingFirstMessage } = await import('@/lib/draft-session');
-    consumePendingFirstMessage(mockSession.id);
+    consumePendingFirstMessage(mockSession.session_id);
   });
 
   function RetryConsumer() {
@@ -1168,17 +1176,17 @@ describe('the shared session stream', () => {
   it('opens one EventSource for two panes on one session', async () => {
     render(() => (
       <>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <span />
         </ChatProvider>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <span />
         </ChatProvider>
       </>
     ));
 
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0]!.url).toBe(`/api/chat/events/${mockSession.id}`);
+    expect(FakeEventSource.instances[0]!.url).toBe(`/api/chat/events/${mockSession.session_id}`);
   });
 
   it('opens one EventSource per session when the panes differ', async () => {
@@ -1202,7 +1210,7 @@ describe('the shared session stream', () => {
 
   it('re-issues the source on a manual retry, and closes the dead one', async () => {
     render(() => (
-      <ChatProvider sessionId={mockSession.id}>
+      <ChatProvider sessionId={mockSession.session_id}>
         <RetryConsumer />
       </ChatProvider>
     ));
@@ -1221,10 +1229,10 @@ describe('the shared session stream', () => {
     const seen: unknown[] = [];
     render(() => (
       <>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <RetryConsumer />
         </ChatProvider>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <TokenConsumer onMessages={(messages) => seen.push(...messages)} />
         </ChatProvider>
       </>
@@ -1244,7 +1252,7 @@ describe('the shared session stream', () => {
     mockSendChatMessage.mockResolvedValue('msg-turn-1');
 
     render(() => (
-      <ChatProvider sessionId={mockSession.id}>
+      <ChatProvider sessionId={mockSession.session_id}>
         <span />
       </ChatProvider>
     ));
@@ -1253,15 +1261,15 @@ describe('the shared session stream', () => {
 
     // The message is staged after the first pane bound, so only the pane below
     // has one to send. Its gate is the stream's open, which happened already.
-    setPendingFirstMessage(mockSession.id, 'first message from draft');
+    setPendingFirstMessage(mockSession.session_id, 'first message from draft');
     render(() => (
-      <ChatProvider sessionId={mockSession.id}>
+      <ChatProvider sessionId={mockSession.session_id}>
         <span />
       </ChatProvider>
     ));
 
     await waitFor(() =>
-      expect(mockSendChatMessage).toHaveBeenCalledWith(mockSession.id, 'first message from draft'),
+      expect(mockSendChatMessage).toHaveBeenCalledWith(mockSession.session_id, 'first message from draft'),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
   });
@@ -1290,7 +1298,7 @@ describe('the shared session transcript', () => {
     // The record answers under the id it was asked for: the bind reads the
     // transcript of the session the daemon named, so a fixed record would
     // have every pane read one transcript whatever it bound to.
-    mockGetSession.mockImplementation(async (id: string) => ({ ...mockSession, id }));
+    mockGetSession.mockImplementation(async (id: string) => ({ ...mockSession, session_id: id }));
     mockListSessions.mockResolvedValue([]);
     mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
   });
@@ -1298,20 +1306,20 @@ describe('the shared session transcript', () => {
   it('reads the transcript once for two panes on one session', async () => {
     render(() => (
       <>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <span />
         </ChatProvider>
-        <ChatProvider sessionId={mockSession.id}>
+        <ChatProvider sessionId={mockSession.session_id}>
           <span />
         </ChatProvider>
       </>
     ));
 
-    await waitFor(() => expect(asked()).toEqual([mockSession.id]));
+    await waitFor(() => expect(asked()).toEqual([mockSession.session_id]));
     // Both panes have bound, and a second request would have been made by the
     // time the first one's answer has been folded twice over.
     await flush();
-    expect(asked()).toEqual([mockSession.id]);
+    expect(asked()).toEqual([mockSession.session_id]);
   });
 
   it('a bind onto another session asks for that one, and not again for the first', async () => {

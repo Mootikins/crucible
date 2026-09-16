@@ -267,7 +267,7 @@ const SCOPES: { scope: ReviewScope; label: string; title: string }[] = [
 
 export const ChangesPanel: Component = () => {
   const { currentSession } = useSessionSafe();
-  const sessionId = () => currentSession()?.id;
+  const sessionId = () => currentSession()?.session_id;
   useReviewSession(sessionId);
 
   const [unreviewedOnly, setUnreviewedOnly] = createSignal(false);

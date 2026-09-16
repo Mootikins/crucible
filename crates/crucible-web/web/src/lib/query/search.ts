@@ -6,8 +6,8 @@ import {
   semanticSearch,
   type GrepResponse,
   type SemanticHit,
+  type SessionSearchResponse,
 } from '@/lib/api';
-import type { Session } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -125,16 +125,21 @@ export function useGrepSearch(
 }
 
 /**
- * Sessions matching one query, optionally scoped to a kiln.
+ * Transcript lines matching one query, optionally scoped to a kiln.
+ *
+ * The answer is MATCHED LINES, not sessions: each match names the session it
+ * came from, the 1-based line, and the line itself. A caller that wants the
+ * session reads `session_id` and asks for it.
  *
  * The kiln here is a registry NAME, not a directory: the daemon refuses a set
  * that names kilns and resolves none of them, so a path is a 422. It is in the
- * key for the same reason it is in the question.
+ * key for the same reason it is in the question. An unscoped search searches
+ * nothing and says so in `note`.
  */
 export function useSearchSessions(
   query: Accessor<string>,
   kiln: Accessor<string | undefined>,
-): UseQueryResult<Session[], Error> {
+): UseQueryResult<SessionSearchResponse, Error> {
   const asked = useDebouncedQuery(query);
   return useQuery(() => {
     const scope = kiln();

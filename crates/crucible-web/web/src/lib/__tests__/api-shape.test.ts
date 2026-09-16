@@ -29,9 +29,9 @@ describe('a reply whose list is missing', () => {
 
   // This route answers a BARE array, so the failure shape differs and the
   // guard has to sit on the value itself rather than on a field.
-  it('does the same for a search, whose reply is a bare array', async () => {
+  it('does the same for a search, whose matches ride under a field', async () => {
     vi.mocked(fetch).mockReturnValue(ok({}));
-    await expect(searchSessions('x')).rejects.toThrow(/Failed to search sessions.*"results"/);
+    await expect(searchSessions('x')).rejects.toThrow(/Failed to search sessions.*"matches"/);
   });
 
   it('does the same for providers', async () => {

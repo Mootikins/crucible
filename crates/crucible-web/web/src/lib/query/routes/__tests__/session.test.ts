@@ -50,7 +50,14 @@ afterEach(() => {
 
 /** One history document, as `GET /api/session/{id}/history` answers it. */
 function history(events: SessionHistoryResponse['history']): SessionHistoryResponse {
-  return { session_id: SESSION, history: events, total_events: events.length };
+  return {
+    session_id: SESSION,
+    type: 'chat',
+    state: 'active',
+    kilns: [],
+    history: events,
+    total_events: events.length,
+  };
 }
 
 describe('the session event route', () => {

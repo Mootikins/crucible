@@ -139,7 +139,7 @@ export const AssistantTurn: Component<{
   // while the session record carries a registry name.
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
-    const s = sessionCtx.sessions().find((x) => x.id === sid);
+    const s = sessionCtx.sessions().find((x) => x.session_id === sid);
     return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
   };
 

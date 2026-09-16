@@ -47,15 +47,17 @@ export async function bootstrapSessionWithFallback({
 }: BootstrapSessionParams): Promise<void> {
   try {
     const session = await fetchSessionOnce(sessionId);
-    setSessionTitle(session.title);
+    setSessionTitle(session.title ?? null);
     // The daemon persists the session mode on the agent config; without this
     // a page reload silently shows "Normal" while the agent stays in plan.
-    hydrateMode(session.agent_mode, setChatMode);
-    announceSession(session.id);
+    // `session.get` nests it under `agent`, which is the only route that
+    // sends it at all — `session.list` carries no mode.
+    hydrateMode(session.agent?.mode ?? null, setChatMode);
+    announceSession(session.session_id);
     // The status bar shows a path, the session stores a name.
     statusBarActions.setKilnPath(kilnPathOf(sessionDefaultKiln(session)));
     statusBarActions.setWorkspacePath(session.workspace || null);
-    await loadHistory(session.id, signal);
+    await loadHistory(session.session_id, signal);
     return;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {

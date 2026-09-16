@@ -58,6 +58,11 @@ type HistoryEvent = SessionHistoryResponse['history'][number];
 /** The payload of `session_event`, which carries no type of its own. */
 type SessionEventData = { message_id?: string; content?: string } | null;
 
+/** One recorded event's payload. `data` is `unknown` on the wire, so a read
+ * of it narrows here rather than trusting a field. */
+const payloadOf = (event: HistoryEvent): { message_id?: string } =>
+  (event.data ?? {}) as { message_id?: string };
+
 /**
  * Adds the echoed user message to the cached history.
  *
@@ -76,7 +81,7 @@ function appendUserMessage(client: QueryClient, sessionId: string, data: Session
     // document from one event would answer the next reader a transcript of one
     // message and call it whole.
     if (!held) return held;
-    if (held.history.some((event) => event.data?.message_id === messageId)) return held;
+    if (held.history.some((event) => payloadOf(event).message_id === messageId)) return held;
 
     const echoed: HistoryEvent = {
       type: 'event',

@@ -59,14 +59,13 @@ const project = (path: string, name: string): Project => ({
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
 const session = (id: string, title: string, workspace: string | null, ageMinutes = 5): Session => ({
-  id,
-  session_type: 'chat',
+  session_id: id,
+  type: 'chat',
   kilns: [],
   workspace,
   state: 'active',
   title,
   agent_model: null,
-  agent_mode: null,
   started_at: minutesAgo(ageMinutes),
   last_activity: minutesAgo(ageMinutes),
   event_count: 0,
@@ -324,7 +323,7 @@ describe('SessionsPanel — Reflections', () => {
     pinnedProject = projectList[0];
     sessionList = [
       session('s1', 'netcode-spike', '/home/me/crucible'),
-      { ...session('p1', 'Reflection: yesterday', null), session_type: 'plugin' },
+      { ...session('p1', 'Reflection: yesterday', null), type: 'plugin' },
     ];
   });
 

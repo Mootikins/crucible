@@ -983,9 +983,10 @@ const WIRE_NAME_HOMES: &[&str] = &[
 /// replaced its one cross-crate use with a fresh literal in `crucible-web`, so
 /// the name was written in two crates with nothing comparing them. Nothing
 /// noticed: the cross-language gate that exists
-/// (`crucible-web`'s `sse_event_names_match_the_frontend_listener_list`)
-/// compares `ChatEvent::event_name()` to `SSE_EVENT_TYPES`, and these two
-/// events travel their own SSE streams, so neither side of it names either one.
+/// (`crucible-web`'s `every_sse_event_name_is_in_the_document`) compares
+/// `ChatEvent::event_name()` to the tag the same enum serialises under, and
+/// these two events travel their own SSE streams, so neither side of it names
+/// either one.
 ///
 /// **This gate FORBIDS rather than REQUIRES.** A gate that requires an entry
 /// is satisfiable by not adding the entry — the failure `AGENTS.md` records

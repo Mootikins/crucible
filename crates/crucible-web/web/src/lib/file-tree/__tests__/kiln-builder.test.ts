@@ -6,6 +6,7 @@ import type { NoteEntry } from '@/lib/types';
 const note = (path: string, updated_at = ''): NoteEntry => ({
   name: path.split('/').pop() ?? path,
   path,
+  properties: {},
   title: null,
   tags: [],
   updated_at,

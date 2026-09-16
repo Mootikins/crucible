@@ -111,17 +111,17 @@ export const SessionsPanel: Component = () => {
    * Inbox members stay in this list: the tree needs them to know which
    * projects have sessions, and it draws them once, in its Inbox.
    */
-  const treeList = createMemo(() => activeList().filter((s) => s.session_type !== 'plugin'));
+  const treeList = createMemo(() => activeList().filter((s) => s.type !== 'plugin'));
 
   const row = (s: Session) => (
     <SessionRow
       session={s}
-      selected={currentSession()?.id === s.id}
+      selected={currentSession()?.session_id === s.session_id}
       branch={branchOfSession(s)}
       kilnLabel={kilnName(sessionDefaultKiln(s))}
-      onSelect={() => selectSession(s.id)}
-      onArchive={() => archiveSession(s.id)}
-      onDelete={() => deleteSession(s.id)}
+      onSelect={() => selectSession(s.session_id)}
+      onArchive={() => archiveSession(s.session_id)}
+      onDelete={() => deleteSession(s.session_id)}
     />
   );
 
@@ -144,7 +144,7 @@ export const SessionsPanel: Component = () => {
           sessions={treeList()}
           inbox={inbox()}
           projectsActions={projectMenu}
-          currentSessionId={currentSession()?.id}
+          currentSessionId={currentSession()?.session_id}
           projects={projects()}
           currentProjectPath={currentProject()?.path}
           onSelectSession={(id) => void selectSession(id)}

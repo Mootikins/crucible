@@ -116,7 +116,8 @@ export const ToolbarButton: Component<{
 );
 
 export const SwatchRow: Component<{
-  color?: CanvasColor;
+  /** Null and absent both mean "no colour": the wire sends an explicit null. */
+  color?: CanvasColor | null;
   onColor: (color: CanvasColor | undefined) => void;
 }> = (props) => (
   <div class="flex items-center gap-1 pl-1" data-testid="canvas-palette">
@@ -140,7 +141,8 @@ export const CanvasCardChrome: Component<{
   selected: boolean;
   /** Suppressed while editing — handles would fight with text selection. */
   editing: boolean;
-  color?: CanvasColor;
+  /** Null and absent both mean "no colour": the wire sends an explicit null. */
+  color?: CanvasColor | null;
   /** Groups and media have nothing to edit as text. */
   canEdit: boolean;
   onResizeStart: (e: PointerEvent, corner: ResizeCorner) => void;

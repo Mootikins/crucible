@@ -50,7 +50,7 @@ let workspace: string | null = null;
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
     currentSession: () => ({
-      id: 'test-session',
+      session_id: 'test-session',
       state: 'active',
       kilns: ['/tmp/test-kiln'],
       workspace,

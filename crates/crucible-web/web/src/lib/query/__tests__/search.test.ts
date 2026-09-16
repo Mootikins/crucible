@@ -57,7 +57,8 @@ function searchRoutes() {
     'GET /api/sessions/search': (request: Request) => {
       const params = new URL(request.url).searchParams;
       asked.push({ route: 'sessions', query: params.get('q') ?? '', root: params.get('kiln') ?? '' });
-      return [];
+      // The route answers matched LINES under `matches`, never a bare array.
+      return { matches: [], total: 0 };
     },
   };
 }

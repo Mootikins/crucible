@@ -423,7 +423,9 @@ export async function editNote(opts: {
     (index) => ({
       queued: false,
       ok: false,
-      failed: [{ reason: 'the line is not in the queued text', index }],
+      // The line is not in the queued text, which is the daemon's
+      // `not_found` said by the outbox instead of by the route.
+      failed: [{ reason: 'not_found' as const, index }],
       current_hash: '',
       stale_base: false,
     }),

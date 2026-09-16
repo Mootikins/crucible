@@ -13,17 +13,18 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   setSessionMode: (...args: unknown[]) => setSessionModeMock(...args),
   subscribeToEvents: () => () => {},
   getSessionHistory: async () => ({ history: [] }),
-  // Mapped Session shape (mapSession output) — the mock must mirror the real
-  // client contract, not the raw daemon JSON: hydration reads agent_mode.
+  // The wire shape of `session.get`: `session_id`, `type`, and the mode nested
+  // under `agent`. Hydration reads it from there, because that is the only
+  // route that sends a mode at all.
   getSession: async () => ({
-    id: 's1',
-    session_type: 'chat',
+    session_id: 's1',
+    type: 'chat',
     title: 'T',
     state: 'active',
-    kiln: '/k',
+    kilns: ['/k'],
     workspace: '/w',
     agent_model: null,
-    agent_mode: getSessionMode ?? null,
+    agent: getSessionMode === undefined ? null : { model: 'm', mode: getSessionMode },
     started_at: '',
     event_count: 0,
     archived: false,

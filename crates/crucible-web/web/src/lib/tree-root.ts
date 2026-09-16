@@ -93,8 +93,8 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
     if (!nameToRoot.has(trimmed)) nameToRoot.set(trimmed, root);
     if (!rootToName.has(root)) rootToName.set(root, trimmed);
   };
-  for (const k of kilns) learn(k.path, k.name);
-  for (const p of projects) for (const k of p.kilns) learn(k.path, k.name);
+  for (const k of kilns) learn(k.path, k.name ?? null);
+  for (const p of projects) for (const k of p.kilns) learn(k.path, k.name ?? null);
 
   const seen = new Map<string, TreeRoot>();
   const pushKiln = (rawPath: string, name: string | null) => {
@@ -109,8 +109,8 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
     seen.set(root, { kind: 'kiln', path: root, name: display });
   };
 
-  for (const k of kilns) pushKiln(k.path, k.name);
-  for (const p of projects) for (const k of p.kilns) pushKiln(k.path, k.name);
+  for (const k of kilns) pushKiln(k.path, k.name ?? null);
+  for (const p of projects) for (const k of p.kilns) pushKiln(k.path, k.name ?? null);
 
   return [
     { label: 'Projects', kind: 'project', roots: projectRoots },
