@@ -90,6 +90,18 @@ describe('RevealController', () => {
     expect(c.state()).toBe('closed');
   });
 
+  it('a tap while revealed pins, and cancels a pending close', () => {
+    const c = controller({ enterDelay: 0, leaveDelay: 300 });
+    c.pointerEnter();
+    vi.advanceTimersByTime(0);
+    expect(c.state()).toBe('revealed');
+    c.pointerLeave();
+    c.tap();
+    expect(c.state()).toBe('pinned');
+    vi.advanceTimersByTime(1000);
+    expect(c.state()).toBe('pinned');
+  });
+
   it('dispose clears a pending reveal', () => {
     const c = controller({ enterDelay: 150, leaveDelay: 300 });
     c.pointerEnter();

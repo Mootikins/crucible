@@ -41,4 +41,15 @@ describe('flyoutRect', () => {
     const r = flyoutRect({ position: 'right', anchor: { x: 1240, y: 0, width: 40, height: 32 }, viewport: { width: 1280, height: 100 }, width: 280 });
     expect(r).toEqual({ x: 1240 - 280, y: 8, width: 280, height: 100 - 16 });
   });
+
+  it('moves right to the left margin when a right-rail flyout would leave the viewport', () => {
+    const r = flyoutRect({ position: 'right', anchor: { x: 100, y: 100, width: 40, height: 32 }, viewport, width: 280 });
+    expect(r).toEqual({ x: 8, y: 100, width: 280, height: 400 });
+  });
+
+  it('shrinks the width to the room of a narrow viewport, and keeps it inside', () => {
+    const r = flyoutRect({ position: 'left', anchor: { x: 0, y: 100, width: 40, height: 32 }, viewport: { width: 400, height: 800 }, width: 600 });
+    expect(r.width).toBe(400 - 16);
+    expect(r.x).toBe(8);
+  });
 });

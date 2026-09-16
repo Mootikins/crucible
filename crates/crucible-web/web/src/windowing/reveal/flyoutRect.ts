@@ -26,26 +26,41 @@ export interface FlyoutParams {
 /**
  * Where a flyout goes. A pure function of its parameters.
  *
- * - Width: the rail's stored width, and never less than `FLYOUT_MIN`.
- * - Height: half the viewport height, and never less than `FLYOUT_MIN`.
- *   The room is the viewport height minus a margin at the top and at the
- *   bottom. The height never exceeds the room. When the room is less than
- *   `FLYOUT_MIN`, the room wins, so the flyout stays on the screen.
+ * The rule is the same on both axes. The room on an axis is the viewport
+ * size minus a margin at each end. A side is never less than `FLYOUT_MIN`
+ * and never more than the room. When the room is less than `FLYOUT_MIN`,
+ * the room wins, so the flyout stays on the screen. A clamp then keeps the
+ * position between the two margins.
+ *
+ * - Width: the rail's stored width.
+ * - Height: half the viewport height.
  * - Top: the top of the anchor. When the bottom would pass the bottom
  *   margin, the flyout moves up to that margin. When the anchor is above the
  *   top margin, the flyout moves down to that margin.
- * - Side: a left-rail flyout starts at the right edge of the anchor. A
- *   right-rail flyout ends at the left edge of the anchor.
+ * - Left: a left-rail flyout starts at the right edge of the anchor. A
+ *   right-rail flyout ends at the left edge of the anchor. When that puts
+ *   the flyout past a side margin, the flyout moves back to that margin.
  *
  * Ported from the old flexlayout core, without the bottom dock.
  */
 export function flyoutRect(p: FlyoutParams): Rect {
-  const width = Math.max(FLYOUT_MIN, p.width);
-  const room = Math.max(0, p.viewport.height - 2 * FLYOUT_MARGIN);
-  const height = Math.min(room, Math.max(FLYOUT_MIN, p.viewport.height * FLYOUT_HEIGHT_FRACTION));
-  const lowestTop = p.viewport.height - FLYOUT_MARGIN - height;
-  // height <= room, so lowestTop >= FLYOUT_MARGIN and the clamp is well formed.
-  const y = Math.min(lowestTop, Math.max(FLYOUT_MARGIN, p.anchor.y));
-  const x = p.position === 'left' ? p.anchor.x + p.anchor.width : p.anchor.x - width;
+  const width = fit(p.viewport.width, p.width);
+  const height = fit(p.viewport.height, p.viewport.height * FLYOUT_HEIGHT_FRACTION);
+  const x = place(p.viewport.width, width, p.position === 'left' ? p.anchor.x + p.anchor.width : p.anchor.x - width);
+  const y = place(p.viewport.height, height, p.anchor.y);
   return { x, y, width, height };
+}
+
+/** A side on an axis of length `axis`: at least `FLYOUT_MIN`, at most the room. */
+function fit(axis: number, preferred: number): number {
+  const room = Math.max(0, axis - 2 * FLYOUT_MARGIN);
+  return Math.min(room, Math.max(FLYOUT_MIN, preferred));
+}
+
+/**
+ * A start on an axis of length `axis`, between the two margins. `size` is
+ * at most the room, so the upper bound is never below the lower bound.
+ */
+function place(axis: number, size: number, preferred: number): number {
+  return Math.min(axis - FLYOUT_MARGIN - size, Math.max(FLYOUT_MARGIN, preferred));
 }
