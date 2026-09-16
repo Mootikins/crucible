@@ -71,7 +71,13 @@ export async function setupEditorHarness(
 
   // Editor load + save both go through /api/kiln/file by absolute path:
   //   GET  → return the seeded bytes (get_note_by_name has no content)
-  //   PUT  → record the save { path, content } and 200
+  //   PUT  → record the save { path, content } and 200 with the JSON body
+  //          the real route sends. An empty body makes response.json()
+  //          throw. The offline layer then counts the save as unanswered
+  //          and queues it, and that queue needs the daemon identity from
+  //          the unmocked /api/config. The test then passed only when a
+  //          daemon answered behind the dev proxy.
+  let saveCount = 0;
   await page.route('**/api/kiln/file**', (route: Route) => {
     const req = route.request();
     if (req.method() === 'GET') {
@@ -83,7 +89,8 @@ export async function setupEditorHarness(
     if (req.method() === 'PUT') {
       const body = req.postDataJSON() as { path: string; content: string };
       saves.push({ path: body.path, content: body.content });
-      return route.fulfill({ status: 200, body: '' });
+      saveCount += 1;
+      return route.fulfill({ json: { ok: true, content_hash: `harness-save-${saveCount}` } });
     }
     return route.continue();
   });
