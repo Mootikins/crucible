@@ -35,7 +35,8 @@ const RibbonTabButton: Component<{
   // A tab that the policy marks unavailable is greyed out instead of opening
   // a panel that only explains why it cannot work. Still draggable — moving
   // the tab is harmless.
-  const unavailable = () => !policy().tabAvailable(props.tab);
+  const reason = () => policy().unavailableReason(props.tab);
+  const unavailable = () => reason() !== null;
 
   const paneCollapsed = () =>
     findPaneInLayout(windowStore.edgePanels[props.position].layout, props.paneId)
@@ -82,7 +83,7 @@ const RibbonTabButton: Component<{
           !highlighted() && !draggable.isActiveDraggable && !unavailable(),
         'text-muted-dark': unavailable() && !draggable.isActiveDraggable,
       }}
-      title={unavailable() ? `${props.tab.title} — not available here` : props.tab.title}
+      title={unavailable() ? `${props.tab.title} — ${reason()}` : props.tab.title}
       onClick={handleClick}
     >
       {props.tab.icon ? (

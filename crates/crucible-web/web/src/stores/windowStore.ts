@@ -34,7 +34,11 @@ export const appWindowPolicy: WindowPolicy<TabContentType> = {
     syncShellSurface(tab);
   },
   iconFor: iconForContentType,
-  tabAvailable: (tab: Tab) => tab.contentType !== 'terminal' || terminalAllowed(),
+  // A terminal needs the host machine, or the remote_shell opt-in.
+  unavailableReason: (tab: Tab) =>
+    tab.contentType === 'terminal' && !terminalAllowed()
+      ? 'only available from the host machine (or with remote_shell enabled)'
+      : null,
   layoutHooks: appLayoutHooks,
   shortcuts: DEFAULT_SHORTCUTS,
   onShortcut: (action) => {

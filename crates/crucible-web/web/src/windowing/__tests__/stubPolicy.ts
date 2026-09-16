@@ -25,7 +25,7 @@ export function stubPolicy(over: Partial<WindowPolicy> = {}): WindowPolicy {
     repairLayout: () => {},
     onActiveTabChange: () => {},
     iconFor: () => undefined,
-    tabAvailable: () => true,
+    unavailableReason: () => null,
     layoutHooks: {
       upgradeLegacy: () => {
         throw new Error('stubPolicy: no legacy layouts in core tests');

@@ -25,8 +25,11 @@ export interface WindowPolicy<C extends string = string> {
   onActiveTabChange(tab: Tab<C> | undefined): void;
   /** The icon that a tab of this type shows when the tab carries none. */
   iconFor(contentType: C): Component<{ class?: string }> | undefined;
-  /** False shows the unavailable state of the tab instead of its content. */
-  tabAvailable(tab: Tab<C>): boolean;
+  /**
+   * Why the tab cannot work here, or null when it can. A reason greys the
+   * tab out, and the ribbon shows the reason in its tooltip.
+   */
+  unavailableReason(tab: Tab<C>): string | null;
   /** The reader hooks for a stored layout: legacy upgrade, prune, icons. */
   layoutHooks: LayoutCodecHooks<C>;
   /** The chords that the keyboard loop matches, in priority order. */
