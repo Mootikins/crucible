@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "api:generate": "openapi-typescript ../openapi.json --output src/lib/api-schema.d.ts --root-types --alphabetize",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
@@ -53,6 +54,7 @@
     "lucide-solid": "^1.8.0",
     "markdown-it": "^14.1.1",
     "mermaid": "^11.16.0",
+    "openapi-fetch": "^0.17.0",
     "shiki": "^4.0.2",
     "solid-js": "^1.9.12"
   },
@@ -69,6 +71,7 @@
     "fast-check": "^4.6.0",
     "jsdom": "^29.0.2",
     "knip": "^6.32.2",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.9",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
