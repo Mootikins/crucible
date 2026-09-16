@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/api';
+import { fetchSessionOnce } from '@/lib/query/sessions';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import type { ChatMode } from '@/lib/types';
@@ -25,16 +25,17 @@ function hydrateMode(mode: string | null, setChatMode?: (mode: ChatMode) => void
   setChatMode(mode);
 }
 
-function syncPrimaryStatus(sessionId: string, title: string | null, model: string | null) {
-  statusBarActions.setActiveModel(model ?? null);
+/**
+ * Announce which session this pane shows.
+ *
+ * The title and the model are NOT written here any more. They are fields of
+ * the session record, and the record has one owner: the `['session', id]`
+ * query this function's caller just read. The status bar reads that key, so a
+ * rename reaches it through the cache rather than through a second copy this
+ * pane pushed at it.
+ */
+function announceSession(sessionId: string) {
   statusBarActions.setActiveSessionId(sessionId);
-  statusBarActions.setActiveSessionTitle(title);
-}
-
-function syncFallbackStatus(sessionId: string, title: string | null, model: string | null) {
-  statusBarActions.setActiveModel(model ?? null);
-  statusBarActions.setActiveSessionId(sessionId);
-  statusBarActions.setActiveSessionTitle(title ?? `Session ${sessionId.slice(0, 8)}`);
 }
 
 export async function bootstrapSessionWithFallback({
@@ -45,12 +46,12 @@ export async function bootstrapSessionWithFallback({
   loadHistory,
 }: BootstrapSessionParams): Promise<void> {
   try {
-    const session = await getSession(sessionId);
+    const session = await fetchSessionOnce(sessionId);
     setSessionTitle(session.title);
     // The daemon persists the session mode on the agent config; without this
     // a page reload silently shows "Normal" while the agent stays in plan.
     hydrateMode(session.agent_mode, setChatMode);
-    syncPrimaryStatus(session.id, session.title, session.agent_model ?? null);
+    announceSession(session.id);
     // The status bar shows a path, the session stores a name.
     statusBarActions.setKilnPath(kilnPathOf(sessionDefaultKiln(session)));
     statusBarActions.setWorkspacePath(session.workspace || null);
@@ -67,7 +68,7 @@ export async function bootstrapSessionWithFallback({
   // so there is nothing left to look up before asking for it.
   try {
     setSessionTitle(null);
-    syncFallbackStatus(sessionId, null, null);
+    announceSession(sessionId);
     await loadHistory(sessionId, signal);
   } catch (fallbackErr) {
     if (fallbackErr instanceof Error && fallbackErr.name === 'AbortError') {

@@ -1,9 +1,10 @@
-import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { SECTION_LABEL_CLASS } from '@/components/ui/SectionLabel';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { attentionStore, attentionActions, type SessionAttention } from '@/stores/attentionStore';
 import { InteractionHandler } from '@/components/interactions';
-import { respondToInteraction, listSessions, deleteSession, unarchiveSession } from '@/lib/api';
+import { respondToInteraction } from '@/lib/api';
+import { useDeleteSession, useSessions, useUnarchiveSession } from '@/lib/query/sessions';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
 import { relativeTime } from '@/lib/format-time';
 import { sessionStatus, type SessionStatus } from '@/lib/session-status';
@@ -59,30 +60,29 @@ const InboxPanel: Component = () => {
   const sessionCtx = useSessionSafe();
   const [resolved, setResolved] = createSignal<string | null>(null);
   const [archivedOpen, setArchivedOpen] = createSignal(false);
+  // ONE list, and the disclosure above IS its flag: closed, this panel reads
+  // the very list the rail reads and pays for no fetch of its own; open, it
+  // asks the daemon the wider question once. It used to keep a second copy
+  // behind its own resource and refetch only that copy, so a session it
+  // deleted stayed in the rail, and a session the rail created was missing
+  // here until this panel remounted. The mutations are the shared ones, so
+  // every reader of the list sees a delete or a restore at once.
+  const sessions = useSessions(archivedOpen);
+  const remove = useDeleteSession();
+  const restore = useUnarchiveSession();
   const [clearArmed, setClearArmed] = createSignal(false);
   const [clearProgress, setClearProgress] = createSignal<string | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null);
 
   const waiting = attentionStore.waiting;
 
-  const recentSessions = createMemo(() =>
-    sortByRecency(sessionCtx.sessions().filter((s) => !s.archived))
-  );
-
-  // Archived sessions load lazily on first expand; the daemon hides them
-  // from the default listing.
-  const [archived, { refetch: refetchArchived }] = createResource(
-    archivedOpen,
-    async (open) => {
-      if (!open) return [] as Session[];
-      const all = await listSessions({ includeArchived: true }).catch(() => [] as Session[]);
-      return sortByRecency(all.filter((s) => s.archived));
-    }
-  );
+  const rows = () => sessions.data ?? [];
+  const recentSessions = createMemo(() => sortByRecency(rows().filter((s) => !s.archived)));
+  const archived = createMemo(() => sortByRecency(rows().filter((s) => s.archived)));
 
   const titleFor = (entry: SessionAttention) => {
     if (entry.title) return entry.title;
-    const session = sessionCtx.sessions().find((s) => s.id === entry.sessionId);
+    const session = rows().find((s) => s.id === entry.sessionId);
     return session ? sessionDisplayTitle(session) : `Session ${entry.sessionId.slice(-8)}`;
   };
 
@@ -113,13 +113,10 @@ const InboxPanel: Component = () => {
     void sessionCtx.selectSession(sessionId).catch(() => {});
   };
 
+  // Each mutation writes the shared list, so nothing here refetches: the row
+  // leaves this panel and the rail together.
   const restoreSession = async (sessionId: string) => {
-    try {
-      await unarchiveSession(sessionId);
-    } finally {
-      void refetchArchived();
-      void sessionCtx.refreshSessions();
-    }
+    await restore.mutateAsync(sessionId).catch(() => {});
   };
 
   const deleteArchived = async (sessionId: string) => {
@@ -128,11 +125,7 @@ const InboxPanel: Component = () => {
       return;
     }
     setPendingDelete(null);
-    try {
-      await deleteSession(sessionId);
-    } finally {
-      void refetchArchived();
-    }
+    await remove.mutateAsync(sessionId).catch(() => {});
   };
 
   const clearArchived = async () => {
@@ -141,20 +134,15 @@ const InboxPanel: Component = () => {
       return;
     }
     setClearArmed(false);
-    const targets = archived() ?? [];
+    const targets = archived();
     let done = 0;
     for (const session of targets) {
       setClearProgress(`Deleting ${done + 1}/${targets.length}…`);
-      try {
-        await deleteSession(session.id);
-      } catch {
-        // keep going — a single failed delete shouldn't strand the rest
-      }
+      // Keep going — a single failed delete shouldn't strand the rest.
+      await remove.mutateAsync(session.id).catch(() => {});
       done += 1;
     }
     setClearProgress(null);
-    void refetchArchived();
-    void sessionCtx.refreshSessions();
   };
 
   const SessionRow = (rowProps: { session: Session; archivedRow: boolean }) => {
@@ -283,8 +271,8 @@ const InboxPanel: Component = () => {
         >
           <span>{archivedOpen() ? '▾' : '▸'}</span>
           <span>ARCHIVED</span>
-          <Show when={archivedOpen() && archived()}>
-            <span>({archived()!.length})</span>
+          <Show when={archivedOpen()}>
+            <span>({archived().length})</span>
           </Show>
           <span class="flex-1" />
           <span class="font-normal normal-case tracking-normal text-floor">
@@ -293,9 +281,9 @@ const InboxPanel: Component = () => {
         </button>
 
         <Show when={archivedOpen()}>
-          <Show when={!archived.loading} fallback={<div class="text-muted-dark text-xs px-1 py-2">Loading…</div>}>
+          <Show when={!sessions.isPending} fallback={<div class="text-muted-dark text-xs px-1 py-2">Loading…</div>}>
             <Show
-              when={(archived() ?? []).length > 0}
+              when={archived().length > 0}
               fallback={<div class="text-muted-dark text-xs px-1 py-2">Nothing archived.</div>}
             >
               <div class="flex items-center gap-2 pb-2">
@@ -311,7 +299,7 @@ const InboxPanel: Component = () => {
                   onClick={() => void clearArchived()}
                 >
                   {clearArmed()
-                    ? `REALLY DELETE ${(archived() ?? []).length} SESSIONS?`
+                    ? `REALLY DELETE ${archived().length} SESSIONS?`
                     : 'CLEAR HISTORY…'}
                 </button>
                 <Show when={clearProgress()}>

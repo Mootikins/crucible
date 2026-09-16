@@ -1,36 +1,39 @@
-import { Component, Show, createSignal, onCleanup, createEffect } from 'solid-js';
+import { Component, Show, onCleanup, createEffect } from 'solid-js';
 import { X } from '@/lib/icons';
-import { exportSession } from '@/lib/api';
+import { useExportSession, useSession } from '@/lib/query/sessions';
 
 interface ExportDialogProps {
   open: boolean;
   sessionId: string | null;
-  sessionTitle: string | null;
   onClose: () => void;
 }
 
+/**
+ * The rendered markdown of one session, to read or to download.
+ *
+ * The title is not passed in any more. It is a field of the session record,
+ * and this dialog reads that record under the same key the pane that opened
+ * it read, so a session renamed while the dialog is open names the file the
+ * user downloads. The export itself is a mutation: the daemon renders it on
+ * POST, nothing else reads the string, and it is dropped when the dialog
+ * closes rather than cached.
+ */
 export const ExportDialog: Component<ExportDialogProps> = (props) => {
-  const [markdown, setMarkdown] = createSignal('');
-  const [loading, setLoading] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
+  const session = useSession(() => props.sessionId);
+  const exportSession = useExportSession();
 
-  // Fetch markdown when dialog opens with a session
+  const markdown = () => exportSession.data ?? '';
+  const loading = () => exportSession.isPending;
+  const error = () => (exportSession.error ? exportSession.error.message : null);
+
+  // Render the export when the dialog opens on a session, and again when it
+  // opens on a different one.
   createEffect(() => {
-    if (props.open && props.sessionId) {
-      setLoading(true);
-      setError(null);
-      setMarkdown('');
-
-      exportSession(props.sessionId)
-        .then((md) => {
-          setMarkdown(md);
-          setLoading(false);
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Export failed');
-          setLoading(false);
-        });
-    }
+    if (!props.open) return;
+    const sessionId = props.sessionId;
+    if (!sessionId) return;
+    exportSession.reset();
+    exportSession.mutate(sessionId);
   });
 
   // Close on Escape
@@ -55,7 +58,7 @@ export const ExportDialog: Component<ExportDialogProps> = (props) => {
   };
 
   const downloadFileName = () => {
-    const title = (props.sessionTitle ?? 'session')
+    const title = (session.data?.title ?? 'session')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');

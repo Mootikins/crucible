@@ -77,7 +77,14 @@ export interface SessionContextValue {
   /** Fold a kiln/workspace mutation's echoed scope into the session store. */
   applySessionScope: (scope: SessionScope) => void;
   selectSession: (id: string) => Promise<void>;
-  refreshSessions: (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => Promise<void>;
+  /**
+   * Re-read the session list, or switch to the other variant of it.
+   *
+   * The kiln and the workspace are gone from the filter: the daemon was never
+   * asked to scope this list, because the tree groups and filters it on the
+   * client, and a scoped fetch made "No project" sessions flash then vanish.
+   */
+  refreshSessions: (filters?: { includeArchived?: boolean }) => Promise<void>;
   pauseSession: () => Promise<void>;
   resumeSession: () => Promise<void>;
   endSession: () => Promise<void>;

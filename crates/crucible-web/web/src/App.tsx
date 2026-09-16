@@ -344,7 +344,6 @@ const App: Component = () => {
             <ExportDialog
               open={isExportDialogOpen()}
               sessionId={statusBarStore.activeSessionId()}
-              sessionTitle={statusBarStore.activeSessionTitle()}
               onClose={() => setIsExportDialogOpen(false)}
             />
             <CommandPalette

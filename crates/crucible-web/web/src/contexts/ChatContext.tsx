@@ -25,7 +25,6 @@ import {
   setSessionMode,
   sendChatMessage,
   respondToInteraction as apiRespondToInteraction,
-  cancelSession as apiCancelSession,
   generateMessageId,
   getSessionHistory,
   turnResponseId,
@@ -33,6 +32,7 @@ import {
   stripFrozenPrefix,
 } from '@/lib/api';
 import { sessionEvents } from '@/lib/query/sse';
+import { useCancelSession } from '@/lib/query/sessions';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -51,6 +51,9 @@ interface ChatProviderProps {
 const ChatContext = createContext<ChatContextValue>();
 
 export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
+  // The one cancel, shared with `SessionContext`'s stop control: two panes
+  // stopping one turn send one shape of request.
+  const cancel = useCancelSession();
   const [messages, setMessages] = createStore<Message[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
@@ -684,7 +687,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const cancelStream = async () => {
     if (props.sessionId) {
       try {
-        await apiCancelSession(props.sessionId);
+        await cancel.mutateAsync(props.sessionId);
       } catch (err) {
         console.error('Failed to cancel session:', err);
       }

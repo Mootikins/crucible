@@ -5,27 +5,30 @@ import {
   createSignal,
   createEffect,
 } from 'solid-js';
-import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import type { SessionContextValue } from '@/lib/types/context';
 import { treeRootActions } from '@/stores/treeRootStore';
 import {
-  createSession as apiCreateSession,
-  listSessions as apiListSessions,
-  getSession as apiGetSession,
-  pauseSession as apiPauseSession,
-  resumeSession as apiResumeSession,
-  endSession as apiEndSession,
-  cancelSession as apiCancelSession,
-  deleteSession as apiDeleteSession,
-  archiveSession as apiArchiveSession,
-  unarchiveSession as apiUnarchiveSession,
   listModels as apiListModels,
   switchModel as apiSwitchModel,
-  setSessionTitle as apiSetSessionTitle,
   listProviders as apiListProviders,
 } from '@/lib/api';
 import type { SessionScope } from '@/lib/api';
+import {
+  dropCachedSession,
+  fetchSessionOnce,
+  patchCachedSession,
+  useArchiveSession,
+  useCancelSession,
+  useCreateSession,
+  useDeleteSession,
+  useEndSession,
+  usePauseSession,
+  useResumeSession,
+  useSessions,
+  useSetSessionTitle,
+  useUnarchiveSession,
+} from '@/lib/query/sessions';
 import { notificationActions } from '@/stores/notificationStore';
 import { getBus } from '@/lib/bus';
 import { setPendingFirstMessage } from '@/lib/draft-session';
@@ -39,97 +42,95 @@ interface SessionProviderProps {
   children: any;
 }
 
-function cachedSessions(): Session[] {
-  try {
-    const raw = localStorage.getItem('crucible:cache:sessions');
-    return raw ? (JSON.parse(raw) as Session[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 const SessionContext = createContext<SessionContextValue>();
 
+/**
+ * Which session the shell is pointed at, and the actions that change one.
+ *
+ * The ROSTER is no longer held here: `useSessions()` owns it, so this context,
+ * the inbox and the rail read one list from one fetch, and a session deleted
+ * in the inbox leaves the rail at once. What stays is this client's own state
+ * — the current selection, and which list variant the open panel asked for.
+ *
+ * Every mutation below is the shared hook plus this context's toast. The
+ * optimistic splices the store used to do live in those hooks, so the inbox
+ * gets them too rather than re-implementing them.
+ */
 export const SessionProvider: ParentComponent<SessionProviderProps> = (props) => {
   const [currentSession, setCurrentSession] = createSignal<Session | null>(null);
-  const [sessions, setSessions] = createStore<Session[]>(cachedSessions());
-  const [isLoading, setIsLoading] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
   const [availableModels, setAvailableModels] = createSignal<string[]>([]);
   const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
   const [providersLoaded, setProvidersLoaded] = createSignal(false);
   const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
+  // The failure of one action, which is not the failure of the roster read.
+  const [actionError, setActionError] = createSignal<string | null>(null);
 
-  // Last explicit includeArchived choice (the panel's state filter): bare
-  // refreshSessions() calls reuse it so an unarchive while viewing Archived
-  // doesn't replace the store with an active-only list.
-  let lastIncludeArchived = false;
+  // Which list the open panel asked for. It is part of the query key, so both
+  // variants are cached side by side and a bare refresh cannot replace the
+  // archived view with the active one.
+  const [includeArchived, setIncludeArchived] = createSignal(false);
 
-  const refreshSessions = async (filters?: { kiln?: string; workspace?: string; includeArchived?: boolean }) => {
-    setIsLoading(true);
-    setError(null);
+  const sessionsQuery = useSessions(includeArchived);
+  const sessions = () => sessionsQuery.data ?? [];
 
-    try {
-      // No implicit kiln/workspace scoping: the session tree groups and
-      // facet-filters CLIENT-side over the global list. Defaulting to
-      // initialKiln/initialWorkspace here made a later scoped refetch
-      // clobber the list — "No project" sessions flashed then vanished.
-      const includeArchived = filters?.includeArchived ?? lastIncludeArchived;
-      lastIncludeArchived = includeArchived;
-      const list = await apiListSessions({
-        kiln: filters?.kiln,
-        workspace: filters?.workspace,
-        includeArchived,
-      });
-      setSessions(reconcile(list));
-      // The file tree's per-session root pin outlives the session that owns
-      // it; the map is written on every root pick, so without this it only
-      // ever grows. An archived-excluding fetch must not prune, or looking at
-      // the unarchived list would forget every archived session's pin.
-      if (includeArchived) treeRootActions.prune(list.map((s) => s.id));
-      try {
-        localStorage.setItem('crucible:cache:sessions', JSON.stringify(list));
-      } catch {
-        /* private mode */
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load sessions';
-      setError(msg);
-      notificationActions.addNotification('error', msg);
-      console.error('Failed to refresh sessions:', err);
-    } finally {
-      setIsLoading(false);
+  const create = useCreateSession();
+  const pause = usePauseSession();
+  const resume = useResumeSession();
+  const end = useEndSession();
+  const remove = useDeleteSession();
+  const archive = useArchiveSession();
+  const unarchive = useUnarchiveSession();
+  const cancel = useCancelSession();
+  const rename = useSetSessionTitle();
+
+  const [isCreating, setIsCreating] = createSignal(false);
+  const isLoading = () => isCreating() || sessionsQuery.isFetching;
+  const error = () => actionError() ?? sessionsQuery.error?.message ?? null;
+
+  // A refused list read reaches the user as a toast, as it did when the
+  // context fetched it. The query surfaces it once per failed fetch, because
+  // `queryClientOptions` turns retries off.
+  createEffect(() => {
+    const failure = sessionsQuery.error;
+    if (failure) {
+      notificationActions.addNotification('error', failure.message);
+      console.error('Failed to refresh sessions:', failure);
     }
+  });
+
+  // The file tree's per-session root pin outlives the session that owns it,
+  // and the map is written on every root pick, so without this it only ever
+  // grows. Only the archived-including list may prune: the default list omits
+  // archived sessions, and pruning against it would forget their pins.
+  createEffect(() => {
+    const list = sessionsQuery.data;
+    if (list && includeArchived()) treeRootActions.prune(list.map((s) => s.id));
+  });
+
+  /**
+   * Asks the daemon for the list again, or for the other variant of it.
+   *
+   * A variant the caller names is a different key, and a key with no fresh
+   * answer fetches on its own — so the switch IS the refresh. A bare call
+   * keeps the variant on screen and re-reads it.
+   */
+  const refreshSessions = async (filters?: { includeArchived?: boolean }) => {
+    const wanted = filters?.includeArchived;
+    if (wanted !== undefined && wanted !== includeArchived()) {
+      setIncludeArchived(wanted);
+      return;
+    }
+    await sessionsQuery.refetch();
   };
 
-  const patchSessionById = (
-    sessionId: string,
-    patch: Partial<Session> | ((session: Session) => Session),
-  ): Session | null => {
-    const applyPatch = (session: Session): Session => (
-      typeof patch === 'function'
-        ? patch(session)
-        : { ...session, ...patch }
-    );
-
-    let updatedSession: Session | null = null;
+  /** Applies one patch to every cached copy of a session, and to the selection. */
+  const patchSessionById = (sessionId: string, patch: Partial<Session>): void => {
+    patchCachedSession(sessionId, patch);
     const current = currentSession();
-    if (current?.id === sessionId) {
-      updatedSession = applyPatch(current);
-      setCurrentSession(updatedSession);
-    }
-
-    setSessions(produce((list) => {
-      const idx = list.findIndex((s) => s.id === sessionId);
-      if (idx === -1) return;
-      updatedSession = applyPatch(list[idx]);
-      list[idx] = updatedSession;
-    }));
-
-    return updatedSession;
+    if (current?.id === sessionId) setCurrentSession({ ...current, ...patch });
   };
 
-  // Kiln/workspace mutations echo the updated scope; fold it into the store
+  // Kiln/workspace mutations echo the updated scope; fold it into the cache
   // so chips and headers re-render without a refetch.
   const applySessionScope = (scope: SessionScope) => {
     patchSessionById(scope.session_id, {
@@ -147,7 +148,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       logPrefix: string;
     },
   ): Promise<T | undefined> => {
-    setError(null);
+    setActionError(null);
 
     try {
       const result = await action();
@@ -157,7 +158,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : options.errorMessage;
-      setError(msg);
+      setActionError(msg);
       notificationActions.addNotification('error', msg);
       console.error(`${options.logPrefix}:`, err);
       if (options.rethrow) {
@@ -171,16 +172,17 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     params: CreateSessionParams,
     opts?: { initialMessage?: string; model?: string },
   ): Promise<Session> => {
-    setIsLoading(true);
+    setIsCreating(true);
     try {
       const session = await withSessionAction(async () => {
-        const created = await apiCreateSession(params);
+        const created = await create.mutateAsync(params);
         // Model choice from the draft surface: reuse the daemon's switch-model
         // resolution rather than parsing "provider_key/model" strings here.
         if (opts?.model) {
           try {
             await apiSwitchModel(created.id, opts.model);
             created.agent_model = opts.model;
+            patchCachedSession(created.id, { agent_model: opts.model });
           } catch (err) {
             notificationActions.addNotification(
               'error',
@@ -189,7 +191,6 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
             console.error('Failed to set model on new session:', err);
           }
         }
-        setSessions(produce((s) => s.unshift(created)));
         setCurrentSession(created);
         // Must be staged BEFORE open-session mounts the ChatProvider that
         // consumes it (lazy creation: draft surface → first message).
@@ -214,7 +215,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       }
       return session;
     } finally {
-      setIsLoading(false);
+      setIsCreating(false);
     }
   };
 
@@ -229,12 +230,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const adoptSession = async (id: string) => {
     if (currentSession()?.id === id) return;
     try {
-      // A read. The daemon answers `session.get` for a stored session as for
-      // a live one, so no history read is needed to bring it back first: the
-      // client used to revive a session through one history page when this
-      // call failed, and a rule kept in the client was kept in one path and
-      // not the other.
-      const session = await apiGetSession(id);
+      // A read, through the same key the pane's own bootstrap reads, so a
+      // restored pane and this context ask the daemon once between them. The
+      // daemon answers `session.get` for a stored session as for a live one,
+      // so no history read is needed to bring it back first.
+      const session = await fetchSessionOnce(id);
       // Focus can move again while the fetch is in flight; the last pane to be
       // focused wins, not the last response to land.
       if (statusBarStore.activeSessionId() !== id) return;
@@ -256,15 +256,14 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   });
 
   const selectSession = async (id: string) => {
-    const existing = sessions.find((s) => s.id === id);
+    const existing = sessions().find((s) => s.id === id);
     if (existing) {
-      if (!(await apiGetSession(existing.id).then(() => true).catch(() => false))) {
-        // The row can come from the last-known localStorage cache — the
-        // daemon may have deleted the session since. The daemon reads a
-        // stored session too, so a failed read means it is really gone:
-        // prune the dead row instead of opening a chat tab that can never
-        // load.
-        setSessions(sessions.filter((s) => s.id !== id));
+      if (!(await fetchSessionOnce(existing.id).then(() => true).catch(() => false))) {
+        // The row can come from the last-known localStorage seed — the daemon
+        // may have deleted the session since. The daemon reads a stored
+        // session too, so a failed read means it is really gone: drop the dead
+        // row instead of opening a chat tab that can never load.
+        dropCachedSession(id);
         notificationActions.addNotification('error', 'Session no longer exists');
         return;
       }
@@ -276,7 +275,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       // session is live so the composer is never a dead end.
       if (existing.state === 'paused' || existing.state === 'ended') {
         try {
-          await apiResumeSession(id);
+          await resume.mutateAsync(id);
           updateCurrentSessionState('active');
         } catch (err) {
           console.error('Failed to resume session:', err);
@@ -290,17 +289,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    
+    setActionError(null);
+
     try {
-      const session = await apiGetSession(id);
+      const session = await fetchSessionOnce(id);
       setCurrentSession(session);
       // Transparently resume idle sessions on open (paused warm, ended/evicted
       // from storage) so the opened session is always live.
       if (session.state === 'paused' || session.state === 'ended') {
         try {
-          await apiResumeSession(id);
+          await resume.mutateAsync(id);
           updateCurrentSessionState('active');
         } catch (err) {
           console.error('Failed to resume session:', err);
@@ -313,18 +311,16 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       await refreshModels(session);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load session';
-      setError(msg);
+      setActionError(msg);
       console.error('Failed to select session:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
+  /** The selection's own copy of a state the mutation already cached. */
   const updateCurrentSessionState = (state: Session['state']) => {
     const session = currentSession();
     if (!session) return;
-
-    patchSessionById(session.id, { state });
+    setCurrentSession({ ...session, state });
   };
 
   const pauseSession = async () => {
@@ -332,7 +328,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await apiPauseSession(session.id);
+      await pause.mutateAsync(session.id);
       updateCurrentSessionState('paused');
     }, {
       errorMessage: 'Failed to pause session',
@@ -345,7 +341,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await apiResumeSession(session.id);
+      await resume.mutateAsync(session.id);
       updateCurrentSessionState('active');
     }, {
       errorMessage: 'Failed to resume session',
@@ -358,8 +354,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await apiEndSession(session.id);
-      updateCurrentSessionState('ended');
+      await end.mutateAsync(session.id);
       setCurrentSession(null);
     }, {
       errorMessage: 'Failed to end session',
@@ -367,23 +362,19 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     });
   };
 
+  /** Closes the chat tab of a session that is no longer listed. */
+  const closeTabFor = (sessionId: string) => {
+    const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
+    if (openTab) tabHost().remove(openTab.id);
+    if (currentSession()?.id === sessionId) setCurrentSession(null);
+  };
+
   const deleteSession = async (sessionId: string) => {
     if (!confirm('Delete this session? This cannot be undone.')) return;
 
     await withSessionAction(async () => {
-      await apiDeleteSession(sessionId);
-      // Remove from local store for snappy UX
-      setSessions(produce((list) => {
-        const idx = list.findIndex((s) => s.id === sessionId);
-        if (idx !== -1) list.splice(idx, 1);
-      }));
-      // Close open chat tab if any
-      const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
-      if (openTab) tabHost().remove(openTab.id);
-      // Clear current session if it was the deleted one
-      if (currentSession()?.id === sessionId) {
-        setCurrentSession(null);
-      }
+      await remove.mutateAsync(sessionId);
+      closeTabFor(sessionId);
     }, {
       errorMessage: 'Failed to delete session',
       successMessage: 'Session deleted',
@@ -393,19 +384,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   const archiveSession = async (sessionId: string) => {
     await withSessionAction(async () => {
-      await apiArchiveSession(sessionId);
-      // Remove from local store (archived sessions are hidden from default listing)
-      setSessions(produce((list) => {
-        const idx = list.findIndex((s) => s.id === sessionId);
-        if (idx !== -1) list.splice(idx, 1);
-      }));
-      // Close open chat tab if any
-      const openTab = tabHost().find((t) => t.metadata?.sessionId === sessionId);
-      if (openTab) tabHost().remove(openTab.id);
-      // Clear current session if it was the archived one
-      if (currentSession()?.id === sessionId) {
-        setCurrentSession(null);
-      }
+      await archive.mutateAsync(sessionId);
+      closeTabFor(sessionId);
     }, {
       errorMessage: 'Failed to archive session',
       successMessage: 'Session archived',
@@ -415,8 +395,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   const unarchiveSession = async (sessionId: string) => {
     await withSessionAction(async () => {
-      await apiUnarchiveSession(sessionId);
-      await refreshSessions();
+      await unarchive.mutateAsync(sessionId);
     }, {
       errorMessage: 'Failed to unarchive session',
       successMessage: 'Session unarchived',
@@ -429,7 +408,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return false;
 
     try {
-      return await apiCancelSession(session.id);
+      return await cancel.mutateAsync(session.id);
     } catch (err) {
       console.error('Failed to cancel operation:', err);
       return false;
@@ -441,7 +420,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // Without this, two overlapping calls can resolve in reverse order and the
   // older one wins — or the no-session `[]` path lands after a populated list.
   // Either way the picker goes stale or empty after having been correct, which
-  // is a race the user sees as options vanishing mid-click.
+  // is a race the user sees as options vanishing mid-click. The model list is
+  // still a bare call here; Task C2.4 gives it a key, and the key retires this
+  // guard as it retired the list's.
   let modelsGeneration = 0;
 
   const refreshModels = async (sessionOverride?: Session) => {
@@ -494,8 +475,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await apiSetSessionTitle(session.id, title);
-      patchSessionById(session.id, { title });
+      await rename.mutateAsync({ id: session.id, title });
+      setCurrentSession({ ...session, title });
     }, {
       errorMessage: 'Failed to set session title',
       logPrefix: 'Failed to set session title',
@@ -523,23 +504,20 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
+  // The roster is NOT fetched here any more. `useSessions()` reads it on
+  // mount, and the list never depended on the kiln: the tree groups and
+  // filters the global list on the client.
   createEffect(() => {
     if (!props.initialKiln) return; // Guard: skip until config has loaded
-    void refreshSessions();
     refreshProviders();
   });
 
   // Daemon auto-titles sessions on their first completed turn; the chat
-  // stream's route announces the new title so the session list stays current.
+  // stream's route announces the new title so the selection stays current.
+  // The route also invalidates both list keys, so the rows correct themselves;
+  // the patch here is what paints before that answer lands.
   const onTitleChangedEvent = ({ sessionId, title }: { sessionId: string; title: string }) => {
-    setSessions(produce((list) => {
-      const session = list.find((s) => s.id === sessionId);
-      if (session) session.title = title;
-    }));
-    const current = currentSession();
-    if (current?.id === sessionId) {
-      setCurrentSession({ ...current, title });
-    }
+    patchSessionById(sessionId, { title });
   };
   // `on` removes the handler with this owner, so the provider needs no
   // `onCleanup` of its own.
@@ -547,7 +525,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   const value: SessionContextValue = {
     currentSession,
-    sessions: () => sessions,
+    sessions,
     isLoading,
     error,
     availableModels,

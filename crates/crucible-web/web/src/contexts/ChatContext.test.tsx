@@ -4,6 +4,8 @@ import { createEffect, createSignal } from 'solid-js';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
 import { resetSseForTests } from '@/lib/query/sse';
+import { setQueryClientForTests } from '@/lib/query/client';
+import { createTestQueryClient } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
 
@@ -12,6 +14,7 @@ vi.mock('@/lib/api', () => ({
   sendChatMessage: vi.fn(async () => 'msg-turn-1'),
   subscribeToEvents: vi.fn(() => () => {}),
   respondToInteraction: vi.fn(),
+  cancelSession: vi.fn(async () => true),
   getSession: vi.fn(),
   getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
   getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
@@ -54,9 +57,16 @@ vi.mock('@/lib/api', () => ({
 
 // Every pane of one session shares one root in `lib/query/sse.ts`, and a root
 // outlives the test that opened it. Forget them between cases, so a source of
-// one test cannot answer the next one.
+// one test cannot answer the next one. The cache is per case for the same
+// reason: `session.get` is answered from it, so one case's session would
+// hydrate the next case's mode.
+beforeEach(() => {
+  setQueryClientForTests(createTestQueryClient());
+});
+
 afterEach(() => {
   resetSseForTests();
+  setQueryClientForTests(null);
 });
 
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;

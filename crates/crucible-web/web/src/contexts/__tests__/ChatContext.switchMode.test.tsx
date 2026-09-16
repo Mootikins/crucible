@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
+import { setQueryClientForTests } from '@/lib/query/client';
+import { createTestQueryClient } from '@/test-utils/query';
 
 // The provider subscribes to SSE and bootstraps history on mount; stub the
 // whole api surface it touches so only the switchMode flow is under test.
@@ -48,6 +50,14 @@ function mountProvider(): ChatContextValue {
 beforeEach(() => {
   vi.clearAllMocks();
   getSessionMode = undefined;
+  // `session.get` is answered from the query cache now, so a case that
+  // reads session `s1` must not be answered with the record the previous
+  // case cached under that id.
+  setQueryClientForTests(createTestQueryClient());
+});
+
+afterEach(() => {
+  setQueryClientForTests(null);
 });
 
 describe('ChatContext.switchMode', () => {

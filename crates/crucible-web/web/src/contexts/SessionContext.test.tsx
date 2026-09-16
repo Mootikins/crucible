@@ -1,24 +1,67 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useSessionSafe, useSession, SessionProvider } from './SessionContext';
-import * as api from '@/lib/api';
+import { apiError, type MockFetchAnswer } from '@/test-utils/mock-fetch';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { resetSessionsForTests } from '@/lib/query/sessions';
 import { statusBarActions } from '@/stores/statusBarStore';
 import type { Session } from '@/lib/types';
 
-vi.mock('@/lib/api', () => ({
-  createSession: vi.fn(),
-  listSessions: vi.fn(() => Promise.resolve([])),
-  getSession: vi.fn(),
-  getSessionHistory: vi.fn(),
-  pauseSession: vi.fn(),
-  resumeSession: vi.fn(),
-  endSession: vi.fn(),
-  cancelSession: vi.fn(),
-  listModels: vi.fn(() => Promise.resolve([])),
-  switchModel: vi.fn(),
-  setSessionTitle: vi.fn(),
-  listProviders: vi.fn(() => Promise.resolve([])),
-}));
+// No `vi.mock('@/lib/api')`. The context reads the daemon through
+// `lib/query/sessions.ts` now, so each case answers ROUTES: that is what
+// proves the context asks for the right thing, and it is the only way to
+// count the requests two readers of one list make between them.
+
+const LIST = 'GET /api/session/list';
+const PROVIDERS = 'GET /api/providers';
+
+/** One session as the daemon sends it, which `lib/api.ts` maps. */
+function wire(over: Partial<Session> & { id: string }): Record<string, unknown> {
+  return {
+    session_id: over.id,
+    type: over.session_type ?? 'chat',
+    kilns: over.kilns ?? ['main'],
+    workspace: over.workspace ?? '/repos/app',
+    state: over.state ?? 'active',
+    title: over.title ?? 'Test Session',
+    agent_model: over.agent_model ?? null,
+    agent: over.agent_mode ? { mode: over.agent_mode } : null,
+    started_at: over.started_at ?? '2026-09-15T00:00:00Z',
+    last_activity: over.last_activity ?? null,
+    event_count: over.event_count ?? 0,
+    archived: over.archived ?? false,
+  };
+}
+
+/** The list reply around a set of rows. */
+function listOf(rows: Array<Partial<Session> & { id: string }>): Record<string, unknown> {
+  return { sessions: rows.map(wire), total: rows.length };
+}
+
+let env: TestQueryEnv;
+
+/** Installs a fresh cache and a fetch that answers only what a case names. */
+function serve(routes: Record<string, MockFetchAnswer>): TestQueryEnv {
+  env = createTestQueryEnv({
+    [LIST]: () => listOf([]),
+    [PROVIDERS]: () => ({ providers: [] }),
+    ...routes,
+  });
+  return env;
+}
+
+beforeEach(() => {
+  resetSessionsForTests();
+  statusBarActions.setActiveSessionId(null);
+  localStorage.removeItem('crucible:cache:sessions');
+});
+
+afterEach(() => {
+  env?.restore();
+  statusBarActions.setActiveSessionId(null);
+  localStorage.removeItem('crucible:cache:sessions');
+  resetSessionsForTests();
+});
 
 describe('useSessionSafe', () => {
   function SafeTestConsumer() {
@@ -35,6 +78,7 @@ describe('useSessionSafe', () => {
   }
 
   it('returns fallback values when used outside provider', () => {
+    serve({});
     render(() => <SafeTestConsumer />);
 
     expect(screen.getByTestId('session').textContent).toBe('no-session');
@@ -44,6 +88,7 @@ describe('useSessionSafe', () => {
   });
 
   it('noop methods do not throw when called outside provider', async () => {
+    serve({});
     function ActionTestConsumer() {
       const { selectSession, pauseSession, resumeSession } = useSessionSafe();
 
@@ -65,21 +110,6 @@ describe('useSessionSafe', () => {
 });
 
 describe('selectSession auto-resume', () => {
-  function makeSession(state: Session['state'], id = 'test-id'): Session {
-    return {
-      id,
-      session_type: 'chat',
-      kilns: ['/tmp/test-kiln'],
-      workspace: '/tmp/test-workspace',
-      state,
-      title: 'Test Session',
-      agent_model: 'test-model',
-      agent_mode: null,
-      started_at: new Date().toISOString(),
-      event_count: 0,
-    };
-  }
-
   function SelectConsumer() {
     const { selectSession } = useSession();
     return (
@@ -90,16 +120,6 @@ describe('selectSession auto-resume', () => {
   let dispatchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.getSessionHistory as ReturnType<typeof vi.fn<any>>).mockResolvedValue({
-      session_id: 'test-id',
-      history: [],
-      total_events: 0,
-    });
-    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.resumeSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(undefined);
     dispatchSpy = vi.spyOn(window, 'dispatchEvent');
   });
 
@@ -107,38 +127,42 @@ describe('selectSession auto-resume', () => {
     dispatchSpy.mockRestore();
   });
 
-  it('calls resumeSession for paused sessions', async () => {
-    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('paused'));
+  /** Serves one session by id, its models, and its resume route. */
+  function serveSession(state: Session['state'], extra: Record<string, MockFetchAnswer> = {}) {
+    return serve({
+      'GET /api/session/test-id': () => wire({ id: 'test-id', state }),
+      'GET /api/session/test-id/models': () => ({ models: [] }),
+      'POST /api/session/test-id/resume': () => new Response(null, { status: 204 }),
+      ...extra,
+    });
+  }
 
+  function mount() {
     render(() => (
       <SessionProvider initialKiln="/tmp/test-kiln">
         <SelectConsumer />
       </SessionProvider>
     ));
+  }
 
-    await waitFor(() => {
-      expect(api.listSessions).toHaveBeenCalled();
-    });
+  it('calls resumeSession for paused sessions', async () => {
+    const served = serveSession('paused');
+    mount();
+    await waitFor(() => expect(served.fetch.calls(LIST)).toBe(1));
 
     screen.getByTestId('select').click();
 
-    await waitFor(() => {
-      expect(api.resumeSession).toHaveBeenCalledWith('test-id');
-    });
-
+    await waitFor(() =>
+      expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(1),
+    );
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'crucible:open-session' })
     );
   });
 
   it('does not call resumeSession for active sessions', async () => {
-    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('active'));
-
-    render(() => (
-      <SessionProvider initialKiln="/tmp/test-kiln">
-        <SelectConsumer />
-      </SessionProvider>
-    ));
+    const served = serveSession('active');
+    mount();
 
     screen.getByTestId('select').click();
 
@@ -148,26 +172,20 @@ describe('selectSession auto-resume', () => {
       );
     });
 
-    expect(api.resumeSession).not.toHaveBeenCalled();
+    expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(0);
   });
 
   it('transparently resumes ended sessions on select', async () => {
     // Ended sessions are always resumable: selecting one revives it (the daemon
     // resume route falls back to storage) so the composer is never a dead end.
-    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('ended'));
-
-    render(() => (
-      <SessionProvider initialKiln="/tmp/test-kiln">
-        <SelectConsumer />
-      </SessionProvider>
-    ));
+    const served = serveSession('ended');
+    mount();
 
     screen.getByTestId('select').click();
 
-    await waitFor(() => {
-      expect(api.resumeSession).toHaveBeenCalledWith('test-id');
-    });
-
+    await waitFor(() =>
+      expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(1),
+    );
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'crucible:open-session' })
     );
@@ -176,21 +194,14 @@ describe('selectSession auto-resume', () => {
   it('opens a stored session from the list with one read, no history page first', async () => {
     // The daemon answers `session.get` for a session it holds in storage
     // only. The client used to read one history page to revive it first.
-    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([makeSession('active')]);
-    (api.getSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeSession('active'));
-
-    render(() => (
-      <SessionProvider initialKiln="/tmp/test-kiln">
-        <SelectConsumer />
-      </SessionProvider>
-    ));
+    const served = serveSession('active', { [LIST]: () => listOf([{ id: 'test-id' }]) });
+    mount();
+    await waitFor(() => expect(served.fetch.calls(LIST)).toBe(1));
 
     screen.getByTestId('select').click();
 
-    await waitFor(() => {
-      expect(api.getSession).toHaveBeenCalledWith('test-id');
-    });
-    expect(api.getSessionHistory).not.toHaveBeenCalledWith('test-id', 1, 0);
+    await waitFor(() => expect(served.fetch.calls('GET /api/session/test-id')).toBe(1));
+    expect(served.fetch.calls('GET /api/session/test-id/history')).toBe(0);
 
     await waitFor(() => {
       expect(dispatchSpy).toHaveBeenCalledWith(
@@ -198,32 +209,35 @@ describe('selectSession auto-resume', () => {
       );
     });
   });
+
+  it('drops a row the daemon no longer holds instead of opening it', async () => {
+    // The list can come from the seeded localStorage copy, and another tab may
+    // have deleted the session since. A failed read prunes the dead row.
+    const served = serve({
+      [LIST]: () => listOf([{ id: 'test-id' }]),
+      'GET /api/session/test-id': apiError(404, 'no such session'),
+    });
+
+    let context!: ReturnType<typeof useSession>;
+    function Probe() {
+      context = useSession();
+      return <span data-testid="count">{context.sessions().length}</span>;
+    }
+    render(() => (
+      <SessionProvider initialKiln="/tmp/test-kiln">
+        <Probe />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
+
+    await context.selectSession('test-id');
+
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
+    expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(0);
+  });
 });
 
-function makeChatSession(id = 'new-id'): Session {
-  return {
-    id,
-    session_type: 'chat',
-    kilns: ['/kilns/main'],
-    workspace: '/kilns/main',
-    state: 'active',
-    title: null,
-    agent_model: null,
-    agent_mode: null,
-    started_at: '2026-01-01T00:00:00Z',
-    event_count: 0,
-  };
-}
-
 describe('applySessionScope', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.createSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeChatSession());
-  });
-
   function ScopeConsumer() {
     const { createSession, applySessionScope, currentSession, sessions } = useSession();
     return (
@@ -252,16 +266,34 @@ describe('applySessionScope', () => {
   }
 
   it('patches both currentSession and the matching sessions list entry', async () => {
+    const created = { id: 'new-id', kilns: ['/kilns/main'], workspace: '/kilns/main' };
+    // The list the daemon answers after the create carries the new row, so the
+    // refetch that follows the write agrees with the optimistic prepend.
+    let rows: Array<Partial<Session> & { id: string }> = [];
+    const served = serve({
+      [LIST]: () => listOf(rows),
+      'POST /api/session': () => {
+        rows = [created];
+        return wire(created);
+      },
+      'GET /api/session/new-id/models': () => ({ models: [] }),
+    });
+
     render(() => (
       <SessionProvider initialKiln="/kilns/main">
         <ScopeConsumer />
       </SessionProvider>
     ));
-    await waitFor(() => expect(api.listSessions).toHaveBeenCalled());
+    await waitFor(() => expect(served.fetch.calls(LIST)).toBe(1));
 
     screen.getByTestId('create').click();
     await waitFor(() =>
       expect(screen.getByTestId('list-workspace').textContent).toBe('/kilns/main'),
+    );
+    // The selection lands when the write settles, which is after the list the
+    // invalidation asked for.
+    await waitFor(() =>
+      expect(screen.getByTestId('cur-workspace').textContent).toBe('/kilns/main'),
     );
 
     screen.getByTestId('apply').click();
@@ -270,21 +302,16 @@ describe('applySessionScope', () => {
       expect(screen.getByTestId('cur-workspace').textContent).toBe('/repos/app'),
     );
     expect(screen.getByTestId('cur-connected').textContent).toBe('/kilns/main,/kilns/extra');
-    expect(screen.getByTestId('list-workspace').textContent).toBe('/repos/app');
+    // The cached row reaches the DOM on the cache's own notification, which
+    // is a microtask later than the selection's signal.
+    await waitFor(() =>
+      expect(screen.getByTestId('list-workspace').textContent).toBe('/repos/app'),
+    );
     expect(screen.getByTestId('list-connected').textContent).toBe('/kilns/main,/kilns/extra');
   });
 });
 
 describe('createSession param forwarding', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (api.listSessions as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.listModels as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.listProviders as ReturnType<typeof vi.fn<any>>).mockResolvedValue([]);
-    (api.createSession as ReturnType<typeof vi.fn<any>>).mockResolvedValue(makeChatSession());
-    (api.switchModel as ReturnType<typeof vi.fn<any>>).mockResolvedValue(undefined);
-  });
-
   function CreateConsumer(props: { run: (ctx: ReturnType<typeof useSession>) => void }) {
     const ctx = useSession();
     return (
@@ -294,54 +321,63 @@ describe('createSession param forwarding', () => {
     );
   }
 
-  async function renderWithRun(run: (ctx: ReturnType<typeof useSession>) => void) {
+  async function renderWithRun(
+    run: (ctx: ReturnType<typeof useSession>) => void,
+    routes: Record<string, MockFetchAnswer> = {},
+  ): Promise<{ sent: unknown[] }> {
+    const sent: unknown[] = [];
+    const served = serve({
+      'POST /api/session': async (request) => {
+        sent.push(await request.json());
+        return wire({ id: 'new-id', title: null });
+      },
+      'POST /api/session/new-id/model': () => new Response(null, { status: 204 }),
+      'GET /api/session/new-id/models': () => ({ models: [] }),
+      ...routes,
+    });
+
     render(() => (
       <SessionProvider initialKiln="/kilns/home">
         <CreateConsumer run={run} />
       </SessionProvider>
     ));
-    await waitFor(() => expect(api.listSessions).toHaveBeenCalled());
+    await waitFor(() => expect(served.fetch.calls(LIST)).toBe(1));
     screen.getByTestId('run').click();
+    return { sent };
   }
 
   it('forwards an internal create with the chosen kiln and applies the model', async () => {
-    await renderWithRun((ctx) =>
+    const { sent } = await renderWithRun((ctx) =>
       void ctx.createSession(
         { kilns: ['/kilns/main'] },
         { initialMessage: 'hi', model: 'openai/gpt-4o' },
       ),
     );
 
+    await waitFor(() => expect(sent[0]).toEqual({ kilns: ['/kilns/main'] }));
     await waitFor(() =>
-      expect(api.createSession).toHaveBeenCalledWith({ kilns: ['/kilns/main'] }),
-    );
-    await waitFor(() =>
-      expect(api.switchModel).toHaveBeenCalledWith('new-id', 'openai/gpt-4o'),
+      expect(env.fetch.calls('POST /api/session/new-id/model')).toBe(1),
     );
   });
 
   it('forwards a kiln-less ACP create without a model override', async () => {
-    await renderWithRun((ctx) =>
+    const { sent } = await renderWithRun((ctx) =>
       void ctx.createSession(
         { agent_type: 'acp', agent_name: 'claude' },
         { initialMessage: 'refactor auth' },
       ),
     );
 
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-    const params = (api.createSession as ReturnType<typeof vi.fn<any>>).mock.calls[0][0] as {
-      agent_type?: string;
-      agent_name?: string;
-      kilns?: string[];
-    };
+    await waitFor(() => expect(sent.length).toBe(1));
+    const params = sent[0] as { agent_type?: string; agent_name?: string; kilns?: string[] };
     expect(params.agent_type).toBe('acp');
     expect(params.agent_name).toBe('claude');
     expect(params.kilns).toBeUndefined();
-    expect(api.switchModel).not.toHaveBeenCalled();
+    expect(env.fetch.calls('POST /api/session/new-id/model')).toBe(0);
   });
 
   it('forwards every kiln in one flat set', async () => {
-    await renderWithRun((ctx) =>
+    const { sent } = await renderWithRun((ctx) =>
       void ctx.createSession(
         { kilns: ['/kilns/main', '/kilns/extra'] },
         { initialMessage: 'multi-kiln' },
@@ -349,19 +385,13 @@ describe('createSession param forwarding', () => {
     );
 
     await waitFor(() =>
-      expect(api.createSession).toHaveBeenCalledWith({
-        kilns: ['/kilns/main', '/kilns/extra'],
-      }),
+      expect(sent[0]).toEqual({ kilns: ['/kilns/main', '/kilns/extra'] }),
     );
   });
 });
 
 
 describe('refreshModels ordering', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   /// Two overlapping refreshes must not let the older one win.
   ///
   /// Regression: `refreshModels` had no generation guard, so a slow earlier
@@ -369,14 +399,21 @@ describe('refreshModels ordering', () => {
   /// The user-visible symptom was model options disappearing right after
   /// appearing, which made the e2e picker test flaky even run serially.
   it('a slow earlier refresh cannot overwrite a newer one', async () => {
-    let releaseFirst: (models: string[]) => void = () => {};
-    const first = new Promise<string[]>((resolve) => {
+    let releaseFirst: (() => void) | undefined;
+    const first = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-
-    vi.mocked(api.listModels)
-      .mockReturnValueOnce(first)
-      .mockResolvedValueOnce(['llama3.2', 'mistral']);
+    let modelCalls = 0;
+    serve({
+      'GET /api/session/s1/models': async () => {
+        modelCalls += 1;
+        if (modelCalls === 1) {
+          await first;
+          return { models: ['stale-only'] };
+        }
+        return { models: ['llama3.2', 'mistral'] };
+      },
+    });
 
     let ctx: ReturnType<typeof useSession>;
     function Probe() {
@@ -399,7 +436,7 @@ describe('refreshModels ordering', () => {
     });
 
     // The earlier call now completes with a different answer.
-    releaseFirst(['stale-only']);
+    releaseFirst?.();
     await stale;
 
     expect(screen.getByTestId('models').textContent).toBe(
@@ -410,7 +447,7 @@ describe('refreshModels ordering', () => {
   /// The no-session path writes `[]`, and it has to obey the same rule —
   /// otherwise a stray refresh with no session blanks a good list.
   it('a stale no-session refresh cannot blank a newer list', async () => {
-    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+    serve({ 'GET /api/session/s1/models': () => ({ models: ['llama3.2', 'mistral'] }) });
 
     let ctx: ReturnType<typeof useSession>;
     function Probe() {
@@ -442,30 +479,26 @@ describe('refreshModels ordering', () => {
  * "Select a session first…" over a perfectly live session.
  */
 describe('adopting the focused pane’s session', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    statusBarActions.setActiveSessionId(null);
-    vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listModels).mockResolvedValue([]);
-    vi.mocked(api.listProviders).mockResolvedValue([]);
-  });
-
-  afterEach(() => statusBarActions.setActiveSessionId(null));
-
-  function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
+  function Probe() {
     const ctx = useSession();
-    props.onCtx(ctx);
     return <span data-testid="current">{ctx.currentSession()?.id ?? 'none'}</span>;
   }
 
-  it('adopts a session announced by a restored pane', async () => {
-    vi.mocked(api.getSession).mockResolvedValue({ id: 's-restored', kilns: ['/k'] } as Session);
-
+  function mount() {
     render(() => (
       <SessionProvider>
-        <Probe onCtx={() => {}} />
+        <Probe />
       </SessionProvider>
     ));
+  }
+
+  it('adopts a session announced by a restored pane', async () => {
+    serve({
+      'GET /api/session/s-restored': () => wire({ id: 's-restored' }),
+      'GET /api/session/s-restored/models': () => ({ models: [] }),
+    });
+
+    mount();
     expect(screen.getByTestId('current').textContent).toBe('none');
 
     // What ChatContext's bootstrap does on reload.
@@ -477,15 +510,13 @@ describe('adopting the focused pane’s session', () => {
   });
 
   it('follows a switch to another pane', async () => {
-    vi.mocked(api.getSession).mockImplementation((id: string) =>
-      Promise.resolve({ id, kilns: ['/k'] } as Session),
-    );
-
-    render(() => (
-      <SessionProvider>
-        <Probe onCtx={() => {}} />
-      </SessionProvider>
-    ));
+    serve({
+      'GET /api/session/s-one': () => wire({ id: 's-one' }),
+      'GET /api/session/s-two': () => wire({ id: 's-two' }),
+      'GET /api/session/s-one/models': () => ({ models: [] }),
+      'GET /api/session/s-two/models': () => ({ models: [] }),
+    });
+    mount();
 
     statusBarActions.setActiveSessionId('s-one');
     await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-one'));
@@ -495,32 +526,25 @@ describe('adopting the focused pane’s session', () => {
   });
 
   it('does not refetch a session that is already current', async () => {
-    vi.mocked(api.getSession).mockResolvedValue({ id: 's-same', kilns: ['/k'] } as Session);
-
-    render(() => (
-      <SessionProvider>
-        <Probe onCtx={() => {}} />
-      </SessionProvider>
-    ));
+    const served = serve({
+      'GET /api/session/s-same': () => wire({ id: 's-same' }),
+      'GET /api/session/s-same/models': () => ({ models: [] }),
+    });
+    mount();
 
     statusBarActions.setActiveSessionId('s-same');
     await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('s-same'));
-    const calls = vi.mocked(api.getSession).mock.calls.length;
+    const calls = served.fetch.calls('GET /api/session/s-same');
 
     // A re-announce of the same id (pane refocus) must not thrash the network.
     statusBarActions.setActiveSessionId('s-same');
     await Promise.resolve();
-    expect(vi.mocked(api.getSession).mock.calls.length).toBe(calls);
+    expect(served.fetch.calls('GET /api/session/s-same')).toBe(calls);
   });
 
   it('leaves the current session alone when the fetch fails', async () => {
-    vi.mocked(api.getSession).mockRejectedValue(new Error('502 Bad Gateway'));
-
-    render(() => (
-      <SessionProvider>
-        <Probe onCtx={() => {}} />
-      </SessionProvider>
-    ));
+    serve({ 'GET /api/session/s-broken': apiError(502, 'Bad Gateway') });
+    mount();
 
     statusBarActions.setActiveSessionId('s-broken');
     await Promise.resolve();
@@ -536,21 +560,6 @@ describe('adopting the focused pane’s session', () => {
  * just created gets.
  */
 describe('the model list of a session that was not just created', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    statusBarActions.setActiveSessionId(null);
-    vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listProviders).mockResolvedValue([]);
-    vi.mocked(api.resumeSession).mockResolvedValue(undefined as never);
-    vi.mocked(api.getSessionHistory).mockResolvedValue({
-      session_id: 's-old',
-      history: [],
-      total_events: 0,
-    } as never);
-  });
-
-  afterEach(() => statusBarActions.setActiveSessionId(null));
-
   function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
     const ctx = useSession();
     props.onCtx(ctx);
@@ -563,9 +572,11 @@ describe('the model list of a session that was not just created', () => {
   }
 
   it('lists the daemon’s models after a rail click on an existing session', async () => {
-    vi.mocked(api.listSessions).mockResolvedValue([makeChatSession('s-old')]);
-    vi.mocked(api.getSession).mockResolvedValue(makeChatSession('s-old'));
-    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+    const served = serve({
+      [LIST]: () => listOf([{ id: 's-old' }]),
+      'GET /api/session/s-old': () => wire({ id: 's-old' }),
+      'GET /api/session/s-old/models': () => ({ models: ['llama3.2', 'mistral'] }),
+    });
 
     let ctx: ReturnType<typeof useSession> | undefined;
     render(() => (
@@ -578,7 +589,7 @@ describe('the model list of a session that was not just created', () => {
     await ctx!.selectSession('s-old');
 
     expect(screen.getByTestId('current').textContent).toBe('s-old');
-    expect(vi.mocked(api.listModels)).toHaveBeenCalledWith('s-old');
+    expect(served.fetch.calls('GET /api/session/s-old/models')).toBeGreaterThan(0);
     expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
   });
 
@@ -591,8 +602,10 @@ describe('the model list of a session that was not just created', () => {
    * to. The daemon now reads a stored session, and the client reads once.
    */
   it('adopts a stored session with one read, then lists its models', async () => {
-    vi.mocked(api.getSession).mockResolvedValue(makeChatSession('s-old'));
-    vi.mocked(api.listModels).mockResolvedValue(['llama3.2', 'mistral']);
+    const served = serve({
+      'GET /api/session/s-old': () => wire({ id: 's-old' }),
+      'GET /api/session/s-old/models': () => ({ models: ['llama3.2', 'mistral'] }),
+    });
 
     render(() => (
       <SessionProvider>
@@ -606,15 +619,15 @@ describe('the model list of a session that was not just created', () => {
       expect(screen.getByTestId('current').textContent).toBe('s-old');
     });
     // One read of the record; no history page to bring it back first.
-    expect(vi.mocked(api.getSession)).toHaveBeenCalledWith('s-old');
-    expect(vi.mocked(api.getSessionHistory)).not.toHaveBeenCalledWith('s-old', 1, 0);
+    expect(served.fetch.calls('GET /api/session/s-old')).toBe(1);
+    expect(served.fetch.calls('GET /api/session/s-old/history')).toBe(0);
     await waitFor(() => {
       expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
     });
   });
 
   it('still leaves the current session alone when the session is really gone', async () => {
-    vi.mocked(api.getSession).mockRejectedValue(new Error('Failed to load session: HTTP 404'));
+    serve({ 'GET /api/session/s-gone': apiError(404, 'Failed to load session') });
 
     render(() => (
       <SessionProvider>
@@ -625,5 +638,150 @@ describe('the model list of a session that was not just created', () => {
     statusBarActions.setActiveSessionId('s-gone');
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.getByTestId('current').textContent).toBe('none');
+  });
+});
+
+/**
+ * Two readers of the session list, one request.
+ *
+ * The rail's context and the inbox each used to fetch their own copy. They now
+ * read one key, so mounting a second reader inside the provider asks the
+ * daemon nothing.
+ */
+describe('the list every reader shares', () => {
+  it('answers a second reader from the cache', async () => {
+    const served = serve({ [LIST]: () => listOf([{ id: 's-1' }]) });
+
+    function Reader(props: { id: string }) {
+      const ctx = useSession();
+      return <span data-testid={props.id}>{ctx.sessions().length}</span>;
+    }
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Reader id="first" />
+        <Reader id="second" />
+      </SessionProvider>
+    ));
+
+    await waitFor(() => expect(screen.getByTestId('first').textContent).toBe('1'));
+    expect(screen.getByTestId('second').textContent).toBe('1');
+    expect(served.fetch.calls(LIST)).toBe(1);
+  });
+
+  it('paints the list this browser stored before the daemon answers', async () => {
+    localStorage.setItem(
+      'crucible:cache:sessions',
+      JSON.stringify([{ id: 's-stored', kilns: [], workspace: null, state: 'active' }]),
+    );
+    let release: (() => void) | undefined;
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    serve({
+      [LIST]: async () => {
+        await answered;
+        return listOf([{ id: 's-live' }]);
+      },
+    });
+
+    let ctx!: ReturnType<typeof useSession>;
+    function Probe() {
+      ctx = useSession();
+      return <span data-testid="ids">{ctx.sessions().map((s) => s.id).join(',')}</span>;
+    }
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Probe />
+      </SessionProvider>
+    ));
+
+    expect(screen.getByTestId('ids').textContent).toBe('s-stored');
+
+    release?.();
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('s-live'));
+  });
+});
+
+describe('the mutations every reader shares', () => {
+  function Probe(props: { onCtx: (c: ReturnType<typeof useSession>) => void }) {
+    const ctx = useSession();
+    props.onCtx(ctx);
+    return <span data-testid="ids">{ctx.sessions().map((s) => s.id).join(',')}</span>;
+  }
+
+  async function mountWith(routes: Record<string, MockFetchAnswer>) {
+    const served = serve({ [LIST]: () => listOf([{ id: 's-1' }, { id: 's-2' }]), ...routes });
+    let ctx!: ReturnType<typeof useSession>;
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Probe onCtx={(c) => (ctx = c)} />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('s-1,s-2'));
+    return { served, ctx };
+  }
+
+  it('takes a deleted session out of the list without waiting for a refetch', async () => {
+    let rows = [{ id: 's-1' }, { id: 's-2' }];
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const served = serve({
+      [LIST]: () => listOf(rows),
+      'DELETE /api/session/s-2': () => {
+        rows = [{ id: 's-1' }];
+        return new Response(null, { status: 204 });
+      },
+    });
+    let ctx!: ReturnType<typeof useSession>;
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Probe onCtx={(c) => (ctx = c)} />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('s-1,s-2'));
+
+    await ctx.deleteSession('s-2');
+
+    expect(screen.getByTestId('ids').textContent).toBe('s-1');
+    expect(served.fetch.calls('DELETE /api/session/s-2')).toBe(1);
+    confirmSpy.mockRestore();
+  });
+
+  it('archives a session out of the default list', async () => {
+    let rows = [{ id: 's-1' }, { id: 's-2' }];
+    const { ctx } = await mountWith({
+      [LIST]: () => listOf(rows),
+      'POST /api/session/s-2/archive': () => {
+        rows = [{ id: 's-1' }];
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await ctx.archiveSession('s-2');
+
+    expect(screen.getByTestId('ids').textContent).toBe('s-1');
+  });
+
+  it('re-reads the list after an unarchive', async () => {
+    let rows = [{ id: 's-1' }];
+    const served = serve({
+      [LIST]: () => listOf(rows),
+      'POST /api/session/s-2/unarchive': () => {
+        rows = [{ id: 's-1' }, { id: 's-2' }];
+        return new Response(null, { status: 204 });
+      },
+    });
+    let ctx!: ReturnType<typeof useSession>;
+    render(() => (
+      <SessionProvider initialKiln="/kilns/main">
+        <Probe onCtx={(c) => (ctx = c)} />
+      </SessionProvider>
+    ));
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('s-1'));
+    expect(served.fetch.calls(LIST)).toBe(1);
+
+    await ctx.unarchiveSession('s-2');
+
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('s-1,s-2'));
+    expect(served.fetch.calls(LIST)).toBe(2);
   });
 });

@@ -37,7 +37,6 @@ vi.mock('@/lib/api', () => ({
 beforeEach(() => {
   document.body.innerHTML = '';
   statusBarActions.setKilnPath('/kilns/helios');
-  statusBarActions.setActiveSessionTitle(null);
 });
 
 function cmd(overrides: Partial<PaletteCommand> = {}): PaletteCommand {
