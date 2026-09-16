@@ -56,9 +56,9 @@ describe('draftCreateParams', () => {
     expect('agent_type' in draftCreateParams(base)).toBe(false);
   });
 
-  it('forwards a named card without confusing it with an ACP profile', () => {
-    expect(draftCreateParams({ ...base, agentCard: ' researcher ' })).toMatchObject({ agent_card: 'researcher' });
-    expect(draftCreateParams({ ...base, agentName: 'claude', agentCard: 'researcher' })).not.toHaveProperty('agent_card');
-    expect(draftCreateParams({ ...base, agentCard: ' ' })).not.toHaveProperty('agent_card');
+  // A card names a subagent, or an @-callout in a message. It is not a
+  // choice a draft makes, so the draft never sends one.
+  it('never names a card', () => {
+    expect(draftCreateParams(base)).not.toHaveProperty('agent_card');
   });
 });

@@ -200,7 +200,7 @@ describe('CenterComposer', () => {
   });
 
   it('Enter submits the first message through createSession', async () => {
-    const { getByTestId, getByRole } = render(() => <CenterComposer />);
+    const { getByTestId, queryByRole } = render(() => <CenterComposer />);
     // Wait for the async defaults (config/kilns) to land before submitting —
     // 'helios' appears on the chip label once defaultKiln resolves.
     await waitFor(() =>
@@ -208,7 +208,8 @@ describe('CenterComposer', () => {
     );
 
     const input = getByTestId('composer-input') as HTMLTextAreaElement;
-    fireEvent.input(getByRole('textbox', { name: 'Agent card' }), { target: { value: 'researcher' } });
+    // No card field: a card names a subagent or an @-callout, not a draft.
+    expect(queryByRole('textbox', { name: 'Agent card' })).toBeNull();
     fireEvent.input(input, { target: { value: 'hello world' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
@@ -216,7 +217,7 @@ describe('CenterComposer', () => {
     // The NAME, not the directory. `session.create` refuses a path outright,
     // so the launchpad sending one would 422 every first message.
     expect(scope.kilns).toEqual(['helios']);
-    expect(scope.agent_card).toBe('researcher');
+    expect(scope).not.toHaveProperty('agent_card');
     expect(scope.agent_name).toBeUndefined();
     expect(opts.initialMessage).toBe('hello world');
   });

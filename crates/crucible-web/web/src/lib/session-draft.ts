@@ -24,8 +24,6 @@ export interface DraftChoices {
   workspace: string;
   /** ACP agent name, or '' for the internal agent. */
   agentName: string;
-  /** Optional internal-agent card name, resolved by the daemon. */
-  agentCard?: string;
   /** `provider:target`, or '' for untouched. */
   wsTarget: string;
   /** `provider:target`, `host`, or '' for untouched. */
@@ -48,7 +46,6 @@ export function draftCreateParams(choices: DraftChoices): CreateSessionParams {
     kilns: kilnsForCreate(choices.kiln, choices.defaultKiln),
     workspace: choices.workspace || undefined,
     ...(isAcp ? { agent_type: 'acp' as const, agent_name: choices.agentName } : {}),
-    ...(!isAcp && choices.agentCard?.trim() ? { agent_card: choices.agentCard.trim() } : {}),
     // The daemon resolves this to a path before it creates anything, so the
     // session is born in the right checkout.
     ...(choices.wsTarget ? { workspace_target: choices.wsTarget } : {}),

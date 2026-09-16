@@ -49,7 +49,8 @@ describe('NewSessionSheet', () => {
 
   it('creates the session with the first message, and says nothing it was not told', async () => {
     render(() => <NewSessionSheet />);
-    fireEvent.input(screen.getByRole('textbox', { name: 'Agent card' }), { target: { value: 'researcher' } });
+    // No card field: a card names a subagent or an @-callout, not a draft.
+    expect(screen.queryByRole('textbox', { name: 'Agent card' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     const box = screen.getByRole('textbox', { name: 'Message' });
@@ -59,7 +60,7 @@ describe('NewSessionSheet', () => {
     await waitFor(() => expect(created.params).toHaveLength(1));
     const params = created.params[0] as Record<string, unknown>;
     expect(created.opts[0]).toMatchObject({ initialMessage: 'hello there' });
-    expect(params.agent_card).toBe('researcher');
+    expect(params).not.toHaveProperty('agent_card');
     expect(params.agent_name).toBeUndefined();
     // Untouched axes say nothing at all.
     expect('isolation' in params).toBe(false);
