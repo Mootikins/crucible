@@ -166,7 +166,12 @@ export const SettingsModal: Component<{ open: boolean; onClose: () => void }> = 
             </nav>
 
             {/* ── The section ──────────────────────────────────────────── */}
-            <div class="flex min-w-0 flex-col">
+            {/* `min-h-0` is what makes the pane below scroll. A grid item keeps
+                `min-height: auto`, so without it this column grew to the height
+                of a long section (Editor, Plugins, Configuration), the pane had
+                nothing to overflow, and the dialog's `overflow-hidden` cut the
+                bottom of the form off with no scrollbar anywhere. */}
+            <div class="flex min-h-0 min-w-0 flex-col">
               <header class="flex flex-none items-center justify-between border-b border-hairline px-5 py-3">
                 <h2 class="text-sm font-semibold text-shell-ink">{active().label}</h2>
                 <button
