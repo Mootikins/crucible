@@ -1,15 +1,20 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import type { InteractionOf } from '@/lib/types';
+import type { PendingInteractionEntry } from '@/lib/api';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
-vi.mock('@/lib/api', () => ({
-  listPendingInteractions: vi.fn().mockResolvedValue([]),
-}));
-
+// No `vi.mock('@/lib/api')`. The remote layer is the shared
+// `usePendingInteractions()` list now, so the aggregate answers the ROUTE
+// below — which is also what proves the store and the inbox read one request
+// between them.
 import { attentionStore, attentionActions } from '../attentionStore';
-import { listPendingInteractions } from '@/lib/api';
 
-const mockedList = vi.mocked(listPendingInteractions);
+const PENDING = 'GET /api/interactions/pending';
+
+let env: TestQueryEnv;
+/** What the aggregate answers next, which each case names up front. */
+let pending: PendingInteractionEntry[] = [];
 
 const perm: InteractionOf<'permission'> = {
   kind: 'permission',
@@ -23,9 +28,14 @@ beforeEach(async () => {
   for (const id of Object.keys(attentionStore.entries)) {
     attentionActions.clear(id);
   }
-  // Empty the remote (polled) layer too.
-  mockedList.mockResolvedValue([]);
+  pending = [];
+  env = createTestQueryEnv({ [PENDING]: () => ({ pending }) });
+  // Empty the remote (aggregate) layer too.
   await attentionActions.refresh();
+});
+
+afterEach(() => {
+  env?.restore();
 });
 
 describe('attentionStore', () => {
@@ -86,9 +96,7 @@ describe('attentionStore', () => {
 
 describe('attentionStore — daemon aggregate (refresh)', () => {
   it('surfaces polled pending interactions for sessions without a tab', async () => {
-    mockedList.mockResolvedValue([
-      { session_id: 's-remote', request_id: 'r1', request: { ...perm, id: 'r1' } },
-    ]);
+    pending = [{ session_id: 's-remote', request_id: 'r1', request: { ...perm, id: 'r1' } }];
     await attentionActions.refresh();
 
     await createRoot(async (dispose) => {
@@ -99,10 +107,10 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
   });
 
   it('local (open tab) state shadows the polled entry for the same session', async () => {
-    mockedList.mockResolvedValue([
+    pending = [
       { session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } },
       { session_id: 's2', request_id: 'r2', request: { ...perm, id: 'r2' } },
-    ]);
+    ];
     await attentionActions.refresh();
 
     // s1 has an open tab whose reducer already saw the response.
@@ -117,9 +125,7 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
 
   it('resolving from the Inbox never shadows future polled pendings (no local tombstone)', async () => {
     // First pending arrives via poll, answered from the Inbox.
-    mockedList.mockResolvedValue([
-      { session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } },
-    ]);
+    pending = [{ session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } }];
     await attentionActions.refresh();
     expect(attentionStore.attentionCount()).toBe(1);
 
@@ -127,23 +133,55 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
     expect(attentionStore.attentionCount()).toBe(0);
 
     // The SAME session raises a new permission later — it must surface.
-    mockedList.mockResolvedValue([
-      { session_id: 's1', request_id: 'r2', request: { ...perm, id: 'r2' } },
-    ]);
+    pending = [{ session_id: 's1', request_id: 'r2', request: { ...perm, id: 'r2' } }];
     await attentionActions.refresh();
     expect(attentionStore.attentionCount()).toBe(1);
     expect(attentionStore.get('s1')?.pendingInteraction?.id).toBe('r2');
   });
 
   it('a later refresh drops resolved entries', async () => {
-    mockedList.mockResolvedValue([
-      { session_id: 's9', request_id: 'r9', request: { ...perm, id: 'r9' } },
-    ]);
+    pending = [{ session_id: 's9', request_id: 'r9', request: { ...perm, id: 'r9' } }];
     await attentionActions.refresh();
     expect(attentionStore.attentionCount()).toBe(1);
 
-    mockedList.mockResolvedValue([]);
+    pending = [];
     await attentionActions.refresh();
     expect(attentionStore.attentionCount()).toBe(0);
+  });
+});
+
+describe('attentionStore — the shared aggregate', () => {
+  it('mirrors the shared list while polling runs, and stops with it', async () => {
+    // `startPolling` mounts an observer of `usePendingInteractions()`; the
+    // interval, the visibility refetch and the invalidation the chat stream
+    // triggers all belong to that query. An invalidation stands for all three
+    // here — it is the one the stream sends on `interaction_requested`.
+    const stop = attentionActions.startPolling();
+    pending = [{ session_id: 's-remote', request_id: 'r1', request: { ...perm, id: 'r1' } }];
+
+    await env.client.invalidateQueries({ queryKey: ['interactions', 'pending'] });
+
+    await vi.waitFor(() => expect(attentionStore.attentionCount()).toBe(1));
+    expect(attentionStore.get('s-remote')?.pendingInteraction?.id).toBe('r1');
+
+    stop();
+    // The observer left with the root, so nothing refetches for this store.
+    pending = [];
+    const asked = env.fetch.calls(PENDING);
+    await env.client.invalidateQueries({ queryKey: ['interactions', 'pending'] });
+    expect(env.fetch.calls(PENDING)).toBe(asked);
+  });
+
+  it('builds its derived views under an owner', async () => {
+    // Four memos used to be built at module scope, where Solid reports a
+    // computation that will never be disposed — on every import of this store.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.resetModules();
+
+    await import('../attentionStore');
+
+    const said = warn.mock.calls.flat().join(' ');
+    expect(said).not.toContain('createRoot');
+    warn.mockRestore();
   });
 });

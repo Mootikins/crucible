@@ -1,7 +1,8 @@
-import { createMemo } from 'solid-js';
+import { createEffect, createMemo, createRoot } from 'solid-js';
 import { createStore, produce, reconcile } from 'solid-js/store';
 import type { InteractionRequest } from '@/lib/types';
-import { listPendingInteractions } from '@/lib/api';
+import type { PendingInteractionEntry } from '@/lib/api';
+import { refetchPendingInteractions, usePendingInteractions } from '@/lib/query/interactions';
 
 // ── Cross-session attention state ────────────────────────────────────────
 // Two sources, one merged view:
@@ -10,8 +11,11 @@ import { listPendingInteractions } from '@/lib/api';
 //   as its SSE reducer fires; cleared on dispose. Authoritative for any
 //   session with an open tab — it also carries streaming state.
 // - `remote`: the daemon's aggregate (`GET /api/interactions/pending`,
-//   backed by session.pending_interactions), polled so sessions WITHOUT an
-//   open tab still raise the header badge and appear in the Inbox.
+//   backed by session.pending_interactions), so sessions WITHOUT an open tab
+//   still raise the header badge and appear in the Inbox. The poll is no
+//   longer written here: `usePendingInteractions()` owns the request, its
+//   ten-second interval and its cache, and every other reader of that list
+//   shares them.
 //
 // Merge rule: a local entry shadows the remote one for the same session —
 // the subscribed tab sees interaction events the instant they happen and
@@ -71,9 +75,8 @@ function resolveInteraction(sessionId: string, requestId: string): void {
   }
 }
 
-/** Re-fetch the daemon's pending-interaction aggregate. */
-async function refresh(): Promise<void> {
-  const pending = await listPendingInteractions();
+/** Folds one answer of the aggregate into the remote layer. */
+function applyPending(pending: PendingInteractionEntry[]): void {
   const next: Record<string, SessionAttention> = {};
   for (const entry of pending) {
     next[entry.session_id] = {
@@ -86,42 +89,67 @@ async function refresh(): Promise<void> {
   setRemote(reconcile(next));
 }
 
-const POLL_INTERVAL_MS = 10_000;
-
-/** Poll the daemon aggregate while the page is visible. Returns a stop fn. */
-function startPolling(): () => void {
-  void refresh();
-  const tick = () => {
-    if (!document.hidden) void refresh();
-  };
-  const interval = setInterval(tick, POLL_INTERVAL_MS);
-  const onVisible = () => {
-    if (!document.hidden) void refresh();
-  };
-  document.addEventListener('visibilitychange', onVisible);
-  return () => {
-    clearInterval(interval);
-    document.removeEventListener('visibilitychange', onVisible);
-  };
+/**
+ * Re-reads the daemon's aggregate now, through the key every reader shares.
+ *
+ * The answer also reaches the inbox and the chat panes, because they read the
+ * same key rather than a copy of this store.
+ */
+async function refresh(): Promise<void> {
+  applyPending(await refetchPendingInteractions());
 }
 
-/** Merged view: local (open tabs) shadows remote (daemon poll). */
-const merged = createMemo<Record<string, SessionAttention>>(() => ({
-  ...remote,
-  ...local,
-}));
+/**
+ * Mirrors the shared aggregate into the remote layer. Returns a stop fn.
+ *
+ * The app calls it once, at start. What it starts is an OBSERVER of
+ * `usePendingInteractions()`, not a timer: the interval, the refetch on a tab
+ * becoming visible again and the invalidation the chat stream triggers all
+ * belong to that query now. The store keeps only the merge rule.
+ *
+ * The root is what gives the effect an owner, and disposing it takes the
+ * observer off the query — so the interval stops with it.
+ */
+function startPolling(): () => void {
+  return createRoot((dispose) => {
+    const pending = usePendingInteractions();
+    createEffect(() => {
+      const entries = pending.data;
+      if (entries) applyPending(entries);
+    });
+    return dispose;
+  });
+}
 
-/** Sessions currently waiting on a human response. */
-const waiting = createMemo(() =>
-  Object.values(merged()).filter((e) => e.pendingInteraction !== null)
-);
+/**
+ * The derived views, under one root.
+ *
+ * A memo built at module scope has no owner, which Solid reports as a
+ * computation that will never be disposed — a warning on every import of this
+ * store. The root is deliberately never disposed: these four live as long as
+ * the module does, which is what the warning was asking to be made explicit.
+ */
+const { waiting, attentionCount, streamingCount } = createRoot(() => {
+  /** Merged view: local (open tabs) shadows remote (the shared aggregate). */
+  const merged = createMemo<Record<string, SessionAttention>>(() => ({
+    ...remote,
+    ...local,
+  }));
 
-/** Header/inbox badge count. */
-const attentionCount = createMemo(() => waiting().length);
+  /** Sessions currently waiting on a human response. */
+  const waiting = createMemo(() =>
+    Object.values(merged()).filter((e) => e.pendingInteraction !== null)
+  );
 
-const streamingCount = createMemo(
-  () => Object.values(merged()).filter((e) => e.isStreaming).length
-);
+  /** Header/inbox badge count. */
+  const attentionCount = createMemo(() => waiting().length);
+
+  const streamingCount = createMemo(
+    () => Object.values(merged()).filter((e) => e.isStreaming).length
+  );
+
+  return { waiting, attentionCount, streamingCount };
+});
 
 function get(sessionId: string): SessionAttention | undefined {
   return local[sessionId] ?? remote[sessionId];

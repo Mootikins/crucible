@@ -3,7 +3,7 @@ import { SECTION_LABEL_CLASS } from '@/components/ui/SectionLabel';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { attentionStore, attentionActions, type SessionAttention } from '@/stores/attentionStore';
 import { InteractionHandler } from '@/components/interactions';
-import { respondToInteraction } from '@/lib/api';
+import { useRespondToInteraction } from '@/lib/query/interactions';
 import { useDeleteSession, useSessions, useUnarchiveSession } from '@/lib/query/sessions';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
 import { relativeTime } from '@/lib/format-time';
@@ -69,6 +69,7 @@ const InboxPanel: Component = () => {
   // every reader of the list sees a delete or a restore at once.
   const sessions = useSessions(archivedOpen);
   const remove = useDeleteSession();
+  const answer = useRespondToInteraction();
   const restore = useUnarchiveSession();
   const [clearArmed, setClearArmed] = createSignal(false);
   const [clearProgress, setClearProgress] = createSignal<string | null>(null);
@@ -90,17 +91,17 @@ const InboxPanel: Component = () => {
     const request = entry.pendingInteraction;
     if (!request) return;
     try {
-      await respondToInteraction(entry.sessionId, request.id, response);
-      // Tell the owning ChatProvider (if a tab is open) its interaction is
-      // handled so the in-chat prompt disappears too.
-      window.dispatchEvent(
-        new CustomEvent('crucible:interaction-resolved', {
-          detail: { sessionId: entry.sessionId, requestId: request.id },
-        })
-      );
+      // The write takes the entry out of the shared pending list and announces
+      // it on the bus, so the owning pane drops its in-chat card too. Neither
+      // the window CustomEvent nor the re-sync that followed it is needed.
+      await answer.mutateAsync({
+        sessionId: entry.sessionId,
+        requestId: request.id,
+        response,
+      });
+      // The LOCAL layer of the attention store belongs to an open tab's own
+      // reducer, which no cache write reaches.
       attentionActions.resolveInteraction(entry.sessionId, request.id);
-      // Re-sync the daemon aggregate — the responded entry is gone there.
-      void attentionActions.refresh();
       setResolved(`✓ Resolved — ${titleFor(entry)}`);
     } catch (err) {
       setResolved(

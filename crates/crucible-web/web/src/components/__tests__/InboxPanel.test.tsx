@@ -6,6 +6,7 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 import { resetSessionsForTests } from '@/lib/query/sessions';
 import { keys } from '@/lib/query/keys';
+import { getBus } from '@/lib/bus';
 import type { InteractionOf, Session } from '@/lib/types';
 
 // No `vi.mock('@/lib/api')`. The panel reads the session list through
@@ -95,7 +96,7 @@ describe('InboxPanel', () => {
     expect(queryByText(/all clear/)).toBeNull();
   });
 
-  it('responds via the API and broadcasts resolution on Allow', async () => {
+  it('responds via the API and announces the resolution on Allow', async () => {
     let sent: unknown = null;
     const served = serve({
       'POST /api/interaction/respond': async (request) => {
@@ -107,10 +108,10 @@ describe('InboxPanel', () => {
       pendingInteraction: perm,
       title: 'scheduler-backpressure',
     });
-    const resolvedEvents: Array<{ sessionId: string; requestId: string }> = [];
-    const onResolved = (e: Event) =>
-      resolvedEvents.push((e as CustomEvent<{ sessionId: string; requestId: string }>).detail);
-    window.addEventListener('crucible:interaction-resolved', onResolved);
+    // The bus, not a window CustomEvent: the write announces the answer, and
+    // the pane holding the card listens on the same bus.
+    const announced: Array<{ sessionId: string; requestId: string }> = [];
+    const off = getBus().on('interactionResolved', (payload) => announced.push(payload));
 
     const { getByText } = render(() => <InboxPanel />);
     (getByText('Allow') as HTMLElement).click();
@@ -123,14 +124,35 @@ describe('InboxPanel', () => {
       });
     });
     expect(served.fetch.calls('POST /api/interaction/respond')).toBe(1);
-    expect(resolvedEvents).toEqual([{ sessionId: 's1', requestId: 'req-42' }]);
+    expect(announced).toEqual([{ sessionId: 's1', requestId: 'req-42' }]);
     // Entry resolved locally: badge drops, resolved note shows.
     await waitFor(() => {
       expect(attentionStore.attentionCount()).toBe(0);
       expect(getByText(/Resolved — scheduler-backpressure/)).toBeTruthy();
     });
 
-    window.removeEventListener('crucible:interaction-resolved', onResolved);
+    off();
+  });
+
+  it('takes the answered request out of the shared pending list', async () => {
+    // The daemon's aggregate lags the answer by up to one poll. The list the
+    // badge and every chat pane read must not wait for it.
+    const served = serve({
+      'GET /api/interactions/pending': () => ({
+        pending: [{ session_id: 's1', request_id: 'req-42', request: perm }],
+      }),
+    });
+    await attentionActions.refresh();
+    attentionActions.report('s1', { pendingInteraction: perm, title: 'scheduler' });
+
+    const { getByText } = render(() => <InboxPanel />);
+    (getByText('Allow') as HTMLElement).click();
+
+    await waitFor(() =>
+      expect(served.client.getQueryData(keys.pendingInteractions())).toEqual([]),
+    );
+    // And nothing asked the daemon for the aggregate again.
+    expect(served.fetch.calls('GET /api/interactions/pending')).toBe(1);
   });
 });
 

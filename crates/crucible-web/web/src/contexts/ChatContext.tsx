@@ -21,13 +21,15 @@ import type {
 import type { ChatContextValue } from '@/lib/types/context';
 import type { SessionHistoryResponse } from '@/lib/api';
 import {
-  listPendingInteractions,
-  respondToInteraction as apiRespondToInteraction,
   generateMessageId,
   turnResponseId,
   turnSegmentId,
   stripFrozenPrefix,
 } from '@/lib/api';
+import {
+  fetchPendingInteractionsOnce,
+  useRespondToInteraction,
+} from '@/lib/query/interactions';
 import { sessionEvents } from '@/lib/query/sse';
 import { useCancelSession } from '@/lib/query/sessions';
 import {
@@ -37,6 +39,7 @@ import {
 } from '@/lib/query/history';
 import { useSessionModes, useSetSessionMode } from '@/lib/query/modes';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
+import { getBus } from '@/lib/bus';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
 import { attentionActions } from '@/stores/attentionStore';
@@ -66,8 +69,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [isLoading, setIsLoading] = createSignal(false);
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
   const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
-  /** Request ids this client answered; the pending aggregate may still list them. */
-  const resolvedRequestIds = new Set<string>();
+  // Answering a request takes it out of the shared pending list, so the read
+  // below cannot hand back one this client already answered. That is what
+  // retires the set of answered request ids this provider used to keep.
+  const respond = useRespondToInteraction();
   const [error, setError] = createSignal<string | null>(null);
   // Transport health, held apart from `error`: the error line also carries
   // daemon failures ("Failed to send: …"), and a "retry the connection"
@@ -526,13 +531,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // `Promise.resolve().then` keeps a synchronous throw (a test double with
     // no such function) on the rejection path instead of inside the effect.
     void Promise.resolve()
-      .then(() => listPendingInteractions())
+      .then(() => fetchPendingInteractionsOnce())
       .then((entries) => {
         if (abortController.signal.aborted || props.sessionId !== newSessionId) return;
         const held = entries.find((e) => e.session_id === newSessionId);
-        // A request answered while the fetch was in flight must not come
-        // back; the daemon's aggregate can lag the answer by one poll.
-        if (held && !pendingInteraction() && !resolvedRequestIds.has(held.request_id)) {
+        if (held && !pendingInteraction()) {
           setPendingInteraction(held.request);
         }
       })
@@ -619,19 +622,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   });
 
-  // The Inbox answers interactions on this session's behalf (raw API call);
-  // it broadcasts so the owning provider drops its in-chat prompt too.
-  const onInteractionResolved = (e: Event) => {
-    const { sessionId, requestId } = (e as CustomEvent<{ sessionId: string; requestId: string }>)
-      .detail;
+  // Whoever answered a request — this pane, another pane, or the inbox on
+  // this session's behalf — the write announces it, and the pane holding the
+  // card drops it. `on` removes the handler with this owner.
+  getBus().on('interactionResolved', ({ sessionId, requestId }) => {
     if (sessionId === props.sessionId && pendingInteraction()?.id === requestId) {
       setPendingInteraction(null);
     }
-  };
-  window.addEventListener('crucible:interaction-resolved', onInteractionResolved);
-  onCleanup(() =>
-    window.removeEventListener('crucible:interaction-resolved', onInteractionResolved)
-  );
+  });
 
   // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
   // (split panes); only the one showing the active session clears its view.
@@ -729,8 +727,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setPendingInteraction(null);
 
     try {
-      resolvedRequestIds.add(request.id);
-      await apiRespondToInteraction(props.sessionId, request.id, response);
+      await respond.mutateAsync({
+        sessionId: props.sessionId,
+        requestId: request.id,
+        response,
+      });
     } catch (err) {
       console.error('Failed to send interaction response:', err);
       setError(err instanceof Error ? err.message : 'Failed to respond');
