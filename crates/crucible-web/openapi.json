@@ -226,6 +226,174 @@
         }
       }
     },
+    "/api/fs/list": {
+      "get": {
+        "summary": "`GET /api/fs/list` — one directory level inside a registered root.",
+        "description": "All security (registry allowlist, path containment, symlink/dotfile\nhandling) is enforced daemon-side; this handler is a thin passthrough of\nthe daemon's listing envelope.",
+        "operationId": "list_dir",
+        "parameters": [
+          {
+            "name": "root",
+            "in": "query",
+            "description": "Absolute path of the root to list inside.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rel_path",
+            "in": "query",
+            "description": "Root-relative POSIX path of the directory. Empty lists the root.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "show_ignored",
+            "in": "query",
+            "description": "Include entries git ignores. The file tree sends `true`.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "show_hidden",
+            "in": "query",
+            "description": "Include dotfiles. `.git` never lists, whatever this says.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsListing"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the root or the relative path, and says why"
+          },
+          "502": {
+            "description": "The daemon could not list the directory, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/fs/mkdir": {
+      "post": {
+        "summary": "`POST /api/fs/mkdir` — create a folder inside one root.",
+        "description": "The tree's \"New folder\". Missing parents are created too. Thin daemon proxy.",
+        "operationId": "mkdir_path",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsPathBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsMkdirResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the root or the relative path, and says why"
+          },
+          "502": {
+            "description": "The daemon could not create the folder"
+          }
+        }
+      }
+    },
+    "/api/fs/move": {
+      "post": {
+        "summary": "`POST /api/fs/move` — move or rename one entry within one root.",
+        "description": "The file-tree drag-and-drop backend. All security (allowlist, containment,\noverwrite refusal) is daemon-side; this handler is a thin passthrough. Kiln\nnote and canvas moves carry the link-rewrite report, so the tree can tell\nthe user what happened to their links.",
+        "operationId": "move_path",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsMoveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsMoveReply"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the root, either path, or an overwrite, and says why"
+          },
+          "502": {
+            "description": "The daemon could not move the entry, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/fs/trash": {
+      "post": {
+        "summary": "`POST /api/fs/trash` — move one entry to the root's `.crucible/trash/`.",
+        "description": "The tree's \"Delete\". Thin daemon proxy; kiln notes leave the index inline,\nso backlinks re-resolve at once.",
+        "operationId": "trash_path",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsPathBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsTrashReply"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the root or the relative path, and says why"
+          },
+          "502": {
+            "description": "The daemon could not trash the entry, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
     "/api/kiln/file": {
       "get": {
         "summary": "`GET /api/kiln/file?path=<path>` — read a file's content.",
@@ -489,6 +657,78 @@
           },
           "502": {
             "description": "The daemon could not list the kilns, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/layout": {
+      "get": {
+        "summary": "`GET /api/layout` — the pane layout this browser last saved.",
+        "description": "The body is the client's own `SerializedLayout`, and it stays an open\nobject here on purpose: the server stores the blob and hands it back\nwithout reading it, so a pane the server has never heard of survives a\nround trip. Describing it as a fixed shape would make this layer a second\nowner of the pane vocabulary, and a layout written by a newer client would\nthen fail to come back.",
+        "operationId": "get_layout",
+        "responses": {
+          "200": {
+            "description": "The stored layout blob, verbatim",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "No layout is saved"
+          },
+          "500": {
+            "description": "The stored layout could not be read"
+          }
+        }
+      },
+      "post": {
+        "summary": "`POST /api/layout` — store this browser's pane layout.",
+        "description": "The body is the client's `SerializedLayout`, opaque here. See\n[`get_layout`] for why it stays open.",
+        "operationId": "save_layout",
+        "requestBody": {
+          "description": "The layout blob to store, verbatim",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayoutWriteResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The layout could not be written"
+          }
+        }
+      },
+      "delete": {
+        "summary": "`DELETE /api/layout` — forget this browser's pane layout.",
+        "description": "Idempotent: deleting a layout that is not there succeeds.",
+        "operationId": "reset_layout",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayoutWriteResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored layout could not be deleted"
           }
         }
       }
@@ -1089,6 +1329,133 @@
         }
       }
     },
+    "/api/project/get": {
+      "get": {
+        "summary": "`GET /api/project/get` — one project by its root path.",
+        "description": "A path no project is registered for answers 404 rather than a null body,\nso a client cannot mistake \"not registered\" for a project with no fields.",
+        "operationId": "get_project",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Absolute path of the project root.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No project is registered for this path"
+          },
+          "502": {
+            "description": "The daemon could not read the project"
+          }
+        }
+      }
+    },
+    "/api/project/list": {
+      "get": {
+        "summary": "`GET /api/project/list` — every project the daemon holds registered.",
+        "operationId": "list_projects",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the projects"
+          }
+        }
+      }
+    },
+    "/api/project/register": {
+      "post": {
+        "summary": "`POST /api/project/register` — make a directory a registered project.",
+        "description": "Registering a root also grants the file API read access to everything\nbeneath it, so the path is canonicalized and checked before AND after the\ndaemon acts: the daemon resolves a registration inside a git repo up to the\nrepo root, which can land above what was checked.",
+        "operationId": "register_project",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The web API may not make this path a root, and the body says why"
+          },
+          "502": {
+            "description": "The daemon could not register the project"
+          }
+        }
+      }
+    },
+    "/api/project/unregister": {
+      "post": {
+        "summary": "`POST /api/project/unregister` — forget a registered project.",
+        "description": "The directory stays on disk; only the registration goes.",
+        "operationId": "unregister_project",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUnregisterResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not unregister the project"
+          }
+        }
+      }
+    },
     "/api/providers": {
       "get": {
         "summary": "Served through the SWR catalog cache — provider probing takes ~0.7s and\nmust not gate every splash render. Shape: `{providers: [ProviderInfo]}`.",
@@ -1107,6 +1474,90 @@
           },
           "502": {
             "description": "The daemon could not list the providers"
+          }
+        }
+      }
+    },
+    "/api/recents": {
+      "get": {
+        "summary": "`GET /api/recents` — the files this server last recorded as opened.",
+        "description": "Server-side rather than in `localStorage`, which is per-origin and so\nvanished across ports, browsers and debug instances.",
+        "operationId": "get_recents",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "`POST /api/recents` — record one file open, and answer the new list.",
+        "description": "A path already in the list moves to the front rather than repeating. The\nlist is capped, so the oldest entries fall off the end.",
+        "operationId": "record_recent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordRecentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The recents list could not be written"
+          }
+        }
+      }
+    },
+    "/api/scm/clone": {
+      "post": {
+        "summary": "`POST /api/scm/clone` — clone a remote repo and register it as a project.",
+        "description": "It lands in `[workspace] root_dir` unless `dest` says otherwise. Slow by\nnature: the daemon call carries a ten-minute timeout, and this route does\nnot retry, because a second `git clone` over a partial directory refuses\nwith a message about the destination rather than the network.",
+        "operationId": "clone_repo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScmCloneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the URL or the destination, and says why"
+          },
+          "502": {
+            "description": "The clone failed, or the daemon could not be reached"
           }
         }
       }
@@ -3815,6 +4266,32 @@
         ],
         "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
+      "CloneRequest": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Remote repo: https://…, git@host:…, or `owner/repo` shorthand."
+          },
+          "dest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to put the clone. Absolute, and it must not exist. Absent takes\n`[workspace] root_dir/<repo-name>`."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The project name for the clone. Absent takes the name in the URL."
+          }
+        }
+      },
       "CommandEffectRow": {
         "type": "string",
         "description": "Whether running a command changes state a user could lose, mirroring\n[`crucible_lua::CommandEffect`].\n\n**Declared by the plugin and verified by nothing.** A consumer must present\nit as a claim, and a permission layer must treat it as a hint about what to\nask — never as permission to skip asking.\n\nA closed set, not the open string a passthrough would give, because the\ndaemon writes `CommandEffect::as_str()` and nothing else: a command that\ndeclares no effect arrives as `write`, never as an unknown word.\n`the_mirrored_vocabularies_stay_closed` holds the two lists together.",
@@ -4277,6 +4754,46 @@
           }
         }
       },
+      "FsEntry": {
+        "type": "object",
+        "description": "One directory entry in an `fs.list_dir` response.\n\nWire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are\nbyte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration\nseam and is always `None`.",
+        "required": [
+          "name",
+          "rel_path",
+          "is_dir",
+          "size",
+          "modified",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rel_path": {
+            "type": "string"
+          },
+          "is_dir": {
+            "type": "boolean"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "modified": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix epoch seconds, or `null` when the platform cannot report it.\nAlways written.",
+            "minimum": 0
+          },
+          "status": {
+            "description": "The git/diff decoration seam. Always `null` today, and deliberately\nopen: whatever fills it will not be a string."
+          }
+        }
+      },
       "FsEvent": {
         "oneOf": [
           {
@@ -4343,6 +4860,140 @@
           }
         ],
         "description": "A filesystem change delivered to the browser.\n\nSerializes with an internal `type` tag whose values are `changed` /\n`deleted` / `moved` (e.g. `{\"type\":\"changed\",\"path\":\"/abs\",\"kind\":\"modified\"}`).\nThe SSE `event:` name is separate — see [`FsEvent::event_name`]."
+      },
+      "FsListing": {
+        "type": "object",
+        "description": "One directory level, plus whether the cap cut it short.\n\nBoth keys are part of the cross-language contract (TypeScript `FsListing`).\nThe response used to be a bare array, which had nowhere to say \"there is\nmore\" — so a capped listing would have been indistinguishable from a complete\none, which is worse than the slow response it replaces.",
+        "required": [
+          "entries",
+          "truncated"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FsEntry"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FsMkdirResponse": {
+        "type": "object",
+        "description": "What `POST /api/fs/mkdir` answers.\n\nThe route's own shape, not the daemon's: `fs_mkdir` reports success as\n`()`, so there is no daemon body to forward.",
+        "required": [
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "boolean",
+            "description": "Always true. A refusal is an error status, not a `false`."
+          }
+        }
+      },
+      "FsMoveBody": {
+        "type": "object",
+        "required": [
+          "root",
+          "kind",
+          "from_rel",
+          "to_rel"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "Absolute path of the root both ends sit inside."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FsRootKind",
+            "description": "Which allowlist the daemon checks `root` against."
+          },
+          "from_rel": {
+            "type": "string",
+            "description": "Root-relative POSIX path of the entry to move."
+          },
+          "to_rel": {
+            "type": "string",
+            "description": "Root-relative POSIX path it takes."
+          }
+        }
+      },
+      "FsMoveReply": {
+        "type": "object",
+        "description": "What `fs.move` answers.\n\nThe two link-report keys are absent for a move the link index does not\nwatch — a directory, an asset, a project file — which is the shape the\nbrowser already reads. They were written as a `json!` literal beside the\nhandler, where nothing held them to the reply the web route promises.",
+        "required": [
+          "moved"
+        ],
+        "properties": {
+          "moved": {
+            "type": "boolean",
+            "description": "Always true. A move that did not happen is an error, not a `false`."
+          },
+          "rewritten_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sources whose inbound links were rewritten. Kiln note and canvas moves\nonly. Absent, never null, for a move with nothing to report."
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkippedRef"
+            },
+            "description": "Inbound links left as they were, with the reason for each. Absent,\nnever null, for a move with nothing to report."
+          }
+        }
+      },
+      "FsPathBody": {
+        "type": "object",
+        "required": [
+          "root",
+          "kind",
+          "rel_path"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "Absolute path of the root the entry sits inside."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FsRootKind",
+            "description": "Which allowlist the daemon checks `root` against."
+          },
+          "rel_path": {
+            "type": "string",
+            "description": "Root-relative POSIX path of the entry."
+          }
+        }
+      },
+      "FsRootKind": {
+        "type": "string",
+        "description": "The two roots a mutation may name, and the allowlist each one selects.\n\nThis describes the wire; the field that carries it stays a `String` so that\nan unknown kind is refused by the daemon, in the daemon's own sentence,\nrather than by a body rejection that says only \"unknown variant\".\n`every_root_kind_is_one_the_daemon_admits` walks an exhaustive match, so a\nthird kind cannot reach the document without a decision about it.",
+        "enum": [
+          "project",
+          "kiln"
+        ]
+      },
+      "FsTrashReply": {
+        "type": "object",
+        "description": "What `fs.trash` answers.",
+        "required": [
+          "trashed",
+          "trash_path"
+        ],
+        "properties": {
+          "trashed": {
+            "type": "boolean",
+            "description": "Always true. A refusal is an error, not a `false`."
+          },
+          "trash_path": {
+            "type": "string",
+            "description": "Where the entry now sits, RELATIVE to the root it was trashed from."
+          }
+        }
       },
       "GraphLinkRow": {
         "type": "object",
@@ -4647,6 +5298,19 @@
           "supported": {
             "type": "boolean",
             "description": "`false` means the control should not be offered: the daemon refuses\nthe call."
+          }
+        }
+      },
+      "LayoutWriteResponse": {
+        "type": "object",
+        "description": "What a layout write answers.\n\n`POST` and `DELETE /api/layout` answer the same object, because both say\nonly that the file on disk now reflects the request. One type keeps them\nfrom separating.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Always true. A failed write is an error status, not a `false`."
           }
         }
       },
@@ -5418,6 +6082,92 @@
           }
         }
       },
+      "Project": {
+        "type": "object",
+        "description": "A registered project — a directory the user works on.\n\nProjects group sessions by workspace path and provide metadata\nfor display in the UI (name, attached kilns, etc.).",
+        "required": [
+          "path",
+          "name",
+          "kilns",
+          "last_accessed"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Canonical path to the project root directory"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name (from `ProjectConfig.project.name` or dirname)"
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectKiln"
+            },
+            "description": "Attached kilns (from `ProjectConfig` or auto-discovered .crucible/)\n\n`default` covers a stored project written before the field existed. It\nis always WRITTEN, empty or not, so a reader never sees it absent."
+          },
+          "last_accessed": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this project was last accessed"
+          },
+          "repository": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RepositoryInfo",
+                "description": "SCM/repository information (if detected)"
+              }
+            ]
+          }
+        }
+      },
+      "ProjectKiln": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The kiln's registry name. A kiln that declares none sends NO `name`\nkey, so a reader must treat the field as absent rather than null."
+          }
+        }
+      },
+      "ProjectPathRequest": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the project root."
+          }
+        }
+      },
+      "ProjectUnregisterResponse": {
+        "type": "object",
+        "description": "What `POST /api/project/unregister` answers.\n\nThe route's own shape: the daemon reports the unregistration as `()`, so\nthere is no daemon body to forward.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Always true. A refusal is an error status, not a `false`."
+          }
+        }
+      },
       "ProviderRow": {
         "type": "object",
         "description": "One LLM provider the daemon found.\n\nMirrors `crucible_core::types::ProviderInfo` field for field. It is\ndeclared here rather than re-exported because `crucible-core` takes no\nutoipa dependency, and a schema is what puts the fields in the document.",
@@ -5576,6 +6326,62 @@
           }
         }
       },
+      "RecentFile": {
+        "type": "object",
+        "required": [
+          "abs_path",
+          "name",
+          "opened_at"
+        ],
+        "properties": {
+          "abs_path": {
+            "type": "string",
+            "description": "Absolute path of the file that was opened."
+          },
+          "name": {
+            "type": "string",
+            "description": "The file's display name, as the client recorded it."
+          },
+          "opened_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix millis of the last open — set server-side on record.",
+            "minimum": 0
+          }
+        }
+      },
+      "RecentsResponse": {
+        "type": "object",
+        "description": "What both recents routes answer: the list, newest first.\n\n`GET` and `POST /api/recents` answer the same projection under the same\nkey, so one type keeps the read and the write from separating.",
+        "required": [
+          "recents"
+        ],
+        "properties": {
+          "recents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentFile"
+            }
+          }
+        }
+      },
+      "RecordRecentRequest": {
+        "type": "object",
+        "required": [
+          "abs_path",
+          "name"
+        ],
+        "properties": {
+          "abs_path": {
+            "type": "string",
+            "description": "Absolute path of the file that was opened."
+          },
+          "name": {
+            "type": "string",
+            "description": "The file's display name."
+          }
+        }
+      },
       "RejectedRefDto": {
         "type": "object",
         "description": "A reference the read path refused, as the browser receives it.\n\nWeb-owned on purpose, and NOT a re-export of\n[`crucible_core::canvas::containment::RejectedRef`]. The core type carries\n`reference` — the offending path itself — and this reply deliberately drops\nit: a client that never learns the path cannot ask for it, which is what\nmakes redaction an enforcement rather than a warning. The node id is\n`nodeId` here because the canvas format is camelCase throughout, and the\nbrowser reads it beside `fromNode` and `toNode`.",
@@ -5591,6 +6397,38 @@
           "reason": {
             "type": "string",
             "description": "Why it was refused, as a sentence to show the reader.\n\nA rendered [`RefError`], not a token. The browser prints it; nothing\nbranches on it, and `the_refusal_reasons_stay_whole_sentences` pins\nevery variant's wording so a reworded error is a visible change rather\nthan a silent one."
+          }
+        }
+      },
+      "RepositoryInfo": {
+        "type": "object",
+        "description": "Information about the git repository containing this project.",
+        "required": [
+          "root",
+          "is_worktree"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "Path to the repository root (where .git is, or main repo for worktrees)"
+          },
+          "remote_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Primary remote URL (usually \"origin\"), if any"
+          },
+          "is_worktree": {
+            "type": "boolean",
+            "description": "Whether this project is in a git worktree (not the main checkout).\nAlways written, so `required` rather than optional."
+          },
+          "main_repo_git_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For worktrees: path to the main repository's .git directory"
           }
         }
       },
@@ -6101,6 +6939,24 @@
             "items": {
               "$ref": "#/components/schemas/ReviewFailureRow"
             }
+          }
+        }
+      },
+      "ScmCloneResponse": {
+        "type": "object",
+        "description": "Response for the `scm.clone` RPC.",
+        "required": [
+          "path",
+          "project"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the freshly cloned repository."
+          },
+          "project": {
+            "$ref": "#/components/schemas/Project",
+            "description": "The `Project` registered for the clone."
           }
         }
       },
@@ -6828,6 +7684,36 @@
             ],
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "SkipReason": {
+        "type": "string",
+        "description": "Why one inbound reference was left as it was.\n\nA closed set, because the browser prints a sentence per reason. It was four\nstring literals spelled in five places, so a fifth reason could reach a\nclient whose reader has no arm for it. `every_skip_reason_reaches_the_wire`\n(`crucible-web`) walks an exhaustive match, so a new variant fails to\ncompile until somebody decides what the client says about it.",
+        "enum": [
+          "ambiguous",
+          "stale-span",
+          "canvas-no-exact-match",
+          "canvas-unreadable"
+        ]
+      },
+      "SkippedRef": {
+        "type": "object",
+        "description": "One inbound reference that was intentionally left untouched.",
+        "required": [
+          "source_path",
+          "raw_target",
+          "reason"
+        ],
+        "properties": {
+          "source_path": {
+            "type": "string"
+          },
+          "raw_target": {
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/SkipReason"
           }
         }
       },

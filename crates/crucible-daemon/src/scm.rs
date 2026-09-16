@@ -13,6 +13,7 @@ use tokio::process::Command;
 
 /// Response for the `scm.clone` RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ScmCloneResponse {
     /// Absolute path of the freshly cloned repository.
     pub path: String,

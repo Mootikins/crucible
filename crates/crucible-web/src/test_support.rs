@@ -413,6 +413,120 @@ pub const MOCK_PINNED_KEY: &str = "mock_pinned";
 /// key must reach the browser WITH its reason, or the control is a dead end.
 pub const MOCK_LOCATION_REASON: &str = "A location key names WHERE the daemon acts.";
 
+// ── The replies the `fs.*`, `project.*` and `scm.*` mocks answer with ──────
+//
+// Each one is built from the type the DAEMON owns, then serialised. A route
+// test that compares its HTTP body against the same fixture therefore runs a
+// round trip through the daemon's own reply type: daemon type → JSON → route →
+// reply type → body. A named reply that dropped a key the daemon writes fails
+// it, which a `status == 200` assertion never could.
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The listing `fs.list_dir` answers with: one file and one directory.
+///
+/// Not an empty listing. An empty `entries` proves the envelope and nothing
+/// about a row, and every field of a row is part of the cross-language
+/// contract.
+pub fn mock_fs_listing() -> crucible_daemon::FsListing {
+    crucible_daemon::FsListing {
+        entries: vec![
+            crucible_daemon::FsEntry {
+                name: "notes".to_string(),
+                rel_path: "notes".to_string(),
+                is_dir: true,
+                size: 0,
+                modified: Some(1_700_000_000),
+                status: None,
+            },
+            crucible_daemon::FsEntry {
+                name: "a.md".to_string(),
+                rel_path: "a.md".to_string(),
+                is_dir: false,
+                size: 42,
+                // The one platform-dependent field. A row that cannot report
+                // it still writes the key.
+                modified: None,
+                status: None,
+            },
+        ],
+        truncated: false,
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The reply `fs.move` answers a kiln note move with: the link-rewrite report.
+///
+/// The richer of the two arms on purpose. A project-file move answers `moved`
+/// alone, which cannot show that the two report keys survive the route.
+pub fn mock_fs_move_reply() -> crucible_daemon::FsMoveReply {
+    crucible_daemon::FsMoveReply {
+        moved: true,
+        rewritten_sources: Some(vec!["index.md".to_string()]),
+        skipped: Some(vec![crucible_daemon::SkippedRef {
+            source_path: "other.md".to_string(),
+            raw_target: "a".to_string(),
+            reason: crucible_daemon::SkipReason::Ambiguous,
+        }]),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The reply `fs.trash` answers with.
+pub fn mock_fs_trash_reply() -> crucible_daemon::FsTrashReply {
+    crucible_daemon::FsTrashReply {
+        trashed: true,
+        trash_path: ".crucible/trash/0-x".to_string(),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The project `project.register`, `project.list` and `project.get` answer
+/// with.
+///
+/// It carries a named kiln, an unnamed one and a repository, so the three
+/// optional corners of the shape are all on the wire. `/tmp/test-project` is
+/// deliberately absent from disk: the registration re-check canonicalizes it
+/// and must behave as it did.
+pub fn mock_project() -> crucible_core::Project {
+    crucible_core::Project {
+        path: PathBuf::from("/tmp/test-project"),
+        name: "test-project".to_string(),
+        kilns: vec![
+            crucible_core::project::ProjectKiln {
+                path: PathBuf::from("/tmp/test-project/.crucible"),
+                name: Some("test-kiln".to_string()),
+            },
+            // An unnamed kiln sends NO `name` key.
+            crucible_core::project::ProjectKiln {
+                path: PathBuf::from("/tmp/test-project/docs"),
+                name: None,
+            },
+        ],
+        last_accessed: "2025-01-01T00:00:00Z".parse().expect("a fixed timestamp"),
+        repository: Some(crucible_core::project::RepositoryInfo {
+            root: PathBuf::from("/tmp/test-project"),
+            remote_url: Some("https://example.invalid/test-project.git".to_string()),
+            is_worktree: false,
+            main_repo_git_dir: None,
+        }),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The reply `scm.clone` answers with.
+pub fn mock_scm_clone() -> crucible_daemon::ScmCloneResponse {
+    crucible_daemon::ScmCloneResponse {
+        path: "/tmp/test-project".to_string(),
+        project: mock_project(),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// A fixture as the mock daemon puts it on the wire.
+fn as_rpc_result<T: serde::Serialize>(value: T) -> Value {
+    serde_json::to_value(value).expect("a mock reply serialises")
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 /// Generate mock RPC responses based on method name.
 pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
@@ -740,19 +854,30 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 })
             }
         }
-        "project.list" => json!([]),
-        "fs.list_dir" => json!({ "entries": [], "truncated": false }),
-        "fs.move" => json!({"moved": true}),
+        "project.list" => as_rpc_result(vec![mock_project()]),
+        "fs.list_dir" => as_rpc_result(mock_fs_listing()),
+        "fs.move" => as_rpc_result(mock_fs_move_reply()),
         "fs.mkdir" => json!({"created": true}),
-        "fs.trash" => json!({"trashed": true, "trash_path": ".crucible/trash/0-x"}),
-        "project.register" => json!({
-            "path": "/tmp/test-project",
-            "name": "test-project",
-            "kilns": [],
-            "last_accessed": "2025-01-01T00:00:00Z"
-        }),
+        "fs.trash" => as_rpc_result(mock_fs_trash_reply()),
+        "scm.clone" => as_rpc_result(mock_scm_clone()),
+        "project.register" => as_rpc_result(mock_project()),
         "project.unregister" => json!(null),
-        "project.get" => Value::Null,
+        // The daemon answers null for a path no project is registered for, so
+        // the mock answers for ITS project and null for anything else. A mock
+        // that answered for every path would make the route's 404 untestable.
+        "project.get" => {
+            let asked = msg
+                .get("params")
+                .and_then(|p| p.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let project = mock_project();
+            if asked == project.path.to_string_lossy() {
+                as_rpc_result(project)
+            } else {
+                Value::Null
+            }
+        }
         "session.connect_kiln" => json!({
             "session_id": "test-session-001",
             "kilns": ["test-kiln", "extra-kiln"],

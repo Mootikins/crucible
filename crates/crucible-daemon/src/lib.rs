@@ -137,6 +137,10 @@ pub use rpc_client::{
 };
 pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use scm::ScmCloneResponse;
+// The wire shapes of the `fs.*` RPCs. The web file-tree routes forward them
+// verbatim, so they read the type rather than keeping a second copy of it.
+pub use server::fs::{FsEntry, FsListing, FsMoveReply, FsTrashReply};
+pub use server::note_refactor::{SkipReason, SkippedRef};
 pub use server::{BindWithPluginConfigParams, Server};
 pub use session_bridge::DaemonSessionBridge;
 pub use session_manager::{SessionError, SessionManager};

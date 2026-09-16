@@ -59,13 +59,20 @@ use std::sync::Arc;
 /// Wire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are
 /// byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration
 /// seam and is always `None`.
-#[derive(serde::Serialize)]
-pub(crate) struct FsEntry {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsEntry {
     pub name: String,
     pub rel_path: String,
     pub is_dir: bool,
     pub size: u64,
+    /// Unix epoch seconds, or `null` when the platform cannot report it.
+    /// Always written.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub modified: Option<u64>,
+    /// The git/diff decoration seam. Always `null` today, and deliberately
+    /// open: whatever fills it will not be a string.
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub status: Option<serde_json::Value>,
 }
 
@@ -89,10 +96,44 @@ const MAX_DIR_ENTRIES: usize = 1_000;
 /// The response used to be a bare array, which had nowhere to say "there is
 /// more" — so a capped listing would have been indistinguishable from a complete
 /// one, which is worse than the slow response it replaces.
-#[derive(serde::Serialize)]
-struct DirListing {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsListing {
     pub entries: Vec<FsEntry>,
     pub truncated: bool,
+}
+
+/// What `fs.move` answers.
+///
+/// The two link-report keys are absent for a move the link index does not
+/// watch — a directory, an asset, a project file — which is the shape the
+/// browser already reads. They were written as a `json!` literal beside the
+/// handler, where nothing held them to the reply the web route promises.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsMoveReply {
+    /// Always true. A move that did not happen is an error, not a `false`.
+    pub moved: bool,
+    /// Sources whose inbound links were rewritten. Kiln note and canvas moves
+    /// only. Absent, never null, for a move with nothing to report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(nullable = false))]
+    pub rewritten_sources: Option<Vec<String>>,
+    /// Inbound links left as they were, with the reason for each. Absent,
+    /// never null, for a move with nothing to report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(nullable = false))]
+    pub skipped: Option<Vec<crate::server::note_refactor::SkippedRef>>,
+}
+
+/// What `fs.trash` answers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FsTrashReply {
+    /// Always true. A refusal is an error, not a `false`.
+    pub trashed: bool,
+    /// Where the entry now sits, RELATIVE to the root it was trashed from.
+    pub trash_path: String,
 }
 
 /// The refusal every `project`-kind root check answers with.
@@ -174,14 +215,14 @@ fn list_dir(
     rel_path: &str,
     show_ignored: bool,
     show_hidden: bool,
-) -> Result<DirListing, FsListError> {
+) -> Result<FsListing, FsListError> {
     let base = base.canonicalize()?;
     let target = resolve_within(&base, rel_path)?;
     if !target.is_dir() {
         return Err(FsListError::NotADir);
     }
     let (entries, truncated) = walk_one_level(&base, &target, show_ignored, show_hidden)?;
-    Ok(DirListing { entries, truncated })
+    Ok(FsListing { entries, truncated })
 }
 
 /// Resolve `rel_path` against `base` with a component whitelist and
@@ -357,13 +398,13 @@ pub(crate) async fn handle_fs_move(
         && base.join(from_rel).is_file()
     {
         return match crate::server::note_refactor::rename_note(km, &base, from_rel, to_rel).await {
-            Ok(outcome) => Response::success(
+            Ok(outcome) => reply(
                 req.id,
-                serde_json::json!({
-                    "moved": true,
-                    "rewritten_sources": outcome.rewritten_sources,
-                    "skipped": outcome.skipped,
-                }),
+                FsMoveReply {
+                    moved: true,
+                    rewritten_sources: Some(outcome.rewritten_sources),
+                    skipped: Some(outcome.skipped),
+                },
             ),
             Err(crate::server::note_refactor::RenameError::Move(e)) => {
                 Response::error(req.id, INVALID_PARAMS, e.to_string())
@@ -373,7 +414,14 @@ pub(crate) async fn handle_fs_move(
     }
 
     match move_within(&base, from_rel, to_rel) {
-        Ok(()) => Response::success(req.id, serde_json::json!({ "moved": true })),
+        Ok(()) => reply(
+            req.id,
+            FsMoveReply {
+                moved: true,
+                rewritten_sources: None,
+                skipped: None,
+            },
+        ),
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
@@ -561,10 +609,25 @@ pub(crate) async fn handle_fs_trash(
         }
     }
 
-    Response::success(
+    reply(
         req.id,
-        serde_json::json!({ "trashed": true, "trash_path": trash_rel }),
+        FsTrashReply {
+            trashed: true,
+            trash_path: trash_rel,
+        },
     )
+}
+
+/// Answer with `value` as JSON, or report the serialisation failure.
+///
+/// The reply types here hold only strings, booleans and vectors of those, so
+/// the error arm is unreachable in practice. It exists because an `expect`
+/// here would take the daemon down over a reply nobody can act on.
+fn reply<T: serde::Serialize>(id: Option<crate::protocol::RequestId>, value: T) -> Response {
+    match serde_json::to_value(value) {
+        Ok(value) => Response::success(id, value),
+        Err(e) => Response::error(id, INTERNAL_ERROR, e.to_string()),
+    }
 }
 
 /// Indexed files at or under `path` — the pre-move index-cleanup set.

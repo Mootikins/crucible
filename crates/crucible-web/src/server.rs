@@ -148,8 +148,8 @@ fn api_router(
         .merge(session_routes_with(EndpointPolicy::for_bind_host(
             &web_config.host,
         )))
-        .merge(project_routes().into())
-        .merge(scm_routes().into())
+        .merge(project_routes())
+        .merge(scm_routes())
         .merge(fs_routes())
         .merge(search_routes())
         .merge(plugin_routes())
@@ -157,7 +157,7 @@ fn api_router(
         .merge(mcp_routes().into())
         .merge(kiln_routes())
         .merge(canvas_routes())
-        .merge(layout_routes().into())
+        .merge(layout_routes())
         .merge(skills_routes().into())
         .merge(webhook_routes().into())
         // An unknown API is not an SPA navigation: never answer it with HTML.

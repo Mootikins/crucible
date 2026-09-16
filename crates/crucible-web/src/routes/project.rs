@@ -1,26 +1,39 @@
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{
-    extract::State,
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{extract::State, Json};
 use crucible_core::config::expand_tilde;
+// `Project` is crucible-core's own wire type. Every one of these routes
+// answers it, so none of them keeps a copy of its shape.
+use crucible_core::Project;
 use crucible_daemon::project_manager::forbidden_root_reason;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn project_routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/project/register", post(register_project))
-        .route("/api/project/unregister", post(unregister_project))
-        .route("/api/project/list", get(list_projects))
-        .route("/api/project/get", get(get_project))
+pub fn project_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(register_project))
+        .routes(routes!(unregister_project))
+        .routes(routes!(list_projects))
+        .routes(routes!(get_project))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct ProjectPathRequest {
+    /// Absolute path of the project root.
+    #[schema(value_type = String)]
     path: PathBuf,
+}
+
+/// What `POST /api/project/unregister` answers.
+///
+/// The route's own shape: the daemon reports the unregistration as `()`, so
+/// there is no daemon body to forward.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct ProjectUnregisterResponse {
+    /// Always true. A refusal is an error status, not a `false`.
+    ok: bool,
 }
 
 /// Personal secret stores. A web-registered root may neither BE one, sit
@@ -170,10 +183,26 @@ pub(crate) fn check_root(
     Ok(canonical)
 }
 
+/// `POST /api/project/register` — make a directory a registered project.
+///
+/// Registering a root also grants the file API read access to everything
+/// beneath it, so the path is canonicalized and checked before AND after the
+/// daemon acts: the daemon resolves a registration inside a git repo up to the
+/// repo root, which can land above what was checked.
+#[utoipa::path(
+    post,
+    path = "/api/project/register",
+    request_body = ProjectPathRequest,
+    responses(
+        (status = 200, body = Project),
+        (status = 403, description = "The web API may not make this path a root, and the body says why"),
+        (status = 502, description = "The daemon could not register the project"),
+    )
+)]
 async fn register_project(
     State(state): State<AppState>,
     Json(req): Json<ProjectPathRequest>,
-) -> Result<Json<crucible_core::Project>, WebError> {
+) -> Result<Json<Project>, WebError> {
     let restriction = registration_roots(&state);
     let canonical = check_root(&req.path, restriction.as_deref())?;
 
@@ -202,40 +231,74 @@ async fn register_project(
     Ok(Json(project))
 }
 
+/// `POST /api/project/unregister` — forget a registered project.
+///
+/// The directory stays on disk; only the registration goes.
+#[utoipa::path(
+    post,
+    path = "/api/project/unregister",
+    request_body = ProjectPathRequest,
+    responses(
+        (status = 200, body = ProjectUnregisterResponse),
+        (status = 502, description = "The daemon could not unregister the project"),
+    )
+)]
 async fn unregister_project(
     State(state): State<AppState>,
     Json(req): Json<ProjectPathRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ProjectUnregisterResponse>, WebError> {
     state
         .daemon
         .project_unregister(&req.path)
         .await
         .daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(ProjectUnregisterResponse { ok: true }))
 }
 
-async fn list_projects(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<crucible_core::Project>>, WebError> {
+/// `GET /api/project/list` — every project the daemon holds registered.
+#[utoipa::path(
+    get,
+    path = "/api/project/list",
+    responses(
+        (status = 200, body = Vec<Project>),
+        (status = 502, description = "The daemon could not list the projects"),
+    )
+)]
+async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>, WebError> {
     let projects = state.daemon.project_list().await.daemon_err()?;
 
     Ok(Json(projects))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct GetProjectQuery {
+    /// Absolute path of the project root.
+    #[param(value_type = String)]
     path: PathBuf,
 }
 
+/// `GET /api/project/get` — one project by its root path.
+///
+/// A path no project is registered for answers 404 rather than a null body,
+/// so a client cannot mistake "not registered" for a project with no fields.
+#[utoipa::path(
+    get,
+    path = "/api/project/get",
+    params(GetProjectQuery),
+    responses(
+        (status = 200, body = Project),
+        (status = 404, description = "No project is registered for this path"),
+        (status = 502, description = "The daemon could not read the project"),
+    )
+)]
 async fn get_project(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<GetProjectQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<Project>, WebError> {
     match state.daemon.project_get(&query.path).await {
-        Ok(Some(project)) => Ok(Json(
-            serde_json::to_value(project).expect("Project serializes to JSON"),
-        )),
+        Ok(Some(project)) => Ok(Json(project)),
         Ok(None) => Err(WebError::NotFound(format!(
             "Project not found: {}",
             query.path.display()
@@ -247,7 +310,9 @@ async fn get_project(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{build_mock_state_with_config, build_test_app, start_mock_daemon};
+    use crate::test_support::{
+        build_mock_state_with_config, build_test_app, mock_project, shape, start_mock_daemon,
+    };
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use crucible_core::config::{CliAppConfig, WebConfig};
@@ -474,5 +539,87 @@ mod tests {
             untrusted_root_refusal(Path::new("/home/u/Projects/app"), Some(home)),
             None
         );
+    }
+
+    // ── The declared shapes ─────────────────────────────────────────────
+    //
+    // Every route here answers `crucible_core::Project`, so the shape is the
+    // core type's own and no copy of it lives in this file. The mock daemon
+    // builds its replies from that same type, which makes each of these a
+    // round trip: core type → JSON → route → core type → body.
+
+    /// The fixture, as the daemon put it on the wire.
+    fn sent<T: serde::Serialize>(value: T) -> serde_json::Value {
+        serde_json::to_value(value).expect("the daemon's type writes JSON")
+    }
+
+    /// The registered project reaches the browser as the daemon wrote it.
+    #[tokio::test]
+    async fn register_project_answers_the_declared_shape() {
+        let project = mock_project();
+        let answered: Project = shape(
+            "POST",
+            "/api/project/register",
+            Some(json!({ "path": std::env::temp_dir().display().to_string() })),
+        )
+        .await;
+
+        assert_eq!(sent(&answered), sent(&project));
+        assert_eq!(answered.name, "test-project");
+    }
+
+    /// An unnamed kiln arrives with NO `name` key.
+    ///
+    /// `ProjectKiln` skips the field rather than writing null, so a reader
+    /// that treats absent and null alike sees neither branch it tests. The
+    /// document says `name` is optional because of this.
+    #[tokio::test]
+    async fn an_unnamed_project_kiln_sends_no_name_key() {
+        let answered: serde_json::Value = shape(
+            "POST",
+            "/api/project/register",
+            Some(json!({ "path": std::env::temp_dir().display().to_string() })),
+        )
+        .await;
+
+        let kilns = answered["kilns"].as_array().expect("a kiln array");
+        assert_eq!(kilns[0]["name"], json!("test-kiln"));
+        assert!(
+            kilns[1].get("name").is_none(),
+            "an unnamed kiln wrote a `name` key: {}",
+            kilns[1]
+        );
+    }
+
+    /// The project list reaches the browser as the daemon wrote it.
+    #[tokio::test]
+    async fn list_projects_answers_the_declared_shape() {
+        let answered: Vec<Project> = shape("GET", "/api/project/list", None).await;
+
+        assert_eq!(sent(&answered), sent(vec![mock_project()]));
+        assert_eq!(answered.len(), 1);
+        assert!(answered[0].repository.is_some(), "the repository was lost");
+    }
+
+    /// One project reaches the browser as the daemon wrote it.
+    #[tokio::test]
+    async fn get_project_answers_the_declared_shape() {
+        let project = mock_project();
+        let uri = format!("/api/project/get?path={}", project.path.display());
+        let answered: Project = shape("GET", &uri, None).await;
+
+        assert_eq!(sent(&answered), sent(&project));
+    }
+
+    #[tokio::test]
+    async fn unregister_project_answers_the_declared_shape() {
+        let answered: ProjectUnregisterResponse = shape(
+            "POST",
+            "/api/project/unregister",
+            Some(json!({ "path": "/tmp/test-project" })),
+        )
+        .await;
+
+        assert!(answered.ok);
     }
 }

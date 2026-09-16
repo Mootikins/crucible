@@ -127,6 +127,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fs/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/fs/list` — one directory level inside a registered root.
+         * @description All security (registry allowlist, path containment, symlink/dotfile
+         *     handling) is enforced daemon-side; this handler is a thin passthrough of
+         *     the daemon's listing envelope.
+         */
+        get: operations["list_dir"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fs/mkdir": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/fs/mkdir` — create a folder inside one root.
+         * @description The tree's "New folder". Missing parents are created too. Thin daemon proxy.
+         */
+        post: operations["mkdir_path"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fs/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/fs/move` — move or rename one entry within one root.
+         * @description The file-tree drag-and-drop backend. All security (allowlist, containment,
+         *     overwrite refusal) is daemon-side; this handler is a thin passthrough. Kiln
+         *     note and canvas moves carry the link-rewrite report, so the tree can tell
+         *     the user what happened to their links.
+         */
+        post: operations["move_path"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fs/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/fs/trash` — move one entry to the root's `.crucible/trash/`.
+         * @description The tree's "Delete". Thin daemon proxy; kiln notes leave the index inline,
+         *     so backlinks re-resolve at once.
+         */
+        post: operations["trash_path"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kiln/file": {
         parameters: {
             query?: never;
@@ -215,6 +301,40 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/layout` — the pane layout this browser last saved.
+         * @description The body is the client's own `SerializedLayout`, and it stays an open
+         *     object here on purpose: the server stores the blob and hands it back
+         *     without reading it, so a pane the server has never heard of survives a
+         *     round trip. Describing it as a fixed shape would make this layer a second
+         *     owner of the pane vocabulary, and a layout written by a newer client would
+         *     then fail to come back.
+         */
+        get: operations["get_layout"];
+        put?: never;
+        /**
+         * `POST /api/layout` — store this browser's pane layout.
+         * @description The body is the client's `SerializedLayout`, opaque here. See
+         *     [`get_layout`] for why it stays open.
+         */
+        post: operations["save_layout"];
+        /**
+         * `DELETE /api/layout` — forget this browser's pane layout.
+         * @description Idempotent: deleting a layout that is not there succeeds.
+         */
+        delete: operations["reset_layout"];
         options?: never;
         head?: never;
         patch?: never;
@@ -523,6 +643,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/project/get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/project/get` — one project by its root path.
+         * @description A path no project is registered for answers 404 rather than a null body,
+         *     so a client cannot mistake "not registered" for a project with no fields.
+         */
+        get: operations["get_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/project/list` — every project the daemon holds registered. */
+        get: operations["list_projects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/project/register` — make a directory a registered project.
+         * @description Registering a root also grants the file API read access to everything
+         *     beneath it, so the path is canonicalized and checked before AND after the
+         *     daemon acts: the daemon resolves a registration inside a git repo up to the
+         *     repo root, which can land above what was checked.
+         */
+        post: operations["register_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/unregister": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/project/unregister` — forget a registered project.
+         * @description The directory stays on disk; only the registration goes.
+         */
+        post: operations["unregister_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers": {
         parameters: {
             query?: never;
@@ -544,6 +745,55 @@ export interface paths {
         get: operations["list_providers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/recents` — the files this server last recorded as opened.
+         * @description Server-side rather than in `localStorage`, which is per-origin and so
+         *     vanished across ports, browsers and debug instances.
+         */
+        get: operations["get_recents"];
+        put?: never;
+        /**
+         * `POST /api/recents` — record one file open, and answer the new list.
+         * @description A path already in the list moves to the front rather than repeating. The
+         *     list is capped, so the oldest entries fall off the end.
+         */
+        post: operations["record_recent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scm/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/scm/clone` — clone a remote repo and register it as a project.
+         * @description It lands in `[workspace] root_dir` unless `dest` says otherwise. Slow by
+         *     nature: the daemon call carries a ten-minute timeout, and this route does
+         *     not retry, because a second `git clone` over a partial directory refuses
+         *     with a message about the destination rather than the network.
+         */
+        post: operations["clone_repo"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1678,6 +1928,17 @@ export interface components {
             /** @enum {string} */
             type: "session_event";
         };
+        CloneRequest: {
+            /**
+             * @description Where to put the clone. Absolute, and it must not exist. Absent takes
+             *     `[workspace] root_dir/<repo-name>`.
+             */
+            dest?: string | null;
+            /** @description The project name for the clone. Absent takes the name in the URL. */
+            name?: string | null;
+            /** @description Remote repo: https://…, git@host:…, or `owner/repo` shorthand. */
+            url: string;
+        };
         /**
          * @description Whether running a command changes state a user could lose, mirroring
          *     [`crucible_lua::CommandEffect`].
@@ -1895,6 +2156,31 @@ export interface components {
             title: string;
         };
         /**
+         * @description One directory entry in an `fs.list_dir` response.
+         *
+         *     Wire keys (`name`/`rel_path`/`is_dir`/`size`/`modified`/`status`) are
+         *     byte-identical to the TypeScript `FsEntry`. `status` is a Phase-1 decoration
+         *     seam and is always `None`.
+         */
+        FsEntry: {
+            is_dir: boolean;
+            /**
+             * Format: int64
+             * @description Unix epoch seconds, or `null` when the platform cannot report it.
+             *     Always written.
+             */
+            modified: number | null;
+            name: string;
+            rel_path: string;
+            /** Format: int64 */
+            size: number;
+            /**
+             * @description The git/diff decoration seam. Always `null` today, and deliberately
+             *     open: whatever fills it will not be a string.
+             */
+            status: unknown;
+        };
+        /**
          * @description A filesystem change delivered to the browser.
          *
          *     Serializes with an internal `type` tag whose values are `changed` /
@@ -1915,6 +2201,86 @@ export interface components {
             to: string;
             /** @enum {string} */
             type: "moved";
+        };
+        /**
+         * @description One directory level, plus whether the cap cut it short.
+         *
+         *     Both keys are part of the cross-language contract (TypeScript `FsListing`).
+         *     The response used to be a bare array, which had nowhere to say "there is
+         *     more" — so a capped listing would have been indistinguishable from a complete
+         *     one, which is worse than the slow response it replaces.
+         */
+        FsListing: {
+            entries: components["schemas"]["FsEntry"][];
+            truncated: boolean;
+        };
+        /**
+         * @description What `POST /api/fs/mkdir` answers.
+         *
+         *     The route's own shape, not the daemon's: `fs_mkdir` reports success as
+         *     `()`, so there is no daemon body to forward.
+         */
+        FsMkdirResponse: {
+            /** @description Always true. A refusal is an error status, not a `false`. */
+            created: boolean;
+        };
+        FsMoveBody: {
+            /** @description Root-relative POSIX path of the entry to move. */
+            from_rel: string;
+            /** @description Which allowlist the daemon checks `root` against. */
+            kind: components["schemas"]["FsRootKind"];
+            /** @description Absolute path of the root both ends sit inside. */
+            root: string;
+            /** @description Root-relative POSIX path it takes. */
+            to_rel: string;
+        };
+        /**
+         * @description What `fs.move` answers.
+         *
+         *     The two link-report keys are absent for a move the link index does not
+         *     watch — a directory, an asset, a project file — which is the shape the
+         *     browser already reads. They were written as a `json!` literal beside the
+         *     handler, where nothing held them to the reply the web route promises.
+         */
+        FsMoveReply: {
+            /** @description Always true. A move that did not happen is an error, not a `false`. */
+            moved: boolean;
+            /**
+             * @description Sources whose inbound links were rewritten. Kiln note and canvas moves
+             *     only. Absent, never null, for a move with nothing to report.
+             */
+            rewritten_sources?: string[];
+            /**
+             * @description Inbound links left as they were, with the reason for each. Absent,
+             *     never null, for a move with nothing to report.
+             */
+            skipped?: components["schemas"]["SkippedRef"][];
+        };
+        FsPathBody: {
+            /** @description Which allowlist the daemon checks `root` against. */
+            kind: components["schemas"]["FsRootKind"];
+            /** @description Root-relative POSIX path of the entry. */
+            rel_path: string;
+            /** @description Absolute path of the root the entry sits inside. */
+            root: string;
+        };
+        /**
+         * @description The two roots a mutation may name, and the allowlist each one selects.
+         *
+         *     This describes the wire; the field that carries it stays a `String` so that
+         *     an unknown kind is refused by the daemon, in the daemon's own sentence,
+         *     rather than by a body rejection that says only "unknown variant".
+         *     `every_root_kind_is_one_the_daemon_admits` walks an exhaustive match, so a
+         *     third kind cannot reach the document without a decision about it.
+         * @enum {string}
+         */
+        FsRootKind: "project" | "kiln";
+        /** @description What `fs.trash` answers. */
+        FsTrashReply: {
+            /** @description Where the entry now sits, RELATIVE to the root it was trashed from. */
+            trash_path: string;
+            /** @description Always true. A refusal is an error, not a `false`. */
+            trashed: boolean;
         };
         /** @description One edge of the note-link graph. */
         GraphLinkRow: {
@@ -2088,6 +2454,17 @@ export interface components {
              *     the call.
              */
             supported: boolean;
+        };
+        /**
+         * @description What a layout write answers.
+         *
+         *     `POST` and `DELETE /api/layout` answer the same object, because both say
+         *     only that the file on disk now reflects the request. One type keeps them
+         *     from separating.
+         */
+        LayoutWriteResponse: {
+            /** @description Always true. A failed write is an error status, not a `false`. */
+            ok: boolean;
         };
         /** @description A half-open range of 1-based line numbers: `end` is one past the last line. */
         LineRangeRow: {
@@ -2531,6 +2908,53 @@ export interface components {
             precognition_enabled: boolean;
         };
         /**
+         * @description A registered project — a directory the user works on.
+         *
+         *     Projects group sessions by workspace path and provide metadata
+         *     for display in the UI (name, attached kilns, etc.).
+         */
+        Project: {
+            /**
+             * @description Attached kilns (from `ProjectConfig` or auto-discovered .crucible/)
+             *
+             *     `default` covers a stored project written before the field existed. It
+             *     is always WRITTEN, empty or not, so a reader never sees it absent.
+             */
+            kilns: components["schemas"]["ProjectKiln"][];
+            /**
+             * Format: date-time
+             * @description When this project was last accessed
+             */
+            last_accessed: string;
+            /** @description Human-readable name (from `ProjectConfig.project.name` or dirname) */
+            name: string;
+            /** @description Canonical path to the project root directory */
+            path: string;
+            repository?: null | components["schemas"]["RepositoryInfo"];
+        };
+        ProjectKiln: {
+            /**
+             * @description The kiln's registry name. A kiln that declares none sends NO `name`
+             *     key, so a reader must treat the field as absent rather than null.
+             */
+            name?: string | null;
+            path: string;
+        };
+        ProjectPathRequest: {
+            /** @description Absolute path of the project root. */
+            path: string;
+        };
+        /**
+         * @description What `POST /api/project/unregister` answers.
+         *
+         *     The route's own shape: the daemon reports the unregistration as `()`, so
+         *     there is no daemon body to forward.
+         */
+        ProjectUnregisterResponse: {
+            /** @description Always true. A refusal is an error status, not a `false`. */
+            ok: boolean;
+        };
+        /**
          * @description One LLM provider the daemon found.
          *
          *     Mirrors `crucible_core::types::ProviderInfo` field for field. It is
@@ -2606,6 +3030,32 @@ export interface components {
             /** @description Absolute path of the kiln to write into. It must be registered. */
             kiln: string;
         };
+        RecentFile: {
+            /** @description Absolute path of the file that was opened. */
+            abs_path: string;
+            /** @description The file's display name, as the client recorded it. */
+            name: string;
+            /**
+             * Format: int64
+             * @description Unix millis of the last open — set server-side on record.
+             */
+            opened_at: number;
+        };
+        /**
+         * @description What both recents routes answer: the list, newest first.
+         *
+         *     `GET` and `POST /api/recents` answer the same projection under the same
+         *     key, so one type keeps the read and the write from separating.
+         */
+        RecentsResponse: {
+            recents: components["schemas"]["RecentFile"][];
+        };
+        RecordRecentRequest: {
+            /** @description Absolute path of the file that was opened. */
+            abs_path: string;
+            /** @description The file's display name. */
+            name: string;
+        };
         /**
          * @description A reference the read path refused, as the browser receives it.
          *
@@ -2629,6 +3079,20 @@ export interface components {
              *     than a silent one.
              */
             reason: string;
+        };
+        /** @description Information about the git repository containing this project. */
+        RepositoryInfo: {
+            /**
+             * @description Whether this project is in a git worktree (not the main checkout).
+             *     Always written, so `required` rather than optional.
+             */
+            is_worktree: boolean;
+            /** @description For worktrees: path to the main repository's .git directory */
+            main_repo_git_dir?: string | null;
+            /** @description Primary remote URL (usually "origin"), if any */
+            remote_url?: string | null;
+            /** @description Path to the repository root (where .git is, or main repo for worktrees) */
+            root: string;
         };
         /**
          * @description Where a wikilink target landed.
@@ -2878,6 +3342,13 @@ export interface components {
             applied: string[];
             failed: components["schemas"]["ReviewFailureRow"][];
             session_id: string;
+        };
+        /** @description Response for the `scm.clone` RPC. */
+        ScmCloneResponse: {
+            /** @description Absolute path of the freshly cloned repository. */
+            path: string;
+            /** @description The `Project` registered for the clone. */
+            project: components["schemas"]["Project"];
         };
         /**
          * @description `POST /api/search/semantic` — text semantic search over a kiln's notes.
@@ -3184,6 +3655,23 @@ export interface components {
             /** Format: int64 */
             timeout_secs?: number | null;
         };
+        /** @description One inbound reference that was intentionally left untouched. */
+        SkippedRef: {
+            raw_target: string;
+            reason: components["schemas"]["SkipReason"];
+            source_path: string;
+        };
+        /**
+         * @description Why one inbound reference was left as it was.
+         *
+         *     A closed set, because the browser prints a sentence per reason. It was four
+         *     string literals spelled in five places, so a fifth reason could reach a
+         *     client whose reader has no arm for it. `every_skip_reason_reaches_the_wire`
+         *     (`crucible-web`) walks an exhaustive match, so a new variant fails to
+         *     compile until somebody decides what the client says about it.
+         * @enum {string}
+         */
+        SkipReason: "ambiguous" | "stale-span" | "canvas-no-exact-match" | "canvas-unreadable";
         /**
          * @description A surface changed, delivered to the browser.
          *
@@ -3354,6 +3842,7 @@ export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
 export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
 export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
+export type SchemaCloneRequest = components['schemas']['CloneRequest'];
 export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
@@ -3366,7 +3855,15 @@ export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
 export type SchemaFileWriteResponse = components['schemas']['FileWriteResponse'];
 export type SchemaFocusedNoteRow = components['schemas']['FocusedNoteRow'];
+export type SchemaFsEntry = components['schemas']['FsEntry'];
 export type SchemaFsEvent = components['schemas']['FsEvent'];
+export type SchemaFsListing = components['schemas']['FsListing'];
+export type SchemaFsMkdirResponse = components['schemas']['FsMkdirResponse'];
+export type SchemaFsMoveBody = components['schemas']['FsMoveBody'];
+export type SchemaFsMoveReply = components['schemas']['FsMoveReply'];
+export type SchemaFsPathBody = components['schemas']['FsPathBody'];
+export type SchemaFsRootKind = components['schemas']['FsRootKind'];
+export type SchemaFsTrashReply = components['schemas']['FsTrashReply'];
 export type SchemaGraphLinkRow = components['schemas']['GraphLinkRow'];
 export type SchemaGraphNoteRow = components['schemas']['GraphNoteRow'];
 export type SchemaGrepHit = components['schemas']['GrepHit'];
@@ -3380,6 +3877,7 @@ export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
 export type SchemaKilnRequest = components['schemas']['KilnRequest'];
 export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
+export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
 export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
@@ -3407,13 +3905,21 @@ export type SchemaPluginRow = components['schemas']['PluginRow'];
 export type SchemaPluginRunCommandResponse = components['schemas']['PluginRunCommandResponse'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
 export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
+export type SchemaProject = components['schemas']['Project'];
+export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
+export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
+export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
 export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
 export type SchemaPutFileRequest = components['schemas']['PutFileRequest'];
 export type SchemaPutNoteRequest = components['schemas']['PutNoteRequest'];
+export type SchemaRecentFile = components['schemas']['RecentFile'];
+export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
+export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
+export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
@@ -3434,6 +3940,7 @@ export type SchemaReviewStateResponse = components['schemas']['ReviewStateRespon
 export type SchemaReviewStateRow = components['schemas']['ReviewStateRow'];
 export type SchemaReviewStatesResponse = components['schemas']['ReviewStatesResponse'];
 export type SchemaReviewUndoRejectResponse = components['schemas']['ReviewUndoRejectResponse'];
+export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
 export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
 export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
@@ -3460,6 +3967,8 @@ export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
 export type SchemaShellEvent = components['schemas']['ShellEvent'];
 export type SchemaShellExecRequest = components['schemas']['ShellExecRequest'];
+export type SchemaSkippedRef = components['schemas']['SkippedRef'];
+export type SchemaSkipReason = components['schemas']['SkipReason'];
 export type SchemaSurfaceChangedEvent = components['schemas']['SurfaceChangedEvent'];
 export type SchemaSurfaceLineRow = components['schemas']['SurfaceLineRow'];
 export type SchemaSurfaceListResponse = components['schemas']['SurfaceListResponse'];
@@ -3714,6 +4223,159 @@ export interface operations {
                 content: {
                     "text/event-stream": components["schemas"]["FsEvent"];
                 };
+            };
+        };
+    };
+    list_dir: {
+        parameters: {
+            query: {
+                /** @description Root-relative POSIX path of the directory. Empty lists the root. */
+                rel_path?: string;
+                /** @description Absolute path of the root to list inside. */
+                root: string;
+                /** @description Include dotfiles. `.git` never lists, whatever this says. */
+                show_hidden?: boolean;
+                /** @description Include entries git ignores. The file tree sends `true`. */
+                show_ignored?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsListing"];
+                };
+            };
+            /** @description The daemon refuses the root or the relative path, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the directory, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mkdir_path: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FsPathBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsMkdirResponse"];
+                };
+            };
+            /** @description The daemon refuses the root or the relative path, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not create the folder */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    move_path: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FsMoveBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsMoveReply"];
+                };
+            };
+            /** @description The daemon refuses the root, either path, or an overwrite, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not move the entry, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    trash_path: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FsPathBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsTrashReply"];
+                };
+            };
+            /** @description The daemon refuses the root or the relative path, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not trash the entry, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4024,6 +4686,97 @@ export interface operations {
             };
             /** @description The daemon could not list the kilns, or answered a shape this route cannot read */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_layout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stored layout blob, verbatim */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description No layout is saved */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The stored layout could not be read */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    save_layout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The layout blob to store, verbatim */
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutWriteResponse"];
+                };
+            };
+            /** @description The layout could not be written */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reset_layout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutWriteResponse"];
+                };
+            };
+            /** @description The stored layout could not be deleted */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4628,6 +5381,135 @@ export interface operations {
             };
         };
     };
+    get_project: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the project root. */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description No project is registered for this path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the project */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_projects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"][];
+                };
+            };
+            /** @description The daemon could not list the projects */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    register_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPathRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description The web API may not make this path a root, and the body says why */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not register the project */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    unregister_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPathRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectUnregisterResponse"];
+                };
+            };
+            /** @description The daemon could not unregister the project */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_providers: {
         parameters: {
             query?: never;
@@ -4646,6 +5528,92 @@ export interface operations {
                 };
             };
             /** @description The daemon could not list the providers */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_recents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentsResponse"];
+                };
+            };
+        };
+    };
+    record_recent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordRecentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentsResponse"];
+                };
+            };
+            /** @description The recents list could not be written */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clone_repo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScmCloneResponse"];
+                };
+            };
+            /** @description The daemon refuses the URL or the destination, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The clone failed, or the daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;

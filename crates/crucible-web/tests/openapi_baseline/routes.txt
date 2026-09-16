@@ -10,31 +10,17 @@
 # then demands that nothing is missing.
 #
 # One `METHOD /path` per line, sorted.
-DELETE /api/layout
 GET /api/agents
 GET /api/commands
 GET /api/config
-GET /api/fs/list
 GET /api/interactions/pending
-GET /api/layout
 GET /api/mcp/status
-GET /api/project/get
-GET /api/project/list
-GET /api/recents
 GET /api/skills
 GET /api/skills/search
 GET /api/skills/{name}
 GET /api/terminal/ws
 POST /api/chat/send
 POST /api/config
-POST /api/fs/mkdir
-POST /api/fs/move
-POST /api/fs/trash
 POST /api/interaction/respond
-POST /api/layout
-POST /api/project/register
-POST /api/project/unregister
-POST /api/recents
-POST /api/scm/clone
 POST /api/session/{id}/command
 POST /api/webhook/{name}

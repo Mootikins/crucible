@@ -30,16 +30,34 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Why one inbound reference was left as it was.
+///
+/// A closed set, because the browser prints a sentence per reason. It was four
+/// string literals spelled in five places, so a fifth reason could reach a
+/// client whose reader has no arm for it. `every_skip_reason_reaches_the_wire`
+/// (`crucible-web`) walks an exhaustive match, so a new variant fails to
+/// compile until somebody decides what the client says about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum SkipReason {
+    /// The stem is shared by several notes, so no single target is meant.
+    Ambiguous,
+    /// The file bytes no longer match the index; a reindex catches up.
+    StaleSpan,
+    /// A canvas resolves to the target but stores it under another spelling.
+    CanvasNoExactMatch,
+    /// The canvas could not be read.
+    CanvasUnreadable,
+}
+
 /// One inbound reference that was intentionally left untouched.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct SkippedRef {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SkippedRef {
     pub source_path: String,
     pub raw_target: String,
-    /// `"ambiguous"` (stem shared by several notes), `"stale-span"` (file bytes
-    /// no longer match the index; reindex will catch up),
-    /// `"canvas-no-exact-match"` (a canvas resolves to the target but stores it
-    /// under a different spelling), or `"canvas-unreadable"`.
-    pub reason: &'static str,
+    pub reason: SkipReason,
 }
 
 /// Outcome of a rename/move, returned to the caller for UX ("N links
@@ -137,7 +155,7 @@ pub(crate) async fn rename_note(
             skipped.push(SkippedRef {
                 source_path: link.source_path.clone(),
                 raw_target: link.raw_target.clone(),
-                reason: "ambiguous",
+                reason: SkipReason::Ambiguous,
             });
             continue;
         }
@@ -151,7 +169,7 @@ pub(crate) async fn rename_note(
             skipped.push(SkippedRef {
                 source_path: link.source_path.clone(),
                 raw_target: link.raw_target.clone(),
-                reason: "stale-span",
+                reason: SkipReason::StaleSpan,
             });
             continue;
         }
@@ -176,7 +194,7 @@ pub(crate) async fn rename_note(
                     skipped.push(SkippedRef {
                         source_path: r.source_path.clone(),
                         raw_target: r.raw_target.clone(),
-                        reason: "stale-span",
+                        reason: SkipReason::StaleSpan,
                     });
                 }
                 tracing::warn!(source = %source, error = %e, "rename rewrite: source unreadable, skipped");
@@ -194,7 +212,7 @@ pub(crate) async fn rename_note(
                 skipped.push(SkippedRef {
                     source_path: r.source_path.clone(),
                     raw_target: r.raw_target.clone(),
-                    reason: "stale-span",
+                    reason: SkipReason::StaleSpan,
                 });
                 continue;
             }
@@ -247,7 +265,7 @@ pub(crate) async fn rename_note(
                 skipped.push(SkippedRef {
                     source_path: source,
                     raw_target: String::new(),
-                    reason: "stale-span",
+                    reason: SkipReason::StaleSpan,
                 });
             }
         }
@@ -278,14 +296,14 @@ pub(crate) async fn rename_note(
             Ok(false) => skipped.push(SkippedRef {
                 source_path: source,
                 raw_target: from_rel.to_string(),
-                reason: "canvas-no-exact-match",
+                reason: SkipReason::CanvasNoExactMatch,
             }),
             Err(e) => {
                 tracing::warn!(source = %source, error = %e, "rename: canvas rewrite failed");
                 skipped.push(SkippedRef {
                     source_path: source,
                     raw_target: from_rel.to_string(),
-                    reason: "canvas-unreadable",
+                    reason: SkipReason::CanvasUnreadable,
                 });
             }
         }
@@ -530,7 +548,9 @@ mod tests {
             .unwrap();
         assert_eq!(read(&root, "linker.md"), "see [[async]] here", "untouched");
         assert!(
-            out.skipped.iter().any(|s| s.reason == "ambiguous"),
+            out.skipped
+                .iter()
+                .any(|s| s.reason == SkipReason::Ambiguous),
             "warning emitted: {:?}",
             out.skipped
         );

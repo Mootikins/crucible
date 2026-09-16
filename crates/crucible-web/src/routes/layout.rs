@@ -6,19 +6,45 @@
 
 use crate::services::daemon::AppState;
 use crate::WebError;
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn layout_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/layout",
-            get(get_layout).post(save_layout).delete(reset_layout),
-        )
-        .route("/api/recents", get(get_recents).post(record_recent))
+pub fn layout_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(get_layout, save_layout, reset_layout))
+        .routes(routes!(get_recents, record_recent))
 }
 
+/// What a layout write answers.
+///
+/// `POST` and `DELETE /api/layout` answer the same object, because both say
+/// only that the file on disk now reflects the request. One type keeps them
+/// from separating.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct LayoutWriteResponse {
+    /// Always true. A failed write is an error status, not a `false`.
+    ok: bool,
+}
+
+/// `GET /api/layout` — the pane layout this browser last saved.
+///
+/// The body is the client's own `SerializedLayout`, and it stays an open
+/// object here on purpose: the server stores the blob and hands it back
+/// without reading it, so a pane the server has never heard of survives a
+/// round trip. Describing it as a fixed shape would make this layer a second
+/// owner of the pane vocabulary, and a layout written by a newer client would
+/// then fail to come back.
+#[utoipa::path(
+    get,
+    path = "/api/layout",
+    responses(
+        (status = 200, body = serde_json::Value, description = "The stored layout blob, verbatim"),
+        (status = 404, description = "No layout is saved"),
+        (status = 500, description = "The stored layout could not be read"),
+    )
+)]
 async fn get_layout(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
     let bytes = match tokio::fs::read(state.layout_path.as_path()).await {
         Ok(bytes) => bytes,
@@ -33,10 +59,23 @@ async fn get_layout(State(state): State<AppState>) -> Result<Json<serde_json::Va
     Ok(Json(layout))
 }
 
+/// `POST /api/layout` — store this browser's pane layout.
+///
+/// The body is the client's `SerializedLayout`, opaque here. See
+/// [`get_layout`] for why it stays open.
+#[utoipa::path(
+    post,
+    path = "/api/layout",
+    request_body(content = serde_json::Value, description = "The layout blob to store, verbatim"),
+    responses(
+        (status = 200, body = LayoutWriteResponse),
+        (status = 500, description = "The layout could not be written"),
+    )
+)]
 async fn save_layout(
     State(state): State<AppState>,
     Json(layout): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<LayoutWriteResponse>, WebError> {
     let path = state.layout_path.as_path();
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -49,16 +88,29 @@ async fn save_layout(
     write_atomic(path, &bytes)
         .await
         .map_err(|e| WebError::Internal(format!("Failed to write layout: {e}")))?;
-    Ok(Json(json!({"ok": true})))
+    Ok(Json(LayoutWriteResponse { ok: true }))
 }
 
-async fn reset_layout(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
+/// `DELETE /api/layout` — forget this browser's pane layout.
+///
+/// Idempotent: deleting a layout that is not there succeeds.
+#[utoipa::path(
+    delete,
+    path = "/api/layout",
+    responses(
+        (status = 200, body = LayoutWriteResponse),
+        (status = 500, description = "The stored layout could not be deleted"),
+    )
+)]
+async fn reset_layout(
+    State(state): State<AppState>,
+) -> Result<Json<LayoutWriteResponse>, WebError> {
     match tokio::fs::remove_file(state.layout_path.as_path()).await {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(WebError::Internal(format!("Failed to delete layout: {e}"))),
     }
-    Ok(Json(json!({"ok": true})))
+    Ok(Json(LayoutWriteResponse { ok: true }))
 }
 
 // =========================================================================
@@ -82,12 +134,23 @@ async fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<(
     tokio::fs::rename(&tmp, path).await
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 struct RecentFile {
+    /// Absolute path of the file that was opened.
     abs_path: String,
+    /// The file's display name, as the client recorded it.
     name: String,
     /// Unix millis of the last open — set server-side on record.
     opened_at: u64,
+}
+
+/// What both recents routes answer: the list, newest first.
+///
+/// `GET` and `POST /api/recents` answer the same projection under the same
+/// key, so one type keeps the read and the write from separating.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct RecentsResponse {
+    recents: Vec<RecentFile>,
 }
 
 fn recents_path(state: &AppState) -> std::path::PathBuf {
@@ -101,21 +164,45 @@ async fn read_recents(state: &AppState) -> Vec<RecentFile> {
     }
 }
 
-async fn get_recents(State(state): State<AppState>) -> Json<serde_json::Value> {
+/// `GET /api/recents` — the files this server last recorded as opened.
+///
+/// Server-side rather than in `localStorage`, which is per-origin and so
+/// vanished across ports, browsers and debug instances.
+#[utoipa::path(
+    get,
+    path = "/api/recents",
+    responses((status = 200, body = RecentsResponse))
+)]
+async fn get_recents(State(state): State<AppState>) -> Json<RecentsResponse> {
     let recents = read_recents(&state).await;
-    Json(json!({ "recents": recents }))
+    Json(RecentsResponse { recents })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct RecordRecentRequest {
+    /// Absolute path of the file that was opened.
     abs_path: String,
+    /// The file's display name.
     name: String,
 }
 
+/// `POST /api/recents` — record one file open, and answer the new list.
+///
+/// A path already in the list moves to the front rather than repeating. The
+/// list is capped, so the oldest entries fall off the end.
+#[utoipa::path(
+    post,
+    path = "/api/recents",
+    request_body = RecordRecentRequest,
+    responses(
+        (status = 200, body = RecentsResponse),
+        (status = 500, description = "The recents list could not be written"),
+    )
+)]
 async fn record_recent(
     State(state): State<AppState>,
     Json(req): Json<RecordRecentRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<RecentsResponse>, WebError> {
     // Serialize concurrent read-modify-writes (two browsers recording at
     // once would drop each other's entry).
     let _guard = state.recents_lock.lock().await;
@@ -145,7 +232,7 @@ async fn record_recent(
     write_atomic(&path, &bytes)
         .await
         .map_err(|e| WebError::Internal(format!("Failed to write recents: {e}")))?;
-    Ok(Json(json!({ "recents": recents })))
+    Ok(Json(RecentsResponse { recents }))
 }
 
 #[cfg(test)]
@@ -153,6 +240,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use serde_json::json;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -163,7 +251,7 @@ mod tests {
         let (_mock, client) = crate::test_support::start_mock_daemon().await;
         let mut state = crate::test_support::build_mock_state(client);
         state.layout_path = Arc::new(tmp.path().join("web-layout.json"));
-        let app = layout_routes().with_state(state);
+        let app = axum::Router::from(layout_routes()).with_state(state);
         (tmp, app)
     }
 
@@ -307,5 +395,76 @@ mod tests {
         // Deleting again (nothing saved) still succeeds
         let response = app.oneshot(delete_request()).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // ── The declared shapes ─────────────────────────────────────────────
+    //
+    // These four replies belong to this layer: the layout blob and the recents
+    // list are files the web server itself writes, and no daemon type
+    // describes them. The blob stays an open object on purpose; the three
+    // envelopes around it are named.
+
+    #[tokio::test]
+    async fn save_layout_answers_the_declared_shape() {
+        let answered: LayoutWriteResponse = crate::test_support::shape(
+            "POST",
+            "/api/layout",
+            Some(json!({ "version": 1, "panes": [] })),
+        )
+        .await;
+
+        assert!(answered.ok);
+    }
+
+    #[tokio::test]
+    async fn reset_layout_answers_the_declared_shape() {
+        let answered: LayoutWriteResponse =
+            crate::test_support::shape("DELETE", "/api/layout", None).await;
+
+        assert!(answered.ok);
+    }
+
+    /// The layout comes back as it went in, key for key.
+    ///
+    /// The one reply in this group the document leaves open. A pane a newer
+    /// client invented has to survive a save and a load, so this layer never
+    /// becomes a second owner of the pane vocabulary.
+    #[tokio::test]
+    async fn the_layout_blob_keeps_the_keys_the_client_wrote() {
+        let (_tmp, app) = layout_test_app().await;
+        let layout = json!({
+            "version": 99,
+            "panes": [{ "id": "a-pane-this-server-never-heard-of", "size": 0.5 }],
+            "unknown_key": { "nested": [1, 2, 3] },
+        });
+
+        app.clone().oneshot(post_request(&layout)).await.unwrap();
+        let response = app.oneshot(get_request()).await.unwrap();
+
+        assert_eq!(body_json(response).await, layout);
+    }
+
+    #[tokio::test]
+    async fn get_recents_answers_the_declared_shape() {
+        let answered: RecentsResponse =
+            crate::test_support::shape("GET", "/api/recents", None).await;
+
+        assert!(answered.recents.is_empty(), "a fresh server has no recents");
+    }
+
+    /// Recording a file answers the new list, newest first.
+    #[tokio::test]
+    async fn record_recent_answers_the_declared_shape() {
+        let answered: RecentsResponse = crate::test_support::shape(
+            "POST",
+            "/api/recents",
+            Some(json!({ "abs_path": "/a.md", "name": "a.md" })),
+        )
+        .await;
+
+        let first = answered.recents.first().expect("the recorded file");
+        assert_eq!(first.abs_path, "/a.md");
+        assert_eq!(first.name, "a.md");
+        assert!(first.opened_at > 0, "the server stamps the open time");
     }
 }
