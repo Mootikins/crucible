@@ -16,7 +16,8 @@ import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree'
 import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
-import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { matchShortcut } from '@/windowing/shortcuts';
+import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
 import { lastPointerPosition } from '@/windowing/model/collision-detector';
@@ -224,7 +225,7 @@ function InnerManager() {
 
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const action = matchShortcut(e);
+      const action = matchShortcut(e, DEFAULT_SHORTCUTS);
       if (action) {
         e.preventDefault();
         handleShortcutAction(action);

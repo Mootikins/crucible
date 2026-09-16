@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore, windowActions } from '../windowStore';
-import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import { configureWindowing, windowStore, setStore, windowActions } from '@/windowing/store';
+import { stubPolicy } from './stubPolicy';
+import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/windowing/model/types';
+
+beforeEach(() => configureWindowing(stubPolicy()));
 
 function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;

@@ -1,28 +1,15 @@
 import { produce } from 'solid-js/store';
 import type {
+  EdgePanelPosition,
   LayoutNode,
+  PaneDropPosition,
   SplitDirection,
   Tab,
   TabGroup,
-  EdgePanelPosition,
-  TabContentType,
-} from '@/types/windowTypes';
-import type { PaneDropPosition } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
-import type { WindowStoreContext } from '@/windowing/model/tree';
-import { statusBarActions } from './statusBarStore';
-import { syncShellSurface } from './shellStore';
-
-/** Keep the status bar's "active session" in sync with tab focus so
- * session-scoped commands (Ctrl+K clear, switch-model) hit the chat the
- * user is looking at, not the one that bootstrapped last. */
-function syncActiveSession(tab: Tab | undefined | null): void {
-  const sessionId = tab?.metadata?.sessionId;
-  if (typeof sessionId === 'string') {
-    statusBarActions.setActiveSessionId(sessionId);
-  }
-  syncShellSurface(tab);
-}
+  WindowState,
+} from '../model/types';
+import { isEdgeCollapsed } from '../model/types';
+import type { WindowStoreContext } from '../model/tree';
 import {
   collapseEmptyNodes,
   countPanes,
@@ -36,18 +23,17 @@ import {
   replacePaneWithSplit,
   updatePaneInLayout,
   updateRootWhere,
-} from '@/windowing/model/tree';
-import type { WindowState } from '@/types/windowTypes';
-import { isLastFixedRailTab } from './layoutActions';
+} from '../model/tree';
+import type { WindowPolicy } from './policy';
 
 /** Drop an emptied group that lives in an edge panel: a multi-pane panel
  * collapses the empty pane out of its tree; the sole remaining pane keeps an
  * empty group and collapses the panel instead (mirrors the old single-group
  * behavior). Call inside produce(). */
-function releaseEdgeGroup(
-  s: WindowState,
+function releaseEdgeGroup<C extends string>(
+  s: WindowState<C>,
   pos: EdgePanelPosition,
-  group: TabGroup
+  group: TabGroup<C>
 ): void {
   const panel = s.edgePanels[pos];
   if (countPanes(panel.layout) > 1) {
@@ -67,9 +53,11 @@ function releaseEdgeGroup(
   }
 }
 
-export interface TabActions {
-  addTab(groupId: string, tab: Tab, insertIndex?: number): void;
+export interface TabActions<C extends string = string> {
+  addTab(groupId: string, tab: Tab<C>, insertIndex?: number): void;
   removeTab(groupId: string, tabId: string): void;
+  /** True when the policy lets this tab close. */
+  canCloseTab(groupId: string, tabId: string): boolean;
   setActiveTab(groupId: string, tabId: string | null): void;
   moveTab(
     sourceGroupId: string,
@@ -77,11 +65,11 @@ export interface TabActions {
     tabId: string,
     insertIndex?: number
   ): void;
-  updateTab(groupId: string, tabId: string, updates: Partial<Tab>): void;
+  updateTab(groupId: string, tabId: string, updates: Partial<Tab<C>>): void;
   createTabGroup(paneId?: string): string;
   splitPane(paneId: string, direction: SplitDirection): void;
   /** Open a new tab in a new pane beside `paneId`; returns the new group id. */
-  openTabInNewPane(paneId: string, position: PaneDropPosition, tab: Tab): string | null;
+  openTabInNewPane(paneId: string, position: PaneDropPosition, tab: Tab<C>): string | null;
   splitPaneAndDrop(
     paneId: string,
     position: PaneDropPosition,
@@ -90,10 +78,13 @@ export interface TabActions {
   ): void;
 }
 
-export function createTabActions(context: WindowStoreContext<TabContentType>): TabActions {
+export function createTabActions<C extends string>(
+  context: WindowStoreContext<C>,
+  policy: () => WindowPolicy<C>,
+): TabActions<C> {
   const { store, setStore } = context;
 
-  const addTab = (groupId: string, tab: Tab, insertIndex?: number) => {
+  const addTab = (groupId: string, tab: Tab<C>, insertIndex?: number) => {
     const group = store.tabGroups[groupId];
     if (!group) {
       // Self-heal a ghost reference: a layout pane can point at a tabGroupId
@@ -102,7 +93,7 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
       // instead of silently dropping the tab (which made every center open —
       // click, palette, file drop — a no-op on such layouts).
       setStore('tabGroups', groupId, { id: groupId, tabs: [tab], activeTabId: tab.id });
-      syncActiveSession(tab);
+      policy().onActiveTabChange(tab);
       return;
     }
     const newTabs =
@@ -114,18 +105,17 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
           ]
         : [...group.tabs, tab];
     setStore('tabGroups', groupId, { tabs: newTabs, activeTabId: tab.id });
-    syncActiveSession(tab);
+    policy().onActiveTabChange(tab);
   };
 
   const removeTab = (groupId: string, tabId: string) => {
     const group = store.tabGroups[groupId];
     if (!group) return;
-    // The two rails are fixed: the LAST Sessions panel and the last Files
-    // panel do not close. The guard is here rather than in the tab strip
-    // because every close path reaches this one function — the tab's own
-    // button, Close Others, Close to the Right, and a pane closing with its
-    // tabs — and a rule enforced in one of them is not a rule.
-    if (isLastFixedRailTab(store, groupId, tabId)) return;
+    // The policy may keep a tab. The guard is here rather than in the tab
+    // strip because every close path reaches this one function — the tab's
+    // own button, Close Others, Close to the Right, and a pane closing with
+    // its tabs — and a rule enforced in one of them is not a rule.
+    if (!policy().mayCloseTab(store, groupId, tabId)) return;
     const newTabs = group.tabs.filter((t) => t.id !== tabId);
     const newActiveTabId =
       group.activeTabId === tabId
@@ -167,13 +157,16 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
     );
   };
 
+  const canCloseTab = (groupId: string, tabId: string): boolean =>
+    policy().mayCloseTab(store, groupId, tabId);
+
   const setActiveTab = (groupId: string, tabId: string | null) => {
     setStore('tabGroups', groupId, 'activeTabId', tabId);
     // Activating a tab focuses its region — otherwise an edge panel's active
     // tab never gets the focused (ember) treatment, since nothing else on the
     // click path sets focusedRegion for edges.
     setStore('focusedRegion', findEdgePanelForGroup(store, groupId) ?? 'center');
-    syncActiveSession(store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId));
+    policy().onActiveTabChange(store.tabGroups[groupId]?.tabs.find((t) => t.id === tabId));
   };
 
   const moveTab = (
@@ -260,7 +253,7 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
     );
   };
 
-  const updateTab = (groupId: string, tabId: string, updates: Partial<Tab>) => {
+  const updateTab = (groupId: string, tabId: string, updates: Partial<Tab<C>>) => {
     const group = store.tabGroups[groupId];
     if (!group) return;
     setStore(
@@ -273,7 +266,7 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
 
   const createTabGroup = (paneId?: string): string => {
     const groupId = generateId();
-    const newGroup: TabGroup = {
+    const newGroup: TabGroup<C> = {
       id: groupId,
       tabs: [],
       activeTabId: null,
@@ -361,7 +354,7 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
   const openTabInNewPane = (
     paneId: string,
     position: PaneDropPosition,
-    tab: Tab,
+    tab: Tab<C>,
   ): string | null => {
     if (!findPaneAnywhere(store, paneId)) {
       console.warn(`openTabInNewPane: pane ${paneId} not found in layout`);
@@ -426,6 +419,7 @@ export function createTabActions(context: WindowStoreContext<TabContentType>): T
   return {
     addTab,
     removeTab,
+    canCloseTab,
     setActiveTab,
     moveTab,
     updateTab,

@@ -335,7 +335,7 @@ test.describe('Comprehensive windowing behavior', () => {
     // The beforeEach's session click docks a chat tab in the right EDGE
     // panel — the center tiling keeps its own group(s). Closing a pane's last tab collapses that (now-empty)
     // pane out of the layout tree entirely (see removeTab/collapseEmptyNodes
-    // in src/stores/tabActions.ts + src/windowing/model/tree.ts) — so emptying
+    // in src/windowing/store/tabActions.ts + src/windowing/model/tree.ts) — so emptying
     // only ONE of the two groups just leaves its still-non-empty sibling
     // occupying the whole layout, and no EmptyState ever renders. Verified
     // via page.evaluate store dumps: emptying BOTH groups collapses the

@@ -7,7 +7,7 @@ import {
 } from '@thisbeyond/solid-dnd';
 import type { Tab as TabType, TabBarProps, DragSource } from '@/types/windowTypes';
 import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/windowStore';
-import { isLastFixedRailTab } from '@/stores/layoutActions';
+import { isLastFixedRailTab } from '@/stores/fixedRails';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
 import { confirmTabClose } from '@/windowing/model/tab-guards';

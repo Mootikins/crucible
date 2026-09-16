@@ -1,11 +1,11 @@
 // src/lib/__tests__/keyboard-shortcuts.test.ts
 import { describe, it, expect } from 'vitest';
-import {
-  matchShortcut,
-  shortcutLabel,
-  DEFAULT_SHORTCUTS,
-  ShortcutAction,
-} from '../keyboard-shortcuts';
+import { shortcutLabel, DEFAULT_SHORTCUTS } from '../keyboard-shortcuts';
+import { matchShortcut as matchIn, type ShortcutAction } from '@/windowing/shortcuts';
+
+/** Match against the app table unless a test names its own. */
+const matchShortcut = (e: KeyboardEvent, shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS) =>
+  matchIn(e, shortcuts);
 
 describe('keyboard-shortcuts', () => {
   describe('matchShortcut', () => {

@@ -15,6 +15,46 @@ export interface WindowStoreContext<C extends string = string> {
 
 export const generateId = () => Math.random().toString(36).substring(2, 11);
 
+/**
+ * The smallest valid state: one centre pane and two rails, each with an empty
+ * group. The left rail is docked, the right rail is a strip. No tabs.
+ *
+ * The store holds this before a policy seeds it, and a test policy builds on it.
+ */
+export function emptyState<C extends string = string>(): WindowState<C> {
+  const centrePane = generateId();
+  const centreGroup = generateId();
+  const leftGroup = generateId();
+  const rightGroup = generateId();
+  const group = (id: string): TabGroup<C> => ({ id, tabs: [], activeTabId: null });
+  return {
+    layout: { id: centrePane, type: 'pane', tabGroupId: centreGroup },
+    tabGroups: {
+      [centreGroup]: group(centreGroup),
+      [leftGroup]: group(leftGroup),
+      [rightGroup]: group(rightGroup),
+    },
+    edgePanels: {
+      left: {
+        id: 'left-panel',
+        layout: { id: 'left-pane', type: 'pane', tabGroupId: leftGroup },
+        mode: 'docked',
+        width: 280,
+      },
+      right: {
+        id: 'right-panel',
+        layout: { id: 'right-pane', type: 'pane', tabGroupId: rightGroup },
+        mode: 'strip',
+        width: 340,
+      },
+    },
+    floatingWindows: [],
+    activePaneId: centrePane,
+    focusedRegion: 'center',
+    nextZIndex: 100,
+  };
+}
+
 export function findPaneInLayout(
   layout: LayoutNode,
   paneId: string

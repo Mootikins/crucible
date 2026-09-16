@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
-import { primaryEdgeGroupId } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import {
+  configureWindowing,
+  windowStore,
+  setStore,
+  windowActions,
+  findEdgePanelForGroup,
+} from '@/windowing/store';
+import { collectLeafGroupIds, emptyState, primaryEdgeGroupId } from '@/windowing/model/tree';
+import { stubPolicy } from './stubPolicy';
+import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/windowing/model/types';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
 
@@ -68,31 +74,28 @@ const splitLayout = (pane1Id: string, group1Id: string, pane2Id: string, group2I
   second: { id: pane2Id, type: 'pane' as const, tabGroupId: group2Id },
 });
 
+/** The empty seed with one tab on each rail. */
+function railSeed() {
+  const s = emptyState();
+  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
+    const id = collectLeafGroupIds(s.edgePanels[pos].layout)[0]!;
+    s.tabGroups[id] = makeTabGroup(id, [makeTab(`${pos}-seed`)]);
+  }
+  return s;
+}
+
 // The windowStore is a module-level singleton. The mutating describes below
 // seed it via resetToState() in their own beforeEach, but the read-only
 // "initial state structure" and "findEdgePanelForGroup" describes assert
-// against the pristine default — which only held because they happened to run
-// first. Reset every test to a fresh defaultLayout() so their assertions
-// are independent of execution order.
-beforeEach(() => {
-  const fresh = defaultLayout();
-  setStore(
-    produce((s) => {
-      s.layout = fresh.layout;
-      s.tabGroups = fresh.tabGroups;
-      s.edgePanels = fresh.edgePanels;
-      s.floatingWindows = fresh.floatingWindows;
-      s.activePaneId = fresh.activePaneId;
-      s.focusedRegion = fresh.focusedRegion;
-      s.nextZIndex = fresh.nextZIndex;
-    })
-  );
-});
+// against the pristine seed — which only held because they happened to run
+// first. Reset every test to a fresh seed so their assertions are
+// independent of execution order.
+beforeEach(() => configureWindowing(stubPolicy({ seed: railSeed })));
 
 describe('initial state structure', () => {
-  it('creates 4 tab groups (1 center + 3 edge)', () => {
+  it('creates 3 tab groups (1 center + 2 edge)', () => {
     const groupIds = Object.keys(windowStore.tabGroups);
-    expect(groupIds).toHaveLength(4);
+    expect(groupIds).toHaveLength(3);
   });
 
   it('edgePanels.left.tabGroupId references a group in tabGroups', () => {

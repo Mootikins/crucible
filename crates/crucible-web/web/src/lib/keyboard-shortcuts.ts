@@ -1,18 +1,7 @@
-export interface ShortcutAction {
-  key: string;           // KeyboardEvent.key value
-  modifiers: ('ctrl' | 'shift' | 'alt' | 'meta')[];
-  action: string;        // action identifier
-  description: string;   // human-readable description
-}
+import { LAYOUT_SHORTCUTS, type ShortcutAction } from '@/windowing/shortcuts';
 
-export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
-  { key: 'w', modifiers: ['ctrl'], action: 'closeActiveTab', description: 'Close active tab' },
-  { key: 'Tab', modifiers: ['ctrl'], action: 'nextTab', description: 'Next tab' },
-  { key: '\\', modifiers: ['ctrl'], action: 'splitVertical', description: 'Split pane vertically' },
-  // Adjacent to the split chord, which keeps Ctrl+\ where the muscle memory
-  // already is. Both are "rearrange the panes", so they read as a pair.
-  { key: '\\', modifiers: ['ctrl', 'shift'], action: 'swapSidePanels', description: 'Swap side panels' },
-  { key: 'b', modifiers: ['ctrl'], action: 'toggleLeftPanel', description: 'Toggle left panel' },
+/** The chords the app owns. The layout chords come from the windowing core. */
+const APP_SHORTCUTS: ShortcutAction[] = [
   { key: 'Tab', modifiers: ['shift'], action: 'cycleMode', description: 'Cycle chat mode (Normal → Plan → Auto)' },
   // Command palette — Ctrl+P / Cmd+P (browser print intercepted with preventDefault)
   { key: 'p', modifiers: ['ctrl'], action: 'openCommandPalette', description: 'Open command palette' },
@@ -28,13 +17,14 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: 'Escape', modifiers: [], action: 'closeOverlay', description: 'Close active overlay' },
   // Session management
   { key: 'n', modifiers: ['ctrl', 'shift'], action: 'newSession', description: 'New chat session' },
-  // Panel toggles
-  { key: 'e', modifiers: ['ctrl', 'shift'], action: 'toggleRightPanel', description: 'Toggle right panel' },
   // Chat actions
   { key: 'k', modifiers: ['ctrl'], action: 'clearChat', description: 'Clear chat' },
   // Thinking display toggle — Ctrl+T / Cmd+T
   { key: 't', modifiers: ['ctrl'], action: 'toggleThinking', description: 'Toggle thinking display visibility' },
 ];
+
+/** Every chord, in match order: the layout first, then the app. */
+export const DEFAULT_SHORTCUTS: ShortcutAction[] = [...LAYOUT_SHORTCUTS, ...APP_SHORTCUTS];
 
 // Browser conflicts:
 // - Ctrl+W: Close tab (browser default) — works in PWA/Electron, blocked in regular browser
@@ -44,25 +34,6 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
 //   work in PWA/Electron windows. The command palette entries are the
 //   universal path for toggle-thinking and new-session.
 // - Escape: May close fullscreen or cancel operations — handled per context
-
-export function matchShortcut(e: KeyboardEvent, shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS): string | null {
-  for (const shortcut of shortcuts) {
-    const ctrlMatch = shortcut.modifiers.includes('ctrl') ? (e.ctrlKey || e.metaKey) : (!e.ctrlKey && !e.metaKey);
-    const shiftMatch = shortcut.modifiers.includes('shift') ? e.shiftKey : !e.shiftKey;
-    const altMatch = shortcut.modifiers.includes('alt') ? e.altKey : !e.altKey;
-    // Shift changes e.key's case for character keys ('n' arrives as 'N'), so
-    // single-char keys compare case-insensitively; named keys (Tab, Escape)
-    // stay exact.
-    const keyMatch =
-      shortcut.key.length === 1
-        ? e.key.toLowerCase() === shortcut.key.toLowerCase()
-        : e.key === shortcut.key;
-    if (ctrlMatch && shiftMatch && altMatch && keyMatch) {
-      return shortcut.action;
-    }
-  }
-  return null;
-}
 
 /** The order a chord prints its modifiers in, whatever order it declares them. */
 const MODIFIER_ORDER: ShortcutAction['modifiers'] = ['ctrl', 'shift', 'alt', 'meta'];

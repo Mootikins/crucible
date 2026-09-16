@@ -2315,7 +2315,8 @@ export function generateMessageId(): string {
 import type { SerializedLayout, StoredLayout } from '@/windowing/model/serializer';
 import type { TabContentType } from '@/types/windowTypes';
 
-export async function saveLayout(layout: SerializedLayout<TabContentType>): Promise<void> {
+/** The server keeps the layout as opaque JSON, so any content type may go in. */
+export async function saveLayout(layout: SerializedLayout): Promise<void> {
   try {
     await request<void>('POST', '/api/layout', {
       errorMessage: 'Failed to save layout',

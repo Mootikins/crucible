@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { produce } from 'solid-js/store';
-import { windowStore, windowActions, setStore } from '../windowStore';
-import { findFirstPane } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
-import type { Tab } from '@/types/windowTypes';
+import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
+import { emptyState, findFirstPane } from '@/windowing/model/tree';
+import { stubPolicy } from './stubPolicy';
+import type { Tab } from '@/windowing/model/types';
 
 const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
   id,
@@ -12,18 +11,9 @@ const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
   ...overrides,
 });
 
-/** Reset to a fresh initial state and return the main pane + its group id. */
+/** Reset to an empty seed and return the main pane + its group id. */
 function resetStore(): { paneId: string; groupId: string } {
-  const fresh = defaultLayout();
-  setStore(produce((s) => {
-    s.layout = fresh.layout;
-    s.tabGroups = fresh.tabGroups;
-    s.edgePanels = fresh.edgePanels;
-    s.floatingWindows = [];
-    s.activePaneId = fresh.activePaneId;
-    s.focusedRegion = 'center';
-    s.nextZIndex = 100;
-  }));
+  configureWindowing(stubPolicy({ seed: emptyState }));
   const pane = findFirstPane(windowStore.layout)!;
   return { paneId: pane.id, groupId: pane.tabGroupId! };
 }

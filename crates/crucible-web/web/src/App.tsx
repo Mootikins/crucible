@@ -13,7 +13,8 @@ import type { TabContentType } from '@/types/windowTypes';
 import { getConfig } from '@/lib/api';
 import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 import { isCompact } from '@/stores/deviceStore';
-import { matchShortcut } from '@/lib/keyboard-shortcuts';
+import { matchShortcut } from '@/windowing/shortcuts';
+import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -260,7 +261,7 @@ const App: Component = () => {
         return;
       }
 
-      const action = matchShortcut(event);
+      const action = matchShortcut(event, DEFAULT_SHORTCUTS);
       if (action === 'openCommandPalette') {
         event.preventDefault();
         event.stopPropagation();

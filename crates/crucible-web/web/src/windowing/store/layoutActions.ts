@@ -3,150 +3,28 @@ import type {
   EdgePanel as EdgePanelType,
   EdgePanelPosition,
   LayoutNode,
-  Tab,
-  TabContentType,
   TabGroup,
-} from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
-import { iconForContentType } from '@/lib/tab-icons';
-import type { SerializedLayout, StoredLayout } from '@/windowing/model/serializer';
-import { deserializeLayout, serializeLayout } from '@/windowing/model/serializer';
-import { appLayoutHooks } from './layoutMigrations';
-import { markLayoutRestore } from '@/windowing/model/layout-restore';
-import type { WindowStoreContext } from '@/windowing/model/tree';
-import type { WindowState } from '@/types/windowTypes';
+} from '../model/types';
+import { isEdgeCollapsed } from '../model/types';
+import type { SerializedLayout, StoredLayout } from '../model/serializer';
+import { deserializeLayout, serializeLayout } from '../model/serializer';
+import { markLayoutRestore } from '../model/layout-restore';
+import type { WindowStoreContext } from '../model/tree';
 import {
   collapseEmptyNodes,
   collectLeafGroupIds,
   expandedPanes,
   findFirstPane,
-  generateId,
   findPaneAnywhere,
   findPaneInLayout,
   mirrorLayout,
   regionOfPane,
   updateRootWhere,
   updateSplitRatio,
-} from '@/windowing/model/tree';
-import { defaultLayout } from './defaultLayout';
-import { statusBarActions } from './statusBarStore';
-import { syncShellSurface } from './shellStore';
+} from '../model/tree';
+import type { WindowPolicy } from './policy';
 
-/**
- * The two panels the shell always keeps, and the rail each one belongs to.
- *
- * Sessions on the left and Files on the right are not tabs like the others:
- * they are the two ways INTO the app. Everything else opens from one of them,
- * or from the palette, so a shell with neither is a shell with no doorway —
- * and that is the state a user reached, because a rail could be emptied and a
- * restore brought it back empty. `swapSidePanels` still moves them as a pair,
- * so the rule names a DEFAULT side, not a fixed one.
- *
- * The title travels with the rule rather than being read from the panel
- * registry: this store must be able to repair a layout during boot, before
- * anything registers a panel, and `Sessions` / `Files` are the registry's
- * titles anyway (see lib/register-panels.tsx).
- */
-export const FIXED_RAIL_PANELS: Record<
-  EdgePanelPosition,
-  { contentType: TabContentType; title: string }
-> = {
-  left: { contentType: 'sessions', title: 'Sessions' },
-  right: { contentType: 'files', title: 'Files' },
-};
-
-const FIXED_RAIL_TYPES: TabContentType[] = Object.values(FIXED_RAIL_PANELS).map(
-  (p) => p.contentType,
-);
-
-/** Every tab of one content type, in every group, wherever it is docked. */
-function tabsOfType(s: WindowState, contentType: TabContentType): Tab[] {
-  return Object.values(s.tabGroups).flatMap((g) =>
-    g.tabs.filter((t) => t.contentType === contentType),
-  );
-}
-
-/**
- * True when closing this tab would leave the shell with no Sessions panel, or
- * no Files panel.
- *
- * The rule is "never zero", not "never leaves the rail". A user may drag
- * Sessions into the centre and keep working, and may close a SECOND copy of
- * it; what nothing may do is take the last one away.
- */
-export function isLastFixedRailTab(
-  s: WindowState,
-  groupId: string,
-  tabId: string,
-): boolean {
-  const tab = s.tabGroups[groupId]?.tabs.find((t) => t.id === tabId);
-  if (!tab || !FIXED_RAIL_TYPES.includes(tab.contentType)) return false;
-  return tabsOfType(s, tab.contentType).length <= 1;
-}
-
-/** The rail that currently holds one content type, or undefined. */
-function railHolding(
-  s: WindowState,
-  contentType: TabContentType,
-): EdgePanelPosition | undefined {
-  return (['left', 'right'] as EdgePanelPosition[]).find((pos) =>
-    collectLeafGroupIds(s.edgePanels[pos].layout).some((id) =>
-      s.tabGroups[id]?.tabs.some((t) => t.contentType === contentType),
-    ),
-  );
-}
-
-/** Put one fixed panel back on a rail, and open that rail so the repair shows. */
-function addFixedRailTab(
-  s: WindowState,
-  pos: EdgePanelPosition,
-  panel: { contentType: TabContentType; title: string },
-): void {
-  const tab: Tab = {
-    id: `${panel.contentType}-tab`,
-    title: panel.title,
-    contentType: panel.contentType,
-    icon: iconForContentType(panel.contentType),
-  };
-  let groupId = collectLeafGroupIds(s.edgePanels[pos].layout).find((id) => s.tabGroups[id]);
-  if (!groupId) {
-    // The rail has no resolvable group — a restore of a layout with no panel
-    // at this position synthesizes a pane with a null tab group.
-    groupId = generateId();
-    s.tabGroups[groupId] = { id: groupId, tabs: [], activeTabId: null };
-    const pane = findFirstPane(s.edgePanels[pos].layout);
-    if (pane) pane.tabGroupId = groupId;
-    else s.edgePanels[pos].layout = { id: `${pos}-pane`, type: 'pane', tabGroupId: groupId };
-  }
-  const group = s.tabGroups[groupId];
-  // Leading, and active: the rail's own panel reads first on its tab strip,
-  // and a repair the user cannot see is not a repair.
-  group.tabs = [tab, ...group.tabs];
-  group.activeTabId = tab.id;
-  s.edgePanels[pos].mode = 'docked';
-}
-
-/**
- * Put back any fixed panel the incoming layout lost. Mutates the draft.
- *
- * Runs on the two paths that write a whole layout — restore and reset — which
- * are the only ways a state the store did not build enters it. Nothing is
- * added while a copy is open anywhere else, so a user who docked Sessions in
- * the centre keeps one Sessions panel, not two.
- */
-export function ensureFixedRails(s: WindowState): void {
-  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
-    const panel = FIXED_RAIL_PANELS[pos];
-    if (tabsOfType(s, panel.contentType).length > 0) continue;
-    const other: EdgePanelPosition = pos === 'left' ? 'right' : 'left';
-    // A swapped layout holds the other fixed panel on this side. Re-add on
-    // the free rail rather than stacking both on one.
-    const target = railHolding(s, FIXED_RAIL_PANELS[other].contentType) === pos ? other : pos;
-    addFixedRailTab(s, target, panel);
-  }
-}
-
-export interface LayoutActions {
+export interface LayoutActions<C extends string = string> {
   setActivePane(paneId: string | null): void;
   toggleEdgePanel(position: EdgePanelPosition): void;
   swapSidePanels(): void;
@@ -158,17 +36,20 @@ export interface LayoutActions {
     collapsed: boolean
   ): void;
   togglePaneCollapsed(paneId: string): void;
-  getTabGroup(groupId: string): TabGroup | undefined;
+  getTabGroup(groupId: string): TabGroup<C> | undefined;
   getPaneTabGroupId(paneId: string): string | null;
   findPaneById(paneId: string): ReturnType<typeof findPaneAnywhere>;
   commitSplitRatio(splitId: string, ratio: number): void;
-  exportLayout(): SerializedLayout<TabContentType>;
-  importLayout(json: StoredLayout<TabContentType>): void;
-  /** Throw the local pane layout away and start from the shipped default. */
+  exportLayout(): SerializedLayout<C>;
+  importLayout(json: StoredLayout<C>): void;
+  /** Throw the local pane layout away and start from the policy seed. */
   resetLayoutToDefaults(): void;
 }
 
-export function createLayoutActions(context: WindowStoreContext<TabContentType>): LayoutActions {
+export function createLayoutActions<C extends string>(
+  context: WindowStoreContext<C>,
+  policy: () => WindowPolicy<C>,
+): LayoutActions<C> {
   const { store, setStore } = context;
 
   const setActivePane = (paneId: string | null) => {
@@ -176,18 +57,12 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
     // Panes live in the center tiling OR inside an edge panel's tree —
     // focus follows the pane's actual region.
     setStore('focusedRegion', paneId ? regionOfPane(store, paneId) : 'center');
-    // Focusing a pane makes its visible chat the target of session-scoped
-    // commands (Ctrl+K clear, switch-model) — see syncActiveSession in
-    // tabActions for the tab-activation half.
+    // Focusing a pane focuses its active tab, so the policy hears of it the
+    // same way it does when a tab activates (see setActiveTab).
     if (paneId) {
       const pane = findPaneAnywhere(store, paneId);
       const group = pane?.tabGroupId ? store.tabGroups[pane.tabGroupId] : null;
-      const activeTab = group?.tabs.find((t) => t.id === group.activeTabId);
-      const sessionId = activeTab?.metadata?.sessionId;
-      if (typeof sessionId === 'string') {
-        statusBarActions.setActiveSessionId(sessionId);
-      }
-      syncShellSurface(activeTab);
+      policy().onActiveTabChange(group?.tabs.find((t) => t.id === group.activeTabId));
     }
   };
 
@@ -379,7 +254,7 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
     );
   };
 
-  const exportLayout = (): SerializedLayout<TabContentType> => {
+  const exportLayout = (): SerializedLayout<C> => {
     // Transient (hover) windows are popovers, not workspace state — a saved
     // layout must not resurrect them (or their tab groups) on reload.
     const transientGroups = new Set(
@@ -396,8 +271,8 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
     });
   };
 
-  const importLayout = (json: StoredLayout<TabContentType>) => {
-    const restored = deserializeLayout(json, appLayoutHooks);
+  const importLayout = (json: StoredLayout<C>) => {
+    const restored = deserializeLayout(json, policy().layoutHooks);
     /**
      * A restored layout has to satisfy the same invariant every mutation
      * maintains: no pane may point at a tab group that does not exist.
@@ -432,9 +307,9 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
         s.activePaneId = null;
         s.focusedRegion = 'center';
         s.nextZIndex = 100;
-        // The rails are fixed: a stored layout that lost one gets it back
-        // here, on the state the restore just wrote.
-        ensureFixedRails(s);
+        // The policy repairs the state the restore just wrote, for example
+        // to give back a panel that the stored layout lost.
+        policy().repairLayout(s);
         const firstPane = findFirstPane(s.layout);
         if (firstPane) s.activePaneId = firstPane.id;
       })
@@ -442,12 +317,12 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
   };
 
   /**
-   * Throw the local pane layout away and start from the shipped default.
+   * Throw the local pane layout away and start from the policy seed.
    *
    * In-place rather than a page reload: a reload would also drop every open
    * session's live SSE stream and the editor's unsaved buffers, which a
-   * request to rearrange PANES never asked for. `defaultLayout` is the
-   * same function that builds the layout on a first run, so "reset" and
+   * request to rearrange PANES never asked for. The seed is the same
+   * function that builds the layout on a first run, so "reset" and
    * "never opened this app before" land on exactly one shape.
    *
    * Deleting the SERVER's copy is the caller's job (`resetLayout()` in
@@ -456,7 +331,7 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
    * back on disk under a new version anyway.
    */
   const resetLayoutToDefaults = () => {
-    const fresh = defaultLayout();
+    const fresh = policy().seed();
     markLayoutRestore(() =>
       setStore(
         produce((s) => {
@@ -467,10 +342,9 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
           s.activePaneId = fresh.activePaneId;
           s.focusedRegion = 'center';
           s.nextZIndex = 100;
-          // The seed ships both rails, so this changes nothing today. It is
-          // here so that "reset" cannot drift away from the invariant the
-          // restore path enforces — one function decides what a rail is.
-          ensureFixedRails(s);
+          // The same repair as a restore, so that "reset" cannot drift away
+          // from the invariant the restore path enforces.
+          policy().repairLayout(s);
         }),
       ),
     );

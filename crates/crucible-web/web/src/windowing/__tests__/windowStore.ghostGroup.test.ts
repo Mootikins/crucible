@@ -2,10 +2,11 @@
 // object is missing from `tabGroups` (pre-v3 ghost). addTab used to silently
 // no-op on such ids, which made EVERY center open — file-tree click, command
 // palette, file drag-onto-pane — do nothing on those layouts.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore, windowActions } from '../windowStore';
-import type { Tab, TabGroup } from '@/types/windowTypes';
+import { configureWindowing, windowStore, setStore, windowActions } from '@/windowing/store';
+import { stubPolicy } from './stubPolicy';
+import type { Tab, TabGroup } from '@/windowing/model/types';
 
 const makeTab = (id: string, title = id): Tab => ({
   id,
@@ -14,6 +15,8 @@ const makeTab = (id: string, title = id): Tab => ({
 });
 
 describe('addTab ghost-group self-heal', () => {
+  beforeEach(() => configureWindowing(stubPolicy()));
+
   it('materializes a missing group instead of dropping the tab', () => {
     setStore(
       produce((s) => {

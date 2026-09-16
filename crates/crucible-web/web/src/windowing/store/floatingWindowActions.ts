@@ -3,9 +3,8 @@ import type {
   FloatingWindow,
   LayoutNode,
   PaneNode,
-  TabContentType,
-} from '@/types/windowTypes';
-import type { WindowStoreContext } from '@/windowing/model/tree';
+} from '../model/types';
+import type { WindowStoreContext } from '../model/tree';
 import {
   collapseEmptyNodes,
   findEdgePanelForPane,
@@ -16,7 +15,7 @@ import {
   replacePaneWithSplit,
   updatePaneInLayout,
   updateRootWhere,
-} from '@/windowing/model/tree';
+} from '../model/tree';
 
 export interface FloatingWindowActions {
   createFloatingWindow(
@@ -40,8 +39,8 @@ export interface FloatingWindowActions {
   dockFloatingWindow(windowId: string): void;
 }
 
-export function createFloatingWindowActions(
-  context: WindowStoreContext<TabContentType>
+export function createFloatingWindowActions<C extends string>(
+  context: WindowStoreContext<C>
 ): FloatingWindowActions {
   const { store, setStore } = context;
 
