@@ -30,7 +30,7 @@ import {
   updateRootWhere,
   updateSplitRatio,
 } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { defaultLayout } from './defaultLayout';
 import { statusBarActions } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
 

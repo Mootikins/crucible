@@ -288,7 +288,7 @@ surface.
   tabs behind ten presses. Walk the visit order at most once: when back reaches a
   tab already seen in this traversal, stop consuming and let the browser go.
 - A tab with `isModified` shows a dot. Its close action asks first.
-  `src/lib/tab-guards.ts` holds that RULE in `confirmTabClose` — but reuse the
+  `src/windowing/model/tab-guards.ts` holds that RULE in `confirmTabClose` — but reuse the
   rule, not the implementation: it calls `window.confirm` (`:9`), which a
   standalone PWA may suppress outright. The compact shell asks with its own
   sheet.

@@ -115,7 +115,7 @@ describe('migrateV7toV8 — the terminal ships collapsed', () => {
   // next load reads the current version and skips it.
   it('rewrites the stored version to the current one', () => {
     const restored = deserializeLayout(v7());
-    expect(serializeLayout(restored).version).toBe(9);
+    expect(serializeLayout(restored).version).toBe(10);
   });
 });
 

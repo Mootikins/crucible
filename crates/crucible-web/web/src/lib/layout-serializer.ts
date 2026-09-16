@@ -1,6 +1,8 @@
 import type {
   LayoutNode,
   TabGroup,
+  EdgeCue,
+  EdgeMode,
   EdgePanel,
   EdgePanelPosition,
   FloatingWindow,
@@ -8,7 +10,6 @@ import type {
   Tab,
   TabContentType,
 } from '@/types/windowTypes';
-import { isEdgeCollapsed } from '@/types/windowTypes';
 import { iconForContentType } from './tab-icons';
 import { getGlobalRegistry } from './panel-registry';
 
@@ -40,7 +41,12 @@ interface SerializedEdgePanel {
   /** v5+: full layout tree. Pre-v5 panels carried a single `tabGroupId`
    * (see LegacySerializedEdgePanel / migrateV4toV5). */
   layout: LayoutNode;
-  isCollapsed: boolean;
+  /** v10+. `migrateV9toV10` fills it from `isCollapsed`. */
+  mode?: EdgeMode;
+  /** v10+. Absent means `grip`. */
+  cue?: EdgeCue;
+  /** Pre-v10 only. v10 writes `mode` instead. */
+  isCollapsed?: boolean;
   width?: number;
   height?: number;
 }
@@ -102,14 +108,15 @@ export function serializeLayout(state: {
     serializedEdgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
       layout: JSON.parse(JSON.stringify(panel.layout)) as LayoutNode,
-      isCollapsed: isEdgeCollapsed(panel),
+      mode: panel.mode,
+      cue: panel.cue,
       width: panel.width,
       height: panel.height,
     };
   }
 
   return {
-    version: 9,
+    version: 10,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -427,6 +434,23 @@ function migrateV8toV9(v8: SerializedLayout): SerializedLayout {
   };
 }
 
+// A rail had two states, open or collapsed, stored as `isCollapsed`. It now
+// has four modes, stored as `mode`. A collapsed rail becomes a strip, and any
+// other rail stays docked. The legacy field goes, so that one field is the
+// only source of the mode.
+function migrateV9toV10(v9: SerializedLayout): SerializedLayout {
+  // A partial payload reaches this step too, so an absent map stays absent.
+  const edgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
+  for (const [pos, panel] of Object.entries(v9.edgePanels ?? {})) {
+    const { isCollapsed, ...rest } = panel;
+    edgePanels[pos as EdgePanelPosition] = {
+      ...rest,
+      mode: panel.mode ?? (isCollapsed ? 'strip' : 'docked'),
+    };
+  }
+  return { ...v9, version: 10, edgePanels: v9.edgePanels && edgePanels };
+}
+
 /**
  * Drop every pane that names one of `groups`, and collapse the splits that
  * lose a child.
@@ -573,7 +597,8 @@ export function deserializeLayout(json: SerializedLayout): {
   // splits into Sessions / Search / Files) → v7 (the bottom dock goes; the
   // terminal moves into the file rail) → v8 (rail panes collapse on their
   // own; the terminal ships collapsed) → v9 (the settings PAGE is gone; its
-  // tabs go, and the panes they empty go with them).
+  // tabs go, and the panes they empty go with them) → v10 (a rail stores its
+  // mode and its cue instead of `isCollapsed`).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -600,7 +625,10 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 8) {
     layout = migrateV8toV9(layout);
   }
-  if (layout.version !== 9) {
+  if (layout.version === 9) {
+    layout = migrateV9toV10(layout);
+  }
+  if (layout.version !== 10) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 
@@ -738,7 +766,10 @@ export function deserializeLayout(json: SerializedLayout): {
         type: 'pane',
         tabGroupId: null,
       },
-      mode: panel.isCollapsed ? 'strip' : 'docked',
+      // A hand-edited v10 payload can lack the mode; a docked rail is the
+      // safe reading, the same one the migration gives an open rail.
+      mode: panel.mode ?? 'docked',
+      ...(panel.cue ? { cue: panel.cue } : {}),
       width: panel.width,
       height: panel.height,
     };

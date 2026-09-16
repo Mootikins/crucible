@@ -3,6 +3,8 @@ import * as fc from 'fast-check';
 import { serializeLayout, deserializeLayout } from '../layout-serializer';
 import type {
   TabGroup,
+  EdgeCue,
+  EdgeMode,
   EdgePanel,
   LayoutNode,
   PaneNode,
@@ -51,7 +53,8 @@ const arbEdgePanel = (tabGroupId: string): fc.Arbitrary<EdgePanel> =>
     layout: fc.uuid().map(
       (paneId): LayoutNode => ({ id: paneId, type: 'pane', tabGroupId }),
     ),
-    mode: fc.constantFrom('docked' as const, 'strip' as const),
+    mode: fc.constantFrom<EdgeMode>('docked', 'strip', 'flyout', 'hidden'),
+    cue: fc.option(fc.constantFrom<EdgeCue>('grip', 'none'), { nil: undefined }),
     width: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),
     height: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),
   });

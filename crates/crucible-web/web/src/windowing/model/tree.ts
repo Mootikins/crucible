@@ -119,9 +119,9 @@ export function insertPaneRelative(
  *
  * HORIZONTAL splits swap their halves and invert the ratio; VERTICAL splits
  * only recurse. That asymmetry is the whole point: a flip reverses the COLUMN
- * order, and anything stacked inside a column keeps its stacking. The terminal
- * under the file tree stays under the file tree when the tree moves sides —
- * mirroring vertical splits too would put it above.
+ * order, and anything stacked inside a column keeps its stacking. A pane stacked
+ * under another pane stays under it when its column moves sides. A mirror of
+ * vertical splits too would put it above.
  *
  * Pure, and its own inverse: mirroring twice restores the original tree,
  * including every ratio.

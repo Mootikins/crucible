@@ -3,7 +3,7 @@ import { createFloatingWindowActions } from './floatingWindowActions';
 import {
   findEdgePanelForGroup as findEdgePanelForGroupInState,
 } from '@/windowing/model/tree';
-import { defaultLayout } from '@/stores/defaultLayout';
+import { defaultLayout } from './defaultLayout';
 import { createLayoutActions } from './layoutActions';
 import { createTabActions } from './tabActions';
 import type { WindowState } from '@/types/windowTypes';
