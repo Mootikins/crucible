@@ -125,7 +125,7 @@ export function createFloatingWindowActions(
             const emptyGroupId = generateId();
             s.tabGroups[emptyGroupId] = { id: emptyGroupId, tabs: [], activeTabId: null };
             s.edgePanels[edgePos].layout = { ...root, tabGroupId: emptyGroupId };
-            s.edgePanels[edgePos].isCollapsed = true;
+            s.edgePanels[edgePos].mode = 'strip';
           }
         }
         if (!s.activePaneId || !findPaneAnywhere(s, s.activePaneId)) {

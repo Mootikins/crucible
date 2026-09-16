@@ -51,7 +51,7 @@ const arbEdgePanel = (tabGroupId: string): fc.Arbitrary<EdgePanel> =>
     layout: fc.uuid().map(
       (paneId): LayoutNode => ({ id: paneId, type: 'pane', tabGroupId }),
     ),
-    isCollapsed: fc.boolean(),
+    mode: fc.constantFrom('docked' as const, 'strip' as const),
     width: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),
     height: fc.option(fc.integer({ min: 100, max: 500 }), { freq: 2 }),
   });

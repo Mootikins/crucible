@@ -46,11 +46,11 @@ describe('placeNewTab (groupless DragSource → any drop target)', () => {
   });
 
   it('drops onto an edge panel and expands it when collapsed', () => {
-    setStore(produce((s) => { s.edgePanels.right.isCollapsed = true; }));
+    setStore(produce((s) => { s.edgePanels.right.mode = 'strip'; }));
     const edgeGroup = primaryEdgeGroupId(windowStore, 'right')!;
     placeNewTab({ type: 'edgePanel', panelId: 'right' }, fileTab('/k/c.md'));
     expect(windowStore.tabGroups[edgeGroup].tabs.some((t) => t.id === 'tab-file-/k/c.md')).toBe(true);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
   it('splits the pane for directional drops, exactly like a tab drag', () => {

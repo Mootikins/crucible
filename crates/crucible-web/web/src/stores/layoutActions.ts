@@ -7,6 +7,7 @@ import type {
   TabContentType,
   TabGroup,
 } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import { iconForContentType } from '@/lib/tab-icons';
 import type { SerializedLayout } from '@/lib/layout-serializer';
 import {
@@ -15,7 +16,7 @@ import {
 } from '@/lib/layout-serializer';
 import { markLayoutRestore } from '@/lib/layout-restore';
 import type { WindowStoreContext } from './windowStoreInternals';
-import type { WindowState } from './windowStoreTypes';
+import type { WindowState } from '@/types/windowTypes';
 import {
   collapseEmptyNodes,
   createInitialState,
@@ -124,7 +125,7 @@ function addFixedRailTab(
   // and a repair the user cannot see is not a repair.
   group.tabs = [tab, ...group.tabs];
   group.activeTabId = tab.id;
-  s.edgePanels[pos].isCollapsed = false;
+  s.edgePanels[pos].mode = 'docked';
 }
 
 /**
@@ -195,7 +196,9 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   const toggleEdgePanel = (position: EdgePanelPosition) => {
     setStore(
       produce((s) => {
-        s.edgePanels[position].isCollapsed = !s.edgePanels[position].isCollapsed;
+        s.edgePanels[position].mode = isEdgeCollapsed(s.edgePanels[position])
+          ? 'docked'
+          : 'strip';
       })
     );
   };
@@ -214,13 +217,13 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
    * still to the left of the editor it belongs to. Half a mirror reads as a
    * bug, because the eye checks the whole row.
    *
-   * `layout`, `width` and `isCollapsed` all travel with the contents. A file
+   * `layout`, `width` and `mode` all travel with the contents. A file
    * tree dragged out to 320px stays 320px on its new side rather than being
    * re-cramped every swap. A panel the user stowed stays stowed, and a panel
    * the user opened stays open. The flip moves panels between sides; it does
    * not open or stow anything.
    *
-   * `isCollapsed` used to stay with the SIDE, to make one gesture work: with
+   * `mode` used to stay with the SIDE, to make one gesture work: with
    * the right rail stowed, one flip put the tree on the visible left. But it
    * separated a panel's collapse from its width and its contents, so a flip
    * silently opened one panel and stowed the other. It also broke the
@@ -240,15 +243,18 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         // MOVE a rail across the row instead of rebuilding it.
         const leftLayout = left.layout;
         const leftWidth = left.width;
-        const leftCollapsed = left.isCollapsed;
+        const leftMode = left.mode;
+        const leftCue = left.cue;
         const leftId = left.id;
         left.layout = mirrorLayout(right.layout);
         left.width = right.width;
-        left.isCollapsed = right.isCollapsed;
+        left.mode = right.mode;
+        left.cue = right.cue;
         left.id = right.id;
         right.layout = mirrorLayout(leftLayout);
         right.width = leftWidth;
-        right.isCollapsed = leftCollapsed;
+        right.mode = leftMode;
+        right.cue = leftCue;
         right.id = leftId;
         // The centre reverses too, or the flip is only half done.
         s.layout = mirrorLayout(s.layout);
@@ -266,7 +272,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     position: EdgePanelPosition,
     collapsed: boolean
   ) => {
-    setStore('edgePanels', position, 'isCollapsed', collapsed);
+    setStore('edgePanels', position, 'mode', collapsed ? 'strip' : 'docked');
   };
 
   const setEdgePanelActiveTab = (

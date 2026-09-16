@@ -10,6 +10,7 @@ vi.mock('../api', () => ({
 }));
 
 import { windowActions, windowStore } from '@/stores/windowStore';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '../layout-persistence';
 
 describe('layout auto-save tracking', () => {
@@ -79,7 +80,10 @@ describe('layout auto-save startup gating', () => {
     // relative to the current value so it always changes (the store singleton
     // may be left collapsed by an earlier test, and Solid won't notify on a
     // no-op set).
-    windowActions.setEdgePanelCollapsed('left', !windowStore.edgePanels.left.isCollapsed);
+    windowActions.setEdgePanelCollapsed(
+      'left',
+      !isEdgeCollapsed(windowStore.edgePanels.left),
+    );
     await vi.advanceTimersByTimeAsync(600);
     expect(saveLayoutMock).toHaveBeenCalledTimes(1);
 

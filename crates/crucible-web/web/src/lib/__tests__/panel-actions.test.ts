@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions } from '@/stores/windowStore';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
-import type { EdgePanelPosition, LayoutNode, Tab, TabGroup } from '@/types/windowTypes';
+import type { EdgeMode, EdgePanelPosition, LayoutNode, Tab, TabGroup } from '@/types/windowTypes';
 import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
 import { openPanelTab, findTabByContentType } from '../panel-actions';
 
@@ -13,7 +13,7 @@ function resetToState(overrides: Partial<{
   edgePanels: Record<EdgePanelPosition, {
     id: string;
     layout: LayoutNode;
-    isCollapsed: boolean;
+    mode: EdgeMode;
     width?: number;
     height?: number;
   }>;
@@ -36,10 +36,10 @@ const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs
   activeTabId,
 });
 
-const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
+const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, collapsed = false) => ({
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
-  isCollapsed,
+  mode: collapsed ? ('strip' as const) : ('docked' as const),
   width: 250,
 });
 
@@ -95,7 +95,7 @@ describe('openPanelTab', () => {
     const tab = group.tabs.find((t) => t.contentType === 'skills');
     expect(tab).toBeDefined();
     expect(group.activeTabId).toBe('tab-skills');
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
   });
 
   it('focuses the existing tab instead of duplicating', () => {
@@ -112,11 +112,11 @@ describe('openPanelTab', () => {
 
   it('re-expands a collapsed edge panel when focusing an existing tab', () => {
     openPanelTab('files');
-    setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
+    setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));
 
     openPanelTab('files');
 
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
     expect(windowStore.tabGroups['left-group'].activeTabId).toBe('tab-files');
   });
 

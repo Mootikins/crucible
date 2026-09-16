@@ -7,6 +7,7 @@ import { isCollapsedLeaf } from '@/lib/pane-collapse';
 import { paneBoundaries, findSplitInLayout } from '@/lib/pane-boundaries';
 import { startSplitDrag } from '@/lib/split-drag';
 import type { EdgePanelPosition, PaneNode } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 
 /** A pane's marker band is exactly a tab bar: TabBar is `h-9`. */
 const MARKER_PX = 36;
@@ -110,7 +111,7 @@ export const RibbonPaneStrip: Component<{
     panes()
       .map((p) => `${p.id}:${p.collapsed === true}`)
       .join('|');
-    panel().isCollapsed;
+    isEdgeCollapsed(panel());
     queueMicrotask(measure);
   });
 

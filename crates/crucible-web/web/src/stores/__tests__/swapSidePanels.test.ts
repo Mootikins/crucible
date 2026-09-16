@@ -8,6 +8,7 @@ import {
   primaryEdgeGroupId,
 } from '@/stores/windowStoreInternals';
 import type { LayoutNode } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 
 const leftGroup = () => primaryEdgeGroupId(windowStore, 'left');
 const rightGroup = () => primaryEdgeGroupId(windowStore, 'right');
@@ -67,29 +68,29 @@ describe('swapSidePanels', () => {
   // The flip moves panels between sides. It does not open or stow anything.
   it('carries each side’s collapse across with its panes', () => {
     const stowed = rightGroup();
-    setStore('edgePanels', 'left', 'isCollapsed', false);
-    setStore('edgePanels', 'right', 'isCollapsed', true);
+    setStore('edgePanels', 'left', 'mode', 'docked');
+    setStore('edgePanels', 'right', 'mode', 'strip');
 
     windowActions.swapSidePanels();
 
     expect(leftGroup()).toBe(stowed);
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.mode).toBe('strip');
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
   // Collapse and width describe the same panel, so they must not separate.
   // A 320px panel that a user stowed is a stowed 320px panel on its new side.
   it('carries collapse and width together, so they stay on one panel', () => {
-    setStore('edgePanels', 'left', 'isCollapsed', true);
+    setStore('edgePanels', 'left', 'mode', 'strip');
     setStore('edgePanels', 'left', 'width', 250);
-    setStore('edgePanels', 'right', 'isCollapsed', false);
+    setStore('edgePanels', 'right', 'mode', 'docked');
     setStore('edgePanels', 'right', 'width', 320);
 
     windowActions.swapSidePanels();
 
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
     expect(windowStore.edgePanels.left.width).toBe(320);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
     expect(windowStore.edgePanels.right.width).toBe(250);
   });
 
@@ -99,9 +100,9 @@ describe('swapSidePanels', () => {
   it('leaves the positional toggles pointing at the right sides', () => {
     windowActions.swapSidePanels();
     const swapped = leftGroup();
-    const before = windowStore.edgePanels.left.isCollapsed;
+    const before = isEdgeCollapsed(windowStore.edgePanels.left);
     windowActions.toggleEdgePanel('left');
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(!before);
+    expect(isEdgeCollapsed(windowStore.edgePanels.left)).toBe(!before);
     expect(leftGroup()).toBe(swapped);
   });
 

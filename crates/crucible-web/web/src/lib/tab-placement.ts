@@ -7,6 +7,7 @@
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DropTarget, Tab } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 
 /** Focus the tab if some group already holds its id. */
 function focusExisting(tabId: string): boolean {
@@ -45,7 +46,7 @@ export function placeNewTab(target: DropTarget, tab: Tab): void {
       const groupId = panel ? primaryEdgeGroupId(windowStore, target.panelId) : null;
       if (!groupId) return;
       windowActions.addTab(groupId, tab, target.insertIndex);
-      if (panel.isCollapsed) {
+      if (isEdgeCollapsed(panel)) {
         windowActions.setEdgePanelCollapsed(target.panelId, false);
       }
       break;

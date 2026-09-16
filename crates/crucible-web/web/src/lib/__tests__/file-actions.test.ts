@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore } from '@/stores/windowStore';
 import { findTabByFilePath, openFileInEditor } from '../file-actions';
-import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 // -- Helpers (same pattern as windowStore.reorder.test.ts) ----------------
 
@@ -11,7 +11,7 @@ function resetToState(overrides: Partial<{
   edgePanels: Record<EdgePanelPosition, {
     id: string;
     layout: LayoutNode;
-    isCollapsed: boolean;
+    mode: EdgeMode;
     width?: number;
     height?: number;
   }>;
@@ -43,10 +43,10 @@ const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs
   activeTabId,
 });
 
-const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
+const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, collapsed = false) => ({
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
-  isCollapsed,
+  mode: collapsed ? ('strip' as const) : ('docked' as const),
   width: 250,
 });
 

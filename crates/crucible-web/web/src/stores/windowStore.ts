@@ -6,9 +6,9 @@ import {
 } from './windowStoreInternals';
 import { createLayoutActions } from './layoutActions';
 import { createTabActions } from './tabActions';
-import type { WindowState } from './windowStoreTypes';
+import type { WindowState } from '@/types/windowTypes';
 
-export type { WindowState } from './windowStoreTypes';
+export type { WindowState } from '@/types/windowTypes';
 
 const initialState = createInitialState();
 const [store, setStore] = createStore<WindowState>(initialState);

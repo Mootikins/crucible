@@ -6,7 +6,8 @@ import type {
   TabGroup,
   EdgePanelPosition,
 } from '@/types/windowTypes';
-import type { PaneDropPosition } from './windowStoreTypes';
+import type { PaneDropPosition } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import type { WindowStoreContext } from './windowStoreInternals';
 import { statusBarActions } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
@@ -35,7 +36,7 @@ import {
   updatePaneInLayout,
   updateRootWhere,
 } from './windowStoreInternals';
-import type { WindowState } from './windowStoreTypes';
+import type { WindowState } from '@/types/windowTypes';
 import { isLastFixedRailTab } from './layoutActions';
 
 /** Drop an emptied group that lives in an edge panel: a multi-pane panel
@@ -61,7 +62,7 @@ function releaseEdgeGroup(
     }
   } else {
     s.tabGroups[group.id] = { ...group, tabs: [], activeTabId: null };
-    panel.isCollapsed = true;
+    panel.mode = 'strip';
   }
 }
 
@@ -251,8 +252,8 @@ export function createTabActions(context: WindowStoreContext): TabActions {
         const targetPos = findEdgePanelForGroup(store, targetGroupId);
         s.focusedRegion = targetPos ?? 'center';
 
-        if (targetPos && s.edgePanels[targetPos].isCollapsed) {
-          s.edgePanels[targetPos].isCollapsed = false;
+        if (targetPos && isEdgeCollapsed(s.edgePanels[targetPos])) {
+          s.edgePanels[targetPos].mode = 'docked';
         }
       })
     );

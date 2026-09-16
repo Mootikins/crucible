@@ -46,8 +46,8 @@ describe('swapSidePanels keeps the panels mounted', () => {
       s.focusedRegion = 'center';
       s.nextZIndex = 100;
       // Both rails open: a collapsed rail is a different question.
-      s.edgePanels.left.isCollapsed = false;
-      s.edgePanels.right.isCollapsed = false;
+      s.edgePanels.left.mode = 'docked';
+      s.edgePanels.right.mode = 'docked';
     }));
   });
 

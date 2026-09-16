@@ -61,13 +61,13 @@ function createTestState(): WindowState {
       left: {
         id: 'left-panel',
         layout: paneLayout('left-pane', leftGroupId),
-        isCollapsed: false,
+        mode: 'docked',
         width: 250,
       },
       right: {
         id: 'right-panel',
         layout: paneLayout('right-pane', rightGroupId),
-        isCollapsed: true,
+        mode: 'strip',
         width: 250,
       },
     },
@@ -268,13 +268,13 @@ describe('layout-serializer', () => {
         left: {
           id: 'left-panel',
           layout: paneLayout('left-pane', 'edge-left-group'),
-          isCollapsed: false,
+          mode: 'docked',
           width: 250,
         },
         right: {
           id: 'right-panel',
           layout: paneLayout('right-pane', 'edge-right-group'),
-          isCollapsed: true,
+          mode: 'strip',
           width: 250,
         },
       },
@@ -623,7 +623,7 @@ describe('v5 edge panels with split layout trees', () => {
     } as never);
     for (const pos of ['left', 'right'] as const) {
       expect(restored.edgePanels[pos]).toBeDefined();
-      expect(restored.edgePanels[pos].isCollapsed).toBe(true);
+      expect(restored.edgePanels[pos].mode).toBe('strip');
       expect(restored.edgePanels[pos].layout).toMatchObject({ type: 'pane', tabGroupId: null });
     }
   });

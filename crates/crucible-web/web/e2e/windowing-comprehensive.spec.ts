@@ -19,7 +19,7 @@ type WindowStoreShape = {
   layout: LayoutNode;
   tabGroups: Record<string, { tabs: Array<{ id: string }>; activeTabId: string | null }>;
   // v5 model: edge panels carry a layout tree; leaves reference tab groups.
-  edgePanels: Record<'left' | 'right' | 'bottom', { layout: LayoutNode; isCollapsed: boolean }>;
+  edgePanels: Record<'left' | 'right' | 'bottom', { layout: LayoutNode; mode: 'docked' | 'strip' | 'flyout' | 'hidden' }>;
   floatingWindows: Array<{ id: string; x: number; y: number; width: number; height: number }>;
 };
 

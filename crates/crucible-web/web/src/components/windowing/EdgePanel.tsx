@@ -11,6 +11,7 @@ import {
   primaryEdgeGroupId,
 } from '@/stores/windowStoreInternals';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import { isRestoringLayout } from '@/lib/layout-restore';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
@@ -147,7 +148,7 @@ const RibbonTabButton: Component<{
   const handleClick = () => {
     if (unavailable()) return;
     const panel = windowStore.edgePanels[props.position];
-    if (panel.isCollapsed) {
+    if (isEdgeCollapsed(panel)) {
       windowActions.setActiveTab(props.groupId, props.tab.id);
       windowActions.setEdgePanelCollapsed(props.position, false);
     } else if (paneCollapsed()) {
@@ -165,7 +166,7 @@ const RibbonTabButton: Component<{
 
   const highlighted = () =>
     props.isActive &&
-    !windowStore.edgePanels[props.position].isCollapsed &&
+    !isEdgeCollapsed(windowStore.edgePanels[props.position]) &&
     !paneCollapsed();
 
   return (
@@ -365,7 +366,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   };
 
   const toggleIcon = () => {
-    const collapsed = panel().isCollapsed;
+    const collapsed = isEdgeCollapsed(panel());
     switch (props.position) {
       case 'left':
         return collapsed ? <IconPanelLeft class="w-4 h-4" /> : <IconPanelLeftClose class="w-4 h-4" />;
@@ -406,7 +407,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           'relative z-20 bg-shell-bg w-10 h-9 border-b border-hairline': isVertical(),
           'h-9 px-2 border-r border-hairline': !isVertical(),
         }}
-        title={panel().isCollapsed ? 'Expand panel' : 'Collapse panel'}
+        title={isEdgeCollapsed(panel()) ? 'Expand panel' : 'Collapse panel'}
         onClick={() => windowActions.toggleEdgePanel(props.position)}
       >
         {toggleIcon()}
@@ -527,7 +528,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
 
 export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];
-  const isCollapsed = () => panel().isCollapsed;
+  const isCollapsed = () => isEdgeCollapsed(panel());
   const isVertical = () => props.position === 'left' || props.position === 'right';
 
   const expandedPanel = () => (

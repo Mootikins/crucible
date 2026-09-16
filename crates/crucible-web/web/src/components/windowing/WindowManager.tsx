@@ -14,6 +14,7 @@ import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
 import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
 import { confirmTabClose } from '@/lib/tab-guards';
@@ -159,7 +160,7 @@ function InnerManager() {
         if (edgeGroupId) {
           windowActions.moveTab(source.sourceGroupId, edgeGroupId, source.tab.id, target.insertIndex);
           // Expand panel if collapsed
-          if (panel.isCollapsed) {
+          if (isEdgeCollapsed(panel)) {
             windowActions.setEdgePanelCollapsed(targetPosition, false);
           }
         }

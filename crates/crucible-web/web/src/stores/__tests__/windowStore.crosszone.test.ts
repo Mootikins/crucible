@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
 import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
-import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
 
@@ -14,7 +14,7 @@ function resetToState(overrides: Partial<{
   edgePanels: Record<EdgePanelPosition, {
     id: string;
     layout: LayoutNode;
-    isCollapsed: boolean;
+    mode: EdgeMode;
     width?: number;
     height?: number;
   }>;
@@ -39,10 +39,10 @@ const makeTab = (id: string, title = id): Tab => ({
   contentType: 'file',
 });
 
-const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
+const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, collapsed = false) => ({
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
-  isCollapsed,
+  mode: collapsed ? ('strip' as const) : ('docked' as const),
   width: 250,
 });
 
@@ -192,7 +192,7 @@ describe('moveTab: edge → center', () => {
     expect(windowStore.tabGroups['right-group']).toBeDefined();
     expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(0);
     expect(windowStore.tabGroups['right-group']!.activeTabId).toBeNull();
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
   });
 
   it('preserves edge group when emptied', () => {
@@ -244,9 +244,9 @@ describe('moveTab: center → edge', () => {
   });
 
   it('expands collapsed edge panel when receiving a tab', () => {
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
     windowActions.moveTab('group-1', 'right-group', 'center-1');
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
   it('deletes center group and collapses layout when last center tab moves out', () => {
@@ -297,13 +297,13 @@ describe('moveTab: edge → edge', () => {
     windowActions.moveTab('right-group', 'left-group', 'right-1');
 
     expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(0);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
   });
 
   it('expands collapsed target edge panel', () => {
-    setStore('edgePanels', 'right', 'isCollapsed', true);
+    setStore('edgePanels', 'right', 'mode', 'strip');
     windowActions.moveTab('left-group', 'right-group', 'left-1');
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 });
 
@@ -375,7 +375,7 @@ describe('removeTab: edge-aware', () => {
     expect(windowStore.tabGroups['left-group']).toBeDefined();
     expect(windowStore.tabGroups['left-group']!.tabs).toHaveLength(0);
     expect(windowStore.tabGroups['left-group']!.activeTabId).toBeNull();
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.left.mode).toBe('strip');
   });
 
   it('does not delete edge group when emptied', () => {
@@ -388,7 +388,7 @@ describe('removeTab: edge-aware', () => {
     windowActions.removeTab('right-group', 'right-1');
 
     expect(windowStore.tabGroups['right-group']!.tabs).toHaveLength(1);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
   it('deletes center group and collapses layout when last center tab removed', () => {
@@ -447,7 +447,7 @@ describe('edge panel split trees (v5 model)', () => {
             first: { id: 'pane-b1', type: 'pane' as const, tabGroupId: 'g-b1' },
             second: { id: 'pane-b2', type: 'pane' as const, tabGroupId: 'g-b2' },
           },
-          isCollapsed: false,
+          mode: 'docked' as const,
           width: 300,
         },
       },
@@ -497,7 +497,7 @@ describe('edge panel split trees (v5 model)', () => {
     expect(layout).toMatchObject({ type: 'pane', tabGroupId: 'g-b1' });
     expect(windowStore.tabGroups['g-b2']).toBeUndefined();
     // Panel stays expanded (it still has content), unlike the sole-pane case.
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
     // activePaneId pointed at the collapsed pane — must be re-pointed, or
     // every keyboard shortcut dead-ends on a pane that exists in no tree.
     expect(windowStore.activePaneId).toBe('pane-b1');
@@ -521,7 +521,7 @@ describe('edge panel split trees (v5 model)', () => {
     windowActions.removeTab('g-solo', 'solo-tab');
 
     expect(windowStore.tabGroups['g-solo']).toMatchObject({ tabs: [], activeTabId: null });
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(true);
+    expect(windowStore.edgePanels.left.mode).toBe('strip');
     expect(windowStore.edgePanels.left.layout).toMatchObject({ type: 'pane', tabGroupId: 'g-solo' });
   });
 });

@@ -16,7 +16,7 @@ function resetLayout() {
       } as Record<string, TabGroup>;
       s.activePaneId = null;
       s.edgePanels.right.layout = { id: 'right-pane', type: 'pane', tabGroupId: 'g-right' };
-      s.edgePanels.right.isCollapsed = true;
+      s.edgePanels.right.mode = 'strip';
     }),
   );
 }

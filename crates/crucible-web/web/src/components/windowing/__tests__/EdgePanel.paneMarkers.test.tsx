@@ -181,7 +181,7 @@ describe('EdgeRibbon markers — clicking one collapses its pane', () => {
   it('leaves the rail itself open', async () => {
     const { container } = await renderMeasured();
     fireEvent.click(marker(container, 'right-term-pane'));
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 
   it('refuses to collapse the last expanded pane', () => {
@@ -326,7 +326,7 @@ describe('the collapsed pane is its own affordance', () => {
 
     fireEvent.click(terminalTab);
     expect(termPane()?.collapsed).toBe(false);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.right.mode).toBe('docked');
   });
 });
 
@@ -376,7 +376,7 @@ describe('a ribbon button sits on the same half as its pane', () => {
           first: { id: 'right-top', type: 'pane', tabGroupId: 'top-group' },
           second: { id: 'right-bottom', type: 'pane', tabGroupId: 'bottom-group' },
         };
-        s.edgePanels.right.isCollapsed = false;
+        s.edgePanels.right.mode = 'docked';
       }),
     );
 

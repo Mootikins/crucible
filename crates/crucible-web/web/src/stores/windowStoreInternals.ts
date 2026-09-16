@@ -13,7 +13,7 @@ import {
   Link2,
   Terminal,
 } from '@/lib/icons';
-import type { PaneDropPosition, WindowState } from './windowStoreTypes';
+import type { PaneDropPosition, WindowState } from '@/types/windowTypes';
 
 export interface WindowStoreContext {
   store: WindowState;
@@ -342,7 +342,7 @@ export function createInitialState(): WindowState {
       left: {
         id: 'left-panel',
         layout: { id: 'left-pane', type: 'pane' as const, tabGroupId: leftGroupId },
-        isCollapsed: false,
+        mode: 'docked',
         // A nav rail: the session list and its project groups. The
         // conversation itself opens as a pane beside the editor, so this
         // stays a list's width.
@@ -375,7 +375,7 @@ export function createInitialState(): WindowState {
             collapsed: true,
           },
         },
-        isCollapsed: true,
+        mode: 'strip',
         // The tree side: files, backlinks, activity, and the shell. A
         // sidebar's width, plus room for a command line.
         width: 340,

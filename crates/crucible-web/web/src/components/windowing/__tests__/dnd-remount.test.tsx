@@ -120,12 +120,12 @@ const swapEdgeGroupId = (position: EdgePanelPosition): string => {
 };
 
 it('collapsed strip icons re-register their draggable with the live group id after a restore', () => {
-  // createInitialState() already ships bottom.isCollapsed=true, so setting it
-  // to true is a no-op that Solid's store setter never notifies on. Force the
+  // createInitialState() can ship left.mode='strip', so setting it
+  // to 'strip' is a no-op that Solid's store setter never notifies on. Force the
   // opposite first so the collapse is a real transition even if the default
   // flips later.
-  setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
-  setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
+  setStore(produce((s) => { s.edgePanels.left.mode = 'docked'; }));
+  setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));
   const gid = primaryEdgeGroupId(windowStore, 'left')!;
   windowActions.addTab(gid, { id: 'strip-tab', title: 'Terminal', contentType: 'terminal' });
 
@@ -144,11 +144,11 @@ it('collapsed strip icons re-register their draggable with the live group id aft
 });
 
 it('expanded edge tab bars re-register draggables with the live group id after a restore', () => {
-  // createInitialState() already ships left.isCollapsed=false, so setting it to
-  // false is a no-op Solid never notifies on. Force the opposite first so the
+  // createInitialState() already ships left.mode='docked', so setting it to
+  // 'docked' is a no-op Solid never notifies on. Force the opposite first so the
   // expand is a real transition even if the default flips later.
-  setStore(produce((s) => { s.edgePanels.left.isCollapsed = true; }));
-  setStore(produce((s) => { s.edgePanels.left.isCollapsed = false; }));
+  setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));
+  setStore(produce((s) => { s.edgePanels.left.mode = 'docked'; }));
   const gid = primaryEdgeGroupId(windowStore, 'left')!;
   windowActions.addTab(gid, { id: 'edge-tab', title: 'Files', contentType: 'files' });
 

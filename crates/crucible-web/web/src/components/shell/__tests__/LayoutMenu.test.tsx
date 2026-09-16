@@ -135,14 +135,14 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
 
   it('resets the server copy and the local layout, and keeps both rails', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    setStore('edgePanels', 'left', 'isCollapsed', true);
+    setStore('edgePanels', 'left', 'mode', 'strip');
     const { getByTestId } = render(() => <LayoutMenu />);
     await openMenu(getByTestId);
     const item = document.querySelector<HTMLElement>('[data-testid="layout-reset"]')!;
     fireEvent.pointerDown(item);
     fireEvent.click(item);
     await waitFor(() => expect(resetLayout).toHaveBeenCalled());
-    await waitFor(() => expect(windowStore.edgePanels.left.isCollapsed).toBe(false));
+    await waitFor(() => expect(windowStore.edgePanels.left.mode).toBe('docked'));
     const leftGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'left')!];
     const rightGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'right')!];
     expect(leftGroup.tabs.map((t) => t.contentType)).toContain('sessions');

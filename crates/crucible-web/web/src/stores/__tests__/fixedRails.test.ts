@@ -76,7 +76,7 @@ describe('the two rails are fixed', () => {
   it('re-adds Sessions on the left when a restored layout has no left panel at all', () => {
     windowActions.importLayout(layoutWith({ right: railPanel('right') }));
     expect(railContent('left')).toContain('sessions');
-    expect(windowStore.edgePanels.left.isCollapsed).toBe(false);
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
   });
 
   it('re-adds Files on the right when a restored layout has no right panel at all', () => {

@@ -48,7 +48,7 @@ describe('rail pane collapse — default seed', () => {
   // seed opening the rail must not open the terminal with it.
   it('collapsing state of the rail is independent of the pane', () => {
     const state = createInitialState();
-    state.edgePanels.right.isCollapsed = false;
+    state.edgePanels.right.mode = 'docked';
     expect(collectPanes(state.edgePanels.right.layout)[1].collapsed).toBe(true);
   });
 });

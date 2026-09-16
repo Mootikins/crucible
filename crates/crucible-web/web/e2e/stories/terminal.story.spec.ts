@@ -59,7 +59,7 @@ test.describe('Terminal panel (xterm over PTY WebSocket)', () => {
         for (const pane of panes(panel.layout)) {
           const group = store.tabGroups[pane.tabGroupId];
           if (!group?.tabs.some((t: any) => t.contentType === 'terminal')) continue;
-          if (panel.isCollapsed) actions.toggleEdgePanel(pos);
+          if (panel.mode === 'strip') actions.toggleEdgePanel(pos);
           actions.setPaneCollapsed(pane.id, false);
           const tab = group.tabs.find((t: any) => t.contentType === 'terminal');
           actions.setActiveTab(pane.tabGroupId, tab.id);

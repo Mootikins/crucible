@@ -8,6 +8,7 @@ import type {
   Tab,
   TabContentType,
 } from '@/types/windowTypes';
+import { isEdgeCollapsed } from '@/types/windowTypes';
 import { iconForContentType } from './tab-icons';
 import { getGlobalRegistry } from './panel-registry';
 
@@ -101,7 +102,7 @@ export function serializeLayout(state: {
     serializedEdgePanels[pos as EdgePanelPosition] = {
       id: panel.id,
       layout: JSON.parse(JSON.stringify(panel.layout)) as LayoutNode,
-      isCollapsed: panel.isCollapsed,
+      isCollapsed: isEdgeCollapsed(panel),
       width: panel.width,
       height: panel.height,
     };
@@ -723,7 +724,7 @@ export function deserializeLayout(json: SerializedLayout): {
       edgePanels[pos] = {
         id: `${pos}-panel`,
         layout: { id: `${pos}-pane`, type: 'pane', tabGroupId: null },
-        isCollapsed: true,
+        mode: 'strip',
         width: 280,
       };
       continue;
@@ -737,7 +738,7 @@ export function deserializeLayout(json: SerializedLayout): {
         type: 'pane',
         tabGroupId: null,
       },
-      isCollapsed: panel.isCollapsed,
+      mode: panel.isCollapsed ? 'strip' : 'docked',
       width: panel.width,
       height: panel.height,
     };

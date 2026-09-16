@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions } from '../windowStore';
-import type { Tab, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
+import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 function resetToState(overrides: Partial<{
   tabGroups: Record<string, TabGroup>;
   edgePanels: Record<EdgePanelPosition, {
     id: string;
     tabGroupId: string;
-    isCollapsed: boolean;
+    mode: EdgeMode;
     width?: number;
     height?: number;
   }>;
@@ -33,10 +33,10 @@ const makeTab = (id: string, title = id): Tab => ({
   contentType: 'file',
 });
 
-const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollapsed = false) => ({
+const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, collapsed = false) => ({
   id: `${position}-panel`,
   tabGroupId,
-  isCollapsed,
+  mode: collapsed ? ('strip' as const) : ('docked' as const),
   width: 250,
 });
 
