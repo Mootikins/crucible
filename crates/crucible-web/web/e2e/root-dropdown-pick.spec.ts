@@ -67,7 +67,7 @@ test('picking a non-workspace project from the root dropdown browses it', async 
   // NOT `force`. The comment that used to justify it blamed the trigger's own
   // chevron, which never animated — it computes to `animation: none`. The
   // motion is the PANEL: the right edge opens with a 200ms rAF tween
-  // (EdgePanel.tsx) that `disableAnimations` cannot reach, because that helper
+  // (DockedBody.tsx) that `disableAnimations` cannot reach, because that helper
   // only zeroes CSS durations and the tween is deliberately JS.
   //
   // `toBeVisible` above goes true on the tween's first frame, and for roughly

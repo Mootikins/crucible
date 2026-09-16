@@ -18,7 +18,6 @@ export {
   Maximize2,
   Minimize2,
   GripVertical,
-  GripHorizontal,
   Settings,
   Zap,
   LayoutDashboard,

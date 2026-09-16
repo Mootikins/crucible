@@ -11,7 +11,7 @@
 // grow the allowlist — it only shrinks.
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, posix, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // vitest runs with cwd at the web/ project root (where vite.config lives).
@@ -74,14 +74,31 @@ describe('e2e architecture discipline', () => {
   // -- Core windowing specs know no app -----------------------------------
   //
   // e2e/windowing/ drives the harness page, which mounts the window manager
-  // with no app and no server. An API mock, an app fixture or an app
-  // navigation helper there means the spec tests the app, not the core.
-  const APP_COUPLING = /mock-api|helpers\/fixtures|helpers\/nav|page\.route\(/;
+  // with no app and no server. The specs there may import only the list
+  // below: Playwright, the harness driver, another module in e2e/windowing/
+  // and the pure geometry helper. Any other import can bring app knowledge.
+  // A route mock is not an import, so a second rule bans `page.route(`.
+  const CORE_IMPORTS = new Set(['@playwright/test', 'windowing/harness', 'helpers/geometry']);
+  const ROUTE_MOCK = /page\.route\(/;
 
-  it('core windowing specs use no API mock and no app helper', () => {
+  /** The imports of a file at `rel` (relative to e2e/) that the allow-list refuses. */
+  function refusedImports(rel: string, src: string): string[] {
+    const specs = [...src.matchAll(/(?:from\s+|import\s*\(?\s*)['"]([^'"]+)['"]/g)].map((m) => m[1]!);
+    return specs.filter((spec) => {
+      if (!spec.startsWith('.')) return !CORE_IMPORTS.has(spec);
+      const target = posix.normalize(posix.join(dirname(rel), spec)).replace(/\.ts$/, '');
+      return !(CORE_IMPORTS.has(target) || target.startsWith('windowing/'));
+    });
+  }
+
+  it('core windowing specs import only the allowed modules and mock no route', () => {
     const coreFiles = ALL_E2E_FILES.filter((f) => f.startsWith('windowing/'));
     expect(coreFiles.length, 'expected to find core windowing specs').toBeGreaterThan(0);
-    const offenders = coreFiles.filter((f) => APP_COUPLING.test(read(f)));
+    const offenders = coreFiles.flatMap((f) => {
+      const src = read(f);
+      const found = refusedImports(f, src).map((spec) => `${f} -> ${spec}`);
+      return ROUTE_MOCK.test(src) ? [...found, `${f} -> page.route(`] : found;
+    });
     expect(
       offenders,
       `Core windowing specs open the harness. Move an app rule to an app spec in e2e/:\n` +
@@ -93,9 +110,25 @@ describe('e2e architecture discipline', () => {
     [`import { setupBasicMocks } from '../helpers/mock-api';`],
     [`import { MOCK_SESSION } from '../helpers/fixtures';`],
     [`import { appReady } from '../helpers/nav';`],
-    [`await page.route('**/api/layout', handler);`],
-  ])('the app coupling matcher flags %s', (src) => {
-    expect(APP_COUPLING.test(src)).toBe(true);
+    [`import { windowStore } from '../../src/windowing';`],
+    [`import { readFileSync } from 'node:fs';`],
+    [`const m = await import('../stories/helpers');`],
+  ])('the core import allow-list refuses %s', (src) => {
+    expect(refusedImports('windowing/probe.spec.ts', src)).toHaveLength(1);
+  });
+
+  it('the core import allow-list passes the allowed modules', () => {
+    const src = [
+      `import { test, expect, type Page } from '@playwright/test';`,
+      `import { act, openHarness } from './harness';`,
+      `import { steps } from './shared/steps';`,
+      `import { getCenterOf } from '../helpers/geometry';`,
+    ].join('\n');
+    expect(refusedImports('windowing/probe.spec.ts', src)).toEqual([]);
+  });
+
+  it('the route mock rule flags page.route', () => {
+    expect(ROUTE_MOCK.test(`await page.route('**/api/layout', handler);`)).toBe(true);
   });
 
   // -- A5b: story specs use semantic locators -----------------------------

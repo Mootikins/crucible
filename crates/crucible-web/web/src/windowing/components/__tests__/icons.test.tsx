@@ -19,7 +19,6 @@ const EXPECTED_ICONS = [
   'IconPanelRightClose',
   'IconLayout',
   'IconGripVertical',
-  'IconGripHorizontal',
   'IconClose',
   'IconMaximize',
   'IconMinimize',

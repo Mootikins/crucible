@@ -4,7 +4,6 @@ export { PanelRight as IconPanelRight } from '@/lib/icons';
 export { PanelRightClose as IconPanelRightClose } from '@/lib/icons';
 export { LayoutDashboard as IconLayout } from '@/lib/icons';
 export { GripVertical as IconGripVertical } from '@/lib/icons';
-export { GripHorizontal as IconGripHorizontal } from '@/lib/icons';
 export { X as IconClose } from '@/lib/icons';
 export { Maximize2 as IconMaximize } from '@/lib/icons';
 export { Minimize2 as IconMinimize } from '@/lib/icons';

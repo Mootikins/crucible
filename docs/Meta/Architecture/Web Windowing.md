@@ -19,11 +19,12 @@ relative to `crates/crucible-web/web/`.
 |---|---|
 | `model/` | `WindowState` and the node types (`types.ts`), the tree helpers (`tree.ts`), the pane and collision helpers (`pane-content.ts`, `pane-collapse.ts`, `pane-boundaries.ts`, `collision-detector.ts`, `layout-restore.ts`, `tab-guards.ts`), and the v10 layout serializer (`serializer.ts`) |
 | `store/` | The Solid store, the `WindowPolicy` type (`policy.ts`), and the tab, layout and floating-window actions |
-| `components/` | `WindowManager`, `EdgeHost`, `Ribbon`, `DockedBody`, `Pane`, `SplitPane`, `CenterTiling`, `TabBar`, `FloatingWindow`, `EmptyPane`, `MinimizedBar`, `RibbonPaneStrip`, plus `split-drag.ts` and `tab-placement.ts` |
+| `components/` | `WindowManager`, `EdgeHost`, `Ribbon`, `DockedBody`, `Pane`, `SplitPane`, `CenterTiling`, `TabBar`, `FloatingWindow`, `EmptyPane`, `MinimizedBar`, `RibbonPaneStrip`, plus `split-drag.ts` and `tab-placement.ts`. `context.tsx` holds the `WindowingSlots` type, the provider and `DROP_OVER_ATTR`. `icons.tsx` names the icons that the chrome draws. `RibbonButton.tsx` holds `ribbonBtn` and `RibbonCommand` |
 | `reveal/` | `RevealController` and `flyoutRect`, the two pure/reactive rules a hover reveal needs |
 | `context-menu.ts` | The native-fallthrough rule for a custom right-click menu (Shift+right-click, images, links) |
 | `shortcuts.ts` | `ShortcutAction`, `matchShortcut`, `LAYOUT_SHORTCUTS` — the chords the layout owns |
-| `testing/` | `neutralPolicy` — a policy with no product knowledge, shared by the core's own unit tests and the harness page |
+| `index.ts` | The public entry. It re-exports the names that app code uses. See "The public entry" below |
+| `testing/` | `neutralPolicy` — a policy with no product knowledge, shared by the core's own unit tests and the harness page — and `stackRightRail`, which gives a test a column in the right rail |
 | `__tests__/` | The core's unit tests, including `boundary.test.ts` |
 
 ## The boundary rule
@@ -39,6 +40,29 @@ side-effect import specifier against that list. It is not a grep a developer
 can forget to run: it is a Vitest test, so `bun run test` and CI fail the
 build the moment a file under `src/windowing/` reaches into the app.
 
+The design tokens in `src/index.css` are a shared layer that the core uses,
+as it uses `components/ui/`. The core classes name those tokens, for example
+`bg-shell-bg`. The harness page imports that stylesheet, so the core draws
+the same way there as in the app.
+
+## The public entry
+
+App code imports the core from `@/windowing`, which is
+`src/windowing/index.ts`. That module holds re-exports only, and each name in
+it has an app caller. It exports the store and its actions, `WindowManager`,
+the slot type, `DROP_OVER_ATTR`, the model types and tree queries that the app
+uses, the stored layout types, the chords and the context menu rule.
+
+`ribbonBtn` and `RibbonCommand` are public on purpose. The app draws its own
+rail buttons in `components/shell/RailChrome.tsx`, and those buttons must
+match the core buttons.
+
+`boundary.test.ts` also enforces this rule. It reads every file under `src/`
+outside the core and fails when one imports a `@/windowing/<path>` specifier,
+or a relative path into the core other than its index. The test skips
+`src/test-harness/`, every `__tests__` folder and every `*.test.*` file,
+because a test and a harness page may import a core module directly.
+
 ## The policy
 
 The core takes one `WindowPolicy` object through `configureWindowing(policy)`
@@ -52,9 +76,9 @@ that forgets one. The app's policy is `appWindowPolicy`
 | `mayCloseTab(state, groupId, tabId)` | `isLastFixedRailTab` inside `removeTab` | `isLastFixedRailTab` (`stores/fixedRails.ts`) |
 | `repairLayout(draft)` | `ensureFixedRails` on restore and reset | `ensureFixedRails` (`stores/fixedRails.ts`) |
 | `onActiveTabChange(tab)` | The status bar and shell-surface calls | An inline closure in `stores/windowStore.ts` that sets the active session id and calls `syncShellSurface` |
-| `iconFor(contentType)` | `iconForContentType` in the layout actions | `iconForContentType` (`lib/tab-icons.ts`) |
+| `iconFor(contentType)` | The `iconForContentType` call on each tab that a restored layout brings back. `importLayout` gives this member to `deserializeLayout` | `iconForContentType` (`lib/tab-icons.ts`) |
 | `unavailableReason(tab)` | The terminal-availability check and its rail tooltip | An inline closure that checks `terminalAllowed()` (`lib/terminal-availability.ts`) |
-| `layoutHooks` | The legacy migrations to v9, the registry prune, the icon restore | `appLayoutHooks` (`stores/layoutMigrations.ts`) |
+| `layoutHooks` | The legacy migrations to v9 and the registry prune | `appLayoutHooks` (`stores/layoutMigrations.ts`) |
 | `shortcuts` | The chord table the keyboard loop matches | `DEFAULT_SHORTCUTS` (`lib/keyboard-shortcuts.ts`; `LAYOUT_SHORTCUTS` first, the app's chords after) |
 | `onShortcut(action, e)` | The app branches inside the old keyboard loop | An inline `switch` in `stores/windowStore.ts` (`focusChatInput`, `newSession`, `clearChat`, `toggleThinking`) |
 
@@ -72,7 +96,7 @@ overwrites.
 
 `WindowManager` takes `renderContent(tab)` — the app's panel registry lookup
 (`lib/render-panel.tsx`) — and a `WindowingSlots` object
-(`windowing/components/context.tsx`), which every member is optional:
+(`windowing/components/context.tsx`), and every member of it is optional:
 
 - `railHead(position)` — above the tab icons on a rail (the layout menu, left rail only).
 - `railTail(position)` — pinned to the far end of a rail (the offline badge, the theme and settings buttons, the notification bell).
@@ -110,8 +134,10 @@ rather than adding one.
 - **Types and state.** `EdgeMode` and `EdgeCue` are closed unions
   (`model/types.ts`), checked exhaustively by `types.test.ts` against
   `EDGE_MODES` and `EDGE_CUES`. `windowActions.setEdgeMode(position, mode, opts?)`
-  writes the mode and, for `hidden`, the cue; `toggleEdgePanel` still moves only
-  between `docked` and `strip`.
+  writes the mode and, for `hidden`, the cue. `toggleEdgePanel` knows two
+  modes only. It sends every mode that is not `docked` to `docked`, and it
+  sends `docked` to `strip`. The toggle thus never enters `flyout` or
+  `hidden`, and it always brings a hidden rail back.
 - **A saved format.** Layout version 10 stores `mode` and an optional `cue`
   (`grip` or `none`, default `grip`) on each `EdgePanel`. See "The saved
   layout" below.
@@ -140,23 +166,24 @@ the **history** before that step, because each earlier version names content
 types that only existed at the time.
 
 - `windowing/model/serializer.ts`: `LAYOUT_VERSION = 10`, `serializeLayout`,
-  and `deserializeLayout(json, hooks)`. `deserializeLayout` runs, in order: the
+  and `deserializeLayout(json, hooks, iconFor)`. `deserializeLayout` runs, in order: the
   app's legacy upgrade (only when the stored version is below 9), the v9-to-v10
   step (`isCollapsed` becomes `mode: 'strip' | 'docked'`, and the v10 writer
   never stores `isCollapsed`), a rebuild that gives every rail position a valid
   panel even from a partial or hand-edited payload, the app's `prune`, and
-  last the app's `iconFor`. A version outside 1–10 throws; an upgrade that does
+  last the `iconFor` function. A version outside 1–10 throws; an upgrade that does
   not return a v9 payload throws.
 - `stores/layoutMigrations.ts`: the v1-to-v9 migration chain, the always-on
   prune of unregistered content types (`pruneRestored` — this is what drops a
   persisted tab for a panel the registry no longer has, such as the retired
   Explorer/Search/Source-Control placeholders), the WS-220 chat-docking move,
   and `appLayoutHooks`, the `LayoutCodecHooks` implementation
-  (`upgradeLegacy`, `prune`, `iconFor`) that the app hands the core through
+  (`upgradeLegacy`, `prune`) that the app hands the core through
   `WindowPolicy.layoutHooks`.
 
-`layoutActions.importLayout` is the only production caller of the reader; it
-passes `appLayoutHooks`.
+`layoutActions.importLayout` is the only production caller of the reader. It
+passes `policy().layoutHooks`, and a function that calls `policy().iconFor`
+for each restored tab.
 
 ## How to add a windowing feature
 
@@ -165,7 +192,8 @@ passes `appLayoutHooks`.
    `WindowPolicy` member's implementation, a new slot, a new content type).
 2. If it is a mechanic, write it under `src/windowing/`, run
    `bunx vitest run src/windowing/__tests__/boundary.test.ts` to confirm it
-   imports nothing from the app, and add its unit test under
+   imports nothing from the app, export a new name from `index.ts` only when
+   app code needs it, and add its unit test under
    `src/windowing/__tests__/` (or `components/__tests__/`).
 3. Prove the mechanic against `/windowing-harness.html`
    (`src/test-harness/windowing-harness.tsx`, dev-served only, never built

@@ -44,7 +44,7 @@ export function configureWindowing<C extends string>(next: WindowPolicy<C>): voi
 /**
  * Forget the policy and empty the store.
  *
- * Test-only. The page configures the core once and never resets it; a test
+ * @internal Test-only. The page configures the core once and never resets it; a test
  * calls this in `beforeEach` to start each case from an unconfigured core.
  */
 export function resetWindowingForTest(): void {
