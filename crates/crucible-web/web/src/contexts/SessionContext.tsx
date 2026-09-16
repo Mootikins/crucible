@@ -8,11 +8,6 @@ import {
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import type { SessionContextValue } from '@/lib/types/context';
 import { treeRootActions } from '@/stores/treeRootStore';
-import {
-  listModels as apiListModels,
-  switchModel as apiSwitchModel,
-  listProviders as apiListProviders,
-} from '@/lib/api';
 import type { SessionScope } from '@/lib/api';
 import {
   dropCachedSession,
@@ -29,6 +24,8 @@ import {
   useSetSessionTitle,
   useUnarchiveSession,
 } from '@/lib/query/sessions';
+import { useSessionModels, useSwitchModel } from '@/lib/query/models';
+import { useProviders } from '@/lib/query/providers';
 import { notificationActions } from '@/stores/notificationStore';
 import { getBus } from '@/lib/bus';
 import { setPendingFirstMessage } from '@/lib/draft-session';
@@ -58,10 +55,7 @@ const SessionContext = createContext<SessionContextValue>();
  */
 export const SessionProvider: ParentComponent<SessionProviderProps> = (props) => {
   const [currentSession, setCurrentSession] = createSignal<Session | null>(null);
-  const [availableModels, setAvailableModels] = createSignal<string[]>([]);
-  const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
-  const [providersLoaded, setProvidersLoaded] = createSignal(false);
-  const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
+  const [pickedProviderType, setPickedProviderType] = createSignal<string | null>(null);
   // The failure of one action, which is not the failure of the roster read.
   const [actionError, setActionError] = createSignal<string | null>(null);
 
@@ -72,6 +66,41 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
 
   const sessionsQuery = useSessions(includeArchived);
   const sessions = () => sessionsQuery.data ?? [];
+
+  // The provider probe, shared with the composer. It is not gated on the kiln
+  // any more: `GET /api/providers` takes no kiln and never did, so the guard
+  // only delayed the probe until the config landed.
+  const providersQuery = useProviders();
+  const providers = () => providersQuery.data ?? [];
+  // False until the probe settles, because "no providers configured" is a
+  // sentence the shell puts on screen and must not say while it is loading.
+  const providersLoaded = () => providersQuery.isSuccess || providersQuery.isError;
+  /** The provider the user picked, or the first one the daemon listed. */
+  const selectedProvider = (): ProviderInfo | null => {
+    const picked = pickedProviderType();
+    const list = providers();
+    if (picked) return list.find((p) => p.provider_type === picked) ?? null;
+    return list[0] ?? null;
+  };
+
+  // The session's own model list, keyed by the session it belongs to. The
+  // hand-written generation counter that used to guard this read is gone: a
+  // late answer lands on the key of the session that asked for it, so it can
+  // no longer overwrite the list of the session the user moved to.
+  const modelsQuery = useSessionModels(() => currentSession()?.id ?? null);
+  /**
+   * The models the picker offers.
+   *
+   * The provider's own list is the fallback, for a session whose agent
+   * declares none and for a read the daemon refused — the picker is chrome,
+   * and an empty menu is worse than a provider default.
+   */
+  const availableModels = (): string[] => {
+    const models = modelsQuery.data;
+    if (models && models.length > 0) return models;
+    return selectedProvider()?.models ?? [];
+  };
+  const switching = useSwitchModel();
 
   const create = useCreateSession();
   const pause = usePauseSession();
@@ -180,9 +209,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         // resolution rather than parsing "provider_key/model" strings here.
         if (opts?.model) {
           try {
-            await apiSwitchModel(created.id, opts.model);
+            await switching.mutateAsync({ id: created.id, modelId: opts.model });
             created.agent_model = opts.model;
-            patchCachedSession(created.id, { agent_model: opts.model });
           } catch (err) {
             notificationActions.addNotification(
               'error',
@@ -415,46 +443,18 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     }
   };
 
-  // Only the most recent `refreshModels` call may write the list.
-  //
-  // Without this, two overlapping calls can resolve in reverse order and the
-  // older one wins — or the no-session `[]` path lands after a populated list.
-  // Either way the picker goes stale or empty after having been correct, which
-  // is a race the user sees as options vanishing mid-click. The model list is
-  // still a bare call here; Task C2.4 gives it a key, and the key retires this
-  // guard as it retired the list's.
-  let modelsGeneration = 0;
-
-  const refreshModels = async (sessionOverride?: Session) => {
-    const generation = ++modelsGeneration;
-    const isCurrent = () => generation === modelsGeneration;
-    // Applied only while this call is still the newest.
-    const publish = (models: string[]) => {
-      if (isCurrent()) {
-        setAvailableModels(models);
-      }
-    };
-
-    const session = sessionOverride ?? currentSession();
-    if (!session?.id) {
-      publish([]);
-      return;
-    }
-
-    // Provider models are the fallback when the session has no agent
-    // configured, or when the lookup fails outright.
-    const providerFallback = () =>
-      (selectedProvider() ?? providers()[0])?.models ?? [];
-
-    try {
-      const models = await apiListModels(session.id);
-      publish(models.length > 0 ? models : providerFallback());
-    } catch (err) {
-      const msg = 'Failed to load models';
-      notificationActions.addNotification('error', msg);
-      console.error(msg, err);
-      publish(providerFallback());
-    }
+  /**
+   * Asks the daemon for the current session's models again.
+   *
+   * The selection drives the query, so the callers that passed a session here
+   * are asking about the session they just selected — which is the one the
+   * query is already keyed to. The failure toast is the API layer's, which
+   * raises one for this route; the second toast this function used to add
+   * showed the same sentence twice.
+   */
+  const refreshModels = async (_sessionOverride?: Session) => {
+    if (!currentSession()?.id) return;
+    await modelsQuery.refetch();
   };
 
   const switchModel = async (modelId: string) => {
@@ -462,8 +462,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     if (!session) return;
 
     await withSessionAction(async () => {
-      await apiSwitchModel(session.id, modelId);
-      patchSessionById(session.id, { agent_model: modelId });
+      await switching.mutateAsync({ id: session.id, modelId });
+      // The cached rows are patched by the mutation; this is the selection's
+      // own copy of the same field.
+      const current = currentSession();
+      if (current?.id === session.id) setCurrentSession({ ...current, agent_model: modelId });
     }, {
       errorMessage: 'Failed to switch model',
       logPrefix: 'Failed to switch model',
@@ -483,34 +486,21 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     });
   };
 
+  /** Probes the providers again. The query answers every reader of the key. */
   const refreshProviders = async () => {
-    try {
-      const providerList = await apiListProviders();
-      setProviders(providerList);
-      if (providerList.length > 0 && !selectedProvider()) {
-        setSelectedProvider(providerList[0]);
-      }
-    } catch (err) {
-      console.error('Failed to load providers:', err);
-    } finally {
-      setProvidersLoaded(true);
-    }
+    await providersQuery.refetch();
   };
 
   const selectProvider = (providerType: string) => {
-    const provider = providers().find((p) => p.provider_type === providerType);
-    if (provider) {
-      setSelectedProvider(provider);
+    if (providers().some((p) => p.provider_type === providerType)) {
+      setPickedProviderType(providerType);
     }
   };
 
-  // The roster is NOT fetched here any more. `useSessions()` reads it on
-  // mount, and the list never depended on the kiln: the tree groups and
-  // filters the global list on the client.
-  createEffect(() => {
-    if (!props.initialKiln) return; // Guard: skip until config has loaded
-    refreshProviders();
-  });
+  // Neither the roster nor the providers are fetched here any more.
+  // `useSessions()` and `useProviders()` read them on mount, and neither list
+  // ever depended on the kiln: the tree groups and filters the global session
+  // list on the client, and the provider route takes no kiln at all.
 
   // Daemon auto-titles sessions on their first completed turn; the chat
   // stream's route announces the new title so the selection stays current.

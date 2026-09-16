@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
@@ -6,8 +6,8 @@ import { closeDraftTab } from '@/lib/draft-session';
 import { draftCreateParams, HOST_RUNTIME } from '@/lib/session-draft';
 import { iconForAgent } from '@/lib/agent-icons';
 import { attachableKilns, kilnNameForPath } from '@/lib/kiln-registry';
-import { listAllModels } from '@/lib/api';
 import { useAgents } from '@/lib/query/agents';
+import { useAllModels } from '@/lib/query/models';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects } from '@/lib/query/projects';
@@ -44,7 +44,11 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [message, setMessage] = createSignal('');
   const [picking, setPicking] = createSignal<Axis | null>(null);
 
-  const [models, setModels] = createSignal<string[]>([]);
+  // The catalogue the desktop composer reads, through the same key: opening
+  // the sheet after the composer has already read it costs nothing, and a
+  // cold sheet paints the last stored catalogue rather than an empty picker.
+  const modelsQuery = useAllModels();
+  const models = () => modelsQuery.data ?? [];
   // The desktop composer's roster, read through the same key: opening the
   // sheet after the composer has already probed costs nothing.
   const agentsQuery = useAgents();
@@ -69,10 +73,6 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const rtAxis = useAxisTargets('runtime', () => workspace() || undefined);
   const wsTargets = () => Object.values(wsAxis.targets).flat();
   const rtTargets = () => Object.values(rtAxis.targets).flat();
-
-  onMount(() => {
-    void listAllModels().then(setModels).catch(() => {});
-  });
 
   const defaultKilnName = () => kilnNameForPath(defaultKilnPath(), kilns());
   const labelFor = (options: { value: string; label: string }[], value: string, fallback: string) =>

@@ -391,33 +391,33 @@ describe('createSession param forwarding', () => {
 });
 
 
-describe('refreshModels ordering', () => {
-  /// Two overlapping refreshes must not let the older one win.
+describe('the model list of the selected session', () => {
+  /// A slow answer for the session the user left must not land on the session
+  /// they moved to.
   ///
-  /// Regression: `refreshModels` had no generation guard, so a slow earlier
-  /// call could resolve after a fast later one and clobber the newer list.
-  /// The user-visible symptom was model options disappearing right after
-  /// appearing, which made the e2e picker test flaky even run serially.
-  it('a slow earlier refresh cannot overwrite a newer one', async () => {
+  /// Regression: `refreshModels` wrote one signal for every session, so a slow
+  /// earlier call resolved after a fast later one and clobbered the newer
+  /// list. The user saw model options disappear right after appearing. The
+  /// hand-written generation counter that guarded it is gone: the list is
+  /// keyed by session id, so each answer lands on the key of the session that
+  /// asked for it.
+  it('keeps a late answer for the previous session off the current one', async () => {
     let releaseFirst: (() => void) | undefined;
     const first = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    let modelCalls = 0;
     serve({
-      'GET /api/session/s1/models': async () => {
-        modelCalls += 1;
-        if (modelCalls === 1) {
-          await first;
-          return { models: ['stale-only'] };
-        }
-        return { models: ['llama3.2', 'mistral'] };
+      'GET /api/session/s-one': () => wire({ id: 's-one' }),
+      'GET /api/session/s-two': () => wire({ id: 's-two' }),
+      'GET /api/session/s-one/models': async () => {
+        await first;
+        return { models: ['stale-only'] };
       },
+      'GET /api/session/s-two/models': () => ({ models: ['llama3.2', 'mistral'] }),
     });
 
-    let ctx: ReturnType<typeof useSession>;
     function Probe() {
-      ctx = useSession();
+      const ctx = useSession();
       return <span data-testid="models">{ctx.availableModels().join(',')}</span>;
     }
     render(() => (
@@ -426,32 +426,43 @@ describe('refreshModels ordering', () => {
       </SessionProvider>
     ));
 
-    const session = { id: 's1' } as Session;
-    const stale = ctx!.refreshModels(session);
-    const fresh = ctx!.refreshModels(session);
-    await fresh;
-
+    // The shell points at one session, then at another, while the first
+    // session's models are still in flight.
+    statusBarActions.setActiveSessionId('s-one');
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s-one/models')).toBe(1));
+    statusBarActions.setActiveSessionId('s-two');
     await waitFor(() => {
       expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
     });
 
-    // The earlier call now completes with a different answer.
+    // The earlier call completes now, with a different answer.
     releaseFirst?.();
-    await stale;
-
-    expect(screen.getByTestId('models').textContent).toBe(
-      'llama3.2,mistral',
-    );
+    await waitFor(() => expect(env.fetch.calls('GET /api/session/s-one/models')).toBe(1));
+    expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
   });
 
-  /// The no-session path writes `[]`, and it has to obey the same rule —
-  /// otherwise a stray refresh with no session blanks a good list.
-  it('a stale no-session refresh cannot blank a newer list', async () => {
-    serve({ 'GET /api/session/s1/models': () => ({ models: ['llama3.2', 'mistral'] }) });
+  /// The picker is chrome. A session whose agent declares no models of its own
+  /// still offers the provider's list rather than an empty menu.
+  it('falls back to the provider models when the session declares none', async () => {
+    serve({
+      'GET /api/session/s-one': () => wire({ id: 's-one' }),
+      'GET /api/session/s-one/models': () => ({ models: [] }),
+      [PROVIDERS]: () => ({
+        providers: [
+          {
+            name: 'ollama',
+            provider_type: 'ollama',
+            available: true,
+            default_model: 'ollama/llama3.2',
+            models: ['ollama/llama3.2'],
+            is_local: true,
+          },
+        ],
+      }),
+    });
 
-    let ctx: ReturnType<typeof useSession>;
     function Probe() {
-      ctx = useSession();
+      const ctx = useSession();
       return <span data-testid="models">{ctx.availableModels().join(',')}</span>;
     }
     render(() => (
@@ -460,16 +471,32 @@ describe('refreshModels ordering', () => {
       </SessionProvider>
     ));
 
-    await ctx!.refreshModels({ id: 's1' } as Session);
-    await waitFor(() => {
-      expect(screen.getByTestId('models').textContent).toBe('llama3.2,mistral');
-    });
+    statusBarActions.setActiveSessionId('s-one');
 
-    // A later refresh with no session legitimately clears it...
-    await ctx!.refreshModels(undefined);
-    expect(screen.getByTestId('models').textContent).toBe('');
+    await waitFor(() => {
+      expect(screen.getByTestId('models').textContent).toBe('ollama/llama3.2');
+    });
+  });
+
+  /// One probe answers the context and every other reader of the key.
+  it('probes the providers once', async () => {
+    serve({});
+
+    function Probe() {
+      const ctx = useSession();
+      return <span data-testid="loaded">{ctx.providersLoaded() ? 'yes' : 'no'}</span>;
+    }
+    render(() => (
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>
+    ));
+
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('yes'));
+    expect(env.fetch.calls(PROVIDERS)).toBe(1);
   });
 });
+
 
 /**
  * On reload, a chat pane is restored straight from the persisted layout and

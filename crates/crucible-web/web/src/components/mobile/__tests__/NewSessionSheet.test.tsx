@@ -11,13 +11,12 @@ vi.mock('@/contexts/SessionContext', () => ({
     },
   }),
 }));
-// Neither `listKilns` nor `listAgents` is stubbed: the sheet reads both
-// rosters through their query hooks, which run the real functions against the
-// mocked fetch below.
+// Neither `listKilns`, `listAgents` nor `listAllModels` is stubbed: the sheet
+// reads all three through their query hooks, which run the real functions
+// against the mocked fetch below.
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getConfig: () => Promise.resolve({ kiln_path: '/kilns/home' }),
-  listAllModels: () => Promise.resolve(['sonnet', 'opus']),
   listProjects: () => Promise.resolve([{ path: '/work/alpha', name: 'alpha', kilns: [] }]),
   getTargetProviders: () => Promise.resolve([]),
   getProviderTargets: () => Promise.resolve([]),
@@ -42,6 +41,7 @@ beforeEach(() => {
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: KILNS }),
     'GET /api/agents': () => ({ agents: AGENTS }),
+    'GET /api/models': () => ({ models: ['sonnet', 'opus'] }),
   });
   created.params = [];
   created.opts = [];

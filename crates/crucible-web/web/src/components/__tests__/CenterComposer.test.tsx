@@ -86,11 +86,7 @@ vi.mock('@/lib/api', async (importOriginal) => ({
           ],
     ),
   ),
-  listAllModels: vi.fn().mockResolvedValue(['ollama/llama3.2', 'openai/gpt-4o']),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
-  listProviders: vi.fn().mockResolvedValue([
-    { name: 'ollama', available: true, default_model: 'llama3.2' },
-  ]),
   // Server-backed recents: empty server list keeps localStorage-driven
   // fixtures in charge; record is fire-and-forget.
   fetchRecents: vi.fn().mockResolvedValue([]),
@@ -111,6 +107,21 @@ beforeEach(async () => {
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: KILNS }),
     'GET /api/agents': () => ({ agents: AGENTS }),
+    // The model chip and its default hint are real reads now: the composer
+    // shares both keys with the session context and the phone sheet.
+    'GET /api/models': () => ({ models: ['ollama/llama3.2', 'openai/gpt-4o'] }),
+    'GET /api/providers': () => ({
+      providers: [
+        {
+          name: 'ollama',
+          provider_type: 'ollama',
+          available: true,
+          default_model: 'llama3.2',
+          models: ['ollama/llama3.2'],
+          is_local: true,
+        },
+      ],
+    }),
   });
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();

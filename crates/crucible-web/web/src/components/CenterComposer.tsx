@@ -2,8 +2,6 @@ import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   isGitRepoUrl,
-  listAllModels,
-  listProviders,
   type ProviderTarget,
   type TargetProvider,
 } from '@/lib/api';
@@ -16,8 +14,9 @@ import { pathBasename } from '@/stores/statusBarStore';
 import { syncRecentsFromServer } from '@/lib/recent-files';
 import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
-import { swrLocal } from '@/lib/local-cache';
 import { useAgents } from '@/lib/query/agents';
+import { useAllModels } from '@/lib/query/models';
+import { useProviders } from '@/lib/query/providers';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects, useScmClone } from '@/lib/query/projects';
@@ -71,7 +70,16 @@ export const CenterComposer: Component<{
 }> = (props) => {
   const { createSession } = useSessionSafe();
 
-  const [models, setModels] = createSignal<string[]>([]);
+  // The catalogue the phone's sheet reads too, under the `swrLocal('models')`
+  // storage key it has always used. A name the daemon could not resolve comes
+  // back as an `[error]` row, which is a diagnostic and not a model to offer.
+  const modelsQuery = useAllModels();
+  const models = () => (modelsQuery.data ?? []).filter((m) => !m.startsWith('[error]'));
+  // The provider probe the session context runs, read through the same key:
+  // the composer no longer pays for a second probe on mount.
+  const providersQuery = useProviders();
+  const defaultModel = () =>
+    providersQuery.data?.find((p) => p.available)?.default_model ?? '';
   // The same roster the phone's sheet reads. It keeps the `swrLocal('agents')`
   // storage key, so the chip still paints its last-known names before the
   // daemon finishes probing each agent's binary.
@@ -93,7 +101,6 @@ export const CenterComposer: Component<{
   // `swrLocal('config')` storage key, and shares one request with the shell.
   const configQuery = useConfig();
   const defaultKilnPath = () => configQuery.data?.kiln_path ?? '';
-  const [defaultModel, setDefaultModel] = createSignal('');
   const remoteShell = () => configQuery.data?.remote_shell === true;
 
   // The two axes, both contributed by plugins. WORKSPACE answers where the
@@ -139,16 +146,6 @@ export const CenterComposer: Component<{
   const isAcp = () => agentName() !== '';
 
   onMount(() => {
-    // No barrier, no blank chips: every source paints its LAST-KNOWN value
-    // synchronously (swrLocal) and the fetch corrects it — a hard reload
-    // shows real labels immediately instead of "Loading…"/fallback text.
-    swrLocal('models', () => listAllModels(), (mo) =>
-      setModels(mo.filter((m) => !m.startsWith('[error]'))),
-    );
-    swrLocal('providers', () => listProviders(), (providers) => {
-      const first = providers.find((p) => p.available);
-      if (first?.default_model) setDefaultModel(first.default_model);
-    });
     syncRecentsFromServer();
   });
 
