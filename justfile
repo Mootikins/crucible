@@ -300,12 +300,17 @@ web-build pwa="on":
 
 # Regenerate the web API contract from the Rust routes.
 #
-# The Rust test writes `crates/crucible-web/openapi.json` from the axum router,
-# so a path this tree serves is a path the bundle can address. `bun run
-# api:generate` turns that document into `web/src/lib/api-schema.d.ts`. Both
-# files are committed, and `just lint types` fails when either one is stale.
+# `CRUCIBLE_WRITE_OPENAPI` puts the staleness gate in write mode, so it renders
+# `crates/crucible-web/openapi.json` from the axum router instead of comparing
+# it. One renderer serves both, so the writer cannot drift from the check, and
+# the gate needs no `#[ignore]` reason that `just test gated` would have to
+# satisfy. `bun run api:generate` turns that document into
+# `web/src/lib/api-schema.d.ts`. Both files are committed, and `just lint
+# types` fails when either one is stale.
 web-contract:
-    cargo test -p crucible-web --test openapi_contract -- --ignored write_openapi_json
+    CRUCIBLE_WRITE_OPENAPI=1 cargo nextest run -p crucible-web \
+        --test openapi_contract --no-capture \
+        -E 'test(the_committed_openapi_json_is_current)'
     cd crates/crucible-web/web && bun install && bun run api:generate
 
 # Prove the test suite writes nothing under the developer's own directories

@@ -1,0 +1,107 @@
+# Routes the axum router serves that the OpenAPI document does not describe.
+#
+# `every_route_the_router_serves_is_in_the_document` allows exactly these and
+# nothing else, so a NEW undescribed route fails at once.
+# `the_openapi_baseline_only_shrinks` fails when a line here is no longer
+# missing, so the file can only lose lines.
+#
+# Tasks A5 to A10 each convert one route group. Each deletes its own lines in
+# the same commit that converts the group. A10 deletes this file, and the gate
+# then demands that nothing is missing.
+#
+# One `METHOD /path` per line, sorted.
+DELETE /api/layout
+DELETE /api/plugins/{name}
+DELETE /api/session/{id}
+GET /api/agents
+GET /api/backlinks
+GET /api/canvas
+GET /api/commands
+GET /api/config
+GET /api/file/raw
+GET /api/fs/list
+GET /api/interactions/pending
+GET /api/kiln/file
+GET /api/kiln/files
+GET /api/kiln/graph
+GET /api/kiln/notes
+GET /api/kilns
+GET /api/layout
+GET /api/mcp/status
+GET /api/notes
+GET /api/notes/resolve
+GET /api/notes/{name}
+GET /api/plugins
+GET /api/plugins/commands
+GET /api/plugins/options
+GET /api/plugins/publications
+GET /api/project/get
+GET /api/project/list
+GET /api/providers
+GET /api/recents
+GET /api/session/list
+GET /api/session/{id}
+GET /api/session/{id}/config/agent-options
+GET /api/session/{id}/config/context-strategy
+GET /api/session/{id}/config/precognition
+GET /api/session/{id}/history
+GET /api/session/{id}/knobs
+GET /api/session/{id}/mode
+GET /api/session/{id}/models
+GET /api/session/{id}/modes
+GET /api/session/{id}/review/hunks
+GET /api/session/{id}/status
+GET /api/sessions/search
+GET /api/skills
+GET /api/skills/search
+GET /api/skills/{name}
+GET /api/surfaces
+GET /api/terminal/ws
+PATCH /api/kiln/file
+POST /api/chat/send
+POST /api/config
+POST /api/fs/mkdir
+POST /api/fs/move
+POST /api/fs/trash
+POST /api/interaction/respond
+POST /api/layout
+POST /api/plugins
+POST /api/plugins/command
+POST /api/plugins/{name}/option
+POST /api/plugins/{name}/reload
+POST /api/project/register
+POST /api/project/unregister
+POST /api/recents
+POST /api/scm/clone
+POST /api/search/grep
+POST /api/search/semantic
+POST /api/search/vectors
+POST /api/session
+POST /api/session/{id}/archive
+POST /api/session/{id}/auto-title
+POST /api/session/{id}/cancel
+POST /api/session/{id}/command
+POST /api/session/{id}/config/agent-options
+POST /api/session/{id}/end
+POST /api/session/{id}/export
+POST /api/session/{id}/kilns/connect
+POST /api/session/{id}/kilns/disconnect
+POST /api/session/{id}/mode
+POST /api/session/{id}/model
+POST /api/session/{id}/pause
+POST /api/session/{id}/resume
+POST /api/session/{id}/review/comment
+POST /api/session/{id}/review/comment/{comment_id}/resolve
+POST /api/session/{id}/review/rebase
+POST /api/session/{id}/review/state
+POST /api/session/{id}/review/states
+POST /api/session/{id}/review/undo-reject
+POST /api/session/{id}/unarchive
+POST /api/webhook/{name}
+PUT /api/canvas
+PUT /api/kiln/file
+PUT /api/notes/{name}
+PUT /api/session/{id}/config/context-strategy
+PUT /api/session/{id}/config/precognition
+PUT /api/session/{id}/title
+PUT /api/session/{id}/workspace

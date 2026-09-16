@@ -1,0 +1,92 @@
+# `/api` paths the browser asks for that the OpenAPI document does not
+# describe.
+#
+# `every_api_path_the_client_calls_is_in_the_document` allows exactly these and
+# nothing else. `the_openapi_baseline_only_shrinks` fails when a line here is
+# no longer missing, so the file can only lose lines.
+#
+# Tasks A5 to A10 each convert one route group. Each deletes the lines its
+# group answers, in the same commit. A10 deletes this file, and the gate then
+# demands that nothing is missing.
+#
+# One `<module>  <path shape>` per line, sorted. The shape carries no
+# parameter names, because TypeScript interpolates a value where OpenAPI names
+# a parameter.
+lib/api.ts  /api/agents
+lib/api.ts  /api/backlinks
+lib/api.ts  /api/canvas
+lib/api.ts  /api/chat/send
+lib/api.ts  /api/commands
+lib/api.ts  /api/config
+lib/api.ts  /api/file/raw
+lib/api.ts  /api/fs/list
+lib/api.ts  /api/fs/mkdir
+lib/api.ts  /api/fs/move
+lib/api.ts  /api/fs/trash
+lib/api.ts  /api/interaction/respond
+lib/api.ts  /api/interactions/pending
+lib/api.ts  /api/kiln/file
+lib/api.ts  /api/kiln/files
+lib/api.ts  /api/kiln/graph
+lib/api.ts  /api/kiln/notes
+lib/api.ts  /api/kilns
+lib/api.ts  /api/layout
+lib/api.ts  /api/mcp/status
+lib/api.ts  /api/notes
+lib/api.ts  /api/notes/resolve
+lib/api.ts  /api/notes/{}
+lib/api.ts  /api/plugins
+lib/api.ts  /api/plugins/command
+lib/api.ts  /api/plugins/commands
+lib/api.ts  /api/plugins/options
+lib/api.ts  /api/plugins/publications
+lib/api.ts  /api/plugins/{}
+lib/api.ts  /api/plugins/{}/option
+lib/api.ts  /api/plugins/{}/reload
+lib/api.ts  /api/project/get
+lib/api.ts  /api/project/list
+lib/api.ts  /api/project/register
+lib/api.ts  /api/project/unregister
+lib/api.ts  /api/providers
+lib/api.ts  /api/recents
+lib/api.ts  /api/scm/clone
+lib/api.ts  /api/search/grep
+lib/api.ts  /api/search/semantic
+lib/api.ts  /api/search/vectors
+lib/api.ts  /api/session
+lib/api.ts  /api/session/list
+lib/api.ts  /api/session/{}
+lib/api.ts  /api/session/{}/archive
+lib/api.ts  /api/session/{}/cancel
+lib/api.ts  /api/session/{}/command
+lib/api.ts  /api/session/{}/config/agent-options
+lib/api.ts  /api/session/{}/config/context-strategy
+lib/api.ts  /api/session/{}/config/precognition
+lib/api.ts  /api/session/{}/end
+lib/api.ts  /api/session/{}/export
+lib/api.ts  /api/session/{}/history
+lib/api.ts  /api/session/{}/kilns/connect
+lib/api.ts  /api/session/{}/kilns/disconnect
+lib/api.ts  /api/session/{}/knobs
+lib/api.ts  /api/session/{}/mode
+lib/api.ts  /api/session/{}/model
+lib/api.ts  /api/session/{}/models
+lib/api.ts  /api/session/{}/modes
+lib/api.ts  /api/session/{}/pause
+lib/api.ts  /api/session/{}/resume
+lib/api.ts  /api/session/{}/status
+lib/api.ts  /api/session/{}/title
+lib/api.ts  /api/session/{}/unarchive
+lib/api.ts  /api/session/{}/workspace
+lib/api.ts  /api/sessions/search
+lib/api.ts  /api/skills
+lib/api.ts  /api/skills/search
+lib/api.ts  /api/skills/{}
+lib/api.ts  /api/surfaces
+lib/review-api.ts  /api/session/{}/review/comment
+lib/review-api.ts  /api/session/{}/review/comment/{}/resolve
+lib/review-api.ts  /api/session/{}/review/hunks
+lib/review-api.ts  /api/session/{}/review/rebase
+lib/review-api.ts  /api/session/{}/review/state
+lib/review-api.ts  /api/session/{}/review/states
+lib/review-api.ts  /api/session/{}/review/undo-reject
