@@ -30,14 +30,17 @@ src/
 │   ├── reveal/             # RevealController and flyoutRect
 │   └── testing/            # neutralPolicy — shared by the core's unit tests and the harness page
 ├── components/          # UI components
-├── contexts/            # SolidJS context providers (state management)
+├── contexts/            # SolidJS context providers (client-local session and editor state)
 ├── hooks/               # Reusable reactive hooks
 ├── stores/              # Global state; stores/windowStore.ts configures the windowing core with the app's WindowPolicy
 ├── types/               # Shared types (e.g. windowTypes, now an alias layer over windowing/model/types)
 └── lib/                 # Utilities, API client, non-reactive code
+    └── query/       # The owner of every server entity: one hook per entity, the key factory in `keys.ts`, the four SSE roots in `routes/`, the query client in `client.ts`
 ```
 
 The main UI is a **window manager**: collapsible edge panels (left/right), a main area with recursive split panes and tab groups, and floating windows. The window manager itself is domainless and lives in `src/windowing/`; the app configures it once, with one `WindowPolicy`, from `stores/windowStore.ts`. Read `docs/Meta/Architecture/Web Windowing.md` for the folder, the policy and the edge modes. Drag-and-drop uses `@thisbeyond/solid-dnd`.
+
+**The data layer.** Every server entity has one owner in `lib/query/`, and the rules below hold across the whole app. A component never imports `lib/api` for a fetch; it imports a hook from `lib/query/`. A mutation names the keys it invalidates. Server events reach the cache through one route per stream, under `lib/query/routes/`. The typed bus in `lib/bus.ts` carries the cross-component data events. The API contract is generated: `just web-contract` writes `crates/crucible-web/openapi.json` and `src/lib/api-schema.d.ts`, and `just lint types` fails when either one is stale.
 
 **MVVM Pattern:**
 - **Model**: The windowing store (`windowing/store`) and contexts (ChatContext, WhisperContext)
@@ -84,3 +87,5 @@ Three layers, all bun-driven:
 - Use npm or yarn (bun only)
 - Import React patterns (no useState, useEffect — use createSignal, createEffect)
 - Add SSR complexity (static build only)
+- Call `lib/api` from a component; use a `lib/query/` hook
+- Hand-edit `src/lib/api-schema.d.ts` or `crates/crucible-web/openapi.json`

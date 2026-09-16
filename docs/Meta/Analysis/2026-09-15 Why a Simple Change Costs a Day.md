@@ -182,6 +182,8 @@ at the end of the `ci` recipe.
 
 ## (c) Five changes, in priority order
 
+**Status 2026-09-16.** The branch `feat/web-api-contract` delivers part of change 1 and one change this list did not name: the live specs `contract.live.spec.ts` and the four entity suites create a session against the real daemon, although `e2e/live/global-setup.ts` still creates none and publishes no ids, and it seeds the second kiln it already seeded before; the API contract is now generated from the Rust routes (`just web-contract`, `openapi.json`, `api-schema.d.ts`); the client's reads and writes moved into `lib/query/`; and the query tests stub one fetch seam (`src/test-utils/mock-fetch.ts`) in place of the API module, which the component tests still mock. Changes 2, 4 and 5 are untouched.
+
 **1. Give the live tier a session.** The single largest gap is that no test
 creates a session against a real daemon. Add the four setup steps above to
 `e2e/live/global-setup.ts` and publish the ids in `.live-state.json`. Then
