@@ -7,7 +7,6 @@ import {
   connectSessionKiln,
   listNotes,
   listDir,
-  subscribeToFsEvents,
   fsMove,
   fsMkdir,
   fsTrash,
@@ -15,6 +14,7 @@ import {
 } from '@/lib/api';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { useKilns } from '@/lib/query/kilns';
+import { fsEvents } from '@/lib/query/sse';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { FsEntry } from '@/lib/types';
 import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
@@ -586,7 +586,10 @@ export const FilesPanel: Component<{
     const onToggleHidden = () => toggleHidden();
     window.addEventListener('crucible:toggle-hidden-files', onToggleHidden);
     onCleanup(() => window.removeEventListener('crucible:toggle-hidden-files', onToggleHidden));
-    const unsub = subscribeToFsEvents((ev) => batcher.push(ev));
+    // One source for the stream, whatever the count of readers: `fsEvents()`
+    // is the shared root of `lib/query/sse.ts`, and the editor watches the same
+    // stream for its open buffers. Each side keeps its own handler on it.
+    const unsub = fsEvents().subscribe((ev) => batcher.push(ev));
     // Project roots are refresh-on-interaction: refetch expanded folders on focus.
     const onFocus = () => {
       const root = activeRoot();

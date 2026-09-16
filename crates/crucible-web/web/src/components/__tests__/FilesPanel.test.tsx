@@ -60,6 +60,7 @@ import { FilesPanel } from '../FilesPanel';
 import { setStore } from '@/stores/windowStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
+import { resetSseForTests } from '@/lib/query/sse';
 
 let env: TestQueryEnv;
 
@@ -123,6 +124,9 @@ beforeEach(() => {
 afterEach(() => {
   env.restore();
   resetKilnsForTests();
+  // The panel and the editor share one root in `lib/query/sse.ts`, and a root
+  // outlives the test that opened it. Forget them between cases.
+  resetSseForTests();
 });
 
 /**

@@ -83,6 +83,7 @@ vi.mock('@/lib/conflicts', () => ({
 
 const { createTestQueryEnv } = await import('@/test-utils/query');
 const { resetKilnsForTests } = await import('@/lib/query/kilns');
+const { resetSseForTests } = await import('@/lib/query/sse');
 
 // The roster `kilnOf` resolves an open path against, over the mocked fetch.
 let kilnEnv: ReturnType<typeof createTestQueryEnv>;
@@ -97,6 +98,10 @@ beforeEach(() => {
 afterEach(() => {
   kilnEnv.restore();
   resetKilnsForTests();
+  // The editor and `FilesPanel` share one root in `lib/query/sse.ts`, and a
+  // root outlives the test that opened it. Forget them between cases, so the
+  // count of watcher subscriptions is this test's own.
+  resetSseForTests();
 });
 
 const { EditorProvider, useEditor } = await import('../EditorContext');

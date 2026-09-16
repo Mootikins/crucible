@@ -10,7 +10,7 @@ import {
 import { createStore, produce } from 'solid-js/store';
 import type { EditorFile, FsEvent } from '@/lib/types';
 import type { EditorContextValue } from '@/lib/types/context';
-import { subscribeToFsEvents } from '@/lib/api';
+import { fsEvents } from '@/lib/query/sse';
 import { fetchKilnsOnce } from '@/lib/query/kilns';
 import { kilnForPath } from '@/lib/note-actions';
 import {
@@ -416,13 +416,13 @@ export const EditorProvider: ParentComponent = (props) => {
   };
 
   // One stream, open while there is a buffer it could speak about and closed
-  // when the last one goes. `FilesPanel` keeps its own subscription: two
-  // independent readers are two `EventSource`s, and one shared subscription is
-  // a recorded follow-up rather than a coupling between a panel and a context.
+  // when the last one goes. `FilesPanel` reads the same stream for the tree,
+  // and both go through the shared root of `lib/query/sse.ts`: one
+  // `EventSource` for the two of them, and one handler each.
   const anyFileOpen = createMemo(() => openFilesStore.length > 0);
   createEffect(() => {
     if (!anyFileOpen()) return;
-    onCleanup(subscribeToFsEvents((event) => void onFsEvent(event)));
+    onCleanup(fsEvents().subscribe((event) => void onFsEvent(event)));
   });
 
   /**
