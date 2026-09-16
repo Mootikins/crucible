@@ -112,6 +112,15 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
+  // The terminal is a WebSocket, which `page.route` never sees. Unmocked, it
+  // reaches whatever listens on the API port through the dev server's proxy:
+  // a daemon that refuses the upgrade makes the browser log a console error,
+  // and a spec that asserts a clean console fails on a socket it never asked
+  // for. This mock PTY accepts the socket and says nothing. A spec that needs
+  // a prompt registers its own handler after this one; the last-added route
+  // wins.
+  await page.routeWebSocket('**/api/terminal/ws', () => {});
+
   await page.route('**/api/session', async (route) => {
     if (route.request().method() === 'POST') {
       route.fulfill({ json: overrides.sessionCreate ?? MOCK_SESSION });

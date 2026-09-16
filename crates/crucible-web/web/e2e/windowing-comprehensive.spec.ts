@@ -26,6 +26,7 @@ type WindowStoreShape = {
 type WindowActionsShape = {
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void;
   removeTab: (groupId: string, tabId: string) => void;
+  moveTab: (sourceGroupId: string, targetGroupId: string, tabId: string) => void;
   setEdgePanelCollapsed: (position: 'left' | 'right' | 'bottom', collapsed: boolean) => void;
   createFloatingWindow: (groupId: string, x: number, y: number, width?: number, height?: number) => string;
 };
@@ -151,9 +152,13 @@ test.describe('Comprehensive windowing behavior', () => {
         return firstLeafGroupId(node.first!) ?? firstLeafGroupId(node.second!);
       };
       const leftGroupId = firstLeafGroupId(windowStore.edgePanels.left.layout)!;
+      const centerGroupId = firstLeafGroupId(windowStore.layout)!;
       const tabs = [...(windowStore.tabGroups[leftGroupId]?.tabs ?? [])];
+      // The rail holds the Sessions panel, and the store refuses to close the
+      // last one (WS-324). Moving it to the centre is the way a user empties
+      // this rail, so that is how the spec empties it.
       for (const tab of tabs) {
-        windowActions.removeTab(leftGroupId, tab.id);
+        windowActions.moveTab(leftGroupId, centerGroupId, tab.id);
       }
     });
 

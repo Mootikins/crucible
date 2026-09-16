@@ -46,6 +46,20 @@ async function openRestoredApp(page: Page) {
   await expect(page.locator('[data-tab-id="tab-inbox"]')).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * The right fifth of the centre pane that holds Inbox.
+ *
+ * The restored layout names no rail panel, so the store puts Sessions and
+ * Files back and opens both rails (WS-324). A point at a viewport fraction
+ * then lands in the Files panel, not in the centre pane; the pane's own box
+ * is the only honest source for a drop inside it.
+ */
+async function centerPaneRightFifth(page: Page): Promise<{ x: number; y: number }> {
+  const pane = page.locator('[data-pane-id]', { has: page.locator('[data-tab-id="tab-inbox"]') }).last();
+  const box = (await pane.boundingBox())!;
+  return { x: Math.floor(box.x + box.width * 0.9), y: Math.floor(box.y + box.height / 2) };
+}
+
 /** Drag with a condition wait on `highlight` (the active drop indicator) before releasing. */
 async function pointerDragUntil(
   page: Page,
@@ -67,12 +81,10 @@ test('pane split by drag works after a delayed layout restore', async ({ page })
   await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(0);
 
   const box = (await inboxTab.boundingBox())!;
-  const viewport = page.viewportSize()!;
-  // Right fifth of the center pane, clear of the collapsed right edge rail.
   await pointerDragUntil(
     page,
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-    { x: Math.floor(viewport.width * 0.85), y: Math.floor(viewport.height / 2) },
+    await centerPaneRightFifth(page),
     '[class*="bg-primary/30"]',
   );
 
@@ -87,12 +99,11 @@ test('drop onto the tab bar of a restored group still moves tabs', async ({ page
   // Split first (works after the fix), then drag Inbox back onto the first
   // group's tab bar — exercises the restored `tabgroup:` droppable.
   const inboxTab = page.locator('[data-tab-id="tab-inbox"]');
-  const viewport = page.viewportSize()!;
   let box = (await inboxTab.boundingBox())!;
   await pointerDragUntil(
     page,
     { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-    { x: Math.floor(viewport.width * 0.85), y: Math.floor(viewport.height / 2) },
+    await centerPaneRightFifth(page),
     '[class*="bg-primary/30"]',
   );
   await expect(page.locator('[data-testid="resize-splitter"]')).toHaveCount(1);
