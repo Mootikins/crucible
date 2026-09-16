@@ -1,13 +1,22 @@
-import { Component, Show, For, createSignal, createResource, createMemo, onCleanup } from 'solid-js';
+import {
+  Component,
+  Show,
+  For,
+  createEffect,
+  createSignal,
+  createResource,
+  createMemo,
+  onCleanup,
+} from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { listSkills, searchSkills, getSkill } from '@/lib/api';
-import type { SkillSummary, SkillDetail } from '@/lib/api';
+import type { SkillSummary } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import { fetchConfigOnce } from '@/lib/query/config';
+import { useSkillDetail, useSkillList, useSkillSearch } from '@/lib/query/skills';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -38,8 +47,6 @@ export const SkillsPanel: Component = () => {
   const [query, setQuery] = createSignal('');
   const [debouncedQuery, setDebouncedQuery] = createSignal('');
   const [selected, setSelected] = createSignal<SkillSummary | null>(null);
-  const [detail, setDetail] = createSignal<SkillDetail | null>(null);
-  const [detailLoading, setDetailLoading] = createSignal(false);
 
   // Debounce typed query so server-side search isn't fired on every keystroke.
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -52,23 +59,27 @@ export const SkillsPanel: Component = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
-  const [skills] = createResource(
-    () => ({ kiln: kilnPath(), q: debouncedQuery() }),
-    async ({ kiln, q }) => {
-      if (!kiln) return [];
-      try {
-        return q.trim().length > 0
-          ? await searchSkills(q, kiln)
-          : await listSkills(kiln);
-      } catch (err) {
-        notificationActions.addNotification('error', `Failed to load skills: ${err}`);
-        return [];
-      }
-    },
-  );
+  // Two queries rather than one resource that branched inside its fetcher. The
+  // roster and a search over it are two different answers, and keeping them
+  // apart is what lets the roster stay in the cache while the user types: the
+  // search box cleared draws the list again with nothing asked.
+  const searching = (): boolean => debouncedQuery().trim().length > 0;
+  const list = useSkillList(kilnPath);
+  const search = useSkillSearch(kilnPath, debouncedQuery);
+  const shownQuery = () => (searching() ? search : list);
+  const skills = (): SkillSummary[] => shownQuery().data ?? [];
+
+  // The old fetcher swallowed its own failure and answered an empty list, so a
+  // kiln the daemon refused to read looked exactly like a kiln with no skills.
+  // The notification is what told the user otherwise, and it still is — the
+  // query holds the error rather than hiding it, and this reports it once.
+  createEffect(() => {
+    const failure = shownQuery().error;
+    if (failure) notificationActions.addNotification('error', `Failed to load skills: ${failure.message}`);
+  });
 
   const groupedSkills = createMemo(() => {
-    const list = skills() ?? [];
+    const list = skills();
     const groups = new Map<string, SkillSummary[]>();
     for (const skill of list) {
       const bucket = groups.get(skill.scope) ?? [];
@@ -79,25 +90,23 @@ export const SkillsPanel: Component = () => {
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   });
 
-  const openDetail = async (skill: SkillSummary) => {
+  // One entry per skill, so a drawer re-opened on a skill just read draws it
+  // without reading the file again.
+  const detailQuery = useSkillDetail(() => selected()?.name ?? null, kilnPath);
+  const detail = () => detailQuery.data ?? null;
+  const detailLoading = () => detailQuery.isLoading;
+
+  createEffect(() => {
+    const failure = detailQuery.error;
+    if (failure) notificationActions.addNotification('error', `Failed to load skill: ${failure.message}`);
+  });
+
+  const openDetail = (skill: SkillSummary) => {
     setSelected(skill);
-    setDetail(null);
-    const kiln = kilnPath();
-    if (!kiln) return;
-    setDetailLoading(true);
-    try {
-      const full = await getSkill(skill.name, kiln);
-      setDetail(full);
-    } catch (err) {
-      notificationActions.addNotification('error', `Failed to load skill: ${err}`);
-    } finally {
-      setDetailLoading(false);
-    }
   };
 
   const closeDetail = () => {
     setSelected(null);
-    setDetail(null);
   };
 
   const copyInvocation = async (name: string) => {
@@ -129,11 +138,11 @@ export const SkillsPanel: Component = () => {
           fallback={<div class="p-4 text-sm text-muted-dark">No kiln selected.</div>}
         >
           <Show
-            when={!skills.loading}
+            when={!shownQuery().isLoading}
             fallback={<div class="p-4 text-sm text-muted-dark">Loading…</div>}
           >
             <Show
-              when={(skills() ?? []).length > 0}
+              when={skills().length > 0}
               fallback={
                 <div class="p-4 text-sm text-muted-dark">
                   {query() ? 'No matching skills.' : 'No skills discovered.'}
