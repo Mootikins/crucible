@@ -4,7 +4,6 @@ import {
   ParentComponent,
   createSignal,
   createEffect,
-  onCleanup,
 } from 'solid-js';
 import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
@@ -28,6 +27,7 @@ import {
 } from '@/lib/api';
 import type { SessionScope } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
+import { getBus } from '@/lib/bus';
 import { setPendingFirstMessage } from '@/lib/draft-session';
 import { tabHost } from '@/lib/tab-host';
 import { statusBarStore } from '@/stores/statusBarStore';
@@ -529,10 +529,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     refreshProviders();
   });
 
-  // Daemon auto-titles sessions on their first completed turn; the owning
-  // ChatProvider rebroadcasts the title so the session list stays current.
-  const onTitleChangedEvent = (e: Event) => {
-    const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
+  // Daemon auto-titles sessions on their first completed turn; the chat
+  // stream's route announces the new title so the session list stays current.
+  const onTitleChangedEvent = ({ sessionId, title }: { sessionId: string; title: string }) => {
     setSessions(produce((list) => {
       const session = list.find((s) => s.id === sessionId);
       if (session) session.title = title;
@@ -542,10 +541,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
       setCurrentSession({ ...current, title });
     }
   };
-  window.addEventListener('crucible:session-title-changed', onTitleChangedEvent);
-  onCleanup(() =>
-    window.removeEventListener('crucible:session-title-changed', onTitleChangedEvent)
-  );
+  // `on` removes the handler with this owner, so the provider needs no
+  // `onCleanup` of its own.
+  getBus().on('sessionTitleChanged', onTitleChangedEvent);
 
   const value: SessionContextValue = {
     currentSession,

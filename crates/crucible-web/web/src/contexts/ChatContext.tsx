@@ -24,7 +24,6 @@ import {
   listPendingInteractions,
   setSessionMode,
   sendChatMessage,
-  subscribeToEvents,
   respondToInteraction as apiRespondToInteraction,
   cancelSession as apiCancelSession,
   generateMessageId,
@@ -33,6 +32,7 @@ import {
   turnSegmentId,
   stripFrozenPrefix,
 } from '@/lib/api';
+import { sessionEvents } from '@/lib/query/sse';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -114,7 +114,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   };
 
-  let eventSourceCleanup: (() => void) | null = null;
+  /** Removes this pane from the shared stream. The stream itself belongs to
+   *  `sessionEvents(id)`, which closes the source when the last pane leaves. */
+  let streamUnsubscribe: (() => void) | null = null;
   /** The session the live stream belongs to. `retryConnection` needs it, and
    *  `props.sessionId` is not it: the stream is opened by an effect that also
    *  handles the null case, so the two can disagree for a tick. */
@@ -245,12 +247,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       const tab = host.find((t) => t.metadata?.sessionId === props.sessionId);
       if (tab) host.update(tab.id, { title });
       attentionActions.report(props.sessionId, { title });
-      // Let the session list (Home resume, Inbox) pick up the new name.
-      window.dispatchEvent(
-        new CustomEvent('crucible:session-title-changed', {
-          detail: { sessionId: props.sessionId, title },
-        })
-      );
+      // The session list (Home resume, Inbox) learns the new name from the
+      // stream's own route, which emits `sessionTitleChanged` on the bus once
+      // per event. Announcing it here as well would announce it once per open
+      // pane, and the panes of one session all carry the same title.
     },
     addMessage,
     updateMessage,
@@ -450,9 +450,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   createEffect(() => {
     const newSessionId = props.sessionId;
     
-    if (eventSourceCleanup) {
-      eventSourceCleanup();
-      eventSourceCleanup = null;
+    if (streamUnsubscribe) {
+      streamUnsubscribe();
+      streamUnsubscribe = null;
       streamSessionId = null;
     }
     
@@ -513,7 +513,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       resolveSseOpen = resolve;
     });
     streamSessionId = newSessionId;
-    eventSourceCleanup = subscribeToEvents(newSessionId, handleEvent, resolveSseOpen);
+    // The shared root, not a source of our own: a second pane on this session
+    // joins the stream this one opened, and a pane that joins an open stream
+    // gets `resolveSseOpen` at once rather than waiting for an open it missed.
+    streamUnsubscribe = sessionEvents(newSessionId).subscribe(handleEvent, resolveSseOpen);
 
     // Lazy creation handoff: the draft surface staged the user's first
     // message before opening this session. Send it only after (a) bootstrap
@@ -546,9 +549,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   });
 
   onCleanup(() => {
-    if (eventSourceCleanup) {
-      eventSourceCleanup();
-      eventSourceCleanup = null;
+    if (streamUnsubscribe) {
+      streamUnsubscribe();
+      streamUnsubscribe = null;
       streamSessionId = null;
     }
     if (historyAbortController) {
@@ -700,17 +703,18 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   /**
    * Skip the backoff wait.
    *
-   * `subscribeToEvents`'s cleanup clears the pending timer AND closes the dead
-   * EventSource, so a fresh subscription is a real re-issue of the connect, not
-   * a cosmetic one. The status is NOT set optimistically: the new stream emits
-   * `connection/connected` when it opens, and `connection/reconnecting` when it
-   * fails again, so the banner reports what happened rather than what we hoped.
+   * `reconnect()` clears the pending timer AND closes the dead EventSource, so
+   * this is a real re-issue of the connect, not a cosmetic one. It keeps every
+   * subscriber, so a pane does not drop its handler to get a fresh source, and
+   * the other panes of this session come back with it. The status is NOT set
+   * optimistically: the new stream emits `connection/connected` when it opens,
+   * and `connection/reconnecting` when it fails again, so the banner reports
+   * what happened rather than what we hoped.
    */
   const retryConnection = () => {
     const id = streamSessionId;
     if (!id) return;
-    eventSourceCleanup?.();
-    eventSourceCleanup = subscribeToEvents(id, handleEvent);
+    sessionEvents(id).reconnect();
   };
 
   const value: ChatContextValue = {

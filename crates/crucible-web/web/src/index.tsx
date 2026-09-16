@@ -16,6 +16,13 @@ import 'katex/dist/katex.min.css';
 import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
 import { initTheme } from '@/lib/theme';
+import { installSessionEventRoute } from '@/lib/query/routes/session';
+
+// Before any pane opens a stream: the route turns a chat event into the cache
+// write it owes every pane. A pane that subscribes first would otherwise carry
+// its own fold only, and the session list, the history and the pending
+// interactions would stay as they were read.
+installSessionEventRoute();
 
 const root = document.getElementById('root');
 

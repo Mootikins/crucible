@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createSignal } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
+import { resetSseForTests } from '@/lib/query/sse';
+import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
@@ -50,6 +52,13 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+// Every pane of one session shares one root in `lib/query/sse.ts`, and a root
+// outlives the test that opened it. Forget them between cases, so a source of
+// one test cannot answer the next one.
+afterEach(() => {
+  resetSseForTests();
+});
+
 const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
 const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
 const mockGetSession = api.getSession as ReturnType<typeof vi.fn>;
@@ -86,6 +95,16 @@ function TestConsumer() {
       </ul>
     </div>
   );
+}
+
+/** Reports this pane's transcript, so a test can prove the pane still hears. */
+function TokenConsumer(props: { onMessages: (messages: { content: string }[]) => void }) {
+  const { messages } = useChat();
+  createEffect(() => {
+    const held = messages().filter((m) => m.content !== '');
+    if (held.length > 0) props.onMessages(held.map((m) => ({ content: m.content })));
+  });
+  return <span />;
 }
 
 function TestWrapper(props: { children: any; session?: Session | null }) {
@@ -1051,5 +1070,137 @@ describe('a slow history load cannot duplicate a finished turn', () => {
       const answers = screen.getAllByRole('listitem').filter((li) => li.textContent === ANSWER);
       expect(answers).toHaveLength(1);
     });
+  });
+});
+
+
+// The stream itself, not the mock of it. `lib/query/sse.ts` owns one source per
+// session and every pane subscribes to it; these cases prove that the provider
+// reaches the stream through that root, so the count of EventSources is the
+// count of sessions on screen and not the count of panes.
+describe('the shared session stream', () => {
+  let realSubscribeToEvents: typeof api.subscribeToEvents;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+    realSubscribeToEvents = actual.subscribeToEvents;
+    installFakeEventSource();
+    mockSubscribeToEvents.mockImplementation(realSubscribeToEvents);
+    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
+  });
+
+  afterEach(async () => {
+    const { consumePendingFirstMessage } = await import('@/lib/draft-session');
+    consumePendingFirstMessage(mockSession.id);
+  });
+
+  function RetryConsumer() {
+    const { retryConnection, connectionStatus } = useChat();
+    return (
+      <button data-testid="retry" data-status={connectionStatus()} onClick={retryConnection}>
+        Retry
+      </button>
+    );
+  }
+
+  it('opens one EventSource for two panes on one session', async () => {
+    render(() => (
+      <>
+        <ChatProvider sessionId={mockSession.id}>
+          <span />
+        </ChatProvider>
+        <ChatProvider sessionId={mockSession.id}>
+          <span />
+        </ChatProvider>
+      </>
+    ));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    expect(FakeEventSource.instances[0]!.url).toBe(`/api/chat/events/${mockSession.id}`);
+  });
+
+  it('opens one EventSource per session when the panes differ', async () => {
+    render(() => (
+      <>
+        <ChatProvider sessionId="session-a">
+          <span />
+        </ChatProvider>
+        <ChatProvider sessionId="session-b">
+          <span />
+        </ChatProvider>
+      </>
+    ));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(FakeEventSource.instances.map((source) => source.url)).toEqual([
+      '/api/chat/events/session-a',
+      '/api/chat/events/session-b',
+    ]);
+  });
+
+  it('re-issues the source on a manual retry, and closes the dead one', async () => {
+    render(() => (
+      <ChatProvider sessionId={mockSession.id}>
+        <RetryConsumer />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const dead = FakeEventSource.instances[0]!;
+
+    screen.getByTestId('retry').click();
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(dead.closed).toBe(true);
+    expect(FakeEventSource.instances[1]!.closed).toBe(false);
+  });
+
+  it('keeps the retry of one pane from dropping the other pane off the stream', async () => {
+    const seen: unknown[] = [];
+    render(() => (
+      <>
+        <ChatProvider sessionId={mockSession.id}>
+          <RetryConsumer />
+        </ChatProvider>
+        <ChatProvider sessionId={mockSession.id}>
+          <TokenConsumer onMessages={(messages) => seen.push(...messages)} />
+        </ChatProvider>
+      </>
+    ));
+
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    screen.getByTestId('retry').click();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+
+    FakeEventSource.instances[1]!.emit('token', { type: 'token', content: 'still here' });
+
+    await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+  });
+
+  it('gives a pane that joins an open stream its open gate at once', async () => {
+    const { setPendingFirstMessage } = await import('@/lib/draft-session');
+    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+
+    render(() => (
+      <ChatProvider sessionId={mockSession.id}>
+        <span />
+      </ChatProvider>
+    ));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    FakeEventSource.instances[0]!.open();
+
+    // The message is staged after the first pane bound, so only the pane below
+    // has one to send. Its gate is the stream's open, which happened already.
+    setPendingFirstMessage(mockSession.id, 'first message from draft');
+    render(() => (
+      <ChatProvider sessionId={mockSession.id}>
+        <span />
+      </ChatProvider>
+    ));
+
+    await waitFor(() =>
+      expect(mockSendChatMessage).toHaveBeenCalledWith(mockSession.id, 'first message from draft'),
+    );
+    expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
