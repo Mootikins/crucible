@@ -52,6 +52,7 @@ const GREP_SNIPPET_CAP: usize = 300;
 /// line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
 /// `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GrepHit {
     /// Absolute path to the matched file.
     pub path: String,
@@ -71,6 +72,7 @@ pub struct GrepHit {
 /// Result of a `search_grep` call: the hits plus whether they were capped at
 /// the requested limit. Matches the `POST /api/search/grep` response body.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GrepSearchResponse {
     pub hits: Vec<GrepHit>,
     pub truncated: bool,

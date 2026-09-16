@@ -13,37 +13,23 @@
 # parameter names, because TypeScript interpolates a value where OpenAPI names
 # a parameter.
 lib/api.ts  /api/agents
-lib/api.ts  /api/backlinks
-lib/api.ts  /api/canvas
 lib/api.ts  /api/chat/send
 lib/api.ts  /api/commands
 lib/api.ts  /api/config
-lib/api.ts  /api/file/raw
 lib/api.ts  /api/fs/list
 lib/api.ts  /api/fs/mkdir
 lib/api.ts  /api/fs/move
 lib/api.ts  /api/fs/trash
 lib/api.ts  /api/interaction/respond
 lib/api.ts  /api/interactions/pending
-lib/api.ts  /api/kiln/file
-lib/api.ts  /api/kiln/files
-lib/api.ts  /api/kiln/graph
-lib/api.ts  /api/kiln/notes
-lib/api.ts  /api/kilns
 lib/api.ts  /api/layout
 lib/api.ts  /api/mcp/status
-lib/api.ts  /api/notes
-lib/api.ts  /api/notes/resolve
-lib/api.ts  /api/notes/{}
 lib/api.ts  /api/project/get
 lib/api.ts  /api/project/list
 lib/api.ts  /api/project/register
 lib/api.ts  /api/project/unregister
 lib/api.ts  /api/recents
 lib/api.ts  /api/scm/clone
-lib/api.ts  /api/search/grep
-lib/api.ts  /api/search/semantic
-lib/api.ts  /api/search/vectors
 lib/api.ts  /api/session/{}/command
 lib/api.ts  /api/skills
 lib/api.ts  /api/skills/search

@@ -275,6 +275,7 @@ pub struct EmbedQueryRequest {
 /// rejects anything else. `glob` filters by file name (e.g. `*.md`); `None`
 /// searches all files.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct GrepSearchRequest {
     pub root: String,
     pub query: String,

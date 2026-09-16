@@ -16,8 +16,12 @@ doctest = false
 test-utils = ["dep:tempfile", "dep:proptest", "crucible-daemon/test-utils"]
 
 [dependencies]
-crucible-core = { path = "../crucible-core" }
-crucible-daemon = { path = "../crucible-daemon", default-features = false }
+# `openapi`: the wire types these two crates own describe themselves, so a
+# route that forwards one does not keep a second copy of its shape.
+crucible-core = { path = "../crucible-core", features = ["openapi"] }
+crucible-daemon = { path = "../crucible-daemon", default-features = false, features = [
+    "openapi",
+] }
 
 axum = { workspace = true, features = ["macros", "ws"] }
 tower = { workspace = true }

@@ -12,23 +12,12 @@
 # One `METHOD /path` per line, sorted.
 DELETE /api/layout
 GET /api/agents
-GET /api/backlinks
-GET /api/canvas
 GET /api/commands
 GET /api/config
-GET /api/file/raw
 GET /api/fs/list
 GET /api/interactions/pending
-GET /api/kiln/file
-GET /api/kiln/files
-GET /api/kiln/graph
-GET /api/kiln/notes
-GET /api/kilns
 GET /api/layout
 GET /api/mcp/status
-GET /api/notes
-GET /api/notes/resolve
-GET /api/notes/{name}
 GET /api/project/get
 GET /api/project/list
 GET /api/recents
@@ -36,7 +25,6 @@ GET /api/skills
 GET /api/skills/search
 GET /api/skills/{name}
 GET /api/terminal/ws
-PATCH /api/kiln/file
 POST /api/chat/send
 POST /api/config
 POST /api/fs/mkdir
@@ -48,11 +36,5 @@ POST /api/project/register
 POST /api/project/unregister
 POST /api/recents
 POST /api/scm/clone
-POST /api/search/grep
-POST /api/search/semantic
-POST /api/search/vectors
 POST /api/session/{id}/command
 POST /api/webhook/{name}
-PUT /api/canvas
-PUT /api/kiln/file
-PUT /api/notes/{name}

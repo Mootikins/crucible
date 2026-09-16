@@ -28,6 +28,8 @@ use similar::{capture_diff_slices, Algorithm, DiffOp};
 /// `crate::session::types::review::LineRange` uses, and they point into the
 /// MERGED text, so a reader can show the region without diffing again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = MergeRegion))]
 pub struct Region {
     /// First line of the region in the merged text, 1-based, inclusive.
     pub start_line: u32,

@@ -35,13 +35,18 @@ mod tests;
 /// means "empty". Node order carries meaning — it *is* the z-order, first
 /// lowest — so this is a `Vec`, never a set or map.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Canvas {
     // Always emitted, even when empty: Obsidian writes a fresh canvas as
     // `{"nodes":[],"edges":[]}`, and skipping empty arrays would silently
-    // rewrite every empty canvas to `{}` on first save.
+    // rewrite every empty canvas to `{}` on first save. `required` in the
+    // schema says exactly that — a reader always gets both keys — while
+    // `serde(default)` keeps a hand-written file that omits one readable.
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub nodes: Vec<Node>,
     #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(required = true))]
     pub edges: Vec<Edge>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -180,15 +185,24 @@ pub struct Node {
 /// The on-disk shape of a node: spec-common fields, the `type` tag, and one
 /// undifferentiated bag for everything else.
 ///
+/// This is also where the OpenAPI schema for a node comes from. [`Node`] reads
+/// and writes JSON THROUGH this struct, so describing `Node`'s own fields would
+/// describe a shape that never reaches the wire — `kind` and `extra` are not
+/// keys any client sees. [`Node`]'s `ToSchema` therefore delegates here, and a
+/// field added to this struct reaches the document without a second edit.
+///
 /// Field order here IS the emitted key order, and it is chosen to match what
 /// Obsidian writes so that saving an untouched canvas produces no diff. The
 /// type-specific keys live in `rest`, which is why they land between `type` and
 /// the geometry for `file`/`text`/`link` — and why a group's `label`, which
 /// Obsidian writes *after* the geometry, is re-inserted there on the way out.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = CanvasNode))]
 struct RawNode {
     id: String,
     #[serde(rename = "type")]
+    #[cfg_attr(feature = "openapi", schema(schema_with = node_type_schema))]
     node_type: String,
     #[serde(flatten)]
     rest: Map<String, Value>,
@@ -198,6 +212,28 @@ struct RawNode {
     height: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     color: Option<Color>,
+}
+
+/// Every `type` a node may carry, in the spec's own order.
+///
+/// A `String` on the way in, because [`TryFrom<RawNode>`] answers an unknown
+/// spelling with a message that names it. The set is still closed: that match
+/// and [`Node::type_name`] are both exhaustive over [`NodeKind`], so a fifth
+/// node type cannot compile without touching them, and
+/// `every_node_type_is_in_the_schema` fails until this list names it too.
+pub const NODE_TYPES: [&str; 4] = ["text", "file", "link", "group"];
+
+/// The schema for a node's `type`: the four spellings, not an open string.
+///
+/// It is the discriminator the browser switches on to know which keys a node
+/// carries, so publishing it as a bare `string` would cost the client its
+/// union for nothing.
+#[cfg(feature = "openapi")]
+fn node_type_schema() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::Type::String)
+        .enum_values(Some(NODE_TYPES))
+        .build()
 }
 
 /// Serialize a coordinate, preferring the integer form when it is whole.
@@ -470,6 +506,7 @@ pub enum NodeKind {
 
 /// How a group's background image is rendered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum BackgroundStyle {
     Cover,
@@ -479,6 +516,8 @@ pub enum BackgroundStyle {
 
 /// A connection between two nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = CanvasEdge))]
 pub struct Edge {
     pub id: String,
     #[serde(rename = "fromNode")]
@@ -517,6 +556,8 @@ impl Edge {
 
 /// Which edge of a node a connection attaches to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = CanvasSide))]
 #[serde(rename_all = "lowercase")]
 pub enum Side {
     Top,
@@ -527,6 +568,8 @@ pub enum Side {
 
 /// Whether a connection terminates in an arrowhead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = CanvasEnd))]
 #[serde(rename_all = "lowercase")]
 pub enum End {
     None,
@@ -541,5 +584,36 @@ pub enum End {
 /// transparent newtype over the raw string rather than an enum that might
 /// normalise the spelling.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", schema(as = CanvasColor))]
 #[serde(transparent)]
 pub struct Color(pub String);
+
+/// A node's schema is the schema of the object it becomes on the wire.
+///
+/// [`Node`] carries `#[serde(try_from = "RawNode", into = "RawNode")]`, and a
+/// derive on `Node` itself would publish `kind` and `extra` — two keys no
+/// client ever sees — while hiding `type`, `text`, `file` and the rest. So the
+/// schema delegates to [`RawNode`], which IS the wire object.
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for Node {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        <RawNode as utoipa::PartialSchema>::schema()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for Node {
+    fn name() -> std::borrow::Cow<'static, str> {
+        <RawNode as utoipa::ToSchema>::name()
+    }
+
+    fn schemas(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
+        <RawNode as utoipa::ToSchema>::schemas(schemas);
+    }
+}

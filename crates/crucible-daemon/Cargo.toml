@@ -27,6 +27,8 @@ uuid = { workspace = true }
 futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core" }
+# OpenAPI schemas for the grep wire types, behind the `openapi` feature.
+utoipa = { workspace = true, optional = true }
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
@@ -82,6 +84,11 @@ ignore = "0.4"
 default = ["fastembed"]
 
 web = []
+
+# `ToSchema` on the grep request and reply, which `POST /api/search/grep`
+# forwards verbatim. Off by default: only crucible-web builds the OpenAPI
+# document, and nothing else pays for the dependency.
+openapi = ["dep:utoipa", "crucible-core/openapi"]
 
 test-utils = ["crucible-core/test-utils"]
 

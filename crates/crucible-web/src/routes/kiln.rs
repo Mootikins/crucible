@@ -1,46 +1,52 @@
 use super::helpers::{note_to_file_json, reject_path_traversal, validate_file_within_kiln};
+use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::response::{IntoResponse, Response};
 use axum::{
     extract::State,
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    routing::get,
-    Json, Router,
+    Json,
 };
 use crucible_core::config::{read_project_config, ProjectFileAccess};
-use crucible_core::note_edit::{disk_hash, AnchoredEdit};
-use serde::Deserialize;
+use crucible_core::note_edit::{disk_hash, AnchoredEdit, EditRefusal};
+use crucible_core::note_merge::Region;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn kiln_routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/kiln/files", get(list_kiln_files))
-        .route("/api/kiln/notes", get(list_kiln_notes))
-        .route("/api/kiln/graph", get(kiln_graph))
-        .route(
-            "/api/kiln/file",
-            get(get_kiln_file).put(put_kiln_file).patch(patch_kiln_file),
-        )
-        .route("/api/file/raw", get(get_raw_file))
+pub fn kiln_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_kiln_files))
+        .routes(routes!(list_kiln_notes))
+        .routes(routes!(kiln_graph))
+        .routes(routes!(get_kiln_file, put_kiln_file, patch_kiln_file))
+        .routes(routes!(get_raw_file))
 }
 
 // =========================================================================
 // Query / Request types
 // =========================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct KilnPathQuery {
+    /// Absolute path of the kiln to read.
+    #[param(value_type = String)]
     kiln: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct FilePathQuery {
+    /// ABSOLUTE path of the file. Containment against an open kiln or a
+    /// readable project is enforced by the handler, not by this shape.
     path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PutFileRequest {
     path: String,
     content: String,
@@ -57,7 +63,7 @@ struct PutFileRequest {
 }
 
 /// `PATCH /api/kiln/file` — change a few lines, not the whole file.
-#[derive(serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PatchFileRequest {
     path: String,
     edits: Vec<AnchoredEdit>,
@@ -73,57 +79,143 @@ struct PatchFileRequest {
 // Handlers
 // =========================================================================
 
+/// One entry of a kiln's file listing.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct FileEntryRow {
+    /// The file stem, or the whole path when the stem is not UTF-8.
+    name: String,
+    /// RELATIVE to the kiln root.
+    path: String,
+    /// Always `false`: this listing walks the note index, which holds files.
+    /// The key stays because the file tree reads one entry type for every
+    /// source, and `GET /api/fs/list` does report directories.
+    is_dir: bool,
+}
+
+/// What `GET /api/kiln/files` and `GET /api/kiln/notes` both answer.
+///
+/// One type for two routes because they answer the same projection of the same
+/// listing. The key is `files` on both, including on the one named for notes.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KilnFilesResponse {
+    files: Vec<FileEntryRow>,
+}
+
 /// `GET /api/kiln/files?kiln=<path>` — list notes in a kiln as file entries.
+#[utoipa::path(
+    get,
+    path = "/api/kiln/files",
+    params(KilnPathQuery),
+    responses(
+        (status = 200, body = KilnFilesResponse),
+        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
+    )
+)]
 async fn list_kiln_files(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
-    let notes = state
-        .daemon
-        .list_notes(&query.kiln, None)
-        .await
-        .daemon_err()?;
-
-    let files: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
-
-    Ok(Json(serde_json::json!({ "files": files })))
+) -> Result<Json<KilnFilesResponse>, WebError> {
+    Ok(Json(kiln_file_listing(&state, &query.kiln).await?))
 }
 
 /// `GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata.
+#[utoipa::path(
+    get,
+    path = "/api/kiln/notes",
+    params(KilnPathQuery),
+    responses(
+        (status = 200, body = KilnFilesResponse),
+        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
+    )
+)]
 async fn list_kiln_notes(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
-    let notes = state
-        .daemon
-        .list_notes(&query.kiln, None)
-        .await
-        .daemon_err()?;
+) -> Result<Json<KilnFilesResponse>, WebError> {
+    Ok(Json(kiln_file_listing(&state, &query.kiln).await?))
+}
 
-    let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
+/// The listing both routes answer. One body, so the two cannot drift apart
+/// the way two copies of the same projection did.
+async fn kiln_file_listing(state: &AppState, kiln: &Path) -> Result<KilnFilesResponse, WebError> {
+    let notes = state.daemon.list_notes(kiln, None).await.daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "files": notes_json })))
+    let files: Vec<serde_json::Value> = notes.into_iter().map(note_to_file_json).collect();
+
+    Ok(KilnFilesResponse {
+        files: daemon_shape(serde_json::Value::Array(files), "note.list")?,
+    })
 }
 
 /// `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
 ///
 /// Returns the daemon's `kiln.graph` result verbatim:
 /// `{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.
+#[utoipa::path(
+    get,
+    path = "/api/kiln/graph",
+    params(KilnPathQuery),
+    responses(
+        (status = 200, body = KilnGraphResponse),
+        (status = 502, description = "The daemon could not build the graph, or answered a shape this route cannot read"),
+    )
+)]
 async fn kiln_graph(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<KilnPathQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<KilnGraphResponse>, WebError> {
     let graph = state.daemon.kiln_graph(&query.kiln).await.daemon_err()?;
-    Ok(Json(graph))
+    Ok(Json(daemon_shape(graph, "kiln.graph")?))
+}
+
+/// One node of the note-link graph.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct GraphNoteRow {
+    /// Kiln-relative, and the value a resolved link's `target` joins against.
+    path: String,
+    /// Never empty: the daemon falls back to the file stem.
+    title: String,
+    tags: Vec<String>,
+}
+
+/// One edge of the note-link graph.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct GraphLinkRow {
+    /// The linking note's path. Always a `path` in `notes`.
+    source: String,
+    /// The linked note's path when `resolved`; otherwise the target as it was
+    /// written, which names no note.
+    target: String,
+    /// Whether `target` resolves to a note the caller can see.
+    resolved: bool,
+}
+
+/// What `GET /api/kiln/graph` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KilnGraphResponse {
+    notes: Vec<GraphNoteRow>,
+    links: Vec<GraphLinkRow>,
 }
 
 /// `GET /api/kiln/file?path=<path>` — read a file's content.
 ///
 /// The path must reside within an open kiln; otherwise the request is rejected.
+#[utoipa::path(
+    get,
+    path = "/api/kiln/file",
+    params(FilePathQuery),
+    responses(
+        (status = 200, body = KilnFileResponse),
+        (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
+        (status = 415, description = "The file is not text; fetch it from `/api/file/raw`"),
+        (status = 422, description = "The path carries a traversal sequence, or escapes its root"),
+        (status = 502, description = "The daemon could not list the roots"),
+    )
+)]
 async fn get_kiln_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<KilnFileResponse>, WebError> {
     // The editor addresses files by ABSOLUTE path (a note's `path`); containment
     // is enforced below by find_enclosing_root + validate_file_within_kiln.
     reject_path_traversal(&query.path)?;
@@ -149,10 +241,19 @@ async fn get_kiln_file(
 
     // The hash of the bytes just read, so a later PATCH can say whether the
     // file moved on. Not the index's hash, which lags a save.
-    Ok(Json(serde_json::json!({
-        "content_hash": disk_hash(&content),
-        "content": content,
-    })))
+    Ok(Json(KilnFileResponse {
+        content_hash: disk_hash(&content),
+        content,
+    }))
+}
+
+/// What `GET /api/kiln/file` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KilnFileResponse {
+    /// BLAKE3 of the bytes just read, so a later write can say whether the
+    /// file moved on. NOT the index's hash, which lags a save.
+    content_hash: String,
+    content: String,
 }
 
 /// Read a file this endpoint is able to represent, or say which way it failed.
@@ -184,6 +285,22 @@ async fn read_text_file(path: &Path) -> Result<String, WebError> {
 /// The content type is NOT simply the guess: see [`raw_file_response`], which
 /// serves media as itself (sandboxing the one scriptable media type) and forces
 /// everything else to download.
+#[utoipa::path(
+    get,
+    path = "/api/file/raw",
+    params(FilePathQuery),
+    responses(
+        (
+            status = 200,
+            description = "The file's bytes. Media types the browser cannot run script from are served as themselves; everything else downloads as `application/octet-stream`.",
+            content_type = "application/octet-stream",
+            body = String,
+        ),
+        (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
+        (status = 422, description = "The path carries a traversal sequence, or escapes its root"),
+        (status = 502, description = "The daemon could not list the roots"),
+    )
+)]
 async fn get_raw_file(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<FilePathQuery>,
@@ -341,7 +458,101 @@ fn attachment_disposition(path: &Path) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static("attachment"))
 }
 
+/// What a write answers when it lands.
+///
+/// One type for `PUT` and `PATCH`, because the daemon builds one object for
+/// both: a patch never merges, so it writes no `merged` key, and a whole
+/// write always does.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct FileWriteResponse {
+    /// Always `true` here. A `false` carries a 409 and one of the
+    /// [`FileWriteConflict`] shapes instead.
+    ok: bool,
+    /// Whether the caller's base was stale and its text was merged with the
+    /// disk. Absent on a `PATCH`, which never merges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged: Option<bool>,
+    /// What was written, present only when `merged` is `true`. The caller
+    /// holds it nowhere else: its own text is not what landed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    /// BLAKE3 of what was written, so the caller needs no second read to
+    /// learn the hash its next write must name.
+    content_hash: String,
+}
+
+/// The error envelope a bare stale-base refusal carries.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct WriteErrorRow {
+    /// The HTTP status, repeated in the body.
+    code: u16,
+    message: String,
+}
+
+/// What a write answers when it refuses with 409.
+///
+/// Untagged, and the variant order is load-bearing: serde takes the first that
+/// fits. Each arm names a field the others do not have — `regions` for a merge
+/// that could not settle, `failed` for a refused patch, `error` for a bare
+/// refusal — so the three are disjoint and
+/// `a_conflict_reads_back_as_the_arm_that_was_sent` asserts each direction.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+enum FileWriteConflict {
+    /// A whole write whose base was stale and whose merge left a region the
+    /// two sides disagree about. Nothing was written.
+    Merge {
+        /// Always `false`.
+        ok: bool,
+        /// BLAKE3 of the file as it is on disk NOW.
+        current_hash: String,
+        /// The disk's text, so the caller can resolve without a second read
+        /// that would race the same way.
+        current_content: String,
+        /// The merge's own text, conflicts included.
+        merged_content: String,
+        /// Every cluster the two sides disagree about.
+        regions: Vec<Region>,
+        /// Always `true`.
+        stale_base: bool,
+    },
+    /// A patch the daemon refused. `failed` is empty when the base alone
+    /// refused the batch, before any anchor was read.
+    Patch {
+        /// Always `false`.
+        ok: bool,
+        current_hash: String,
+        failed: Vec<EditRefusal>,
+        /// Whether the file moved on since `base_hash` was read. `false` means
+        /// the anchors themselves refused.
+        stale_base: bool,
+    },
+    /// A whole write whose base was stale and which sent no `base_text`, so
+    /// there was nothing to merge with. Nothing was written.
+    Refused {
+        /// Always `false`.
+        ok: bool,
+        current_hash: String,
+        error: WriteErrorRow,
+    },
+}
+
 /// The daemon owns containment, policy, compare, merge and write.
+#[utoipa::path(
+    put,
+    path = "/api/kiln/file",
+    request_body = PutFileRequest,
+    responses(
+        (status = 200, body = FileWriteResponse),
+        (status = 403, description = "The root refuses writes"),
+        (status = 404, description = "The path is in no open kiln and no registered project"),
+        (status = 409, body = FileWriteConflict, description = "The file moved on since `base_hash` was read"),
+        (status = 415, description = "The file on disk is not UTF-8 text"),
+        (status = 422, description = "The path is invalid, escapes its root, or the content is too large"),
+        (status = 500, description = "The write itself failed"),
+        (status = 502, description = "The daemon could not be reached"),
+    )
+)]
 async fn put_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PutFileRequest>,
@@ -362,6 +573,21 @@ async fn put_kiln_file(
     write_response(answer)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/kiln/file",
+    request_body = PatchFileRequest,
+    responses(
+        (status = 200, body = FileWriteResponse),
+        (status = 403, description = "The root refuses writes"),
+        (status = 404, description = "The path is in no open kiln and no registered project, or the file is not there"),
+        (status = 409, body = FileWriteConflict, description = "The file moved on, or an anchor did not apply"),
+        (status = 415, description = "The file on disk is not UTF-8 text"),
+        (status = 422, description = "The path is invalid, escapes its root, or the batch is empty"),
+        (status = 500, description = "The write itself failed"),
+        (status = 502, description = "The daemon could not be reached"),
+    )
+)]
 async fn patch_kiln_file(
     State(state): State<AppState>,
     Json(req): Json<PatchFileRequest>,
@@ -523,14 +749,365 @@ mod tests {
         reject_path_traversal, validate_parent_within_kiln, validate_write_target_within_kiln,
     };
     use super::*;
-    use crate::test_support::{arb_safe_path, arb_traversal_path};
+    use crate::test_support::{
+        arb_safe_path, arb_traversal_path, request_json_in_kilns, shape, shape_in_kilns, survives,
+    };
+    use crucible_daemon::rpc_client::NoteListRow;
     use proptest::prelude::*;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, TempDir};
 
     #[cfg(unix)]
     use std::os::unix::fs::symlink as symlink_dir;
     #[cfg(windows)]
     use std::os::windows::fs::symlink_dir;
+
+    // =====================================================================
+    // Each route answers the shape it declares
+    // =====================================================================
+
+    /// A kiln on disk holding one note, so the file routes have a real root
+    /// and real bytes to work with. Answers the kiln, the note's absolute
+    /// path, and the hash of what was written.
+    async fn kiln_with_note(text: &str) -> (TempDir, String, String) {
+        let kiln = TempDir::new().unwrap();
+        let note = kiln.path().join("Seed.md");
+        tokio::fs::write(&note, text).await.unwrap();
+        (kiln, note.to_string_lossy().into_owned(), disk_hash(text))
+    }
+
+    #[tokio::test]
+    async fn list_kiln_files_answers_the_declared_shape() {
+        let listing: KilnFilesResponse =
+            shape("GET", "/api/kiln/files?kiln=/daemon/kiln", None).await;
+
+        assert_eq!(listing.files.len(), 2);
+        assert_eq!(listing.files[0].name, "Kilns");
+        assert_eq!(listing.files[0].path, "notes/kilns.md");
+        assert!(
+            !listing.files[0].is_dir,
+            "this listing walks the note index, which holds no directories"
+        );
+    }
+
+    /// The notes route answers the same projection under the same key, so one
+    /// reply type serves both. A change to either must therefore move both.
+    #[tokio::test]
+    async fn list_kiln_notes_answers_the_same_shape_under_the_same_key() {
+        let files: KilnFilesResponse =
+            shape("GET", "/api/kiln/files?kiln=/daemon/kiln", None).await;
+        let notes: KilnFilesResponse =
+            shape("GET", "/api/kiln/notes?kiln=/daemon/kiln", None).await;
+
+        assert_eq!(
+            serde_json::to_value(&files).unwrap(),
+            serde_json::to_value(&notes).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn kiln_graph_answers_the_declared_shape() {
+        let graph: KilnGraphResponse =
+            shape("GET", "/api/kiln/graph?kiln=/daemon/kiln", None).await;
+
+        assert_eq!(graph.notes.len(), 2);
+        assert_eq!(graph.notes[0].path, "Alpha.md");
+        assert_eq!(graph.notes[0].title, "Alpha");
+        assert_eq!(graph.notes[0].tags, ["rust"]);
+
+        // A resolved edge names a note in `notes`; a dangling one names the
+        // target as it was written and resolves to nothing.
+        assert!(graph.links[0].resolved);
+        assert_eq!(graph.links[0].target, "Beta.md");
+        assert!(!graph.links[1].resolved);
+        assert_eq!(graph.links[1].target, "ghost");
+    }
+
+    #[tokio::test]
+    async fn get_kiln_file_answers_the_declared_shape() {
+        let text = "# Seed\n\nBody.\n";
+        let (kiln, note, hash) = kiln_with_note(text).await;
+
+        let answer: KilnFileResponse = shape_in_kilns(
+            "GET",
+            &format!("/api/kiln/file?path={note}"),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(answer.content, text);
+        assert_eq!(
+            answer.content_hash, hash,
+            "the hash is of the bytes just read, not of the index's copy"
+        );
+    }
+
+    #[tokio::test]
+    async fn put_kiln_file_answers_the_declared_shape() {
+        let (kiln, note, hash) = kiln_with_note("before\n").await;
+
+        let answer: FileWriteResponse = shape_in_kilns(
+            "PUT",
+            "/api/kiln/file",
+            Some(serde_json::json!({
+                "path": note,
+                "content": "after\n",
+                "base_hash": hash,
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert!(answer.ok);
+        assert_eq!(answer.merged, Some(false), "the base was current");
+        assert_eq!(
+            answer.content, None,
+            "nothing was merged, so nothing to send back"
+        );
+        assert_eq!(answer.content_hash, disk_hash("after\n"));
+    }
+
+    #[tokio::test]
+    async fn patch_kiln_file_answers_the_declared_shape() {
+        let (kiln, note, hash) = kiln_with_note("- [ ] task\n").await;
+
+        let answer: FileWriteResponse = shape_in_kilns(
+            "PATCH",
+            "/api/kiln/file",
+            Some(serde_json::json!({
+                "path": note,
+                "base_hash": hash,
+                "edits": [{ "expect": "- [ ] task", "replace": "- [x] task" }],
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert!(answer.ok);
+        assert_eq!(
+            answer.merged, None,
+            "a patch never merges, so it writes no `merged` key"
+        );
+        assert_eq!(answer.content_hash, disk_hash("- [x] task\n"));
+    }
+
+    #[tokio::test]
+    async fn get_raw_file_answers_the_bytes_and_not_json() {
+        let kiln = TempDir::new().unwrap();
+        let shot = kiln.path().join("shot.png");
+        // A real PNG signature: 0x89 is not valid UTF-8 in any position, so a
+        // text-only reader cannot serve this and JSON cannot carry it.
+        let bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+        tokio::fs::write(&shot, bytes).await.unwrap();
+
+        let (_mock, client) =
+            crate::test_support::start_mock_daemon_with_kilns(vec![kiln.path().to_path_buf()])
+                .await;
+        let app =
+            crate::test_support::build_test_app(crate::test_support::build_mock_state(client));
+
+        use tower::ServiceExt;
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(format!("/api/file/raw?path={}", shot.display()))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), bytes);
+    }
+
+    // =====================================================================
+    // The conflict arms
+    // =====================================================================
+
+    /// A whole write whose base is stale and that sent no `base_text` has
+    /// nothing to merge with, so it refuses with the bare arm.
+    #[tokio::test]
+    async fn a_stale_whole_write_answers_the_refused_arm() {
+        let (kiln, note, _) = kiln_with_note("on disk\n").await;
+
+        let (status, body) = request_json_in_kilns(
+            "PUT",
+            "/api/kiln/file",
+            Some(serde_json::json!({
+                "path": note,
+                "content": "mine\n",
+                "base_hash": "0".repeat(64),
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let conflict: FileWriteConflict = serde_json::from_value(body.clone())
+            .unwrap_or_else(|e| panic!("the conflict type cannot read the body: {e}\n{body}"));
+        let FileWriteConflict::Refused {
+            ok,
+            current_hash,
+            error,
+        } = conflict
+        else {
+            panic!("expected the bare refusal arm, got {body}");
+        };
+        assert!(!ok);
+        assert_eq!(current_hash, disk_hash("on disk\n"));
+        assert_eq!(error.code, 409);
+        assert_eq!(
+            tokio::fs::read_to_string(&note).await.unwrap(),
+            "on disk\n",
+            "the file is untouched"
+        );
+    }
+
+    /// A whole write that sent its `base_text` is merged instead, and a
+    /// cluster both sides changed comes back as a region.
+    #[tokio::test]
+    async fn a_merge_that_cannot_settle_answers_the_merge_arm() {
+        let (kiln, note, _) = kiln_with_note("line one\ntheirs\n").await;
+        let base = "line one\nbase\n";
+
+        let (status, body) = request_json_in_kilns(
+            "PUT",
+            "/api/kiln/file",
+            Some(serde_json::json!({
+                "path": note,
+                "content": "line one\nours\n",
+                "base_hash": disk_hash(base),
+                "base_text": base,
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let conflict: FileWriteConflict = serde_json::from_value(body.clone())
+            .unwrap_or_else(|e| panic!("the conflict type cannot read the body: {e}\n{body}"));
+        let FileWriteConflict::Merge {
+            current_content,
+            regions,
+            stale_base,
+            ..
+        } = conflict
+        else {
+            panic!("expected the merge arm, got {body}");
+        };
+        assert!(stale_base);
+        assert_eq!(current_content, "line one\ntheirs\n");
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].ours, "ours\n");
+        assert_eq!(regions[0].theirs, "theirs\n");
+    }
+
+    /// A patch whose anchor does not apply comes back with the refusal, which
+    /// names the edit and why.
+    #[tokio::test]
+    async fn a_patch_whose_anchor_misses_answers_the_patch_arm() {
+        let (kiln, note, _) = kiln_with_note("- [ ] task\n").await;
+
+        let (status, body) = request_json_in_kilns(
+            "PATCH",
+            "/api/kiln/file",
+            Some(serde_json::json!({
+                "path": note,
+                "edits": [{ "expect": "nothing like this", "replace": "x" }],
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let conflict: FileWriteConflict = serde_json::from_value(body.clone())
+            .unwrap_or_else(|e| panic!("the conflict type cannot read the body: {e}\n{body}"));
+        let FileWriteConflict::Patch {
+            failed, stale_base, ..
+        } = conflict
+        else {
+            panic!("expected the patch arm, got {body}");
+        };
+        assert!(!stale_base, "the anchors refused, not the base");
+        assert_eq!(failed, vec![EditRefusal::NotFound { index: 0 }]);
+    }
+
+    /// The three arms are untagged, and serde takes the first that fits. Each
+    /// one is written and read back, so a reordering that made one arm swallow
+    /// another's body fails here rather than in a browser.
+    #[test]
+    fn a_conflict_reads_back_as_the_arm_that_was_sent() {
+        let merge = FileWriteConflict::Merge {
+            ok: false,
+            current_hash: "a".repeat(64),
+            current_content: "theirs\n".to_string(),
+            merged_content: "ours\n".to_string(),
+            regions: vec![Region {
+                start_line: 2,
+                end_line: 3,
+                base: "base\n".to_string(),
+                ours: "ours\n".to_string(),
+                theirs: "theirs\n".to_string(),
+            }],
+            stale_base: true,
+        };
+        let patch = FileWriteConflict::Patch {
+            ok: false,
+            current_hash: "b".repeat(64),
+            failed: vec![EditRefusal::Ambiguous {
+                index: 1,
+                matches: 3,
+            }],
+            stale_base: false,
+        };
+        let refused = FileWriteConflict::Refused {
+            ok: false,
+            current_hash: "c".repeat(64),
+            error: WriteErrorRow {
+                code: 409,
+                message: "The file moved on".to_string(),
+            },
+        };
+
+        for (sent, arm) in [(&merge, "merge"), (&patch, "patch"), (&refused, "refused")] {
+            let wire = serde_json::to_value(sent).unwrap();
+            let read: FileWriteConflict = serde_json::from_value(wire.clone())
+                .unwrap_or_else(|e| panic!("the {arm} arm does not read back: {e}\n{wire}"));
+            assert_eq!(
+                serde_json::to_value(read).unwrap(),
+                wire,
+                "the {arm} arm was read as a different arm"
+            );
+        }
+    }
+
+    // =====================================================================
+    // The rows write back what the daemon sent
+    // =====================================================================
+
+    /// A file entry survives [`FileEntryRow`], built from the daemon's own
+    /// [`NoteListRow`] through the projection the route uses.
+    #[test]
+    fn a_file_entry_writes_back_what_note_list_sent() {
+        let row = NoteListRow {
+            name: "Kilns".to_string(),
+            path: "notes/kilns.md".to_string(),
+            title: Some("Kilns".to_string()),
+            tags: vec!["knowledge".to_string()],
+            updated_at: Some("2026-01-01T00:00:00Z".to_string()),
+            properties: Default::default(),
+        };
+
+        survives::<FileEntryRow>(&note_to_file_json(row));
+    }
 
     #[tokio::test]
     async fn a_file_that_is_not_text_is_not_reported_as_missing() {

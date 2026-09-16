@@ -82,11 +82,21 @@ shellexpand = "3.1"
 # Fuzzy matching for interactive search
 nucleo-matcher = "0.3"
 
+# OpenAPI schemas for the wire types the web API answers with, behind the
+# `openapi` feature. The document is generated from crucible-web's router, and
+# a route that forwards one of these types describes it by deriving here rather
+# than by keeping a second copy of the shape.
+utoipa = { workspace = true, optional = true }
+
 [features]
 default = ["core", "markdown-it-parser", "toml"]
 core = []
 test-utils = []
 markdown-it-parser = []
+
+# `ToSchema` on the types the web API puts on the wire. Off by default: only
+# crucible-web needs the schemas, and nothing else pays for the dependency.
+openapi = ["dep:utoipa"]
 
 # Absorbed from crucible-config: the TOML format toggle
 toml = []

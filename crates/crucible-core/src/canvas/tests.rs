@@ -372,3 +372,65 @@ fn references_to_missing_files_still_parse() {
 
     assert_eq!(canvas.file_paths().count(), 1);
 }
+
+/// The four node types the schema publishes are the four the parser accepts.
+///
+/// [`NODE_TYPES`] is what a client switches on, so a fifth node type that
+/// reached the parser and not this list would arrive at the browser as a node
+/// the union has no arm for. The match below is exhaustive over [`NodeKind`],
+/// so a new variant fails to compile here, and the comparison then fails until
+/// the list names it.
+#[test]
+fn every_node_type_is_in_the_schema() {
+    fn spelling(kind: &NodeKind) -> &'static str {
+        match kind {
+            NodeKind::Text { .. } => "text",
+            NodeKind::File { .. } => "file",
+            NodeKind::Link { .. } => "link",
+            NodeKind::Group { .. } => "group",
+        }
+    }
+
+    let every_kind = [
+        NodeKind::Text {
+            text: String::new(),
+        },
+        NodeKind::File {
+            file: String::new(),
+            subpath: None,
+        },
+        NodeKind::Link { url: String::new() },
+        NodeKind::Group {
+            label: None,
+            background: None,
+            background_style: None,
+        },
+    ];
+
+    let parsed: Vec<&str> = every_kind.iter().map(spelling).collect();
+    assert_eq!(
+        parsed,
+        NODE_TYPES.to_vec(),
+        "the schema's node types and the parser's have separated"
+    );
+
+    // And the node itself reports the same spelling, which is the value that
+    // actually reaches the wire.
+    for kind in every_kind {
+        let node = Node {
+            id: "n".to_string(),
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            color: None,
+            extra: Map::new(),
+            kind,
+        };
+        assert!(
+            NODE_TYPES.contains(&node.type_name()),
+            "`{}` is a node type the schema does not publish",
+            node.type_name()
+        );
+    }
+}

@@ -3,48 +3,135 @@ use super::helpers::{note_to_metadata_json, validate_note_name, MAX_CONTENT_SIZE
 // this file had the same six fields and its own `default_grep_limit`
 // hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
 // change to that constant moved the RPC default and left the HTTP one behind.
+use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
-    routing::{get, post, put},
-    Json, Router,
+    Json,
 };
 use chrono::Utc;
+use crucible_core::types::database::BlockRef;
 use crucible_daemon::rpc_client::GrepSearchRequest;
-use serde::Deserialize;
+use crucible_daemon::GrepSearchResponse;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tokio::fs;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn search_routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/kilns", get(list_kilns))
-        .route("/api/notes", get(list_notes))
-        .route("/api/notes/resolve", get(resolve_note))
-        .route("/api/notes/{name}", get(get_note))
-        .route("/api/notes/{name}", put(put_note))
-        .route("/api/backlinks", get(get_backlinks))
-        .route("/api/search/vectors", post(search_vectors))
-        .route("/api/search/semantic", post(search_semantic))
-        .route("/api/search/grep", post(search_grep))
+pub fn search_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list_kilns))
+        .routes(routes!(list_notes))
+        .routes(routes!(resolve_note))
+        .routes(routes!(get_note, put_note))
+        .routes(routes!(get_backlinks))
+        .routes(routes!(search_vectors))
+        .routes(routes!(search_semantic))
+        .routes(routes!(search_grep))
 }
 
-async fn list_kilns(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
+/// One kiln, as the daemon's `kiln.list` reports it.
+///
+/// Every key is written on every row, including the two an older reader
+/// treated as optional, so this reply carries no absent-versus-false ambiguity.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KilnRow {
+    /// Where the kiln lives. This is the one listing whose job is to say so.
+    path: String,
+    /// The REGISTRY key — the name every other API call answers to. An open
+    /// directory that no entry names carries the empty string, never `null`.
+    name: String,
+    /// Whether the registry answers for this directory, and therefore whether
+    /// `name` is a name an attach accepts. A row with `false` must not be
+    /// offered in a picker.
+    registered: bool,
+    /// Whether the daemon holds the kiln open right now. A closed row is not a
+    /// dead one: the first request that addresses a kiln opens it.
+    open: bool,
+    /// Seconds since the daemon last touched the kiln, or `null` when it holds
+    /// it closed. Always written, so `required` rather than optional.
+    #[schema(required = true)]
+    last_access_secs_ago: Option<u64>,
+}
+
+/// What `GET /api/kilns` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KilnListResponse {
+    kilns: Vec<KilnRow>,
+}
+
+/// `GET /api/kilns` — every kiln a client may address.
+#[utoipa::path(
+    get,
+    path = "/api/kilns",
+    responses(
+        (status = 200, body = KilnListResponse),
+        (status = 502, description = "The daemon could not list the kilns, or answered a shape this route cannot read"),
+    )
+)]
+async fn list_kilns(State(state): State<AppState>) -> Result<Json<KilnListResponse>, WebError> {
     let kilns = state.daemon.kiln_list().await.daemon_err()?;
 
-    Ok(Json(serde_json::json!({ "kilns": kilns })))
+    Ok(Json(KilnListResponse {
+        kilns: daemon_shape(serde_json::Value::Array(kilns), "kiln.list")?,
+    }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ListNotesQuery {
+    /// Absolute path of the kiln to list.
+    #[param(value_type = String)]
     kiln: PathBuf,
+    /// Keep only notes whose path holds this substring.
     path_filter: Option<String>,
 }
 
+/// One note, with the metadata a client filters and sorts on.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct NoteMetadataRow {
+    /// The file stem, or the whole path when the stem is not UTF-8.
+    name: String,
+    /// RELATIVE to the kiln root. A path-taking endpoint needs it joined onto
+    /// the root first.
+    path: String,
+    /// The note's own title, or `null` when it declares none. Always written.
+    #[schema(required = true)]
+    title: Option<String>,
+    tags: Vec<String>,
+    /// ISO-8601, or `null` for a note the index has no timestamp for. Always
+    /// written.
+    #[schema(required = true)]
+    updated_at: Option<String>,
+    /// The note's own frontmatter, filtered daemon-side to what the author
+    /// wrote. Open by design: a note may carry any key, and validating the
+    /// values here would refuse frontmatter this layer has no business judging.
+    properties: BTreeMap<String, serde_json::Value>,
+}
+
+/// What `GET /api/notes` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct NoteListResponse {
+    notes: Vec<NoteMetadataRow>,
+}
+
+/// `GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata.
+#[utoipa::path(
+    get,
+    path = "/api/notes",
+    params(ListNotesQuery),
+    responses(
+        (status = 200, body = NoteListResponse),
+        (status = 502, description = "The daemon could not list the notes, or answered a shape this route cannot read"),
+    )
+)]
 async fn list_notes(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ListNotesQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<NoteListResponse>, WebError> {
     let notes = state
         .daemon
         .list_notes(&query.kiln, query.path_filter.as_deref())
@@ -53,7 +140,9 @@ async fn list_notes(
 
     let notes_json: Vec<serde_json::Value> = notes.into_iter().map(note_to_metadata_json).collect();
 
-    Ok(Json(serde_json::json!({ "notes": notes_json })))
+    Ok(Json(NoteListResponse {
+        notes: daemon_shape(serde_json::Value::Array(notes_json), "note.list")?,
+    }))
 }
 
 /// `GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink
@@ -81,10 +170,22 @@ async fn list_notes(
 /// failing is the correct outcome — the alternative, quietly answering from a
 /// different root, is how a link in one vault silently opens a same-named note
 /// from another.
+#[utoipa::path(
+    get,
+    path = "/api/notes/resolve",
+    params(ResolveQuery),
+    responses(
+        (status = 200, body = ResolvedNoteResponse),
+        (status = 400, description = "The name carries a traversal sequence"),
+        (status = 404, description = "No open kiln or readable project holds the supplied root, or it holds no such note"),
+        (status = 500, description = "The walk that searches the root failed"),
+        (status = 502, description = "The daemon could not list the kilns or the projects"),
+    )
+)]
 async fn resolve_note(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ResolveQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ResolvedNoteResponse>, WebError> {
     validate_note_name(&query.name)?;
 
     // The caller does NOT get to nominate the root.
@@ -116,7 +217,7 @@ async fn resolve_note(
             continue;
         }
         if let Some(contained) = contained_file(&candidate, &root) {
-            return Ok(Json(resolved_json(&root, &contained)));
+            return Ok(Json(resolved_note(&root, &contained)));
         }
     }
 
@@ -169,7 +270,7 @@ async fn resolve_note(
     };
 
     match best {
-        Some(path) => Ok(Json(resolved_json(&root, &path))),
+        Some(path) => Ok(Json(resolved_note(&root, &path))),
         None => Err(WebError::NotFound(format!(
             "Note '{}' not found in this kiln",
             query.name
@@ -186,26 +287,92 @@ fn contained_file(path: &std::path::Path, root: &std::path::Path) -> Option<std:
     (canonical.is_file() && canonical.starts_with(root)).then_some(canonical)
 }
 
-fn resolved_json(root: &std::path::Path, path: &std::path::Path) -> serde_json::Value {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    serde_json::json!({
-        "path": rel.to_string_lossy(),
-        "absolutePath": path.to_string_lossy(),
-        "title": path.file_stem().map(|s| s.to_string_lossy().to_string()),
-    })
+/// Where a wikilink target landed.
+///
+/// `absolutePath` is camelCase while every sibling reply is snake_case: the
+/// browser has read that spelling since before this route was typed, and
+/// renaming it would break the editor's open-a-link path for no gain.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct ResolvedNoteResponse {
+    /// Relative to the root that was walked.
+    path: String,
+    /// The absolute path, which is what an editor opens.
+    #[serde(rename = "absolutePath")]
+    absolute_path: String,
+    /// The file stem, or `null` when the path has none. Always written.
+    #[schema(required = true)]
+    title: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+fn resolved_note(root: &std::path::Path, path: &std::path::Path) -> ResolvedNoteResponse {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    ResolvedNoteResponse {
+        path: rel.to_string_lossy().into_owned(),
+        absolute_path: path.to_string_lossy().into_owned(),
+        title: path.file_stem().map(|s| s.to_string_lossy().into_owned()),
+    }
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ResolveQuery {
+    /// A path inside the root to search. The root that is actually walked is
+    /// the kiln or project this resolves to, never the supplied path itself.
+    #[param(value_type = String)]
     kiln: PathBuf,
+    /// The wikilink target, alias and heading suffixes included.
     name: String,
 }
 
+/// One note, as `get_note_by_name` reports it.
+///
+/// The daemon sends `links_to` and `wikilinks` for the same links: the web
+/// reader pins `links_to`, and the RPC client's own DTO reads `wikilinks`.
+/// Both stay on the wire, so both are named here.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct NoteResponse {
+    /// Relative to the kiln root.
+    path: String,
+    /// The note's title. The daemon writes the empty string when it has none;
+    /// this is never `null`.
+    title: String,
+    tags: Vec<String>,
+    /// Every wikilink target in the note, as written.
+    links_to: Vec<String>,
+    /// The same targets, one object each.
+    wikilinks: Vec<WikilinkRow>,
+    /// BLAKE3 of the note's content as the INDEX holds it. The file watcher
+    /// writes it asynchronously, so it lags a save; `GET /api/kiln/file`
+    /// answers the hash of the bytes on disk.
+    content_hash: String,
+}
+
+/// One wikilink target.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct WikilinkRow {
+    target: String,
+}
+
+/// `GET /api/notes/{name}?kiln=<path>` — one note by name or path.
+#[utoipa::path(
+    get,
+    path = "/api/notes/{name}",
+    params(
+        ("name" = String, Path, description = "The note's name or kiln-relative path"),
+        KilnQuery,
+    ),
+    responses(
+        (status = 200, body = NoteResponse),
+        (status = 400, description = "The name carries a traversal sequence"),
+        (status = 404, description = "The kiln holds no note of that name"),
+        (status = 502, description = "The daemon could not read the note, or answered a shape this route cannot read"),
+    )
+)]
 async fn get_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
     axum::extract::Query(query): axum::extract::Query<KilnQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<NoteResponse>, WebError> {
     // Security: Validate note name doesn't contain path traversal
     validate_note_name(&name)?;
 
@@ -216,18 +383,24 @@ async fn get_note(
         .daemon_err()?;
 
     match note {
-        Some(n) => Ok(Json(n)),
+        Some(n) => Ok(Json(daemon_shape(n, "note.get")?)),
         None => Err(WebError::NotFound(format!("Note '{name}' not found"))),
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct KilnQuery {
+    /// Absolute path of the kiln that holds the note.
+    #[param(value_type = String)]
     kiln: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct BacklinksQuery {
+    /// Absolute path of the kiln that holds the note.
+    #[param(value_type = String)]
     kiln: PathBuf,
     /// Note name or kiln-relative path (same fuzzy resolution as `get_note_by_name`).
     note: String,
@@ -249,10 +422,21 @@ fn absolute_note_path(kiln: &std::path::Path, note_path: &str) -> String {
 /// `get_backlinks`). `unlinked` is plain-text mentions of *other* notes inside
 /// the focused note's content (daemon `suggest_links`) — candidates for
 /// one-click link insertion. Self-mentions are filtered out.
+#[utoipa::path(
+    get,
+    path = "/api/backlinks",
+    params(BacklinksQuery),
+    responses(
+        (status = 200, body = BacklinksResponse),
+        (status = 400, description = "The note name carries a traversal sequence"),
+        (status = 404, description = "The kiln holds no note of that name"),
+        (status = 502, description = "The daemon could not read the links, or answered a shape this route cannot read"),
+    )
+)]
 async fn get_backlinks(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<BacklinksQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<BacklinksResponse>, WebError> {
     validate_note_name(&query.note)?;
 
     let resolved = state
@@ -327,29 +511,117 @@ async fn get_backlinks(
         Err(_) => Vec::new(),
     };
 
-    Ok(Json(serde_json::json!({
-        "note": { "path": note_path, "abs_path": abs_path, "title": note_title },
-        "linked": linked,
-        "unlinked": unlinked,
-    })))
+    Ok(Json(BacklinksResponse {
+        note: FocusedNoteRow {
+            path: note_path,
+            abs_path,
+            title: note_title,
+        },
+        linked: daemon_shape(serde_json::Value::Array(linked), "get_backlinks")?,
+        unlinked: daemon_shape(serde_json::Value::Array(unlinked), "suggest_links")?,
+    }))
 }
 
-#[derive(Debug, Deserialize)]
+/// The note the panel is about.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct FocusedNoteRow {
+    /// As the index holds it: kiln-relative in normal operation.
+    path: String,
+    /// The same note joined onto the kiln root, which is what
+    /// `GET /api/kiln/file` takes.
+    abs_path: String,
+    /// The empty string when the index holds no title. Never `null`.
+    title: String,
+}
+
+/// A note whose wikilinks point at the focused note.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct BacklinkRow {
+    name: String,
+    /// Kiln-relative, as the index holds it.
+    path: String,
+    /// `null` when the source note declares no title. Always written.
+    #[schema(required = true)]
+    title: Option<String>,
+    /// The same source joined onto the kiln root. Added by this route, not by
+    /// the daemon.
+    abs_path: String,
+    /// Byte offset of the first link occurrence in the source. Absent — not
+    /// `null` — for a span-less legacy index row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    span_start: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    span_end: Option<i64>,
+}
+
+/// A plain-text mention of another note inside the focused note — a candidate
+/// for one-click link insertion, mirroring the daemon's `LinkSuggestion`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct UnlinkedMentionRow {
+    /// The text as it appears, original casing kept.
+    mention: String,
+    /// The note name it would link to.
+    target: String,
+    /// Byte offset of the mention in the note's content.
+    offset: usize,
+}
+
+/// What `GET /api/backlinks` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct BacklinksResponse {
+    note: FocusedNoteRow,
+    linked: Vec<BacklinkRow>,
+    unlinked: Vec<UnlinkedMentionRow>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PutNoteRequest {
     /// The hash the caller read. Absent keeps the blind overwrite; present
     /// refuses with 409 and the current hash when the file moved on.
     #[serde(default)]
     base_hash: Option<String>,
 
+    /// Absolute path of the kiln to write into. It must be registered.
+    #[schema(value_type = String)]
     kiln: PathBuf,
     content: String,
 }
 
+/// What `PUT /api/notes/{name}` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct NoteSavedResponse {
+    success: bool,
+    /// The file name written, `.md` included — which is not always the `name`
+    /// that was asked for.
+    name: String,
+    /// The first heading of the content, or its first line.
+    title: String,
+    /// When this route wrote it, not when the index noticed.
+    updated_at: chrono::DateTime<Utc>,
+}
+
+/// `PUT /api/notes/{name}` — write a note into an open kiln.
+#[utoipa::path(
+    put,
+    path = "/api/notes/{name}",
+    params(("name" = String, Path, description = "The note's name, with or without `.md`")),
+    request_body = PutNoteRequest,
+    responses(
+        (status = 200, body = NoteSavedResponse),
+        (status = 400, description = "The content is too large, the name carries a traversal sequence, or the name escapes the kiln"),
+        (status = 403, description = "The root refuses writes"),
+        (status = 404, description = "The kiln is not registered, or the path is in no root"),
+        (status = 409, description = "The file moved on since `base_hash` was read"),
+        (status = 415, description = "The file on disk is not UTF-8 text"),
+        (status = 422, description = "The daemon refused the write"),
+        (status = 502, description = "The daemon could not list the kilns, or could not write"),
+    )
+)]
 async fn put_note(
     State(state): State<AppState>,
     Path(name): Path<String>,
     Json(req): Json<PutNoteRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<NoteSavedResponse>, WebError> {
     // Security: Validate content size to prevent DoS
     if req.content.len() > MAX_CONTENT_SIZE {
         return Err(WebError::Chat(format!(
@@ -416,12 +688,12 @@ async fn put_note(
 
     let title = extract_title(&req.content);
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "name": note_filename,
-        "title": title,
-        "updated_at": Utc::now()
-    })))
+    Ok(Json(NoteSavedResponse {
+        success: true,
+        name: note_filename,
+        title,
+        updated_at: Utc::now(),
+    }))
 }
 
 fn extract_title(content: &str) -> String {
@@ -439,9 +711,12 @@ fn extract_title(content: &str) -> String {
         .unwrap_or_else(|| content.lines().next().unwrap_or("Untitled").to_string())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct VectorSearchRequest {
+    /// Absolute path of the kiln to search.
+    #[schema(value_type = String)]
     kiln: PathBuf,
+    /// The query vector, already embedded by the caller.
     vector: Vec<f32>,
     #[serde(default = "default_limit")]
     limit: usize,
@@ -451,28 +726,57 @@ fn default_limit() -> usize {
     10
 }
 
+/// One block hit, as `search_vectors` ranked it.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct VectorSearchRow {
+    /// The note's kiln-relative path.
+    document_id: String,
+    /// Similarity, higher is closer.
+    score: f64,
+    /// Where in the note the hit sits, or `null` when the hit names the whole
+    /// note. Always written, so `null` reads as "the whole note" and never as
+    /// "unknown".
+    #[schema(required = true)]
+    block: Option<BlockRef>,
+}
+
+/// What `POST /api/search/vectors` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct VectorSearchResponse {
+    results: Vec<VectorSearchRow>,
+}
+
+/// `POST /api/search/vectors` — rank a kiln's blocks against a vector the
+/// caller already holds.
+#[utoipa::path(
+    post,
+    path = "/api/search/vectors",
+    request_body = VectorSearchRequest,
+    responses(
+        (status = 200, body = VectorSearchResponse),
+        (status = 502, description = "The daemon could not search the kiln"),
+    )
+)]
 async fn search_vectors(
     State(state): State<AppState>,
     Json(req): Json<VectorSearchRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<VectorSearchResponse>, WebError> {
     let results = state
         .daemon
         .search_vectors(&req.kiln, &req.vector, req.limit)
         .await
         .daemon_err()?;
 
-    let results_json: Vec<serde_json::Value> = results
-        .into_iter()
-        .map(|hit| {
-            serde_json::json!({
-                "document_id": hit.document_id,
-                "score": hit.score,
-                "block": hit.block,
+    Ok(Json(VectorSearchResponse {
+        results: results
+            .into_iter()
+            .map(|hit| VectorSearchRow {
+                document_id: hit.document_id,
+                score: hit.score,
+                block: hit.block,
             })
-        })
-        .collect();
-
-    Ok(Json(serde_json::json!({ "results": results_json })))
+            .collect(),
+    }))
 }
 
 /// `POST /api/search/semantic` — text semantic search over a kiln's notes.
@@ -485,21 +789,62 @@ async fn search_vectors(
 /// kiln-relative note path; `path` is the absolute path for the editor to
 /// open. Requires an embedding provider (else `embed.query` fails) AND
 /// processed notes (no embeddings yields no hits).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct SemanticSearchRequest {
+    /// Absolute path of the kiln to search.
+    #[schema(value_type = String)]
     kiln: PathBuf,
     query: String,
     #[serde(default = "default_limit")]
     limit: usize,
 }
 
+/// One note hit, with the block that earned it.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SemanticSearchRow {
+    /// The note's kiln-relative path. The same value as `rel_path`; both stay
+    /// because the browser reads both.
+    document_id: String,
+    /// The note's kiln-relative path, for display.
+    rel_path: String,
+    /// The absolute path, which is what an editor opens.
+    path: String,
+    /// Similarity, higher is closer.
+    score: f64,
+    /// The note's best block, or `null` when the kiln has no block rows.
+    /// Always written.
+    #[schema(required = true)]
+    block: Option<BlockRef>,
+    /// The block's text, or `null` when there is none. Always written.
+    #[schema(required = true)]
+    snippet: Option<String>,
+}
+
+/// What `POST /api/search/semantic` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SemanticSearchResponse {
+    results: Vec<SemanticSearchRow>,
+}
+
+/// `POST /api/search/semantic` — embed the query, then rank the kiln's notes.
+#[utoipa::path(
+    post,
+    path = "/api/search/semantic",
+    request_body = SemanticSearchRequest,
+    responses(
+        (status = 200, body = SemanticSearchResponse),
+        (status = 502, description = "The kiln has no embedding provider, or the daemon could not search it"),
+    )
+)]
 async fn search_semantic(
     State(state): State<AppState>,
     Json(req): Json<SemanticSearchRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SemanticSearchResponse>, WebError> {
     // Blank query → empty results (skip the embed round-trip).
     if req.query.trim().is_empty() {
-        return Ok(Json(serde_json::json!({ "results": [] })));
+        return Ok(Json(SemanticSearchResponse {
+            results: Vec::new(),
+        }));
     }
 
     let embedding = state
@@ -514,21 +859,19 @@ async fn search_semantic(
         .await
         .daemon_err()?;
 
-    let results_json: Vec<serde_json::Value> = one_row_per_note(results)
-        .into_iter()
-        .map(|hit| {
-            serde_json::json!({
-                "document_id": hit.document_id,
-                "rel_path": hit.document_id,
-                "path": absolute_note_path(&req.kiln, &hit.document_id),
-                "score": hit.score,
-                "block": hit.block,
-                "snippet": hit.snippet,
+    Ok(Json(SemanticSearchResponse {
+        results: one_row_per_note(results)
+            .into_iter()
+            .map(|hit| SemanticSearchRow {
+                rel_path: hit.document_id.clone(),
+                path: absolute_note_path(&req.kiln, &hit.document_id),
+                document_id: hit.document_id,
+                score: hit.score,
+                block: hit.block,
+                snippet: hit.snippet,
             })
-        })
-        .collect();
-
-    Ok(Json(serde_json::json!({ "results": results_json })))
+            .collect(),
+    }))
 }
 
 /// Keep the first hit of each note. Hits arrive best first, so the first
@@ -546,10 +889,20 @@ fn one_row_per_note(hits: Vec<crucible_daemon::VectorHit>) -> Vec<crucible_daemo
 /// INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
 /// (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
 /// binary files are skipped.
+#[utoipa::path(
+    post,
+    path = "/api/search/grep",
+    request_body = GrepSearchRequest,
+    responses(
+        (status = 200, body = GrepSearchResponse),
+        (status = 400, description = "The root sits outside every registered project and open kiln, or the query is not a valid regex"),
+        (status = 502, description = "The daemon could not run the search"),
+    )
+)]
 async fn search_grep(
     State(state): State<AppState>,
     Json(req): Json<GrepSearchRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<GrepSearchResponse>, WebError> {
     let resp = state
         .daemon
         .search_grep(
@@ -563,9 +916,7 @@ async fn search_grep(
         .await
         .map_err(map_grep_err)?;
 
-    Ok(Json(
-        serde_json::to_value(resp).unwrap_or_else(|_| serde_json::json!({})),
-    ))
+    Ok(Json(resp))
 }
 
 /// Map a `search_grep` daemon error. Containment/parameter rejections come back
@@ -583,8 +934,329 @@ fn map_grep_err(e: impl std::fmt::Display) -> WebError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{arb_safe_path, arb_traversal_path, request_json};
+    use crate::test_support::{
+        arb_safe_path, arb_traversal_path, request_json, shape, shape_in_kilns, survives,
+        MOCK_DAEMON_KILN_PATH,
+    };
+    use crucible_daemon::rpc_client::NoteListRow;
+    use crucible_daemon::tools::autolink::LinkSuggestion;
+    use crucible_daemon::VectorHit;
     use proptest::prelude::*;
+    use tempfile::TempDir;
+
+    // =====================================================================
+    // Each route answers the shape it declares
+    // =====================================================================
+
+    #[tokio::test]
+    async fn list_kilns_answers_the_declared_shape() {
+        let listing: KilnListResponse = shape("GET", "/api/kilns", None).await;
+
+        let registered = &listing.kilns[0];
+        assert_eq!(registered.path, MOCK_DAEMON_KILN_PATH);
+        assert_eq!(registered.name, "daemon-kiln");
+        assert!(registered.registered);
+        assert!(registered.open);
+        assert_eq!(registered.last_access_secs_ago, Some(12));
+
+        // A directory the daemon holds open that the registry cannot name. It
+        // carries the empty string, never `null`, and no picker may offer it.
+        let unnamed = &listing.kilns[1];
+        assert_eq!(unnamed.name, "");
+        assert!(!unnamed.registered);
+    }
+
+    #[tokio::test]
+    async fn list_notes_answers_the_declared_shape() {
+        let listing: NoteListResponse = shape("GET", "/api/notes?kiln=/daemon/kiln", None).await;
+
+        let titled = &listing.notes[0];
+        assert_eq!(titled.name, "Kilns");
+        assert_eq!(titled.path, "notes/kilns.md");
+        assert_eq!(titled.title.as_deref(), Some("Kilns"));
+        assert_eq!(titled.tags, ["knowledge"]);
+        assert_eq!(
+            titled.properties.get("status").and_then(|v| v.as_str()),
+            Some("draft"),
+            "the note's own frontmatter rides along"
+        );
+
+        // A note the index has no title or timestamp for. `null` is the value,
+        // never an absent key.
+        let bare = &listing.notes[1];
+        assert_eq!(bare.title, None);
+        assert_eq!(bare.updated_at, None);
+        assert!(bare.properties.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_note_answers_the_declared_shape() {
+        let note: NoteResponse = shape("GET", "/api/notes/Kilns?kiln=/daemon/kiln", None).await;
+
+        assert_eq!(note.path, "notes/kilns.md");
+        assert_eq!(note.title, "Kilns");
+        assert_eq!(note.links_to, ["Projects"]);
+        // The daemon writes the same links twice, under two names. Both are on
+        // the wire, so both are named.
+        assert_eq!(note.wikilinks[0].target, "Projects");
+        assert_eq!(note.content_hash.len(), 64);
+    }
+
+    #[tokio::test]
+    async fn a_note_the_kiln_does_not_hold_is_a_404() {
+        let (status, _) = request_json("GET", "/api/notes/missing?kiln=/daemon/kiln", None).await;
+
+        assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    }
+
+    /// Unlinked mentions are scanned out of the focused note's own file, so
+    /// this one needs the note on disk. Linked mentions come from the index
+    /// and would answer without it.
+    #[tokio::test]
+    async fn get_backlinks_answers_the_declared_shape() {
+        let kiln = TempDir::new().unwrap();
+        tokio::fs::create_dir(kiln.path().join("notes"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            kiln.path().join("notes/focused.md"),
+            "Other Note is worth reading. Focused Note is this one.\n",
+        )
+        .await
+        .unwrap();
+        let root = kiln.path().display();
+
+        let answer: BacklinksResponse = shape(
+            "GET",
+            &format!("/api/backlinks?kiln={root}&note=Focused"),
+            None,
+        )
+        .await;
+
+        assert_eq!(answer.note.path, "notes/focused.md");
+        assert_eq!(answer.note.title, "Focused Note");
+        assert_eq!(
+            answer.note.abs_path,
+            kiln.path().join("notes/focused.md").to_string_lossy(),
+            "the panel needs the path `/api/kiln/file` takes"
+        );
+
+        let linker = &answer.linked[0];
+        assert_eq!(linker.name, "linker");
+        assert_eq!(
+            linker.abs_path,
+            kiln.path().join("notes/linker.md").to_string_lossy()
+        );
+        assert_eq!(
+            linker.span_start, None,
+            "a span-less index row leaves the key out rather than sending null"
+        );
+
+        // The focused note mentions itself; that suggestion is filtered out.
+        assert_eq!(answer.unlinked.len(), 1, "{:?}", answer.unlinked);
+        assert_eq!(answer.unlinked[0].target, "Other Note");
+        assert_eq!(answer.unlinked[0].offset, 0);
+    }
+
+    #[tokio::test]
+    async fn search_vectors_answers_the_declared_shape() {
+        let answer: VectorSearchResponse = shape(
+            "POST",
+            "/api/search/vectors",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln", "vector": [0.1, 0.2] })),
+        )
+        .await;
+
+        // Every block row the daemon ranked, not one per note: folding is the
+        // semantic route's job, not this one's.
+        assert_eq!(answer.results.len(), 3);
+        let best = &answer.results[0];
+        assert_eq!(best.document_id, "notes/kilns.md");
+        let block = best.block.as_ref().expect("the hit names a block");
+        assert_eq!(block.span_start, 40);
+        assert_eq!(block.kind, "paragraph");
+    }
+
+    #[tokio::test]
+    async fn search_semantic_answers_the_declared_shape() {
+        let answer: SemanticSearchResponse = shape(
+            "POST",
+            "/api/search/semantic",
+            Some(serde_json::json!({ "kiln": "/daemon/kiln", "query": "what is a kiln" })),
+        )
+        .await;
+
+        // Two of the daemon's three block hits sit in one note, and this route
+        // keeps one row per note.
+        assert_eq!(answer.results.len(), 2);
+        let best = &answer.results[0];
+        assert_eq!(best.document_id, "notes/kilns.md");
+        assert_eq!(best.rel_path, "notes/kilns.md");
+        assert_eq!(best.path, "/daemon/kiln/notes/kilns.md");
+        assert_eq!(
+            best.snippet.as_deref(),
+            Some("A kiln is where knowledge goes.")
+        );
+        assert!(best.block.is_some());
+    }
+
+    #[tokio::test]
+    async fn search_grep_answers_the_declared_shape() {
+        let answer: GrepSearchResponse = shape(
+            "POST",
+            "/api/search/grep",
+            Some(serde_json::json!({ "root": "/tmp/test-kiln", "query": "needle" })),
+        )
+        .await;
+
+        assert!(!answer.truncated);
+        let hit = &answer.hits[0];
+        assert_eq!(hit.rel_path, "a.md");
+        assert_eq!(hit.line, 3);
+        assert_eq!(hit.match_start, 2);
+        assert_eq!(hit.match_end, 8);
+    }
+
+    #[tokio::test]
+    async fn resolve_note_answers_the_declared_shape() {
+        let kiln = TempDir::new().unwrap();
+        tokio::fs::create_dir(kiln.path().join("Notes"))
+            .await
+            .unwrap();
+        tokio::fs::write(kiln.path().join("Notes/Design.md"), "# Design\n")
+            .await
+            .unwrap();
+
+        let answer: ResolvedNoteResponse = shape_in_kilns(
+            "GET",
+            &format!(
+                "/api/notes/resolve?kiln={}&name=Design",
+                kiln.path().display()
+            ),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(answer.path, "Notes/Design.md");
+        assert_eq!(answer.title.as_deref(), Some("Design"));
+        assert!(
+            answer.absolute_path.ends_with("Notes/Design.md"),
+            "the editor opens the absolute path: {}",
+            answer.absolute_path
+        );
+    }
+
+    #[tokio::test]
+    async fn put_note_answers_the_declared_shape() {
+        let kiln = TempDir::new().unwrap();
+
+        let answer: NoteSavedResponse = shape_in_kilns(
+            "PUT",
+            "/api/notes/Seed",
+            Some(serde_json::json!({
+                "kiln": kiln.path(),
+                "content": "# Seeded\n\nBody.\n",
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert!(answer.success);
+        assert_eq!(answer.name, "Seed.md", "the route adds the suffix");
+        assert_eq!(answer.title, "Seeded", "the title is the first heading");
+        assert_eq!(
+            tokio::fs::read_to_string(kiln.path().join("Seed.md"))
+                .await
+                .unwrap(),
+            "# Seeded\n\nBody.\n"
+        );
+    }
+
+    // =====================================================================
+    // The rows write back what the daemon sent
+    // =====================================================================
+
+    /// Every field of a listed note survives [`NoteMetadataRow`].
+    ///
+    /// Built from the daemon's own [`NoteListRow`] through the same projection
+    /// the route uses, so a field added there and written to the wire fails
+    /// here rather than disappearing on the way to the browser.
+    #[test]
+    fn a_note_row_writes_back_what_note_list_sent() {
+        let row = NoteListRow {
+            name: "Kilns".to_string(),
+            path: "notes/kilns.md".to_string(),
+            title: Some("Kilns".to_string()),
+            tags: vec!["knowledge".to_string()],
+            updated_at: Some("2026-01-01T00:00:00Z".to_string()),
+            properties: [("status".to_string(), serde_json::json!("draft"))]
+                .into_iter()
+                .collect(),
+        };
+
+        survives::<NoteMetadataRow>(&note_to_metadata_json(row));
+    }
+
+    /// The same, for a note that declares nothing. `title` and `updated_at`
+    /// are `null` here and set above, and both spellings are written: an
+    /// absent key would be a different answer.
+    #[test]
+    fn a_bare_note_row_writes_back_its_nulls() {
+        let row = NoteListRow {
+            name: "Untitled".to_string(),
+            path: "notes/untitled.md".to_string(),
+            title: None,
+            tags: Vec::new(),
+            updated_at: None,
+            properties: Default::default(),
+        };
+
+        let wire = note_to_metadata_json(row);
+        assert_eq!(wire["title"], serde_json::Value::Null);
+        assert_eq!(wire["updated_at"], serde_json::Value::Null);
+        survives::<NoteMetadataRow>(&wire);
+    }
+
+    /// A hit's block survives [`VectorSearchRow`].
+    ///
+    /// The block is the structured part, and it comes from the daemon's own
+    /// [`VectorHit`] rather than a literal. The row drops `snippet` on
+    /// purpose — `POST /api/search/vectors` never carried it — so the object
+    /// is assembled the way the handler assembles it.
+    #[test]
+    fn a_vector_hit_writes_back_the_block_search_vectors_sent() {
+        let hit = VectorHit {
+            document_id: "notes/kilns.md".to_string(),
+            score: 0.91,
+            block: Some(crucible_core::types::database::BlockRef {
+                span_start: 40,
+                span_end: 90,
+                kind: "paragraph".to_string(),
+                cited: vec![(40, 55)],
+            }),
+            snippet: Some("A kiln is where knowledge goes.".to_string()),
+        };
+
+        survives::<VectorSearchRow>(&serde_json::json!({
+            "document_id": hit.document_id,
+            "score": hit.score,
+            "block": hit.block,
+        }));
+    }
+
+    /// An unlinked mention survives [`UnlinkedMentionRow`], built from the
+    /// daemon's own [`LinkSuggestion`].
+    #[test]
+    fn an_unlinked_mention_writes_back_what_suggest_links_sent() {
+        let suggestion = LinkSuggestion {
+            mention: "Other Note".to_string(),
+            target: "Other Note".to_string(),
+            offset: 12,
+        };
+
+        survives::<UnlinkedMentionRow>(&suggestion);
+    }
 
     #[tokio::test]
     async fn grep_search_maps_hits_to_wire_shape() {

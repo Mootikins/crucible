@@ -10,14 +10,16 @@
 //! the payload. A client that never learns the offending path cannot request
 //! it, so quarantine is enforced here rather than trusted to the renderer.
 
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, Json};
 use crucible_core::canvas::containment::{
     resolve_file_ref, validate_canvas, RefError, RejectedRef,
 };
 use crucible_core::canvas::{Canvas, NodeKind};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use super::helpers::{
     reject_path_traversal, validate_file_within_kiln, validate_write_target_within_kiln,
@@ -28,16 +30,18 @@ use crucible_core::config::{read_project_config, ProjectFileAccess};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 
-pub fn canvas_routes() -> Router<AppState> {
-    Router::new().route("/api/canvas", get(get_canvas).put(put_canvas))
+pub fn canvas_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(get_canvas, put_canvas))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct CanvasPathQuery {
+    /// Absolute path of the `.canvas` file.
     path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct PutCanvasRequest {
     path: String,
     content: String,
@@ -45,6 +49,47 @@ struct PutCanvasRequest {
     /// refuses with 409 and the current hash when the file moved on.
     #[serde(default)]
     base_hash: Option<String>,
+}
+
+/// A reference the read path refused, as the browser receives it.
+///
+/// Web-owned on purpose, and NOT a re-export of
+/// [`crucible_core::canvas::containment::RejectedRef`]. The core type carries
+/// `reference` — the offending path itself — and this reply deliberately drops
+/// it: a client that never learns the path cannot ask for it, which is what
+/// makes redaction an enforcement rather than a warning. The node id is
+/// `nodeId` here because the canvas format is camelCase throughout, and the
+/// browser reads it beside `fromNode` and `toNode`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct RejectedRefDto {
+    /// Id of the node holding the bad reference.
+    #[serde(rename = "nodeId")]
+    node_id: String,
+    /// Why it was refused, as a sentence to show the reader.
+    ///
+    /// A rendered [`RefError`], not a token. The browser prints it; nothing
+    /// branches on it, and `the_refusal_reasons_stay_whole_sentences` pins
+    /// every variant's wording so a reworded error is a visible change rather
+    /// than a silent one.
+    reason: String,
+}
+
+/// What `GET /api/canvas` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct CanvasResponse {
+    /// The document, with every refused reference already removed.
+    canvas: Canvas,
+    /// One entry per reference the document held and this reply withholds.
+    rejected: Vec<RejectedRefDto>,
+    /// The root the canvas belongs to, which bounds every reference in it.
+    #[schema(value_type = String)]
+    kiln: PathBuf,
+}
+
+/// What `PUT /api/canvas` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct CanvasSavedResponse {
+    ok: bool,
 }
 
 /// `GET /api/canvas?path=<path>` — read and validate a canvas document.
@@ -57,10 +102,21 @@ struct PutCanvasRequest {
 /// This is the fail-safe layer. A `.canvas` hand-edited on disk to point at
 /// `../../../etc/passwd` reaches this handler like any other, and the offending
 /// path never leaves the process.
+#[utoipa::path(
+    get,
+    path = "/api/canvas",
+    params(CanvasPathQuery),
+    responses(
+        (status = 200, body = CanvasResponse),
+        (status = 404, description = "No open kiln or readable project holds this path, or the file is not there"),
+        (status = 422, description = "The path carries a traversal sequence, or the file is not a canvas"),
+        (status = 502, description = "The daemon could not list the kilns or the projects"),
+    )
+)]
 async fn get_canvas(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<CanvasPathQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<CanvasResponse>, WebError> {
     reject_path_traversal(&query.path)?;
 
     let path = PathBuf::from(&query.path);
@@ -79,11 +135,11 @@ async fn get_canvas(
     let rejected = validate_canvas(&canvas, &kiln);
     redact(&mut canvas, &kiln);
 
-    Ok(Json(serde_json::json!({
-        "canvas": canvas,
-        "rejected": rejected_json(&rejected),
-        "kiln": kiln,
-    })))
+    Ok(Json(CanvasResponse {
+        canvas,
+        rejected: rejected_dtos(&rejected),
+        kiln,
+    }))
 }
 
 /// `PUT /api/canvas` — write a canvas document.
@@ -92,10 +148,24 @@ async fn get_canvas(
 /// checked before anything touches disk. A canvas naming a file outside its
 /// kiln is refused wholesale with the offending node ids, rather than being
 /// written and cleaned up later.
+#[utoipa::path(
+    put,
+    path = "/api/canvas",
+    request_body = PutCanvasRequest,
+    responses(
+        (status = 200, body = CanvasSavedResponse),
+        (status = 403, description = "The project is read-only, or the canvas references a file outside its root"),
+        (status = 404, description = "No open kiln or registered project holds this path"),
+        (status = 409, description = "The file moved on since `base_hash` was read"),
+        (status = 415, description = "The file on disk is not UTF-8 text"),
+        (status = 422, description = "The path carries a traversal sequence, the content is too large, or it is not a canvas"),
+        (status = 502, description = "The daemon could not list the roots, or could not write"),
+    )
+)]
 async fn put_canvas(
     State(state): State<AppState>,
     Json(req): Json<PutCanvasRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<CanvasSavedResponse>, WebError> {
     reject_path_traversal(&req.path)?;
 
     if req.content.len() > MAX_CONTENT_SIZE {
@@ -172,7 +242,7 @@ async fn put_canvas(
         .daemon_err()?;
     super::kiln::check_write(&answer)?;
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(CanvasSavedResponse { ok: true }))
 }
 
 /// Resolve the root a canvas belongs to: its kiln, or failing that its project.
@@ -327,17 +397,15 @@ fn redact(canvas: &mut Canvas, kiln_root: &Path) {
     }
 }
 
-fn rejected_json(rejected: &[RejectedRef]) -> Vec<serde_json::Value> {
+fn rejected_dtos(rejected: &[RejectedRef]) -> Vec<RejectedRefDto> {
     rejected
         .iter()
-        .map(|r| {
-            serde_json::json!({
-                "nodeId": r.node_id,
-                // The offending path is deliberately NOT echoed back — the
-                // reason is enough for the UI to explain the placeholder, and
-                // echoing it would hand a probe its own answer.
-                "reason": r.reason.to_string(),
-            })
+        .map(|r| RejectedRefDto {
+            node_id: r.node_id.clone(),
+            // The offending path is deliberately NOT echoed back — the
+            // reason is enough for the UI to explain the placeholder, and
+            // echoing it would hand a probe its own answer.
+            reason: r.reason.to_string(),
         })
         .collect()
 }
@@ -345,9 +413,223 @@ fn rejected_json(rejected: &[RejectedRef]) -> Vec<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{request_json_in_kilns, shape_in_kilns, survives};
     use crucible_core::canvas::containment::is_contained;
     use crucible_core::canvas::Canvas;
     use tempfile::TempDir;
+
+    // =====================================================================
+    // The routes answer the shapes they declare
+    // =====================================================================
+
+    /// A kiln on disk holding one canvas, so the read path has a real root to
+    /// resolve against and a real file to parse.
+    async fn kiln_with_canvas(document: serde_json::Value) -> (TempDir, String) {
+        let kiln = TempDir::new().unwrap();
+        let path = kiln.path().join("Board.canvas");
+        tokio::fs::write(&path, document.to_string()).await.unwrap();
+        let path = path.to_string_lossy().into_owned();
+        (kiln, path)
+    }
+
+    /// One node per kind, so no arm of the canvas union reaches the browser
+    /// untested, plus a key outside the spec at every level.
+    fn every_kind_of_node() -> serde_json::Value {
+        serde_json::json!({
+            "nodes": [
+                { "id": "t", "type": "text", "x": 0, "y": 0, "width": 1, "height": 1,
+                  "text": "# Note", "color": "3" },
+                { "id": "f", "type": "file", "x": 1, "y": 0, "width": 1, "height": 1,
+                  "file": "Notes/Fine.md", "subpath": "#Heading" },
+                { "id": "l", "type": "link", "x": 2, "y": 0, "width": 1, "height": 1,
+                  "url": "https://example.invalid" },
+                { "id": "g", "type": "group", "x": 3, "y": 0, "width": 9, "height": 9,
+                  "label": "Cluster", "backgroundStyle": "cover",
+                  "styleAttributes": { "border": "dashed" } }
+            ],
+            "edges": [
+                { "id": "e", "fromNode": "t", "toNode": "f", "fromSide": "right",
+                  "toEnd": "arrow", "label": "explains", "weight": 3 }
+            ],
+            "plugin-state": { "zoom": 1.5 }
+        })
+    }
+
+    #[tokio::test]
+    async fn get_canvas_answers_the_declared_shape() {
+        let (kiln, path) = kiln_with_canvas(every_kind_of_node()).await;
+
+        let answer: CanvasResponse = shape_in_kilns(
+            "GET",
+            &format!("/api/canvas?path={path}"),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(answer.canvas.nodes.len(), 4, "one node per kind");
+        assert_eq!(answer.canvas.edges.len(), 1);
+        assert!(
+            answer.rejected.is_empty(),
+            "every reference in this document is contained"
+        );
+        assert_eq!(answer.kiln, kiln.path().canonicalize().unwrap());
+        // The keys outside the spec survive the reply, which is the whole
+        // reason `Canvas` carries an `extra` bag at every level.
+        assert!(answer.canvas.extra.contains_key("plugin-state"));
+    }
+
+    /// The reply that carries a refusal, which is the shape the placeholder
+    /// renderer reads.
+    #[tokio::test]
+    async fn a_refused_reference_reaches_the_reply_without_its_path() {
+        let (kiln, path) = kiln_with_canvas(serde_json::json!({
+            "nodes": [{ "id": "bad", "type": "file", "x": 0, "y": 0,
+                        "width": 1, "height": 1, "file": "../../../etc/passwd" }]
+        }))
+        .await;
+
+        let answer: CanvasResponse = shape_in_kilns(
+            "GET",
+            &format!("/api/canvas?path={path}"),
+            None,
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(answer.rejected.len(), 1);
+        assert_eq!(answer.rejected[0].node_id, "bad");
+        assert!(!answer.rejected[0].reason.is_empty());
+        let body = serde_json::to_string(&answer).unwrap();
+        assert!(
+            !body.contains("passwd"),
+            "the offending path must not survive into the reply: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn put_canvas_answers_the_declared_shape() {
+        let kiln = TempDir::new().unwrap();
+        let path = kiln
+            .path()
+            .join("New.canvas")
+            .to_string_lossy()
+            .into_owned();
+
+        let answer: CanvasSavedResponse = shape_in_kilns(
+            "PUT",
+            "/api/canvas",
+            Some(serde_json::json!({
+                "path": path,
+                "content": every_kind_of_node().to_string(),
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert!(answer.ok);
+        assert!(
+            tokio::fs::read_to_string(&path).await.is_ok(),
+            "the document reached the disk"
+        );
+    }
+
+    /// A canvas naming a file outside its root is refused wholesale, and the
+    /// refusal is a 403 rather than a body the reply type could read.
+    #[tokio::test]
+    async fn put_canvas_refuses_a_reference_outside_the_root() {
+        let kiln = TempDir::new().unwrap();
+        let path = kiln
+            .path()
+            .join("Bad.canvas")
+            .to_string_lossy()
+            .into_owned();
+
+        let (status, body) = request_json_in_kilns(
+            "PUT",
+            "/api/canvas",
+            Some(serde_json::json!({
+                "path": path,
+                "content": serde_json::json!({
+                    "nodes": [{ "id": "bad", "type": "file", "x": 0, "y": 0,
+                                "width": 1, "height": 1, "file": "../escape.md" }]
+                })
+                .to_string(),
+            })),
+            vec![kiln.path().to_path_buf()],
+        )
+        .await;
+
+        assert_eq!(status, axum::http::StatusCode::FORBIDDEN, "{body}");
+    }
+
+    // =====================================================================
+    // The reply writes back the document it was given
+    // =====================================================================
+
+    /// Every node kind, every edge attribute and every key outside the spec
+    /// survives [`CanvasResponse`].
+    ///
+    /// Built from a parsed [`Canvas`] rather than from a literal, so a field
+    /// added to the core type and written to the wire fails here instead of
+    /// vanishing between the parser and the browser. That loss is the risk this
+    /// route took on when it stopped answering `serde_json::Value`.
+    #[test]
+    fn a_canvas_reply_writes_back_the_document_it_parsed() {
+        let document = every_kind_of_node();
+        let canvas = Canvas::parse(&document.to_string()).unwrap();
+
+        survives::<CanvasResponse>(&serde_json::json!({
+            "canvas": canvas,
+            "rejected": [],
+            "kiln": "/vault",
+        }));
+    }
+
+    // =====================================================================
+    // The refusal reasons
+    // =====================================================================
+
+    /// Every reason a reference can be refused, as the sentence the reply
+    /// carries.
+    ///
+    /// The wire value is a rendered [`RefError`], not a token, because the
+    /// browser prints it. An exhaustive match, so a variant added to the core
+    /// enum fails to compile here rather than reaching the reader as wording
+    /// nobody chose; and each sentence is pinned, so a rewording is a visible
+    /// change to this file.
+    #[test]
+    fn the_refusal_reasons_stay_whole_sentences() {
+        fn sentence(reason: RefError) -> &'static str {
+            match reason {
+                RefError::Empty => "reference is empty",
+                RefError::Absolute => {
+                    "reference is an absolute path; canvas references must be kiln-relative"
+                }
+                RefError::Traversal => {
+                    "reference escapes the kiln via a parent-directory component"
+                }
+                RefError::InteriorNul => "reference contains an interior NUL byte",
+                RefError::OutsideKiln => "reference resolves outside the kiln that owns the canvas",
+            }
+        }
+
+        const EVERY_REASON: &[RefError] = &[
+            RefError::Empty,
+            RefError::Absolute,
+            RefError::Traversal,
+            RefError::InteriorNul,
+            RefError::OutsideKiln,
+        ];
+
+        for &reason in EVERY_REASON {
+            assert_eq!(
+                reason.to_string(),
+                sentence(reason),
+                "the wording the browser prints moved"
+            );
+        }
+    }
 
     fn canvas_with(reference: &str) -> Canvas {
         Canvas::parse(
@@ -505,7 +787,7 @@ mod tests {
         let canvas = canvas_with("/etc/shadow");
         let rejected = validate_canvas(&canvas, tmp.path());
 
-        let json = serde_json::to_string(&rejected_json(&rejected)).unwrap();
+        let json = serde_json::to_string(&rejected_dtos(&rejected)).unwrap();
         assert!(
             json.contains("n1"),
             "the node id is needed to place the placeholder"

@@ -27,6 +27,7 @@ pub fn disk_hash(text: &str) -> String {
 
 /// One change: the text expected, and what replaces it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AnchoredEdit {
     /// The text this edit expects to find. Matched against WHOLE LINES.
     pub expect: String,
@@ -40,6 +41,7 @@ pub struct AnchoredEdit {
 
 /// Why one edit could not be applied. The index is the caller's edit index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum EditRefusal {
     /// The expected text is not in the file. It moved on, or was never there.

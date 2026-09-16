@@ -417,7 +417,28 @@ pub const MOCK_LOCATION_REASON: &str = "A location key names WHERE the daemon ac
 /// Generate mock RPC responses based on method name.
 pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
     match method {
-        "kiln.list" => json!([]),
+        // Two rows, because `handle_kiln_list` writes two kinds: a registry
+        // entry, named and attachable, and an open directory no entry names,
+        // which carries `registered: false` and the empty string. Both paths
+        // are deliberately absent from disk, so every containment check that
+        // canonicalizes still finds no root and the file routes behave as
+        // they did when this answered nothing.
+        "kiln.list" => json!([
+            {
+                "path": MOCK_DAEMON_KILN_PATH,
+                "name": "daemon-kiln",
+                "registered": true,
+                "open": true,
+                "last_access_secs_ago": 12,
+            },
+            {
+                "path": "/daemon/unnamed",
+                "name": "",
+                "registered": false,
+                "open": true,
+                "last_access_secs_ago": 0,
+            },
+        ]),
         "kiln.graph" => json!({
             "notes": [
                 { "path": "Alpha.md", "title": "Alpha", "tags": ["rust"] },
@@ -428,8 +449,43 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 { "source": "Alpha.md", "target": "ghost", "resolved": false }
             ]
         }),
-        "list_notes" => json!([]),
-        "get_note_by_name" => Value::Null,
+        // The daemon's `NoteListRow`, all six fields. One note carries a
+        // title, tags and frontmatter; the other carries none of them, so a
+        // reader that treats an absent title as a missing key fails here.
+        "list_notes" => json!([
+            {
+                "name": "Kilns",
+                "path": "notes/kilns.md",
+                "title": "Kilns",
+                "tags": ["knowledge"],
+                "updated_at": "2026-01-01T00:00:00Z",
+                "properties": { "status": "draft" },
+            },
+            {
+                "name": "Untitled",
+                "path": "notes/untitled.md",
+                "title": Value::Null,
+                "tags": [],
+                "updated_at": Value::Null,
+                "properties": {},
+            },
+        ]),
+        // Note name "missing" resolves to nothing (the 404 path); anything
+        // else resolves to a note with both link spellings the daemon writes.
+        "get_note_by_name" => {
+            if param_str(msg, "name") == "missing" {
+                Value::Null
+            } else {
+                json!({
+                    "path": "notes/kilns.md",
+                    "title": "Kilns",
+                    "tags": ["knowledge"],
+                    "links_to": ["Projects"],
+                    "wikilinks": [{ "target": "Projects" }],
+                    "content_hash": "a".repeat(64),
+                })
+            }
+        }
         // Note name "missing" resolves to nothing (404 path); anything else
         // resolves to a focused note with one linked mention.
         "get_backlinks" => {
@@ -1205,6 +1261,58 @@ pub async fn request_json(
     body: Option<Value>,
 ) -> (axum::http::StatusCode, Value) {
     request_json_as(method, uri, body, Vec::new()).await
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// [`request_json`], against a mock daemon that lists `kilns` as open.
+///
+/// The knowledge routes serve only a path inside an open root, so a test that
+/// reads or writes a real file through one needs a kiln that holds it. The
+/// plain [`request_json`] cannot supply one: its mock lists only directories
+/// that are not on disk.
+pub async fn request_json_in_kilns(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    kilns: Vec<PathBuf>,
+) -> (axum::http::StatusCode, Value) {
+    use tower::ServiceExt;
+
+    let (_mock, client) = start_mock_daemon_with_kilns(kilns).await;
+    let app = build_test_app(build_mock_state(client));
+
+    let builder = axum::http::Request::builder().method(method).uri(uri);
+    let request = match body {
+        Some(body) => builder
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap(),
+        None => builder.body(axum::body::Body::empty()).unwrap(),
+    };
+
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// [`shape`], against a mock daemon that lists `kilns` as open. See
+/// [`request_json_in_kilns`].
+pub async fn shape_in_kilns<T: serde::de::DeserializeOwned>(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    kilns: Vec<PathBuf>,
+) -> T {
+    let (status, json) = request_json_in_kilns(method, uri, body, kilns).await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{method} {uri}: {json}");
+    serde_json::from_value(json.clone()).unwrap_or_else(|e| {
+        panic!("{method} {uri} answered a body the struct cannot read: {e}\n{json}")
+    })
 }
 
 /// [`request_json`], plus the headers a route reads.

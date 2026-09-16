@@ -4,6 +4,63 @@
  */
 
 export interface paths {
+    "/api/backlinks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/backlinks?kiln=&note=` — linked + unlinked mentions for a note.
+         * @description `linked` is the notes whose wikilinks point at the focused note (daemon
+         *     `get_backlinks`). `unlinked` is plain-text mentions of *other* notes inside
+         *     the focused note's content (daemon `suggest_links`) — candidates for
+         *     one-click link insertion. Self-mentions are filtered out.
+         */
+        get: operations["get_backlinks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/canvas?path=<path>` — read and validate a canvas document.
+         * @description Returns `{ canvas, rejected, kiln }`. Any node whose reference fails
+         *     containment is **redacted in the returned canvas** — a `file` node loses its
+         *     path, a `group` loses its background — and described in `rejected` so the UI
+         *     can render a quarantined placeholder explaining why.
+         *
+         *     This is the fail-safe layer. A `.canvas` hand-edited on disk to point at
+         *     `../../../etc/passwd` reaches this handler like any other, and the offending
+         *     path never leaves the process.
+         */
+        get: operations["get_canvas"];
+        /**
+         * `PUT /api/canvas` — write a canvas document.
+         * @description This is the authoritative layer: the document is parsed and every reference
+         *     checked before anything touches disk. A canvas naming a file outside its
+         *     kiln is refused wholesale with the offending node ids, rather than being
+         *     written and cleaned up later.
+         */
+        put: operations["put_canvas"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/events/{session_id}": {
         parameters: {
             query?: never;
@@ -17,6 +74,31 @@ export interface paths {
          *     OpenAPI has no way to say "many of these, one per line".
          */
         get: operations["event_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/file/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/file/raw?path=<path>` — serve a file's raw bytes. Same
+         *     containment as reading via `/api/kiln/file` (kiln, or a project whose
+         *     `project_files` policy permits reads); used to load the media that markdown
+         *     and canvas cards reference by path (e.g. a README's `assets/demo.gif`).
+         * @description The content type is NOT simply the guess: see [`raw_file_response`], which
+         *     serves media as itself (sandboxing the one scriptable media type) and forces
+         *     everything else to download.
+         */
+        get: operations["get_raw_file"];
         put?: never;
         post?: never;
         delete?: never;
@@ -45,6 +127,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kiln/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/kiln/file?path=<path>` — read a file's content.
+         * @description The path must reside within an open kiln; otherwise the request is rejected.
+         */
+        get: operations["get_kiln_file"];
+        /** The daemon owns containment, policy, compare, merge and write. */
+        put: operations["put_kiln_file"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_kiln_file"];
+        trace?: never;
+    };
+    "/api/kiln/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/kiln/files?kiln=<path>` — list notes in a kiln as file entries. */
+        get: operations["list_kiln_files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kiln/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/kiln/graph?kiln=<path>` — the full note-link graph of a kiln.
+         * @description Returns the daemon's `kiln.graph` result verbatim:
+         *     `{ notes: [{ path, title, tags }], links: [{ source, target, resolved }] }`.
+         */
+        get: operations["kiln_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kiln/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/kiln/notes?kiln=<path>` — list notes in a kiln with metadata. */
+        get: operations["list_kiln_notes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kilns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/kilns` — every kiln a client may address. */
+        get: operations["list_kilns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models": {
         parameters: {
             query?: never;
@@ -59,6 +234,83 @@ export interface paths {
          *     resolver unfloored, and no caller ever sent one.
          */
         get: operations["list_all_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/notes?kiln=<path>` — the notes of one kiln, with metadata. */
+        get: operations["list_notes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/notes/{name}?kiln=<path>` — one note by name or path. */
+        get: operations["get_note"];
+        /** `PUT /api/notes/{name}` — write a note into an open kiln. */
+        put: operations["put_note"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/notes/resolve?kiln=<path>&name=<target>` — resolve a wikilink
+         *     target to a file, **by walking the kiln**.
+         * @description Deliberately independent of the note index. Opening `[[Some Note]]` is a
+         *     path question, and answering it from the index means a kiln that has not
+         *     been processed yet resolves nothing — which does not fail loudly, it falls
+         *     through to whatever kiln is configured as the default and silently opens a
+         *     same-named note from the wrong vault. Indexing is an optimisation for search
+         *     and backlinks; it must not be a prerequisite for following a link.
+         *
+         *     Resolution order, matching how wikilinks are written in practice:
+         *       1. exact kiln-relative path (with or without the `.md` suffix)
+         *       2. unique filename stem anywhere in the kiln
+         *
+         *     An ambiguous stem resolves to the shallowest match, which is the same
+         *     tie-break the link index applies.
+         *
+         *     # Isolation
+         *
+         *     **A root never resolves outside itself.** Every candidate is canonicalized
+         *     and checked against the canonical root, so a symlink planted inside one kiln
+         *     cannot surface a note from another kiln or from a project. Resolution
+         *     failing is the correct outcome — the alternative, quietly answering from a
+         *     different root, is how a link in one vault silently opens a same-named note
+         *     from another.
+         */
+        get: operations["resolve_note"];
         put?: never;
         post?: never;
         delete?: never;
@@ -292,6 +544,67 @@ export interface paths {
         get: operations["list_providers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/grep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/search/grep` — ripgrep-style content search over an absolute
+         *     `root`. The daemon enforces that `root` is contained within a registered
+         *     project or open kiln (a root outside every known root is rejected with
+         *     INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
+         *     (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
+         *     binary files are skipped.
+         */
+        post: operations["search_grep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/semantic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/search/semantic` — embed the query, then rank the kiln's notes. */
+        post: operations["search_semantic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/vectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/search/vectors` — rank a kiln's blocks against a vector the
+         *     caller already holds.
+         */
+        post: operations["search_vectors"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1052,14 +1365,162 @@ export interface components {
             options: components["schemas"]["AgentOptionRow"][];
             session_id: string;
         };
+        /** @description One change: the text expected, and what replaces it. */
+        AnchoredEdit: {
+            /** @description The text this edit expects to find. Matched against WHOLE LINES. */
+            expect: string;
+            /**
+             * @description Which match to take when `expect` legitimately appears more than once,
+             *     zero-based. Absent means the text must appear exactly once.
+             */
+            occurrence?: number | null;
+            /** @description What replaces it. May carry newlines, so one line becomes several. */
+            replace: string;
+        };
         /** @description Response for session archive/unarchive status changes. */
         ArchiveResponse: {
             archived: boolean;
+        };
+        /** @description A note whose wikilinks point at the focused note. */
+        BacklinkRow: {
+            /**
+             * @description The same source joined onto the kiln root. Added by this route, not by
+             *     the daemon.
+             */
+            abs_path: string;
+            name: string;
+            /** @description Kiln-relative, as the index holds it. */
+            path: string;
+            /** Format: int64 */
+            span_end?: number | null;
+            /**
+             * Format: int64
+             * @description Byte offset of the first link occurrence in the source. Absent — not
+             *     `null` — for a span-less legacy index row.
+             */
+            span_start?: number | null;
+            /** @description `null` when the source note declares no title. Always written. */
+            title: string | null;
+        };
+        /** @description What `GET /api/backlinks` answers. */
+        BacklinksResponse: {
+            linked: components["schemas"]["BacklinkRow"][];
+            note: components["schemas"]["FocusedNoteRow"];
+            unlinked: components["schemas"]["UnlinkedMentionRow"][];
+        };
+        /** @description Where in a note a hit sits. */
+        BlockRef: {
+            /**
+             * @description Further `(span_start, span_end)` pairs a `search:rerank` handler cited
+             *     for this hit, in the order it gave them. Empty for a plain block hit.
+             */
+            cited?: [
+                number,
+                number
+            ][];
+            /** @description The block's kind: `heading`, `paragraph`, `code`, `callout`, … */
+            kind: string;
+            /** @description Byte offset one past the block's last byte. */
+            span_end: number;
+            /** @description Byte offset where the block starts, relative to the note body. */
+            span_start: number;
         };
         /** @description Response for session cancellation. */
         CancelledResponse: {
             cancelled: boolean;
         };
+        /**
+         * @description A parsed `.canvas` document.
+         *
+         *     Both arrays are optional in the spec; a canvas with neither is legal and
+         *     means "empty". Node order carries meaning — it *is* the z-order, first
+         *     lowest — so this is a `Vec`, never a set or map.
+         */
+        Canvas: {
+            edges: components["schemas"]["CanvasEdge"][];
+            nodes: components["schemas"]["CanvasNode"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * @description A canvas colour.
+         *
+         *     On the wire this is always a JSON string: either `#RRGGBB` or one of the six
+         *     presets `"1"`–`"6"`. Presets are numeric *strings*, not numbers, and writing
+         *     them back as numbers makes Obsidian stop recognising them — so this stays a
+         *     transparent newtype over the raw string rather than an enum that might
+         *     normalise the spelling.
+         */
+        CanvasColor: string;
+        /** @description A connection between two nodes. */
+        CanvasEdge: {
+            color?: null | components["schemas"]["CanvasColor"];
+            fromEnd?: null | components["schemas"]["CanvasEnd"];
+            fromNode: string;
+            fromSide?: null | components["schemas"]["CanvasSide"];
+            id: string;
+            label?: string | null;
+            toEnd?: null | components["schemas"]["CanvasEnd"];
+            toNode: string;
+            toSide?: null | components["schemas"]["CanvasSide"];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * @description Whether a connection terminates in an arrowhead.
+         * @enum {string}
+         */
+        CanvasEnd: "none" | "arrow";
+        /**
+         * @description The on-disk shape of a node: spec-common fields, the `type` tag, and one
+         *     undifferentiated bag for everything else.
+         *
+         *     This is also where the OpenAPI schema for a node comes from. [`Node`] reads
+         *     and writes JSON THROUGH this struct, so describing `Node`'s own fields would
+         *     describe a shape that never reaches the wire — `kind` and `extra` are not
+         *     keys any client sees. [`Node`]'s `ToSchema` therefore delegates here, and a
+         *     field added to this struct reaches the document without a second edit.
+         *
+         *     Field order here IS the emitted key order, and it is chosen to match what
+         *     Obsidian writes so that saving an untouched canvas produces no diff. The
+         *     type-specific keys live in `rest`, which is why they land between `type` and
+         *     the geometry for `file`/`text`/`link` — and why a group's `label`, which
+         *     Obsidian writes *after* the geometry, is re-inserted there on the way out.
+         */
+        CanvasNode: {
+            color?: null | components["schemas"]["CanvasColor"];
+            /** Format: double */
+            height: number;
+            id: string;
+            /** @enum {string} */
+            type: "text" | "file" | "link" | "group";
+            /** Format: double */
+            width: number;
+            /** Format: double */
+            x: number;
+            /** Format: double */
+            y: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description What `GET /api/canvas` answers. */
+        CanvasResponse: {
+            /** @description The document, with every refused reference already removed. */
+            canvas: components["schemas"]["Canvas"];
+            /** @description The root the canvas belongs to, which bounds every reference in it. */
+            kiln: string;
+            /** @description One entry per reference the document held and this reply withholds. */
+            rejected: components["schemas"]["RejectedRefDto"][];
+        };
+        /** @description What `PUT /api/canvas` answers. */
+        CanvasSavedResponse: {
+            ok: boolean;
+        };
+        /**
+         * @description Which edge of a node a connection attaches to.
+         * @enum {string}
+         */
+        CanvasSide: "top" | "right" | "bottom" | "left";
         /**
          * @description The browser's view of a session event, streamed by `GET
          *     /api/chat/events/{session_id}`.
@@ -1313,6 +1774,126 @@ export interface components {
         DeleteResponse: {
             deleted: boolean;
         };
+        /** @description Why one edit could not be applied. The index is the caller's edit index. */
+        EditRefusal: {
+            index: number;
+            /** @enum {string} */
+            reason: "not_found";
+        } | {
+            index: number;
+            matches: number;
+            /** @enum {string} */
+            reason: "ambiguous";
+        } | {
+            index: number;
+            matches: number;
+            /** @enum {string} */
+            reason: "no_such_occurrence";
+        } | {
+            index: number;
+            other: number;
+            /** @enum {string} */
+            reason: "overlaps";
+        } | {
+            index: number;
+            /** @enum {string} */
+            reason: "empty_expect";
+        };
+        /** @description One entry of a kiln's file listing. */
+        FileEntryRow: {
+            /**
+             * @description Always `false`: this listing walks the note index, which holds files.
+             *     The key stays because the file tree reads one entry type for every
+             *     source, and `GET /api/fs/list` does report directories.
+             */
+            is_dir: boolean;
+            /** @description The file stem, or the whole path when the stem is not UTF-8. */
+            name: string;
+            /** @description RELATIVE to the kiln root. */
+            path: string;
+        };
+        /**
+         * @description What a write answers when it refuses with 409.
+         *
+         *     Untagged, and the variant order is load-bearing: serde takes the first that
+         *     fits. Each arm names a field the others do not have — `regions` for a merge
+         *     that could not settle, `failed` for a refused patch, `error` for a bare
+         *     refusal — so the three are disjoint and
+         *     `a_conflict_reads_back_as_the_arm_that_was_sent` asserts each direction.
+         */
+        FileWriteConflict: {
+            /**
+             * @description The disk's text, so the caller can resolve without a second read
+             *     that would race the same way.
+             */
+            current_content: string;
+            /** @description BLAKE3 of the file as it is on disk NOW. */
+            current_hash: string;
+            /** @description The merge's own text, conflicts included. */
+            merged_content: string;
+            /** @description Always `false`. */
+            ok: boolean;
+            /** @description Every cluster the two sides disagree about. */
+            regions: components["schemas"]["MergeRegion"][];
+            /** @description Always `true`. */
+            stale_base: boolean;
+        } | {
+            current_hash: string;
+            failed: components["schemas"]["EditRefusal"][];
+            /** @description Always `false`. */
+            ok: boolean;
+            /**
+             * @description Whether the file moved on since `base_hash` was read. `false` means
+             *     the anchors themselves refused.
+             */
+            stale_base: boolean;
+        } | {
+            current_hash: string;
+            error: components["schemas"]["WriteErrorRow"];
+            /** @description Always `false`. */
+            ok: boolean;
+        };
+        /**
+         * @description What a write answers when it lands.
+         *
+         *     One type for `PUT` and `PATCH`, because the daemon builds one object for
+         *     both: a patch never merges, so it writes no `merged` key, and a whole
+         *     write always does.
+         */
+        FileWriteResponse: {
+            /**
+             * @description What was written, present only when `merged` is `true`. The caller
+             *     holds it nowhere else: its own text is not what landed.
+             */
+            content?: string | null;
+            /**
+             * @description BLAKE3 of what was written, so the caller needs no second read to
+             *     learn the hash its next write must name.
+             */
+            content_hash: string;
+            /**
+             * @description Whether the caller's base was stale and its text was merged with the
+             *     disk. Absent on a `PATCH`, which never merges.
+             */
+            merged?: boolean | null;
+            /**
+             * @description Always `true` here. A `false` carries a 409 and one of the
+             *     [`FileWriteConflict`] shapes instead.
+             */
+            ok: boolean;
+        };
+        /** @description The note the panel is about. */
+        FocusedNoteRow: {
+            /**
+             * @description The same note joined onto the kiln root, which is what
+             *     `GET /api/kiln/file` takes.
+             */
+            abs_path: string;
+            /** @description As the index holds it: kiln-relative in normal operation. */
+            path: string;
+            /** @description The empty string when the index holds no title. Never `null`. */
+            title: string;
+        };
         /**
          * @description A filesystem change delivered to the browser.
          *
@@ -1335,11 +1916,115 @@ export interface components {
             /** @enum {string} */
             type: "moved";
         };
+        /** @description One edge of the note-link graph. */
+        GraphLinkRow: {
+            /** @description Whether `target` resolves to a note the caller can see. */
+            resolved: boolean;
+            /** @description The linking note's path. Always a `path` in `notes`. */
+            source: string;
+            /**
+             * @description The linked note's path when `resolved`; otherwise the target as it was
+             *     written, which names no note.
+             */
+            target: string;
+        };
+        /** @description One node of the note-link graph. */
+        GraphNoteRow: {
+            /** @description Kiln-relative, and the value a resolved link's `target` joins against. */
+            path: string;
+            tags: string[];
+            /** @description Never empty: the daemon falls back to the file stem. */
+            title: string;
+        };
+        /**
+         * @description A single content-search hit.
+         *
+         *     `match_start`/`match_end` are **character** offsets into `text` (post-trim),
+         *     suitable for `<mark>` highlighting in the web UI. Only the first match on a
+         *     line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
+         *     `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
+         */
+        GrepHit: {
+            /**
+             * Format: int64
+             * @description 1-based line number.
+             */
+            line: number;
+            /** @description Character offset of the first match's end within `text`. */
+            match_end: number;
+            /** @description Character offset of the first match's start within `text`. */
+            match_start: number;
+            /** @description Absolute path to the matched file. */
+            path: string;
+            /** @description Path relative to the search's `rel_base` (forward-slash separators). */
+            rel_path: string;
+            /**
+             * @description The matched line, trimmed of surrounding whitespace and capped at
+             *     [`GREP_SNIPPET_CAP`] characters.
+             */
+            text: string;
+        };
+        /**
+         * @description Request for `search_grep` (ripgrep-style content search).
+         *
+         *     `root` must resolve inside a registered project or open kiln — the daemon
+         *     rejects anything else. `glob` filters by file name (e.g. `*.md`); `None`
+         *     searches all files.
+         */
+        GrepSearchRequest: {
+            /** @description Defaults to `true`, which is what the handler's `optional_param!` did. */
+            case_insensitive?: boolean;
+            glob?: string | null;
+            /** @description The handler still clamps this to `1..=GREP_MAX_LIMIT`. */
+            limit?: number;
+            query: string;
+            /**
+             * @description Compile `query` as a regex (Rust regex syntax) instead of matching it
+             *     as a literal substring.
+             */
+            regex?: boolean;
+            root: string;
+        };
+        /**
+         * @description Result of a `search_grep` call: the hits plus whether they were capped at
+         *     the requested limit. Matches the `POST /api/search/grep` response body.
+         */
+        GrepSearchResponse: {
+            hits: components["schemas"]["GrepHit"][];
+            truncated: boolean;
+        };
         InstallRequest: {
             branch?: string | null;
             pin?: string | null;
             /** @description Plugin URL (e.g. "user/repo" or full git URL). */
             url: string;
+        };
+        /** @description What `GET /api/kiln/file` answers. */
+        KilnFileResponse: {
+            content: string;
+            /**
+             * @description BLAKE3 of the bytes just read, so a later write can say whether the
+             *     file moved on. NOT the index's hash, which lags a save.
+             */
+            content_hash: string;
+        };
+        /**
+         * @description What `GET /api/kiln/files` and `GET /api/kiln/notes` both answer.
+         *
+         *     One type for two routes because they answer the same projection of the same
+         *     listing. The key is `files` on both, including on the one named for notes.
+         */
+        KilnFilesResponse: {
+            files: components["schemas"]["FileEntryRow"][];
+        };
+        /** @description What `GET /api/kiln/graph` answers. */
+        KilnGraphResponse: {
+            links: components["schemas"]["GraphLinkRow"][];
+            notes: components["schemas"]["GraphNoteRow"][];
+        };
+        /** @description What `GET /api/kilns` answers. */
+        KilnListResponse: {
+            kilns: components["schemas"]["KilnRow"][];
         };
         /**
          * @description The body of `POST /connect_kiln` and `POST /disconnect_kiln`.
@@ -1356,6 +2041,38 @@ export interface components {
              *     registration floor never saw.
              */
             kiln: string;
+        };
+        /**
+         * @description One kiln, as the daemon's `kiln.list` reports it.
+         *
+         *     Every key is written on every row, including the two an older reader
+         *     treated as optional, so this reply carries no absent-versus-false ambiguity.
+         */
+        KilnRow: {
+            /**
+             * Format: int64
+             * @description Seconds since the daemon last touched the kiln, or `null` when it holds
+             *     it closed. Always written, so `required` rather than optional.
+             */
+            last_access_secs_ago: number | null;
+            /**
+             * @description The REGISTRY key — the name every other API call answers to. An open
+             *     directory that no entry names carries the empty string, never `null`.
+             */
+            name: string;
+            /**
+             * @description Whether the daemon holds the kiln open right now. A closed row is not a
+             *     dead one: the first request that addresses a kiln opens it.
+             */
+            open: boolean;
+            /** @description Where the kiln lives. This is the one listing whose job is to say so. */
+            path: string;
+            /**
+             * @description Whether the registry answers for this directory, and therefore whether
+             *     `name` is a name an attach accepts. A row with `false` must not be
+             *     offered in a picker.
+             */
+            registered: boolean;
         };
         /**
          * @description One setting and whether this session can change it.
@@ -1384,6 +2101,32 @@ export interface components {
              * @description First line, 1-based, inclusive.
              */
             start: number;
+        };
+        /**
+         * @description A cluster both sides changed differently.
+         *
+         *     The lines are 1-based and the end is exclusive, the convention
+         *     `crate::session::types::review::LineRange` uses, and they point into the
+         *     MERGED text, so a reader can show the region without diffing again.
+         */
+        MergeRegion: {
+            /** @description The cluster as the base held it. */
+            base: string;
+            /**
+             * Format: int32
+             * @description One past the last line of the region in the merged text, exclusive.
+             *     Equal to `start_line` when our side deleted the cluster.
+             */
+            end_line: number;
+            /** @description The cluster as our side wrote it. This is what the merged text holds. */
+            ours: string;
+            /**
+             * Format: int32
+             * @description First line of the region in the merged text, 1-based, inclusive.
+             */
+            start_line: number;
+            /** @description The cluster as their side wrote it. */
+            theirs: string;
         };
         /**
          * @description Response for model listings — the session-scoped `list_models` and the
@@ -1418,6 +2161,79 @@ export interface components {
              */
             review_policy: components["schemas"]["ReviewPolicyRow"];
         };
+        /** @description What `GET /api/notes` answers. */
+        NoteListResponse: {
+            notes: components["schemas"]["NoteMetadataRow"][];
+        };
+        /** @description One note, with the metadata a client filters and sorts on. */
+        NoteMetadataRow: {
+            /** @description The file stem, or the whole path when the stem is not UTF-8. */
+            name: string;
+            /**
+             * @description RELATIVE to the kiln root. A path-taking endpoint needs it joined onto
+             *     the root first.
+             */
+            path: string;
+            /**
+             * @description The note's own frontmatter, filtered daemon-side to what the author
+             *     wrote. Open by design: a note may carry any key, and validating the
+             *     values here would refuse frontmatter this layer has no business judging.
+             */
+            properties: {
+                [key: string]: unknown;
+            };
+            tags: string[];
+            /** @description The note's own title, or `null` when it declares none. Always written. */
+            title: string | null;
+            /**
+             * @description ISO-8601, or `null` for a note the index has no timestamp for. Always
+             *     written.
+             */
+            updated_at: string | null;
+        };
+        /**
+         * @description One note, as `get_note_by_name` reports it.
+         *
+         *     The daemon sends `links_to` and `wikilinks` for the same links: the web
+         *     reader pins `links_to`, and the RPC client's own DTO reads `wikilinks`.
+         *     Both stay on the wire, so both are named here.
+         */
+        NoteResponse: {
+            /**
+             * @description BLAKE3 of the note's content as the INDEX holds it. The file watcher
+             *     writes it asynchronously, so it lags a save; `GET /api/kiln/file`
+             *     answers the hash of the bytes on disk.
+             */
+            content_hash: string;
+            /** @description Every wikilink target in the note, as written. */
+            links_to: string[];
+            /** @description Relative to the kiln root. */
+            path: string;
+            tags: string[];
+            /**
+             * @description The note's title. The daemon writes the empty string when it has none;
+             *     this is never `null`.
+             */
+            title: string;
+            /** @description The same targets, one object each. */
+            wikilinks: components["schemas"]["WikilinkRow"][];
+        };
+        /** @description What `PUT /api/notes/{name}` answers. */
+        NoteSavedResponse: {
+            /**
+             * @description The file name written, `.md` included — which is not always the `name`
+             *     that was asked for.
+             */
+            name: string;
+            success: boolean;
+            /** @description The first heading of the content, or its first line. */
+            title: string;
+            /**
+             * Format: date-time
+             * @description When this route wrote it, not when the index noticed.
+             */
+            updated_at: string;
+        };
         /** @description Standard acknowledgment response for successful mutations. */
         OkResponse: {
             ok: boolean;
@@ -1436,6 +2252,18 @@ export interface components {
             path: string[];
             /** @description The new value, for a `set`. Ignored otherwise. */
             value?: unknown;
+        };
+        /** @description `PATCH /api/kiln/file` — change a few lines, not the whole file. */
+        PatchFileRequest: {
+            /**
+             * @description The disk hash the caller last read. Present, it gates: the batch is
+             *     refused with 409 and `stale_base: true` when the file moved on, even
+             *     when every anchor applies. Absent, the anchors alone decide; the outbox
+             *     replay sends no base, because it edits the note's current text.
+             */
+            base_hash?: string | null;
+            edits: components["schemas"]["AnchoredEdit"][];
+            path: string;
         };
         /**
          * @description One executable primitive a plugin declared, and the arguments it takes.
@@ -1743,6 +2571,80 @@ export interface components {
             key: string;
             plugin: string;
         };
+        PutCanvasRequest: {
+            /**
+             * @description The hash the caller read. Absent keeps the blind overwrite; present
+             *     refuses with 409 and the current hash when the file moved on.
+             */
+            base_hash?: string | null;
+            content: string;
+            path: string;
+        };
+        PutFileRequest: {
+            /**
+             * @description The hash the caller read. Absent keeps the blind overwrite; present
+             *     refuses with 409 and the current hash when the file moved on.
+             */
+            base_hash?: string | null;
+            /**
+             * @description The text the caller read, whose hash is `base_hash`. Present, a stale
+             *     base is merged against the disk instead of refused: the caller loses
+             *     its edit otherwise, and it is the only party that holds the text its
+             *     edit was made from. Absent, the refusal stands.
+             */
+            base_text?: string | null;
+            content: string;
+            path: string;
+        };
+        PutNoteRequest: {
+            /**
+             * @description The hash the caller read. Absent keeps the blind overwrite; present
+             *     refuses with 409 and the current hash when the file moved on.
+             */
+            base_hash?: string | null;
+            content: string;
+            /** @description Absolute path of the kiln to write into. It must be registered. */
+            kiln: string;
+        };
+        /**
+         * @description A reference the read path refused, as the browser receives it.
+         *
+         *     Web-owned on purpose, and NOT a re-export of
+         *     [`crucible_core::canvas::containment::RejectedRef`]. The core type carries
+         *     `reference` — the offending path itself — and this reply deliberately drops
+         *     it: a client that never learns the path cannot ask for it, which is what
+         *     makes redaction an enforcement rather than a warning. The node id is
+         *     `nodeId` here because the canvas format is camelCase throughout, and the
+         *     browser reads it beside `fromNode` and `toNode`.
+         */
+        RejectedRefDto: {
+            /** @description Id of the node holding the bad reference. */
+            nodeId: string;
+            /**
+             * @description Why it was refused, as a sentence to show the reader.
+             *
+             *     A rendered [`RefError`], not a token. The browser prints it; nothing
+             *     branches on it, and `the_refusal_reasons_stay_whole_sentences` pins
+             *     every variant's wording so a reworded error is a visible change rather
+             *     than a silent one.
+             */
+            reason: string;
+        };
+        /**
+         * @description Where a wikilink target landed.
+         *
+         *     `absolutePath` is camelCase while every sibling reply is snake_case: the
+         *     browser has read that spelling since before this route was typed, and
+         *     renaming it would break the editor's open-a-link path for no gain.
+         */
+        ResolvedNoteResponse: {
+            /** @description The absolute path, which is what an editor opens. */
+            absolutePath: string;
+            /** @description Relative to the root that was walked. */
+            path: string;
+            /** @description The file stem, or `null` when the path has none. Always written. */
+            title: string | null;
+        };
         /**
          * @description What `POST /api/session/{id}/resume` answers, which depends on the path
          *     that resumed the session.
@@ -1976,6 +2878,48 @@ export interface components {
             applied: string[];
             failed: components["schemas"]["ReviewFailureRow"][];
             session_id: string;
+        };
+        /**
+         * @description `POST /api/search/semantic` — text semantic search over a kiln's notes.
+         *     Embeds the query with the kiln's embedding provider, then cosine-scans the
+         *     embeddings in the kiln's SQLite store. Two daemon RPCs (`embed.query` +
+         *     `search_vectors`) mirror the CLI's `run_semantic_search`. The daemon
+         *     answers with one row per block, best first. The panel lists notes, so
+         *     this route keeps one row per note: its best block, with `block` and
+         *     `snippet` when the kiln has block rows. Each hit's `document_id` is the
+         *     kiln-relative note path; `path` is the absolute path for the editor to
+         *     open. Requires an embedding provider (else `embed.query` fails) AND
+         *     processed notes (no embeddings yields no hits).
+         */
+        SemanticSearchRequest: {
+            /** @description Absolute path of the kiln to search. */
+            kiln: string;
+            limit?: number;
+            query: string;
+        };
+        /** @description What `POST /api/search/semantic` answers. */
+        SemanticSearchResponse: {
+            results: components["schemas"]["SemanticSearchRow"][];
+        };
+        /** @description One note hit, with the block that earned it. */
+        SemanticSearchRow: {
+            block: null | components["schemas"]["BlockRef"];
+            /**
+             * @description The note's kiln-relative path. The same value as `rel_path`; both stay
+             *     because the browser reads both.
+             */
+            document_id: string;
+            /** @description The absolute path, which is what an editor opens. */
+            path: string;
+            /** @description The note's kiln-relative path, for display. */
+            rel_path: string;
+            /**
+             * Format: double
+             * @description Similarity, higher is closer.
+             */
+            score: number;
+            /** @description The block's text, or `null` when there is none. Always written. */
+            snippet: string | null;
         };
         /**
          * @description The agent record `session.get` nests inside a session.
@@ -2337,6 +3281,53 @@ export interface components {
         TitleResponse: {
             title: string;
         };
+        /**
+         * @description A plain-text mention of another note inside the focused note — a candidate
+         *     for one-click link insertion, mirroring the daemon's `LinkSuggestion`.
+         */
+        UnlinkedMentionRow: {
+            /** @description The text as it appears, original casing kept. */
+            mention: string;
+            /** @description Byte offset of the mention in the note's content. */
+            offset: number;
+            /** @description The note name it would link to. */
+            target: string;
+        };
+        VectorSearchRequest: {
+            /** @description Absolute path of the kiln to search. */
+            kiln: string;
+            limit?: number;
+            /** @description The query vector, already embedded by the caller. */
+            vector: number[];
+        };
+        /** @description What `POST /api/search/vectors` answers. */
+        VectorSearchResponse: {
+            results: components["schemas"]["VectorSearchRow"][];
+        };
+        /** @description One block hit, as `search_vectors` ranked it. */
+        VectorSearchRow: {
+            block: null | components["schemas"]["BlockRef"];
+            /** @description The note's kiln-relative path. */
+            document_id: string;
+            /**
+             * Format: double
+             * @description Similarity, higher is closer.
+             */
+            score: number;
+        };
+        /** @description One wikilink target. */
+        WikilinkRow: {
+            target: string;
+        };
+        /** @description The error envelope a bare stale-base refusal carries. */
+        WriteErrorRow: {
+            /**
+             * Format: int32
+             * @description The HTTP status, repeated in the body.
+             */
+            code: number;
+            message: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -2348,8 +3339,20 @@ export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoic
 export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
 export type SchemaAgentOptionRow = components['schemas']['AgentOptionRow'];
 export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResponse'];
+export type SchemaAnchoredEdit = components['schemas']['AnchoredEdit'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
+export type SchemaBacklinkRow = components['schemas']['BacklinkRow'];
+export type SchemaBacklinksResponse = components['schemas']['BacklinksResponse'];
+export type SchemaBlockRef = components['schemas']['BlockRef'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
+export type SchemaCanvas = components['schemas']['Canvas'];
+export type SchemaCanvasColor = components['schemas']['CanvasColor'];
+export type SchemaCanvasEdge = components['schemas']['CanvasEdge'];
+export type SchemaCanvasEnd = components['schemas']['CanvasEnd'];
+export type SchemaCanvasNode = components['schemas']['CanvasNode'];
+export type SchemaCanvasResponse = components['schemas']['CanvasResponse'];
+export type SchemaCanvasSavedResponse = components['schemas']['CanvasSavedResponse'];
+export type SchemaCanvasSide = components['schemas']['CanvasSide'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
 export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
@@ -2358,16 +3361,37 @@ export type SchemaCommentRequest = components['schemas']['CommentRequest'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
+export type SchemaEditRefusal = components['schemas']['EditRefusal'];
+export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
+export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
+export type SchemaFileWriteResponse = components['schemas']['FileWriteResponse'];
+export type SchemaFocusedNoteRow = components['schemas']['FocusedNoteRow'];
 export type SchemaFsEvent = components['schemas']['FsEvent'];
+export type SchemaGraphLinkRow = components['schemas']['GraphLinkRow'];
+export type SchemaGraphNoteRow = components['schemas']['GraphNoteRow'];
+export type SchemaGrepHit = components['schemas']['GrepHit'];
+export type SchemaGrepSearchRequest = components['schemas']['GrepSearchRequest'];
+export type SchemaGrepSearchResponse = components['schemas']['GrepSearchResponse'];
 export type SchemaInstallRequest = components['schemas']['InstallRequest'];
+export type SchemaKilnFileResponse = components['schemas']['KilnFileResponse'];
+export type SchemaKilnFilesResponse = components['schemas']['KilnFilesResponse'];
+export type SchemaKilnGraphResponse = components['schemas']['KilnGraphResponse'];
+export type SchemaKilnListResponse = components['schemas']['KilnListResponse'];
 export type SchemaKilnRequest = components['schemas']['KilnRequest'];
+export type SchemaKilnRow = components['schemas']['KilnRow'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
+export type SchemaMergeRegion = components['schemas']['MergeRegion'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
+export type SchemaNoteListResponse = components['schemas']['NoteListResponse'];
+export type SchemaNoteMetadataRow = components['schemas']['NoteMetadataRow'];
+export type SchemaNoteResponse = components['schemas']['NoteResponse'];
+export type SchemaNoteSavedResponse = components['schemas']['NoteSavedResponse'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaOptionRequest = components['schemas']['OptionRequest'];
+export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
 export type SchemaPluginCommandRow = components['schemas']['PluginCommandRow'];
 export type SchemaPluginCommandsResponse = components['schemas']['PluginCommandsResponse'];
 export type SchemaPluginInstallOutcomeRow = components['schemas']['PluginInstallOutcomeRow'];
@@ -2386,6 +3410,11 @@ export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResp
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
+export type SchemaPutCanvasRequest = components['schemas']['PutCanvasRequest'];
+export type SchemaPutFileRequest = components['schemas']['PutFileRequest'];
+export type SchemaPutNoteRequest = components['schemas']['PutNoteRequest'];
+export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
+export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
@@ -2405,6 +3434,9 @@ export type SchemaReviewStateResponse = components['schemas']['ReviewStateRespon
 export type SchemaReviewStateRow = components['schemas']['ReviewStateRow'];
 export type SchemaReviewStatesResponse = components['schemas']['ReviewStatesResponse'];
 export type SchemaReviewUndoRejectResponse = components['schemas']['ReviewUndoRejectResponse'];
+export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
+export type SchemaSemanticSearchResponse = components['schemas']['SemanticSearchResponse'];
+export type SchemaSemanticSearchRow = components['schemas']['SemanticSearchRow'];
 export type SchemaSessionAgentRow = components['schemas']['SessionAgentRow'];
 export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
@@ -2436,8 +3468,167 @@ export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSurfaceShapeRow = components['schemas']['SurfaceShapeRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
+export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
+export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
+export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
+export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
+export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
+export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
 export type $defs = Record<string, never>;
 export interface operations {
+    get_backlinks: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln that holds the note. */
+                kiln: string;
+                /** @description Note name or kiln-relative path (same fuzzy resolution as `get_note_by_name`). */
+                note: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklinksResponse"];
+                };
+            };
+            /** @description The note name carries a traversal sequence */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln holds no note of that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the links, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_canvas: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the `.canvas` file. */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasResponse"];
+                };
+            };
+            /** @description No open kiln or readable project holds this path, or the file is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path carries a traversal sequence, or the file is not a canvas */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the kilns or the projects */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_canvas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutCanvasRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasSavedResponse"];
+                };
+            };
+            /** @description The project is read-only, or the canvas references a file outside its root */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No open kiln or registered project holds this path */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file moved on since `base_hash` was read */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file on disk is not UTF-8 text */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path carries a traversal sequence, the content is too large, or it is not a canvas */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the roots, or could not write */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     event_stream: {
         parameters: {
             query?: never;
@@ -2460,6 +3651,53 @@ export interface operations {
             };
         };
     };
+    get_raw_file: {
+        parameters: {
+            query: {
+                /**
+                 * @description ABSOLUTE path of the file. Containment against an open kiln or a
+                 *     readable project is enforced by the handler, not by this shape.
+                 */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's bytes. Media types the browser cannot run script from are served as themselves; everything else downloads as `application/octet-stream`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description No open kiln or readable project holds this path, or the file is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path carries a traversal sequence, or escapes its root */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the roots */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     fs_event_stream: {
         parameters: {
             query?: never;
@@ -2479,6 +3717,320 @@ export interface operations {
             };
         };
     };
+    get_kiln_file: {
+        parameters: {
+            query: {
+                /**
+                 * @description ABSOLUTE path of the file. Containment against an open kiln or a
+                 *     readable project is enforced by the handler, not by this shape.
+                 */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnFileResponse"];
+                };
+            };
+            /** @description No open kiln or readable project holds this path, or the file is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file is not text; fetch it from `/api/file/raw` */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path carries a traversal sequence, or escapes its root */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the roots */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_kiln_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutFileRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileWriteResponse"];
+                };
+            };
+            /** @description The root refuses writes */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path is in no open kiln and no registered project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file moved on since `base_hash` was read */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileWriteConflict"];
+                };
+            };
+            /** @description The file on disk is not UTF-8 text */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path is invalid, escapes its root, or the content is too large */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The write itself failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_kiln_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchFileRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileWriteResponse"];
+                };
+            };
+            /** @description The root refuses writes */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path is in no open kiln and no registered project, or the file is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file moved on, or an anchor did not apply */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileWriteConflict"];
+                };
+            };
+            /** @description The file on disk is not UTF-8 text */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The path is invalid, escapes its root, or the batch is empty */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The write itself failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_kiln_files: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln to read. */
+                kiln: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnFilesResponse"];
+                };
+            };
+            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    kiln_graph: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln to read. */
+                kiln: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnGraphResponse"];
+                };
+            };
+            /** @description The daemon could not build the graph, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_kiln_notes: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln to read. */
+                kiln: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnFilesResponse"];
+                };
+            };
+            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_kilns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnListResponse"];
+                };
+            };
+            /** @description The daemon could not list the kilns, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_all_models: {
         parameters: {
             query?: never;
@@ -2495,6 +4047,213 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ModelsResponse"];
                 };
+            };
+        };
+    };
+    list_notes: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln to list. */
+                kiln: string;
+                /** @description Keep only notes whose path holds this substring. */
+                path_filter?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteListResponse"];
+                };
+            };
+            /** @description The daemon could not list the notes, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_note: {
+        parameters: {
+            query: {
+                /** @description Absolute path of the kiln that holds the note. */
+                kiln: string;
+            };
+            header?: never;
+            path: {
+                /** @description The note's name or kiln-relative path */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteResponse"];
+                };
+            };
+            /** @description The name carries a traversal sequence */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln holds no note of that name */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the note, or answered a shape this route cannot read */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_note: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The note's name, with or without `.md` */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutNoteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSavedResponse"];
+                };
+            };
+            /** @description The content is too large, the name carries a traversal sequence, or the name escapes the kiln */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The root refuses writes */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The kiln is not registered, or the path is in no root */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file moved on since `base_hash` was read */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The file on disk is not UTF-8 text */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon refused the write */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the kilns, or could not write */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolve_note: {
+        parameters: {
+            query: {
+                /**
+                 * @description A path inside the root to search. The root that is actually walked is
+                 *     the kiln or project this resolves to, never the supplied path itself.
+                 */
+                kiln: string;
+                /** @description The wikilink target, alias and heading suffixes included. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolvedNoteResponse"];
+                };
+            };
+            /** @description The name carries a traversal sequence */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No open kiln or readable project holds the supplied root, or it holds no such note */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The walk that searches the root failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not list the kilns or the projects */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -2887,6 +4646,103 @@ export interface operations {
                 };
             };
             /** @description The daemon could not list the providers */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_grep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrepSearchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrepSearchResponse"];
+                };
+            };
+            /** @description The root sits outside every registered project and open kiln, or the query is not a valid regex */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not run the search */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_semantic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SemanticSearchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SemanticSearchResponse"];
+                };
+            };
+            /** @description The kiln has no embedding provider, or the daemon could not search it */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search_vectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorSearchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorSearchResponse"];
+                };
+            };
+            /** @description The daemon could not search the kiln */
             502: {
                 headers: {
                     [name: string]: unknown;

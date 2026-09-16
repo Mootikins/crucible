@@ -56,6 +56,7 @@ pub struct SearchResult {
 
 /// Where in a note a hit sits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BlockRef {
     /// Byte offset where the block starts, relative to the note body.
     pub span_start: usize,
