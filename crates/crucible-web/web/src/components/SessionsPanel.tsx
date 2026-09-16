@@ -1,7 +1,7 @@
-import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { listWorkspaceTargets } from '@/lib/api';
+import { useWorkspaceTargetsByRoot } from '@/lib/query/targets';
 import type { Session } from '@/lib/types';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { PanelShell } from './PanelShell';
@@ -32,7 +32,6 @@ export const SessionsPanel: Component = () => {
   const { currentSession, sessions, selectSession, archiveSession, deleteSession, refreshSessions } = useSessionSafe();
   const { projects, currentProject, selectProject } = useProjectSafe();
 
-  const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
   const [showArchived, setShowArchived] = createSignal(false);
   const [reflectionsOpen, setReflectionsOpen] = createSignal(false);
 
@@ -41,22 +40,21 @@ export const SessionsPanel: Component = () => {
   });
 
   // Live branch per checkout path, from the workspace provider that owns the
-  // concept (one call per repo root).
-  const loadBranches = async () => {
-    const roots = [...new Set(projects().filter((p) => p.repository?.root).map((p) => p.repository!.root))];
+  // concept. One query per repo root, shared with every other reader of the
+  // same root: this used to re-run the whole fan-out on every roster change
+  // and again on every window focus, which cost N plugin commands each time.
+  // Nothing refetches on focus now — `queryClientOptions` turns that off for
+  // every query, because the daemon pushes a change over SSE instead.
+  const repoRoots = createMemo(() => [
+    ...new Set(projects().filter((p) => p.repository?.root).map((p) => p.repository!.root)),
+  ]);
+  const targetsByRoot = useWorkspaceTargetsByRoot(repoRoots);
+  const checkoutBranch = createMemo(() => {
     const map = new Map<string, string>();
-    await Promise.all(
-      roots.map(async (root) => {
-        for (const t of await listWorkspaceTargets(root)) if (t.path) map.set(t.path, t.label);
-      }),
-    );
-    setCheckoutBranch(map);
-  };
-  createEffect(() => { projects(); void loadBranches(); });
-  onMount(() => {
-    const onFocus = () => void loadBranches();
-    window.addEventListener('focus', onFocus);
-    onCleanup(() => window.removeEventListener('focus', onFocus));
+    for (const targets of targetsByRoot().values()) {
+      for (const t of targets) if (t.path) map.set(t.path, t.label);
+    }
+    return map;
   });
 
   /** The live branch for a session's workspace, or null when it has none. */

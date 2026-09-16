@@ -1,20 +1,74 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMemo, createSignal } from 'solid-js';
 import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library';
 import { RootDropdown } from '../RootDropdown';
 import { buildRoster, rootKey, rosterIndex, type TreeRoot } from '@/lib/tree-root';
 import type { SessionRoot } from '@/lib/session-roots';
 import type { KilnListEntry, Project } from '@/lib/types';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
-vi.mock('@/lib/api', () => ({
-  listWorkspaceTargets: vi.fn(),
-  resolveWorkspaceTarget: vi.fn(),
-  scmClone: vi.fn(),
-  registerProject: vi.fn(),
-  isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
-}));
+/**
+ * The daemon answers here, not `@/lib/api`.
+ *
+ * The dropdown reads its branch list and materialises a target through the
+ * shared target queries, so stubbing the api module would prove only that the
+ * stub was called. These routes are the two the workspace provider actually
+ * goes through: the publication that declares it, and the plugin command it
+ * declares.
+ */
+let env: TestQueryEnv;
 
-import { listWorkspaceTargets, resolveWorkspaceTarget, registerProject } from '@/lib/api';
+/** One plugin command the daemon was asked to run. */
+interface CommandCall {
+  name: string;
+  args: { workspace?: string; target?: string };
+}
+
+/** The rows `worktree:list` answers, as the plugin publishes them. */
+let branchRows: Array<Record<string, unknown>> = [];
+/** What `worktree:add` answers, or an error status when the provider refuses. */
+let resolveAnswer: { path?: string | null } | { status: number } = {};
+/** The paths `POST /api/project/register` was given, in order. */
+let registered: string[] = [];
+/** What that registration answers. */
+let registerAnswer: Project = { path: '/registered', name: 'registered', kilns: [], last_accessed: '' };
+let commands: CommandCall[] = [];
+
+const ranCommand = (name: string) => commands.filter((c) => c.name === name);
+
+const PUBLICATIONS = {
+  publications: {
+    targets: {
+      worktree: {
+        axis: 'workspace',
+        label: 'Worktree',
+        targets_command: 'worktree:list',
+        resolve_command: 'worktree:add',
+      },
+    },
+  },
+};
+
+function installDaemon(): void {
+  env = createTestQueryEnv({
+    'GET /api/plugins/publications': () => PUBLICATIONS,
+    'POST /api/plugins/command': async (request) => {
+      const body = (await request.json()) as CommandCall;
+      commands.push(body);
+      if (body.name === 'worktree:list') return { targets: branchRows };
+      if ('status' in resolveAnswer) {
+        return new Response(JSON.stringify({ error: 'the destination is busy' }), {
+          status: resolveAnswer.status,
+        });
+      }
+      return resolveAnswer;
+    },
+    'POST /api/project/register': async (request) => {
+      registered.push(((await request.json()) as { path: string }).path);
+      return registerAnswer;
+    },
+  });
+}
 
 const project = (path: string, name: string, kilns: Project['kilns'] = []): Project => ({
   path,
@@ -50,9 +104,16 @@ beforeEach(() => {
   // A repo-less root answers with no targets rather than throwing — the
   // enumerating calls swallow provider failure so one bad plugin cannot take
   // the picker down.
-  vi.mocked(listWorkspaceTargets).mockResolvedValue([]);
-  vi.mocked(resolveWorkspaceTarget).mockReset();
-  vi.mocked(registerProject).mockReset();
+  branchRows = [];
+  resolveAnswer = {};
+  registerAnswer = project('/registered', 'registered');
+  registered = [];
+  commands = [];
+  installDaemon();
+});
+
+afterEach(() => {
+  env.restore();
 });
 
 describe('RootDropdown', () => {
@@ -199,24 +260,11 @@ describe('RootDropdown', () => {
   });
 
   it('lists workspace targets for an active project root and jumps to an existing checkout', async () => {
-    vi.mocked(listWorkspaceTargets).mockResolvedValue([
-      {
-        value: 'master',
-        label: 'master',
-        hint: 'current',
-        spec: 'worktree:master',
-        path: '/repo',
-        current: true,
-      },
-      {
-        value: 'feat/x',
-        label: 'feat/x',
-        hint: 'feat-x',
-        spec: 'worktree:feat/x',
-        path: '/repo/tree/feat/x',
-      },
-    ]);
-    vi.mocked(registerProject).mockResolvedValue(project('/repo/tree/feat/x', 'x'));
+    branchRows = [
+      { value: 'master', label: 'master', hint: 'current', path: '/repo', current: true },
+      { value: 'feat/x', label: 'feat/x', hint: 'feat-x', path: '/repo/tree/feat/x' },
+    ];
+    registerAnswer = project('/repo/tree/feat/x', 'x');
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
@@ -241,19 +289,17 @@ describe('RootDropdown', () => {
         name: 'x',
       }),
     );
-    expect(registerProject).toHaveBeenCalledWith('/repo/tree/feat/x');
+    expect(registered).toEqual(['/repo/tree/feat/x']);
     // A target the provider already resolved needs no round trip.
-    expect(resolveWorkspaceTarget).not.toHaveBeenCalled();
+    expect(ranCommand('worktree:add')).toHaveLength(0);
   });
 
   // No confirmation prompt: picking a row labelled "new worktree" IS the
   // confirmation, and the provider is idempotent if it turns out to exist.
   it('asks the provider to materialise a target that has no checkout yet', async () => {
-    vi.mocked(listWorkspaceTargets).mockResolvedValue([
-      { value: 'fix/y', label: 'fix/y', hint: 'new worktree', spec: 'worktree:fix/y' },
-    ]);
-    vi.mocked(resolveWorkspaceTarget).mockResolvedValue('/repo/tree/fix/y');
-    vi.mocked(registerProject).mockResolvedValue(project('/repo/tree/fix/y', 'y'));
+    branchRows = [{ value: 'fix/y', label: 'fix/y', hint: 'new worktree' }];
+    resolveAnswer = { path: '/repo/tree/fix/y' };
+    registerAnswer = project('/repo/tree/fix/y', 'y');
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
@@ -270,7 +316,7 @@ describe('RootDropdown', () => {
 
     fireEvent.click(screen.getByText('fix/y'));
     await waitFor(() =>
-      expect(resolveWorkspaceTarget).toHaveBeenCalledWith('worktree:fix/y', '/repo'),
+      expect(ranCommand('worktree:add')[0]?.args).toEqual({ target: 'fix/y', workspace: '/repo' }),
     );
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
@@ -284,10 +330,8 @@ describe('RootDropdown', () => {
   // A target the provider refuses (a name git rejects, a busy destination)
   // must say so — this is an explicit pick, not a background enumeration.
   it('surfaces a provider refusal instead of silently doing nothing', async () => {
-    vi.mocked(listWorkspaceTargets).mockResolvedValue([
-      { value: 'fix/y', label: 'fix/y', hint: 'new worktree', spec: 'worktree:fix/y' },
-    ]);
-    vi.mocked(resolveWorkspaceTarget).mockRejectedValue(new Error('destination busy'));
+    branchRows = [{ value: 'fix/y', label: 'fix/y', hint: 'new worktree' }];
+    resolveAnswer = { status: 500 };
     const onNotice = vi.fn();
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
@@ -304,24 +348,19 @@ describe('RootDropdown', () => {
     await waitFor(() => expect(screen.getByText('fix/y')).toBeTruthy());
 
     fireEvent.click(screen.getByText('fix/y'));
-    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('destination busy'));
+    await waitFor(() =>
+      expect(onNotice).toHaveBeenCalledWith(
+        expect.stringContaining("Plugin command 'worktree:add' failed"),
+      ),
+    );
   });
 
   it('typing an unknown name offers branch-plus-worktree creation', async () => {
-    vi.mocked(listWorkspaceTargets).mockResolvedValue([
-      {
-        value: 'master',
-        label: 'master',
-        hint: 'current',
-        spec: 'worktree:master',
-        path: '/repo',
-        current: true,
-      },
-    ]);
-    vi.mocked(resolveWorkspaceTarget).mockResolvedValue('/repo/tree/feat/new-thing');
-    vi.mocked(registerProject).mockResolvedValue(
-      project('/repo/tree/feat/new-thing', 'new-thing'),
-    );
+    branchRows = [
+      { value: 'master', label: 'master', hint: 'current', path: '/repo', current: true },
+    ];
+    resolveAnswer = { path: '/repo/tree/feat/new-thing' };
+    registerAnswer = project('/repo/tree/feat/new-thing', 'new-thing');
     const onNotice = vi.fn();
     // Big roster so the filter input renders (searchThreshold).
     const groups = buildRoster(
@@ -352,7 +391,10 @@ describe('RootDropdown', () => {
     // Addressed to the provider that offered the other rows, so a typed name
     // goes to the same place a picked one does.
     await waitFor(() =>
-      expect(resolveWorkspaceTarget).toHaveBeenCalledWith('worktree:feat/new-thing', '/p0'),
+      expect(ranCommand('worktree:add')[0]?.args).toEqual({
+        target: 'feat/new-thing',
+        workspace: '/p0',
+      }),
     );
   });
 });

@@ -1,17 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, screen } from '@solidjs/testing-library';
 import type { Project, Session } from '@/lib/types';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 let sessionList: Session[] = [];
 let projectList: Project[] = [];
 // The pin is INDEPENDENT of the roster: a shell can have projects and no
 // pinned one, which is the state the tree must not scope itself into nothing.
 let pinnedProject: Project | null = null;
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  listWorkspaceTargets: async () => [],
-}));
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
@@ -33,6 +29,23 @@ vi.mock('@/contexts/ProjectContext', () => ({
 }));
 
 import { SessionsPanel } from '../SessionsPanel';
+
+/**
+ * The rail asks the workspace providers for each repository root through the
+ * shared query. No project here has a repository, so nothing is asked — the
+ * client and the mock fetch are installed to prove that, and to keep one
+ * case's cache out of the next.
+ */
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  env = createTestQueryEnv();
+});
+
+afterEach(() => {
+  env.restore();
+});
+
 import { attentionActions } from '@/stores/attentionStore';
 import { INBOX_SIZE } from '@/lib/session-inbox';
 

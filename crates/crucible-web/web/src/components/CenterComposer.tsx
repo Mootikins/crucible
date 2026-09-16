@@ -1,8 +1,6 @@
 import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
-  getProviderTargets,
-  getTargetProviders,
   isGitRepoUrl,
   listAgents,
   listAllModels,
@@ -23,6 +21,7 @@ import { swrLocal } from '@/lib/local-cache';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects, useScmClone } from '@/lib/query/projects';
+import { useAxisTargets, useTargetProviders } from '@/lib/query/targets';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -104,10 +103,10 @@ export const CenterComposer: Component<{
   // hosts, which is what lets a provider shipped tomorrow appear with no
   // change on this side. The branch chip it replaces did the opposite — it
   // called `scm.worktree_add` directly and put git in the rendering layer.
-  const [wsProviders, setWsProviders] = createSignal<TargetProvider[]>([]);
-  const [rtProviders, setRtProviders] = createSignal<TargetProvider[]>([]);
-  const [wsTargets, setWsTargets] = createSignal<Record<string, ProviderTarget[]>>({});
-  const [rtTargets, setRtTargets] = createSignal<Record<string, ProviderTarget[]>>({});
+  const wsProvidersQuery = useTargetProviders('workspace');
+  const rtProvidersQuery = useTargetProviders('runtime');
+  const wsProviders = () => wsProvidersQuery.data ?? [];
+  const rtProviders = () => rtProvidersQuery.data ?? [];
 
   // '' = internal agent / default kiln / default model / no project.
   const [agentName, setAgentName] = createSignal('');
@@ -121,6 +120,14 @@ export const CenterComposer: Component<{
   const [wsTarget, setWsTarget] = createSignal('');
   const [runtime, setRuntime] = createSignal('');
 
+  // One cache entry per provider AND project, so the answer for the project
+  // the user left cannot land on the chip of the project they picked. That is
+  // what the hand-written out-of-order guard here used to do.
+  const wsAxis = useAxisTargets('workspace', () => workspace() || undefined);
+  const rtAxis = useAxisTargets('runtime', () => workspace() || undefined);
+  const wsTargets = () => wsAxis.targets;
+  const rtTargets = () => rtAxis.targets;
+
   const [message, setMessage] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [cloning, setCloning] = createSignal(false);
@@ -131,12 +138,6 @@ export const CenterComposer: Component<{
     // No barrier, no blank chips: every source paints its LAST-KNOWN value
     // synchronously (swrLocal) and the fetch corrects it — a hard reload
     // shows real labels immediately instead of "Loading…"/fallback text.
-    swrLocal('targets-workspace', () => getTargetProviders('workspace'), (p) => {
-      if (p) setWsProviders(p);
-    });
-    swrLocal('targets-runtime', () => getTargetProviders('runtime'), (p) => {
-      if (p) setRtProviders(p);
-    });
     swrLocal('agents', listAgents, setAgents);
     swrLocal('models', () => listAllModels(), (mo) =>
       setModels(mo.filter((m) => !m.startsWith('[error]'))),
@@ -264,43 +265,12 @@ export const CenterComposer: Component<{
    */
   const selectedKilnPath = () => kilnPathForName(kilnsForCreate()[0], kilns());
 
-  /**
-   * Re-enumerate every provider on one axis for the selected project.
-   *
-   * Providers answer per-project — a branch list belongs to a repo — so this
-   * re-runs whenever the project chip changes. The guard is the reason it is
-   * written out rather than dropped into a resource: a slow answer for project
-   * A resolving after the user picked B must not land A's branches, or the
-   * session is created against a worktree of the wrong repository.
-   */
-  const loadTargets = (
-    providers: TargetProvider[],
-    ws: string,
-    set: (v: Record<string, ProviderTarget[]>) => void,
-    ready: (v: boolean) => void,
-  ) => {
-    ready(false);
-    if (providers.length === 0) {
-      set({});
-      return ready(true);
-    }
-    void Promise.all(
-      providers.map((p) => getProviderTargets(p, ws || undefined).then((t) => [p.plugin, t] as const)),
-    ).then((entries) => {
-      if (workspace() !== ws) return;
-      set(Object.fromEntries(entries));
-      ready(true);
-    });
-  };
-
   createEffect(
-    on([workspace, wsProviders, rtProviders], ([ws, wsp, rtp]) => {
+    on(workspace, () => {
       // A target chosen for the previous project names a branch that may not
       // exist in this one. Clearing is the only safe answer; keeping it would
       // silently resolve against a repo the user did not pick it in.
       setWsTarget('');
-      loadTargets(wsp, ws, setWsTargets, setWsReady);
-      loadTargets(rtp, ws, setRtTargets, setRtReady);
     }),
   );
 
@@ -351,8 +321,8 @@ export const CenterComposer: Component<{
   // Whether each axis's answer for the selected project has landed. Until it
   // has, the chip says only that the project's default applies; naming the
   // previous project's default in the meantime would name the wrong one.
-  const [wsReady, setWsReady] = createSignal(false);
-  const [rtReady, setRtReady] = createSignal(false);
+  const wsReady = () => wsAxis.ready;
+  const rtReady = () => rtAxis.ready;
 
   /** The provider row carrying `flag`, if any provider on the axis set one. */
   const flaggedTarget = (

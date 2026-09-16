@@ -6,18 +6,12 @@ import { closeDraftTab } from '@/lib/draft-session';
 import { draftCreateParams, HOST_RUNTIME } from '@/lib/session-draft';
 import { iconForAgent } from '@/lib/agent-icons';
 import { attachableKilns, kilnNameForPath } from '@/lib/kiln-registry';
-import {
-  getProviderTargets,
-  getTargetProviders,
-  listAgents,
-  listAllModels,
-  type ProviderTarget,
-  type TargetProvider,
-} from '@/lib/api';
+import { listAgents, listAllModels } from '@/lib/api';
 import type { AgentProfileEntry } from '@/lib/types';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects } from '@/lib/query/projects';
+import { useAxisTargets } from '@/lib/query/targets';
 import { ChevronRight } from '@/lib/icons';
 
 type Step = 'agent' | 'context' | 'prompt';
@@ -58,10 +52,6 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const projects = () => projectsQuery.data ?? [];
   const configQuery = useConfig();
   const defaultKilnPath = () => configQuery.data?.kiln_path ?? '';
-  const [wsProviders, setWsProviders] = createSignal<TargetProvider[]>([]);
-  const [rtProviders, setRtProviders] = createSignal<TargetProvider[]>([]);
-  const [wsTargets, setWsTargets] = createSignal<ProviderTarget[]>([]);
-  const [rtTargets, setRtTargets] = createSignal<ProviderTarget[]>([]);
 
   const [agentName, setAgentName] = createSignal('');
   const [kiln, setKiln] = createSignal('');
@@ -70,33 +60,16 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [wsTarget, setWsTarget] = createSignal('');
   const [runtime, setRuntime] = createSignal('');
 
+  // The same two queries the desktop composer reads, keyed by axis, provider
+  // and project. The sheet shows them flat, spec and all.
+  const wsAxis = useAxisTargets('workspace', () => workspace() || undefined);
+  const rtAxis = useAxisTargets('runtime', () => workspace() || undefined);
+  const wsTargets = () => Object.values(wsAxis.targets).flat();
+  const rtTargets = () => Object.values(rtAxis.targets).flat();
+
   onMount(() => {
     void listAgents().then(setAgents).catch(() => {});
     void listAllModels().then(setModels).catch(() => {});
-    void getTargetProviders('workspace').then(setWsProviders).catch(() => {});
-    void getTargetProviders('runtime').then(setRtProviders).catch(() => {});
-  });
-
-  // Targets are per provider; the sheet shows them flat, spec and all.
-  const loadTargets = async (
-    providers: TargetProvider[],
-    set: (t: ProviderTarget[]) => void,
-  ) => {
-    const all: ProviderTarget[] = [];
-    for (const provider of providers) {
-      try {
-        all.push(...(await getProviderTargets(provider, workspace() || undefined)));
-      } catch {
-        /* a provider that cannot list offers nothing */
-      }
-    }
-    set(all);
-  };
-  onMount(() => {
-    void Promise.resolve().then(async () => {
-      await loadTargets(wsProviders(), setWsTargets);
-      await loadTargets(rtProviders(), setRtTargets);
-    });
   });
 
   const defaultKilnName = () => kilnNameForPath(defaultKilnPath(), kilns());

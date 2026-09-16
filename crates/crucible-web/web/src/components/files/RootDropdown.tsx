@@ -1,15 +1,11 @@
-import { Component, createSignal } from 'solid-js';
+import { Component } from 'solid-js';
 import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
 import type { SessionRoot } from '@/lib/session-roots';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
-import {
-  isGitRepoUrl,
-  listWorkspaceTargets,
-  resolveWorkspaceTarget,
-  type ProviderTarget,
-} from '@/lib/api';
+import { isGitRepoUrl } from '@/lib/api';
 import { useRegisterProject, useScmClone } from '@/lib/query/projects';
+import { useResolveWorkspaceTarget, useWorkspaceTargets } from '@/lib/query/targets';
 
 function basename(p: string): string {
   const parts = p.replace(/\/$/, '').split('/');
@@ -68,21 +64,22 @@ export const RootDropdown: Component<{
   };
   const hasRoots = () => props.own.length > 0 || props.groups.some((g) => g.roots.length > 0);
 
-  const [targets, setTargets] = createSignal<ProviderTarget[]>([]);
+  const resolve = useResolveWorkspaceTarget();
 
-  // Fetched on every popout open — cheap (one git shell-out) and always fresh.
+  /** The repository the Branches section lists, or nothing to list. */
+  const repoPath = () =>
+    props.activeRoot?.kind === 'project' ? props.activeRoot.path : undefined;
+  // Keyed by that repository, which is what replaces the out-of-order guard
+  // this list used to need: an answer for the root the user left lands in that
+  // root's entry, not in the menu. The sessions rail reads the same key, so
+  // opening this popout over a repo the rail already labelled asks nothing.
+  const targetsQuery = useWorkspaceTargets(repoPath);
+  const targets = () => targetsQuery.data ?? [];
+
+  // Still asked on every popout open — one git shell-out, and a branch list
+  // the user is about to read has to be current.
   const loadBranches = () => {
-    const root = props.activeRoot;
-    if (!root || root.kind !== 'project') {
-      setTargets([]);
-      return;
-    }
-    // Out-of-order guard: only apply the answer if the active root hasn't
-    // changed since the fetch started.
-    const forPath = root.path;
-    void listWorkspaceTargets(forPath).then(
-      (rows) => props.activeRoot?.path === forPath && setTargets(rows),
-    );
+    if (repoPath() !== undefined) void targetsQuery.refetch();
   };
 
   const options = (): ChipOption[] => {
@@ -155,7 +152,7 @@ export const RootDropdown: Component<{
     }
     void (async () => {
       try {
-        const path = await resolveWorkspaceTarget(spec, props.activeRoot?.path);
+        const path = await resolve.mutateAsync({ spec, workspace: props.activeRoot?.path });
         props.onNotice?.(null);
         await selectWorktreeRoot(path);
       } catch (e) {

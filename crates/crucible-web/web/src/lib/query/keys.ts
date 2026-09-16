@@ -13,8 +13,12 @@ export const keys = {
   project: (path: string) => ['project', path] as const,
   targetProviders: (axis: 'workspace' | 'runtime') =>
     ['targets', 'providers', axis] as const,
-  providerTargets: (plugin: string, axis: string) =>
-    ['targets', 'provider', plugin, axis] as const,
+  // The workspace belongs in the key: a provider answers PER project — a
+  // branch list belongs to a repository — so one entry per (plugin, axis)
+  // would serve project A's branches for project B, and a session would be
+  // created against a worktree of the wrong repository.
+  providerTargets: (plugin: string, axis: string, workspace?: string) =>
+    ['targets', 'provider', plugin, axis, workspace] as const,
   workspaceTargets: (workspace?: string) =>
     ['targets', 'workspace', workspace] as const,
 
