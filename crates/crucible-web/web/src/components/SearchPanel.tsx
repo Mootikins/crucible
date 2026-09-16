@@ -5,7 +5,6 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  on,
   onCleanup,
   onMount,
 } from 'solid-js';
@@ -13,14 +12,9 @@ import { Portal } from 'solid-js/web';
 import { PanelShell } from './PanelShell';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import {
-  grepSearch,
-  searchSessions,
-  semanticSearch,
-  type GrepHit,
-  type SemanticHit,
-} from '@/lib/api';
-import type { KilnListEntry, Session } from '@/lib/types';
+import type { GrepHit, SemanticHit } from '@/lib/api';
+import type { KilnListEntry } from '@/lib/types';
+import { useGrepSearch, useSearchSessions, useSemanticSearch } from '@/lib/query/search';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -32,9 +26,6 @@ import { treeSectionHeader } from '@/components/tree/tree-style';
 import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 
-const HIT_LIMIT = 60;
-const SEMANTIC_LIMIT = 20;
-const DEBOUNCE_MS = 220;
 /** Scope menu width (was `w-56`) and the height at which its list scrolls. */
 const SCOPE_MENU_WIDTH = 224;
 const SCOPE_MENU_MAX_HEIGHT = 320;
@@ -160,18 +151,10 @@ export const SearchPanel: Component = () => {
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
   const [query, setQuery] = createSignal('');
-  const [debounced, setDebounced] = createSignal('');
   const [scope, setScope] = createSignal<SScope>({ kind: 'everywhere', name: 'Everywhere' });
   const [scopeTouched, setScopeTouched] = createSignal(false);
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const [mode, setMode] = createSignal<SearchMode>('text');
-
-  const [noteHits, setNoteHits] = createSignal<GrepHit[]>([]);
-  const [fileHits, setFileHits] = createSignal<GrepHit[]>([]);
-  const [semanticHits, setSemanticHits] = createSignal<SemanticHit[]>([]);
-  const [sessionHits, setSessionHits] = createSignal<Session[]>([]);
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
 
   let inputRef: HTMLInputElement | undefined;
   /** The scope chip; the portaled menu is placed against its viewport rect. */
@@ -221,63 +204,66 @@ export const SearchPanel: Component = () => {
 
   const pickScope = (s: SScope) => { setScopeTouched(true); setScope(s); setPickerOpen(false); };
 
-  // Debounce.
-  createEffect(on(query, (q) => {
-    const t = setTimeout(() => setDebounced(q.trim()), DEBOUNCE_MS);
-    onCleanup(() => clearTimeout(t));
-  }));
-
   const showNotes = () => scope().kind === 'everywhere' || scope().kind === 'kiln';
   const showFiles = () => scope().kind === 'everywhere' || scope().kind === 'project';
   // Which roots to grep for the current scope.
   const noteRoot = () => { const s = scope(); return s.kind === 'kiln' ? s.path : primaryKiln(); };
   const fileRoot = () => { const s = scope(); return s.kind === 'project' ? s.path : mruProject(); };
 
-  // Run searches on query/scope/mode change; per-run token drops stale responses.
-  let runToken = 0;
-  createEffect(on([debounced, scope, mode], ([q]) => {
-    const token = ++runToken;
-    if (!q) { setNoteHits([]); setFileHits([]); setSemanticHits([]); setSessionHits([]); setError(null); setBusy(false); return; }
-    setBusy(true);
-    setError(null);
-    const guard = <T,>(fn: () => T) => (runToken === token ? fn() : undefined);
+  /**
+   * The four searches, each asked only under the scope and mode that wants it.
+   *
+   * A root of `null` is "this bucket does not apply here", which is how the
+   * mode switch empties the other note bucket: an entry nobody asks for holds
+   * nothing, so there are no hits of the wrong kind left on screen. The
+   * debounce and the stale-answer guard both live in the hooks — the guard is
+   * the KEY, which the panel used to carry as a `runToken`.
+   */
+  const semanticNotes = useSemanticSearch(
+    () => (showNotes() && mode() === 'semantic' ? noteRoot() || null : null),
+    query,
+  );
+  const grepNotes = useGrepSearch(
+    () => (showNotes() && mode() === 'text' ? noteRoot() || null : null),
+    query,
+    { glob: '*.md' },
+  );
+  const grepFiles = useGrepSearch(
+    () => (showFiles() && mode() === 'text' ? fileRoot() || null : null),
+    query,
+  );
+  // The NAME. `searchSessions` takes registry names, and the route refuses a
+  // set that names kilns and resolves none of them — a path here is a
+  // guaranteed 422 rather than the silent empty result it used to be.
+  const sessionSearch = useSearchSessions(query, () => {
+    const s = scope();
+    return s.kind === 'kiln' ? s.kiln || undefined : undefined;
+  });
 
-    const nRoot = noteRoot();
-    const semantic = mode() === 'semantic';
+  const semanticHits = () => semanticNotes.data ?? [];
+  const noteHits = (): GrepHit[] => grepNotes.data?.hits ?? [];
+  const fileHits = (): GrepHit[] => grepFiles.data?.hits ?? [];
+  const sessionHits = () => sessionSearch.data ?? [];
 
-    // Notes: semantic (vector) or text (grep). The other note bucket is cleared
-    // so switching modes never leaves stale hits of the wrong kind on screen.
-    let notes: Promise<unknown>;
-    if (!(showNotes() && nRoot)) {
-      notes = Promise.resolve(guard(() => { setNoteHits([]); setSemanticHits([]); }));
-    } else if (semantic) {
-      setNoteHits([]);
-      notes = semanticSearch(nRoot, q, SEMANTIC_LIMIT)
-        .then((r) => guard(() => setSemanticHits(r)))
-        .catch(() => guard(() => setSemanticHits([])));
-    } else {
-      setSemanticHits([]);
-      notes = grepSearch(nRoot, q, { glob: '*.md', limit: HIT_LIMIT })
-        .then((r) => guard(() => setNoteHits(r.hits)))
-        .catch(() => guard(() => setNoteHits([])));
-    }
+  const busy = () =>
+    semanticNotes.isFetching ||
+    grepNotes.isFetching ||
+    grepFiles.isFetching ||
+    sessionSearch.isFetching;
 
-    // Files: grep only (semantic search is notes-only). Hidden in semantic mode.
-    const fRoot = fileRoot();
-    const files = !semantic && showFiles() && fRoot
-      ? grepSearch(fRoot, q, { limit: HIT_LIMIT }).then((r) => guard(() => setFileHits(r.hits))).catch(() => guard(() => setFileHits([])))
-      : Promise.resolve(guard(() => setFileHits([])));
+  /**
+   * The first refusal, if any.
+   *
+   * The banner was here before and nothing ever filled it: every failure was
+   * caught into an empty bucket, so a kiln with no embedding provider and a
+   * kiln with no matches read the same. The daemon's own sentence goes in it.
+   */
+  const error = () =>
+    [semanticNotes.error, grepNotes.error, grepFiles.error, sessionSearch.error].find(Boolean)
+      ?.message ?? null;
 
-    // Sessions always integrate; scope to the kiln when one is selected.
-    // The NAME. `searchSessions` takes registry names, and the route now
-    // refuses a set that names kilns and resolves none of them — a path here
-    // was a guaranteed 422 rather than the silent empty result it used to be.
-    const sessKilnScope = scope();
-    const sessKiln = sessKilnScope.kind === 'kiln' ? sessKilnScope.kiln || undefined : undefined;
-    const sessions = searchSessions(q, sessKiln, 30).then((r) => guard(() => setSessionHits(r))).catch(() => guard(() => setSessionHits([])));
-
-    void Promise.allSettled([notes, files, sessions]).then(() => guard(() => setBusy(false)));
-  }));
+  /** The query the results on screen answer, for the prompt and the empty state. */
+  const asked = () => query().trim();
 
   const counts = createMemo(() => ({
     notes: noteHits().length,
@@ -361,7 +347,7 @@ export const SearchPanel: Component = () => {
         </Show>
 
         {/* Empty state: contextual operator hints for the chosen scope. */}
-        <Show when={!debounced()}>
+        <Show when={!asked()}>
           <div class="px-3 py-2">
             <div class="py-1 text-floor font-semibold text-muted-dark">{optionsHeader(scope().kind)}</div>
             <For each={opsFor(scope().kind)}>
@@ -372,8 +358,8 @@ export const SearchPanel: Component = () => {
           </div>
         </Show>
 
-        <Show when={debounced() && !busy() && total() === 0}>
-          <div class="px-3 py-8 text-center text-muted-dark text-xs">No matches for “{debounced()}”.</div>
+        <Show when={asked() && !busy() && total() === 0}>
+          <div class="px-3 py-8 text-center text-muted-dark text-xs">No matches for “{asked()}”.</div>
         </Show>
 
         <Show when={mode() === 'semantic' && showNotes() && semanticHits().length > 0}>

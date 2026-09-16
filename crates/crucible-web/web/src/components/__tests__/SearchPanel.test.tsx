@@ -11,50 +11,58 @@ vi.mock('@/contexts/ProjectContext', () => ({
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({ selectSession: selectSessionMock, currentSession: () => undefined }),
 }));
-const searchSessionsMock = vi.fn(
-  async (_q: string, _kiln?: string | string[], _limit?: number) => [
-    { id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' },
-  ],
-);
-
 const openFileMock = vi.fn();
 vi.mock('@/lib/file-actions', () => ({ openFileInEditor: (...a: unknown[]) => openFileMock(...a) }));
 
-const grepMock = vi.fn(async (root: string, _q: string, opts?: { glob?: string }) => {
-  // Notes call carries glob '*.md'; the files call does not.
-  if (opts?.glob === '*.md') {
-    return {
-      truncated: false,
-      hits: [
-        { path: `${root}/Trust.md`, relPath: 'Trust.md', line: 3, text: 'derived trust is the boundary', matchStart: 8, matchEnd: 13 },
-      ],
-    };
-  }
-  return {
-    truncated: false,
-    hits: [
-      { path: `${root}/trust.rs`, relPath: 'src/trust.rs', line: 12, text: 'fn resolve_trust()', matchStart: 11, matchEnd: 16 },
-    ],
-  };
-});
-
-// The kiln roster is NOT stubbed here: `useKilns` runs the real `listKilns`
-// against the mocked fetch below, so the scope picker is driven by an answer
-// the daemon could give.
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getConfig: vi.fn(async () => ({ kiln_path: '/kilns/main' })),
-  grepSearch: (...a: [string, string, { glob?: string }?]) => grepMock(...a),
-  searchSessions: (...a: Parameters<typeof searchSessionsMock>) => searchSessionsMock(...a),
-}));
-
+/**
+ * Nothing in `@/lib/api` is stubbed.
+ *
+ * The three searches are held in the query cache now, so a mocked module
+ * counts the calls that reach it rather than the calls that reach the daemon —
+ * and the debounce, which is the point of half of these cases, would not be
+ * observable at all.
+ */
 let env: TestQueryEnv;
+/** Every grep the daemon answered: its root, its query and its glob. */
+let greps: { root: string; query: string; glob: string | null }[] = [];
+/** Every session search the daemon answered: its query, its kilns, its limit. */
+let sessionSearches: { query: string; kilns: string[]; limit: string | null }[] = [];
 
 beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
+  greps = [];
+  sessionSearches = [];
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [{ path: '/kilns/main', name: 'main' }] }),
+    'GET /api/config': () => ({ kiln_path: '/kilns/main' }),
+    'POST /api/search/grep': async (request: Request) => {
+      const body = (await request.json()) as { root: string; query: string; glob: string | null };
+      greps.push(body);
+      // The notes call carries the markdown glob; the files call does not.
+      return body.glob === '*.md'
+        ? {
+            truncated: false,
+            hits: [
+              { path: `${body.root}/Trust.md`, rel_path: 'Trust.md', line: 3, text: 'derived trust is the boundary', match_start: 8, match_end: 13 },
+            ],
+          }
+        : {
+            truncated: false,
+            hits: [
+              { path: `${body.root}/trust.rs`, rel_path: 'src/trust.rs', line: 12, text: 'fn resolve_trust()', match_start: 11, match_end: 16 },
+            ],
+          };
+    },
+    'GET /api/sessions/search': (request: Request) => {
+      const params = new URL(request.url).searchParams;
+      sessionSearches.push({
+        query: params.get('q') ?? '',
+        kilns: params.getAll('kiln'),
+        limit: params.get('limit'),
+      });
+      return [{ id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' }];
+    },
   });
 });
 
@@ -71,13 +79,17 @@ describe('SearchPanel', () => {
     fireEvent.input(screen.getByTestId('search-input'), { target: { value: 'trust' } });
 
     await waitFor(() =>
-      expect(grepMock).toHaveBeenCalledWith('/kilns/main', 'trust', expect.objectContaining({ glob: '*.md' })),
+      expect(greps).toContainEqual({ root: '/kilns/main', query: 'trust', glob: '*.md', limit: 60, case_insensitive: true }),
     );
-    expect(grepMock).toHaveBeenCalledWith('/repos/app', 'trust', expect.not.objectContaining({ glob: '*.md' }));
+    await waitFor(() =>
+      expect(greps).toContainEqual({ root: '/repos/app', query: 'trust', glob: null, limit: 60, case_insensitive: true }),
+    );
 
     // Note + file hits render; a session hit renders.
     await waitFor(() => expect(screen.getAllByTestId('search-hit').length).toBe(2));
-    expect(screen.getByTestId('search-session-hit').textContent).toContain('Trust session');
+    await waitFor(() =>
+      expect(screen.getByTestId('search-session-hit').textContent).toContain('Trust session'),
+    );
   });
 
   it('highlights the matched span and opens a hit', async () => {
@@ -122,18 +134,13 @@ describe('SearchPanel', () => {
     fireEvent.input(screen.getByTestId('search-input'), { target: { value: 'trust' } });
 
     await waitFor(() =>
-      expect(grepMock).toHaveBeenCalledWith(
-        '/kilns/main',
-        'trust',
-        expect.objectContaining({ glob: '*.md' }),
-      ),
+      expect(greps.map((g) => g.root)).toContain('/kilns/main'),
     );
-    await waitFor(() =>
-      expect(searchSessionsMock).toHaveBeenCalledWith('trust', 'main', 30),
-    );
+    await waitFor(() => expect(sessionSearches).toHaveLength(1));
+    expect(sessionSearches[0]).toEqual({ query: 'trust', kilns: ['main'], limit: '30' });
     // Neither call carries the other's spelling.
-    expect(grepMock).not.toHaveBeenCalledWith('main', expect.anything(), expect.anything());
-    expect(searchSessionsMock).not.toHaveBeenCalledWith('trust', '/kilns/main', 30);
+    expect(greps.map((g) => g.root)).not.toContain('main');
+    expect(sessionSearches[0].kilns).not.toContain('/kilns/main');
   });
 
   it('scoping to Sessions drops the notes/files sections', async () => {
@@ -147,6 +154,30 @@ describe('SearchPanel', () => {
     fireEvent.click(screen.getByTestId('search-scope-sessions'));
 
     await waitFor(() => expect(screen.queryAllByTestId('search-hit').length).toBe(0));
-    expect(screen.getByTestId('search-session-hit')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('search-session-hit')).toBeTruthy());
+  });
+
+  /**
+   * One request per settled query, not one per keystroke.
+   *
+   * Grep walks a tree and a semantic search embeds the text with a provider,
+   * so a request per character is a walk per character. The wait used to be
+   * the panel's own timer; it belongs to the reads it throttles.
+   */
+  it('waits out the typing instead of searching on every keystroke', async () => {
+    render(() => <SearchPanel />);
+    const input = screen.getByTestId('search-input');
+
+    // Spaced the way a person types, and inside one debounce window between
+    // them: a panel that asked per keystroke would run five searches here.
+    for (const partial of ['t', 'tr', 'tru', 'trus', 'trust']) {
+      fireEvent.input(input, { target: { value: partial } });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+
+    await waitFor(() => expect(screen.getAllByTestId('search-hit').length).toBe(2));
+    await waitFor(() => expect(sessionSearches).toHaveLength(1));
+    expect(greps.map((g) => g.query)).toEqual(['trust', 'trust']);
+    expect(sessionSearches.map((search) => search.query)).toEqual(['trust']);
   });
 });
