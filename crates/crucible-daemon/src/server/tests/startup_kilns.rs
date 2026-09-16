@@ -122,3 +122,93 @@ async fn boot_leaves_a_lazy_kiln_closed() {
         "a lazy kiln must not open unasked: {roots:?}"
     );
 }
+
+/// A write into a REGISTERED kiln is admitted after a restart, and the write
+/// opens it.
+///
+/// Root admission read the kilns the manager held OPEN, and a daemon that has
+/// just started holds none, so a note write answered
+/// `File not within any open kiln or registered project` against a kiln the
+/// user could see in `kiln.list` and in their own config. The listing and the
+/// admission disagreed about what a kiln is.
+///
+/// Admission asks IDENTITY now — `KilnManager::admissible_kiln_roots` — and
+/// opening is a consequence of admitting rather than a precondition for it.
+#[tokio::test]
+async fn a_write_into_a_registered_kiln_is_admitted_after_a_restart() {
+    let tmp = TempDir::new().unwrap();
+    let data_home = tmp.path().join("data");
+    let vault = tmp.path().join("alpha");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    // The first daemon's registration, exactly what `cru init -p <dir> -y`
+    // leaves behind.
+    let state = Arc::new(KilnStateStore::new(&data_home));
+    state
+        .register(&KilnName::parse("alpha").unwrap(), &vault, false, false)
+        .expect("the registration must be written");
+
+    // A fresh daemon over the same data root. Nothing has opened anything: the
+    // boot open is a task of its own, and a request can land before it.
+    let registry = crate::test_support::kiln_registry(&data_home, &[]);
+    registry.overlay_state(state.registrations());
+    let km = Arc::new(crate::kiln_manager::KilnManager::new().with_kiln_registry(registry.clone()));
+    assert!(
+        km.list().await.is_empty(),
+        "precondition: a fresh daemon holds nothing open"
+    );
+
+    let target = vault.join("Watched.md");
+    let answer = crate::file_write::write_for_roots(
+        crucible_core::file_write::FileWriteRequest {
+            path: target.to_string_lossy().into_owned(),
+            change: crucible_core::file_write::FileChange::Put {
+                content: "after the restart\n".to_string(),
+                base_hash: None,
+                base_text: None,
+            },
+        },
+        &km.admissible_kiln_roots().await,
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        answer["ok"],
+        json!(true),
+        "a registered kiln must admit the write: {answer}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("the file must be written"),
+        "after the restart\n"
+    );
+
+    // And admitting opens it, so the bytes just written are watched and
+    // indexed rather than sitting outside the kiln the daemon serves.
+    assert_eq!(
+        km.admit_kiln_root(&target).await.as_deref(),
+        Some(vault.as_path()),
+        "the admission names the kiln root it opened"
+    );
+    let listed = crate::server::kiln::handle_kiln_list(
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(crucible_core::protocol::RequestId::Number(9)),
+            method: "kiln.list".to_string(),
+            params: json!({}),
+        },
+        &km,
+        &registry,
+        &data_home,
+    )
+    .await
+    .result
+    .expect("kiln.list returns a list");
+    let row = listed
+        .as_array()
+        .expect("an array")
+        .iter()
+        .find(|row| row["name"] == json!("alpha"))
+        .unwrap_or_else(|| panic!("the kiln must be listed: {listed}"));
+    assert_eq!(row["open"], json!(true), "the use opened it: {listed}");
+}

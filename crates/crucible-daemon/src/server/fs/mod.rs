@@ -394,9 +394,16 @@ async fn resolve_root(
         "project" => project_root(pm, sessions, Path::new(root))
             .await
             .ok_or(ROOT_NOT_ADMITTED),
+        // Registered, not merely open, and opened on first use. This asked
+        // whether the manager held the directory OPEN, which a restart makes
+        // false for every kiln; identity is the registry's answer and the
+        // open is a consequence of admitting, not a precondition for it.
         "kiln" => match Path::new(root).canonicalize() {
-            Ok(canon) if km.get(&canon).await.is_some() => Ok(canon),
-            _ => Err("root is not an open kiln"),
+            Ok(canon) => match km.admit_kiln_root(&canon).await {
+                Some(_) => Ok(canon),
+                None => Err("root is not a registered kiln"),
+            },
+            Err(_) => Err("root is not a registered kiln"),
         },
         _ => Err("kind must be 'project' or 'kiln'"),
     }

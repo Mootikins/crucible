@@ -197,12 +197,12 @@ pub(crate) async fn handle(
         .session_workspace_containing(std::path::Path::new(&params.path))
         .await
         .map(|folder| (folder, ProjectFileAccess::ReadWrite));
-    let kilns = km
-        .list()
-        .await
-        .into_iter()
-        .map(|(path, _, _)| path)
-        .collect::<Vec<_>>();
+    // Registered, not merely open. A restart closes every kiln, and a write
+    // admitted against the open set alone answered 404 for a kiln the user
+    // can see in `kiln.list`. `admit_kiln_root` also OPENS the one this write
+    // lands in, so the bytes it is about to add are watched and indexed.
+    let kilns = km.admissible_kiln_roots().await;
+    let _opened = km.admit_kiln_root(std::path::Path::new(&params.path)).await;
     let projects = pm
         .list()
         .into_iter()

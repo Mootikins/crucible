@@ -143,32 +143,36 @@ pub(crate) async fn handle_kiln_list(
     registry: &crate::kiln_registry::KilnRegistry,
     data_home: &Path,
 ) -> Response {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
-    // What the manager holds open. Keyed by the path it opened, which a
-    // registry entry matches by either of its two spellings.
-    let open: HashMap<std::path::PathBuf, std::time::Instant> = km
-        .list()
-        .await
-        .into_iter()
-        .map(|(path, _self_asserted, last_access)| (path, last_access))
-        .collect();
+    // What the manager holds open, resolved through the registry's own reverse
+    // index. Matching the two by path string is what the index exists to
+    // spare every caller: an opener canonicalizes, a configured entry may say
+    // `~/vault`, and a symlinked spelling is a third form of the same
+    // directory. Ask the registry which NAME a path is, and the answer holds
+    // for all three.
+    let mut open_by_name: HashMap<crucible_core::config::KilnName, std::time::Instant> =
+        HashMap::new();
+    let mut open_unnamed: Vec<(std::path::PathBuf, std::time::Instant)> = Vec::new();
+    for (path, _self_asserted, last_access) in km.list().await {
+        match registry.name_for(&path) {
+            Some(name) => {
+                open_by_name.insert(name, last_access);
+            }
+            None => open_unnamed.push((path, last_access)),
+        }
+    }
 
     let mut rows = Vec::new();
-    let mut claimed: HashSet<std::path::PathBuf> = HashSet::new();
 
     for kiln in registry.entries() {
-        let opened = open
-            .get(kiln.path())
-            .or_else(|| open.get(kiln.resolved_path()));
+        let opened = open_by_name.get(kiln.name());
         // A registration pointing at a directory that is gone is not offered:
         // the attach would fail to open it, and this listing publishes only
         // names the attach resolves.
         if opened.is_none() && !kiln.path().is_dir() {
             continue;
         }
-        claimed.insert(kiln.path().to_path_buf());
-        claimed.insert(kiln.resolved_path().to_path_buf());
         rows.push(serde_json::json!({
             "path": kiln.path().to_string_lossy(),
             "name": kiln.name().as_str(),
@@ -178,11 +182,11 @@ pub(crate) async fn handle_kiln_list(
         }));
     }
 
-    for (path, last_access) in open {
+    for (path, last_access) in open_unnamed {
         // The daemon data root gets opened as the fallback kiln for kiln-less
         // sessions, but it is config/session storage — not a user kiln.
         // Listing it would surface ".crucible" in every kiln picker.
-        if path == data_home || claimed.contains(&path) || registry.name_for(&path).is_some() {
+        if path == data_home {
             continue;
         }
         rows.push(serde_json::json!({

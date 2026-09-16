@@ -103,8 +103,10 @@ async fn validate_grep_root(
         }
     }
 
-    // Open kilns.
-    for (kiln_path, _name, _last) in km.list().await {
+    // Kilns — registered, not merely open. Searching only the open set meant
+    // a restart made every registered kiln unsearchable, and `lazy` meant
+    // "never" rather than "not opened unasked".
+    for kiln_path in km.admissible_kiln_roots().await {
         if let Ok(base) = kiln_path.canonicalize() {
             if canon.starts_with(&base) {
                 return Ok(canon);

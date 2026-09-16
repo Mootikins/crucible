@@ -435,6 +435,70 @@ impl KilnManager {
             .and_then(|r| r.name_for(&canonical))
     }
 
+    /// Every directory a containment check may admit as a kiln.
+    ///
+    /// The registry's entries, plus whatever this manager already holds open.
+    ///
+    /// Admission asks IDENTITY — "is this directory a kiln" — and identity is
+    /// the registry's to answer. `list()` answers "is it open", which is
+    /// state, and a daemon that has just started holds nothing open. Every
+    /// root admission read the open set, so after a restart a note write to a
+    /// registered kiln answered `File not within any open kiln`, the file
+    /// routes answered `root is not an open kiln`, and grep searched nothing —
+    /// each of them refusing a kiln the user can see in `kiln.list` and in
+    /// their own config.
+    ///
+    /// Both spellings of a registry entry are offered, because a caller may
+    /// hold either: the path as configured, or the one walked back through its
+    /// deepest existing ancestor.
+    ///
+    /// Admission is not opening. A caller that admits a root should open it
+    /// through [`Self::get_or_open`], so the write it just let through is
+    /// watched and indexed.
+    pub async fn admissible_kiln_roots(&self) -> Vec<PathBuf> {
+        let mut roots: Vec<PathBuf> = self
+            .list()
+            .await
+            .into_iter()
+            .map(|(path, _, _)| path)
+            .collect();
+        if let Some(registry) = self.kiln_registry.as_ref() {
+            for kiln in registry.entries() {
+                for form in [kiln.path(), kiln.resolved_path()] {
+                    if !roots.iter().any(|root| root == form) {
+                        roots.push(form.to_path_buf());
+                    }
+                }
+            }
+        }
+        roots
+    }
+
+    /// The admissible kiln root that contains `path`, opened.
+    ///
+    /// One call for the admission and the open, so a caller cannot do the
+    /// first and forget the second. `None` is a denial: no kiln contains the
+    /// path, and the caller must refuse rather than fall back to a wider root.
+    pub async fn admit_kiln_root(&self, path: &Path) -> Option<PathBuf> {
+        let canonical = canonical_or_self(path);
+        let root = self
+            .admissible_kiln_roots()
+            .await
+            .into_iter()
+            .find(|root| {
+                let resolved = canonical_or_self(root);
+                canonical.starts_with(root) || canonical.starts_with(&resolved)
+            })?;
+        // Opened on first use: a lazy entry, or one a restart left closed, is
+        // a kiln whose watcher and index have to exist before the request that
+        // admitted it lands.
+        if let Err(e) = self.get_or_open(&root).await {
+            warn!(kiln = %root.display(), error = %e, "Admitted a kiln that will not open");
+            return None;
+        }
+        Some(root)
+    }
+
     /// Give a directory a registry name as it opens, if it has none.
     ///
     /// The registry is the single source of kiln names: `kiln.list` publishes
