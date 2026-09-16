@@ -142,6 +142,28 @@ describe('saveCanvasOnce', () => {
     expect(writes).toHaveLength(1);
   });
 
+  /**
+   * The pane's OWN echo must not read as news.
+   *
+   * A reader adopts a document when the entry's stamp moves, and every
+   * autosave patched the entry with a fresh stamp — so the pane that wrote the
+   * document was told about its own write, six hundred milliseconds after each
+   * edit. The panel re-read it as a new board and threw away the undo stack
+   * behind it: after one autosave there was nothing left to undo to.
+   */
+  it('does not move the stamp of the entry it wrote', async () => {
+    env = createTestQueryEnv(canvasRoutes());
+
+    const reader = inRoot(() => useGetCanvas(() => BOARD));
+    await waitFor(() => expect(reader.data).toBeDefined());
+    const before = reader.dataUpdatedAt;
+
+    await saveCanvasOnce(BOARD, doc('moved'));
+
+    await waitFor(() => expect(reader.data?.canvas).toEqual(doc('moved')));
+    expect(reader.dataUpdatedAt).toBe(before);
+  });
+
   it('leaves another board alone', async () => {
     env = createTestQueryEnv(canvasRoutes());
 

@@ -222,7 +222,7 @@ export function initHistory(doc: CanvasDoc): History {
  * saved the unchanged document over the user's work. Serializing a few hundred
  * nodes once per gesture is cheap, and it cannot be wrong in that direction.
  */
-function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
+export function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
   if (a === b) return true;
   return JSON.stringify(a) === JSON.stringify(b);
 }

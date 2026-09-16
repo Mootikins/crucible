@@ -75,8 +75,18 @@ export function fetchCanvasOnce(path: string): Promise<CanvasResponse> {
  */
 export function saveCanvasOnce(path: string, canvas: CanvasDoc): Promise<void> {
   return saveCanvas(path, canvas).then(() => {
-    getQueryClient().setQueryData<CanvasResponse>(keys.canvas(path), (held) =>
-      held ? { ...held, canvas } : held,
+    const client = getQueryClient();
+    // The stamp stays where it was. A reader adopts a document when the stamp
+    // MOVES, and the pane that wrote this one is a reader of the same entry —
+    // so a fresh stamp told that pane about its own write, six hundred
+    // milliseconds after every edit, and it rebuilt its board from the echo
+    // and threw away the undo stack behind it. Writing what you already know
+    // is not news, and the stamp is what says whether something is.
+    const stamp = client.getQueryState<CanvasResponse>(keys.canvas(path))?.dataUpdatedAt;
+    client.setQueryData<CanvasResponse>(
+      keys.canvas(path),
+      (held) => (held ? { ...held, canvas } : held),
+      { updatedAt: stamp },
     );
   });
 }

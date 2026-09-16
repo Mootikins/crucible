@@ -87,6 +87,7 @@ import {
   removeEdges,
   removeNodes,
   resizeNode,
+  sameDocument,
   updateNode,
   undo,
   type History,
@@ -208,14 +209,18 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
   createEffect(() => setLoading(board.isPending && props.filePath !== undefined));
 
   /**
-   * Adopt the daemon's document, and ONLY when it is a new one.
+   * Adopt the daemon's answer, and REBUILD the board only from a new document.
    *
-   * `dataUpdatedAt` moves on every answer, including one that equals the last,
-   * so it is the honest "this is a new document" signal — and reading the
-   * query at all re-runs this effect on every state change it makes, including
-   * the ones that carry no answer. Rebuilding the history on those would throw
-   * away the edit the user made since the read: a card added, then a refetch
-   * that changed nothing, and the card is gone with no warning.
+   * The stamp says an answer arrived at all: reading the query re-runs this
+   * effect on every state change it makes, including the ones that carry no
+   * answer. The kiln and the refused references are taken from every answer,
+   * because they can change while the document does not.
+   *
+   * The history is the part that must not be rebuilt on an answer that says
+   * nothing. An answer can BE the document already on screen — this pane's own
+   * autosave echoed back, or another pane saving the same board — and
+   * `initHistory` on that throws away `past` and `future` behind an edit the
+   * user can still see, with no warning. Undo simply stops working.
    */
   createEffect(
     on(
@@ -230,6 +235,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
         // base — one spurious 404 per card on every open.
         setKiln(res.kiln);
         setRejected(res.rejected);
+        if (previousAt !== 0 && sameDocument(res.canvas, doc())) return;
         setHistory(initHistory(res.canvas));
         setDirty(false);
         queueMicrotask(openAtNaturalZoom);

@@ -681,4 +681,85 @@ describe('CanvasPanel — the shared board', () => {
     });
     expect(reads).toEqual(['/kiln/Board.canvas', '/kiln/Other.canvas']);
   });
+
+  /**
+   * An autosave must not cost the user their undo stack.
+   *
+   * The pane patches the cache with what it wrote, and it reads the same
+   * entry. With a fresh stamp on that patch, its own echo came back six
+   * hundred milliseconds after every edit and read as a new board — so the
+   * panel rebuilt its history from it, and undo had nothing to go back to.
+   */
+  it('keeps the undo stack across the autosave of an edit', async () => {
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+
+    surface.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(5);
+    });
+
+    // The whole debounce, and the write it ends in.
+    await waitFor(() => expect(saved.length).toBeGreaterThan(0), { timeout: 2000 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const undoButton = container.querySelector<HTMLButtonElement>('[data-testid="canvas-undo"]')!;
+    expect(undoButton.disabled, 'the edit before the save must still be undoable').toBe(false);
+    fireEvent.click(undoButton);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+  });
+
+  /**
+   * A re-read that finds the board unchanged must not cost the undo stack
+   * either.
+   *
+   * The stamp says an answer ARRIVED, not that it says anything new. A refetch
+   * — after a reconnect, or after anything invalidates the entry — hands the
+   * pane the document it is already showing, and rebuilding the history on
+   * that is the same silent loss as the autosave echo was.
+   */
+  it('keeps the undo stack when a re-read finds the same document', async () => {
+    // The daemon serves back whatever was last written to it.
+    let onDisk = response().canvas;
+    serve(() => ({ kiln: '/kiln', rejected: [], canvas: onDisk }));
+    env.restore();
+    env = createTestQueryEnv({
+      'GET /api/canvas': () => board(),
+      'PUT /api/canvas': async (request: Request) => {
+        const body = (await request.json()) as { path: string; content: string };
+        saved.push(body);
+        onDisk = JSON.parse(body.content) as typeof onDisk;
+        return {};
+      },
+    });
+
+    const { container } = render(() => <CanvasPanel filePath="/kiln/Board.canvas" />);
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+    const surface = container.querySelector('[data-testid="canvas-surface"]') as HTMLElement;
+
+    surface.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(5);
+    });
+    await waitFor(() => expect(saved.length).toBeGreaterThan(0), { timeout: 2000 });
+
+    await env.client.invalidateQueries({ queryKey: ['canvas', '/kiln/Board.canvas'] });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const undoButton = container.querySelector<HTMLButtonElement>('[data-testid="canvas-undo"]')!;
+    expect(undoButton.disabled, 'a re-read of the same board must not clear undo').toBe(false);
+    fireEvent.click(undoButton);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-testid="canvas-node"]').length).toBe(4);
+    });
+  });
 });
