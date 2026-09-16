@@ -1,25 +1,16 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
+import { waitFor } from '@solidjs/testing-library';
 import { FakeEventSource, installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
-import { sessionEvents, resetSseForTests } from '@/lib/query/sse';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { sessionEvents } from '@/lib/query/sse';
+import {
+  installSessionEventRoute,
+  resetReviewInvalidationForTests,
+  REVIEW_INVALIDATE_DEBOUNCE_MS,
+} from '@/lib/query/routes/session';
 import type { ComposedHunk } from '@/lib/review-types';
-
-const listReviewHunks = vi.fn();
-const setHunkState = vi.fn(async () => ({ hunk_id: 'h1', state: 'accepted' as const }));
-const setHunkStates = vi.fn(async () => ({ applied: [] as string[], failed: [] }));
-const undoReject = vi.fn(async () => ({ applied: [] as string[], failed: [] }));
-const addReviewComment = vi.fn(async () => ({ comment: {} }));
-const resolveReviewComment = vi.fn(async () => ({ comment_id: 'c1' }));
-vi.mock('@/lib/review-api', () => ({
-  listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
-  setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
-  setHunkStates: (...a: unknown[]) => setHunkStates(...(a as [])),
-  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
-  addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
-  resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
-}));
-
-const {
+import {
   __resetReviewStore,
   REVIEW_REFRESH_DEBOUNCE_MS,
   indexToolCall,
@@ -28,7 +19,32 @@ const {
   reviewStore,
   toolCallLabel,
   useReviewSession,
-} = await import('../review-store');
+} from '../review-store';
+
+/**
+ * The review slot, over the cache and the stream that feed it.
+ *
+ * Nothing in `@/lib/review-api` is stubbed. The listing is a cache entry now,
+ * so a mocked module would count the calls that reach IT rather than the ones
+ * that reach the daemon — and the two facts this suite exists for, that three
+ * surfaces share one listing and that a burst of events costs one, are both
+ * about what reaches the daemon.
+ *
+ * A slot exists only while a session is BOUND. That is not new — a slot per
+ * session ever visited is a leak — but it is now the only way to fill one:
+ * `refresh` marks the listing wrong, and it is the binding's observer that
+ * asks again.
+ */
+
+let env: TestQueryEnv;
+/** Every listing the daemon answered: the session, and the scope asked for. */
+let listed: { session: string; scope: string }[] = [];
+/** Every write the daemon answered: its name, and the body it was sent. */
+let wrote: { name: string; body: Record<string, unknown> }[] = [];
+/** What each session's listing answers next. */
+let answers = new Map<string, () => unknown>();
+/** What each write answers next; a `Response` refuses. */
+let writeAnswers = new Map<string, () => unknown>();
 
 function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
   return {
@@ -47,33 +63,112 @@ function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
 }
 
 /**
- * Answer every list with a FRESH copy. The store mutates hunk state
- * optimistically, and a mock resolving the same object twice would hand the
- * refresh back the optimistic value it was supposed to correct.
+ * Answer one session's listing with a FRESH copy each time.
+ *
+ * The store marks hunk state optimistically, and a route answering the same
+ * object twice would hand the refetch back the optimistic value it is supposed
+ * to correct.
  */
-const answer = (hunks: ComposedHunk[], comments: unknown[] = []) =>
-  listReviewHunks.mockImplementation(async () => ({
-    session_id: 's1',
+function answer(session: string, hunks: ComposedHunk[], comments: unknown[] = []): void {
+  answers.set(session, () => ({
+    session_id: session,
     hunks: structuredClone(hunks),
     comments: structuredClone(comments),
   }));
+}
+
+/** Answer one session's listing with whatever the case wants, once or always. */
+function answerWith(session: string, body: () => unknown): void {
+  answers.set(session, body);
+}
+
+/** A refusal in the envelope `request()` unwraps, carrying the daemon's words. */
+function refuse(status: number, message: string): Response {
+  return new Response(JSON.stringify({ error: { code: status, message } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+/** How many times one session was listed. */
+const countOf = (session: string) => listed.filter((seen) => seen.session === session).length;
+/** The scope of the last listing of one session. */
+const lastScopeOf = (session: string) =>
+  listed.filter((seen) => seen.session === session).at(-1)?.scope;
+/** How many times one write was sent. */
+const writeCount = (name: string) => wrote.filter((seen) => seen.name === name).length;
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
+/** Waits out the route's coalescing window and lets the listing it starts land. */
+const afterDebounce = () =>
+  new Promise((r) => setTimeout(r, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
+
+/** The review routes of two sessions, recording everything they are asked. */
+function reviewRoutes() {
+  listed = [];
+  wrote = [];
+  answers = new Map();
+  writeAnswers = new Map();
+  answer('s1', []);
+  answer('s2', []);
+
+  const listing = (session: string) => (request: Request) => {
+    listed.push({
+      session,
+      scope: new URL(request.url).searchParams.get('scope') ?? '',
+    });
+    return answers.get(session)!();
+  };
+  const write = (name: string) => async (request: Request) => {
+    wrote.push({ name, body: (await request.json()) as Record<string, unknown> });
+    return writeAnswers.get(name)?.() ?? { applied: [], failed: [] };
+  };
+
+  const routes: Record<string, unknown> = {};
+  for (const session of ['s1', 's2']) {
+    const base = `/api/session/${session}/review`;
+    routes[`GET ${base}/hunks`] = listing(session);
+    routes[`POST ${base}/state`] = write('state');
+    routes[`POST ${base}/states`] = write('states');
+    routes[`POST ${base}/undo-reject`] = write('undo');
+    routes[`POST ${base}/rebase`] = write('rebase');
+    routes[`POST ${base}/comment`] = write('comment');
+    routes[`POST ${base}/comment/c1/resolve`] = write('resolve');
+  }
+  return routes as Parameters<typeof createTestQueryEnv>[0];
+}
+
+/** Binds a session the way a panel does, and answers when to let go. */
+function bind(id: () => string | undefined): () => void {
+  let dispose = () => {};
+  createRoot((d) => {
+    dispose = d;
+    useReviewSession(id);
+  });
+  return dispose;
+}
+
+/** Binds one session and waits for its first listing to land. */
+async function bound(session: string): Promise<() => void> {
+  const dispose = bind(() => session);
+  await waitFor(() => expect(reviewStore.session(session).loaded).toBe(true));
+  return dispose;
+}
 
 beforeEach(() => {
   installFakeEventSource();
-  answer([]);
-  // clearMocks wipes call history, not implementations — a test that installs
-  // a never-resolving one would otherwise hang every test after it.
-  setHunkState.mockReset();
-  setHunkState.mockResolvedValue({ hunk_id: 'h1', state: 'accepted' });
+  env = createTestQueryEnv(reviewRoutes());
+  // The app installs the routes of every stream at start (`src/index.tsx`);
+  // `review_changed` reaches no listing without this one.
+  installSessionEventRoute();
 });
 
 afterEach(() => {
-  // The store first, because dropping a binding unsubscribes it; the roots
-  // after, so a source of this case cannot answer the next one.
+  // The store first, because dropping a binding unsubscribes it; the client
+  // after, so a stream of this case cannot answer the next one.
   __resetReviewStore();
-  resetSseForTests();
+  resetReviewInvalidationForTests();
+  env.restore();
   vi.clearAllMocks();
 });
 
@@ -87,179 +182,231 @@ describe('reviewStore reads', () => {
   });
 
   it('unreviewed count excludes external hunks', async () => {
-    answer([
+    answer('s1', [
       hunk({ id: 'mine', state: 'unreviewed' }),
       hunk({ id: 'theirs', state: 'unreviewed', tool_call_ids: [] }),
       hunk({ id: 'done', state: 'accepted' }),
     ]);
-    await reviewActions.refresh('s1');
+    const dispose = await bound('s1');
     // An external hunk is the user's own edit; counting it as work owed would
     // make the queue argue for reviewing yourself.
     expect(reviewStore.unreviewedCount('s1')).toBe(1);
+    dispose();
   });
 
   it('collects hunks for a path across every session under review', async () => {
-    answer([hunk({ id: 'a' })]);
-    await reviewActions.refresh('s1');
-    answer([hunk({ id: 'b' })]);
-    await reviewActions.refresh('s2');
+    answer('s1', [hunk({ id: 'a' })]);
+    answer('s2', [hunk({ id: 'b' })]);
+    const d1 = await bound('s1');
+    const d2 = await bound('s2');
 
     const found = reviewStore.hunksForOpenPath('/repo/src/a.rs');
     expect(found.map((f) => `${f.sessionId}:${f.hunk.id}`).sort()).toEqual(['s1:a', 's2:b']);
     expect(reviewStore.hunksForOpenPath('/repo/src/other.rs')).toEqual([]);
+    d1();
+    d2();
   });
 
   it('hunksForToolCall matches on the daemon call id', async () => {
-    answer([hunk({ id: 'a', tool_call_ids: ['call-1', 'call-2'] })]);
-    await reviewActions.refresh('s1');
+    answer('s1', [hunk({ id: 'a', tool_call_ids: ['call-1', 'call-2'] })]);
+    const dispose = await bound('s1');
     expect(reviewStore.hunksForToolCall('s1', 'call-2')).toHaveLength(1);
     expect(reviewStore.hunksForToolCall('s1', 'call-9')).toHaveLength(0);
+    dispose();
   });
 });
 
 describe('scope', () => {
   it('a session lists under the session scope until asked for the turn', async () => {
-    await reviewActions.refresh('s1');
-    expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'session');
+    const dispose = await bound('s1');
+    expect(lastScopeOf('s1')).toBe('session');
     expect(reviewStore.scope('s1')).toBe('session');
 
     await reviewActions.setScope('s1', 'turn');
+    await waitFor(() => expect(countOf('s1')).toBe(2));
     expect(reviewStore.scope('s1')).toBe('turn');
-    expect(listReviewHunks).toHaveBeenLastCalledWith('s1', 'turn');
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+    expect(lastScopeOf('s1')).toBe('turn');
 
     // The same scope again is not a round trip.
     await reviewActions.setScope('s1', 'turn');
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(countOf('s1')).toBe(2);
+    dispose();
   });
 
   it('an answer for a scope the session has left is dropped', async () => {
     // The daemon echoes the scope it answered. A session-wide listing that
     // lands after the user switched to the turn would show the whole diff
     // under a control that says "Turn".
-    listReviewHunks.mockImplementation(async (_id: string, scope: string) => ({
+    // The daemon answers the whole session's diff whatever it is asked.
+    answerWith('s1', () => ({
       session_id: 's1',
       scope: 'session',
-      hunks: scope === 'session' ? [hunk({ id: 'whole' })] : [],
+      hunks: [hunk({ id: 'whole' })],
       comments: [],
     }));
     await reviewActions.setScope('s1', 'turn');
+    const dispose = bind(() => 's1');
+    await waitFor(() => expect(countOf('s1')).toBe(1));
+    expect(lastScopeOf('s1')).toBe('turn');
+
     expect(reviewStore.session('s1').hunks).toEqual([]);
     // ...and it does not count as a load either: nothing is known about the turn.
     expect(reviewStore.session('s1').loaded).toBe(false);
+    dispose();
   });
 });
 
 describe('refresh', () => {
   it('a failed list does NOT mark the session loaded', async () => {
-    listReviewHunks.mockRejectedValue(new Error('HTTP 500'));
-    await reviewActions.refresh('s1');
-    expect(reviewStore.session('s1').error).toContain('500');
+    answerWith('s1', () => refuse(500, 'HTTP 500'));
+    const dispose = bind(() => 's1');
+
+    await waitFor(() => expect(reviewStore.session('s1').error).toContain('500'));
     // Claiming "loaded" here would let every ToolCard announce that its edit
     // had been superseded, on nothing but a failed request.
     expect(reviewStore.session('s1').loaded).toBe(false);
+    dispose();
+  });
+
+  /**
+   * `refresh` marks the listing wrong; the binding's observer asks again.
+   *
+   * It used to fetch by itself, which meant a caller could fill a slot for a
+   * session nothing was bound to — a slot that then outlived every reader.
+   */
+  it('re-lists a bound session', async () => {
+    const dispose = await bound('s1');
+
+    await reviewActions.refresh('s1');
+
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+    dispose();
   });
 });
 
 describe('mutations', () => {
   it('accept applies optimistically, then re-lists', async () => {
-    answer([hunk({ id: 'h1' })]);
-    await reviewActions.refresh('s1');
+    answer('s1', [hunk({ id: 'h1' })]);
+    const dispose = await bound('s1');
 
-    let resolveCall: (v: unknown) => void = () => {};
-    setHunkState.mockImplementation(
-      () => new Promise((r) => (resolveCall = r as (v: unknown) => void)),
-    );
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    writeAnswers.set('state', () => held.then(() => ({ hunk_id: 'h1', state: 'accepted' })));
     const pending = reviewActions.setState('s1', 'h1', 'accepted');
 
-    expect(reviewStore.session('s1').hunks[0].state).toBe('accepted');
-    answer([hunk({ id: 'h1', state: 'accepted' })]);
-    resolveCall(undefined);
+    await waitFor(() => expect(reviewStore.session('s1').hunks[0].state).toBe('accepted'));
+    answer('s1', [hunk({ id: 'h1', state: 'accepted' })]);
+    release();
     await pending;
-    expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'accepted');
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+
+    expect(wrote.filter((w) => w.name === 'state')[0].body).toEqual({
+      hunk_id: 'h1',
+      state: 'accepted',
+    });
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+    dispose();
   });
 
   it('reject IS set-state rejected — one operation, one disk write', async () => {
-    answer([hunk({ id: 'h1' })]);
-    await reviewActions.refresh('s1');
+    answer('s1', [hunk({ id: 'h1' })]);
+    const dispose = await bound('s1');
+
     await reviewActions.reject('s1', 'h1');
-    expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected');
+
+    expect(wrote.filter((w) => w.name === 'state')[0].body).toEqual({
+      hunk_id: 'h1',
+      state: 'rejected',
+    });
+    dispose();
   });
 
   it('a failed accept still re-lists, so the optimistic mark cannot stick', async () => {
-    answer([hunk({ id: 'h1' })]);
-    await reviewActions.refresh('s1');
-    setHunkState.mockRejectedValue(new Error('stale'));
+    answer('s1', [hunk({ id: 'h1' })]);
+    const dispose = await bound('s1');
+    writeAnswers.set('state', () => refuse(409, 'stale'));
+
     await expect(reviewActions.setState('s1', 'h1', 'accepted')).rejects.toThrow('stale');
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
-    expect(reviewStore.session('s1').hunks[0].state).toBe('unreviewed');
+
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+    await waitFor(() => expect(reviewStore.session('s1').hunks[0].state).toBe('unreviewed'));
+    dispose();
   });
 
   it('a bulk reject is ONE call with the ids in the order given, then a re-list', async () => {
-    answer([hunk({ id: 'h1' }), hunk({ id: 'h2' })]);
-    await reviewActions.refresh('s1');
-    setHunkStates.mockResolvedValue({ applied: ['h2', 'h1'], failed: [] });
+    answer('s1', [hunk({ id: 'h1' }), hunk({ id: 'h2' })]);
+    const dispose = await bound('s1');
+    writeAnswers.set('states', () => ({ applied: ['h2', 'h1'], failed: [] }));
 
     const outcome = await reviewActions.rejectMany('s1', ['h2', 'h1']);
 
-    expect(setHunkStates).toHaveBeenCalledTimes(1);
-    expect(setHunkStates).toHaveBeenCalledWith('s1', ['h2', 'h1'], 'rejected');
-    expect(setHunkState).not.toHaveBeenCalled();
+    expect(writeCount('states')).toBe(1);
+    expect(wrote.filter((w) => w.name === 'states')[0].body).toEqual({
+      hunk_ids: ['h2', 'h1'],
+      state: 'rejected',
+    });
+    expect(writeCount('state')).toBe(0);
     expect(outcome.applied).toEqual(['h2', 'h1']);
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+    dispose();
   });
 
   it('a bulk decision marks every named hunk optimistically and a failed call re-lists', async () => {
-    answer([hunk({ id: 'h1' }), hunk({ id: 'h2' }), hunk({ id: 'h3' })]);
-    await reviewActions.refresh('s1');
-    let resolveCall: (v: unknown) => void = () => {};
-    setHunkStates.mockImplementation(
-      () => new Promise((r) => (resolveCall = r as (v: unknown) => void)),
-    );
+    answer('s1', [hunk({ id: 'h1' }), hunk({ id: 'h2' }), hunk({ id: 'h3' })]);
+    const dispose = await bound('s1');
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    writeAnswers.set('states', () => held.then(() => ({ applied: ['h1', 'h3'], failed: [] })));
     const pending = reviewActions.setStates('s1', ['h1', 'h3'], 'accepted');
 
-    const states = reviewStore.session('s1').hunks.map((h) => h.state);
-    expect(states).toEqual(['accepted', 'unreviewed', 'accepted']);
-    resolveCall({ applied: ['h1', 'h3'], failed: [] });
+    await waitFor(() =>
+      expect(reviewStore.session('s1').hunks.map((h) => h.state)).toEqual([
+        'accepted',
+        'unreviewed',
+        'accepted',
+      ]),
+    );
+    release();
     await pending;
 
-    setHunkStates.mockRejectedValue(new Error('stale'));
+    writeAnswers.set('states', () => refuse(409, 'stale'));
     await expect(reviewActions.setStates('s1', ['h2'], 'accepted')).rejects.toThrow('stale');
-    expect(listReviewHunks).toHaveBeenCalledTimes(3);
-    expect(reviewStore.session('s1').hunks[1].state).toBe('unreviewed');
+
+    await waitFor(() => expect(countOf('s1')).toBe(3));
+    await waitFor(() => expect(reviewStore.session('s1').hunks[1].state).toBe('unreviewed'));
+    dispose();
   });
 
   it('undo names no hunk, returns what the daemon restored, and re-lists', async () => {
-    answer([hunk({ id: 'h1', state: 'rejected' })]);
-    await reviewActions.refresh('s1');
-    undoReject.mockResolvedValue({ applied: ['h1'], failed: [] });
+    answer('s1', [hunk({ id: 'h1', state: 'rejected' })]);
+    const dispose = await bound('s1');
+    writeAnswers.set('undo', () => ({ applied: ['h1'], failed: [] }));
 
     const outcome = await reviewActions.undoReject('s1');
 
-    expect(undoReject).toHaveBeenCalledWith('s1');
+    expect(wrote.filter((w) => w.name === 'undo')[0].body).toEqual({});
     expect(outcome.applied).toEqual(['h1']);
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+    dispose();
   });
 
   it('commenting and resolving both re-list', async () => {
+    const dispose = await bound('s1');
+    writeAnswers.set('comment', () => ({ comment: {} }));
+    writeAnswers.set('resolve', () => ({ comment_id: 'c1' }));
+
     await reviewActions.comment('s1', { path: 'src/a.rs', line_start: 3, body: 'change this' });
-    expect(addReviewComment).toHaveBeenCalled();
+    await waitFor(() => expect(countOf('s1')).toBe(2));
+
     await reviewActions.resolveComment('s1', 'c1');
-    expect(resolveReviewComment).toHaveBeenCalledWith('s1', 'c1');
+    await waitFor(() => expect(countOf('s1')).toBe(3));
+    expect(writeCount('resolve')).toBe(1);
+    dispose();
   });
 });
 
 describe('subscription lifecycle', () => {
-  const bind = (id: () => string | undefined) => {
-    let dispose = () => {};
-    createRoot((d) => {
-      dispose = d;
-      useReviewSession(id);
-    });
-    return dispose;
-  };
-
   /**
    * Stands in for `ChatProvider`, which reads the same stream for the
    * transcript. It is the other half of the fault this suite exists to find:
@@ -270,8 +417,7 @@ describe('subscription lifecycle', () => {
 
   it('a chat pane and the changes panel share ONE EventSource', async () => {
     const stopChat = bindChatPane('s1');
-    const dispose = bind(() => 's1');
-    await settle();
+    const dispose = await bound('s1');
 
     // `onlyEventSource` fails with the count, which is the number that names
     // the fault: two sources means the panel went around the shared root.
@@ -284,8 +430,7 @@ describe('subscription lifecycle', () => {
   });
 
   it('a second panel on the same session opens no second source', async () => {
-    const d1 = bind(() => 's1');
-    await settle();
+    const d1 = await bound('s1');
     const opened = FakeEventSource.instances.length;
 
     const d2 = bind(() => 's1');
@@ -300,9 +445,9 @@ describe('subscription lifecycle', () => {
   it('two consumers share ONE stream and one initial fetch', async () => {
     const d1 = bind(() => 's1');
     const d2 = bind(() => 's1');
-    await settle();
+    await waitFor(() => expect(reviewStore.session('s1').loaded).toBe(true));
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(listReviewHunks).toHaveBeenCalledTimes(1);
+    expect(countOf('s1')).toBe(1);
 
     // The stream outlives the first consumer — the panel closing must not
     // blind the editor.
@@ -317,41 +462,45 @@ describe('subscription lifecycle', () => {
     expect(reviewStore.session('s1').loaded).toBe(false);
   });
 
-  it('a review_changed event re-lists, debounced across a burst', async () => {
-    const dispose = bind(() => 's1');
-    await settle();
-    listReviewHunks.mockClear();
+  /**
+   * The burst of one turn costs ONE listing.
+   *
+   * The route of the stream owns this now, so every reader of the diff gets
+   * it, not only this store. The coalescing is load-bearing: an invalidation
+   * does not fold concurrent refetches of one key into one request, it cancels
+   * the one in flight and starts another.
+   */
+  it('a review_changed burst re-lists once', async () => {
+    const dispose = await bound('s1');
     const source = onlyEventSource();
 
     for (let i = 0; i < 5; i++) {
       source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
     }
-    expect(listReviewHunks).not.toHaveBeenCalled();
-    await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
-    expect(listReviewHunks).toHaveBeenCalledTimes(1);
+    expect(countOf('s1')).toBe(1);
+
+    await afterDebounce();
+
+    expect(countOf('s1')).toBe(2);
     dispose();
   });
 
   it('tool results and turn ends re-list too — nothing else announces new hunks', async () => {
-    const dispose = bind(() => 's1');
-    await settle();
-    listReviewHunks.mockClear();
+    const dispose = await bound('s1');
     const source = onlyEventSource();
 
     source.emit('tool_result', { type: 'tool_result', id: 'x', result: '' });
-    await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
-    expect(listReviewHunks).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 30));
+    await waitFor(() => expect(countOf('s1')).toBe(2));
 
     source.emit('message_complete', { type: 'message_complete' });
-    await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
-    expect(listReviewHunks).toHaveBeenCalledTimes(2);
+    await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 30));
+    await waitFor(() => expect(countOf('s1')).toBe(3));
     dispose();
   });
 
-  it('a review_gate event records the block and refreshes immediately', async () => {
-    const dispose = bind(() => 's1');
-    await settle();
-    listReviewHunks.mockClear();
+  it('a review_gate event records the block and re-lists', async () => {
+    const dispose = await bound('s1');
     const source = onlyEventSource();
 
     source.emit('session_event', {
@@ -359,13 +508,16 @@ describe('subscription lifecycle', () => {
       event: 'review_gate',
       data: { blocked: true, tool: 'edit_file', path: '/repo/src/a.rs' },
     });
+
+    // The block is state only this slot holds, so it lands at once — the chip
+    // must not wait on a round trip.
     expect(reviewStore.session('s1').gate).toEqual({
       blocked: true,
       tool: 'edit_file',
       path: '/repo/src/a.rs',
     });
-    // Not debounced: a held agent is exactly when the user needs the queue.
-    expect(listReviewHunks).toHaveBeenCalledTimes(1);
+    await afterDebounce();
+    expect(countOf('s1')).toBe(2);
 
     source.emit('session_event', {
       type: 'session_event',
@@ -417,56 +569,47 @@ describe('reveal channel', () => {
  * parked — the exact "agent looks hung" failure the chip exists to prevent.
  */
 describe('gate state from a listing', () => {
+  const blocked = () => ({
+    session_id: 's1',
+    hunks: [],
+    comments: [],
+    gate: { tool: 'edit_file', path: '/repo/src/a.rs' },
+  });
+
   it('restores a block a reload never saw the event for', async () => {
-    listReviewHunks.mockResolvedValueOnce({
-      session_id: 's1',
-      hunks: [],
-      comments: [],
-      gate: { tool: 'edit_file', path: '/repo/src/a.rs' },
-    });
-    await reviewActions.refresh('s1');
+    answerWith('s1', blocked);
+    const dispose = await bound('s1');
 
     expect(reviewStore.session('s1').gate).toEqual({
       blocked: true,
       tool: 'edit_file',
       path: '/repo/src/a.rs',
     });
+    dispose();
   });
 
   it('an explicit null clears a block that has since been released', async () => {
-    listReviewHunks.mockResolvedValueOnce({
-      session_id: 's1',
-      hunks: [],
-      comments: [],
-      gate: { tool: 'edit_file', path: '/repo/src/a.rs' },
-    });
+    answerWith('s1', blocked);
+    const dispose = await bound('s1');
+
+    answerWith('s1', () => ({ session_id: 's1', hunks: [], comments: [], gate: null }));
     await reviewActions.refresh('s1');
 
-    listReviewHunks.mockResolvedValueOnce({
-      session_id: 's1',
-      hunks: [],
-      comments: [],
-      gate: null,
-    });
-    await reviewActions.refresh('s1');
-
-    expect(reviewStore.session('s1').gate).toBeNull();
+    await waitFor(() => expect(reviewStore.session('s1').gate).toBeNull());
+    dispose();
   });
 
   it('a daemon that reports no gate key leaves the event-established block alone', async () => {
-    listReviewHunks.mockResolvedValueOnce({
-      session_id: 's1',
-      hunks: [],
-      comments: [],
-      gate: { tool: 'edit_file', path: '/repo/src/a.rs' },
-    });
-    await reviewActions.refresh('s1');
+    answerWith('s1', blocked);
+    const dispose = await bound('s1');
 
     // An older daemon omits the key entirely. Treating that as "not blocked"
     // would erase a live block on every refresh.
-    answer([]);
+    answer('s1', []);
     await reviewActions.refresh('s1');
 
+    await waitFor(() => expect(countOf('s1')).toBe(2));
     expect(reviewStore.session('s1').gate?.blocked).toBe(true);
+    dispose();
   });
 });

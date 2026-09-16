@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
+import { createRoot, createSignal } from 'solid-js';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
 import type { ToolCallDisplay } from '@/lib/types';
 import type { ComposedHunk } from '@/lib/review-types';
 
@@ -42,9 +44,14 @@ vi.mock('@/lib/review-api', () => ({
 
 const { ToolCard } = await import('../ToolCard');
 const { notificationActions } = await import('@/stores/notificationStore');
-const { __resetReviewStore, reviewActions, revealedToolCall, toolCallLabel } = await import(
-  '@/lib/review-store'
-);
+const {
+  __resetReviewStore,
+  reviewActions,
+  reviewStore,
+  revealedToolCall,
+  toolCallLabel,
+  useReviewSession,
+} = await import('@/lib/review-store');
 
 /** An Edit call, so `extractDiffFromToolCall` produces a diff and the card is
  *  eligible to carry review affordances at all. */
@@ -76,16 +83,39 @@ function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
   };
 }
 
+let env: TestQueryEnv;
+/** The panel standing in for whatever binds this session on screen. */
+let unbind: (() => void) | null = null;
+
+/**
+ * Put a composed diff in front of the card.
+ *
+ * The listing is a cache entry now, and a slot is filled by the BINDING that
+ * observes it — so this binds the session once, the way a panel does, and then
+ * marks the listing wrong so the new answer lands.
+ */
 const seed = async (hunks: ComposedHunk[]) => {
   listReviewHunks.mockImplementation(async () => ({
     session_id: 's1',
     hunks: structuredClone(hunks),
     comments: [],
   }));
+  if (!unbind) {
+    unbind = createRoot((dispose) => {
+      useReviewSession(() => 's1');
+      return dispose;
+    });
+  }
   await reviewActions.refresh('s1');
+  await waitFor(() => {
+    expect(reviewStore.session('s1').loaded).toBe(true);
+    expect(reviewStore.session('s1').hunks.map((h) => h.id)).toEqual(hunks.map((h) => h.id));
+  });
 };
 
 beforeEach(() => {
+  installFakeEventSource();
+  env = createTestQueryEnv({});
   setSessionId('s1');
   setHunkState.mockReset();
   setHunkState.mockResolvedValue({ hunk_id: 'h1', state: 'accepted' });
@@ -93,7 +123,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  unbind?.();
+  unbind = null;
   __resetReviewStore();
+  env.restore();
   device.compact = false;
   vi.clearAllMocks();
 });

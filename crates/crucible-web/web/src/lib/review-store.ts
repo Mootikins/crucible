@@ -23,20 +23,23 @@ import { createStore, produce } from 'solid-js/store';
 import { createSingletonRoot } from '@solid-primitives/rootless';
 import { sessionEvents } from './query/sse';
 import type { ChatEvent } from './types';
-import {
-  addReviewComment,
-  listReviewHunks,
-  rebaseReview,
-  resolveReviewComment,
-  setHunkState,
-  setHunkStates,
-  undoReject,
-  type BulkOutcome,
-  type DegradedRoot,
-  type IntegritySkip,
-  type NewComment,
-  type ReviewHunksResponse,
+import type {
+  BulkOutcome,
+  DegradedRoot,
+  IntegritySkip,
+  NewComment,
+  ReviewHunksResponse,
 } from './review-api';
+import {
+  addReviewCommentOnce,
+  invalidateReview,
+  rebaseReviewOnce,
+  resolveReviewCommentOnce,
+  setHunkStateOnce,
+  setHunkStatesOnce,
+  undoRejectOnce,
+  useReviewHunks,
+} from './query/review';
 import {
   hunkPath,
   isExternal,
@@ -261,46 +264,58 @@ function gateFromList(data: ReviewHunksResponse, current: ReviewGate | null): Re
   return data.gate ? { blocked: true, tool: data.gate.tool, path: data.gate.path } : null;
 }
 
+/**
+ * Folds one answer from the daemon into a session's slot.
+ *
+ * The listing itself is held in `lib/query/review.ts`, under the session; this
+ * is the slot the three surfaces read, which carries the optimistic marks the
+ * listing corrects.
+ */
+function adoptListing(id: string, data: ReviewHunksResponse): void {
+  // The session may have been released while the request was in flight;
+  // writing then would resurrect a slot nobody reads.
+  if (!sessions[id]) return;
+  // The daemon echoes the scope it answered. A listing for a scope the user
+  // has since left is not this slot's diff any more; the switch issued its own
+  // refetch, and that one lands with the right word.
+  if (data.scope && data.scope !== sessions[id].scope) return;
+  setSessions(id, (s) => ({
+    ...s,
+    hunks: data.hunks,
+    comments: data.comments,
+    // Defaulted rather than left alone: a daemon that reports neither key has
+    // nothing degraded to report, and carrying a stale banner forward would
+    // outlive the failure it described.
+    degraded: data.degraded ?? [],
+    skips: data.integrity?.skips ?? [],
+    gate: gateFromList(data, s.gate),
+    loaded: true,
+    loading: false,
+    error: null,
+  }));
+}
+
+/** Folds one refusal into the slot. */
+function adoptFailure(id: string, error: Error): void {
+  if (!sessions[id]) return;
+  // `loaded` is deliberately NOT set: a failed list means we still do not know
+  // what the composed diff holds, and the superseded rule must stay silent
+  // rather than claim every edit was thrown away.
+  setSessions(id, (s) => ({ ...s, loading: false, error: error.message }));
+}
+
 export const reviewActions = {
-  /** Replace a session's hunks and comments from the daemon. */
+  /**
+   * Ask the daemon for this session's hunks and comments again.
+   *
+   * The listing is a cache entry now, so this INVALIDATES it rather than
+   * fetching: the bound session is observing that entry, so the invalidation
+   * is what fetches, and two of these inside one round trip are one request.
+   */
   async refresh(id: string): Promise<void> {
     ensureSlot(id);
-    setSessions(id, 'loading', true);
-    const scope = sessions[id].scope;
-    try {
-      const data = await listReviewHunks(id, scope);
-      // The session may have been released while the request was in flight;
-      // writing then would resurrect a slot nobody reads.
-      if (!sessions[id]) return;
-      // The daemon echoes the scope it answered. A listing for a scope the
-      // user has since left is not this slot's diff any more; the switch
-      // issued its own refresh, and that one lands with the right word.
-      if (data.scope && data.scope !== sessions[id].scope) return;
-      setSessions(id, (s) => ({
-        ...s,
-        hunks: data.hunks,
-        comments: data.comments,
-        // Defaulted rather than left alone: a daemon that reports neither key
-        // has nothing degraded to report, and carrying a stale banner forward
-        // would outlive the failure it described.
-        degraded: data.degraded ?? [],
-        skips: data.integrity?.skips ?? [],
-        gate: gateFromList(data, s.gate),
-        loaded: true,
-        loading: false,
-        error: null,
-      }));
-    } catch (e) {
-      if (!sessions[id]) return;
-      // `loaded` is deliberately NOT set: a failed list means we still do not
-      // know what the composed diff holds, and the superseded rule must stay
-      // silent rather than claim every edit was thrown away.
-      setSessions(id, (s) => ({
-        ...s,
-        loading: false,
-        error: (e as Error).message,
-      }));
-    }
+    if (sessions[id]) setSessions(id, 'loading', true);
+    await invalidateReview(id);
   },
 
   async setState(id: string, hunkId: string, state: ReviewState): Promise<void> {
@@ -314,11 +329,7 @@ export const reviewActions = {
         if (h) h.state = state;
       }),
     );
-    try {
-      await setHunkState(id, hunkId, state);
-    } finally {
-      await reviewActions.refresh(id);
-    }
+    await setHunkStateOnce(id, hunkId, state);
   },
 
   /**
@@ -354,11 +365,7 @@ export const reviewActions = {
         for (const h of s.hunks) if (named.has(h.id)) h.state = state;
       }),
     );
-    try {
-      return await setHunkStates(id, hunkIds, state);
-    } finally {
-      await reviewActions.refresh(id);
-    }
+    return setHunkStatesOnce(id, hunkIds, state);
   },
 
   /** A bulk reject: every id reverted on disk, one note to the agent. */
@@ -374,11 +381,7 @@ export const reviewActions = {
    * A `failed` list means the batch is still on the stack for the next try.
    */
   async undoReject(id: string): Promise<BulkOutcome> {
-    try {
-      return await undoReject(id);
-    } finally {
-      await reviewActions.refresh(id);
-    }
+    return undoRejectOnce(id);
   },
 
   /**
@@ -389,21 +392,15 @@ export const reviewActions = {
    * degraded, and the refresh below is what shows which.
    */
   async rebase(id: string): Promise<void> {
-    try {
-      await rebaseReview(id);
-    } finally {
-      await reviewActions.refresh(id);
-    }
+    await rebaseReviewOnce(id);
   },
 
   async comment(id: string, comment: NewComment): Promise<void> {
-    await addReviewComment(id, comment);
-    await reviewActions.refresh(id);
+    await addReviewCommentOnce(id, comment);
   },
 
   async resolveComment(id: string, commentId: string): Promise<void> {
-    await resolveReviewComment(id, commentId);
-    await reviewActions.refresh(id);
+    await resolveReviewCommentOnce(id, commentId);
   },
 
   /** Ask the open editor for this path to scroll to a hunk. */
@@ -463,12 +460,13 @@ function foldEvent(id: string, event: ChatEvent): void {
           tool: typeof data.tool === 'string' ? data.tool : '',
           path: typeof data.path === 'string' ? data.path : null,
         });
-        // A block means there is something to review RIGHT NOW; do not make
-        // the user wait out the debounce to find out what.
-        void reviewActions.refresh(id);
         return;
       }
-      if (event.event === 'review_changed') scheduleRefresh(id);
+      // `review_gate` and `review_changed` both make the listing wrong, and
+      // the ROUTE of this stream (`lib/query/routes/session.ts`) invalidates
+      // it for every reader at once. Re-listing here as well would be a second
+      // request for one event. The gate above is different: it is state only
+      // this slot holds, and no cache entry carries it.
       return;
     }
     // No event announces "the agent just created hunks" — `review_changed`
@@ -522,7 +520,27 @@ function sessionBinding(id: string): SessionBinding {
     binding.dispose = dispose;
     ensureSlot(id);
     const unsubscribe = sessionEvents(id).subscribe((event) => foldEvent(id, event));
-    void reviewActions.refresh(id);
+
+    // The listing itself. It is observed HERE, inside the binding's own root,
+    // rather than in any of the three surfaces: they do not share an owner,
+    // and the one that mounts first would then own the fetch for the other
+    // two. An observer is also what makes the stream's invalidation fetch —
+    // an entry nobody is reading is marked wrong and left alone.
+    const listing = useReviewHunks(
+      () => id,
+      () => sessions[id]?.scope ?? 'session',
+    );
+
+    createEffect(() => {
+      if (listing.data) adoptListing(id, listing.data);
+    });
+    createEffect(() => {
+      if (listing.error) adoptFailure(id, listing.error);
+    });
+    createEffect(() => {
+      if (sessions[id]) setSessions(id, 'loading', listing.isFetching);
+    });
+
     onCleanup(() => {
       // Only when this binding is still the one on file: the test seam may
       // have dropped it already and a later consumer built its successor.

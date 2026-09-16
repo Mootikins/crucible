@@ -6,7 +6,11 @@ import { getBus } from '@/lib/bus';
 import type { SessionHistoryResponse } from '@/lib/api';
 import { keys } from '../../keys';
 import { sessionEvents } from '../../sse';
-import { installSessionEventRoute } from '../session';
+import {
+  installSessionEventRoute,
+  resetReviewInvalidationForTests,
+  REVIEW_INVALIDATE_DEBOUNCE_MS,
+} from '../session';
 
 const SESSION = 's1';
 
@@ -39,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   stop?.();
   stop = null;
+  resetReviewInvalidationForTests();
   vi.restoreAllMocks();
   env.restore();
 });
@@ -154,13 +159,36 @@ describe('the session event route', () => {
     expect(env.client.getQueryData(keys.sessionHistory(SESSION))).toBeUndefined();
   });
 
-  it('invalidates the review of a gate and of a change', () => {
+  /**
+   * Both events mean "the composed diff may have moved", and a turn fires
+   * several of them — one per tool call, one per review action. They coalesce
+   * into ONE listing, because an invalidation does not fold concurrent
+   * refetches of a key into one request: it cancels the one in flight and
+   * starts another, so a burst is a listing per edit of a diff that settles
+   * once.
+   */
+  it('coalesces a burst of gate and change events into one review listing', async () => {
     const source = openStream();
 
     source.emit('session_event', { type: 'session_event', event: 'review_gate', data: {} });
     source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
+    source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
 
-    expect(invalidated).toEqual([keys.review(SESSION), keys.review(SESSION)]);
+    expect(invalidated).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
+
+    expect(invalidated).toEqual([keys.review(SESSION)]);
+  });
+
+  // The negative: a session whose stream said nothing about the review keeps
+  // the listing it has.
+  it('leaves the review of a session that said nothing alone', async () => {
+    const source = openStream();
+
+    source.emit('token', { type: 'token', content: 'x' });
+    await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
+
+    expect(invalidated).toEqual([]);
   });
 
   it('writes nothing for a dropped-event warning, which the pane surfaces', () => {

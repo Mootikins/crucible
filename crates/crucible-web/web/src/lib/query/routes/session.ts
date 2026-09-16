@@ -21,6 +21,37 @@ import type { SessionHistoryResponse } from '@/lib/api';
 import { keys } from '../keys';
 import { setSessionEventRoute, type SessionRouteContext } from '../sse';
 
+/**
+ * How long the route waits before it re-lists a review.
+ *
+ * The daemon fires several events per turn that each mean "the composed diff
+ * may have moved" — one per tool call, and one per review action. Re-listing
+ * on each is one round trip per edit for a diff that settles once.
+ */
+export const REVIEW_INVALIDATE_DEBOUNCE_MS = 150;
+
+/** The pending coalesced re-list of each session, by id. */
+const reviewTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Coalesces a burst of "the diff moved" events into one listing. */
+function scheduleReviewInvalidation(client: QueryClient, sessionId: string): void {
+  const pending = reviewTimers.get(sessionId);
+  if (pending) clearTimeout(pending);
+  reviewTimers.set(
+    sessionId,
+    setTimeout(() => {
+      reviewTimers.delete(sessionId);
+      void client.invalidateQueries({ queryKey: keys.review(sessionId) });
+    }, REVIEW_INVALIDATE_DEBOUNCE_MS),
+  );
+}
+
+/** Test seam: drop every pending re-list, so one case cannot reach the next. */
+export function resetReviewInvalidationForTests(): void {
+  for (const pending of reviewTimers.values()) clearTimeout(pending);
+  reviewTimers.clear();
+}
+
 /** One persisted event of the history document, as the daemon records it. */
 type HistoryEvent = SessionHistoryResponse['history'][number];
 
@@ -72,15 +103,15 @@ function routeSessionSubEvent(
       appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;
 
-    // The table debounces `review_changed`. The route does not: a debounce
-    // here is a timer in a module singleton that outlives the stream that
-    // started it. An invalidation refetches an ACTIVE query only, and the
-    // cache folds concurrent refetches of one key into one request, so the
-    // cost of the plain call is bounded. The consumer that owns `review`
-    // debounces its own reads.
+    // The table debounces these two, and the debounce is load-bearing. An
+    // invalidation does NOT fold concurrent refetches of one key into one
+    // request: it CANCELS the one in flight and starts another, so a turn that
+    // fires five of these is five listings of a diff that settles once. The
+    // timer is per session and deletes itself, and a listing it starts after
+    // the last reader has gone reaches a key nobody holds.
     case 'review_gate':
     case 'review_changed':
-      void client.invalidateQueries({ queryKey: keys.review(sessionId) });
+      scheduleReviewInvalidation(client, sessionId);
       break;
 
     // `stream_gap` tells the user their transcript has a hole, which the pane

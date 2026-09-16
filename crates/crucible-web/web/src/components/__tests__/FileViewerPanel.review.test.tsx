@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, waitFor } from '@solidjs/testing-library';
+import { createRoot } from 'solid-js';
 import type { ComposedHunk } from '@/lib/review-types';
 import { createTestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
 import { resetKilnsForTests } from '@/lib/query/kilns';
 
 const FILE_PATH = '/repo/src/a.rs';
@@ -58,9 +60,14 @@ vi.mock('@/lib/review-api', () => ({
 }));
 
 const { default: FileViewerPanel } = await import('../FileViewerPanel');
-const { __resetReviewStore, pendingReveal, reviewActions, revealedToolCall } = await import(
-  '@/lib/review-store'
-);
+const {
+  __resetReviewStore,
+  pendingReveal,
+  reviewActions,
+  reviewStore,
+  revealedToolCall,
+  useReviewSession,
+} = await import('@/lib/review-store');
 
 function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
   return {
@@ -78,13 +85,32 @@ function hunk(over: Partial<ComposedHunk> = {}): ComposedHunk {
   };
 }
 
+/** The panel standing in for whatever binds this session on screen. */
+let unbind: (() => void) | null = null;
+
+/**
+ * Put a composed diff in front of the gutter.
+ *
+ * The listing is a cache entry now, and a slot is filled by the BINDING that
+ * observes it — so this binds the session once, the way a panel does, and then
+ * marks the listing wrong so the new answer lands.
+ */
 const seed = async (hunks: ComposedHunk[]) => {
   listReviewHunks.mockImplementation(async () => ({
     session_id: 's1',
     hunks: structuredClone(hunks),
     comments: [],
   }));
+  if (!unbind) {
+    unbind = createRoot((dispose) => {
+      useReviewSession(() => 's1');
+      return dispose;
+    });
+  }
   await reviewActions.refresh('s1');
+  await waitFor(() =>
+    expect(reviewStore.session('s1').hunks.map((h) => h.id)).toEqual(hunks.map((h) => h.id)),
+  );
 };
 
 // The panel asks which kiln owns the open file. Nothing here is in one, and
@@ -92,6 +118,7 @@ const seed = async (hunks: ComposedHunk[]) => {
 let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 
 beforeEach(() => {
+  installFakeEventSource();
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
   listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
@@ -99,6 +126,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  unbind?.();
+  unbind = null;
   kilnEnv.restore();
   resetKilnsForTests();
   __resetReviewStore();

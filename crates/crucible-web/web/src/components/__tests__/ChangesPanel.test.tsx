@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { Session } from '@/lib/types';
@@ -127,7 +129,18 @@ const answer = (
     ...structuredClone(extra),
   }));
 
+/**
+ * A fresh cache per case.
+ *
+ * The listing is a cache entry now, so without this the empty answer of the
+ * first case is still fresh five minutes later and every case after it reads
+ * that instead of its own.
+ */
+let env: TestQueryEnv;
+
 beforeEach(() => {
+  installFakeEventSource();
+  env = createTestQueryEnv({});
   resetGlobalRegistry();
   conflicts.rows = [];
   __resetConflictStore();
@@ -155,6 +168,7 @@ afterEach(() => {
   setCurrentSession(undefined);
   device.compact = false;
   __resetReviewStore();
+  env.restore();
   vi.clearAllMocks();
 });
 
