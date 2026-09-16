@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * What a live spec counts, and why it counts it here.
@@ -88,27 +88,39 @@ export function captureApiRequests(page: Page): ApiRequestLog {
  * The window stays well under the ten-second interactions poll
  * (`lib/query/interactions.ts`), so that poll ends a wait rather than
  * extending it forever.
+ *
+ * `expect.poll`, never an arbitrary sleep. The live tier is sleep-free and
+ * `src/__tests__/architecture/e2e-discipline.test.ts` enforces it by scanning
+ * this source, so the banned name does not appear here even in prose. The
+ * rule is what this helper exists for: a fixed wait either ends before the
+ * fetch a claim is about, or lasts long enough to collect one the claim is
+ * not about. The condition here is "no new request for `quietMs`", which is
+ * the state every count in this tier is taken in.
  */
 export async function apiQuiet(
-  page: Page,
   log: ApiRequestLog,
   quietMs = 1200,
-  capMs = 20_000,
+  capMs = 25_000,
 ): Promise<void> {
-  const deadline = Date.now() + capMs;
   let last = log.all().length;
   let since = Date.now();
-  for (;;) {
-    await page.waitForTimeout(200);
-    const now = log.all().length;
-    if (now !== last) {
-      last = now;
-      since = Date.now();
-    } else if (Date.now() - since >= quietMs) {
-      return;
-    }
-    if (Date.now() > deadline) return;
-  }
+  await expect
+    .poll(
+      () => {
+        const now = log.all().length;
+        if (now !== last) {
+          last = now;
+          since = Date.now();
+        }
+        return Date.now() - since >= quietMs;
+      },
+      {
+        timeout: capMs,
+        intervals: [100, 200, 200, 200, 400],
+        message: `the page never stopped calling /api/* for ${quietMs}ms`,
+      },
+    )
+    .toBe(true);
 }
 
 /** A failure message that names the requests behind a wrong count. */

@@ -42,6 +42,16 @@ const MODES = /^\/api\/session\/[^/]+\/modes$/;
 const MODELS = /^\/api\/session\/[^/]+\/models$/;
 const STATUS = /^\/api\/session\/[^/]+\/status$/;
 
+/** The session record the daemon holds, read straight from it. */
+async function sessionRecord(
+  api: APIRequestContext,
+  id: string,
+): Promise<{ state?: string; archived?: boolean; agent?: { model?: string | null } }> {
+  const res = await api.get(`/api/session/${id}`);
+  expect(res.status(), await res.text()).toBe(200);
+  return (await res.json()) as { state?: string; archived?: boolean; agent?: { model?: string | null } };
+}
+
 test.describe('live C2 entities', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
 
@@ -68,7 +78,7 @@ test.describe('live C2 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await openSessionsList(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // TWO reads, not two of one: the archived and unarchived rosters are
     // different questions under different keys (`keys.sessions(boolean)`),
@@ -88,7 +98,7 @@ test.describe('live C2 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await openSessionsList(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     const plain = (): number => log.matching('/api/session/list').filter((r) => r.query === '').length;
     const archived = (): number =>
@@ -103,7 +113,7 @@ test.describe('live C2 entities', () => {
       contentType: 'sessions',
     });
     await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The unarchived roster is untouched. This is the cache claim: a second
     // panel with a cache of its own would have to fill it, and filling it
@@ -130,12 +140,12 @@ test.describe('live C2 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await openSessionsList(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     const groups = await centerGroupIds(page);
     await mountChat(page, groups[0], id, `tab-chat-${id}`);
     await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The first pane binds: one read of each per-session entity, one stream.
     expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
@@ -149,7 +159,7 @@ test.describe('live C2 entities', () => {
     // not a second fetch, and it opens no second `EventSource`.
     await openInNewPane(page, chatTab(id, `tab-chat-${id}-second`));
     await expect(page.getByTestId('chat-input')).toHaveCount(2, { timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', HISTORY), describeRequests(log, HISTORY)).toBe(1);
     expect(log.count('GET', MODES)).toBe(1);
@@ -188,7 +198,7 @@ test.describe('live C2 entities', () => {
     await expect(page.getByTestId('scope-kiln').first()).toContainText('No kiln', {
       timeout: 15_000,
     });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     log.reset();
 
     // Attach one from the chip of the FIRST pane only.
@@ -215,7 +225,7 @@ test.describe('live C2 entities', () => {
 
     // The roster the write invalidates is refetched ONCE per variant, not once
     // per pane that displays it.
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     const roster = log.matching('/api/session/list');
     expect(roster.length, describeRequests(log, '/api/session/list')).toBeLessThanOrEqual(2);
 
@@ -232,7 +242,7 @@ test.describe('live C2 entities', () => {
     await openSessionsList(page);
     const row = page.getByTestId(`session-item-${id}`);
     await expect(row).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     log.reset();
 
     // The control is `opacity-0` at rest, so the hover is part of the test.
@@ -242,7 +252,7 @@ test.describe('live C2 entities', () => {
     await archive.click();
 
     await expect(row).toHaveCount(0, { timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('POST', `/api/session/${id}/archive`)).toBe(1);
     // One refresh per roster variant. More than that is the same list fetched
@@ -293,6 +303,183 @@ test.describe('live C2 entities', () => {
     // landed on the fake model server.
     const fakeLog = readFileSync(state.fakeLogPath!, 'utf-8');
     expect(fakeLog).toContain('a hermetic turn');
+
+    await api.dispose();
+  });
+
+  test('switching the model writes the choice and re-reads the session once', async ({ page }) => {
+    const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
+    const id = await createSession(api, 'Switch my model');
+
+    const log = captureApiRequests(page);
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    const groups = await centerGroupIds(page);
+    await mountChat(page, groups[0], id, `tab-chat-${id}`);
+    await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 20_000 });
+    // A SECOND pane on the same session, so the refetch below has two readers
+    // to serve and the count can tell one cache from two.
+    await openInNewPane(page, chatTab(id, `tab-chat-${id}-second`));
+    await expect(page.getByTestId('chat-input')).toHaveCount(2, { timeout: 20_000 });
+    await apiQuiet(log);
+
+    // Two panes read the session's model LIST once between them.
+    expect(log.count('GET', MODELS), describeRequests(log, MODELS)).toBe(1);
+    log.reset();
+
+    // The picker, as a user reaches it. The tier's fake model server
+    // advertises ONE model, so the pick re-selects the model the session is
+    // already on — `ChipSelect.pick` calls `onSelect` for any row, and
+    // `SessionContext.switchModel` has no equality guard, so the write is
+    // real. The claim is about the write and about the list key, neither of
+    // which depends on the value changing.
+    await page.getByTestId('model-picker-button').first().click();
+    const option = page.locator('[data-testid^="model-option-"]').first();
+    await expect(option).toBeVisible({ timeout: 10_000 });
+    const model = (await option.getAttribute('data-testid'))!.replace('model-option-', '');
+    const label = (await option.innerText()).trim();
+    await option.click();
+
+    await expect
+      .poll(() => log.count('POST', `/api/session/${id}/model`), {
+        timeout: 20_000,
+        message: 'the picker sent no model write',
+      })
+      .toBe(1);
+    await apiQuiet(log);
+
+    // The daemon took the choice. The picker names a model by the id the
+    // provider list gives it (`ollama/live-model`); the daemon records the
+    // bare name that provider knows it by, so the record is the tail of what
+    // was clicked rather than the whole of it.
+    const recorded = (await sessionRecord(api, id)).agent?.model ?? '';
+    expect(recorded, 'the daemon recorded no model').not.toBe('');
+    expect(
+      model.endsWith(recorded),
+      `the picker sent ${model} and the daemon recorded ${recorded}`,
+    ).toBe(true);
+    // And the chip names it, from the cache the mutation patched.
+    await expect(page.getByTestId('model-picker-button').first()).toContainText(label);
+
+    // The list is re-read ONCE, and once is the whole claim.
+    //
+    // `useSwitchModel` invalidates `keys.session(id)`, which is a PREFIX of
+    // `keys.sessionModels(id)`, so one call reaches the row and the list
+    // together — on purpose, because an agent that accepts a model may offer
+    // a different set of them afterwards. Two panes are bound here and two
+    // caches would make that two reads, which is the defect this counts for.
+    expect(log.count('GET', MODELS), describeRequests(log, MODELS)).toBe(1);
+
+    await api.dispose();
+  });
+
+  test('a paused session is resumed by the rail that opens it', async ({ page }) => {
+    const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
+    const id = await createSession(api, 'Pause me');
+
+    const log = captureApiRequests(page);
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await openSessionsList(page);
+    await expect(page.getByTestId(`session-item-${id}`)).toBeVisible({ timeout: 20_000 });
+    await apiQuiet(log);
+    log.reset();
+
+    // The shell ships no pause control — not a button, not a context-menu row
+    // (`SessionTree` offers Archive and Delete, and nothing calls the
+    // context's `pauseSession`). So the write goes through the page's own
+    // request context, which carries the same session cookie the app does.
+    // Everything asserted after it is the product's.
+    const paused = await page.request.post(`${state.baseURL}/api/session/${id}/pause`);
+    expect(paused.status(), await paused.text()).toBe(200);
+    await expect
+      .poll(async () => (await sessionRecord(api, id)).state, {
+        timeout: 20_000,
+        message: 'the daemon never paused the session',
+      })
+      .toBe('paused');
+
+    // The rail still believes the session is active: nothing in this browser
+    // made that write, so no cache entry was told about it. Give it the
+    // product's own refresh first — a mounting Sessions panel asks for the
+    // roster again in `onMount` — because `selectSession` decides whether to
+    // resume from the ROW it holds, not from a fresh read.
+    await mountTab(page, 'left', {
+      id: 'sessions-second',
+      title: 'Sessions again',
+      contentType: 'sessions',
+    });
+    await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
+    await apiQuiet(log);
+
+    // Opening a paused session from the rail resumes it, transparently, so
+    // the composer is never a dead end (`SessionContext.selectSession`). That
+    // is the state change reaching the UI with no page reload.
+    await page.getByTestId(`session-item-${id}`).first().click();
+    await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 30_000 });
+    await expect
+      .poll(() => log.count('POST', `/api/session/${id}/resume`), {
+        timeout: 30_000,
+        message: 'the rail opened a paused session without resuming it',
+      })
+      .toBe(1);
+    await apiQuiet(log);
+
+    expect((await sessionRecord(api, id)).state).toBe('active');
+    // ONE status read for the pane that bound, not one per chip that draws it.
+    expect(log.count('GET', STATUS), describeRequests(log, STATUS)).toBe(1);
+
+    await api.dispose();
+  });
+
+  test('an unarchived session comes back to the rail on one roster read', async ({ page }) => {
+    const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
+    const id = await createSession(api, 'Bring me back');
+
+    const log = captureApiRequests(page);
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await openSessionsList(page);
+    const row = page.getByTestId(`session-item-${id}`);
+    await expect(row).toBeVisible({ timeout: 20_000 });
+
+    // Archive through the control a user has. The hover is part of it: the
+    // button is `opacity-0` at rest.
+    await row.hover();
+    await row.getByTitle('Archive session').click();
+    await expect(row).toHaveCount(0, { timeout: 20_000 });
+    await apiQuiet(log);
+    log.reset();
+
+    // The shell ships no unarchive control either — the context's
+    // `unarchiveSession` has no caller in any component — so this write also
+    // goes through the page's request context.
+    const back = await page.request.post(`${state.baseURL}/api/session/${id}/unarchive`);
+    expect(back.status(), await back.text()).toBe(200);
+    expect((await sessionRecord(api, id)).archived ?? false).toBe(false);
+
+    // The rail does not know yet, and must not pretend to: nothing in this
+    // browser made that write, so no cache entry was told about it.
+    await expect(row).toHaveCount(0);
+
+    // The product's own refresh is a mounting Sessions panel, which asks for
+    // the archived roster again in `onMount`. One read brings the row back.
+    await mountTab(page, 'left', {
+      id: 'sessions-second',
+      title: 'Sessions again',
+      contentType: 'sessions',
+    });
+    await expect(page.getByTestId('edge-tab-left-sessions-second')).toBeVisible({ timeout: 15_000 });
+    await expect(row.first()).toBeVisible({ timeout: 20_000 });
+    await apiQuiet(log);
+
+    const archivedReads = log
+      .matching('/api/session/list')
+      .filter((r) => r.query === 'include_archived=true').length;
+    expect(archivedReads, describeRequests(log, '/api/session/list')).toBe(1);
+    // The unarchived roster was never asked for: the row returned from the
+    // one list the rail is showing, not from a second fetch beside it.
+    expect(log.matching('/api/session/list').filter((r) => r.query === '').length).toBe(0);
 
     await api.dispose();
   });

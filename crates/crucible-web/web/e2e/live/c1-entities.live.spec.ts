@@ -66,7 +66,7 @@ test.describe('live C1 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
     expect(log.count('GET', '/api/config'), describeRequests(log, '/api/config')).toBe(1);
@@ -89,7 +89,7 @@ test.describe('live C1 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(log.count('GET', '/api/kilns')).toBe(1);
 
     // Three more mounted readers of the same roster: the search panel names a
@@ -103,7 +103,7 @@ test.describe('live C1 entities', () => {
       await mountTab(page, 'left', tab);
       await expect(page.getByTestId(`edge-tab-left-${tab.id}`)).toBeVisible({ timeout: 15_000 });
     }
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
     expect(log.count('GET', '/api/config'), describeRequests(log, '/api/config')).toBe(1);
@@ -116,19 +116,19 @@ test.describe('live C1 entities', () => {
     await page.goto(state.baseURL!);
     await appReady(page);
     await openFileTree(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The first kiln. One read of ITS notes, and no second read of the roster
     // that named it.
     await selectRoot(page, ALPHA);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
     expect(log.count('GET', '/api/kilns'), describeRequests(log, '/api/kilns')).toBe(1);
 
     // The second kiln. A different key, so a read; the first kiln's answer is
     // untouched.
     await selectRoot(page, BETA);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(notesFor(log, state.secondKilnDir!), describeRequests(log, '/api/notes')).toBe(1);
     expect(notesFor(log, state.kilnDir!)).toBe(1);
     expect(log.count('GET', '/api/kilns')).toBe(1);
@@ -137,7 +137,7 @@ test.describe('live C1 entities', () => {
     // returning to it asks nothing. A single-slot cache would refetch here,
     // because the second kiln overwrote the first.
     await selectRoot(page, ALPHA);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
     expect(notesFor(log, state.secondKilnDir!)).toBe(1);
     expect(log.count('GET', '/api/kilns')).toBe(1);
@@ -165,7 +165,7 @@ test.describe('live C1 entities', () => {
     // A kiln this session does not hold: the tree offers to attach it, which
     // is the one gesture in the file tree that widens what the agent can read.
     await selectRoot(page, BETA);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     const attach = page.getByTestId('root-attach');
     await expect(attach).toBeVisible({ timeout: 15_000 });
     log.reset();
@@ -183,7 +183,7 @@ test.describe('live C1 entities', () => {
     // The chip in the composer says so, from the cache the write patched —
     // the pane made no read of its own.
     await expect(page.getByTestId('scope-kiln').first()).toContainText(BETA, { timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('POST', `/api/session/${id}/kilns/connect`)).toBe(1);
     // The KILN REGISTRY did not change, so nothing re-read it. A scope write

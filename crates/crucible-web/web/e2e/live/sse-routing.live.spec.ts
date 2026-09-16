@@ -69,14 +69,14 @@ test.describe('live SSE routing', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     const firstGroup = (await centerGroupIds(page))[0];
     await mountChat(page, firstGroup, id, `tab-chat-${id}`);
     await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 20_000 });
     const secondGroup = await openInNewPane(page, chatTab(id, `tab-chat-${id}-second`));
     await expect(page.getByTestId('chat-input')).toHaveCount(2, { timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // One request, for two panes.
     expect(
@@ -91,7 +91,11 @@ test.describe('live SSE routing', () => {
     // pane that remains is mid-conversation and must not lose its events.
     await closeTab(page, firstGroup, `tab-chat-${id}`);
     await expect(page.getByTestId('chat-input')).toHaveCount(1, { timeout: 20_000 });
-    await page.waitForTimeout(1500);
+    // A quiet window, so a close that was going to reopen the stream has had
+    // its chance to. `apiQuiet` returns on the condition — no new call for a
+    // second and a half — rather than after a fixed wait that would pass
+    // whether or not the page had finished reacting.
+    await apiQuiet(log, 1500);
     streams = await sourcesFor(page, `/api/chat/events/${id}`);
     expect(streams.length, 'closing one pane opened another stream').toBe(1);
     expect(streams[0].open, 'the surviving pane lost its stream').toBe(true);
@@ -155,7 +159,7 @@ test.describe('live SSE routing', () => {
     // transcript replaces the one the stream assembled. Both panes share that
     // one entry, so they share that one refetch — a pane with a cache of its
     // own would make the count four.
-    await apiQuiet(page, log, 3000);
+    await apiQuiet(log, 3000);
     expect(
       log.count('GET', /^\/api\/session\/[^/]+\/history$/),
       describeRequests(log, /^\/api\/session\/[^/]+\/history$/),
@@ -169,7 +173,7 @@ test.describe('live SSE routing', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The default layout mounts one file tree, so one stream is already up.
     expect(log.count('GET', '/api/fs/events'), describeRequests(log, '/api/fs/events')).toBe(1);
@@ -184,7 +188,7 @@ test.describe('live SSE routing', () => {
       contentType: 'backlinks',
     });
     await expect(page.getByTestId('edge-tab-left-backlinks-left')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/fs/events'), describeRequests(log, '/api/fs/events')).toBe(1);
     const fs = await sourcesFor(page, '/api/fs/events');
@@ -197,7 +201,7 @@ test.describe('live SSE routing', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The surfaces panel is the only reader of the surface stream, so it is
     // the one that opens it.
@@ -208,7 +212,7 @@ test.describe('live SSE routing', () => {
       contentType: 'surfaces',
     });
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(
       log.count('GET', '/api/surfaces/events'),
       describeRequests(log, '/api/surfaces/events'),

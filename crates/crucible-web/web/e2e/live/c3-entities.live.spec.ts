@@ -52,14 +52,14 @@ test.describe('live C3 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // Nothing reads the plugin roster until a panel that draws it mounts.
     expect(log.count('GET', '/api/plugins')).toBe(0);
 
     await mountTab(page, 'left', { id: 'plugins-tab', title: 'Plugins', contentType: 'plugins' });
     await expect(page.getByTestId('plugins-refresh')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/plugins'), describeRequests(log, '/api/plugins')).toBe(1);
     expect(
@@ -73,7 +73,7 @@ test.describe('live C3 entities', () => {
     await expect(page.getByTestId('settings-modal')).toBeVisible({ timeout: 20_000 });
     const pluginsNav = page.getByTestId('settings-nav-plugins');
     if (await pluginsNav.count()) await pluginsNav.click();
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/plugins'), describeRequests(log, '/api/plugins')).toBe(1);
     expect(log.count('GET', '/api/plugins/options')).toBe(1);
@@ -85,11 +85,11 @@ test.describe('live C3 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     await mountTab(page, 'left', { id: 'skills-tab', title: 'Skills', contentType: 'skills' });
     await expect(page.getByTestId('skills-search-input')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The roster, once. The SEARCH is a different key and an empty box asks
     // nothing: a panel that searched for "" on mount would fetch a second
@@ -99,7 +99,7 @@ test.describe('live C3 entities', () => {
 
     // A typed query. The panel debounces, so four keystrokes are one search.
     await page.getByTestId('skills-search-input').fill('note');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     const afterFirst = log.count('GET', SKILLS_SEARCH);
     expect(afterFirst, describeRequests(log, SKILLS_SEARCH)).toBe(1);
     // And the roster was not asked for again behind it.
@@ -108,9 +108,9 @@ test.describe('live C3 entities', () => {
     // Clearing and retyping the SAME query answers from the key it already
     // holds, so the daemon is not asked twice for one question.
     await page.getByTestId('skills-search-input').fill('');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     await page.getByTestId('skills-search-input').fill('note');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(log.count('GET', SKILLS_SEARCH), describeRequests(log, SKILLS_SEARCH)).toBe(afterFirst);
   });
 
@@ -119,7 +119,7 @@ test.describe('live C3 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/surfaces')).toBe(0);
 
@@ -129,7 +129,7 @@ test.describe('live C3 entities', () => {
       contentType: 'surfaces',
     });
     await expect(page.getByTestId('edge-tab-left-surfaces-tab')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
     expect(log.count('GET', '/api/surfaces/events')).toBe(1);
@@ -137,7 +137,13 @@ test.describe('live C3 entities', () => {
 
     // Nothing changed on the daemon, so nothing refetches. A panel that polled
     // its roster would add a second read here.
-    await page.waitForTimeout(5000);
+    //
+    // The window is a QUIET window, not a sleep: `apiQuiet` returns only once
+    // five whole seconds have passed with no `/api/*` call at all. That is a
+    // stronger claim than the sleep it replaces — a sleep would let a poll
+    // fire at four seconds and still pass, as long as the count it happened
+    // to move was not this one.
+    await apiQuiet(log, 5000);
     expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
 
     // The panel leaves and takes its stream. A second mount opens a fresh one,
@@ -157,7 +163,7 @@ test.describe('live C3 entities', () => {
       contentType: 'surfaces',
     });
     await expect(page.getByTestId('edge-tab-left-surfaces-again')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The roster came from the cache the first mount filled: still one read.
     expect(log.count('GET', '/api/surfaces'), describeRequests(log, '/api/surfaces')).toBe(1);
@@ -189,7 +195,7 @@ test.describe('live C3 entities', () => {
     await appReady(page);
     await mountTab(page, 'left', { id: 'plugins-tab', title: 'Plugins', contentType: 'plugins' });
     await expect(page.getByTestId('plugins-refresh')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     const rows = page.locator('[data-testid^="plugin-row-"]');
     const count = await rows.count();
@@ -206,7 +212,7 @@ test.describe('live C3 entities', () => {
         message: 'the reload control sent nothing',
       })
       .toBe(1);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // ONE refetch of the roster, not one per observer of it. The panel and the
     // settings section both read `keys.pluginList()`, and an invalidation that

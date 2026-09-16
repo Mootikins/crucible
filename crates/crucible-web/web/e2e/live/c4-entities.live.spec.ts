@@ -75,14 +75,14 @@ test.describe('live C4 entities', () => {
     await appReady(page);
     await openFileTree(page);
     await selectRoot(page, 'alpha');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
 
     // A second tree, mounted on the other rail, drawing the same corpus.
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
     await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
   });
@@ -111,7 +111,7 @@ test.describe('live C4 entities', () => {
     await selectRoot(page, 'alpha');
     await mountTab(page, 'left', { id: 'files-left', title: 'Files', contentType: 'files' });
     await expect(page.getByTestId('edge-tab-left-files-left')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
 
     // Count from zero across the write, so an event still in flight from an
@@ -140,7 +140,7 @@ test.describe('live C4 entities', () => {
 
     // ONE refetch for two mounted trees, not one each. Two caches would make
     // two, and a tree that polled would keep making more.
-    await apiQuiet(page, log, 3000);
+    await apiQuiet(log, 3000);
     expect(notesFor(log, state.kilnDir!), describeRequests(log, '/api/notes')).toBe(1);
   });
 
@@ -151,7 +151,7 @@ test.describe('live C4 entities', () => {
     await mountTab(page, 'left', { id: 'search-tab', title: 'Search', contentType: 'search' });
     const input = page.getByTestId('search-input');
     await expect(input).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // An empty box asks nothing: there is no question yet.
     expect(log.count('POST', '/api/search/grep')).toBe(0);
@@ -164,7 +164,7 @@ test.describe('live C4 entities', () => {
         message: 'the typed query reached no search',
       })
       .toBeGreaterThanOrEqual(1);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     const asked = log.count('POST', '/api/search/grep');
 
     // Clear, then ask the SAME question again. The answer is held under the
@@ -172,9 +172,9 @@ test.describe('live C4 entities', () => {
     // question — the debounce alone could not do that, because the box was
     // emptied in between.
     await input.fill('');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     await input.fill('seeded');
-    await apiQuiet(page, log);
+    await apiQuiet(log);
     expect(log.count('POST', '/api/search/grep'), describeRequests(log, '/api/search/grep')).toBe(
       asked,
     );
@@ -184,7 +184,7 @@ test.describe('live C4 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // One read, on load. The layout is client display state everywhere else,
     // so a second read would be a second owner of it.
@@ -196,7 +196,7 @@ test.describe('live C4 entities', () => {
     // writer must fold those into one durable save.
     await mountTab(page, 'left', { id: 'layout-probe', title: 'Files', contentType: 'files' });
     await expect(page.getByTestId('edge-tab-left-layout-probe')).toBeVisible({ timeout: 15_000 });
-    await apiQuiet(page, log, 3000);
+    await apiQuiet(log, 3000);
 
     const writes = log.count('POST', '/api/layout') - writesBefore;
     expect(writes, describeRequests(log, '/api/layout')).toBeGreaterThanOrEqual(1);
@@ -209,13 +209,13 @@ test.describe('live C4 entities', () => {
     const log = captureApiRequests(page);
     await page.goto(state.baseURL!);
     await appReady(page);
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     await page.getByTestId('layout-menu').click();
     await page.getByTestId('layout-readd').click();
     await page.getByTestId('layout-readd-canvas').click();
     await expect(page.getByTestId('canvas-surface')).toBeVisible({ timeout: 20_000 });
-    await apiQuiet(page, log);
+    await apiQuiet(log);
 
     // The board is keyed by its path (`keys.canvas(path)`), so a panel with no
     // path has no key and asks nothing. The version that fetched on mount read
@@ -262,7 +262,15 @@ test.describe('live C4 entities', () => {
     await page.getByTestId('terminal-panel').click();
     await page.keyboard.type('echo live-tier');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(3000);
+
+    // Wait on the shell, not on the clock. The PTY echoes what was typed and
+    // then answers it, so the word appearing twice in the panel is proof that
+    // the command reached a shell and came back — and that is the moment the
+    // socket count below means anything. A sleep would have asserted the same
+    // count before the command had left the browser.
+    await expect(page.getByTestId('terminal-panel')).toContainText('live-tier', {
+      timeout: 30_000,
+    });
     expect((await sockets()).filter((u) => u.includes('/api/terminal/ws')).length).toBe(1);
 
     // And the socket is an upgrade, not a fetch: it never appears in the
