@@ -33,6 +33,11 @@ The TUI has no note tabs, so this feature is for the web only.
 | The phone back button | NavStack closes layers first. Then it walks the tab history. |
 | The prompt for unsaved changes | An app modal. The web never uses `window.confirm` for this prompt. |
 | Where the model lives | In the windowing core, as a typed field. The layout format goes to v11. |
+| Opens that are not link clicks (file tree, search, palette) | The same rule as a link: the current tab navigates and gets a history node. `openFileInEditor` has one behavior for all callers. |
+| The link gestures in the editor | As in Obsidian. A plain click follows in place. Ctrl/Cmd+click and a middle click open a new tab. Mod-Enter follows in place. A drag that starts on a link still selects text. |
+| The `#note=` hash | Only the phone writes it. No code reads it yet. |
+| A pinned tab | An open from a pinned tab goes to a new tab. Back and forward still move a pinned tab. |
+| How a user pins a tab | Pin tab and Unpin tab in the tab context menu. A pinned tab shows a pin mark. On a phone, a pin toggle on each card of the tab overview. |
 
 The design rejected two other places for the tree:
 - `metadata.history` needs no format bump. But the core cannot check the tree there, and each content type must copy the logic.
@@ -80,13 +85,22 @@ These callers assume one tab for each path, so each one changes:
 - `findTabByFilePath` and `host.find` (`lib/file-actions.ts`, `lib/tab-host.ts`) return the active tab of the editor group first.
 - `closeTabsUnder` closes a tab only if its current node is under the deleted path. An old node that points under the path gets a "missing" mark.
 
-### Link clicks
+### Link clicks and other opens
 
 `openNoteInEditor` (`lib/note-actions.ts`) and `openFileInEditor` change:
-- A plain click navigates the active editor tab.
-- Ctrl+click or a middle-click opens a new tab.
-- A click in the chat or in a canvas card navigates the active editor tab.
-- If no editor tab exists, the click opens a new tab.
+- A plain click navigates the tab that holds the link. Content that names no tab (the chat, a canvas card) navigates the active editor tab.
+- Ctrl/Cmd+click or a middle-click opens a new tab.
+- The file tree, a search result, a palette note and every other caller of `openFileInEditor` follow the same rule. They navigate the active editor tab and add a history node.
+- If no editor tab exists, the open makes a new tab.
+- If the target tab is pinned, the open makes a new tab. A pinned tab that already shows the file only gets the focus. Back, forward and the popover still move a pinned tab.
+
+In the editor, the gestures are the same as in Obsidian:
+- A plain click on a wikilink follows it in place. Thus a mouse click cannot put the cursor on a link. The arrow keys can.
+- Ctrl/Cmd+click and a middle click open a new tab.
+- Mod-Enter follows the link at the cursor in place.
+- The link handler takes the press from CodeMirror. If the pointer moves 4 px or more before the release, the press becomes a text selection and follows nothing. Shift and Alt clicks stay with CodeMirror.
+
+This replaces the WS-209 rule, in which a plain click only moved the cursor.
 
 ## 4. The saved layout
 
@@ -121,6 +135,14 @@ The graph is a small SVG with one row for each node. A pure function
 `layoutNavTree(tree) → rows[]` calculates the lanes, so a unit test can check the
 lanes without the DOM.
 
+### Pin a tab
+
+`Tab.isPinned` exists, but no control set it before this design. The design adds one:
+- The tab context menu (`TabContextMenu` in `components/windowing/TabBar.tsx`) gets **Pin tab** or **Unpin tab**, above the close rows.
+- A core action `setPinned(groupId, tabId, pinned)` writes the flag. The core does not read it.
+- A pinned tab shows a pin mark after its title. It keeps its close button.
+- The phone has no tab strip and no tab menu. The tab overview is its tab list, so each card gets a pin toggle and the mark. `tabStackStore` already stores and persists the flag.
+
 ### The prompt for unsaved changes
 
 If a tab has unsaved changes (`isModified`), `navigate`, `back` and `goTo` stop. An
@@ -144,7 +166,7 @@ outside this design.
 - At the root of the tree, the tab has no layer, so the browser gets the event.
 - The browser forward gesture does nothing. On a phone, the forward button and the popover give forward movement.
 - `stores/tabStackStore.ts` gets the same actions through `lib/tab-host.ts`.
-- `navigate` also changes the `#note=` hash, so a deep link shows the current note.
+- `navigate` also writes the `#note=` hash to its own history entry, so the address shows the current note. Only the phone writes the hash. No code reads it yet; a reader is a separate change.
 
 ## 7. Errors
 
@@ -162,7 +184,11 @@ Core unit tests:
 `layoutNavTree` tests: a line, a fork and a deep fork.
 
 App tests:
-- A plain click navigates in place. A Ctrl+click opens a new tab.
+- A plain click navigates in place. A Ctrl+click opens a new tab. The same holds in the editor.
+- In the editor, a drag that starts on a link selects text and follows nothing. Shift and Alt clicks stay with CodeMirror.
+- The file tree, search and the palette call `openFileInEditor` in its plain form, which navigates in place.
+- An open from a pinned tab makes a new tab. Back and forward still move a pinned tab.
+- Pin tab and Unpin tab set and clear the flag, and the pin mark follows it. The phone overview toggle does the same.
 - The discard modal stops a movement. A cancel keeps the tab unchanged.
 - `findTabByFilePath` prefers the active tab.
 - `closeTabsUnder` with old nodes.
@@ -171,11 +197,12 @@ NavStack test: the phone back button closes a drawer before it moves back in the
 tab history.
 
 Playwright tests: a right-click opens the popover. A long press opens the popover.
-The buttons are disabled when they have no target.
+The buttons are disabled when they have no target. A tab pinned from its menu sends an open to a new tab.
 
 Each new gate must fail once before it passes.
 
 ## 9. Documents to change
 
-- [[Web User Stories]] gets the stories for the bar, the popover and the phone back button.
+- [[Web User Stories]] gets the stories for the bar, the popover, the pin control and the phone back button.
 - [[Product Decision Log]] records the navigation in place and the end of the rule "one tab for each note".
+- WS-209 in [[Web User Stories]] changes: a plain click on a link in the editor follows it.
