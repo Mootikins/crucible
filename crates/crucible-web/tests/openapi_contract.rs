@@ -12,9 +12,14 @@
 //! the event union it carries, and the browser's event-name lists are compared
 //! against those unions in both directions.
 //!
+//! Task A4 adds the completeness gate: the router and the browser must both
+//! name only routes the document describes. Two of its three tests are
+//! `#[ignore]`d until A10 finishes converting the route groups.
+//!
 //! To regenerate the committed document, run:
 //! `cargo test -p crucible-web --test openapi_contract -- --ignored write_openapi_json`
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crucible_web::server::api_spec;
@@ -275,4 +280,675 @@ fn every_stream_route_answers_with_an_event_stream() {
             "{method} {path} does not name `{schema}`"
         );
     }
+}
+
+// ===========================================================================
+// Task A4 — the router and the document describe the same routes.
+//
+// A handler with no `#[utoipa::path]` is absent from the document, so the
+// generated TypeScript never learns the route exists and `bun run typecheck`
+// stays green while the client calls a route it cannot see. Three tests close
+// that hole:
+//
+//   1. every route the router registers has an operation — `#[ignore]` until
+//      A10, because A5 to A10 convert the route groups that make it green;
+//   2. every `/api` path the browser asks for has an operation — `#[ignore]`
+//      for the same reason;
+//   3. every `/api` path the browser asks for reaches a route — green today,
+//      because a registered route serves its path whether or not the document
+//      describes it.
+//
+// They replace `every_frontend_api_path_has_a_backend_route`
+// (`crates/crucible-cli/tests/architecture_tests.rs`), which read one file,
+// ignored the method and compared paths against a second regex scan. Test 3
+// is that gate, widened; tests 1 and 2 are what it could not ask.
+// ===========================================================================
+
+/// A path the router serves that the document deliberately never describes,
+/// and the reason.
+///
+/// `health_routes` and `auth_routes` merge onto the application in
+/// `build_router`, outside the `api_router` group that `api_spec` describes,
+/// so no conversion puts them in the document. The catch-all sits inside the
+/// group and answers 404 for every `/api` path no route claims.
+///
+/// The list names paths, not `(method, path)` pairs: an entry exempts every
+/// method on that path.
+const PATHS_OUTSIDE_THE_DOCUMENT: &[(&str, &str)] = &[
+    (
+        "/health",
+        "a public operator probe, merged outside the API group",
+    ),
+    (
+        "/ready",
+        "a public operator probe, merged outside the API group",
+    ),
+    (
+        "/api/auth/login",
+        "the public login bootstrap, merged outside the API group",
+    ),
+    (
+        "/api/auth/logout",
+        "the public logout, merged outside the API group",
+    ),
+    (
+        "/api/{*unmatched}",
+        "the catch-all that refuses every other /api path",
+    ),
+];
+
+/// The method-router constructors that name an HTTP method in an axum
+/// `.route(...)` call.
+///
+/// `any` is here because the catch-all uses it. It is not an OpenAPI method,
+/// so a route that answers with `any` can never be described; only the
+/// allow-listed catch-all does that today.
+const AXUM_METHOD_ROUTERS: &[&str] = &[
+    "get", "post", "put", "delete", "patch", "head", "options", "trace", "any",
+];
+
+/// The keys an OpenAPI path item uses for an operation. A path item also holds
+/// `parameters`, `summary` and `$ref`, which name no method.
+const OPENAPI_METHODS: &[&str] = &[
+    "get", "post", "put", "delete", "patch", "head", "options", "trace",
+];
+
+fn path_is_outside_the_document(path: &str) -> bool {
+    PATHS_OUTSIDE_THE_DOCUMENT
+        .iter()
+        .any(|(listed, _)| *listed == path)
+}
+
+// --- Reading the Rust sources ----------------------------------------------
+
+/// Every Rust source that registers a route: the files under `src/routes`,
+/// plus `src/server.rs`, each with its test modules removed.
+///
+/// The test modules build routers of their own (`/api/test`, `/health`, `/`)
+/// that no server serves, and a scan that counted them would demand
+/// operations for them.
+fn route_sources() -> Vec<(PathBuf, String)> {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths: Vec<PathBuf> = walkdir::WalkDir::new(crate_root.join("src/routes"))
+        .into_iter()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().to_path_buf())
+        .filter(|path| path.extension().and_then(|end| end.to_str()) == Some("rs"))
+        .filter(|path| !file_holds_only_tests(path))
+        .collect();
+    paths.sort();
+    paths.push(crate_root.join("src/server.rs"));
+
+    paths
+        .into_iter()
+        .map(|path| {
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("the test reads {}: {error}", path.display()));
+            let source = without_test_modules(&source);
+            (path, source)
+        })
+        .collect()
+}
+
+/// Whether the file is a test module of its own, named `tests.rs` or
+/// `<something>_tests.rs`. A `#[cfg(test)] mod tests;` declaration puts the
+/// test code in such a file, where no attribute marks it.
+fn file_holds_only_tests(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    name == "tests.rs" || name.ends_with("_tests.rs")
+}
+
+/// The source up to its first inline `#[cfg(test)]` module.
+///
+/// A `#[cfg(test)] mod tests;` declaration opens no body, so it does not end
+/// the file: `session_config/mod.rs` declares its tests at line 30 and
+/// registers six routes at line 50. Cutting at the attribute would have
+/// dropped all six and left the gate green about them.
+fn without_test_modules(source: &str) -> String {
+    const ATTRIBUTE: &str = "#[cfg(test)]";
+    let mut search = 0usize;
+    while let Some(offset) = source[search..].find(ATTRIBUTE) {
+        let at = search + offset;
+        let rest = &source[at + ATTRIBUTE.len()..];
+        let declares_a_file = match (rest.find('{'), rest.find(';')) {
+            (Some(brace), Some(semicolon)) => semicolon < brace,
+            (None, Some(_)) => true,
+            _ => false,
+        };
+        if !declares_a_file {
+            return source[..at].to_string();
+        }
+        search = at + ATTRIBUTE.len();
+    }
+    source.to_string()
+}
+
+/// The text between the parenthesis at `open` and the one that closes it.
+///
+/// A `"` opens a string literal and a `//` opens a line comment; neither's
+/// contents count as structure. The route and nest calls this reads hold no
+/// raw string literals and no block comments.
+fn call_arguments(source: &str, open: usize) -> Option<&str> {
+    let bytes = source.as_bytes();
+    assert_eq!(bytes[open], b'(', "the offset does not name a parenthesis");
+    let mut depth = 0usize;
+    let mut index = open;
+    let mut in_string = false;
+    let mut escaped = false;
+    while index < bytes.len() {
+        let character = bytes[index] as char;
+        if in_string {
+            match (escaped, character) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => in_string = false,
+                _ => {}
+            }
+            index += 1;
+            continue;
+        }
+        match character {
+            '"' => in_string = true,
+            '/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += source[index..].find('\n').unwrap_or(source.len() - index);
+                continue;
+            }
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&source[open + 1..index]);
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// The first `"…"` literal in the text, and the offset just past its closing
+/// quote.
+///
+/// Route and nest paths hold no escapes, so the literal reads through as
+/// written.
+fn first_string_literal(text: &str) -> Option<(String, usize)> {
+    let start = text.find('"')? + 1;
+    let length = text[start..].find('"')?;
+    Some((text[start..start + length].to_string(), start + length + 1))
+}
+
+/// Whether the identifier at `start` stands alone rather than inside a longer
+/// name: `get(` is a method router, the `get` in `get_config` is not.
+fn is_whole_identifier(text: &str, start: usize, length: usize) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[start + length..].chars().next();
+    let joins = |character: Option<char>| {
+        character.is_some_and(|character| character.is_alphanumeric() || character == '_')
+    };
+    !joins(before) && after == Some('(')
+}
+
+/// Every HTTP method the method-router expression names, in source order.
+fn methods_in(expression: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for (index, _) in expression.char_indices() {
+        for method in AXUM_METHOD_ROUTERS {
+            if expression[index..].starts_with(method)
+                && is_whole_identifier(expression, index, method.len())
+                && !found.iter().any(|seen| seen == method)
+            {
+                found.push((*method).to_string());
+            }
+        }
+    }
+    found
+}
+
+/// The name of the function whose body holds `offset`.
+///
+/// The scan reads whole route-builder functions, and every `.route(...)` call
+/// in these files sits in one, so the nearest preceding `fn` owns it.
+fn enclosing_function(source: &str, offset: usize) -> String {
+    let mut best: Option<String> = None;
+    for (index, _) in source[..offset].char_indices() {
+        if !source[index..].starts_with("fn ") || !is_word_start(source, index) {
+            continue;
+        }
+        let rest = &source[index + 3..];
+        let name: String = rest
+            .chars()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect();
+        if !name.is_empty() {
+            best = Some(name);
+        }
+    }
+    best.unwrap_or_else(|| "<no enclosing function>".to_string())
+}
+
+fn is_word_start(text: &str, start: usize) -> bool {
+    !text[..start]
+        .chars()
+        .next_back()
+        .is_some_and(|character| character.is_alphanumeric() || character == '_')
+}
+
+/// Each nested router function and the prefix `api_router` mounts it under.
+///
+/// Resolving the prefix by name is the point: the test this replaces joined
+/// every prefix onto every relative path, which invented paths no router
+/// serves. `/api/terminal` plus `terminal.rs`'s `/ws` is one real pair, not
+/// two candidates.
+fn nest_prefixes(server: &str) -> std::collections::BTreeMap<String, String> {
+    let mut prefixes = std::collections::BTreeMap::new();
+    let mut search = 0usize;
+    while let Some(offset) = server[search..].find(".nest(") {
+        let open = search + offset + ".nest".len();
+        let arguments = call_arguments(server, open).expect("the nest call closes its parenthesis");
+        let (prefix, _) = first_string_literal(arguments).expect("the nest call names a prefix");
+        let function = nested_function_name(arguments)
+            .unwrap_or_else(|| panic!("no `*_routes()` call in `.nest(\"{prefix}\", …)`"));
+        prefixes.insert(function, prefix);
+        search = open + 1;
+    }
+    prefixes
+}
+
+/// The first `…_routes(` call in a nest call's arguments.
+fn nested_function_name(arguments: &str) -> Option<String> {
+    let mut search = 0usize;
+    while let Some(offset) = arguments[search..].find("_routes(") {
+        let end = search + offset + "_routes".len();
+        let start = arguments[..end]
+            .char_indices()
+            .rev()
+            .take_while(|(_, character)| character.is_alphanumeric() || *character == '_')
+            .map(|(index, _)| index)
+            .last()?;
+        if is_word_start(arguments, start) {
+            return Some(arguments[start..end].to_string());
+        }
+        search = end;
+    }
+    None
+}
+
+/// Every `(method, path)` pair an axum `.route(…)` call registers.
+///
+/// `.routes(routes!(handler))` is absent on purpose. That form takes its path
+/// from the handler's `#[utoipa::path]` attribute and writes the same
+/// operation into the document, so it cannot be registered and undescribed.
+/// `.route(…)` is the form that can, and the one A5 to A10 convert away.
+fn routes_the_router_serves() -> BTreeSet<(String, String)> {
+    let sources = route_sources();
+    let server = sources
+        .iter()
+        .find(|(path, _)| path.ends_with("server.rs"))
+        .map(|(_, source)| source.clone())
+        .expect("the scan reads server.rs");
+    let prefixes = nest_prefixes(&server);
+
+    let mut registered = BTreeSet::new();
+    for (file, source) in &sources {
+        let mut found_here = 0usize;
+        let mut search = 0usize;
+        while let Some(offset) = source[search..].find(".route(") {
+            let open = search + offset + ".route".len();
+            let arguments = call_arguments(source, open).unwrap_or_else(|| {
+                panic!(
+                    "a `.route(` call in {} closes no parenthesis",
+                    file.display()
+                )
+            });
+            let (path, after_path) = first_string_literal(arguments)
+                .unwrap_or_else(|| panic!("a `.route(` call in {} names no path", file.display()));
+            let methods = methods_in(&arguments[after_path..]);
+            assert!(
+                !methods.is_empty(),
+                "`.route(\"{path}\", …)` in {} names no HTTP method",
+                file.display()
+            );
+
+            let owner = enclosing_function(source, open);
+            let full = match prefixes.get(&owner) {
+                Some(prefix) => format!("{prefix}{path}"),
+                None => path.clone(),
+            };
+            assert!(
+                full.starts_with("/api") || path_is_outside_the_document(&full),
+                "`{path}` in `{owner}` ({}) resolves to `{full}`, which names no \
+                 served prefix; teach `nest_prefixes` where `{owner}` mounts",
+                file.display()
+            );
+
+            for method in methods {
+                registered.insert((method, full.clone()));
+                found_here += 1;
+            }
+            search = open + 1;
+        }
+
+        // The scan reads text, so a parser that stops parsing reports an empty
+        // missing list and looks like success. A file that still writes
+        // `.route("/api…` must still yield a pair from it.
+        assert!(
+            !source.contains(".route(\"/api") || found_here > 0,
+            "the scan found no route in {}, which still registers one; \
+             the parser has broken",
+            file.display()
+        );
+    }
+    registered
+}
+
+// --- Reading the document ---------------------------------------------------
+
+/// Every `(method, path)` pair the document describes.
+fn documented_operations() -> BTreeSet<(String, String)> {
+    let spec = spec_json();
+    let paths = spec["paths"]
+        .as_object()
+        .expect("the document holds a `paths` object")
+        .clone();
+
+    let mut described = BTreeSet::new();
+    for (path, item) in paths {
+        let item = item.as_object().expect("a path item is an object");
+        for method in item.keys() {
+            if OPENAPI_METHODS.contains(&method.as_str()) {
+                described.insert((method.clone(), path.clone()));
+            }
+        }
+    }
+    described
+}
+
+/// Every route the router registers has an operation in the document.
+///
+/// This is the test that makes "a route added in Rust fails `bun run
+/// typecheck`" true: an undescribed route reaches no generated type, so
+/// nothing downstream can notice it.
+#[test]
+#[ignore = "red until A10: A5 to A10 convert every route group, and A10 removes this line"]
+fn every_route_the_router_serves_is_in_the_document() {
+    let registered = routes_the_router_serves();
+    let described = documented_operations();
+
+    // The allow-list is the scan's own sanity check. Every entry is a
+    // `.route(…)` call that no task converts, so a scan that stops finding
+    // them has broken, and the missing list below would be empty for the
+    // wrong reason.
+    for (path, reason) in PATHS_OUTSIDE_THE_DOCUMENT {
+        assert!(
+            registered.iter().any(|(_, found)| found == path),
+            "the scan no longer finds `{path}` ({reason}); \
+             fix the scan or drop the allow-list entry"
+        );
+    }
+
+    let missing: Vec<String> = registered
+        .iter()
+        .filter(|(_, path)| !path_is_outside_the_document(path))
+        .filter(|pair| !described.contains(*pair))
+        .map(|(method, path)| format!("{} {path}", method.to_uppercase()))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "{} routes the router serves have no OpenAPI operation. Give each \
+         handler a `#[utoipa::path]` and register it with \
+         `.routes(routes!(handler))`:\n  - {}",
+        missing.len(),
+        missing.join("\n  - ")
+    );
+}
+
+// --- Reading the browser's API calls ----------------------------------------
+
+/// The TypeScript modules that name `/api` paths as literals.
+///
+/// `review-api.ts` is here because the regex scan this test replaces never
+/// read it, and its seven paths went unchecked.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 60), ("lib/review-api.ts", 7)];
+
+/// A path with its parameter names removed: `/api/session/{id}` and
+/// `/api/session/${id}` both read as `/api/session/{}`.
+///
+/// TypeScript interpolates a value where OpenAPI names a parameter, so the
+/// two sides compare by shape. The query string carries no route, so it goes.
+/// Two adjacent holes collapse into one: `/api/plugins/${name}${query}` ends
+/// in a conditional query suffix, not a second segment.
+fn path_shape(raw: &str) -> String {
+    let mut shaped = String::new();
+    let mut rest = raw;
+    while let Some(open) = rest.find('{') {
+        let head = &rest[..open];
+        // `${` and `{` both open a hole; the `$` is not part of the path.
+        shaped.push_str(head.strip_suffix('$').unwrap_or(head));
+        shaped.push_str("{}");
+        let close = rest[open..]
+            .find('}')
+            .unwrap_or_else(|| panic!("`{raw}` opens a hole it never closes"));
+        rest = &rest[open + close + 1..];
+    }
+    shaped.push_str(rest);
+
+    let shaped = shaped.split('?').next().unwrap_or(&shaped).to_string();
+    let mut collapsed = shaped;
+    while collapsed.contains("{}{}") {
+        collapsed = collapsed.replace("{}{}", "{}");
+    }
+    collapsed
+        .strip_suffix('/')
+        .unwrap_or(&collapsed)
+        .to_string()
+}
+
+/// Every template literal in the source, as `(body, start offset)`.
+fn template_literals(source: &str) -> Vec<(String, usize)> {
+    let mut found = Vec::new();
+    let mut rest = source;
+    let mut base = 0usize;
+    while let Some(open) = rest.find('`') {
+        let Some(length) = rest[open + 1..].find('`') else {
+            break;
+        };
+        found.push((
+            rest[open + 1..open + 1 + length].to_string(),
+            base + open + 1,
+        ));
+        base += open + length + 2;
+        rest = &source[base..];
+    }
+    found
+}
+
+/// The path prefixes a module builds once and reuses, as
+/// `const base = (id: string) => \`/api/…\`;`.
+///
+/// `review-api.ts` writes all seven of its paths as `${base(sessionId)}/…`.
+/// A scan that read literals alone would find the prefix and none of the
+/// paths, and would report that the file calls nothing.
+fn path_prefix_aliases(source: &str) -> std::collections::BTreeMap<String, (String, usize)> {
+    let mut aliases = std::collections::BTreeMap::new();
+    for (body, start) in template_literals(source) {
+        if !body.starts_with("/api") {
+            continue;
+        }
+        let Some(head) = source[..start - 1].trim_end().strip_suffix("=>") else {
+            continue;
+        };
+        let Some(declaration) = head.rfind("const ") else {
+            continue;
+        };
+        let name: String = head[declaration + "const ".len()..]
+            .trim_start()
+            .chars()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect();
+        if !name.is_empty() {
+            aliases.insert(name, (body, start));
+        }
+    }
+    aliases
+}
+
+/// Every `/api` path shape a module asks for.
+fn client_api_paths(source: &str) -> BTreeSet<String> {
+    let aliases = path_prefix_aliases(source);
+    // The alias's own template is a prefix, not a path anybody fetches:
+    // `review-api.ts` never asks for `/api/session/{id}/review` itself.
+    let declarations: BTreeSet<usize> = aliases.values().map(|(_, start)| *start).collect();
+
+    let mut literals: Vec<String> = template_literals(source)
+        .into_iter()
+        .filter(|(_, start)| !declarations.contains(start))
+        .map(|(body, _)| body)
+        .collect();
+    for quote in ['\'', '"'] {
+        literals.extend(
+            source
+                .split(quote)
+                .skip(1)
+                .step_by(2)
+                .map(str::to_string)
+                .filter(|body| body.starts_with("/api")),
+        );
+    }
+
+    let mut called = BTreeSet::new();
+    for literal in literals {
+        let resolved = resolve_alias(&literal, &aliases);
+        if resolved.starts_with("/api") {
+            called.insert(path_shape(&resolved));
+        }
+    }
+    called
+}
+
+/// A literal that opens with `${alias(…)}`, rewritten with the alias's own
+/// template in front. Any other literal reads through unchanged.
+fn resolve_alias(
+    literal: &str,
+    aliases: &std::collections::BTreeMap<String, (String, usize)>,
+) -> String {
+    let Some(rest) = literal.strip_prefix("${") else {
+        return literal.to_string();
+    };
+    let Some(close) = rest.find('}') else {
+        return literal.to_string();
+    };
+    let call = &rest[..close];
+    let name = call
+        .chars()
+        .take_while(|character| character.is_alphanumeric() || *character == '_')
+        .collect::<String>();
+    match aliases.get(&name) {
+        Some((prefix, _)) => format!("{prefix}{}", &rest[close + 1..]),
+        None => literal.to_string(),
+    }
+}
+
+/// Every `/api` path the browser asks for has an operation in the document.
+///
+/// This runs the direction the deleted regex scan ran, and fixes what it
+/// missed: it compares against the generated document rather than a second
+/// regex scan of the same Rust, and it reads `review-api.ts`.
+#[test]
+#[ignore = "red until A10: A5 to A10 convert every route group, and A10 removes this line"]
+fn every_api_path_the_client_calls_is_in_the_document() {
+    let described: BTreeSet<String> = documented_operations()
+        .into_iter()
+        .map(|(_, path)| path_shape(&path))
+        .collect();
+    let exempt: BTreeSet<String> = PATHS_OUTSIDE_THE_DOCUMENT
+        .iter()
+        .map(|(path, _)| path_shape(path))
+        .collect();
+
+    let mut missing: Vec<String> = Vec::new();
+    for (module, least) in CLIENT_API_MODULES {
+        let source = std::fs::read_to_string(web_src(module))
+            .unwrap_or_else(|error| panic!("the test reads {module}: {error}"));
+        let called = client_api_paths(&source);
+        // A resolver that stops resolving finds nothing and proves nothing.
+        assert!(
+            called.len() >= *least,
+            "the scan found only {} `/api` paths in {module}, and expected at \
+             least {least}; the literal scan or the prefix resolver has broken",
+            called.len()
+        );
+        missing.extend(
+            called
+                .into_iter()
+                .filter(|path| !described.contains(path) && !exempt.contains(path))
+                .map(|path| format!("{module}  {path}")),
+        );
+    }
+    missing.sort();
+
+    assert!(
+        missing.is_empty(),
+        "{} `/api` paths the browser calls have no OpenAPI operation. Either \
+         the route needs a `#[utoipa::path]`, or the client calls a path that \
+         no route serves:\n  - {}",
+        missing.len(),
+        missing.join("\n  - ")
+    );
+}
+
+/// Every `/api` path the browser asks for reaches a route.
+///
+/// This is the claim the deleted regex scan made, and the only one of the
+/// three that can be green before A10: a route that is registered but not yet
+/// described still serves the path. It compares against the nest-resolved
+/// scan joined to the document, so a route reads the same before and after
+/// its group converts.
+///
+/// It also holds the scan honest. A scan that quietly stopped reading a file
+/// would report an empty missing list in the two tests above, which look like
+/// success; here the same loss names the paths that suddenly reach nothing.
+#[test]
+fn every_api_path_the_client_calls_reaches_a_route() {
+    let served: BTreeSet<String> = routes_the_router_serves()
+        .into_iter()
+        .chain(documented_operations())
+        .map(|(_, path)| path_shape(&path))
+        .collect();
+    let exempt: BTreeSet<String> = PATHS_OUTSIDE_THE_DOCUMENT
+        .iter()
+        .map(|(path, _)| path_shape(path))
+        .collect();
+
+    let mut missing: Vec<String> = Vec::new();
+    for (module, least) in CLIENT_API_MODULES {
+        let source = std::fs::read_to_string(web_src(module))
+            .unwrap_or_else(|error| panic!("the test reads {module}: {error}"));
+        let called = client_api_paths(&source);
+        assert!(
+            called.len() >= *least,
+            "the scan found only {} `/api` paths in {module}, and expected at \
+             least {least}; the literal scan or the prefix resolver has broken",
+            called.len()
+        );
+        missing.extend(
+            called
+                .into_iter()
+                .filter(|path| !served.contains(path) && !exempt.contains(path))
+                .map(|path| format!("{module}  {path}")),
+        );
+    }
+    missing.sort();
+
+    assert!(
+        missing.is_empty(),
+        "{} `/api` paths the browser calls reach no route. Add the route, fix \
+         the client path, or fix the scan that reads them:\n  - {}",
+        missing.len(),
+        missing.join("\n  - ")
+    );
 }

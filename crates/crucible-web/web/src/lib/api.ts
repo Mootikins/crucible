@@ -737,11 +737,11 @@ export async function getPluginPublications(
   caller: string = APP_CALLER,
 ): Promise<PluginPublications> {
   // The path stays a bare literal and the query is appended to it.
-  // `architecture_tests::every_frontend_api_path_has_a_backend_route` scans
-  // this file for route literals and cannot see through an interpolation, so
-  // inlining the query would hide the route from the gate that proves it
-  // exists. (Do not write an example path in this comment either — the scan
-  // reads comments too.)
+  // `openapi_contract::every_api_path_the_client_calls_is_in_the_document`
+  // scans this file for route literals and cannot see through an
+  // interpolation, so inlining the query would hide the route from the gate
+  // that proves it exists. (Do not write an example path in this comment
+  // either — the scan reads comments too.)
   const path = '/api/plugins/publications';
   const url = key ? `${path}?key=${encodeURIComponent(key)}` : path;
   const body = await request<{ publications?: PluginPublications }>('GET', url, {

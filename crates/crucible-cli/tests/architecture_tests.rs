@@ -4,7 +4,8 @@
 //! TUI-side invariants CLAUDE.md states in prose:
 //!   A2a — every `ChatAppMsg` variant is handled somewhere (no dead messages).
 //!   A2b — canonical parser types are defined only in crucible-core/parser.
-//!   A2c — every `/api` path the web frontend calls has a backend route.
+//!   A2c — moved to `crucible-web/tests/openapi_contract.rs`, which holds
+//!         the router and the client to the generated OpenAPI document.
 //!   A2d — the CLI does not build its own knowledge-base context block.
 //!   A2e — every session knob the daemon advertises has a web route and a
 //!         TUI `:set` key, both derived from `SessionKnob`.
@@ -219,110 +220,27 @@ fn canonical_parser_types_are_not_redefined() {
 }
 
 // ===========================================================================
-// A2c — every /api path the web frontend calls exists as a backend route.
-// This mismatch class shipped twice (generate-title vs auto-title 405,
-// /api/layout with no backend route at all): the frontend degrades silently,
-// so nothing but a console warning catches it. Source-scan both sides.
+// A2c — MOVED. `crates/crucible-web/tests/openapi_contract.rs` now holds this
+// gate, as `every_api_path_the_client_calls_reaches_a_route` (green today),
+// plus `every_route_the_router_serves_is_in_the_document` and
+// `every_api_path_the_client_calls_is_in_the_document` (both `#[ignore]`d
+// until task A10 finishes converting the route groups).
+//
+// The scan that stood here compared `/api` string literals in one TypeScript
+// file against a second regex scan of the Rust routes. It caught a frontend
+// path that named no route, and missed everything else. The two tests in
+// `openapi_contract.rs` compare both sides against the generated OpenAPI
+// document instead, which adds:
+//   - the method: `GET /api/layout` and `DELETE /api/layout` are two entries,
+//     not one string;
+//   - the fields: the document carries each reply's shape, so the drifts a
+//     path comparison cannot see fail `just lint types`;
+//   - `lib/review-api.ts`: its seven review paths were never read here;
+//   - the reverse direction: a route the router serves and nothing describes
+//     now fails, where this scan only ran frontend to backend.
+// The nest prefixes resolve by router-function name there, so the scan no
+// longer invents paths by joining every prefix onto every relative route.
 // ===========================================================================
-
-/// `${...}` interpolations and `{param}` segments both normalize to `{}` so
-/// the two sides compare structurally. Query strings are stripped. Adjacent
-/// interpolations collapse (`/api/plugins/${name}${query}` → `/api/plugins/{}`
-/// — the trailing one is a conditionally-appended query suffix).
-fn normalize_api_path(raw: &str) -> String {
-    let no_query = raw.split('?').next().unwrap_or(raw);
-    let re = Regex::new(r"\$\{[^}]*\}|\{[^}]*\}").unwrap();
-    let braced = re.replace_all(no_query, "{}").to_string();
-    let mut collapsed = braced;
-    while collapsed.contains("{}{}") {
-        collapsed = collapsed.replace("{}{}", "{}");
-    }
-    collapsed.trim_end_matches('/').to_string()
-}
-
-fn frontend_api_paths(root: &Path) -> BTreeSet<String> {
-    let src = read(&root.join("crates/crucible-web/web/src/lib/api.ts"));
-    let re = Regex::new(r#"['"`](/api/[^'"`]*)['"`]"#).unwrap();
-    re.captures_iter(&src)
-        .map(|c| normalize_api_path(&c[1]))
-        .collect()
-}
-
-fn backend_api_paths(root: &Path) -> BTreeSet<String> {
-    let route_re = Regex::new(r#"\.route\(\s*"([^"]+)""#).unwrap();
-    let nest_re = Regex::new(r#"\.nest\(\s*"([^"]+)""#).unwrap();
-    // `utoipa_axum::routes!(handler)` takes the path from the handler's
-    // `#[utoipa::path]` attribute, so a converted route has no `.route("...")`
-    // line to find. The lazy match takes the first `path = "..."` after the
-    // attribute opens.
-    let utoipa_re = Regex::new(r#"(?s)#\[utoipa::path\(.*?path\s*=\s*"([^"]+)""#).unwrap();
-
-    let mut sources = Vec::new();
-    let routes_dir = root.join("crates/crucible-web/src/routes");
-    for entry in WalkDir::new(&routes_dir).into_iter().filter_map(Result::ok) {
-        if entry.path().extension().and_then(|e| e.to_str()) == Some("rs") {
-            sources.push(read(entry.path()));
-        }
-    }
-    sources.push(read(&root.join("crates/crucible-web/src/server.rs")));
-
-    let mut absolute = BTreeSet::new();
-    let mut relative = BTreeSet::new();
-    let mut nest_prefixes = BTreeSet::new();
-    for src in &sources {
-        for c in route_re.captures_iter(src) {
-            let path = normalize_api_path(&c[1]);
-            if path.starts_with("/api") {
-                absolute.insert(path);
-            } else {
-                relative.insert(path);
-            }
-        }
-        for c in utoipa_re.captures_iter(src) {
-            let path = normalize_api_path(&c[1]);
-            if path.starts_with("/api") {
-                absolute.insert(path);
-            } else {
-                relative.insert(path);
-            }
-        }
-        for c in nest_re.captures_iter(src) {
-            nest_prefixes.insert(normalize_api_path(&c[1]));
-        }
-    }
-    // Routers mounted via .nest() register relative paths; join every relative
-    // path with every nest prefix. Over-approximates (harmless: this set is
-    // only checked for membership), avoids resolving which router nests where.
-    for prefix in &nest_prefixes {
-        for rel in &relative {
-            absolute.insert(format!("{prefix}{rel}"));
-        }
-    }
-    absolute
-}
-
-// UNIQUE: TS types don't see /api paths constructed at runtime; clippy/types cannot cross the Rust↔SolidJS boundary. The source-scan compares frontend string literals to backend route declarations structurally.
-#[test]
-fn every_frontend_api_path_has_a_backend_route() {
-    let root = workspace_root();
-    let frontend = frontend_api_paths(&root);
-    let backend = backend_api_paths(&root);
-
-    assert!(
-        frontend.len() >= 20,
-        "extraction sanity check: expected 20+ /api paths in api.ts, found {} — \
-         the scan regex probably broke, fix the test",
-        frontend.len()
-    );
-
-    let missing: Vec<_> = frontend.difference(&backend).cloned().collect();
-    assert!(
-        missing.is_empty(),
-        "web/src/lib/api.ts calls /api paths that no backend route serves \
-         (routes/*.rs + server.rs). Add the route or fix the frontend path:\n  - {}",
-        missing.join("\n  - ")
-    );
-}
 
 // ===========================================================================
 // A2d — the CLI must not build its own knowledge-base context block.
@@ -402,6 +320,80 @@ fn the_cli_does_not_build_its_own_context_block() {
 // The ledgers below are SHRINK-ONLY: a NEW knob is not in one and so fails
 // immediately.
 // ===========================================================================
+
+/// `${...}` interpolations and `{param}` segments both normalize to `{}` so
+/// the two sides compare structurally. Query strings are stripped. Adjacent
+/// interpolations collapse (`/api/plugins/${name}${query}` → `/api/plugins/{}`
+/// — the trailing one is a conditionally-appended query suffix).
+fn normalize_api_path(raw: &str) -> String {
+    let no_query = raw.split('?').next().unwrap_or(raw);
+    let re = Regex::new(r"\$\{[^}]*\}|\{[^}]*\}").unwrap();
+    let braced = re.replace_all(no_query, "{}").to_string();
+    let mut collapsed = braced;
+    while collapsed.contains("{}{}") {
+        collapsed = collapsed.replace("{}{}", "{}");
+    }
+    collapsed.trim_end_matches('/').to_string()
+}
+
+/// Every `/api` path the axum router declares, as a shape.
+///
+/// This helper and `normalize_api_path` stayed behind when A2c moved to
+/// `crucible-web/tests/openapi_contract.rs`. The gate below asks only whether
+/// a knob's route exists, and a membership test tolerates the
+/// over-approximation the comment at the end admits; A2c did not.
+fn backend_api_paths(root: &Path) -> BTreeSet<String> {
+    let route_re = Regex::new(r#"\.route\(\s*"([^"]+)""#).unwrap();
+    let nest_re = Regex::new(r#"\.nest\(\s*"([^"]+)""#).unwrap();
+    // `utoipa_axum::routes!(handler)` takes the path from the handler's
+    // `#[utoipa::path]` attribute, so a converted route has no `.route("...")`
+    // line to find. The lazy match takes the first `path = "..."` after the
+    // attribute opens.
+    let utoipa_re = Regex::new(r#"(?s)#\[utoipa::path\(.*?path\s*=\s*"([^"]+)""#).unwrap();
+
+    let mut sources = Vec::new();
+    let routes_dir = root.join("crates/crucible-web/src/routes");
+    for entry in WalkDir::new(&routes_dir).into_iter().filter_map(Result::ok) {
+        if entry.path().extension().and_then(|e| e.to_str()) == Some("rs") {
+            sources.push(read(entry.path()));
+        }
+    }
+    sources.push(read(&root.join("crates/crucible-web/src/server.rs")));
+
+    let mut absolute = BTreeSet::new();
+    let mut relative = BTreeSet::new();
+    let mut nest_prefixes = BTreeSet::new();
+    for src in &sources {
+        for c in route_re.captures_iter(src) {
+            let path = normalize_api_path(&c[1]);
+            if path.starts_with("/api") {
+                absolute.insert(path);
+            } else {
+                relative.insert(path);
+            }
+        }
+        for c in utoipa_re.captures_iter(src) {
+            let path = normalize_api_path(&c[1]);
+            if path.starts_with("/api") {
+                absolute.insert(path);
+            } else {
+                relative.insert(path);
+            }
+        }
+        for c in nest_re.captures_iter(src) {
+            nest_prefixes.insert(normalize_api_path(&c[1]));
+        }
+    }
+    // Routers mounted via .nest() register relative paths; join every relative
+    // path with every nest prefix. Over-approximates (harmless: this set is
+    // only checked for membership), avoids resolving which router nests where.
+    for prefix in &nest_prefixes {
+        for rel in &relative {
+            absolute.insert(format!("{prefix}{rel}"));
+        }
+    }
+    absolute
+}
 
 /// `session.set_agent_option` is guarded, and it is NOT a [`SessionKnob`].
 ///
