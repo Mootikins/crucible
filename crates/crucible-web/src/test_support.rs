@@ -719,6 +719,36 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "workspace": workspace,
             })
         }
+        // The settings the session's external agent advertised for itself, as
+        // `server/session/modes.rs` sends them: one option per control shape,
+        // because the kind tag and the value belong together and a client that
+        // read `current` without it would draw the wrong control.
+        "session.list_agent_options" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "options": [
+                {
+                    "id": "reasoning",
+                    "name": "Reasoning effort",
+                    "description": "How long the agent thinks",
+                    "category": "model",
+                    "kind": "select",
+                    "current": "medium",
+                    "choices": [
+                        {"value": "medium", "name": "Medium"},
+                        {"value": "high", "name": "High"},
+                    ],
+                },
+                {
+                    "id": "web_search",
+                    "name": "Web search",
+                    "description": Value::Null,
+                    "category": Value::Null,
+                    "kind": "toggle",
+                    "current": false,
+                },
+            ],
+        }),
+        "session.set_agent_option" => json!({ "ok": true }),
         "session.set_precognition" => json!(null),
         "session.get_precognition" => json!({"precognition_enabled": true}),
         "session.set_precognition_results" => json!(null),

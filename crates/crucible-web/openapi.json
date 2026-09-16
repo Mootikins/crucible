@@ -376,6 +376,230 @@
         }
       }
     },
+    "/api/session/{id}/config/agent-options": {
+      "get": {
+        "summary": "The settings this session's external agent advertised for itself.",
+        "description": "These belong to the agent, not to Crucible: a reasoning-level selector, a\ntoggle it invented. The daemon passes them through, so the browser renders\nwhatever this particular agent happens to have.",
+        "operationId": "list_agent_options",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose agent is asked",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon knows no such session"
+          },
+          "502": {
+            "description": "The daemon could not ask the agent"
+          }
+        }
+      },
+      "post": {
+        "operationId": "set_agent_option",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose agent is set",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAgentOptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The agent knows no such option, or refuses the value"
+          },
+          "502": {
+            "description": "The daemon could not reach the agent"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/config/context-strategy": {
+      "get": {
+        "operationId": "get_context_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextStrategyResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the value"
+          }
+        }
+      },
+      "put": {
+        "operationId": "set_context_strategy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to configure",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetContextStrategyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon does not know the strategy named"
+          },
+          "502": {
+            "description": "The daemon could not store the value"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/config/precognition": {
+      "get": {
+        "operationId": "get_precognition",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrecognitionResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the value"
+          }
+        }
+      },
+      "put": {
+        "operationId": "set_precognition",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to configure",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPrecognitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The session cannot carry the knob"
+          },
+          "502": {
+            "description": "The daemon could not store the value"
+          }
+        }
+      }
+    },
     "/api/session/{id}/end": {
       "post": {
         "operationId": "end_session",
@@ -853,6 +1077,306 @@
         }
       }
     },
+    "/api/session/{id}/review/comment": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/comment`",
+        "operationId": "comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The path names no tracked root, or the author is neither `human` nor `agent`"
+          },
+          "502": {
+            "description": "The daemon could not store the comment"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/comment/{comment_id}/resolve": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/comment/{comment_id}/resolve`",
+        "description": "The client sends a `{}` body this handler never reads, and that is\ndeliberate — see the note on `resolveReviewComment` in `review-api.ts`.\nThe empty object forces `Content-Type: application/json`, which puts the\nrequest outside the CORS simple-request set and makes the browser preflight\nit against an allowlist that refuses cross-origin callers. It is the second\nlayer behind the `SameSite=Strict` auth cookie, not a redundant one: an\n\"optimisation\" that drops the body drops the header, and every review write\nbecomes something a foreign page can fire blind.",
+        "operationId": "resolve_comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "description": "The comment to mark answered",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResolveCommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon knows no such comment"
+          },
+          "502": {
+            "description": "The daemon could not resolve the comment"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/hunks": {
+      "get": {
+        "summary": "`GET /api/session/{id}/review/hunks?scope=session|turn`",
+        "operationId": "list_hunks",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "The hunks to list. Absent means the whole session.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReviewScopeRow"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewHunksResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The `scope` query named something that is neither `session` nor `turn`"
+          },
+          "422": {
+            "description": "The session has no reviewable root"
+          },
+          "502": {
+            "description": "The daemon could not read the journal"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/rebase": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/rebase`",
+        "description": "The release for a root the daemon can no longer account for. A degraded root\ncontributes no hunks, so nothing in the queue can clear it and every write\nunder it stays held — this is the only shipped way out, which is why it is\na sixth route rather than something the panel infers.\n\nThe `{}` body is load-bearing for the same reason as on\n`…/comment/{id}/resolve`: it is what carries `Content-Type:\napplication/json` and forces a preflight the CORS allowlist refuses.",
+        "operationId": "rebase",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to rebase",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewRebaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The session has no ledger and no trackable root"
+          },
+          "502": {
+            "description": "The daemon could not recapture a root"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/state": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/state`",
+        "operationId": "set_state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon knows no such hunk, or refuses the state"
+          },
+          "502": {
+            "description": "The daemon could not record the decision"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/states": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/states`",
+        "description": "The daemon answers the ids it applied and the ids it refused, each with a\nreason. A refused hunk is part of the answer, not an error status: the\nclient shows which ones and keeps the rest, so this route forwards the\nobject whole.",
+        "operationId": "set_states",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetStatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewStatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the state"
+          },
+          "502": {
+            "description": "The daemon could not record the decisions"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/review/undo-reject": {
+      "post": {
+        "summary": "`POST /api/session/{id}/review/undo-reject`",
+        "description": "Takes back the most recent reject, single or bulk, as one action. The\ndaemon owns the stack, so the request names no hunk: the session in the\npath is the whole input. The `{}` body is load-bearing for the same reason\nas on `…/rebase` and `…/comment/{id}/resolve`: it carries `Content-Type:\napplication/json` and forces the preflight the CORS allowlist refuses.",
+        "operationId": "undo_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session under review",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewUndoRejectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon knows no such hunk any more"
+          },
+          "502": {
+            "description": "The daemon could not restore the rejects"
+          }
+        }
+      }
+    },
     "/api/session/{id}/status": {
       "get": {
         "summary": "Proxy `session.status` verbatim.",
@@ -1111,6 +1635,139 @@
   },
   "components": {
     "schemas": {
+      "AgentOptionChoiceRow": {
+        "type": "object",
+        "description": "One choice in an agent's select option.",
+        "required": [
+          "value",
+          "name"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The value to send back when this choice is picked."
+          },
+          "name": {
+            "type": "string",
+            "description": "What to show for it."
+          }
+        }
+      },
+      "AgentOptionKindRow": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Pick one of several values.",
+            "required": [
+              "current",
+              "choices",
+              "kind"
+            ],
+            "properties": {
+              "current": {
+                "type": "string",
+                "description": "The value the agent reports as current."
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentOptionChoiceRow"
+                },
+                "description": "Every value it accepts, in the order it listed them."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "select"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "On or off.",
+            "required": [
+              "current",
+              "kind"
+            ],
+            "properties": {
+              "current": {
+                "type": "boolean",
+                "description": "The value the agent reports as current."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "toggle"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The control an agent option asks for.\n\nA tagged union rather than a `kind` string beside a loose `current`: a\nselect carries choices and a string, a toggle carries a bool, and the\nbrowser's hand-written type declared `current: string | boolean` with\noptional choices because nothing described the pairing."
+      },
+      "AgentOptionRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentOptionKindRow",
+            "description": "The control to draw, and its current value."
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "description",
+              "category"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The id to name when setting the option."
+              },
+              "name": {
+                "type": "string",
+                "description": "What to label the control."
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Help text the agent supplied, or `null`. Always written, so\n`required` rather than optional."
+              },
+              "category": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The agent's own category string, or `null`. Presentation only."
+              }
+            }
+          }
+        ],
+        "description": "One setting an external agent advertised for itself."
+      },
+      "AgentOptionsResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/config/agent-options` answers.",
+        "required": [
+          "session_id",
+          "options"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentOptionRow"
+            },
+            "description": "Empty until the first message, and empty for an internal agent always:\nan agent advertises nothing until the daemon connects to it."
+          }
+        }
+      },
       "ArchiveResponse": {
         "type": "object",
         "description": "Response for session archive/unarchive status changes.",
@@ -1691,6 +2348,71 @@
         ],
         "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
+      "CommentAuthorRow": {
+        "type": "string",
+        "description": "Who wrote a comment.",
+        "enum": [
+          "human",
+          "agent"
+        ]
+      },
+      "CommentRequest": {
+        "type": "object",
+        "description": "`POST /review/comment` — anchor a comment to a line range.\n\nRead into a typed body rather than forwarded as raw JSON, so the session\nunder review can only ever be the one in the path: a `session_id` in the\nbody is an unknown field here. The handler copies the fields into a\n`ReviewCommentRequest` with the path's session id.",
+        "required": [
+          "path",
+          "line_start",
+          "body"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute, or relative to the session's tracked root."
+          },
+          "line_start": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1-based.",
+            "minimum": 0
+          },
+          "line_end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1-based, exclusive. Absent means `line_start + 1`, which the daemon\napplies — hence `skip_serializing_if`. Sending an explicit `null`\ndefeats the daemon's `optional_param!` default and is not the same\nrequest.",
+            "minimum": 0
+          },
+          "body": {
+            "type": "string"
+          },
+          "root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ContextStrategyResponse": {
+        "type": "object",
+        "properties": {
+          "context_strategy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The strategy's string spelling, or `null` where the session carries no\nchoice of its own."
+          }
+        }
+      },
       "CreateSessionRequest": {
         "type": "object",
         "properties": {
@@ -1871,6 +2593,28 @@
           }
         }
       },
+      "LineRangeRow": {
+        "type": "object",
+        "description": "A half-open range of 1-based line numbers: `end` is one past the last line.",
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "integer",
+            "format": "int32",
+            "description": "First line, 1-based, inclusive.",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "format": "int32",
+            "description": "One past the last line, 1-based, exclusive.",
+            "minimum": 0
+          }
+        }
+      },
       "ModeResponse": {
         "type": "object",
         "properties": {
@@ -1968,6 +2712,18 @@
           }
         }
       },
+      "PrecognitionResponse": {
+        "type": "object",
+        "description": "Response for precognition config.",
+        "required": [
+          "precognition_enabled"
+        ],
+        "properties": {
+          "precognition_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "ProviderRow": {
         "type": "object",
         "description": "One LLM provider the daemon found.\n\nMirrors `crucible_core::types::ProviderInfo` field for field. It is\ndeclared here rather than re-exported because `crucible-core` takes no\nutoipa dependency, and a schema is what puts the fields in the document.",
@@ -2055,15 +2811,244 @@
       "ResumeSessionResponse": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/SessionLifecycleResponse",
-            "description": "The session was resident and merely paused."
-          },
-          {
             "$ref": "#/components/schemas/SessionHistoryResponse",
             "description": "The session came back from the store."
+          },
+          {
+            "$ref": "#/components/schemas/SessionLifecycleResponse",
+            "description": "The session was resident and merely paused."
           }
         ],
-        "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves."
+        "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
+      },
+      "ReviewCommentResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/comment` answers.",
+        "required": [
+          "session_id",
+          "comment"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "comment": {
+            "$ref": "#/components/schemas/ReviewCommentRow",
+            "description": "The comment as it was stored, with the id and the time the daemon\nminted."
+          }
+        }
+      },
+      "ReviewCommentRow": {
+        "type": "object",
+        "description": "One review comment, anchored to a line range rather than to a hunk.",
+        "required": [
+          "id",
+          "root",
+          "path",
+          "base_tree",
+          "line_range",
+          "body",
+          "author",
+          "resolved",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string",
+            "description": "The repository top level."
+          },
+          "path": {
+            "type": "string",
+            "description": "The path, relative to `root`."
+          },
+          "base_tree": {
+            "type": "string",
+            "description": "The tree the range is anchored in. A range that no longer projects\nforward from it is outdated."
+          },
+          "line_range": {
+            "$ref": "#/components/schemas/LineRangeRow"
+          },
+          "body": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthorRow"
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the comment was written, RFC 3339.\n\nA string rather than a date type: the daemon's spelling reaches the\nbrowser unchanged, and a parse and a reformat here could only lose\nprecision the daemon sent."
+          }
+        }
+      },
+      "ReviewFailureRow": {
+        "type": "object",
+        "description": "One hunk a bulk decision refused, with the daemon's reason.",
+        "required": [
+          "hunk_id",
+          "reason"
+        ],
+        "properties": {
+          "hunk_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewGateRow": {
+        "type": "object",
+        "description": "A turn parked on the review gate, waiting for a human.",
+        "required": [
+          "tool",
+          "path"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "The tool call being held."
+          },
+          "path": {
+            "type": "string",
+            "description": "The first target still unreviewed — what a human must answer to release\nthe turn."
+          }
+        }
+      },
+      "ReviewHunkRow": {
+        "type": "object",
+        "description": "One hunk of the composed diff, the unit a decision applies to.\n\nThere is no `external` field, here or on the wire: a hunk is external when\n`tool_call_ids` is empty, which is what `isExternal` reads in the browser.",
+        "required": [
+          "id",
+          "root",
+          "path",
+          "base_range",
+          "current_range",
+          "before_content",
+          "after_content",
+          "tool_call_ids",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Content-derived, and the only handle a decision names."
+          },
+          "root": {
+            "type": "string",
+            "description": "The repository top level this hunk belongs to."
+          },
+          "path": {
+            "type": "string",
+            "description": "The path, relative to `root`."
+          },
+          "base_range": {
+            "$ref": "#/components/schemas/LineRangeRow",
+            "description": "The lines this hunk replaces, in base coordinates."
+          },
+          "current_range": {
+            "$ref": "#/components/schemas/LineRangeRow",
+            "description": "The lines it occupies now, in worktree coordinates."
+          },
+          "before_content": {
+            "type": "string",
+            "description": "The base-side text. Empty for a pure insertion."
+          },
+          "after_content": {
+            "type": "string",
+            "description": "The current-side text. Empty for a pure deletion."
+          },
+          "tool_call_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The tool calls whose writes survive into this hunk, in ledger order."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReviewStateRow"
+          },
+          "reapplied": {
+            "type": "boolean",
+            "description": "The agent applied a change the user had rejected. The state comes back\n`unreviewed`; this is the history that makes the grind visible."
+          }
+        }
+      },
+      "ReviewHunksResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/review/hunks` answers.",
+        "required": [
+          "session_id",
+          "scope",
+          "hunks",
+          "comments",
+          "degraded",
+          "integrity",
+          "gate"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ReviewScopeRow",
+            "description": "The scope the answer describes, echoed. A client that switched scope\nwhile a listing was in flight reads it to drop the stale answer."
+          },
+          "hunks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewHunkRow"
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewCommentRow"
+            }
+          },
+          "degraded": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewRootRow"
+            },
+            "description": "Only the roots that are broken. An empty array is the common case; a\nnon-empty one means the gate holds writes that no reviewing releases."
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/ReviewIntegrityRow"
+          },
+          "gate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReviewGateRow",
+                "description": "What this session's turn is parked on, or `null`.\n\nAlways written, and `required` in the document for that reason: a\nclient has to be able to tell \"not blocked\" from \"this daemon does not\nreport it\", and an optional key collapses the two."
+              }
+            ]
+          }
+        }
+      },
+      "ReviewIntegrityRow": {
+        "type": "object",
+        "description": "What the journal could not be read back as.\n\nSeparate from the degraded roots because the worst losses are the ones with\nno root to name: a journal that will not read at all leaves `degraded`\nempty while the gate holds every write in the session.",
+        "required": [
+          "skips"
+        ],
+        "properties": {
+          "skips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewSkipRow"
+            }
+          }
+        }
       },
       "ReviewPolicyRow": {
         "type": "string",
@@ -2073,6 +3058,239 @@
           "post_turn",
           "pre_write"
         ]
+      },
+      "ReviewRebaseResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/rebase` answers.",
+        "required": [
+          "session_id",
+          "roots"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewRootRow"
+            },
+            "description": "Every tracked root and what the rebase could do for it. A root that\nstill carries a reason was not recovered."
+          }
+        }
+      },
+      "ReviewResolveCommentResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/comment/{comment_id}/resolve` answers.",
+        "required": [
+          "session_id",
+          "comment_id",
+          "resolved"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "comment_id": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ReviewRootRow": {
+        "type": "object",
+        "description": "Whether the ledger can still account for one tracked root.",
+        "required": [
+          "root",
+          "degraded"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "The repository top level."
+          },
+          "degraded": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why this root's attribution cannot be trusted. `null` is intact, and\nthe string is shown to the user as the daemon wrote it. The key is\nalways written, so `required` rather than optional."
+          }
+        }
+      },
+      "ReviewScopeRow": {
+        "type": "string",
+        "description": "Which hunks a listing covers, as `crucible_core::session::ReviewScope`\nspells it on the wire.\n\nWeb-owned because a schema is what puts the two values in the document, and\n`crucible-core` takes no `utoipa` dependency. [`From`] converts it to the\ncore type, so a variant added there fails to compile here rather than\nreaching the daemon as a scope this crate silently narrowed.",
+        "enum": [
+          "session",
+          "turn"
+        ]
+      },
+      "ReviewSkipKindRow": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The session's base is untrustworthy, so every root blocks — including\nones the ledger may no longer know it tracked.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "session"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One root's attribution is incomplete. Only writes under it block.",
+            "required": [
+              "root",
+              "kind"
+            ],
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "root"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A lost decision or comment. The queue is poorer, not wrong.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "informational"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a skipped journal record costs."
+      },
+      "ReviewSkipRow": {
+        "type": "object",
+        "description": "One journal record the daemon could not read back.",
+        "required": [
+          "record",
+          "line",
+          "reason"
+        ],
+        "properties": {
+          "record": {
+            "$ref": "#/components/schemas/ReviewSkipKindRow"
+          },
+          "line": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The 1-based line in `review.jsonl`, so an operator can find it.",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "description": "The parse failure, verbatim."
+          }
+        }
+      },
+      "ReviewStateResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/state` answers.",
+        "required": [
+          "session_id",
+          "hunk_id",
+          "state"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "hunk_id": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReviewStateRow"
+          }
+        }
+      },
+      "ReviewStateRow": {
+        "type": "string",
+        "description": "One user decision about one hunk.",
+        "enum": [
+          "unreviewed",
+          "accepted",
+          "rejected"
+        ]
+      },
+      "ReviewStatesResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/states` answers.\n\nA refused hunk is part of the answer rather than an error status: the ids\nin `applied` are on disk whatever happened to the rest, and a client told\nonly \"failed\" would have to re-list to learn which were which.",
+        "required": [
+          "session_id",
+          "state",
+          "applied",
+          "failed"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReviewStateRow"
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ids that applied, in the order the request sent them."
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewFailureRow"
+            }
+          }
+        }
+      },
+      "ReviewUndoRejectResponse": {
+        "type": "object",
+        "description": "What `POST /api/session/{id}/review/undo-reject` answers.\n\nThe same report as a bulk decision, minus the state: an undo restores\nwhatever the batch rejected. An empty stack answers two empty lists.",
+        "required": [
+          "session_id",
+          "applied",
+          "failed"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewFailureRow"
+            }
+          }
+        }
       },
       "SessionAgentRow": {
         "allOf": [
@@ -2459,6 +3677,13 @@
             "type": "integer",
             "description": "How many matches the reply carries.",
             "minimum": 0
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the search looked at nothing, when it looked at nothing.\n\nThe daemon writes it for a search with no kiln scope\n(`server/session/list.rs:206`), and only then. An unscoped search is\nthe one case where an empty result is not a statement about the\ncorpus, so the sentence has to reach the caller."
           }
         }
       },
@@ -2506,6 +3731,32 @@
           }
         }
       },
+      "SetAgentOptionRequest": {
+        "type": "object",
+        "required": [
+          "option_id",
+          "value"
+        ],
+        "properties": {
+          "option_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "SetContextStrategyRequest": {
+        "type": "object",
+        "required": [
+          "context_strategy"
+        ],
+        "properties": {
+          "context_strategy": {
+            "type": "string"
+          }
+        }
+      },
       "SetModeRequest": {
         "type": "object",
         "required": [
@@ -2513,6 +3764,53 @@
         ],
         "properties": {
           "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "SetPrecognitionRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SetStateRequest": {
+        "type": "object",
+        "description": "`POST /review/state` — accept, reject, or requeue one hunk.",
+        "required": [
+          "hunk_id",
+          "state"
+        ],
+        "properties": {
+          "hunk_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "Forwarded unvalidated: the daemon owns the state vocabulary and answers\n`INVALID_PARAMS` for anything outside it. A copy of the enum here could\nonly ever refuse a state the daemon had newly learned."
+          }
+        }
+      },
+      "SetStatesRequest": {
+        "type": "object",
+        "description": "`POST /review/states` — one decision over several hunks, in order.\n\nThe ids reach the daemon in the order the caller gave them, because the\ndaemon applies them in that order and a reject reverts files as it goes.\n`state` is forwarded unvalidated for the same reason as on\n[`SetStateRequest`].",
+        "required": [
+          "hunk_ids",
+          "state"
+        ],
+        "properties": {
+          "hunk_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
             "type": "string"
           }
         }

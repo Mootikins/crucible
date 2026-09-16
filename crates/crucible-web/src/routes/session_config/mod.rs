@@ -17,9 +17,7 @@
 //! response JSON key, because route existence alone does not prove the value
 //! survives.
 
-// Only `put` as a free function: the `.get(...)` in each pair is a method on the
-// `MethodRouter` `put(...)` returns.
-use axum::{routing::put, Router};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::services::daemon::AppState;
 
@@ -29,9 +27,19 @@ pub(super) mod prompt;
 #[cfg(test)]
 mod tests;
 
-pub(super) use basic::{get_precognition, list_agent_options, set_agent_option, set_precognition};
+// The `__path_*` types come with the handlers: `utoipa_axum::routes!` reads
+// each handler's `#[utoipa::path]` attribute through the type the macro
+// generates beside it, and resolves both names in this module's scope.
+pub(super) use basic::{
+    __path_get_precognition, __path_list_agent_options, __path_set_agent_option,
+    __path_set_precognition, get_precognition, list_agent_options, set_agent_option,
+    set_precognition,
+};
 
-pub(super) use prompt::{get_context_strategy, set_context_strategy};
+pub(super) use prompt::{
+    __path_get_context_strategy, __path_set_context_strategy, get_context_strategy,
+    set_context_strategy,
+};
 
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
 /// group merges in.
@@ -46,12 +54,9 @@ pub(super) use prompt::{get_context_strategy, set_context_strategy};
 /// inherits bearer auth, the host guard, the CORS allowlist, the body limit and
 /// the security headers. A separate group is how a surface quietly stops
 /// inheriting them.
-pub(super) fn config_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/session/{id}/config/precognition",
-            put(set_precognition).get(get_precognition),
-        )
+pub(super) fn config_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(set_precognition, get_precognition))
         // Not one of Crucible's knobs: the settings the external agent
         // advertised for itself. One path serves both directions because the
         // value belongs to the agent — GET lists what it has, POST sets one,
@@ -59,14 +64,8 @@ pub(super) fn config_routes() -> Router<AppState> {
         // became. It sits with the config routes because that is where the
         // settings panel's calls belong, and because a route outside this
         // group would stop inheriting the auth and limits above.
-        .route(
-            "/api/session/{id}/config/agent-options",
-            axum::routing::get(list_agent_options).post(set_agent_option),
-        )
+        .routes(routes!(list_agent_options, set_agent_option))
         // The nine knobs the daemon advertised that the web could not reach.
         // Gate A2e keeps the axis from drifting again; these close it.
-        .route(
-            "/api/session/{id}/config/context-strategy",
-            put(set_context_strategy).get(get_context_strategy),
-        )
+        .routes(routes!(set_context_strategy, get_context_strategy))
 }

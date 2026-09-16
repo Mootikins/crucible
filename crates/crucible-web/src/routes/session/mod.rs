@@ -397,24 +397,18 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         // Config knobs register themselves in `session_config`, next to their
         // handlers: fifteen route pairs is 60 lines that pushed this file past the
         // 1000-line budget, and the group has no reason to be spelled out here.
-        .merge(super::session_config::config_routes().into())
+        .merge(super::session_config::config_routes())
         // Review lives inside this group, not beside it: bearer auth, the host
         // guard, the CORS allowlist, the body limit and the security headers
         // are applied to the session router, and a separate group is how the
         // review surface would quietly stop inheriting them.
-        .route("/api/session/{id}/review/hunks", get(review::list_hunks))
-        .route("/api/session/{id}/review/rebase", post(review::rebase))
-        .route("/api/session/{id}/review/state", post(review::set_state))
-        .route("/api/session/{id}/review/states", post(review::set_states))
-        .route(
-            "/api/session/{id}/review/undo-reject",
-            post(review::undo_reject),
-        )
-        .route("/api/session/{id}/review/comment", post(review::comment))
-        .route(
-            "/api/session/{id}/review/comment/{comment_id}/resolve",
-            post(review::resolve_comment),
-        )
+        .routes(routes!(review::list_hunks))
+        .routes(routes!(review::rebase))
+        .routes(routes!(review::set_state))
+        .routes(routes!(review::set_states))
+        .routes(routes!(review::undo_reject))
+        .routes(routes!(review::comment))
+        .routes(routes!(review::resolve_comment))
         .routes(routes!(export_session))
         .route("/api/session/{id}/command", post(execute_command))
         // Session-independent: the command set is static, so the composer can

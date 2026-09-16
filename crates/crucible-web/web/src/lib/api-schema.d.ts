@@ -217,6 +217,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/config/agent-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The settings this session's external agent advertised for itself.
+         * @description These belong to the agent, not to Crucible: a reasoning-level selector, a
+         *     toggle it invented. The daemon passes them through, so the browser renders
+         *     whatever this particular agent happens to have.
+         */
+        get: operations["list_agent_options"];
+        put?: never;
+        post: operations["set_agent_option"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/config/context-strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_context_strategy"];
+        put: operations["set_context_strategy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/config/precognition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_precognition"];
+        put: operations["set_precognition"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/end": {
         parameters: {
             query?: never;
@@ -435,6 +489,158 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/review/comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/session/{id}/review/comment` */
+        post: operations["comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/comment/{comment_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/session/{id}/review/comment/{comment_id}/resolve`
+         * @description The client sends a `{}` body this handler never reads, and that is
+         *     deliberate — see the note on `resolveReviewComment` in `review-api.ts`.
+         *     The empty object forces `Content-Type: application/json`, which puts the
+         *     request outside the CORS simple-request set and makes the browser preflight
+         *     it against an allowlist that refuses cross-origin callers. It is the second
+         *     layer behind the `SameSite=Strict` auth cookie, not a redundant one: an
+         *     "optimisation" that drops the body drops the header, and every review write
+         *     becomes something a foreign page can fire blind.
+         */
+        post: operations["resolve_comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/hunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/session/{id}/review/hunks?scope=session|turn` */
+        get: operations["list_hunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/rebase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/session/{id}/review/rebase`
+         * @description The release for a root the daemon can no longer account for. A degraded root
+         *     contributes no hunks, so nothing in the queue can clear it and every write
+         *     under it stays held — this is the only shipped way out, which is why it is
+         *     a sixth route rather than something the panel infers.
+         *
+         *     The `{}` body is load-bearing for the same reason as on
+         *     `…/comment/{id}/resolve`: it is what carries `Content-Type:
+         *     application/json` and forces a preflight the CORS allowlist refuses.
+         */
+        post: operations["rebase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/session/{id}/review/state` */
+        post: operations["set_state"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/session/{id}/review/states`
+         * @description The daemon answers the ids it applied and the ids it refused, each with a
+         *     reason. A refused hunk is part of the answer, not an error status: the
+         *     client shows which ones and keeps the rest, so this route forwards the
+         *     object whole.
+         */
+        post: operations["set_states"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/review/undo-reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/session/{id}/review/undo-reject`
+         * @description Takes back the most recent reject, single or bulk, as one action. The
+         *     daemon owns the stack, so the request names no hunk: the session in the
+         *     path is the whole input. The `{}` body is load-bearing for the same reason
+         *     as on `…/rebase` and `…/comment/{id}/resolve`: it carries `Content-Type:
+         *     application/json` and forces the preflight the CORS allowlist refuses.
+         */
+        post: operations["undo_reject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/status": {
         parameters: {
             query?: never;
@@ -597,6 +803,57 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One choice in an agent's select option. */
+        AgentOptionChoiceRow: {
+            /** @description What to show for it. */
+            name: string;
+            /** @description The value to send back when this choice is picked. */
+            value: string;
+        };
+        /**
+         * @description The control an agent option asks for.
+         *
+         *     A tagged union rather than a `kind` string beside a loose `current`: a
+         *     select carries choices and a string, a toggle carries a bool, and the
+         *     browser's hand-written type declared `current: string | boolean` with
+         *     optional choices because nothing described the pairing.
+         */
+        AgentOptionKindRow: {
+            /** @description Every value it accepts, in the order it listed them. */
+            choices: components["schemas"]["AgentOptionChoiceRow"][];
+            /** @description The value the agent reports as current. */
+            current: string;
+            /** @enum {string} */
+            kind: "select";
+        } | {
+            /** @description The value the agent reports as current. */
+            current: boolean;
+            /** @enum {string} */
+            kind: "toggle";
+        };
+        /** @description One setting an external agent advertised for itself. */
+        AgentOptionRow: components["schemas"]["AgentOptionKindRow"] & {
+            /** @description The agent's own category string, or `null`. Presentation only. */
+            category: string | null;
+            /**
+             * @description Help text the agent supplied, or `null`. Always written, so
+             *     `required` rather than optional.
+             */
+            description: string | null;
+            /** @description The id to name when setting the option. */
+            id: string;
+            /** @description What to label the control. */
+            name: string;
+        };
+        /** @description What `GET /api/session/{id}/config/agent-options` answers. */
+        AgentOptionsResponse: {
+            /**
+             * @description Empty until the first message, and empty for an internal agent always:
+             *     an agent advertises nothing until the daemon connects to it.
+             */
+            options: components["schemas"]["AgentOptionRow"][];
+            session_id: string;
+        };
         /** @description Response for session archive/unarchive status changes. */
         ArchiveResponse: {
             archived: boolean;
@@ -762,6 +1019,46 @@ export interface components {
             /** @enum {string} */
             type: "session_event";
         };
+        /**
+         * @description Who wrote a comment.
+         * @enum {string}
+         */
+        CommentAuthorRow: "human" | "agent";
+        /**
+         * @description `POST /review/comment` — anchor a comment to a line range.
+         *
+         *     Read into a typed body rather than forwarded as raw JSON, so the session
+         *     under review can only ever be the one in the path: a `session_id` in the
+         *     body is an unknown field here. The handler copies the fields into a
+         *     `ReviewCommentRequest` with the path's session id.
+         */
+        CommentRequest: {
+            author?: string | null;
+            body: string;
+            /**
+             * Format: int32
+             * @description 1-based, exclusive. Absent means `line_start + 1`, which the daemon
+             *     applies — hence `skip_serializing_if`. Sending an explicit `null`
+             *     defeats the daemon's `optional_param!` default and is not the same
+             *     request.
+             */
+            line_end?: number | null;
+            /**
+             * Format: int32
+             * @description 1-based.
+             */
+            line_start: number;
+            /** @description Absolute, or relative to the session's tracked root. */
+            path: string;
+            root?: string | null;
+        };
+        ContextStrategyResponse: {
+            /**
+             * @description The strategy's string spelling, or `null` where the session carries no
+             *     choice of its own.
+             */
+            context_strategy?: string | null;
+        };
         CreateSessionRequest: {
             /** @description Internal-agent card name; never resolved in the web layer. */
             agent_card?: string | null;
@@ -851,6 +1148,19 @@ export interface components {
              */
             supported: boolean;
         };
+        /** @description A half-open range of 1-based line numbers: `end` is one past the last line. */
+        LineRangeRow: {
+            /**
+             * Format: int32
+             * @description One past the last line, 1-based, exclusive.
+             */
+            end: number;
+            /**
+             * Format: int32
+             * @description First line, 1-based, inclusive.
+             */
+            start: number;
+        };
         /**
          * @description Response for model listings — the session-scoped `list_models` and the
          *     session-less `list_all_models` return the same `{ models: [...] }` shape.
@@ -892,6 +1202,10 @@ export interface components {
             name: string;
             /** Format: double */
             relevance?: number;
+        };
+        /** @description Response for precognition config. */
+        PrecognitionResponse: {
+            precognition_enabled: boolean;
         };
         /**
          * @description One LLM provider the daemon found.
@@ -941,8 +1255,128 @@ export interface components {
          *     The warm path answers the state change. The cold path reloads the session
          *     from the store and answers its history, because that call is also what
          *     `GET /api/session/{id}/history` serves.
+         *
+         *     **`Restored` must stay first.** The daemon sends no tag, so the variants
+         *     are told apart by their fields, and `Live`'s required fields
+         *     (`session_id`, `state`) are a subset of `Restored`'s. An untagged enum
+         *     takes the first variant that fits, so with the order reversed every
+         *     restored history would read back as a bare state change and every event
+         *     would be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`
+         *     holds the order.
+         *
+         *     `deny_unknown_fields` would be the other way to separate them, and it is
+         *     not used here: these are daemon replies, and refusing a field a newer
+         *     daemon added would turn an extension into a 502 on three healthy routes.
          */
-        ResumeSessionResponse: components["schemas"]["SessionLifecycleResponse"] | components["schemas"]["SessionHistoryResponse"];
+        ResumeSessionResponse: components["schemas"]["SessionHistoryResponse"] | components["schemas"]["SessionLifecycleResponse"];
+        /** @description What `POST /api/session/{id}/review/comment` answers. */
+        ReviewCommentResponse: {
+            /**
+             * @description The comment as it was stored, with the id and the time the daemon
+             *     minted.
+             */
+            comment: components["schemas"]["ReviewCommentRow"];
+            session_id: string;
+        };
+        /** @description One review comment, anchored to a line range rather than to a hunk. */
+        ReviewCommentRow: {
+            author: components["schemas"]["CommentAuthorRow"];
+            /**
+             * @description The tree the range is anchored in. A range that no longer projects
+             *     forward from it is outdated.
+             */
+            base_tree: string;
+            body: string;
+            /**
+             * Format: date-time
+             * @description When the comment was written, RFC 3339.
+             *
+             *     A string rather than a date type: the daemon's spelling reaches the
+             *     browser unchanged, and a parse and a reformat here could only lose
+             *     precision the daemon sent.
+             */
+            created_at: string;
+            id: string;
+            line_range: components["schemas"]["LineRangeRow"];
+            /** @description The path, relative to `root`. */
+            path: string;
+            resolved: boolean;
+            /** @description The repository top level. */
+            root: string;
+        };
+        /** @description One hunk a bulk decision refused, with the daemon's reason. */
+        ReviewFailureRow: {
+            hunk_id: string;
+            reason: string;
+        };
+        /** @description A turn parked on the review gate, waiting for a human. */
+        ReviewGateRow: {
+            /**
+             * @description The first target still unreviewed — what a human must answer to release
+             *     the turn.
+             */
+            path: string;
+            /** @description The tool call being held. */
+            tool: string;
+        };
+        /**
+         * @description One hunk of the composed diff, the unit a decision applies to.
+         *
+         *     There is no `external` field, here or on the wire: a hunk is external when
+         *     `tool_call_ids` is empty, which is what `isExternal` reads in the browser.
+         */
+        ReviewHunkRow: {
+            /** @description The current-side text. Empty for a pure deletion. */
+            after_content: string;
+            /** @description The lines this hunk replaces, in base coordinates. */
+            base_range: components["schemas"]["LineRangeRow"];
+            /** @description The base-side text. Empty for a pure insertion. */
+            before_content: string;
+            /** @description The lines it occupies now, in worktree coordinates. */
+            current_range: components["schemas"]["LineRangeRow"];
+            /** @description Content-derived, and the only handle a decision names. */
+            id: string;
+            /** @description The path, relative to `root`. */
+            path: string;
+            /**
+             * @description The agent applied a change the user had rejected. The state comes back
+             *     `unreviewed`; this is the history that makes the grind visible.
+             */
+            reapplied?: boolean;
+            /** @description The repository top level this hunk belongs to. */
+            root: string;
+            state: components["schemas"]["ReviewStateRow"];
+            /** @description The tool calls whose writes survive into this hunk, in ledger order. */
+            tool_call_ids: string[];
+        };
+        /** @description What `GET /api/session/{id}/review/hunks` answers. */
+        ReviewHunksResponse: {
+            comments: components["schemas"]["ReviewCommentRow"][];
+            /**
+             * @description Only the roots that are broken. An empty array is the common case; a
+             *     non-empty one means the gate holds writes that no reviewing releases.
+             */
+            degraded: components["schemas"]["ReviewRootRow"][];
+            gate: null | components["schemas"]["ReviewGateRow"];
+            hunks: components["schemas"]["ReviewHunkRow"][];
+            integrity: components["schemas"]["ReviewIntegrityRow"];
+            /**
+             * @description The scope the answer describes, echoed. A client that switched scope
+             *     while a listing was in flight reads it to drop the stale answer.
+             */
+            scope: components["schemas"]["ReviewScopeRow"];
+            session_id: string;
+        };
+        /**
+         * @description What the journal could not be read back as.
+         *
+         *     Separate from the degraded roots because the worst losses are the ones with
+         *     no root to name: a journal that will not read at all leaves `degraded`
+         *     empty while the gate holds every write in the session.
+         */
+        ReviewIntegrityRow: {
+            skips: components["schemas"]["ReviewSkipRow"][];
+        };
         /**
          * @description How much review a mode asks for before the agent writes.
          *
@@ -952,6 +1386,102 @@ export interface components {
          * @enum {string}
          */
         ReviewPolicyRow: "none" | "post_turn" | "pre_write";
+        /** @description What `POST /api/session/{id}/review/rebase` answers. */
+        ReviewRebaseResponse: {
+            /**
+             * @description Every tracked root and what the rebase could do for it. A root that
+             *     still carries a reason was not recovered.
+             */
+            roots: components["schemas"]["ReviewRootRow"][];
+            session_id: string;
+        };
+        /** @description What `POST /api/session/{id}/review/comment/{comment_id}/resolve` answers. */
+        ReviewResolveCommentResponse: {
+            comment_id: string;
+            resolved: boolean;
+            session_id: string;
+        };
+        /** @description Whether the ledger can still account for one tracked root. */
+        ReviewRootRow: {
+            /**
+             * @description Why this root's attribution cannot be trusted. `null` is intact, and
+             *     the string is shown to the user as the daemon wrote it. The key is
+             *     always written, so `required` rather than optional.
+             */
+            degraded: string | null;
+            /** @description The repository top level. */
+            root: string;
+        };
+        /**
+         * @description Which hunks a listing covers, as `crucible_core::session::ReviewScope`
+         *     spells it on the wire.
+         *
+         *     Web-owned because a schema is what puts the two values in the document, and
+         *     `crucible-core` takes no `utoipa` dependency. [`From`] converts it to the
+         *     core type, so a variant added there fails to compile here rather than
+         *     reaching the daemon as a scope this crate silently narrowed.
+         * @enum {string}
+         */
+        ReviewScopeRow: "session" | "turn";
+        /** @description What a skipped journal record costs. */
+        ReviewSkipKindRow: {
+            /** @enum {string} */
+            kind: "session";
+        } | {
+            /** @enum {string} */
+            kind: "root";
+            root: string;
+        } | {
+            /** @enum {string} */
+            kind: "informational";
+        };
+        /** @description One journal record the daemon could not read back. */
+        ReviewSkipRow: {
+            /**
+             * Format: int32
+             * @description The 1-based line in `review.jsonl`, so an operator can find it.
+             */
+            line: number;
+            /** @description The parse failure, verbatim. */
+            reason: string;
+            record: components["schemas"]["ReviewSkipKindRow"];
+        };
+        /** @description What `POST /api/session/{id}/review/state` answers. */
+        ReviewStateResponse: {
+            hunk_id: string;
+            session_id: string;
+            state: components["schemas"]["ReviewStateRow"];
+        };
+        /**
+         * @description One user decision about one hunk.
+         * @enum {string}
+         */
+        ReviewStateRow: "unreviewed" | "accepted" | "rejected";
+        /**
+         * @description What `POST /api/session/{id}/review/states` answers.
+         *
+         *     A refused hunk is part of the answer rather than an error status: the ids
+         *     in `applied` are on disk whatever happened to the rest, and a client told
+         *     only "failed" would have to re-list to learn which were which.
+         */
+        ReviewStatesResponse: {
+            /** @description The ids that applied, in the order the request sent them. */
+            applied: string[];
+            failed: components["schemas"]["ReviewFailureRow"][];
+            session_id: string;
+            state: components["schemas"]["ReviewStateRow"];
+        };
+        /**
+         * @description What `POST /api/session/{id}/review/undo-reject` answers.
+         *
+         *     The same report as a bulk decision, minus the state: an undo restores
+         *     whatever the batch rejected. An empty stack answers two empty lists.
+         */
+        ReviewUndoRejectResponse: {
+            applied: string[];
+            failed: components["schemas"]["ReviewFailureRow"][];
+            session_id: string;
+        };
         /**
          * @description The agent record `session.get` nests inside a session.
          *
@@ -1112,6 +1642,15 @@ export interface components {
         /** @description What `GET /api/sessions/search` answers. */
         SessionSearchResponse: {
             matches: components["schemas"]["SessionSearchMatch"][];
+            /**
+             * @description Why the search looked at nothing, when it looked at nothing.
+             *
+             *     The daemon writes it for a search with no kiln scope
+             *     (`server/session/list.rs:206`), and only then. An unscoped search is
+             *     the one case where an empty result is not a statement about the
+             *     corpus, so the sentence has to reach the caller.
+             */
+            note?: string | null;
             /** @description How many matches the reply carries. */
             total: number;
         };
@@ -1141,8 +1680,40 @@ export interface components {
             /** @description The line to draw. */
             text: string;
         };
+        SetAgentOptionRequest: {
+            option_id: string;
+            value: string;
+        };
+        SetContextStrategyRequest: {
+            context_strategy: string;
+        };
         SetModeRequest: {
             mode: string;
+        };
+        SetPrecognitionRequest: {
+            enabled: boolean;
+        };
+        /** @description `POST /review/state` — accept, reject, or requeue one hunk. */
+        SetStateRequest: {
+            hunk_id: string;
+            /**
+             * @description Forwarded unvalidated: the daemon owns the state vocabulary and answers
+             *     `INVALID_PARAMS` for anything outside it. A copy of the enum here could
+             *     only ever refuse a state the daemon had newly learned.
+             */
+            state: string;
+        };
+        /**
+         * @description `POST /review/states` — one decision over several hunks, in order.
+         *
+         *     The ids reach the daemon in the order the caller gave them, because the
+         *     daemon applies them in that order and a reject reverts files as it goes.
+         *     `state` is forwarded unvalidated for the same reason as on
+         *     [`SetStateRequest`].
+         */
+        SetStatesRequest: {
+            hunk_ids: string[];
+            state: string;
         };
         SetTitleRequest: {
             title: string;
@@ -1211,24 +1782,50 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
+export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
+export type SchemaAgentOptionRow = components['schemas']['AgentOptionRow'];
+export type SchemaAgentOptionsResponse = components['schemas']['AgentOptionsResponse'];
 export type SchemaArchiveResponse = components['schemas']['ArchiveResponse'];
 export type SchemaCancelledResponse = components['schemas']['CancelledResponse'];
 export type SchemaChatEvent = components['schemas']['ChatEvent'];
+export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
+export type SchemaCommentRequest = components['schemas']['CommentRequest'];
+export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
 export type SchemaFsEvent = components['schemas']['FsEvent'];
 export type SchemaKilnRequest = components['schemas']['KilnRequest'];
 export type SchemaKnobRow = components['schemas']['KnobRow'];
+export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
 export type SchemaModelsResponse = components['schemas']['ModelsResponse'];
 export type SchemaModeResponse = components['schemas']['ModeResponse'];
 export type SchemaModeRow = components['schemas']['ModeRow'];
 export type SchemaOkResponse = components['schemas']['OkResponse'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
+export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
+export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
+export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
+export type SchemaReviewFailureRow = components['schemas']['ReviewFailureRow'];
+export type SchemaReviewGateRow = components['schemas']['ReviewGateRow'];
+export type SchemaReviewHunkRow = components['schemas']['ReviewHunkRow'];
+export type SchemaReviewHunksResponse = components['schemas']['ReviewHunksResponse'];
+export type SchemaReviewIntegrityRow = components['schemas']['ReviewIntegrityRow'];
 export type SchemaReviewPolicyRow = components['schemas']['ReviewPolicyRow'];
+export type SchemaReviewRebaseResponse = components['schemas']['ReviewRebaseResponse'];
+export type SchemaReviewResolveCommentResponse = components['schemas']['ReviewResolveCommentResponse'];
+export type SchemaReviewRootRow = components['schemas']['ReviewRootRow'];
+export type SchemaReviewScopeRow = components['schemas']['ReviewScopeRow'];
+export type SchemaReviewSkipKindRow = components['schemas']['ReviewSkipKindRow'];
+export type SchemaReviewSkipRow = components['schemas']['ReviewSkipRow'];
+export type SchemaReviewStateResponse = components['schemas']['ReviewStateResponse'];
+export type SchemaReviewStateRow = components['schemas']['ReviewStateRow'];
+export type SchemaReviewStatesResponse = components['schemas']['ReviewStatesResponse'];
+export type SchemaReviewUndoRejectResponse = components['schemas']['ReviewUndoRejectResponse'];
 export type SchemaSessionAgentRow = components['schemas']['SessionAgentRow'];
 export type SchemaSessionHistoryEvent = components['schemas']['SessionHistoryEvent'];
 export type SchemaSessionHistoryResponse = components['schemas']['SessionHistoryResponse'];
@@ -1242,7 +1839,12 @@ export type SchemaSessionSearchMatch = components['schemas']['SessionSearchMatch
 export type SchemaSessionSearchResponse = components['schemas']['SessionSearchResponse'];
 export type SchemaSessionStatusResponse = components['schemas']['SessionStatusResponse'];
 export type SchemaSessionStatusSlot = components['schemas']['SessionStatusSlot'];
+export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
+export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
 export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
+export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
+export type SchemaSetStateRequest = components['schemas']['SetStateRequest'];
+export type SchemaSetStatesRequest = components['schemas']['SetStatesRequest'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
 export type SchemaShellEvent = components['schemas']['ShellEvent'];
@@ -1545,6 +2147,220 @@ export interface operations {
                 };
             };
             /** @description The daemon could not cancel the turn */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_agent_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session whose agent is asked */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOptionsResponse"];
+                };
+            };
+            /** @description The daemon knows no such session */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not ask the agent */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_agent_option: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session whose agent is set */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAgentOptionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description The agent knows no such option, or refuses the value */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not reach the agent */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_context_strategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to read */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextStrategyResponse"];
+                };
+            };
+            /** @description The daemon could not read the value */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_context_strategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to configure */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetContextStrategyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description The daemon does not know the strategy named */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the value */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_precognition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to read */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrecognitionResponse"];
+                };
+            };
+            /** @description The daemon could not read the value */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_precognition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to configure */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPrecognitionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description The session cannot carry the knob */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the value */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -1964,6 +2780,282 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not resume the session */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewCommentResponse"];
+                };
+            };
+            /** @description The path names no tracked root, or the author is neither `human` nor `agent` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the comment */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolve_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The comment to mark answered */
+                comment_id: string;
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewResolveCommentResponse"];
+                };
+            };
+            /** @description The daemon knows no such comment */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not resolve the comment */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_hunks: {
+        parameters: {
+            query?: {
+                /** @description The hunks to list. Absent means the whole session. */
+                scope?: components["schemas"]["ReviewScopeRow"];
+            };
+            header?: never;
+            path: {
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewHunksResponse"];
+                };
+            };
+            /** @description The `scope` query named something that is neither `session` nor `turn` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The session has no reviewable root */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the journal */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rebase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session to rebase */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewRebaseResponse"];
+                };
+            };
+            /** @description The session has no ledger and no trackable root */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not recapture a root */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_state: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewStateResponse"];
+                };
+            };
+            /** @description The daemon knows no such hunk, or refuses the state */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not record the decision */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_states: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStatesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewStatesResponse"];
+                };
+            };
+            /** @description The daemon refuses the state */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not record the decisions */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    undo_reject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session under review */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewUndoRejectResponse"];
+                };
+            };
+            /** @description The daemon knows no such hunk any more */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not restore the rejects */
             502: {
                 headers: {
                     [name: string]: unknown;

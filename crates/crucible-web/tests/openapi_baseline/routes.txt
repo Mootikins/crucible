@@ -37,10 +37,6 @@ GET /api/plugins/publications
 GET /api/project/get
 GET /api/project/list
 GET /api/recents
-GET /api/session/{id}/config/agent-options
-GET /api/session/{id}/config/context-strategy
-GET /api/session/{id}/config/precognition
-GET /api/session/{id}/review/hunks
 GET /api/skills
 GET /api/skills/search
 GET /api/skills/{name}
@@ -66,16 +62,7 @@ POST /api/search/grep
 POST /api/search/semantic
 POST /api/search/vectors
 POST /api/session/{id}/command
-POST /api/session/{id}/config/agent-options
-POST /api/session/{id}/review/comment
-POST /api/session/{id}/review/comment/{comment_id}/resolve
-POST /api/session/{id}/review/rebase
-POST /api/session/{id}/review/state
-POST /api/session/{id}/review/states
-POST /api/session/{id}/review/undo-reject
 POST /api/webhook/{name}
 PUT /api/canvas
 PUT /api/kiln/file
 PUT /api/notes/{name}
-PUT /api/session/{id}/config/context-strategy
-PUT /api/session/{id}/config/precognition
