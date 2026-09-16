@@ -14,8 +14,6 @@ export {
   PanelLeftClose,
   PanelRight,
   PanelRightClose,
-  PanelBottom,
-  PanelBottomClose,
   X,
   Maximize2,
   Minimize2,

@@ -1,11 +1,21 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from 'vitest';
 import { createRoot } from 'solid-js';
-import { createRevealController, type RevealController } from '@/windowing/reveal/RevealController';
+import { createRevealController, type RevealController, type RevealState } from '@/windowing/reveal/RevealController';
+
+/** Every `RevealState`, for a check of stored data — same pattern as `EDGE_MODES`. */
+const REVEAL_STATES = ['closed', 'revealed', 'pinned'] as const satisfies readonly RevealState[];
 
 /** Make a controller inside a Solid root, and return the root's disposer too. */
 function make(opts: { enterDelay: number; leaveDelay: number }): [RevealController, () => void] {
   return createRoot((dispose) => [createRevealController(opts), dispose]);
 }
+
+describe('RevealState', () => {
+  it('names every state', () => {
+    expectTypeOf<Exclude<RevealState, (typeof REVEAL_STATES)[number]>>().toEqualTypeOf<never>();
+    expect(new Set(REVEAL_STATES).size).toBe(REVEAL_STATES.length);
+  });
+});
 
 describe('RevealController', () => {
   const roots: Array<() => void> = [];

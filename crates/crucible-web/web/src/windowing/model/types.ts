@@ -91,7 +91,7 @@ export const EDGE_CUES = ['grip', 'none'] as const satisfies readonly EdgeCue[];
 /** How a pane collapsed to its band comes back. */
 export type PaneReveal = 'click' | 'hover';
 
-export type FocusedRegion = EdgePanelPosition | 'center';
+type FocusedRegion = EdgePanelPosition | 'center';
 
 export interface EdgePanel {
   id: string;

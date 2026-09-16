@@ -29,19 +29,11 @@ export type {
   EdgeMode,
   EdgePanel,
   EdgePanelPosition,
-  FloatingWindow,
-  FocusedRegion,
   LayoutNode,
-  PaneDropPosition,
   PaneNode,
-  PaneReveal,
-  SplitDirection,
-  DropTarget,
-  TabBarProps,
 } from '@/windowing/model/types';
 export { isEdgeCollapsed } from '@/windowing/model/types';
 
 export type Tab = Core.Tab<TabContentType>;
 export type TabGroup = Core.TabGroup<TabContentType>;
-export type DragSource = Core.DragSource<TabContentType>;
 export type WindowState = Core.WindowState<TabContentType>;

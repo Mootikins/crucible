@@ -17,7 +17,7 @@ import { collectLeafGroupIds, findFirstPane, generateId } from '@/windowing/mode
  * anything registers a panel, and `Sessions` / `Files` are the registry's
  * titles anyway (see lib/register-panels.tsx).
  */
-export const FIXED_RAIL_PANELS: Record<
+const FIXED_RAIL_PANELS: Record<
   EdgePanelPosition,
   { contentType: TabContentType; title: string }
 > = {

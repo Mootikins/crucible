@@ -12,7 +12,7 @@ import { LAYOUT_SHORTCUTS } from '@/windowing/shortcuts';
  */
 
 /** The three content types of the neutral seed. */
-export type NeutralType = 'alpha' | 'beta' | 'gamma';
+type NeutralType = 'alpha' | 'beta' | 'gamma';
 
 /** The tab group of the first pane in a layout. The empty state has one in each place. */
 function firstGroup(s: WindowState, layout: WindowState['layout']): string {
@@ -26,7 +26,7 @@ function firstGroup(s: WindowState, layout: WindowState['layout']): string {
  * and `tab-beta`. The docked left rail holds `tab-left`. The right rail is
  * a strip that holds `tab-right`. Nothing else.
  */
-export function neutralSeed(): WindowState<NeutralType> {
+function neutralSeed(): WindowState<NeutralType> {
   const s = emptyState<NeutralType>();
   const fill = (groupId: string, tabs: WindowState<NeutralType>['tabGroups'][string]['tabs']) => {
     const g = s.tabGroups[groupId]!;

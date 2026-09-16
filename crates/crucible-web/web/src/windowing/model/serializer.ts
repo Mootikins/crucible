@@ -19,7 +19,7 @@ import type {
  * content types that the app had at the time. The app gives that history to
  * the reader as `upgradeLegacy`.
  */
-export const LAYOUT_VERSION = 10;
+const LAYOUT_VERSION = 10;
 
 export interface SerializedTab<C extends string = string> {
   id: string;
@@ -36,7 +36,7 @@ export interface SerializedTabGroup<C extends string = string> {
   activeTabId: string | null;
 }
 
-export interface SerializedEdgePanel {
+interface SerializedEdgePanel {
   id: string;
   layout: LayoutNode;
   mode: EdgeMode;
@@ -162,7 +162,7 @@ export function isLegacyV9<C extends string>(s: { version: number }): s is Seria
 }
 
 /** A stored layout in the current format. */
-export function isCurrentLayout<C extends string>(s: { version: number }): s is SerializedLayout<C> {
+function isCurrentLayout<C extends string>(s: { version: number }): s is SerializedLayout<C> {
   return s.version === LAYOUT_VERSION;
 }
 

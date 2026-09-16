@@ -77,7 +77,7 @@ export function depthOf(node: LayoutNode): number {
 }
 
 /** The layout tree of a region. */
-export function layoutOf(s: StoreSnapshot, region: Region): LayoutNode {
+function layoutOf(s: StoreSnapshot, region: Region): LayoutNode {
   return region === 'center' ? s.layout : s.edgePanels[region].layout;
 }
 
