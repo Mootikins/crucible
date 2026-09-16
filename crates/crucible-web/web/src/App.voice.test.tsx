@@ -4,6 +4,7 @@ import { createSignal, type ParentProps } from 'solid-js';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { defaultSettings, SETTINGS_STORAGE_KEY } from '@/lib/settings';
 import App from './App';
+import { notificationActions, notificationStore } from '@/stores/notificationStore';
 
 // Keep the application's provider tree and the complete composer/mic/provider
 // path real; replace unrelated shell panels and daemon-backed contexts.
@@ -46,6 +47,7 @@ vi.mock('@/lib/sounds', () => ({
 
 const fetchMock = vi.fn();
 beforeEach(() => {
+  notificationActions.clearAll();
   localStorage.clear();
   localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
     ...defaultSettings,
@@ -88,6 +90,12 @@ it('a transcription failure stays visible and does not replace the draft', async
   render(() => <App />);
   const mic = await record();
   await waitFor(() => expect(mic).toHaveAttribute('data-state', 'error'));
-  expect(mic.title).toContain('503');
+  // The cause goes to the notification area, ONCE: the provider reports it
+  // and the button, which awaited the same failure, must not report it again.
+  const failures = notificationStore.notifications.filter(
+    (n) => n.type === 'error' && !n.dismissed && n.message.includes('503'),
+  );
+  expect(failures.map((n) => n.message)).toHaveLength(1);
+  expect(failures[0].message).toContain('Transcription failed');
   expect(screen.getByTestId('voice-composer')).toHaveValue('Draft');
 });

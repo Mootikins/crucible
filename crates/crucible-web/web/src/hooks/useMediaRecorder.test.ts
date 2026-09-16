@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'solid-js';
 import { useMediaRecorder } from './useMediaRecorder';
+import { notificationActions } from '@/stores/notificationStore';
 
 // Mock MediaRecorder
+let lastRecorder: MockMediaRecorder | null = null;
+
 class MockMediaRecorder {
   state: 'inactive' | 'recording' = 'inactive';
   ondataavailable: ((event: { data: Blob }) => void) | null = null;
@@ -12,7 +15,9 @@ class MockMediaRecorder {
   constructor(
     private stream: MediaStream,
     _options?: { mimeType: string }
-  ) {}
+  ) {
+    lastRecorder = this;
+  }
 
   start(_timeslice?: number) {
     this.state = 'recording';
@@ -166,7 +171,9 @@ describe('useMediaRecorder', () => {
     await createRoot(async (dispose) => {
       const { startRecording, error } = useMediaRecorder();
 
-      await expect(startRecording()).rejects.toThrow();
+      // The rejection carries the cause in words: the caller reports it and
+      // never reads `error()`.
+      await expect(startRecording()).rejects.toThrow('Microphone permission denied');
       expect(error()).toBe('Microphone permission denied');
       dispose();
     });
@@ -178,10 +185,33 @@ describe('useMediaRecorder', () => {
     await createRoot(async (dispose) => {
       const { startRecording, error } = useMediaRecorder();
 
-      await expect(startRecording()).rejects.toThrow();
+      await expect(startRecording()).rejects.toThrow('No microphone found');
       expect(error()).toBe('No microphone found');
       dispose();
     });
+  });
+
+  it('tells the user when the recorder dies mid-take', async () => {
+    const added = vi.spyOn(notificationActions, 'addNotification');
+    await createRoot(async (dispose) => {
+      const { startRecording, isRecording } = useMediaRecorder();
+      await startRecording();
+      expect(isRecording()).toBe(true);
+
+      // What a browser fires when the device goes away under a live recorder.
+      const recorder = lastRecorder!;
+      const failure = new Event('error') as Event & { error: Error };
+      failure.error = new DOMException('The device was unplugged', 'InvalidStateError');
+      recorder.onerror?.(failure);
+
+      expect(isRecording()).toBe(false);
+      expect(added).toHaveBeenCalledWith(
+        'error',
+        expect.stringContaining('The device was unplugged'),
+      );
+      dispose();
+    });
+    added.mockRestore();
   });
 
   it('rejects stopRecording if not recording', async () => {

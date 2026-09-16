@@ -1,7 +1,8 @@
 import { Component, createSignal, Show, Accessor } from 'solid-js';
-import { useWhisperSafe } from '@/contexts/WhisperContext';
+import { useWhisperSafe, reportedToUser } from '@/contexts/WhisperContext';
 import { playRecordingStartSound, playRecordingEndSound } from '@/lib/sounds';
 import { Mic } from '@/lib/icons';
+import { notificationActions } from '@/stores/notificationStore';
 
 interface MicButtonProps {
   onTranscription: (text: string) => void;
@@ -16,8 +17,31 @@ type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');
-  const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
   const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisperSafe();
+
+  /**
+   * Show the failure on the button and put its cause in the notification
+   * area.
+   *
+   * The button used to keep the message in a local signal and show it only
+   * as a tooltip on a red circle for three seconds, which nobody hovering a
+   * microphone icon reads. The red circle stays, as the visual; the words go
+   * where every other error goes. A failure the provider already reported
+   * (a model that would not load, a server that answered 503) is not
+   * reported twice.
+   */
+  const fail = (prefix: string, err: unknown, fallback: string) => {
+    console.error(`${prefix}:`, err);
+    if (!reportedToUser(err)) {
+      const cause = err instanceof Error ? err.message : fallback;
+      notificationActions.addNotification('error', `${prefix}: ${cause}`);
+    }
+    setState('error');
+    // Back to idle after a moment; the notification keeps the words.
+    setTimeout(() => {
+      if (state() === 'error') setState('idle');
+    }, 3000);
+  };
 
   // Preload model on first interaction
   const ensureModelLoaded = async () => {
@@ -25,6 +49,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       try {
         await loadModel();
       } catch (err) {
+        // The provider reports its own load failure; nothing to add here.
         console.error('Failed to preload model:', err);
       }
     }
@@ -32,9 +57,6 @@ export const MicButton: Component<MicButtonProps> = (props) => {
 
   const handleMouseDown = async () => {
     if (props.disabled || state() !== 'idle') return;
-
-    // Clear any previous error
-    setErrorMessage(null);
 
     // Start loading model in background if not ready
     ensureModelLoaded();
@@ -44,17 +66,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       playRecordingStartSound();
       setState('recording');
     } catch (err) {
-      console.error('Failed to start recording:', err);
-      const message = err instanceof Error ? err.message : 'Failed to access microphone';
-      setErrorMessage(message);
-      setState('error');
-      // Auto-clear error after 3 seconds
-      setTimeout(() => {
-        if (state() === 'error') {
-          setState('idle');
-          setErrorMessage(null);
-        }
-      }, 3000);
+      fail('Could not start recording', err, 'Failed to access microphone');
     }
   };
 
@@ -79,17 +91,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
         props.onTranscription(text.trim());
       }
     } catch (err) {
-      console.error('Transcription failed:', err);
-      const message = err instanceof Error ? err.message : 'Transcription failed';
-      setErrorMessage(message);
-      setState('error');
-      // Auto-clear error after 3 seconds
-      setTimeout(() => {
-        if (state() === 'error') {
-          setState('idle');
-          setErrorMessage(null);
-        }
-      }, 3000);
+      fail('Transcription failed', err, 'Transcription failed');
       return;
     }
     setState('idle');
@@ -117,8 +119,8 @@ export const MicButton: Component<MicButtonProps> = (props) => {
   };
 
   const getTitle = () => {
-    if (state() === 'error' && errorMessage()) {
-      return `Error: ${errorMessage()}`;
+    if (state() === 'error') {
+      return 'Voice input failed — see notifications';
     }
     if (whisperStatus() === 'loading') {
       return `Loading speech model... ${progress()}%`;

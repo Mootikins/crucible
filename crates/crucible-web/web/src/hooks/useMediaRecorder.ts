@@ -1,4 +1,15 @@
 import { createSignal, onCleanup } from 'solid-js';
+import { notificationActions } from '@/stores/notificationStore';
+
+/** The words a recorder's error event carries, or its type when it has none. */
+function describeRecorderError(event: Event): string {
+  // Duck-typed: a DOMException from another realm is not `instanceof Error`.
+  const err = (event as { error?: { name?: unknown; message?: unknown } }).error;
+  if (err && typeof err.message === 'string') {
+    return typeof err.name === 'string' ? `${err.name}: ${err.message}` : err.message;
+  }
+  return event.type || 'unknown error';
+}
 
 export interface UseMediaRecorderResult {
   isRecording: () => boolean;
@@ -117,6 +128,12 @@ export function useMediaRecorder(): UseMediaRecorderResult {
       mediaRecorder.onerror = (event) => {
         console.error('MediaRecorder error:', event);
         setError('Recording failed');
+        // Nobody awaits a recorder that dies mid-take, so this is the only
+        // place that can tell the user.
+        notificationActions.addNotification(
+          'error',
+          `Recording failed: the microphone stopped (${describeRecorderError(event)})`,
+        );
         setIsRecording(false);
       };
 
@@ -127,18 +144,18 @@ export function useMediaRecorder(): UseMediaRecorderResult {
       updateAudioLevel();
     } catch (err) {
       console.error('Failed to start recording:', err);
-      if (err instanceof DOMException) {
-        if (err.name === 'NotAllowedError') {
-          setError('Microphone permission denied');
-        } else if (err.name === 'NotFoundError') {
-          setError('No microphone found');
-        } else {
-          setError(`Microphone error: ${err.message}`);
-        }
-      } else {
-        setError('Failed to access microphone');
-      }
-      throw err;
+      // The caller gets the cause in words, not the browser's DOMException
+      // text: "Permission denied" alone does not say it was the microphone.
+      const message =
+        err instanceof DOMException
+          ? err.name === 'NotAllowedError'
+            ? 'Microphone permission denied'
+            : err.name === 'NotFoundError'
+              ? 'No microphone found'
+              : `Microphone error: ${err.message}`
+          : 'Failed to access microphone';
+      setError(message);
+      throw new Error(message, { cause: err });
     }
   };
 

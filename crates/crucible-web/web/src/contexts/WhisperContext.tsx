@@ -7,6 +7,31 @@ import {
 } from 'solid-js';
 import { useSettings } from './SettingsContext';
 import { createServerTranscriber } from '@/lib/transcription';
+import { notificationActions } from '@/stores/notificationStore';
+
+/**
+ * Failures this provider already told the user about.
+ *
+ * The provider rethrows after it reports, so the button that awaited the call
+ * sees the same failure. It checks here before reporting again, or a dead
+ * transcription server would raise two toasts for one press.
+ */
+const reported = new WeakSet<object>();
+
+/** Whether `err` was already put in the notification area by the provider. */
+export function reportedToUser(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && reported.has(err);
+}
+
+/** Put a failure in the notification area, once, and hand it back to throw. */
+function report(prefix: string, err: unknown): Error {
+  const failure = err instanceof Error ? err : new Error(String(err));
+  if (!reported.has(failure)) {
+    reported.add(failure);
+    notificationActions.addNotification('error', `${prefix}: ${failure.message}`);
+  }
+  return failure;
+}
 
 type WhisperStatus = 'idle' | 'loading' | 'ready' | 'error' | 'transcribing';
 
@@ -119,9 +144,10 @@ export const WhisperProvider: ParentComponent = (props) => {
       setLocalStatus('ready');
     } catch (err) {
       console.error('Failed to load Whisper model:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load speech model');
+      const failure = report('Failed to load the speech model', err);
+      setError(failure.message);
       setLocalStatus('error');
-      throw err;
+      throw failure;
     }
   };
 
@@ -203,8 +229,11 @@ export const WhisperProvider: ParentComponent = (props) => {
     } catch (err) {
       console.error('Transcription failed:', err);
       setLocalStatus(settings.transcription.provider === 'server' ? 'ready' : 'error');
-      setError(err instanceof Error ? err.message : 'Transcription failed');
-      throw err;
+      // A local model that failed to load was reported by `loadModel`; the
+      // guard in `report` keeps it to one notification.
+      const failure = report('Transcription failed', err);
+      setError(failure.message);
+      throw failure;
     }
   };
 
