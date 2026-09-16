@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
+import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import type { KilnListEntry } from '@/lib/types';
 
 const registry: KilnListEntry[] = [
@@ -56,5 +56,48 @@ describe('kilnNameForPath', () => {
   it('matches the whole directory, not a prefix of it', () => {
     expect(kilnNameForPath('/home/u/vault-archive', registry)).toBeNull();
     expect(kilnNameForPath('/home/u/vault/sub', registry)).toBeNull();
+  });
+});
+
+describe('attachableKilns', () => {
+  // The client half of the daemon's own rule: `kiln.list` never publishes a
+  // name the attach cannot resolve, and a row it cannot name says so with
+  // `registered: false`. Offering such a row posts a name the daemon refuses
+  // and shows the 422 as a toast, which reads as a broken picker.
+  it('leaves out a row the daemon reports as unregistered', () => {
+    const rows: KilnListEntry[] = [
+      { path: '/home/u/vault', name: 'vault', registered: true },
+      { path: '/home/u/.crucible/sessions', name: '', registered: false },
+    ];
+
+    expect(attachableKilns(rows).map((k) => k.name)).toEqual(['vault']);
+  });
+
+  // The flag is the authority, not the label. A daemon that sends a name
+  // alongside `registered: false` is still describing a directory no session
+  // can attach, and a picker that trusted the label would offer it.
+  it('leaves out an unregistered row even when it carries a label', () => {
+    const rows: KilnListEntry[] = [{ path: '/home/u/docs', name: 'docs', registered: false }];
+
+    expect(attachableKilns(rows)).toEqual([]);
+  });
+
+  // An older daemon omits the field. Absent is not false: dropping every row
+  // would empty the picker against a daemon that works.
+  it('keeps a named row from a daemon that does not send the flag', () => {
+    const rows: KilnListEntry[] = [{ path: '/home/u/vault', name: 'vault' }];
+
+    expect(attachableKilns(rows).map((k) => k.name)).toEqual(['vault']);
+  });
+
+  // A row with no name cannot be attached whatever the flag says: there is
+  // nothing to send.
+  it('leaves out a row with no usable name', () => {
+    const rows: KilnListEntry[] = [
+      { path: '/a', name: null, registered: true },
+      { path: '/b', name: '   ', registered: true },
+    ];
+
+    expect(attachableKilns(rows)).toEqual([]);
   });
 });

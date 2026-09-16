@@ -8,14 +8,16 @@
 //! put in their config, and it selects nothing at all when there is no such
 //! entry.
 //!
-//! Modelled on [`SessionId`](crate::session::SessionId), with two deliberate
+//! Modelled on [`SessionId`](crate::session::SessionId), with three deliberate
 //! divergences from its charset:
 //!
-//! - **Lower case only** (`[a-z0-9._-]`, against `SessionId`'s
-//!   `[A-Za-z0-9._-]`). A name is a *key the user types*, so `Work` and `work`
-//!   must not be two kilns. Registration case-folds via [`KilnName::normalize`];
-//!   [`KilnName::parse`] then refuses the un-folded spelling rather than
-//!   quietly accepting a second one.
+//! - **A space is a character.** `Crucible Help` is a name a person chose, and
+//!   the registry is the one place that name is written down. A charset that
+//!   refused the space made every picker show a label nobody typed.
+//! - **Case is kept, and ignored.** The spelling the user registered is the
+//!   spelling every renderer shows; resolution folds ASCII case, so `Work` and
+//!   `work` are one kiln rather than two. [`KilnName`] holds both: the display
+//!   text, and the folded key that equality, hashing and ordering read.
 //! - **64 bytes, not 128.** A session id is a filesystem component and needs the
 //!   headroom; a name is a map key and a prompt line.
 //!
@@ -23,9 +25,9 @@
 //! point of the type is that no caller can turn one into a directory without
 //! going through the registry.
 
-use serde::{Deserialize, Deserializer, Serialize};
-use std::borrow::Borrow;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -44,11 +46,54 @@ impl KilnName {
 /// A kiln name: the key of a `[kilns]` entry in the user's config.
 ///
 /// Guaranteed by construction to be non-empty, at most [`MAX_LEN`] bytes, drawn
-/// from `[a-z0-9._-]`, and not to start with a dot — so it is never `.`, `..`,
-/// a hidden file, or anything holding a path separator.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
-#[serde(transparent)]
-pub struct KilnName(String);
+/// from `[A-Za-z0-9._- ]`, neither starting nor ending with a space, and not to
+/// start with a dot — so it is never `.`, `..`, a hidden file, or anything
+/// holding a path separator.
+///
+/// Two strings, not one, and the pair is the whole design: `display` is what
+/// the user wrote and what every renderer shows; `key` is that text with ASCII
+/// case folded, and it is the only field [`PartialEq`], [`Hash`] and [`Ord`]
+/// read. So a map keyed by a name answers to any casing of it, and still hands
+/// back the casing its owner chose.
+#[derive(Debug, Clone)]
+pub struct KilnName {
+    display: String,
+    key: String,
+}
+
+impl PartialEq for KilnName {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for KilnName {}
+
+impl Hash for KilnName {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+    }
+}
+
+impl PartialOrd for KilnName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KilnName {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
+impl Serialize for KilnName {
+    /// The display spelling, so a name round-trips through a persisted
+    /// `meta.json` or an RPC reply as the user registered it.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.display)
+    }
+}
 
 /// Why a string is not usable as a kiln name.
 ///
@@ -73,11 +118,26 @@ impl InvalidKilnName {
 }
 
 impl KilnName {
+    /// Fold text to the key that equality, hashing and ordering compare.
+    ///
+    /// ASCII case only. A name is a key a person types at a shell and reads in
+    /// a picker, and Unicode case folding is locale-dependent in exactly the
+    /// places (Turkish dotted `I`) where two users would disagree about which
+    /// kiln they named.
+    ///
+    /// Public because the layers that key a *map* by the raw string — the
+    /// registration overlay, `kilns.json`, the `[kilns]` table — have to agree
+    /// with this type about when two names are one name.
+    pub fn fold_str(raw: &str) -> String {
+        raw.to_ascii_lowercase()
+    }
+
     /// Validate `s` as a kiln name.
     ///
-    /// An allowlist, not a denylist: anything outside `[a-z0-9._-]` is refused
-    /// rather than enumerated as dangerous, so separators, encodings and the
-    /// Windows spellings fall out for free instead of each needing a rule.
+    /// An allowlist, not a denylist: anything outside `[A-Za-z0-9._- ]` is
+    /// refused rather than enumerated as dangerous, so separators, encodings
+    /// and the Windows spellings fall out for free instead of each needing a
+    /// rule.
     pub fn parse(s: &str) -> Result<Self, InvalidKilnName> {
         if s.is_empty() {
             return Err(InvalidKilnName::new(s, "it is empty"));
@@ -88,9 +148,10 @@ impl KilnName {
                 "it is longer than a kiln name may be",
             ));
         }
-        if let Some(bad) = s.chars().find(|c| {
-            !(c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
-        }) {
+        if let Some(bad) = s
+            .chars()
+            .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ' ')))
+        {
             // Named rather than echoed: a control character or NUL in the
             // message is worse than useless in a log.
             return Err(InvalidKilnName::new(
@@ -98,12 +159,16 @@ impl KilnName {
                 match bad {
                     '/' | '\\' => "it contains a path separator",
                     '\0' => "it contains a NUL byte",
-                    c if c.is_ascii_uppercase() => {
-                        "it contains an upper-case letter; kiln names are case-folded"
-                    }
-                    _ => "it contains a character outside [a-z0-9._-]",
+                    _ => "it contains a character outside [A-Za-z0-9._- ]",
                 },
             ));
+        }
+        // A padded name renders as a name with a hole beside it, and two names
+        // that differ only in padding are two entries the user reads as one.
+        // `normalize` trims; `parse` refuses, so nothing is stored that the
+        // user did not type.
+        if s.starts_with(' ') || s.ends_with(' ') {
+            return Err(InvalidKilnName::new(s, "it starts or ends with a space"));
         }
         // Excludes `.` and `..` as a side effect, and keeps a name out of the
         // hidden-file namespace so that a name can never be mistaken for one of
@@ -111,18 +176,24 @@ impl KilnName {
         if s.starts_with('.') {
             return Err(InvalidKilnName::new(s, "it starts with a dot"));
         }
-        Ok(Self(s.to_string()))
+        Ok(Self {
+            key: Self::fold_str(s),
+            display: s.to_string(),
+        })
     }
 
     /// Fold arbitrary text into a valid name, or `None` when nothing valid
     /// survives.
     ///
-    /// This is the *registration* door: a hand-authored `[kilns]` key written
-    /// before names were validated (`cru init` writes the directory basename
-    /// verbatim, so `My Vault` exists in the wild) and a name derived from a
-    /// directory basename both arrive here. Folding rather than refusing is a
-    /// decision, not laziness — aborting the daemon over a key its own wizard
-    /// wrote is a worse outcome than `my-vault`.
+    /// This is the *registration* door: a hand-authored `[kilns]` key and a
+    /// name derived from a directory basename both arrive here. Folding rather
+    /// than refusing is a decision, not laziness — aborting the daemon over a
+    /// key its own wizard wrote is a worse outcome than a name with a space in
+    /// it.
+    ///
+    /// Case survives, and so does a space: `My Vault` stays `My Vault`, because
+    /// the directory a user named is the label they expect to see. Only a
+    /// character the charset has no room for becomes a space, one per run.
     ///
     /// `None` is the fail-closed answer and callers must treat it as "no name,
     /// therefore no kiln": `"/"`, `"…"` and `""` all fold to nothing, and a
@@ -130,40 +201,44 @@ impl KilnName {
     pub fn normalize(raw: &str) -> Option<Self> {
         let mut folded = String::with_capacity(raw.len());
         for ch in raw.chars() {
-            let lowered = ch.to_ascii_lowercase();
-            if lowered.is_ascii_lowercase()
-                || lowered.is_ascii_digit()
-                || matches!(lowered, '.' | '_' | '-')
-            {
-                folded.push(lowered);
-            } else if !folded.ends_with('-') {
-                // One separator per run of unrepresentable characters, so
-                // `My   Vault` is `my-vault` rather than `my---vault`.
-                folded.push('-');
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                folded.push(ch);
+            } else if !folded.ends_with(' ') {
+                // One space per run of unrepresentable characters — and a run
+                // of real spaces collapses the same way, so `My   Vault` is
+                // `My Vault` rather than a name with a hole in it.
+                folded.push(' ');
             }
         }
         // Leading dots and separators are trimmed rather than replaced: a
-        // leading dot is refused by `parse`, and a leading `-` is noise from
-        // whatever preceded the first real character.
-        let trimmed = folded.trim_start_matches(['-', '.']).trim_end_matches('-');
+        // leading dot is refused by `parse`, and a leading `-` or space is
+        // noise from whatever preceded the first real character.
+        let trimmed = folded
+            .trim_start_matches(['-', '.', ' '])
+            .trim_end_matches(['-', ' ']);
         // Every character is ASCII by construction, so this cannot split a
         // char. Trim again: truncation can expose a trailing separator.
         let capped = trimmed
             .get(..MAX_LEN)
             .unwrap_or(trimmed)
-            .trim_end_matches('-');
+            .trim_end_matches(['-', ' ']);
         Self::parse(capped).ok()
     }
 
-    /// The name as a string slice.
+    /// The name as the user registered it — the spelling every renderer shows.
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.display
+    }
+
+    /// The case-folded key two names are compared by.
+    pub fn fold_key(&self) -> &str {
+        &self.key
     }
 }
 
 impl fmt::Display for KilnName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.display)
     }
 }
 
@@ -179,37 +254,33 @@ impl Deref for KilnName {
     type Target = str;
 
     fn deref(&self) -> &str {
-        &self.0
+        &self.display
     }
 }
 
 impl AsRef<str> for KilnName {
     fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Borrow<str> for KilnName {
-    fn borrow(&self) -> &str {
-        &self.0
+        &self.display
     }
 }
 
 impl PartialEq<str> for KilnName {
+    /// Case-insensitive, like every other comparison of two names: a caller
+    /// asking "is this the kiln called `docs`" means the kiln, not the casing.
     fn eq(&self, other: &str) -> bool {
-        self.0 == other
+        self.display.eq_ignore_ascii_case(other)
     }
 }
 
 impl PartialEq<&str> for KilnName {
     fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
+        self.display.eq_ignore_ascii_case(other)
     }
 }
 
 impl From<KilnName> for String {
     fn from(name: KilnName) -> String {
-        name.0
+        name.display
     }
 }
 
@@ -253,9 +324,6 @@ mod tests {
             "a\\b",
             "C:\\Windows",
             ".hidden",
-            "my vault",
-            "My Vault",
-            "Work",
             "caf\u{e9}",
             "name\0",
             "name\n",
@@ -274,7 +342,7 @@ mod tests {
         assert!(serde_json::from_str::<KilnName>(r#""../keys""#).is_err());
         assert!(serde_json::from_str::<KilnName>(r#""/etc/passwd""#).is_err());
         assert!(serde_json::from_str::<KilnName>(r#""""#).is_err());
-        assert!(serde_json::from_str::<KilnName>(r#""Work""#).is_err());
+        assert!(serde_json::from_str::<KilnName>(r#"" Work""#).is_err());
         assert_eq!(
             serde_json::from_str::<KilnName>(r#""vault""#).unwrap(),
             KilnName::parse("vault").unwrap()
@@ -285,18 +353,19 @@ mod tests {
         );
     }
 
-    /// `cru init` writes the directory basename verbatim, so keys like
-    /// `My Vault` are already in users' configs. They fold; they do not abort.
+    /// A hand-written key folds; it does not abort. Case and spaces survive —
+    /// only a character the charset has no room for is replaced.
     #[test]
     fn normalization_folds_a_hand_written_key_to_a_valid_name() {
         for (raw, expected) in [
-            ("My Vault", "my-vault"),
-            ("Work", "work"),
-            ("my   vault", "my-vault"),
-            ("Caf\u{e9} Notes", "caf-notes"),
+            ("My Vault", "My Vault"),
+            ("Work", "Work"),
+            ("my   vault", "my vault"),
+            ("Caf\u{e9} Notes", "Caf Notes"),
             ("-leading", "leading"),
             (".hidden", "hidden"),
             ("trailing-", "trailing"),
+            ("a/b", "a b"),
         ] {
             assert_eq!(
                 KilnName::normalize(raw).as_deref(),
@@ -339,6 +408,7 @@ mod tests {
             &trailing_dash_at_the_cut,
             "\u{2026}\u{2026}",
             "Über Notes",
+            "Crucible Help",
         ] {
             if let Some(name) = KilnName::normalize(raw) {
                 assert_eq!(
@@ -354,5 +424,76 @@ mod tests {
     fn an_over_long_key_is_truncated_rather_than_refused() {
         let name = KilnName::normalize(&"a".repeat(MAX_LEN * 2)).unwrap();
         assert_eq!(name.as_str().len(), MAX_LEN);
+    }
+
+    /// The user's own kiln is called "Crucible Help" — a capital C, a capital
+    /// H and a space. A name is a label a person reads, and case-folding it at
+    /// the door made every picker render a name nobody chose.
+    #[test]
+    fn a_name_keeps_its_case_and_may_hold_spaces() {
+        for ok in ["Crucible Help", "Work", "My Vault", "a b c", "Notes.2024"] {
+            assert_eq!(
+                KilnName::parse(ok).map(|n| n.as_str().to_string()),
+                Ok(ok.to_string()),
+                "{ok:?} must round-trip exactly as written"
+            );
+        }
+    }
+
+    /// Case is kept for display and ignored for resolution: `Work` and `work`
+    /// are one kiln, and the registered spelling is the one that renders.
+    #[test]
+    fn resolution_ignores_case_and_display_does_not() {
+        let registered = KilnName::parse("Crucible Help").unwrap();
+        let typed = KilnName::parse("crucible help").unwrap();
+
+        assert_eq!(registered, typed, "one kiln, two spellings");
+        assert_eq!(
+            registered.as_str(),
+            "Crucible Help",
+            "the registered spelling is what renders"
+        );
+
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(registered.clone(), 1);
+        assert_eq!(
+            map.get(&typed),
+            Some(&1),
+            "a map must resolve either spelling"
+        );
+
+        let mut set = std::collections::HashSet::new();
+        set.insert(registered.clone());
+        assert!(set.contains(&typed), "hashing must agree with equality");
+    }
+
+    /// The widened charset is not a widened door: a name is still never a path,
+    /// never hidden, and never padded.
+    #[test]
+    fn a_wider_charset_still_refuses_a_path_and_untrimmed_text() {
+        for hostile in [
+            "",
+            " ",
+            "   ",
+            ".",
+            "..",
+            "../keys",
+            "/etc",
+            "a/b",
+            "a\\b",
+            "C:\\Windows",
+            ".hidden",
+            " leading",
+            "trailing ",
+            "caf\u{e9}",
+            "name\0",
+            "name\n",
+            "na%2Fme",
+        ] {
+            assert!(
+                KilnName::parse(hostile).is_err(),
+                "{hostile:?} was accepted as a kiln name"
+            );
+        }
     }
 }

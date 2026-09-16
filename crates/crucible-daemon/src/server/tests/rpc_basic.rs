@@ -64,25 +64,37 @@ async fn test_kiln_close_missing_path_param() {
 }
 
 #[tokio::test]
-async fn test_kiln_list_returns_array() {
-    // Inject an isolated data root (no env) so the daemon never loads the
-    // developer's real ~/.crucible registry — the async startup load would
-    // otherwise race this 50ms-later kiln.list and make it non-empty.
+async fn test_kiln_list_names_the_registered_kiln() {
+    // An isolated data root (no env), so the daemon never loads the
+    // developer's real ~/.crucible registry and the listing holds only the
+    // fixture's own kiln.
     let server = TestServer::start().await;
-    let mut client = server.connect().await;
 
-    client
-        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"kiln.list\",\"params\":{}}\n")
-        .await
-        .unwrap();
+    // The kiln the fixture registered is OPEN once the daemon has started.
+    // This used to assert an empty array: `kiln.list` reports what the manager
+    // holds open, a starting daemon held nothing, and a restart therefore made
+    // every kiln-addressed route 404. Polled, because the boot open is its own
+    // task and a fixed wait is a guess about how long a SQLite open takes.
+    let mut response = String::new();
+    for _ in 0..100 {
+        let mut client = server.connect().await;
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"kiln.list\",\"params\":{}}\n")
+            .await
+            .unwrap();
 
-    let mut buf = vec![0u8; 1024];
-    let n = client.read(&mut buf).await.unwrap();
-    let response = String::from_utf8_lossy(&buf[..n]);
-
-    assert!(response.contains("\"result\":[]")); // Empty array initially
+        let mut buf = vec![0u8; 4096];
+        let n = client.read(&mut buf).await.unwrap();
+        response = String::from_utf8_lossy(&buf[..n]).to_string();
+        if response.contains("\"name\":\"kiln\"") {
+            server.shutdown().await;
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     server.shutdown().await;
+    panic!("the registered kiln never appeared in kiln.list: {response}");
 }
 
 #[tokio::test]

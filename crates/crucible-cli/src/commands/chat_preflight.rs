@@ -185,8 +185,8 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
 /// that cannot be reached is not an error here — it means the same as "no kiln
 /// registered", and the caller's next step is the prompt either way.
 ///
-/// A `discovered` entry is skipped: that is a directory something opened by
-/// path, not a kiln any session can name.
+/// A `discovered` entry is skipped: that is a directory this daemon opened and
+/// named for itself, not a kiln the user chose.
 async fn registered_default_kiln() -> Option<std::path::PathBuf> {
     let client = crate::common::daemon_client().await.ok()?;
     let reply = client.kiln_registry_list().await.ok()?;

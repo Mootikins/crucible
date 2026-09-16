@@ -75,7 +75,14 @@ fn a_kiln_path_only_config_still_yields_a_named_kiln() {
     let notes = tmp.path().join("notes");
     let registry = registry(&tmp, json!({ "kiln_path": notes.to_str().unwrap() }));
 
-    assert_eq!(ready_path(&registry, "notes"), notes);
+    // Registered, and LAZY: the name resolves and the session that asks for it
+    // opens it, but boot does not. `kiln_path` defaults to the directory the
+    // client stood in, and an eager entry there had the daemon open and index
+    // whatever source tree it was spawned from.
+    match registry.resolve(&name("notes")) {
+        KilnResolution::Lazy(kiln) => assert_eq!(kiln.path(), notes),
+        other => panic!("expected a lazy entry for a synthesized kiln_path, got {other:?}"),
+    }
     assert_eq!(registry.resolve(&name("default")), KilnResolution::Unknown);
 }
 
@@ -139,12 +146,23 @@ fn a_relative_configured_path_is_anchored_at_the_stated_base() {
 fn an_out_of_charset_config_key_folds_rather_than_aborting() {
     let tmp = TempDir::new().unwrap();
     let vault = tmp.path().join("vault");
+    let cafe = tmp.path().join("cafe");
     let registry = registry(
         &tmp,
-        json!({ "kilns": { "My Vault": vault.to_str().unwrap() } }),
+        json!({
+            "kilns": {
+                // Capitals and a space are IN the charset: this key survives
+                // exactly as written, and resolves whatever case is typed.
+                "My Vault": vault.to_str().unwrap(),
+                // A character the charset has no room for still folds.
+                "Caf\u{e9} Notes": cafe.to_str().unwrap(),
+            }
+        }),
     );
 
-    assert_eq!(ready_path(&registry, "my-vault"), vault);
+    assert_eq!(ready_path(&registry, "My Vault"), vault);
+    assert_eq!(ready_path(&registry, "my vault"), vault);
+    assert_eq!(ready_path(&registry, "Caf Notes"), cafe);
 }
 
 /// Two keys folding onto one name for two *different* directories is a config
@@ -159,14 +177,14 @@ fn a_folded_name_claimed_by_two_directories_aborts_the_build() {
         Some(&json!({
             "kilns": {
                 "My Vault": tmp.path().join("alpha").to_str().unwrap(),
-                "my-vault": tmp.path().join("bravo").to_str().unwrap(),
+                "my vault": tmp.path().join("bravo").to_str().unwrap(),
             }
         })),
     )
     .expect_err("a name claimed by two directories must not build");
 
     let RegistryError::Collision { name: n, .. } = &err;
-    assert_eq!(n, &name("my-vault"));
+    assert_eq!(n, &name("My Vault"));
     let message = err.to_string();
     assert!(
         message.contains("alpha") && message.contains("bravo"),

@@ -35,8 +35,13 @@ const disconnectMock = vi.fn().mockResolvedValue({
 // No `setSessionWorkspace` here: the chip must have no path to it.
 vi.mock('@/lib/api', () => ({
   listKilns: vi.fn().mockResolvedValue([
-    { path: '/kilns/main', name: 'main' },
-    { path: '/kilns/extra', name: 'extra' },
+    { path: '/kilns/main', name: 'main', registered: true },
+    { path: '/kilns/extra', name: 'extra', registered: true },
+    // An open directory the registration floor refuses. It is LABELLED here
+    // on purpose: the daemon sends an empty name with `registered: false`
+    // today, and a fixture that copied that would pass against a picker which
+    // only checks the label. The flag is the authority.
+    { path: '/home/u/.crucible/sessions', name: 'sessions', registered: false },
   ]),
   connectSessionKiln: (...args: unknown[]) => connectMock(...args),
   disconnectSessionKiln: (...args: unknown[]) => disconnectMock(...args),
@@ -152,6 +157,22 @@ describe('SessionScopeChips', () => {
     expect(only.disabled).toBe(false);
     fireEvent.click(only);
     await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', 'main'));
+  });
+
+  // `kiln.list` reports every OPEN directory, and the registration floor
+  // refuses some of them — the session store, the daemon data root. The daemon
+  // marks those `registered: false` and publishes no name, because a name it
+  // publishes must be one `connect_kiln` resolves. Offering the row anyway
+  // posts an empty name and shows the 422 as a toast.
+  it('does not offer a kiln the daemon reports as unregistered', async () => {
+    mockSession = baseSession();
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    const popout = await screen.findByTestId('scope-kiln-popout');
+
+    expect(within(popout).queryByText('sessions')).toBeNull();
+    expect(within(popout).getByText('main')).toBeTruthy();
+    expect(within(popout).getByText('extra')).toBeTruthy();
   });
 
   it('a kiln-less session reads as tools-only, and says the note tools are gone', async () => {

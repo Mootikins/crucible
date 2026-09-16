@@ -51,3 +51,29 @@ export function kilnNameForPath(
   const trimmed = path.replace(/\/+$/, '');
   return kilns.find((k) => k.path.replace(/\/+$/, '') === trimmed)?.name ?? null;
 }
+
+/**
+ * The rows a picker may offer: the ones the daemon says it can resolve.
+ *
+ * The client half of a rule the daemon states on its own side — `kiln.list`
+ * never publishes a name `session.connect_kiln` refuses. A row it cannot name
+ * carries `registered: false`, and offering it posts a name the daemon answers
+ * 422 to, which the user reads as a broken picker rather than as a directory
+ * that needs registering.
+ *
+ * Such a row is LEFT OUT rather than shown disabled, because it has nothing to
+ * show: its `name` is empty by construction, so a disabled row would render as
+ * a blank line with a hint. The directory is still visible where directories
+ * belong — the file tree — and `cru kiln register` is how it gains a name.
+ *
+ * Two independent reasons a row is unusable, and both are checked here so no
+ * caller has to remember either: the daemon said it is not registered, or
+ * there is no name to send.
+ */
+export function attachableKilns(
+  kilns: readonly KilnListEntry[],
+): (KilnListEntry & { name: string })[] {
+  return kilns.filter(
+    (k): k is KilnListEntry & { name: string } => k.registered !== false && !!k.name?.trim(),
+  );
+}

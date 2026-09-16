@@ -15,12 +15,14 @@ use crate::cli::KilnCommands;
 
 pub async fn handle(cmd: KilnCommands) -> Result<()> {
     match cmd {
-        KilnCommands::Register { name, path } => {
+        KilnCommands::Register {
+            name,
+            path,
+            make_default,
+        } => {
             let client = crate::common::daemon_client().await?;
             let response = client
-                .kiln_register(
-                    &name, &path, /* auto */ false, /* make_default */ false,
-                )
+                .kiln_register(&name, &path, /* auto */ false, make_default)
                 .await
                 .with_context(|| format!("registering kiln '{name}'"))?;
 
@@ -34,6 +36,9 @@ pub async fn handle(cmd: KilnCommands) -> Result<()> {
             }
             if let Some(file) = response["state_file"].as_str() {
                 println!("  in {file}");
+            }
+            if make_default {
+                println!("  It is now the kiln used when none is named.");
             }
             println!("\nAttach it with `cru acp --kiln {name}`.");
             Ok(())
@@ -206,8 +211,9 @@ mod tests {
         );
     }
 
-    /// A directory opened by path is NOT a kiln any session can name. Listing
-    /// it says so rather than leaving the user to wonder why the name fails.
+    /// A directory this daemon opened carries a name it derived itself, and
+    /// nothing wrote that name down. Listing it says so, because the name
+    /// stops working at the next daemon start unless a session attaches it.
     #[test]
     fn an_opened_but_unregistered_directory_reads_as_discovered() {
         assert_eq!(

@@ -201,13 +201,34 @@ impl Server {
         data_home: std::path::PathBuf,
         kilns: &[(&str, &Path)],
     ) -> Result<Self> {
+        let eager: Vec<(&str, &Path, bool)> = kilns
+            .iter()
+            .map(|(name, dir)| (*name, *dir, false))
+            .collect();
+        Self::bind_with_data_home_and_kiln_entries(path, data_home, &eager).await
+    }
+
+    /// As [`Self::bind_with_data_home_and_kilns`], with each entry's `lazy`
+    /// flag.
+    ///
+    /// A fixture needs this once boot opens the eager entries: a test that
+    /// proves "nothing opened this kiln" has to register one that boot leaves
+    /// alone, or the daemon's own startup supplies the side effect the test is
+    /// looking for.
+    pub async fn bind_with_data_home_and_kiln_entries(
+        path: &Path,
+        data_home: std::path::PathBuf,
+        kilns: &[(&str, &Path, bool)],
+    ) -> Result<Self> {
         let entries: serde_json::Map<String, serde_json::Value> = kilns
             .iter()
-            .map(|(name, dir)| {
-                (
-                    (*name).to_string(),
-                    serde_json::Value::String(dir.to_string_lossy().into_owned()),
-                )
+            .map(|(name, dir, lazy)| {
+                let value = if *lazy {
+                    serde_json::json!({ "path": dir.to_string_lossy(), "lazy": true })
+                } else {
+                    serde_json::Value::String(dir.to_string_lossy().into_owned())
+                };
+                ((*name).to_string(), value)
             })
             .collect();
         Self::bind_with_plugin_config(BindWithPluginConfigParams {

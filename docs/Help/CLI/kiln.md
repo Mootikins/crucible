@@ -32,8 +32,9 @@ cru kiln register notes ~/vault/notes
 
 | Argument | Description |
 |----------|-------------|
-| `<NAME>` | Name to register the kiln under — lower-case `[a-z0-9._-]`, at most 64 characters, not starting with a dot |
+| `<NAME>` | Name to register the kiln under — `[A-Za-z0-9._- ]`, at most 64 characters, not starting with a dot, not padded with spaces. Quote a name that holds a space: `cru kiln register "Crucible Help" ~/crucible/docs` |
 | `<PATH>` | Directory to register. Must be an absolute path, or one that resolves to a directory |
+| `--default` | Make this the kiln every command uses when none is named |
 
 ### What it refuses, and why
 
@@ -42,9 +43,10 @@ against a different directory, is an error rather than an update. Sessions that 
 stored that name would silently start opening a different corpus — the failure would be
 invisible at the point it mattered, so it is refused at the point it is cheap.
 
-**Names are case-folded.** `cru kiln register Notes ~/vault/notes` after `notes` is
-already registered is refused as a duplicate rather than creating a second kiln that
-differs only in case.
+**A name keeps its case; resolution ignores it.** Crucible shows the name you
+registered, in the spelling you registered it. Two names that differ only in case
+are one kiln, so `cru kiln register Notes ~/vault/notes` after `notes` is refused
+as a duplicate. `--kiln notes` attaches a kiln registered as `Notes`.
 
 **Registering the same name and path twice is a no-op**, so the command is safe to run
 from a setup script.
@@ -93,7 +95,7 @@ The `origin` column says which layer owns the name.
 |--------|---------|
 | `config` | You declared it in your config file |
 | `registered` | A command wrote it into the daemon's state file |
-| `discovered` | Something opened the directory by path. It is **not** a kiln that a session can name |
+| `discovered` | This daemon opened the directory and named it for itself. A session can attach the name, and attaching writes it down; until then the name stops working at the next daemon start |
 
 The qualifiers in brackets say what is unusual about the entry.
 

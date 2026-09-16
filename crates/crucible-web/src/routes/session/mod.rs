@@ -556,7 +556,7 @@ async fn search_sessions(
     // otherwise be answered as though it had said nothing.
     //
     // This route has to draw the same line or it collapses the two: dropping
-    // every name silently turns `?q=x&kiln=Bad%20Name` into "searched
+    // every name silently turns `?q=x&kiln=..%2Fescape` into "searched
     // everything, found nothing" instead of a 422. Partial drops are safe and
     // stay silent, for the daemon's reason — the surviving members still narrow.
     let mut kilns: Vec<crucible_core::config::KilnName> = Vec::new();

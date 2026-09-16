@@ -99,7 +99,7 @@ shape; the examples are Lua.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `kiln_path` | path | current dir | Path to your notes directory (kiln). Legacy — prefer `kilns`. |
-| `default_kiln` | string | first alphabetically | Name of the default kiln (session storage, tool scoping) |
+| `default_kiln` | string | first alphabetically, else the bundled `crucible-docs` | Name of the default kiln (session storage, tool scoping). A pointer to a name in `kilns`; it never names a kiln of its own |
 | `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
 | `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
 | `agent_directories` | list | `[]` | **Deprecated.** Extra directories holding agent cards. Use `runtimepath` instead: one entry there supplies `agents/`, `skills/`, `plugins/` and `themes/` alike. Still honoured, warns once. |
@@ -132,8 +132,19 @@ cru.config.set({
 | `path` | string | required | Filesystem path to the kiln root |
 | `lazy` | bool | `false` | If true, the kiln is not opened at daemon start; it must be opened explicitly |
 
+A name holds `[A-Za-z0-9._- ]`, at most 64 characters. It keeps the case and
+the spaces you wrote — `"Crucible Help"` shows as `Crucible Help` — and it
+resolves case-insensitively, so `crucible help` attaches the same kiln. Two
+entries that differ only in case are one contested name, not two kilns.
+
 If `kilns` is empty or absent, Crucible falls back to `kiln_path`
-(synthesized as a kiln named after its directory: `~/vault` is `vault`).
+(synthesized as a kiln named after its directory: `~/vault` is `vault`, and
+`~/My Vault` is `My Vault`). That synthesized entry is **lazy**: `kiln_path`
+defaults to the directory you happened to run `cru` in, so it is registered and
+addressable by name but never opened until something asks for it. Declare the
+kiln under `kilns` to have the daemon open it at start. When a config names no
+kiln at all, the default is the bundled help corpus, `crucible-docs`.
+
 `"default"` is never a kiln's name unless you declare one; it is at most the
 `default_kiln` pointer. When `kilns` is present, `kiln_path` is ignored.
 

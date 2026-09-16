@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, cleanup, screen, waitFor, fireEvent } from '@solidjs/testing-library';
+import { render, cleanup, screen, waitFor, fireEvent, within } from '@solidjs/testing-library';
 import { CenterComposer } from '../CenterComposer';
 
 const createSessionMock = vi.fn().mockResolvedValue({ id: 'sess-1' });
@@ -63,8 +63,13 @@ vi.mock('@/lib/api', () => ({
   // default, so it appears here too — a default the registry cannot name is
   // its own case, tested below.
   listKilns: vi.fn().mockResolvedValue([
-    { path: '/home/user/kilns/helios', name: 'helios' },
-    { path: '/home/user/kilns/other', name: 'other' },
+    { path: '/home/user/kilns/helios', name: 'helios', registered: true },
+    { path: '/home/user/kilns/other', name: 'other', registered: true },
+    // An open directory the registration floor refuses. LABELLED on purpose:
+    // the daemon sends an empty name beside `registered: false` today, and a
+    // fixture that copied that would pass against a picker which only checks
+    // the label. The flag is the authority.
+    { path: '/home/user/.crucible/sessions', name: 'sessions', registered: false },
   ]),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
   listProviders: vi.fn().mockResolvedValue([
@@ -275,6 +280,22 @@ describe('CenterComposer', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
     expect(createSessionMock.mock.calls[0][0].kilns).toEqual(['other']);
+  });
+
+  // `kiln.list` reports every OPEN directory, and the registration floor
+  // refuses some of them. The daemon marks those `registered: false` and
+  // publishes no name, because a name it publishes must be one the attach
+  // resolves. A picker that offered the row would create a session naming a
+  // kiln the daemon refuses.
+  it('does not offer a kiln the daemon reports as unregistered', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
+    fireEvent.click(getByTestId('composer-kiln'));
+    await waitFor(() => expect(screen.getByTestId('composer-kiln-popout')).toBeInTheDocument());
+
+    const popout = screen.getByTestId('composer-kiln-popout');
+    expect(within(popout).queryByText('sessions')).toBeNull();
+    expect(within(popout).getByText('other')).toBeTruthy();
   });
 
   // A configured `kiln_path` the registry does not answer for has no name, and

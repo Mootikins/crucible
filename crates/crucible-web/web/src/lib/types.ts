@@ -245,13 +245,26 @@ export interface Project {
 /**
  * One entry of `GET /api/kilns`. The daemon's `handle_kiln_list`
  * (crucible-daemon/src/server/kiln.rs) emits objects — `{ path, name,
- * last_access_secs_ago }` — surfaced verbatim by the web route
+ * registered, last_access_secs_ago }` — surfaced verbatim by the web route
  * (routes/search.rs). NOT a bare string (the pre-file-tree `listKilns` mock
  * asserted a fictional string payload; see api.test.ts).
  */
 export interface KilnListEntry {
   path: string;
   name: string | null;
+  /**
+   * Whether the kiln registry answers for this directory, and therefore
+   * whether `name` is a name `POST /kilns/connect` accepts.
+   *
+   * The daemon publishes no name it cannot resolve: a row it cannot name is
+   * an open directory the registration floor refuses (the daemon data root,
+   * the session store, a home directory), and it arrives here as `false` with
+   * an empty `name`. No picker may offer such a row — see `attachableKilns`.
+   *
+   * Optional because an older daemon omits it. Absent is NOT `false`: treating
+   * it as false would empty the picker against a daemon that works.
+   */
+  registered?: boolean;
   last_access_secs_ago?: number;
 }
 

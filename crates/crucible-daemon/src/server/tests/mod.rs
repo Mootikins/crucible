@@ -28,6 +28,7 @@ mod review_watch;
 mod rpc_basic;
 mod session_id_boundary;
 mod session_log_capture;
+mod startup_kilns;
 mod subscription;
 mod truncation;
 mod trust;

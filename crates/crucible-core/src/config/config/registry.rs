@@ -56,6 +56,37 @@ impl KilnEntry {
     }
 }
 
+/// The name the bundled help corpus is offered under.
+///
+/// Stated once because two rules read it: [`resolve_kiln_entries`] injects the
+/// entry, and [`CliAppConfig::resolved_default_kiln`] falls back to it when a
+/// config names no kiln at all. A literal in both places is how the fallback
+/// ends up pointing at a name the map does not hold.
+///
+/// [`CliAppConfig::resolved_default_kiln`]: crate::config::CliAppConfig::resolved_default_kiln
+pub const BUNDLED_DOCS_KILN: &str = "crucible-docs";
+
+/// The entry in `kilns` whose key names `name`, ignoring ASCII case.
+///
+/// The `[kilns]` map is keyed by the raw string a user typed, and
+/// [`KilnName`](crate::config::KilnName) resolves case-insensitively. Without
+/// one folding lookup, a `default_kiln = "Crucible Help"` pointer misses a
+/// `[kilns."crucible help"]` entry and the config layer answers a name the
+/// daemon registry happily resolves — the same "the list offers a name the
+/// attach refuses" shape, one layer up.
+pub fn find_kiln_entry<'a, T>(
+    kilns: &'a BTreeMap<String, T>,
+    name: &str,
+) -> Option<(&'a String, &'a T)> {
+    if let Some((key, entry)) = kilns.get_key_value(name) {
+        return Some((key, entry));
+    }
+    let folded = crate::config::KilnName::fold_str(name);
+    kilns
+        .iter()
+        .find(|(key, _)| crate::config::KilnName::fold_str(key) == folded)
+}
+
 /// The name a `kiln_path`-only config gives its one kiln: the directory
 /// basename, folded to the registry charset.
 ///
@@ -83,20 +114,43 @@ pub fn synthesized_kiln_name(kiln_path: &Path) -> Option<String> {
 ///
 /// See that method for why `crucible-docs` must stay out of the stored map and
 /// why it is `lazy`.
+///
+/// The synthesized `kiln_path` entry is lazy for a related but distinct
+/// reason: a `[kilns]` entry is a kiln the user NAMED, and boot opens those,
+/// while `kiln_path` defaults to whatever directory the client was standing in
+/// when it spawned the daemon. See the test for why the two cannot be told
+/// apart by provenance.
 pub fn resolve_kiln_entries(
     kiln_path: &Path,
     kilns: &BTreeMap<String, KilnEntry>,
 ) -> BTreeMap<String, KilnEntry> {
     let mut map = if kilns.is_empty() {
         synthesized_kiln_name(kiln_path)
-            .map(|name| BTreeMap::from([(name, KilnEntry::Path(kiln_path.to_path_buf()))]))
+            .map(|name| {
+                BTreeMap::from([(
+                    name,
+                    KilnEntry::Config {
+                        path: kiln_path.to_path_buf(),
+                        // LAZY, and the flag is the whole difference between a
+                        // kiln the user named and a directory the daemon
+                        // happened to start in. `kiln_path` defaults to the
+                        // process working directory, so an eager entry here
+                        // meant a daemon spawned in a source tree opened and
+                        // indexed that source tree at boot. It stays
+                        // registered — addressable by name, opened on first
+                        // use — it simply does not open unasked.
+                        lazy: true,
+                        auto: false,
+                    },
+                )])
+            })
             .unwrap_or_default()
     } else {
         kilns.clone()
     };
 
     if let Some(docs) = crate::bundled_docs::bundled_docs_dir() {
-        map.entry("crucible-docs".to_string())
+        map.entry(BUNDLED_DOCS_KILN.to_string())
             .or_insert(KilnEntry::Config {
                 path: docs,
                 lazy: true,
@@ -177,11 +231,12 @@ default_kiln = "vault"
     /// `kiln_path` defaults to the working directory, so `cru --standalone
     /// web` run inside a kiln used to list that kiln as "default". The
     /// directory names the kiln; "default" is only ever the `default_kiln`
-    /// pointer.
+    /// pointer. The directory's own spelling survives, capitals and space
+    /// included — the name a user reads is the name of their folder.
     #[test]
     fn a_kiln_path_only_config_names_the_kiln_after_its_directory() {
         let map = resolve_kiln_entries(Path::new("/home/u/My Vault"), &BTreeMap::new());
-        assert_eq!(map["my-vault"].path(), PathBuf::from("/home/u/My Vault"));
+        assert_eq!(map["My Vault"].path(), PathBuf::from("/home/u/My Vault"));
         assert!(
             !map.contains_key("default"),
             "\"default\" is a pointer, never a kiln's identity: {map:?}"
@@ -189,6 +244,68 @@ default_kiln = "vault"
         assert_eq!(
             synthesized_kiln_name(Path::new("~/vault")).as_deref(),
             Some("vault")
+        );
+    }
+
+    /// The pointer and the key are two strings a user types by hand, and one
+    /// of them carries the case. The lookup folds so the pair cannot disagree.
+    #[test]
+    fn a_kiln_entry_is_found_whatever_case_the_pointer_uses() {
+        let kilns = BTreeMap::from([(
+            "Crucible Help".to_string(),
+            KilnEntry::Path(PathBuf::from("/docs")),
+        )]);
+
+        for pointer in ["Crucible Help", "crucible help", "CRUCIBLE HELP"] {
+            let (key, entry) =
+                find_kiln_entry(&kilns, pointer).expect("the entry must be found: {pointer}");
+            assert_eq!(key, "Crucible Help", "the registered spelling comes back");
+            assert_eq!(entry.path(), PathBuf::from("/docs"));
+        }
+        assert!(find_kiln_entry(&kilns, "other").is_none());
+    }
+
+    /// The synthesized entry is LAZY, and that is the difference between a
+    /// kiln a user named and a directory the daemon happened to start in.
+    ///
+    /// `kiln_path` defaults to the process working directory, and the daemon
+    /// is spawned by whichever client the user ran, wherever they stood. Boot
+    /// opens every eager entry, so an eager synthesized entry meant that
+    /// `cru web` in a source tree opened and indexed that source tree. The
+    /// entry stays REGISTERED — it is addressable by name and opens on first
+    /// use — it simply does not open unasked.
+    ///
+    /// The daemon cannot distinguish a `kiln_path` the user wrote from the
+    /// default: provenance is `#[serde(skip)]`, so the value crosses the wire
+    /// with the default already applied. Guessing which it was is the
+    /// inference this registry exists to refuse, so both are lazy, and a user
+    /// who wants the eager rule writes a `[kilns]` entry — which the config
+    /// reference already recommends over `kiln_path`.
+    #[test]
+    fn a_synthesized_kiln_path_entry_is_lazy() {
+        let map = resolve_kiln_entries(Path::new("/home/u/My Vault"), &BTreeMap::new());
+
+        assert!(
+            map["My Vault"].lazy(),
+            "a directory the daemon merely started in must not open unasked: {map:?}"
+        );
+    }
+
+    /// A kiln the user NAMED keeps the eager rule, so boot opens it and the
+    /// kiln-addressed routes answer for it after a restart.
+    #[test]
+    fn a_declared_kilns_entry_stays_eager() {
+        let declared = BTreeMap::from([(
+            "vault".to_string(),
+            KilnEntry::Path(PathBuf::from("/home/u/vault")),
+        )]);
+
+        let map = resolve_kiln_entries(Path::new("/home/u/elsewhere"), &declared);
+
+        assert!(!map["vault"].lazy(), "{map:?}");
+        assert!(
+            !map.contains_key("elsewhere"),
+            "a declared `[kilns]` table replaces the synthesis: {map:?}"
         );
     }
 

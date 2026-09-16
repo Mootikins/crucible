@@ -114,6 +114,31 @@ async fn create_seeded_kiln() -> TempDir {
     kiln_dir
 }
 
+/// Wait until the fixture's own registered kiln is open, then answer the paths
+/// `kiln.list` reports.
+///
+/// A registered kiln is OPEN once the daemon has started — boot opens the
+/// registry's eager entries, so that a restart does not leave every
+/// kiln-addressed route answering 404. That open runs in its own task, so a
+/// test that counted the list immediately would race it. Polling for the
+/// steady state is the only honest way to assert about the list's size.
+async fn open_kiln_paths(client: &DaemonClient, expected: usize) -> Vec<String> {
+    for _ in 0..100 {
+        let list = client.kiln_list().await.expect("kiln_list failed");
+        if list.len() >= expected {
+            return list
+                .iter()
+                .filter_map(|row| row["path"].as_str().map(str::to_string))
+                .collect();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!(
+        "kiln.list never reached {expected} open kilns: {:?}",
+        client.kiln_list().await
+    );
+}
+
 // =============================================================================
 // kiln.open
 // =============================================================================
@@ -149,24 +174,26 @@ async fn test_kiln_list_shows_opened_kiln() {
         .await
         .expect("Failed to connect");
 
-    // List should be empty before opening
-    let list = client.kiln_list().await.expect("kiln_list failed");
-    assert!(list.is_empty(), "No kilns should be open initially");
+    // The fixture registers one kiln, and a registered kiln is open once the
+    // daemon has started. This used to assert an empty list: `kiln.list`
+    // reports what the manager holds open, nothing opened the registered
+    // entries, and a restart therefore made every kiln-addressed route 404.
+    let before = open_kiln_paths(&client, 1).await;
+    assert_eq!(before.len(), 1, "the fixture's own kiln, and only it");
 
-    // Open kiln
+    // Open a second kiln by path.
     client
         .kiln_open(kiln_dir.path())
         .await
         .expect("kiln_open failed");
 
-    // List should now contain the opened kiln
-    let list = client.kiln_list().await.expect("kiln_list failed");
-    assert_eq!(list.len(), 1, "Should have exactly one kiln");
-
-    let kiln_path = list[0]["path"].as_str().expect("path should be string");
+    let after = open_kiln_paths(&client, 2).await;
+    assert_eq!(after.len(), 2, "the fixture's kiln plus the opened one");
     assert!(
-        kiln_path.contains(kiln_dir.path().to_str().unwrap()),
-        "Listed kiln path should match the opened path"
+        after
+            .iter()
+            .any(|path| path.contains(kiln_dir.path().to_str().unwrap())),
+        "the opened path must be listed: {after:?}"
     );
 
     server.shutdown().await;
@@ -185,15 +212,16 @@ async fn test_kiln_close_removes_from_list() {
         .await
         .expect("Failed to connect");
 
-    // Open kiln
+    // The fixture's registered kiln is open from the start; this one is not.
+    let before = open_kiln_paths(&client, 1).await;
+
     client
         .kiln_open(kiln_dir.path())
         .await
         .expect("kiln_open failed");
 
-    // Verify it appears in list
-    let list = client.kiln_list().await.expect("kiln_list failed");
-    assert_eq!(list.len(), 1, "Should have one kiln open");
+    let after = open_kiln_paths(&client, 2).await;
+    assert_eq!(after.len(), before.len() + 1, "the open added exactly one");
 
     // Close kiln via raw RPC call (no typed method on DaemonClient)
     let result = client
@@ -209,9 +237,17 @@ async fn test_kiln_close_removes_from_list() {
         "Close should return status ok"
     );
 
-    // Verify kiln is gone from list
+    // Closed, and only the closed one: the fixture's registered kiln stays
+    // open, because closing one kiln says nothing about another.
     let list = client.kiln_list().await.expect("kiln_list failed");
-    assert!(list.is_empty(), "Kiln should be removed after close");
+    let paths: Vec<&str> = list.iter().filter_map(|row| row["path"].as_str()).collect();
+    assert!(
+        !paths
+            .iter()
+            .any(|path| path.contains(kiln_dir.path().to_str().unwrap())),
+        "the closed kiln must be gone: {paths:?}"
+    );
+    assert_eq!(paths.len(), before.len(), "nothing else changed: {paths:?}");
 
     server.shutdown().await;
 }
@@ -350,9 +386,16 @@ async fn test_kiln_lifecycle_open_query_close() {
         .expect("kiln.close failed");
     assert_eq!(close_result["status"].as_str(), Some("ok"));
 
-    // Verify kiln list is empty
+    // Closed. The fixture's own registered kiln is still open — boot opened
+    // it, and closing this one says nothing about it.
     let list = client.kiln_list().await.expect("kiln_list failed");
-    assert!(list.is_empty(), "Kiln should be removed after close");
+    let paths: Vec<&str> = list.iter().filter_map(|row| row["path"].as_str()).collect();
+    assert!(
+        !paths
+            .iter()
+            .any(|path| path.contains(kiln_dir.path().to_str().unwrap())),
+        "the closed kiln must be gone: {paths:?}"
+    );
 
     server.shutdown().await;
 }

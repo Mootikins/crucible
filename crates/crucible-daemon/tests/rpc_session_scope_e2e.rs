@@ -42,13 +42,17 @@ impl TestServer {
             "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
         )?;
 
-        let server = Server::bind_with_data_home_and_kilns(
+        // `classified` is registered LAZY on purpose. Boot opens every eager
+        // registered kiln, so an eager entry here would be open before the
+        // test ran and the "a refused attach opened nothing" assertion would
+        // be reading the daemon's own startup rather than the attach.
+        let server = Server::bind_with_data_home_and_kiln_entries(
             &socket_path,
             temp_dir.path().to_path_buf(),
             &[
-                ("kiln", &kiln),
-                ("extra-kiln", &extra),
-                ("classified", &classified),
+                ("kiln", &kiln, false),
+                ("extra-kiln", &extra, false),
+                ("classified", &classified, true),
             ],
         )
         .await?;

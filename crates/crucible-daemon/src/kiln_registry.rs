@@ -542,6 +542,32 @@ impl KilnRegistry {
     /// existing name. Persisting the new entry back to the user's config is
     /// the caller's job (Phase 3); this registry is the in-memory authority.
     pub fn register_path(&self, path: &Path) -> Result<KilnName, RegistrationRefused> {
+        self.register_derived(path, RegistrationOrigin::Registered)
+    }
+
+    /// Name a directory this daemon **opened**, so that the name it is listed
+    /// under is a name a caller can say back to us.
+    ///
+    /// `kiln.list` publishes a name for every open kiln, and
+    /// `session.connect_kiln` resolves names through this registry alone. When
+    /// the two did not share a source, the listing filled the gap with the
+    /// basename it *would* have derived and the attach answered
+    /// `Unknown kiln "docs"` — a picker offering a name the daemon refuses.
+    /// One source, filled at the moment of the open, is the fix.
+    ///
+    /// [`RegistrationOrigin::Discovered`], not `Registered`: nothing is
+    /// written to `kilns.json`, the name lives as long as this daemon does,
+    /// and `cru kiln list` must say so rather than claim a registration the
+    /// user never made.
+    pub fn register_discovered(&self, path: &Path) -> Result<KilnName, RegistrationRefused> {
+        self.register_derived(path, RegistrationOrigin::Discovered)
+    }
+
+    fn register_derived(
+        &self,
+        path: &Path,
+        origin: RegistrationOrigin,
+    ) -> Result<KilnName, RegistrationRefused> {
         let absolute = self.absolutize(path);
         self.refuse(&absolute).map_err(RegistrationRefused)?;
 
@@ -568,12 +594,7 @@ impl KilnRegistry {
             ))
         })?;
 
-        self.insert_entry(
-            name.clone(),
-            resolved,
-            false,
-            RegistrationOrigin::Registered,
-        );
+        self.insert_entry(name.clone(), resolved, false, origin);
         Ok(name)
     }
 
@@ -654,6 +675,12 @@ impl KilnRegistry {
         let resolved = ResolvedPath::resolve(&absolute);
         match self.read().entries.get(&name) {
             Some(existing) if existing.path == *resolved.lexical() => return Ok(()),
+            // A name this daemon derived for a directory it opened is a label,
+            // not a claim: it was never written down and it dies with the
+            // process. A user registering that name outranks it, or opening a
+            // directory would make its basename unusable for the rest of the
+            // daemon's life.
+            Some(existing) if existing.origin == RegistrationOrigin::Discovered => {}
             Some(existing) => {
                 return Err(RegistrationRefused(format!(
                     "The kiln name '{name}' is already registered to '{}'. Choose another name, \
@@ -707,6 +734,9 @@ impl KilnRegistry {
             // Same name, same directory: two spellings of one entry, so
             // there is nothing to choose between.
             Some(existing) if existing.path == *resolved.lexical() => return Ok(()),
+            // A derived label for an opened directory never contests a name
+            // the user wrote down. See `register_named`.
+            Some(existing) if existing.origin == RegistrationOrigin::Discovered => {}
             Some(existing) => {
                 return Err(RegistryError::Collision {
                     name,
@@ -784,6 +814,15 @@ impl KilnRegistry {
             origin,
         };
         let mut index = self.write();
+        // A discovered label the caller is replacing leaves the reverse index
+        // pointing at a name that no longer exists, so it goes first.
+        if let Some(previous) = index.entries.get(&name) {
+            if previous.origin == RegistrationOrigin::Discovered && previous.path != kiln.path {
+                let (stale, stale_resolved) = (previous.path.clone(), previous.resolved.clone());
+                index.by_path.remove(&stale);
+                index.by_path.remove(&stale_resolved);
+            }
+        }
         // `or_insert`, not `insert`: two names may legitimately alias one
         // directory, and the reverse lookup then answers with the first in
         // name order rather than whichever was indexed last.

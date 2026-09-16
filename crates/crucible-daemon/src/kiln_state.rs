@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
-use crucible_core::config::{KilnName, Registration};
+use crucible_core::config::{find_kiln_entry, KilnName, Registration};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -181,7 +181,13 @@ impl KilnStateStore {
         self.store.update(|state| {
             *state = gate_version(std::mem::take(state), &file)?;
 
-            let outcome = match state.kilns.get(name.as_str()) {
+            // The FOLDED lookup, because two names that differ only in case
+            // are one kiln. A raw-string lookup writes `Docs` beside `docs`
+            // and the registry then holds one of them, chosen by whichever
+            // landed last.
+            let existing_key =
+                find_kiln_entry(&state.kilns, name.as_str()).map(|(key, _)| key.clone());
+            let outcome = match existing_key.as_ref().and_then(|key| state.kilns.get(key)) {
                 Some(existing) if existing.path == path => RegisterOutcome::AlreadyPresent,
                 Some(existing) => bail!(
                     "the kiln name '{name}' is already registered to '{}' in {}. \
@@ -224,11 +230,19 @@ impl KilnStateStore {
         let file = self.path().to_path_buf();
         self.store.update(|state| {
             *state = gate_version(std::mem::take(state), &file)?;
-            let removed = state.kilns.remove(name).is_some();
+            let key = find_kiln_entry(&state.kilns, name).map(|(key, _)| key.clone());
+            let removed = key
+                .as_ref()
+                .and_then(|key| state.kilns.remove(key))
+                .is_some();
             // A default naming an entry that no longer exists resolves to
             // nothing, and a `default_kiln` that resolves to nothing is read as
             // "no default" by one consumer and as a name by another.
-            if removed && state.default_kiln.as_deref() == Some(name) {
+            let names_the_removed = state
+                .default_kiln
+                .as_deref()
+                .is_some_and(|current| KilnName::fold_str(current) == KilnName::fold_str(name));
+            if removed && names_the_removed {
                 state.default_kiln = state.kilns.keys().next().cloned();
             }
             Ok(removed)

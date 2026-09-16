@@ -110,9 +110,20 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
 /// and the one the web layer joins a session's kilns against. It used to be the
 /// `[kiln] name` out of the kiln's own `kiln.toml`: a name the corpus asserts
 /// about itself, which two kilns can claim at once and which no caller can say
-/// back to us. A directory with no registry entry falls back to the name that
-/// *would* be derived from its basename, so the picker still has something to
-/// show for a kiln opened by another door.
+/// back to us.
+///
+/// # The listing never publishes a name the attach refuses
+///
+/// It used to. A directory with no registry entry was listed under the name
+/// this daemon *would* have derived from its basename, and
+/// `session.connect_kiln` answered `Unknown kiln "docs"` for exactly that
+/// name — a picker offering a kiln the daemon then refused with 422.
+///
+/// So there is one source and no fallback: the name comes from the registry or
+/// there is no name. Opening a directory is what puts it in the registry
+/// (`KilnManager::open`), so the nameless case is only what the registration
+/// floor refuses — and `registered` says so, for a client that must not offer
+/// the row.
 ///
 /// `path` stays, by design — this is the one listing whose job is to say where
 /// a kiln lives.
@@ -129,21 +140,12 @@ pub(crate) async fn handle_kiln_list(
         // for kiln-less sessions, but it is config/session storage — not a
         // user kiln. Listing it would surface ".crucible" in every kiln picker.
         .filter(|(path, _, _)| path != data_home)
-        .map(|(path, name, last_access)| {
-            let registered = registry
-                .name_for(path)
-                .map(|name| name.to_string())
-                .or_else(|| {
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .and_then(crucible_core::config::KilnName::normalize)
-                        .map(|n| n.to_string())
-                })
-                .or_else(|| name.clone())
-                .unwrap_or_default();
+        .map(|(path, _self_asserted, last_access)| {
+            let name = registry.name_for(path);
             serde_json::json!({
                 "path": path.to_string_lossy(),
-                "name": registered,
+                "name": name.as_ref().map(|n| n.as_str()).unwrap_or_default(),
+                "registered": name.is_some(),
                 "last_access_secs_ago": last_access.elapsed().as_secs()
             })
         })
@@ -202,8 +204,9 @@ pub(crate) async fn handle_kiln_register(
                     req.id,
                     INVALID_PARAMS,
                     format!(
-                        "{e}. A kiln name is lower-case `[a-z0-9._-]`, at most {} characters, \
-                         and does not start with a dot.",
+                        "{e}. A kiln name holds `[A-Za-z0-9._- ]`, at most {} characters, \
+                         does not start with a dot, and is not padded with spaces. Two names \
+                         that differ only in case are one kiln.",
                         KilnName::MAX_LEN
                     ),
                 )
@@ -288,12 +291,14 @@ pub(crate) async fn handle_kiln_register(
 /// | Registered in state only | `registered` | — |
 /// | Both, same path | `config` | `also_registered` |
 /// | Both, different paths | `config` | `shadows` names the state path |
-/// | Open by path, never registered | `discovered` | — |
+/// | Opened by path, named by this daemon | `discovered` | — |
 /// | Registered, directory gone | `registered` | `missing` |
 ///
-/// `discovered` is not a registration. It is a directory some other door
-/// opened — `kiln.open` has no registration floor — and it is listed so the
-/// user can see it is NOT a kiln any session can name.
+/// `discovered` is a name, not a registration. Opening a directory names it in
+/// the live registry (`KilnManager::open`), so a session CAN attach it and
+/// `kiln.list` may publish it; nothing is written down, so the name lasts only
+/// while this daemon runs. Attaching it is what records it. The row says
+/// `discovered` so the user can see which names are in that state.
 pub(crate) async fn handle_kiln_registry_list(
     req: Request,
     registry: &Arc<crate::kiln_registry::KilnRegistry>,
@@ -314,12 +319,20 @@ pub(crate) async fn handle_kiln_registry_list(
     let mut rows = Vec::new();
     for kiln in registry.entries() {
         let name = kiln.name().to_string();
-        let also = recorded.kilns.get(&name);
+        // Folded, because a name resolves case-insensitively: a state entry
+        // spelled `docs` under a config entry spelled `Docs` is the SAME
+        // contested name, and a raw lookup would report neither the agreement
+        // nor the conflict.
+        let also =
+            crucible_core::config::find_kiln_entry(&recorded.kilns, &name).map(|(_, entry)| entry);
         rows.push(serde_json::json!({
             "name": name,
             "path": kiln.path().to_string_lossy(),
             "origin": kiln.origin().as_str(),
-            "default": default.as_deref() == Some(name.as_str()),
+            "default": default.as_deref().is_some_and(|d| {
+                crucible_core::config::KilnName::fold_str(d)
+                    == crucible_core::config::KilnName::fold_str(&name)
+            }),
             "missing": !kiln.path().is_dir(),
             "lazy": kiln.lazy(),
             // Both layers hold the name and agree: one registration written
@@ -402,7 +415,7 @@ pub(crate) async fn handle_kiln_forget(
 
     let held = state
         .read()
-        .map(|file| file.kilns.contains_key(&params.name))
+        .map(|file| crucible_core::config::find_kiln_entry(&file.kilns, &params.name).is_some())
         .unwrap_or(false);
 
     if !held {
@@ -1149,12 +1162,12 @@ mod tests {
             handle_kiln_register(unnamed_register_request(&dir), &registry, &state, None).await;
         let data = resp.result.expect("an unnamed registration succeeds");
 
-        assert_eq!(data["name"], serde_json::json!("my-vault"));
+        assert_eq!(data["name"], serde_json::json!("My Vault"));
         assert_eq!(data["outcome"], serde_json::json!("added"));
-        assert!(state.read().unwrap().kilns.contains_key("my-vault"));
+        assert!(state.read().unwrap().kilns.contains_key("My Vault"));
         assert_eq!(
             registry
-                .resolve(&KilnName::parse("my-vault").unwrap())
+                .resolve(&KilnName::parse("my vault").unwrap())
                 .path()
                 .as_deref(),
             Some(dir.canonicalize().unwrap().as_path()),
@@ -1326,14 +1339,14 @@ mod tests {
         let registry = crate::test_support::kiln_registry(&data_home, &[]);
         let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
 
-        for bad in ["Notes", "my notes", "../escape", ".hidden", ""] {
+        for bad in ["../escape", ".hidden", "", " padded ", "a/b"] {
             let resp =
                 handle_kiln_register(register_request(bad, &dir), &registry, &state, None).await;
             let err = resp
                 .error
                 .unwrap_or_else(|| panic!("{bad:?} must be refused"));
             assert!(
-                err.message.contains("[a-z0-9._-]"),
+                err.message.contains("[A-Za-z0-9._- ]"),
                 "{bad:?}: the refusal must state the rule, got: {}",
                 err.message
             );
@@ -1729,28 +1742,136 @@ mod tests {
         );
     }
 
-    /// A directory open under some other door — `kiln.open`, which has no
-    /// registration floor — has no registry entry at all. It still needs a
-    /// name to show in a picker, and the fallback is the one that *would* be
-    /// derived from its basename rather than the kiln's self-description.
+    /// The user's own case, end to end and across the file boundary: a
+    /// registration written to `kilns.json` under `Crucible Help` is served
+    /// under that spelling, answers to `crucible help`, and is marked the
+    /// default. The name crosses a JSON file, the state overlay and the
+    /// registry, and every one of those keyed by a raw string before.
     #[tokio::test]
-    async fn an_unregistered_open_kiln_falls_back_to_its_derived_name() {
+    async fn a_registration_with_capitals_and_a_space_survives_the_state_file() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let docs = tmp.path().join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+        state
+            .register(
+                &KilnName::parse("Crucible Help").unwrap(),
+                &docs,
+                false,
+                /* make_default */ true,
+            )
+            .expect("the registration must be written");
+
+        // Re-read from disk, as the daemon does at bind.
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        registry.overlay_state(state.registrations());
+
+        let attached =
+            crate::server::session::scope::resolve_scope_kiln("crucible help", &registry)
+                .expect("any case of a registered name must attach");
+        assert_eq!(
+            attached.name().as_str(),
+            "Crucible Help",
+            "the session stores the spelling its owner registered"
+        );
+        assert_eq!(attached.path(), docs);
+
+        let km = Arc::new(KilnManager::new().with_kiln_registry(registry.clone()));
+        let resp = handle_kiln_registry_list(
+            registry_list_request(),
+            &registry,
+            &state,
+            &km,
+            /* config_default_kiln */ None,
+            &data_home,
+        )
+        .await;
+        let data = resp.result.expect("the listing returns rows");
+        let rows = data["kilns"].as_array().expect("an array");
+        // Beside the bundled help corpus, which every config is offered.
+        let row = rows
+            .iter()
+            .find(|row| row["name"] == serde_json::json!("Crucible Help"))
+            .unwrap_or_else(|| panic!("no row under the registered spelling: {rows:?}"));
+        assert_eq!(row["origin"], "registered");
+        assert_eq!(row["default"], true);
+    }
+
+    /// A directory opened under any door gets its name from the registry,
+    /// because the registry is the only thing that can hand a name back to
+    /// `session.connect_kiln`. `kiln.open` used to have no registration floor
+    /// and no entry, and the listing filled the hole with the basename it
+    /// *would* have derived — a label the attach then refused with 422.
+    #[tokio::test]
+    async fn an_open_kiln_is_named_by_the_registry_that_opened_it() {
         let tmp = TempDir::new().unwrap();
         let data_home = tmp.path().join("data");
         let kiln_dir = tmp.path().join("My Vault");
         std::fs::create_dir_all(&kiln_dir).unwrap();
 
-        let km = Arc::new(KilnManager::new());
-        km.open(&kiln_dir).await.expect("open the kiln");
         let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let km = Arc::new(KilnManager::new().with_kiln_registry(registry.clone()));
         assert!(
             registry.name_for(&kiln_dir).is_none(),
             "precondition: the directory must be unregistered"
         );
 
-        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
+        km.open(&kiln_dir).await.expect("open the kiln");
 
+        assert_eq!(
+            registry.name_for(&kiln_dir).as_ref().map(|n| n.as_str()),
+            Some("My Vault"),
+            "opening a directory is what gives it a name"
+        );
+
+        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
         let listed = resp.result.expect("kiln.list returns a list");
-        assert_eq!(listed.as_array().expect("an array")[0]["name"], "my-vault");
+        let row = &listed.as_array().expect("an array")[0];
+        assert_eq!(row["name"], "My Vault");
+        assert_eq!(row["registered"], true);
+    }
+
+    /// The rule, stated as the round trip the user's 422 broke: every name the
+    /// listing publishes is a name the attach resolves. The listing is the
+    /// only place a picker learns a name, so a name it invents is a name the
+    /// user is invited to send and the daemon then refuses.
+    #[tokio::test]
+    async fn every_name_kiln_list_publishes_can_be_attached() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let configured = tmp.path().join("Team Notes");
+        let by_path = tmp.path().join("docs");
+        std::fs::create_dir_all(&configured).unwrap();
+        std::fs::create_dir_all(&by_path).unwrap();
+
+        let registry =
+            crate::test_support::kiln_registry(&data_home, &[("Team Notes", &configured)]);
+        let km = Arc::new(KilnManager::new().with_kiln_registry(registry.clone()));
+        km.open(&configured)
+            .await
+            .expect("open the configured kiln");
+        // The door the web client uses, and the one that had no registration.
+        km.open(&by_path).await.expect("open the other kiln");
+
+        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
+        let listed = resp.result.expect("kiln.list returns a list");
+        let rows = listed.as_array().expect("an array");
+        assert_eq!(rows.len(), 2, "both kilns are listed: {listed}");
+
+        for row in rows {
+            let name = row["name"].as_str().expect("a row names its kiln");
+            assert!(
+                row["registered"].as_bool().unwrap_or(false),
+                "an offered name must be a registered one: {row}"
+            );
+            if let Err(refusal) = crate::server::session::scope::resolve_scope_kiln(name, &registry)
+            {
+                panic!(
+                    "kiln.list published {name:?}, which session.connect_kiln refuses: {refusal}"
+                );
+            }
+        }
     }
 }

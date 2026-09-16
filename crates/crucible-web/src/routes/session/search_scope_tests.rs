@@ -13,7 +13,7 @@
 #[tokio::test]
 async fn search_refuses_a_kiln_that_is_not_a_usable_name() {
     let (status, json) =
-        crate::test_support::request_json("GET", "/api/sessions/search?q=x&kiln=Bad%20Name", None)
+        crate::test_support::request_json("GET", "/api/sessions/search?q=x&kiln=..%2Fescape", None)
             .await;
 
     assert_eq!(
@@ -25,7 +25,7 @@ async fn search_refuses_a_kiln_that_is_not_a_usable_name() {
         json["error"]["message"]
             .as_str()
             .unwrap_or_default()
-            .contains("Bad Name"),
+            .contains("../escape"),
         "the refusal names the value it refused: {json}"
     );
 }
@@ -37,7 +37,7 @@ async fn search_refuses_a_kiln_that_is_not_a_usable_name() {
 async fn search_keeps_the_usable_names_when_only_some_are_refused() {
     let (status, json) = crate::test_support::request_json(
         "GET",
-        "/api/sessions/search?q=x&kiln=Bad%20Name&kiln=notes",
+        "/api/sessions/search?q=x&kiln=..%2Fescape&kiln=notes",
         None,
     )
     .await;

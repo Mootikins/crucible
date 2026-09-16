@@ -4,7 +4,7 @@ use super::create::validate_trust_level;
 use crate::agent_manager::AgentError;
 use crate::session_manager::KilnScope;
 use crate::trust_resolution::{find_workspace_and_resolve_classification, resolve_provider_trust};
-use crucible_core::config::KilnName;
+use crucible_core::config::{KilnName, RegistrationOrigin};
 use crucible_core::Session;
 
 /// The caller's kiln set, as the four backlog-spanning handlers receive it.
@@ -159,35 +159,84 @@ fn parse_scope_kiln(raw: &str) -> Result<KilnName, String> {
     })
 }
 
+/// The whole of the attach-side name gate: parse, then resolve.
+///
+/// A function rather than two steps inside the handler because it is the
+/// contract `kiln.list` has to satisfy. The listing publishes a name for every
+/// open kiln, and a name it publishes that this refuses is a 422 the user
+/// meets by clicking what the picker offered. `kiln.list`'s own test calls
+/// this, so the two answers cannot drift apart again.
+pub(crate) fn resolve_scope_kiln(
+    raw: &str,
+    registry: &crate::kiln_registry::KilnRegistry,
+) -> Result<crate::kiln_registry::RegisteredKiln, String> {
+    let name = parse_scope_kiln(raw)?;
+    // The registry is the gate: a name it does not know resolves to no
+    // directory, and attaching it would leave the session holding a kiln that
+    // grants nothing — an absence, which is the thing consumers misread as
+    // "unconstrained". So it is refused here instead of attached.
+    registry.resolve(&name).registered().ok_or_else(|| {
+        format!(
+            "Unknown kiln {:?}: no `[kilns]` entry is registered under it. \
+             Register one with `cru kiln register <name> <path>`.",
+            name.as_str()
+        )
+    })
+}
+
+/// Write a name this daemon derived into `kilns.json`, because a session is
+/// about to store it.
+///
+/// A [`RegistrationOrigin::Discovered`] entry lives only as long as the daemon
+/// that opened the directory. That is fine for a listing and NOT fine for a
+/// session: `Session.kilns` holds names, so a name that dies at the next boot
+/// leaves a persisted session pointing at nothing — the absence this module
+/// spends its length refusing to create.
+///
+/// Attaching is the act that makes the name matter beyond this process, so it
+/// is the act that writes it down. A failed write is logged and the attach
+/// continues: the session works today, and the user can name the directory
+/// themselves.
+fn persist_attached_kiln(
+    state: &Arc<crate::kiln_state::KilnStateStore>,
+    kiln: &crate::kiln_registry::RegisteredKiln,
+) {
+    if kiln.origin() != RegistrationOrigin::Discovered {
+        return;
+    }
+    match state.register(kiln.name(), kiln.path(), /* auto */ true, false) {
+        Ok(_) => tracing::info!(
+            kiln = %kiln.name(),
+            path = %kiln.path().display(),
+            "Recorded the attached kiln, so its name outlives this daemon"
+        ),
+        Err(e) => tracing::warn!(
+            kiln = %kiln.name(),
+            error = %e,
+            "Could not record the attached kiln; its name lasts only while this daemon runs"
+        ),
+    }
+}
+
 pub(crate) async fn handle_session_connect_kiln(
     req: Request,
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
     km: &Arc<KilnManager>,
+    kiln_state: &Arc<crate::kiln_state::KilnStateStore>,
     llm_config: &Option<LlmConfig>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
     let kiln = require_param!(req, "kiln", as_str).to_string();
-    let name = match parse_scope_kiln(&kiln) {
-        Ok(name) => name,
+    let kiln = match resolve_scope_kiln(&kiln, sm.kiln_registry()) {
+        Ok(kiln) => kiln,
         Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
     };
-    // The registry is the gate now: a name it does not know resolves to no
-    // directory, and attaching it would leave the session holding a kiln that
-    // grants nothing — an absence, which is the thing consumers misread as
-    // "unconstrained". So it is refused here instead of attached.
-    let Some(kiln) = sm.kiln_registry().resolve(&name).registered() else {
-        return Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!(
-                "Unknown kiln {:?}: no `[kilns]` entry is registered under it. \
-                 Register one with `cru kiln register <name> <path>`.",
-                name.as_str()
-            ),
-        );
-    };
+    // The registered spelling, not the caller's: names resolve case-
+    // insensitively, and what the session stores must be what every renderer
+    // and every later lookup sees.
+    let name = kiln.name().clone();
     let kiln_path = kiln.path().to_path_buf();
 
     // Trust must gate before any side effect: resolving the classification only
@@ -209,7 +258,10 @@ pub(crate) async fn handle_session_connect_kiln(
     }
 
     match am.connect_kiln(&session_id, &name, Some(event_tx)).await {
-        Ok(session) => scope_response(req.id, &session),
+        Ok(session) => {
+            persist_attached_kiln(kiln_state, &kiln);
+            scope_response(req.id, &session)
+        }
         Err(e) => scope_error(req.id, e),
     }
 }
@@ -249,4 +301,65 @@ pub(crate) async fn handle_session_set_workspace(req: Request, am: &Arc<AgentMan
         "refused session.set_workspace: the workspace is fixed at creation"
     );
     scope_error(req.id, am.refuse_workspace_change(&session_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// A session stores kiln NAMES, so a name this daemon derived for itself
+    /// must outlive the daemon once a session holds it. Attaching is the act
+    /// that writes it down; without that, the session's kiln resolves to
+    /// nothing after the next restart.
+    #[test]
+    fn attaching_a_kiln_this_daemon_named_writes_it_down() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let docs = tmp.path().join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let name = registry
+            .register_discovered(&docs)
+            .expect("the floor admits an ordinary directory");
+        let kiln = registry
+            .resolve(&name)
+            .registered()
+            .expect("the entry it just made");
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        persist_attached_kiln(&state, &kiln);
+
+        let recorded = state.read().expect("the state file must read back");
+        assert!(
+            recorded.kilns.contains_key("docs"),
+            "the attached name must be recorded: {recorded:?}"
+        );
+    }
+
+    /// A configured kiln is already written down, in a file the user owns.
+    /// Attaching one must not copy it into the state store, or every config
+    /// entry grows a shadow the user never made.
+    #[test]
+    fn attaching_a_configured_kiln_records_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let docs = tmp.path().join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+
+        let registry = crate::test_support::kiln_registry(&data_home, &[("Crucible Help", &docs)]);
+        let kiln = registry
+            .resolve(&KilnName::parse("crucible help").unwrap())
+            .registered()
+            .expect("a configured entry resolves whatever case is typed");
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        persist_attached_kiln(&state, &kiln);
+
+        assert!(
+            !state.path().exists(),
+            "a configured kiln needs no registration"
+        );
+    }
 }

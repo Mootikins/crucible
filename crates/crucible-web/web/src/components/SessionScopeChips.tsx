@@ -6,6 +6,7 @@ import type { KilnListEntry } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
+import { attachableKilns } from '@/lib/kiln-registry';
 import { swrLocal } from '@/lib/local-cache';
 import type { ChipOption } from '@/components/composer/ChipSelect';
 import type { ComposerChip } from '@/components/composer/ChipRow';
@@ -92,12 +93,10 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
 
   const kilnOptions = (): ChipOption[] => {
     const attached = new Set(selectedKilns());
-    const rows: ChipOption[] = kilns()
-      // A listed kiln the daemon could derive no name for cannot be attached —
-      // there is nothing to send. Offering the row anyway would post an empty
-      // name and show the 422 as a toast, which reads as a broken picker
-      // rather than as a kiln that needs registering.
-      .filter((k): k is KilnListEntry & { name: string } => !!k.name)
+    // A row the daemon cannot resolve is not offered. It says so itself, with
+    // `registered: false`, and the rule is spelled once in `attachableKilns`
+    // so the draft composer and this one cannot disagree about it.
+    const rows: ChipOption[] = attachableKilns(kilns())
       .map((k) => ({
         value: k.name,
         label: k.name,

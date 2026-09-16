@@ -5,7 +5,7 @@ import { BottomSheet, SheetOption } from '@/components/mobile/BottomSheet';
 import { closeDraftTab } from '@/lib/draft-session';
 import { draftCreateParams, HOST_RUNTIME } from '@/lib/session-draft';
 import { iconForAgent } from '@/lib/agent-icons';
-import { kilnNameForPath } from '@/lib/kiln-registry';
+import { attachableKilns, kilnNameForPath } from '@/lib/kiln-registry';
 import {
   getConfig,
   getProviderTargets,
@@ -111,9 +111,10 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
     const kilnOptions = [
       { value: '', label: defaultKilnName() ? `Default (${defaultKilnName()})` : 'Default' },
       { value: 'none', label: 'No kiln' },
-      ...kilns()
-        .filter((k) => !!k.name?.trim())
-        .map((k) => ({ value: k.name!, label: k.name! })),
+      // The same rule the two desktop pickers use: a row the daemon reports as
+      // `registered: false` names a directory `connect_kiln` refuses, so the
+      // phone must not offer it either.
+      ...attachableKilns(kilns()).map((k) => ({ value: k.name, label: k.name })),
     ];
     const modelOptions = [
       { value: '', label: 'Default' },

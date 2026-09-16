@@ -147,7 +147,12 @@ pub fn overlay_registrations(
     let merged = overlay_layers(
         config,
         state,
-        |entry| entry.name.clone(),
+        // The FOLDED name, because a kiln name resolves case-insensitively.
+        // Keyed by the raw string, `Docs` in the config and `docs` in the
+        // state store are two entries that both reach the registry, where the
+        // second silently re-points the first — a conflict the user is never
+        // shown because the overlay never saw one.
+        |entry| crate::config::KilnName::fold_str(&entry.name),
         |declared, entry| declared.path == entry.path,
     );
     Overlay {
@@ -264,6 +269,29 @@ mod tests {
             overlay.effective[1].origin,
             RegistrationOrigin::Registered,
             "the origin must survive, or `cru kiln list` cannot say which side owns the name"
+        );
+    }
+
+    /// Two layers spelling one name differently is a CONFLICT, not two kilns.
+    /// Names resolve case-insensitively, so keying the overlay by the raw
+    /// string let both entries through and the state one landed last.
+    #[test]
+    fn two_layers_that_differ_only_in_case_are_one_contested_name() {
+        let overlay = overlay_registrations(
+            [Registration::config("Crucible Help", "/a/docs")],
+            [Registration::registered("crucible help", "/b/docs")],
+        );
+
+        assert_eq!(
+            names(&overlay),
+            ["Crucible Help"],
+            "the config layer wins, and it wins with its own spelling"
+        );
+        assert_eq!(
+            overlay.shadowed.len(),
+            1,
+            "the user must be able to see the entry that does nothing: {:?}",
+            overlay.shadowed
         );
     }
 

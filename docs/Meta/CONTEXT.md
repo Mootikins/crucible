@@ -25,6 +25,12 @@ _Avoid_: repo, workspace (for this meaning)
 Where knowledge goes. A session attaches kilns as a flat set. A session is not stored in one.
 _Avoid_: vault, knowledge base, notebook
 
+**Kiln name**:
+The registry key a kiln is addressed by, everywhere. It holds `[A-Za-z0-9._- ]`,
+keeps the case and the spaces its owner wrote, and resolves case-insensitively.
+No kiln is called "default": that word names the `default_kiln` pointer only.
+_Avoid_: kiln id, kiln label, kiln path (for this meaning)
+
 **Workspace**:
 One instance of a project directory, the root or a worktree. A runtime concept with no config file.
 _Avoid_: project (for this meaning), checkout

@@ -1030,14 +1030,14 @@ impl Server {
             }
         });
 
-        // Startup: open the registered project kilns (+ crucible home) so a
-        // client that never runs `cru chat` — e.g. `cru web` on a fresh
-        // daemon — can still resolve notes. Note-open and other file APIs
-        // gate on the daemon's OPEN-kiln set (find_enclosing_kiln); with an
-        // empty set every note-open 404s ("File not within any open kiln").
-        // The same list then feeds the title catch-up sweep (persisted
-        // sessions with content but no title). Project kiln entries may point
-        // at the `.crucible` data dir — normalize to the kiln root.
+        // Startup: open the kilns this daemon is meant to serve, so a client
+        // that never runs `cru chat` — e.g. `cru web` on a fresh daemon — can
+        // still resolve notes. Note-open and other file APIs gate on the
+        // daemon's OPEN-kiln set (find_enclosing_kiln); with an empty set
+        // every note-open 404s ("File not within any open kiln"), and a
+        // restart empties it. `startup_kiln_roots` decides the set and states
+        // why each source is in it. The same list then feeds the title
+        // catch-up sweep (persisted sessions with content but no title).
         {
             let sm = self.session_manager.clone();
             let km = self.kiln_manager.clone();
@@ -1045,31 +1045,14 @@ impl Server {
             let tx = self.rpc_context.event_tx.clone();
             let starting = self.activity.start(WorkKind::Maintenance);
 
-            // Kilns to OPEN: already-open kilns + registered project kiln roots.
-            // Deliberately NOT ~/.crucible — opening the config dir as a kiln
-            // leaked it into km.list()/`/api/kilns` forever and spun a watcher
-            // over it. Project entries may point at the `.crucible` data dir;
-            // normalize to the kiln root.
-            let mut open_kilns: Vec<std::path::PathBuf> = km
+            let already_open: Vec<std::path::PathBuf> = km
                 .list()
                 .await
                 .into_iter()
                 .map(|(path, _, _)| path)
                 .collect();
-            for project in pm.list() {
-                for kiln in project.kilns {
-                    let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
-                        kiln.path.parent().map(|p| p.to_path_buf())
-                    } else {
-                        Some(kiln.path)
-                    };
-                    if let Some(root) = root {
-                        if !open_kilns.contains(&root) {
-                            open_kilns.push(root);
-                        }
-                    }
-                }
-            }
+            let open_kilns =
+                startup_kiln_roots(already_open, pm.list(), &self.rpc_context.kiln_registry);
 
             tokio::spawn(async move {
                 // Held for the whole catch-up: opening the kilns and titling
@@ -1541,6 +1524,65 @@ impl Server {
             }
         }
     }
+}
+
+/// The directories a starting daemon opens.
+///
+/// Three sources, and the third is the one whose absence closed every kiln
+/// after a restart:
+///
+/// 1. **Already open.** A no-op at boot, and the reason this is a function of
+///    its input rather than a read of the manager: the same rule serves a
+///    re-bind of a daemon that is already serving kilns.
+/// 2. **The kiln registry's eager entries.** The registry is the only thing
+///    that knows which directories ARE kilns, and `lazy` is its own answer to
+///    "may this open unasked". A registered kiln that nothing opens is a kiln
+///    the user sees in their config and cannot reach: `kiln.list` reports the
+///    manager, the web file routes gate on `kiln.list`, and a note write to it
+///    answers 404. This source used to be missing, and a kiln root that was
+///    also a *project* opened by accident through the third source. Kiln roots
+///    stopped being projects, and then nothing opened them at all.
+/// 3. **Registered project kilns.** A project declares the kilns its work
+///    reads. Those entries may name the `.crucible` data directory, so they
+///    are normalized to the kiln root.
+///
+/// Deliberately NOT `~/.crucible`: opening the daemon data root as a kiln
+/// leaked it into `km.list()` and `/api/kilns` forever and spun a watcher over
+/// it. A lazy entry is absent by construction — [`KilnRegistry::eager`]
+/// filters it — so the bundled help corpus is never opened, indexed or
+/// searched until a session asks for it by name.
+///
+/// [`KilnRegistry::eager`]: crate::kiln_registry::KilnRegistry::eager
+pub(crate) fn startup_kiln_roots(
+    already_open: Vec<std::path::PathBuf>,
+    projects: Vec<crucible_core::project::Project>,
+    registry: &crate::kiln_registry::KilnRegistry,
+) -> Vec<std::path::PathBuf> {
+    let mut roots = already_open;
+    let push = |root: std::path::PathBuf, roots: &mut Vec<std::path::PathBuf>| {
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    };
+
+    for kiln in registry.eager() {
+        push(kiln.resolved_path().to_path_buf(), &mut roots);
+    }
+
+    for project in projects {
+        for kiln in project.kilns {
+            let root = if kiln.path.file_name().is_some_and(|n| n == ".crucible") {
+                kiln.path.parent().map(|p| p.to_path_buf())
+            } else {
+                Some(kiln.path)
+            };
+            if let Some(root) = root {
+                push(root, &mut roots);
+            }
+        }
+    }
+
+    roots
 }
 
 #[cfg(test)]

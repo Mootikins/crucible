@@ -398,13 +398,33 @@ async fn test_client_ping_event_mode() {
     assert_eq!(result, "pong");
 }
 
+/// A registered kiln is OPEN once the daemon has started, so the first
+/// `kiln.list` of a fresh daemon names it.
+///
+/// This used to assert the opposite. `kiln.list` reports the kilns the manager
+/// holds open, a starting daemon held none, and every kiln-addressed route
+/// answered 404 after a restart against a kiln the user could see in their own
+/// config. Boot opens the registry's eager entries now.
+///
+/// Polled rather than slept on: the boot open runs in its own task, and a
+/// fixed wait is a guess about how long a SQLite open takes on the machine
+/// running the test.
 #[tokio::test]
-async fn test_client_kiln_list_initially_empty() {
+async fn test_client_kiln_list_names_the_registered_kiln() {
     let (_tmp, sock_path, _handle) = setup_test_server().await;
 
     let client = DaemonClient::connect_to(&sock_path).await.unwrap();
-    let list = client.kiln_list().await.unwrap();
-    assert!(list.is_empty());
+    for _ in 0..100 {
+        let list = client.kiln_list().await.unwrap();
+        if list.iter().any(|row| row["name"] == "kiln") {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!(
+        "the registered kiln never opened: {:?}",
+        client.kiln_list().await.unwrap()
+    );
 }
 
 #[tokio::test]

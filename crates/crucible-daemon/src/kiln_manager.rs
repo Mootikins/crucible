@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig};
 use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
@@ -419,6 +419,39 @@ impl KilnManager {
             .and_then(|r| r.name_for(&canonical))
     }
 
+    /// Give a directory a registry name as it opens, if it has none.
+    ///
+    /// The registry is the single source of kiln names: `kiln.list` publishes
+    /// what it holds and `session.connect_kiln` resolves through it alone. A
+    /// directory that opened under a door with no registration — `kiln.open`,
+    /// which any client may call by path — had no entry, so the listing
+    /// derived a label of its own and the attach answered
+    /// `Unknown kiln "docs"`. Naming it here closes that, at the one moment
+    /// every door passes through.
+    ///
+    /// A refusal leaves the kiln open and NAMELESS, which is the honest
+    /// answer: the floor refuses the data root and the session storage root,
+    /// and both are opened deliberately. `kiln.list` then reports the row as
+    /// unregistered rather than inventing a name for it.
+    fn name_on_open(&self, canonical: &Path) -> Option<crucible_core::config::KilnName> {
+        let registry = self.kiln_registry.as_ref()?;
+        if let Some(name) = registry.name_for(canonical) {
+            return Some(name);
+        }
+        match registry.register_discovered(canonical) {
+            Ok(name) => {
+                info!(kiln = %name, path = %canonical.display(), "Named an opened kiln");
+                Some(name)
+            }
+            Err(refusal) => {
+                // Debug, not warn: the data root is opened on every kiln-less
+                // session and is refused every time, by design.
+                debug!(path = %canonical.display(), "{refusal}");
+                None
+            }
+        }
+    }
+
     pub fn enrichment_config(&self) -> Option<&EmbeddingProviderConfig> {
         self.enrichment_config.as_ref()
     }
@@ -457,6 +490,8 @@ impl KilnManager {
                 return Ok(()); // Already open
             }
         }
+
+        self.name_on_open(&canonical);
 
         let db_path = canonical.join(".crucible").join("crucible-sqlite.db");
 

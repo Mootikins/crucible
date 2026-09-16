@@ -25,7 +25,7 @@ import { WorkingDots } from '@/components/AssistantTurn';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
 import { syncRecentsFromServer } from '@/lib/recent-files';
-import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
+import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
 import type { ChipOption } from '@/components/composer/ChipSelect';
@@ -217,8 +217,15 @@ export const CenterComposer: Component<{
    */
   const defaultKilnName = () => kilnNameForPath(defaultKilnPath(), kilns());
 
-  /** Registry names only: a nameless entry cannot be attached by name. */
-  const namedKilns = () => kilns().filter((k) => !!k.name?.trim());
+  /**
+   * The rows this picker may offer.
+   *
+   * Registry names only, and only the ones the daemon says it can resolve: a
+   * row it reports as `registered: false` names a directory `connect_kiln`
+   * refuses. The rule lives in `attachableKilns` so this composer and the live
+   * session's chips cannot drift apart on it.
+   */
+  const namedKilns = () => attachableKilns(kilns());
 
   const kilnOptions = (): ChipOption[] => [
     // '' = "whatever the config says", resolved to a name at submit. Offered

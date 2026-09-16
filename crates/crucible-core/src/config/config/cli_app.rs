@@ -873,7 +873,9 @@ endpoint = "http://localhost:11434"
     /// named entry, fall back to the flat field.
     pub fn resolved_kiln_path(&self) -> Option<std::path::PathBuf> {
         let name = self.resolved_default_kiln();
-        if let Some(entry) = self.kilns.get(&name) {
+        if let Some((_, entry)) =
+            crate::config::config::registry::find_kiln_entry(&self.kilns, &name)
+        {
             return Some(entry.path());
         }
         (!self.kiln_path.as_os_str().is_empty()).then(|| self.kiln_path.clone())
@@ -882,9 +884,14 @@ endpoint = "http://localhost:11434"
     /// Returns the effective default kiln name.
     ///
     /// With no `[kilns]` the pointer names the entry `resolved_kilns`
-    /// synthesizes from `kiln_path`, so the two agree. "default" survives
-    /// only as a pointer to nothing, for a `kiln_path` with no usable
-    /// basename — never as a kiln's identity.
+    /// synthesizes from `kiln_path`, so the two agree.
+    ///
+    /// No kiln is ever called "default". The word is the name of the
+    /// *pointer*, and a synthesized entry wearing it showed up as "default" in
+    /// every picker while its directory said otherwise. When a config names no
+    /// kiln at all, the answer is the bundled help corpus — a real kiln with a
+    /// real path, offered by `resolved_kilns` and therefore attachable — and
+    /// never a name that resolves to nothing.
     pub fn resolved_default_kiln(&self) -> String {
         if let Some(ref name) = self.default_kiln {
             return name.clone();
@@ -894,7 +901,7 @@ endpoint = "http://localhost:11434"
             return self.kilns.keys().min().cloned().unwrap_or_default();
         }
         crate::config::config::registry::synthesized_kiln_name(&self.kiln_path)
-            .unwrap_or_else(|| "default".to_string())
+            .unwrap_or_else(|| crate::config::config::registry::BUNDLED_DOCS_KILN.to_string())
     }
 
     /// The registry NAME of the kiln a new session should attach, if any.
@@ -930,10 +937,8 @@ endpoint = "http://localhost:11434"
             return matched;
         }
         let default = self.resolved_default_kiln();
-        resolved
-            .contains_key(&default)
-            .then(|| crate::config::KilnName::normalize(&default))
-            .flatten()
+        crate::config::config::registry::find_kiln_entry(&resolved, &default)
+            .and_then(|(key, _)| crate::config::KilnName::normalize(key))
     }
 }
 
@@ -1015,6 +1020,56 @@ mod tests {
             config.resolved_default_kiln(),
             "crucible-docs",
             "the help corpus must not become the default kiln"
+        );
+    }
+
+    /// "default" is a POINTER, never a kiln's identity. A config that names
+    /// nothing at all falls back to the bundled help corpus — a real kiln with
+    /// a real path — rather than to a synthesized entry called "default" that
+    /// resolves to nothing.
+    #[test]
+    fn a_config_that_names_no_kiln_defaults_to_the_bundled_help_corpus() {
+        let config = CliAppConfig {
+            // No usable basename, so nothing is synthesized from it.
+            kiln_path: std::path::PathBuf::from("/"),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.resolved_default_kiln(),
+            crate::config::config::registry::BUNDLED_DOCS_KILN,
+            "the help corpus is the last resort, not a name that resolves to nothing"
+        );
+        assert_ne!(
+            config.resolved_default_kiln(),
+            "default",
+            "no kiln is ever called \"default\""
+        );
+        assert!(
+            config
+                .resolved_kilns()
+                .contains_key(crate::config::config::registry::BUNDLED_DOCS_KILN),
+            "the name the default points at must be a kiln that exists"
+        );
+    }
+
+    /// The `default_kiln` pointer and the `[kilns]` key are two spellings a
+    /// user types by hand, and names resolve case-insensitively everywhere
+    /// else. A pointer that missed on case alone named a kiln nobody could
+    /// attach.
+    #[test]
+    fn the_default_pointer_resolves_across_case() {
+        let mut config = CliAppConfig::default();
+        config.kilns.insert(
+            "Crucible Help".to_string(),
+            crate::config::config::registry::KilnEntry::Path(std::path::PathBuf::from("/docs")),
+        );
+        config.default_kiln = Some("crucible help".to_string());
+
+        assert_eq!(
+            config.resolved_kiln_path(),
+            Some(std::path::PathBuf::from("/docs")),
+            "the pointer must find the entry whatever case it is written in"
         );
     }
 

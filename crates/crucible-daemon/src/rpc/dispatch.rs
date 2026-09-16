@@ -679,6 +679,7 @@ impl RpcDispatcher {
                     &self.ctx.sessions,
                     &self.ctx.agents,
                     &self.ctx.kiln,
+                    &self.ctx.kiln_state,
                     &self.ctx.llm_config.get().map(|c| (*c).clone()),
                     &self.ctx.event_tx
                 )
