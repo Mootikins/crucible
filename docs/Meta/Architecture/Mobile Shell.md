@@ -55,8 +55,8 @@ These facts come from the tree at `crates/crucible-web/web`.
 | Fact | Evidence |
 |------|----------|
 | The shell has no WIDTH breakpoints. | Zero Tailwind breakpoint prefixes in `src/`. It does carry `@media(hover:none)` rules, so it is not innocent of touch — only of width. |
-| The shell is a window manager. | `src/components/windowing/WindowManager.tsx` |
-| Rails are fixed-width and collapsible. | `EdgePanel.tsx` — 250 px default width |
+| The shell is a window manager. | `src/windowing/components/WindowManager.tsx` |
+| Rails are fixed-width and collapsible. | `src/windowing/components/DockedBody.tsx` — 250 px default width |
 | Panels come from one registry. | `src/lib/panel-registry.ts`, `register-panels.tsx` |
 | Layout state lives in one store. | `src/stores/windowStore.ts` |
 | The PWA already ships. | `vite.config.ts`, `src/pwa-options.ts` |
@@ -261,9 +261,9 @@ mouse with one code path.
 
 - Set `touch-action: pan-y` on the content surface. The browser then gives the
   horizontal axis to the drawer.
-- Animate `transform: translateX(...)`. Do not animate `width`. `EdgePanel.tsx`
-  line 562 records the same reason for the desktop rails.
-- Honour `prefers-reduced-motion`. `EdgePanel.tsx` line 578 shows the check.
+- Animate `transform: translateX(...)`. Do not animate `width`. `DockedBody.tsx`
+  (`src/windowing/components/`) records the same reason for the desktop rails.
+- Honour `prefers-reduced-motion`. `DockedBody.tsx` shows the check.
 - Trap focus inside an open drawer. Return focus to the button on close.
 - Close the drawer on `Escape`, on a scrim tap, **and on the hardware back
   button** — a phone has no `Escape`, which leaves Android users only the scrim.

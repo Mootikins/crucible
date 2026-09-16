@@ -18,6 +18,7 @@ the implementation boundaries and required workflow.
 | How do configuration and plugins start? | [[Config Boot]], [[State Stores]], [[Meta/Plugin Conventions]] |
 | What is the plugin data/render contract? | [[Meta/Analysis/The Plugin Contract]], [[Meta/Analysis/Plugin API Plan]] |
 | Where does a new tool, provider, client or RPC land? | [[Consolidation Plan#Extension seams]] |
+| How does the web window manager work, and where does a layout feature go? | [[Web Windowing]] |
 | What proves the recent daemon-first work? | [[Meta/Analysis/2026-09-15 Architecture Follow-ups]] and [[Meta/Product]] |
 | What does a user do? | The relevant note under `docs/Help/`, rather than an implementation report |
 

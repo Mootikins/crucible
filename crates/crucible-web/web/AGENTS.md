@@ -23,19 +23,24 @@ bun run preview      # Preview production build
 
 ```
 src/
-├── components/         # UI components
-│   └── windowing/      # Window manager (WindowManager, SplitPane, Pane, TabBar, EdgePanel, etc.)
-├── contexts/           # SolidJS context providers (state management)
-├── hooks/              # Reusable reactive hooks
-├── stores/             # Global state (e.g. windowStore for layout/tabs/panels)
-├── types/              # Shared types (e.g. windowTypes)
-└── lib/                # Utilities, API client, non-reactive code
+├── windowing/           # Window manager core — no import from the app (see Testing: boundary.test.ts)
+│   ├── model/             # WindowState and the node types, the tree helpers, the v10 layout serializer
+│   ├── store/             # The store, the WindowPolicy seam, and the tab/layout/floating actions
+│   ├── components/        # WindowManager, EdgeHost, Ribbon, DockedBody, Pane, TabBar, FloatingWindow, etc.
+│   ├── reveal/             # RevealController and flyoutRect
+│   └── testing/            # neutralPolicy — shared by the core's unit tests and the harness page
+├── components/          # UI components
+├── contexts/            # SolidJS context providers (state management)
+├── hooks/               # Reusable reactive hooks
+├── stores/              # Global state; stores/windowStore.ts configures the windowing core with the app's WindowPolicy
+├── types/               # Shared types (e.g. windowTypes, now an alias layer over windowing/model/types)
+└── lib/                 # Utilities, API client, non-reactive code
 ```
 
-The main UI is a **window manager** (demo-style): header bar, collapsible edge panels (left/right/bottom), main area with recursive split panes and tab groups, floating windows, flyout, status bar. State is in `stores/windowStore` (Solid `createStore`); drag-and-drop uses `@thisbeyond/solid-dnd`.
+The main UI is a **window manager**: collapsible edge panels (left/right), a main area with recursive split panes and tab groups, and floating windows. The window manager itself is domainless and lives in `src/windowing/`; the app configures it once, with one `WindowPolicy`, from `stores/windowStore.ts`. Read `docs/Meta/Architecture/Web Windowing.md` for the folder, the policy and the edge modes. Drag-and-drop uses `@thisbeyond/solid-dnd`.
 
 **MVVM Pattern:**
-- **Model**: Store (windowStore) and contexts (ChatContext, WhisperContext)
+- **Model**: The windowing store (`windowing/store`) and contexts (ChatContext, WhisperContext)
 - **ViewModel**: Hooks and store actions
 - **View**: Components — render, emit events
 
@@ -65,6 +70,7 @@ Three layers, all bun-driven:
 - **Vitest gates CI** (added 2026-07). Coverage thresholds live in `vite.config.ts`.
 - **Story specs** live in `e2e/stories/**`; the `stories` project sets `video/trace/screenshot: on`. `createStory(testInfo).step(page, name)` writes an ordered image sequence per story. Committed visual baselines are under `e2e/__screenshots__/` (re-included past the root `*.png` ignore). Per repo policy, EYE-VERIFY a regenerated baseline before committing — never blindly `--update-snapshots`.
 - **Editor stories** drive the REAL editor via the dev-only harness at `/editor-harness.html` (`src/test-harness/editor-harness.tsx`) — not the registry-bypass in `e2e/file-tab.spec.ts`. The harness is dev-served only and never ships in `dist`.
+- **Windowing core specs** live in `e2e/windowing/**` (`split`, `tabs`, `rails`, `floating`, `restore`, `modes`) and drive the dev-only harness at `/windowing-harness.html` (`src/test-harness/windowing-harness.tsx`), which mounts the window manager with a neutral policy: no app, no panel registry, no rails rule. They run in the `ui` project alongside the app specs. `e2e/fixed-rails.spec.ts` keeps the app-only rule (the last Sessions and Files tabs do not close) against the real app. `src/windowing/__tests__/boundary.test.ts` is the gate for the whole core: it fails the build the moment any file under `src/windowing/` imports from the app. See `docs/Meta/Architecture/Web Windowing.md`.
 - **The `ui` tier is NOT end to end.** It mocks every API route in the browser (`e2e/helpers/mock-api.ts`, `page.route`) and the terminal socket (`page.routeWebSocket`, so a daemon on the API port cannot leak a 403 into a spec), so it proves what a component does with an answer the spec itself wrote: layout, drag, focus, keyboard. It cannot see a daemon that refuses a call. A scenario whose "then" is "the daemon accepted it" belongs in the live tier.
 - **Live tier** (`playwright.live.config.ts`): `e2e/live/global-setup.ts` boots `cru web` on an isolated `$CRUCIBLE_SOCKET` against a TempDir kiln (seeded and indexed via `cru process` — `/api/kiln/notes` serves the note index, and opening a kiln deliberately does not scan it). It is STRICT and HERMETIC:
   - **Strict.** It runs the `cru` under `target/debug` (or `$CRU_BIN`, or `$CARGO_TARGET_DIR`) and serves `web/dist`, and FAILS the run when either is missing or older than its sources. There is no PATH fallback and no green skip: a tier that silently tested an installed binary reported a pass for code it never ran. `just web-test live` builds both, in that order, every time.
