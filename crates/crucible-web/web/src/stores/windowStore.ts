@@ -56,9 +56,11 @@ export const appWindowPolicy: WindowPolicy<TabContentType> = {
         statusBarActions.setShowThinking(!statusBarStore.showThinking());
         return true;
       default:
-        // Every chord in the app table is the app's, so the browser default
-        // stays off for it. App.tsx handles the palette family in the capture
-        // phase; the composer handles Shift+Tab and Escape on its own element.
+        // Only `cycleMode` (Shift+Tab) and `closeOverlay` (Escape) reach this
+        // branch: App.tsx handles the palette chords in the capture phase. The
+        // composer acts on these two keys on its own element. The `true` keeps
+        // the behavior of the old loop, which cancelled the browser default
+        // for Shift+Tab and Escape.
         return true;
     }
   },

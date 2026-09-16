@@ -14,7 +14,7 @@ export interface WindowingSlots {
   /**
    * Attach a native drop target to a pane body or a rail ribbon, for the
    * group that `groupId` names. Returns the cleanup. While a drag hovers the
-   * element, the slot sets `data-file-drop-over` on it, and the window
+   * element, the slot sets `data-drop-over` on it, and the window
    * manager styles the element from that attribute.
    */
   attachDropTarget?: (el: HTMLElement, groupId: () => string | null) => () => void;

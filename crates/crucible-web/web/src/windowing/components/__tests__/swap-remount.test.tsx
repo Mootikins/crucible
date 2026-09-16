@@ -12,10 +12,10 @@ beforeEach(() => configureRails());
 
 /**
  * A flip moves a panel from one side to the other. It must MOVE the panel,
- * not rebuild it. A rebuilt chat panel drops its provider, so it refetches the
- * transcript and paints an empty pane while the history loads.
+ * not rebuild it. A rebuilt panel drops its state, so it loads its content
+ * again and paints an empty pane while the content loads.
  *
- * The probe stands in for that chat panel. It counts its own mounts and it
+ * The probe stands in for such a panel. It counts its own mounts and it
  * remembers the DOM node it drew, which are the two things a remount changes.
  */
 let mounts = 0;

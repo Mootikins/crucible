@@ -17,10 +17,6 @@ const EXPECTED_ICONS = [
   'IconPanelLeftClose',
   'IconPanelRight',
   'IconPanelRightClose',
-  'IconPanelBottom',
-  'IconPanelBottomClose',
-  'IconSettings',
-  'IconZap',
   'IconLayout',
   'IconGripVertical',
   'IconGripHorizontal',
@@ -29,7 +25,6 @@ const EXPECTED_ICONS = [
   'IconMinimize',
   'IconPin',
   'IconTabBar',
-  'IconBell',
 ] as const;
 
 describe('windowing/icons.tsx', () => {

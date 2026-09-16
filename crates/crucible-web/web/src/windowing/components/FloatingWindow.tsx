@@ -43,7 +43,8 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
   };
   // Same guard as Pane.renderContent: re-render the panel only when the
   // active tab's identity/type changes, NOT when updateTab churns the tab
-  // object (dirty-flag sync would otherwise remount the editor in a loop).
+  // object (a panel that syncs the modified flag would otherwise remount
+  // itself in a loop).
   const activeTabId = createMemo(() => activeTab()?.id ?? null);
   const activeContentType = createMemo(() => activeTab()?.contentType ?? null);
   const [isDragging, setIsDragging] = createSignal(false);

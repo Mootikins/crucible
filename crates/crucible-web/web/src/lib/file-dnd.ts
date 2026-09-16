@@ -9,7 +9,7 @@
  * dragstart/drop, so tab drags and file drags never see each other.
  *
  * Zone protocol: every file-accepting drop target tags its data with a `zone`
- * (`'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon'`) and only acts
+ * (`'folder' | 'tree-root' | 'pane' | 'editor'`) and only acts
  * when it is the INNERMOST file target of the drop (pragmatic fires onDrop on
  * the whole target stack; without the innermost check, dropping on an editor
  * would also "open in pane" on the pane behind it).
@@ -24,7 +24,7 @@ import { openFileInGroup } from './file-actions';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
 import { collectPanes } from '@/windowing/model/tree';
 
-type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
+type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor';
 
 /** Payload attached to a file-tree node drag. Identity is rootKey + relPath. */
 export type FileDragData = {
@@ -146,7 +146,7 @@ export function attachFileDropTarget(
  * The attribute a pane drop target carries while a file drag hovers it. The
  * window manager styles its drop surfaces from this attribute.
  */
-export const FILE_DROP_OVER_ATTR = 'data-file-drop-over';
+export const DROP_OVER_ATTR = 'data-drop-over';
 
 /** The pane that shows `groupId`, in the centre or on a rail. */
 function paneShowing(groupId: string) {
@@ -164,7 +164,8 @@ function paneShowing(groupId: string) {
  *
  * The drop then shows its result. The pane that holds the group takes focus,
  * and a rail that holds it opens, so a file dropped on a closed rail does not
- * open out of sight.
+ * open out of sight. A rail with no group has no place for the file, so a
+ * drop with no group does nothing.
  */
 export function attachPaneDropTarget(
   element: HTMLElement,
@@ -173,14 +174,15 @@ export function attachPaneDropTarget(
   return attachFileDropTarget(element, {
     zone: 'pane',
     canDrop: (source) => !source.isDir,
-    onDragEnter: () => element.setAttribute(FILE_DROP_OVER_ATTR, ''),
-    onDragLeave: () => element.removeAttribute(FILE_DROP_OVER_ATTR),
+    onDragEnter: () => element.setAttribute(DROP_OVER_ATTR, ''),
+    onDragLeave: () => element.removeAttribute(DROP_OVER_ATTR),
     onDrop: (source) => {
       const id = groupId();
-      const pane = id ? paneShowing(id) : undefined;
+      if (!id) return;
+      const pane = paneShowing(id);
       if (pane) windowActions.setActivePane(pane.id);
       openFileInGroup(id, source.absPath, source.name);
-      const rail = id ? findEdgePanelForGroup(id) : null;
+      const rail = findEdgePanelForGroup(id);
       if (rail) windowActions.setEdgePanelCollapsed(rail, false);
     },
   });

@@ -32,8 +32,8 @@ const ribbonBtn =
  * the ribbon from the same split ratios and drew the bands in the ribbon's
  * leftover flow space. The proportions matched and the pixels did not: the
  * fixed clusters above the strip pushed every band down by their own height,
- * so the terminal's marker sat 56px below the terminal's tab bar and the file
- * tree's sat 362px below its own. A marker that points at the wrong pane is
+ * so the lower pane's marker sat 56px below that pane's tab bar and the upper
+ * pane's sat 362px below its own. A marker that points at the wrong pane is
  * worse than no marker.
  *
  * The ribbon and the panel are siblings of equal height and equal top, so the
@@ -85,8 +85,9 @@ export const RibbonPaneStrip: Component<{
     setBands(next);
 
     // Two pinned clusters own ribbon pixels the strip may not draw on: the
-    // rail toggle at the top, and the pinned tail at the bottom. A band that reached either would put a marker under a
-    // button that already owns those pixels.
+    // rail toggle at the top, and the pinned tail at the bottom. A band that
+    // reached either would put a marker under a button that already owns
+    // those pixels.
     //
     // The band is DROPPED, never nudged. Nudging is exactly what the mirrored
     // strip did, and a marker one cluster-height away from its pane is the bug
@@ -168,9 +169,9 @@ export const RibbonPaneStrip: Component<{
 /**
  * One band: the boundary rule, the marker, and the tab bar's own underline.
  *
- * The marker wears the pane's ACTIVE TAB icon, so the terminal's marker is a
- * terminal — the rail reads as "this icon controls that pane" rather than as a
- * column of anonymous chevrons.
+ * The marker wears the pane's ACTIVE TAB icon, so a pane's marker looks like
+ * the tab that the pane shows — the rail reads as "this icon controls that
+ * pane" rather than as a column of anonymous chevrons.
  */
 const RibbonPaneBand: Component<{ position: EdgePanelPosition; band: Band }> = (props) => {
   const panel = () => windowStore.edgePanels[props.position];

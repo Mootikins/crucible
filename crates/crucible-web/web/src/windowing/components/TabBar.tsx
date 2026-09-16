@@ -26,10 +26,10 @@ const TAB_TITLE_TAIL = 8;
  * Elide a long tab label from the MIDDLE.
  *
  * CSS truncates from the end, and the end is where a tab title carries its
- * meaning: `2026-09-15 Web UI Review.md` and `2026-09-15 Web UI Notes.md`
- * both read as `2026-09-15 W…` at the old 120px cap, so a strip of dated
- * notes became a column of identical tabs. The head names the file and the
- * tail names its kind.
+ * meaning: `2026-09-15 Web UI Review.md` and `2026-09-15 Web UI Plan.md`
+ * both read as `2026-09-15 W…` at the old 120px cap, so a strip of titles
+ * with a shared prefix became a column of identical tabs. The head names the
+ * item and the tail names what makes it different.
  *
  * The full label always rides on the element's `title`, so the elision costs
  * the user nothing but a hover.
@@ -178,8 +178,8 @@ const TabItem: Component<TabItemProps> = (props) => {
           width permanently, and tabs jumped as the active one changed. It now
           sits OVER the tab's trailing edge and takes no layout at all.
 
-          The slot also carries the modified dot, and the two swap the way an
-          editor's do: the dot marks unsaved work at rest, and hovering turns
+          The slot also carries the modified dot, and the two swap places:
+          the dot marks unsaved work at rest, and hovering turns
           it into the control that discards it. Two separate marks would mean a
           dirty tab is the one tab you cannot close without aiming. */}
       <span class="pointer-events-none absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center">

@@ -1,11 +1,11 @@
-import { Component, For } from 'solid-js';
+import { Component, For, Show } from 'solid-js';
 import { useWindowing } from '@/windowing/components/context';
 
 /**
  * What an empty centre pane shows.
  *
  * An empty pane used to draw nothing at all, which said the right thing —
- * starting a session is a deliberate act — and read as a rendering failure:
+ * filling a pane is a deliberate act — and read as a rendering failure:
  * a third of a wide viewport went black with no content, no placeholder and
  * no hint. This is the smallest correction that keeps the intent. It names the
  * state, it names the two keys that fill the pane, and it stops there. No
@@ -24,8 +24,8 @@ export const EmptyPane: Component<{
    */
   solitary: boolean;
 }> = (props) => {
-  const { slots } = useWindowing();
-  const hints = () => slots.emptyPaneHints?.() ?? [];
+  const windowing = useWindowing();
+  const hints = () => windowing.slots.emptyPaneHints?.() ?? [];
 
   return (
     <div
@@ -35,18 +35,20 @@ export const EmptyPane: Component<{
     >
       <div class="w-full max-w-[15rem] rounded-md border border-hairline px-3 py-2.5 text-muted">
         <p class="text-floor leading-4">{props.solitary ? 'Nothing open' : 'Empty pane'}</p>
-        <ul class="mt-2 flex flex-col gap-1">
-          <For each={hints()}>
-            {(hint) => (
-              <li class="flex items-center justify-between gap-2 text-floor leading-4">
-                <span class="truncate">{hint.label}</span>
-                <kbd class="flex-none rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-floor text-muted">
-                  {hint.chord}
-                </kbd>
-              </li>
-            )}
-          </For>
-        </ul>
+        <Show when={hints().length > 0}>
+          <ul class="mt-2 flex flex-col gap-1">
+            <For each={hints()}>
+              {(hint) => (
+                <li class="flex items-center justify-between gap-2 text-floor leading-4">
+                  <span class="truncate">{hint.label}</span>
+                  <kbd class="flex-none rounded border border-hairline bg-surface-overlay px-1.5 py-0.5 text-floor text-muted">
+                    {hint.chord}
+                  </kbd>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
       </div>
     </div>
   );

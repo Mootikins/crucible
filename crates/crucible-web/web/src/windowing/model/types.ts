@@ -55,10 +55,10 @@ export type LayoutNode = PaneNode | SplitNode;
 
 // Edge panel types
 /**
- * The two docks. There was a third, `bottom`, a full-width dock that held the
- * terminal — so showing a shell cost the EDITOR its height, for a tool that
- * belongs beside the files it runs against. The terminal moved into the file
- * rail as a pane under the tree; nothing else ever lived down there.
+ * The two docks. There was a third, `bottom`, a full-width dock. A panel in
+ * it cost the CENTRE its height, for a tool that belonged beside the rail
+ * content it works with. That panel moved into a rail as a pane under the
+ * rail's first pane; nothing else ever lived down there.
  *
  * Two values, not three-with-one-unused: a dock nothing can reach is a drop
  * target, a ribbon, a toggle, a shortcut and a serialized slot that all still
@@ -131,7 +131,7 @@ export interface FloatingWindow {
 
 // Drag and drop types
 // 'tab' moves an existing tab between groups; 'newTab' spawns a tab that has
-// no source group yet (e.g. dragging a file out of a wikilink hover card) —
+// no source group yet (e.g. dragging an item out of a hover card) —
 // every drop target treats both alike, so any surface can join the window
 // system by carrying a Tab payload.
 export type DragSource<C extends string = string> =
@@ -150,13 +150,13 @@ export type DropTarget =
   | { type: 'newFloating'; at?: { x: number; y: number } };
 
 // ---------------------------------------------------------------------------
-// File-tree drag-and-drop lives in `@/lib/file-dnd` (pragmatic-drag-and-drop,
-// native HTML5 drags) — NOT in this solid-dnd pipeline. The original Phase-2
-// plan (a second solid-dnd provider) was superseded: solid-dnd only matches
-// within its nearest provider, which is exactly what blocks the cross-surface
-// drops the feature needs (tree → pane open, tree → editor insert). The two
-// systems coexist because solid-dnd is pointer-event based and pragmatic is
-// native dragstart/drop.
+// Native drags from outside the window manager do NOT use this solid-dnd
+// pipeline. The app attaches them through the `attachDropTarget` slot, with
+// native HTML5 drag events. A second solid-dnd provider was rejected:
+// solid-dnd only matches within its nearest provider, which blocks a drag
+// that crosses from outside the window manager into a pane. The two systems
+// coexist because solid-dnd is pointer-event based and a native drag uses
+// dragstart/drop.
 // ---------------------------------------------------------------------------
 
 // One TabBar for every region: edge panels host the same Pane/TabBar stack

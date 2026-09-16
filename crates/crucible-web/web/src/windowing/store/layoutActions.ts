@@ -80,25 +80,25 @@ export function createLayoutActions<C extends string>(
    * Mirror the WHOLE workspace left-to-right — a true flip, not a rail swap.
    *
    * Every column reverses: the two rails trade sides, and the centre tiling
-   * reverses with them, so a conversation left of its editor ends up right of
-   * it. Anything STACKED inside a column keeps its stacking — a terminal below
-   * the file tree is still below it after the flip. `mirrorLayout` encodes
+   * reverses with them, so a pane left of its neighbour ends up right of it.
+   * Anything STACKED inside a column keeps its stacking — a pane below another
+   * pane is still below it after the flip. `mirrorLayout` encodes
    * that rule (horizontal splits swap, vertical splits do not).
    *
    * It used to move the rails only, which left the centre unmirrored: after a
-   * flip the tree sat left, the session list right, and the conversation was
-   * still to the left of the editor it belongs to. Half a mirror reads as a
-   * bug, because the eye checks the whole row.
+   * flip the rails traded sides, but a centre pane was still to the left of
+   * the pane it belongs beside. Half a mirror reads as a bug, because the eye
+   * checks the whole row.
    *
-   * `layout`, `width` and `mode` all travel with the contents. A file
-   * tree dragged out to 320px stays 320px on its new side rather than being
+   * `layout`, `width` and `mode` all travel with the contents. A rail
+   * dragged out to 320px stays 320px on its new side rather than being
    * re-cramped every swap. A panel the user stowed stays stowed, and a panel
    * the user opened stays open. The flip moves panels between sides; it does
    * not open or stow anything.
    *
    * The collapse flag (`isCollapsed`, now `mode`) used to stay with the SIDE,
    * to make one gesture work: with the right rail stowed, one flip put the
-   * tree on the visible left. But it
+   * stowed rail's panel on the visible left. But it
    * separated a panel's collapse from its width and its contents, so a flip
    * silently opened one panel and stowed the other. It also broke the
    * involution — two presses could land somewhere other than the start.
@@ -113,7 +113,7 @@ export function createLayoutActions<C extends string>(
         // `id` travels with the contents too. Nothing resolves a panel BY
         // this id — drop targets and every other caller name a position —
         // so it is free to be what it reads as: the moving panel's name.
-        // WindowManager keys the shell row by it, which is what lets Solid
+        // WindowManager keys the rail row by it, which is what lets Solid
         // MOVE a rail across the row instead of rebuilding it.
         const leftLayout = left.layout;
         const leftWidth = left.width;
@@ -281,7 +281,7 @@ export function createLayoutActions<C extends string>(
      * operations, but never on RESTORE — so a saved layout carrying a pane
      * whose `tabGroupId` is dangling brought that pane back on every load,
      * drawing EmptyPane beside the real work. Nothing the user could do
-     * reached it: opening a session or a file adds a tab to some OTHER pane,
+     * reached it: opening a new tab adds it to some OTHER pane,
      * and none of those paths collapse anything. The pane was unremovable by
      * construction, and it came back after a reload even if it was collapsed
      * away in a previous run.
@@ -319,9 +319,9 @@ export function createLayoutActions<C extends string>(
   /**
    * Throw the local pane layout away and start from the policy seed.
    *
-   * In-place rather than a page reload: a reload would also drop every open
-   * session's live SSE stream and the editor's unsaved buffers, which a
-   * request to rearrange PANES never asked for. The seed is the same
+   * In-place rather than a page reload: a reload would also drop the live
+   * state and the unsaved work of every open panel, which a request to
+   * rearrange PANES never asked for. The seed is the same
    * function that builds the layout on a first run, so "reset" and
    * "never opened this app before" land on exactly one shape.
    *

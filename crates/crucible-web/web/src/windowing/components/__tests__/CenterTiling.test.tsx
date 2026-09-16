@@ -89,8 +89,8 @@ describe('CenterTiling', () => {
 
 /**
  * A pane with no tabs used to hold its full ratio against nothing: at 1280px
- * the centre gave an empty pane 460px it could not use while the chat beside
- * it squeezed a tool card into 459px. The empty side now keeps the affordance
+ * the centre gave an empty pane 460px it could not use while the pane beside
+ * it squeezed its content into 459px. The empty side now keeps the affordance
  * strip and the side with content takes the rest — and `splitRatio` survives
  * untouched, so the pane returns to its own size when a tab lands in it.
  */

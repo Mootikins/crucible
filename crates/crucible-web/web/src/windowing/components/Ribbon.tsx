@@ -6,6 +6,7 @@ import { collectPanes, findPaneInLayout, primaryEdgeGroupId } from '@/windowing/
 import type { EdgePanelPosition, Tab } from '@/windowing/model/types';
 import { isEdgeCollapsed } from '@/windowing/model/types';
 import { useWindowing } from '@/windowing/components/context';
+import { chordLabel } from '@/windowing/shortcuts';
 import { RibbonPaneStrip } from './RibbonPaneStrip';
 import {
   IconPanelLeft,
@@ -122,7 +123,7 @@ export const RibbonCommand: Component<{
  * panels grow out of it, so the toggles never move or disappear. The top
  * button expands/collapses the panel. */
 export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
-  const { slots } = useWindowing();
+  const windowing = useWindowing();
   // The box the pane markers are positioned inside. They are placed from the
   // PANEL's measured geometry, so they need this element's own top to convert
   // a viewport coordinate into an offset.
@@ -182,10 +183,15 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
   // Native drags from outside the window manager: the app's drop target opens
   // the dropped item in this rail's first leaf group.
   const attachRibbonDrop = (el: HTMLElement) => {
-    const cleanup = slots.attachDropTarget?.(el, () =>
+    const cleanup = windowing.slots.attachDropTarget?.(el, () =>
       primaryEdgeGroupId(windowStore, props.position),
     );
     onCleanup(() => cleanup?.());
+  };
+
+  const swapTitle = () => {
+    const chord = chordLabel('swapSidePanels', policy().shortcuts);
+    return chord === null ? 'Swap side panels' : `Swap side panels (${chord})`;
   };
 
   const toggleIcon = () => {
@@ -204,7 +210,7 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
       }}
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
-        'relative flex flex-col bg-shell-bg border-hairline transition-colors data-file-drop-over:bg-primary/20': true,
+        'relative flex flex-col bg-shell-bg border-hairline transition-colors data-drop-over:bg-primary/20': true,
         // Border faces the center/panel it grows toward.
         'border-r': props.position === 'left',
         'border-l': props.position === 'right',
@@ -250,7 +256,7 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
       <Show when={panes().length > 1}>
         <RibbonPaneStrip position={props.position} ribbonEl={() => ribbonRef} />
       </Show>
-      {slots.railHead?.(props.position)}
+      {windowing.slots.railHead?.(props.position)}
       {/* Everything from here down is pinned to the rail's far end.
           EXACTLY ONE element in this run may carry `mt-auto` — it is what
           absorbs the free space — and it must be the FIRST of them, or the
@@ -284,17 +290,17 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
         data-ribbon-floor={trailingEntries().length === 0 ? '' : undefined}
       >
         <Show when={props.position === 'left'}>
-          {/* Swapping sides acts on the whole shell, so it sits at the bottom
-              of the rail with the other shell-wide toggles. */}
+          {/* Swapping sides acts on the whole window, so it sits at the bottom
+              of the rail with the other window-wide toggles. */}
           <RibbonCommand
-            title="Swap side panels (Ctrl+Shift+\)"
+            title={swapTitle()}
             testId="ribbon-cmd-swap-sides"
             onClick={() => windowActions.swapSidePanels()}
           >
             <ArrowLeftRight class="w-4 h-4" />
           </RibbonCommand>
         </Show>
-        {slots.railTail?.(props.position)}
+        {windowing.slots.railTail?.(props.position)}
       </div>
     </div>
   );

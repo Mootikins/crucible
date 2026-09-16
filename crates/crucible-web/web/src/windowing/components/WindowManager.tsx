@@ -37,7 +37,7 @@ function DragOverlayContent() {
   const data = () => draggable()?.data as DragSource | undefined;
 
   // The drag data is a registration-time snapshot; read the live tab from the
-  // store so a mid-session rename (daemon title push) shows in the overlay.
+  // store so a rename during the drag shows in the overlay.
   // 'newTab' sources have no group yet — their snapshot IS the live tab.
   const title = () => {
     const d = data();
@@ -58,22 +58,22 @@ function DragOverlayContent() {
   );
 }
 
-/** The middle column of the shell row. Its key never changes, so it never moves. */
+/** The middle column of the rail row. Its key never changes, so it never moves. */
 function CentreColumn() {
-  const { slots } = useWindowing();
+  const windowing = useWindowing();
   return (
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
       {/* relative: the corner slot floats at this area's bottom-right. */}
       <div class="relative flex-1 flex flex-col overflow-hidden min-h-0">
         <CenterTiling />
-        {slots.corner?.()}
+        {windowing.slots.corner?.()}
       </div>
     </div>
   );
 }
 
 /**
- * The shell row, left to right: a rail, the centre, the other rail.
+ * The rail row, left to right: a rail, the centre, the other rail.
  *
  * `side` is absent on the centre, which is how the row tells the two apart.
  */
@@ -231,8 +231,8 @@ function InnerManager() {
         {/* The row is a KEYED LIST, not three fixed slots, so a flip MOVES a
             rail across the centre instead of rebuilding it. The two rails
             used to sit in fixed slots; `swapSidePanels` then handed each slot
-            the other rail's tree, and Solid rebuilt both — every chat panel
-            in them lost its provider and refetched from empty.
+            the other rail's tree, and Solid rebuilt both — every panel in
+            them lost its state and loaded its content again from empty.
 
             The key is the panel's own `id`, which travels with its contents.
             So a flip reverses the two rail keys, `Key` moves the existing DOM

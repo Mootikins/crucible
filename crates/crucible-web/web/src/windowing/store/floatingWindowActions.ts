@@ -145,7 +145,7 @@ export function createFloatingWindowActions<C extends string>(
 
   // Closing a floating window closes its tabs with it — the group must not
   // linger invisibly in tabGroups (orphaned tabs still count in "N tabs",
-  // still match findTabByFilePath, and can never be reached again).
+  // still match a lookup by tab, and can never be reached again).
   const closeFloatingWindow = (windowId: string) => {
     const window = store.floatingWindows.find((w) => w.id === windowId);
     if (!window) return;

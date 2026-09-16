@@ -1,7 +1,7 @@
 /**
  * Place a group-less tab (DragSource 'newTab') into any window-system drop
- * target. This is what lets non-window surfaces — wikilink hover cards
- * today, anything carrying a Tab payload tomorrow — participate in the same
+ * target. This is what lets surfaces outside the window manager — a hover
+ * card, or anything else that carries a Tab payload — participate in the same
  * drag-and-drop abstraction as panes, tabs, and edge panels.
  */
 import { windowStore, windowActions } from '@/windowing/store';
@@ -72,7 +72,7 @@ export function placeNewTab(target: DropTarget, tab: Tab): void {
  * Hover-editor drop policy for group-less sources: explicit dock targets
  * (tab bars, edge panels, directional split zones) dock; releasing over a
  * pane BODY or over nothing tears off into a floating window at the drop
- * point — the popover becomes a real, movable, resizable editor window.
+ * point — the popover becomes a real, movable, resizable window.
  */
 export function resolveNewTabTarget(
   target: DropTarget | undefined,

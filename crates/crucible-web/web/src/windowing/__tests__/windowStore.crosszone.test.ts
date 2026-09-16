@@ -440,8 +440,8 @@ describe('edge panel split trees (v5 model)', () => {
         left: makeEdgePanel('left', 'g-center-unused-left'),
         right: {
           id: 'right-panel',
-          // A SPLIT rail — the shape the file tree with a terminal under it
-          // has. Vertical, because a rail stacks; this used to model the
+          // A SPLIT rail — the shape of a rail with a second pane under its
+          // first. Vertical, because a rail stacks; this used to model the
           // bottom dock's horizontal row, which no longer exists.
           layout: {
             id: 'right-split',

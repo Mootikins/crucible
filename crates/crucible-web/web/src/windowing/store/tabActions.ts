@@ -91,7 +91,7 @@ export function createTabActions<C extends string>(
       // whose group object was lost from persisted state (pre-v3 layouts).
       // The pane node is the authority for the id, so materialize the group
       // instead of silently dropping the tab (which made every center open —
-      // click, palette, file drop — a no-op on such layouts).
+      // from a click, a command or a drop was a no-op on such layouts).
       setStore('tabGroups', groupId, { id: groupId, tabs: [tab], activeTabId: tab.id });
       policy().onActiveTabChange(tab);
       return;
@@ -345,8 +345,8 @@ export function createTabActions<C extends string>(
    * Open a NEW tab in a NEW pane beside an existing one.
    *
    * `splitPaneAndDrop` is the drag path — it MOVES a tab that already exists.
-   * This is the programmatic path: a session opening beside the editor has no
-   * source group to move from, and routing it through a temporary group only
+   * This is the programmatic path: a new tab that opens beside another tab
+   * has no source group to move from, and routing it through a temporary group only
    * to move it out again would fire two layout writes for one gesture.
    *
    * Returns the new group's id so the caller can act on it.

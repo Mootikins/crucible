@@ -73,9 +73,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     position: 'bottom',
   });
 
-  // Native drags from outside the window manager (the app's file tree) reach
-  // the pane body through the app's drop target. The app marks the body with
-  // `data-file-drop-over` while a drag hovers it.
+  // Native drags from outside the window manager reach the pane body through
+  // the app's drop target. The app marks the body with
+  // `data-drop-over` while a drag hovers it.
   const attachDrop = (el: HTMLElement) => {
     const cleanup = windowing.slots.attachDropTarget?.(el, tabGroupId);
     onCleanup(() => cleanup?.());
@@ -91,10 +91,11 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   // Re-render the panel only when the active tab's identity or content type
   // changes — NOT when unrelated tab fields (e.g. isModified) churn the tab
   // object reference. updateTab() replaces the whole tabs array on every write,
-  // so depending on activeTab() directly would remount the panel (and, for the
-  // editor, discard in-progress edits + loop). Metadata is NOT write-once, so
-  // it reaches the panel through `reactiveMetadataProps` instead: per-key
-  // memos, which deliver a later write without re-running this.
+  // so depending on activeTab() directly would remount the panel (and discard
+  // any work in progress in it, in a loop for a panel that syncs its modified
+  // flag). Metadata is NOT write-once, so it reaches the panel through the
+  // live accessor instead, which delivers a later write without re-running
+  // this.
   const activeTabId = createMemo(() => activeTab()?.id ?? null);
   const activeContentType = createMemo(() => activeTab()?.contentType ?? null);
 
@@ -119,13 +120,13 @@ export const Pane: Component<{ paneId: string }> = (props) => {
 
   // A collapsed rail pane is CLIPPED to its tab strip, not unmounted: the
   // parent split gives it the strip's height and `overflow-hidden` takes the
-  // rest. Unmounting would tear down the shell (and its scrollback) every time
-  // the user tucked the terminal away.
+  // rest. Unmounting would tear down the panel (and the state it keeps) every
+  // time the user tucked the pane away.
   const collapsed = () => windowActions.findPaneById(props.paneId)?.collapsed === true;
 
   // The affordance belongs to the centre tiling only. A rail pane is one slot
-  // of a fixed tool stack; "open a note here" is not an instruction it can
-  // honour, and the ribbon already marks it.
+  // of a fixed stack; "open a tab here" is not an instruction it can honour,
+  // and the ribbon already marks it.
   const inCenter = createMemo(() => regionOfPane(windowStore, props.paneId) === 'center');
   const solitary = () =>
     !hasTabsOutsidePane(windowStore.tabGroups, windowStore.layout, props.paneId);
@@ -146,7 +147,7 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       data-pane-id={props.paneId}
       data-pane-collapsed={collapsed() ? 'true' : undefined}
       classList={{
-        'relative flex flex-col h-full overflow-hidden transition-all data-file-drop-over:ring-1 data-file-drop-over:ring-primary/60': true,
+        'relative flex flex-col h-full overflow-hidden transition-all data-drop-over:ring-1 data-drop-over:ring-primary/60': true,
         // Focus reads through the active tab chip (Obsidian's language) —
         // no colored ring around the pane itself.
         'bg-primary/5': centerDroppable.isActiveDroppable,

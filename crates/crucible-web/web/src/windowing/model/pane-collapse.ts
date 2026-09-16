@@ -18,7 +18,7 @@ const COLLAPSED_PANE_PX = 36;
  *
  * Wide enough for the empty-pane affordance and for the drop zones the pane
  * still offers, and no wider — the pane held half the centre against nothing,
- * which pushed a tool card's filename and its status glyph ~250px apart.
+ * which pushed the two ends of one line of content ~250px apart.
  */
 export const EMPTY_PANE_PX = 220;
 

@@ -16,8 +16,8 @@ import type {
  *
  * The core owns the CURRENT format and the one step into it from v9. The
  * history before v9 belongs to the app, because each of those steps names
- * content the app had at the time: a navigator, a bottom terminal, a settings
- * page. The app gives that history to the reader as `upgradeLegacy`.
+ * content types that the app had at the time. The app gives that history to
+ * the reader as `upgradeLegacy`.
  */
 export const LAYOUT_VERSION = 10;
 
@@ -217,8 +217,8 @@ export function deserializeLayout<C extends string>(
 
   // Every position MUST come back with a valid panel: a partial payload
   // (missing edgePanels entries, or an empty object from a truncated write)
-  // otherwise leaves `edgePanels[pos]` undefined and every panel, ribbon and
-  // composer read crashes, which bricks the whole shell. An absent position
+  // otherwise leaves `edgePanels[pos]` undefined, and every read of a rail
+  // crashes the whole window manager. An absent position
   // gets an empty panel in the strip mode.
   const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
   for (const pos of EDGE_POSITIONS) {

@@ -20,7 +20,7 @@ vi.mock('@atlaskit/pragmatic-drag-and-drop/element/adapter', () => ({
   },
 }));
 
-import { attachPaneDropTarget, FILE_DROP_OVER_ATTR } from '@/lib/file-dnd';
+import { attachPaneDropTarget, DROP_OVER_ATTR } from '@/lib/file-dnd';
 import { windowStore, setStore } from '@/stores/windowStore';
 import { defaultLayout } from '@/stores/defaultLayout';
 import { findFirstPane } from '@/windowing/model/tree';
@@ -53,9 +53,9 @@ describe('attachPaneDropTarget', () => {
     const el = document.createElement('div');
     attachPaneDropTarget(el, () => null);
     captured.config!.onDragEnter({ source: { data: file } });
-    expect(el.hasAttribute(FILE_DROP_OVER_ATTR)).toBe(true);
+    expect(el.hasAttribute(DROP_OVER_ATTR)).toBe(true);
     captured.config!.onDragLeave();
-    expect(el.hasAttribute(FILE_DROP_OVER_ATTR)).toBe(false);
+    expect(el.hasAttribute(DROP_OVER_ATTR)).toBe(false);
   });
 
   it('opens a file dropped on a closed rail in that rail, and opens the rail', () => {
@@ -77,5 +77,28 @@ describe('attachPaneDropTarget', () => {
     drop(el);
     expect(windowStore.activePaneId).toBe(pane.id);
     expect(windowStore.tabGroups[pane.tabGroupId!]!.tabs.map((t) => t.metadata?.filePath)).toContain('/k/notes/a.md');
+  });
+});
+
+describe('attachPaneDropTarget with no group', () => {
+  it('does nothing, even when a tab already shows the file', () => {
+    const pane = findFirstPane(windowStore.layout)!;
+    const groupId = pane.tabGroupId!;
+    setStore(
+      produce((s) => {
+        s.tabGroups[groupId]!.tabs = [
+          { id: 'open-file', title: 'a.md', contentType: 'file', metadata: { filePath: file.absPath } },
+          { id: 'other', title: 'Other', contentType: 'file' },
+        ];
+        s.tabGroups[groupId]!.activeTabId = 'other';
+        s.edgePanels.left.mode = 'strip';
+      }),
+    );
+    const before = JSON.stringify(windowStore);
+    const el = document.createElement('div');
+    attachPaneDropTarget(el, () => null);
+    drop(el);
+    // A rail with no group has no place for the file, so the drop changes nothing.
+    expect(JSON.stringify(windowStore)).toBe(before);
   });
 });

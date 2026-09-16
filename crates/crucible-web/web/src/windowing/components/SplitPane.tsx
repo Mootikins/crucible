@@ -35,13 +35,13 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
   // A side with no tabs yields its share to the side that has them.
   //
   // A 50% split against a void is not a layout, it is a hole: at 1280px the
-  // centre gave an empty pane 460px it could not use while the chat beside it
-  // squeezed a tool card into 459px. Only ONE side may yield, and only to a
+  // centre gave an empty pane 460px it could not use while the pane beside it
+  // squeezed its content into 459px. Only ONE side may yield, and only to a
   // side that actually holds content — two empty panes keep their ratio,
   // because neither has a better claim on the space than the other.
   //
-  // Centre tiling only. A rail's panes are a fixed tool stack the user does
-  // not fill by opening a note, so an empty slot there is not the same state.
+  // Centre tiling only. A rail's panes are a fixed stack that the user does
+  // not fill with new tabs, so an empty slot there is not the same state.
   // (The ribbon follows either way — it MEASURES each pane's box rather than
   // recomputing it from `splitRatio`.)
   const inCenter = createMemo(() => findSplitInLayout(windowStore.layout, split().id) !== null);
@@ -95,8 +95,8 @@ const SplitPaneInner: Component<{ node: Extract<LayoutNode, { type: 'split' }> }
   // halves instead of rebuilding them. `swapSidePanels` reverses every
   // horizontal split; with the halves in fixed slots each one received the
   // other's node, and Solid answered the only way it can for a slot whose
-  // content changed — tear down, build again. Every chat pane in the flipped
-  // subtree lost its provider and refetched its transcript from empty.
+  // content changed — tear down, build again. Every panel in the flipped
+  // subtree lost its state and loaded its content again from empty.
   //
   // Keyed by node id, the same reversal is a REORDER: `Key` moves the
   // existing DOM node, and the component instance inside it survives.

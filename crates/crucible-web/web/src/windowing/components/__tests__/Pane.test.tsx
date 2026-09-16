@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createComputed, onCleanup, type Component } from 'solid-js';
+import { createComputed, createSignal, onCleanup, type Component } from 'solid-js';
 import { render } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { Pane } from '../Pane';
@@ -54,6 +54,22 @@ describe('Pane — empty center', () => {
   it('prints no rows when the app gives no hints', () => {
     const { getByTestId } = renderPane(() => paneId, { slots: {} });
     expect(getByTestId('empty-pane').querySelectorAll('li')).toHaveLength(0);
+    // No list at all, so an empty list adds no margin under the label.
+    expect(getByTestId('empty-pane').querySelector('ul')).toBeNull();
+  });
+
+  it('prints the rows of the slots that the app gives now', () => {
+    const [slots, setSlots] = createSignal<WindowingSlots>({});
+    const { getByTestId } = render(() => (
+      <CoreProviders slots={slots()}>
+        <Pane paneId={paneId} />
+      </CoreProviders>
+    ));
+    expect(getByTestId('empty-pane').querySelectorAll('li')).toHaveLength(0);
+
+    setSlots(hints);
+
+    expect(getByTestId('empty-pane').querySelectorAll('li')).toHaveLength(2);
   });
 
   it('names the region empty when no other pane holds a tab', () => {
@@ -104,8 +120,8 @@ describe('Pane — empty center', () => {
     );
     const { queryByTestId } = renderPane(() => railPane.id);
 
-    // A rail slot is a fixed tool stack; "open a note here" is not an
-    // instruction it can honour.
+    // A rail slot is a fixed stack; "open a tab here" is not an instruction
+    // it can honour.
     expect(queryByTestId('empty-pane')).toBeNull();
   });
 

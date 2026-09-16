@@ -1,4 +1,4 @@
-import { LAYOUT_SHORTCUTS, type ShortcutAction } from '@/windowing/shortcuts';
+import { chordLabel, LAYOUT_SHORTCUTS, type ShortcutAction } from '@/windowing/shortcuts';
 
 /** The chords the app owns. The layout chords come from the windowing core. */
 const APP_SHORTCUTS: ShortcutAction[] = [
@@ -35,35 +35,12 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [...LAYOUT_SHORTCUTS, ...APP_
 //   universal path for toggle-thinking and new-session.
 // - Escape: May close fullscreen or cancel operations — handled per context
 
-/** The order a chord prints its modifiers in, whatever order it declares them. */
-const MODIFIER_ORDER: ShortcutAction['modifiers'] = ['ctrl', 'shift', 'alt', 'meta'];
-
-const MODIFIER_LABEL: Record<ShortcutAction['modifiers'][number], string> = {
-  ctrl: 'Ctrl',
-  shift: 'Shift',
-  alt: 'Alt',
-  meta: 'Meta',
-};
-
-/**
- * The printed chord for an action, or null when no binding carries it.
- *
- * A hint reads the binding table instead of spelling the keys at the call
- * site. A hand-written hint goes stale the first time a binding moves, and a
- * hint that names keys the app does not listen for is worse than no hint.
- */
+/** The printed chord for an action in the app table, or null when no binding carries it. */
 export function shortcutLabel(
   action: string,
   shortcuts: ShortcutAction[] = DEFAULT_SHORTCUTS,
 ): string | null {
-  const shortcut = shortcuts.find((s) => s.action === action);
-  if (!shortcut) return null;
-  const modifiers = MODIFIER_ORDER.filter((m) => shortcut.modifiers.includes(m)).map(
-    (m) => MODIFIER_LABEL[m],
-  );
-  // Single characters print uppercase ('o' → 'O'); named keys stay exact.
-  const key = shortcut.key.length === 1 ? shortcut.key.toUpperCase() : shortcut.key;
-  return [...modifiers, key].join('+');
+  return chordLabel(action, shortcuts);
 }
 
 /**
