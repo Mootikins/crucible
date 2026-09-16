@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 // A reloaded turn must show the same duration the live one did, so the
@@ -13,7 +13,6 @@ const history = [
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   subscribeToEvents: () => () => {},
-  listPendingInteractions: async () => [],
   getSessionHistory: async () => ({ session_id: 's1', history, total_events: history.length }),
   getSession: async () => ({
     id: 's1', session_type: 'chat', title: 'T', state: 'active', kiln: '/k', workspace: '/w',
@@ -23,6 +22,21 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
+
+// The pending aggregate is the shared query now, so it answers the route
+// rather than a stub of `listPendingInteractions`.
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  installFakeEventSource();
+  env = createTestQueryEnv({ 'GET /api/interactions/pending': () => ({ pending: [] }) });
+});
+
+afterEach(() => {
+  env?.restore();
+});
 
 function mountProvider(): ChatContextValue {
   let ctx!: ChatContextValue;

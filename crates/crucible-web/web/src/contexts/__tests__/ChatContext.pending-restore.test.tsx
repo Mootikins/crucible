@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 // A permission request that the daemon still holds must survive a page
@@ -17,11 +17,12 @@ const pendingEntry = {
   },
 };
 
+// `listPendingInteractions` is NOT stubbed any more: the aggregate is the
+// shared `usePendingInteractions()` list, so it answers the ROUTE below.
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   subscribeToEvents: () => () => {},
   getSessionHistory: async () => ({ history: [] }),
-  listPendingInteractions: async () => [pendingEntry],
   getSession: async () => ({
     id: 's1',
     session_type: 'chat',
@@ -39,6 +40,21 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
+
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  installFakeEventSource();
+  env = createTestQueryEnv({
+    'GET /api/interactions/pending': () => ({ pending: [pendingEntry] }),
+  });
+});
+
+afterEach(() => {
+  env?.restore();
+});
 
 function mountProvider(sessionId: string): ChatContextValue {
   let ctx!: ChatContextValue;

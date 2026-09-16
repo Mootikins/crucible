@@ -14,7 +14,6 @@ vi.mock('@/lib/api', () => ({
   // Resolves the backend-minted turn id (the transcript is keyed on it).
   sendChatMessage: vi.fn(async () => 'msg-turn-1'),
   subscribeToEvents: vi.fn(() => () => {}),
-  respondToInteraction: vi.fn(),
   cancelSession: vi.fn(async () => true),
   getSession: vi.fn(),
   getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
