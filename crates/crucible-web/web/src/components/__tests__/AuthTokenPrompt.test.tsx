@@ -1,18 +1,42 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
-
-const loginMock = vi.fn();
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  login: (...args: unknown[]) => loginMock(...args),
-}));
+import { createMockFetch, type MockFetch } from '@/test-utils/mock-fetch';
 
 import { AuthTokenPrompt } from '../AuthTokenPrompt';
+
+/**
+ * The exchange reaches the daemon on the WIRE.
+ *
+ * Signing in is deliberately NOT a cache entry — it mints an HttpOnly cookie
+ * and the page reloads — so there is no hook to read here. What there is is
+ * one `POST /api/auth/login`, and the key the prompt sends is the whole
+ * contract: a mocked module would prove that the component called a function,
+ * not that the daemon was sent the key the user pasted.
+ */
+let fetchMock: MockFetch;
+let realFetch: typeof fetch;
+/** Whether the daemon accepts the next key. */
+let accepts = true;
+/** Every key the daemon was sent, in order. */
+let sent: string[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = '';
+  accepts = true;
+  sent = [];
+  realFetch = global.fetch;
+  fetchMock = createMockFetch({
+    'POST /api/auth/login': async (request: Request) => {
+      sent.push(((await request.json()) as { key: string }).key);
+      return new Response('', { status: accepts ? 200 : 401 });
+    },
+  });
+  global.fetch = fetchMock;
+});
+
+afterEach(() => {
+  global.fetch = realFetch;
 });
 
 describe('AuthTokenPrompt', () => {
@@ -25,7 +49,6 @@ describe('AuthTokenPrompt', () => {
   });
 
   it('exchanges the pasted key via login() and invokes onSaved on success', async () => {
-    loginMock.mockResolvedValue(true);
     const onSaved = vi.fn();
     render(() => <AuthTokenPrompt onSaved={onSaved} />);
     window.dispatchEvent(new CustomEvent('crucible:auth-required'));
@@ -38,12 +61,12 @@ describe('AuthTokenPrompt', () => {
     await waitFor(() => {
       expect(onSaved).toHaveBeenCalledOnce();
     });
-    expect(loginMock).toHaveBeenCalledWith('my-secret-key');
+    expect(sent).toEqual(['my-secret-key']);
     expect(screen.queryByTestId('auth-token-prompt')).not.toBeInTheDocument();
   });
 
   it('shows a rejection message and stays open when the server refuses the key', async () => {
-    loginMock.mockResolvedValue(false);
+    accepts = false;
     const onSaved = vi.fn();
     render(() => <AuthTokenPrompt onSaved={onSaved} />);
     window.dispatchEvent(new CustomEvent('crucible:auth-required'));
@@ -66,7 +89,7 @@ describe('AuthTokenPrompt', () => {
     window.dispatchEvent(new CustomEvent('crucible:auth-required'));
 
     fireEvent.click(screen.getByTestId('auth-token-save'));
-    expect(loginMock).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
     expect(onSaved).not.toHaveBeenCalled();
   });
 
@@ -76,6 +99,6 @@ describe('AuthTokenPrompt', () => {
 
     fireEvent.click(screen.getByText('Cancel'));
     expect(screen.queryByTestId('auth-token-prompt')).not.toBeInTheDocument();
-    expect(loginMock).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
   });
 });

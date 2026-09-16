@@ -5,12 +5,20 @@ import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { windowStore, setStore } from '@/stores/windowStore';
 import { primaryEdgeGroupId } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
+import { createMockFetch, type MockFetch } from '@/test-utils/mock-fetch';
 
-const resetLayout = vi.fn(async () => {});
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  resetLayout: () => resetLayout(),
-}));
+/**
+ * The reset reaches the daemon on the WIRE.
+ *
+ * The layout is deliberately NOT a cache entry — it is a signal written to
+ * disk, loaded once at start — so there is no hook to read here. What there is
+ * is one `DELETE /api/layout`, and a mocked module counts the calls that reach
+ * the module rather than the ones that reach the daemon.
+ */
+let fetchMock: MockFetch;
+let realFetch: typeof fetch;
+/** How many times the daemon was asked to forget the layout. */
+const resetCount = () => fetchMock.calls('DELETE /api/layout');
 
 const openPanelTab = vi.fn();
 vi.mock('@/lib/panel-actions', async (importOriginal) => ({
@@ -60,11 +68,14 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
     // Registered but never re-addable on its own: a file tab names a file.
     registry.register('file', 'File', Dummy, 'center');
     resetStore();
-    resetLayout.mockClear();
+    realFetch = global.fetch;
+    fetchMock = createMockFetch({ 'DELETE /api/layout': { status: 204 } });
+    global.fetch = fetchMock;
     openPanelTab.mockClear();
   });
 
   afterEach(() => {
+    global.fetch = realFetch;
     vi.restoreAllMocks();
     resetGlobalRegistry();
   });
@@ -131,7 +142,7 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
     fireEvent.pointerDown(item);
     fireEvent.click(item);
     await waitFor(() => expect(confirm).toHaveBeenCalled());
-    expect(resetLayout).not.toHaveBeenCalled();
+    expect(resetCount()).toBe(0);
   });
 
   it('resets the server copy and the local layout, and keeps both rails', async () => {
@@ -142,7 +153,7 @@ describe('LayoutMenu — the rail kebab is the layout control', () => {
     const item = document.querySelector<HTMLElement>('[data-testid="layout-reset"]')!;
     fireEvent.pointerDown(item);
     fireEvent.click(item);
-    await waitFor(() => expect(resetLayout).toHaveBeenCalled());
+    await waitFor(() => expect(resetCount()).toBe(1));
     await waitFor(() => expect(windowStore.edgePanels.left.mode).toBe('docked'));
     const leftGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'left')!];
     const rightGroup = windowStore.tabGroups[primaryEdgeGroupId(windowStore, 'right')!];
