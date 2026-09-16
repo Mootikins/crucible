@@ -2,15 +2,18 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 import { MOCK_SESSION, MOCK_SESSION_2 } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
-import { stableCenter } from './helpers/geometry';
-import { fillCenterPanes } from './helpers/panes';
+
+/**
+ * Windowing rules that belong to the app: session tabs, and what the app
+ * does NOT draw in an emptied centre. The mechanics (splits, tab moves,
+ * rails, floating windows) are core specs in e2e/windowing/, which drive the
+ * harness page with no app.
+ */
 
 type LayoutNode = {
   type: 'pane' | 'split';
   id: string;
   tabGroupId?: string | null;
-  direction?: 'horizontal' | 'vertical';
-  splitRatio?: number;
   first?: LayoutNode;
   second?: LayoutNode;
 };
@@ -18,17 +21,10 @@ type LayoutNode = {
 type WindowStoreShape = {
   layout: LayoutNode;
   tabGroups: Record<string, { tabs: Array<{ id: string }>; activeTabId: string | null }>;
-  // v5 model: edge panels carry a layout tree; leaves reference tab groups.
-  edgePanels: Record<'left' | 'right' | 'bottom', { layout: LayoutNode; mode: 'docked' | 'strip' | 'flyout' | 'hidden' }>;
-  floatingWindows: Array<{ id: string; x: number; y: number; width: number; height: number }>;
 };
 
 type WindowActionsShape = {
-  splitPane: (paneId: string, direction: 'horizontal' | 'vertical') => void;
   removeTab: (groupId: string, tabId: string) => void;
-  moveTab: (sourceGroupId: string, targetGroupId: string, tabId: string) => void;
-  setEdgePanelCollapsed: (position: 'left' | 'right' | 'bottom', collapsed: boolean) => void;
-  createFloatingWindow: (groupId: string, x: number, y: number, width?: number, height?: number) => string;
 };
 
 async function waitForApp(page: Page) {
@@ -51,198 +47,13 @@ async function waitForApp(page: Page) {
   // renders once the app has fully mounted — no fixed settle needed.
 }
 
-test.describe('Comprehensive windowing behavior', () => {
+test.describe('Windowing in the app', () => {
   test.beforeEach(async ({ page }) => {
     await waitForApp(page);
     const sessionItem = page.getByTestId('session-item-test-session-001');
     await expect(sessionItem).toBeVisible({ timeout: 5000 });
     await sessionItem.click();
     await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
-  });
-
-  // A session opens as its own PANE in the centre, left of the editor, so the
-  // centre root is already a split by the time the beforeEach's session click
-  // lands. These tests build their splits from a LEAF, not from the root —
-  // `splitPane(root.id)` silently did nothing once the root stopped being a
-  // pane, and the test then failed on the splitter it never created.
-
-  test('creates a vertical split with row splitter semantics', async ({ page }) => {
-    await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
-        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
-      const leaf = firstLeaf(windowStore.layout);
-      if (leaf) windowActions.splitPane(leaf.id, 'vertical');
-    });
-
-    // Row semantics live on the splitter's cursor, which an inert splitter
-    // drops. The new pane is born empty, so fill both sides first.
-    await fillCenterPanes(page);
-
-    const rowSplitter = page.locator('[data-split-id].cursor-row-resize').first();
-    await expect(rowSplitter).toBeVisible({ timeout: 3000 });
-
-    const state = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const root = windowStore.layout;
-      const anyVertical = (n: LayoutNodeShape): boolean =>
-        n.type === 'split' &&
-        (n.direction === 'vertical' || anyVertical(n.first!) || anyVertical(n.second!));
-      return { rootType: root.type, hasVertical: anyVertical(root) };
-    });
-    expect(state.rootType).toBe('split');
-    // A vertical split SOMEWHERE in the tree: the root is the session/editor
-    // column split, and the new one nests inside the leaf that was split.
-    expect(state.hasVertical).toBe(true);
-  });
-
-  test('supports nested splits by splitting a child pane after initial split', async ({ page }) => {
-    const nested = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-
-      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
-        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
-      const depth = (n: LayoutNodeShape): number =>
-        n.type === 'pane' ? 0 : 1 + Math.max(depth(n.first!), depth(n.second!));
-
-      // Split a LEAF twice: the centre root is already the session/editor
-      // column split, so `root.id` names a split and splitPane would no-op.
-      const before = depth(windowStore.layout);
-      const leaf = firstLeaf(windowStore.layout);
-      if (!leaf) return false;
-      windowActions.splitPane(leaf.id, 'vertical');
-
-      const inner = firstLeaf(windowStore.layout);
-      if (!inner) return false;
-      windowActions.splitPane(inner.id, 'horizontal');
-
-      // Two more levels than we started with is the nesting under test.
-      return depth(windowStore.layout) >= before + 2;
-    });
-
-    expect(nested).toBe(true);
-
-  });
-
-  test('collapses and re-expands left edge panel via store action', async ({ page }) => {
-    await expect(page.locator('[data-testid="edge-tabbar-left"]')).toBeVisible({ timeout: 3000 });
-
-    await page.evaluate(() => {
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      windowActions.setEdgePanelCollapsed('left', true);
-    });
-    await expect(page.locator('[data-testid="edge-collapsed-drop-left"]')).toBeVisible({ timeout: 3000 });
-    await expect(page.locator('[data-testid="edge-tabbar-left"]')).not.toBeVisible({ timeout: 3000 });
-
-    await page.evaluate(() => {
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      windowActions.setEdgePanelCollapsed('left', false);
-    });
-    await expect(page.locator('[data-testid="edge-tabbar-left"]')).toBeVisible({ timeout: 3000 });
-  });
-
-  test('shows valid collapsed strip state when edge panel has no tabs', async ({ page }) => {
-    await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const firstLeafGroupId = (node: WindowStoreShape['layout']): string | null => {
-        if (node.type === 'pane') return node.tabGroupId ?? null;
-        return firstLeafGroupId(node.first!) ?? firstLeafGroupId(node.second!);
-      };
-      const leftGroupId = firstLeafGroupId(windowStore.edgePanels.left.layout)!;
-      const centerGroupId = firstLeafGroupId(windowStore.layout)!;
-      const tabs = [...(windowStore.tabGroups[leftGroupId]?.tabs ?? [])];
-      // The rail holds the Sessions panel, and the store refuses to close the
-      // last one (WS-324). Moving it to the centre is the way a user empties
-      // this rail, so that is how the spec empties it.
-      for (const tab of tabs) {
-        windowActions.moveTab(leftGroupId, centerGroupId, tab.id);
-      }
-    });
-
-    await expect(page.locator('[data-testid="edge-collapsed-drop-left"]')).toBeVisible({ timeout: 3000 });
-    await expect(page.locator('[data-testid="edge-tabbar-left"]')).not.toBeVisible({ timeout: 3000 });
-    // The ribbon persists but has nothing to show for an empty panel —
-    // no tab icons, and no expand affordance (icons ARE the toggles now).
-    await expect(page.locator('[data-testid="edge-collapsed-drop-left"] [data-testid="collapsed-tab-button-left"]')).toHaveCount(0, { timeout: 3000 });
-  });
-
-  test('creates a floating window at requested position', async ({ page }) => {
-    const result = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-
-      const findFirstPaneGroupId = (node: LayoutNode): string | null => {
-        if (node.type === 'pane') return node.tabGroupId ?? null;
-        return (node.first ? findFirstPaneGroupId(node.first) : null) ?? (node.second ? findFirstPaneGroupId(node.second) : null);
-      };
-
-      const centerGroupId = findFirstPaneGroupId(windowStore.layout);
-      if (!centerGroupId) return { ok: false, count: 0, x: -1, y: -1 };
-
-      windowActions.createFloatingWindow(centerGroupId, 320, 180, 420, 260);
-      const floating = windowStore.floatingWindows[windowStore.floatingWindows.length - 1];
-      return {
-        ok: true,
-        count: windowStore.floatingWindows.length,
-        x: floating?.x ?? -1,
-        y: floating?.y ?? -1,
-      };
-    });
-
-    expect(result.ok).toBe(true);
-    expect(result.count).toBeGreaterThan(0);
-    expect(result.x).toBe(320);
-    expect(result.y).toBe(180);
-    await expect(page.locator('div[style*="left: 320px"][style*="top: 180px"]')).toBeVisible({ timeout: 3000 });
-  });
-
-  test('clicking tabs updates active tab in the center group', async ({ page }) => {
-    const secondSessionItem = page.getByTestId('session-item-test-session-002');
-    await expect(secondSessionItem).toBeVisible({ timeout: 5000 });
-    await secondSessionItem.click();
-
-    const firstTab = page.locator('[data-tab-id="tab-chat-test-session-001"]');
-    const secondTab = page.locator('[data-tab-id="tab-chat-test-session-002"]');
-    await expect(firstTab).toBeVisible({ timeout: 3000 });
-    await expect(secondTab).toBeVisible({ timeout: 3000 });
-
-    await secondTab.click();
-    const activeAfterSecondClick = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const group = Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === 'tab-chat-test-session-002'));
-      return group?.activeTabId ?? null;
-    });
-    expect(activeAfterSecondClick).toBe('tab-chat-test-session-002');
-
-    await firstTab.click();
-    const activeAfterFirstClick = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const group = Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === 'tab-chat-test-session-001'));
-      return group?.activeTabId ?? null;
-    });
-    expect(activeAfterFirstClick).toBe('tab-chat-test-session-001');
-  });
-
-  test('closing a tab via store action updates center tab DOM', async ({ page }) => {
-    await page.getByTestId('session-item-test-session-002').click();
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toHaveCount(2, { timeout: 3000 });
-
-    await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const groupEntry = Object.entries(windowStore.tabGroups).find(([, group]) =>
-        group.tabs.some((t) => t.id === 'tab-chat-test-session-002')
-      );
-      if (groupEntry) {
-        windowActions.removeTab(groupEntry[0], 'tab-chat-test-session-002');
-      }
-    });
-
-    await expect(page.locator('[data-tab-id="tab-chat-test-session-002"]')).not.toBeVisible({ timeout: 3000 });
-    await expect(page.locator('[data-tab-id^="tab-chat-"]')).toHaveCount(1, { timeout: 3000 });
   });
 
   test('opening multiple sessions creates two unique chat tabs without duplicates', async ({ page }) => {
@@ -252,83 +63,6 @@ test.describe('Comprehensive windowing behavior', () => {
 
     await page.getByTestId('session-item-test-session-001').click();
     await expect(page.locator('[data-tab-id^="tab-chat-"]')).toHaveCount(2, { timeout: 3000 });
-  });
-
-  test('split ratio persists after dragging splitter away from default', async ({ page }) => {
-    await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      if (windowStore.layout.type === 'pane') {
-        windowActions.splitPane(windowStore.layout.id, 'horizontal');
-      }
-    });
-
-    // An empty side yields its width and pins the splitter — this test is
-    // about the ratio a DRAG writes, so both sides need content.
-    await fillCenterPanes(page);
-
-    const splitter = page.locator('[data-split-id]').first();
-
-    // Settle first: the split has just been created and the right edge panel
-    // is still expanding, so an early box gives an `x` the splitter has
-    // already moved away from — and the drag destination is computed from it.
-    const { x: cx, y: cy } = await stableCenter(splitter);
-
-    // The separator is a 1px element widened only by an ::after pseudo, so a
-    // raw mouse.move at box.x + width/2 lands on a sub-pixel coordinate that
-    // can round onto the neighbouring pane and never reach pointerdown.
-    // hover() uses Playwright's actionability hit-point instead.
-    await splitter.hover();
-    await page.mouse.down();
-    await page.mouse.move(cx + 110, cy, { steps: 8 });
-    await page.mouse.up();
-
-    // Poll the store until the drag-updated split ratio settles past the default.
-    const readRatio = () =>
-      page.evaluate(() => {
-        const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-        return windowStore.layout.type === 'split' ? windowStore.layout.splitRatio ?? 0.5 : 0.5;
-      });
-    await expect.poll(readRatio, { timeout: 3000 }).toBeGreaterThan(0.5);
-
-    const ratio = await readRatio();
-    expect(Math.abs(ratio - 0.5)).toBeGreaterThan(0.02);
-  });
-
-  test('a yielding pane leaves no gap — the split still fills its container', async ({ page }) => {
-    // Regression: the growing half carried its 0.5 ratio as its flex factor.
-    // Flexbox hands out free space in proportion to the grow factors and keeps
-    // the remainder when they sum to under 1, so beside a fixed-basis pane the
-    // centre ended 348px short of its own container — a hole that a jsdom test
-    // cannot see, because jsdom does not lay anything out.
-    await page.evaluate(() => {
-      const store = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const actions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
-        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
-      const leaf = firstLeaf(store.layout);
-      if (leaf) actions.splitPane(leaf.id, 'horizontal');
-    });
-
-    // The new pane is born empty, so exactly one side yields.
-    const affordance = page.getByTestId('empty-pane').first();
-    await expect(affordance).toBeVisible({ timeout: 3000 });
-
-    const geometry = await page.evaluate(() => {
-      const splitter = document.querySelector('[data-testid="resize-splitter"]') as HTMLElement;
-      const container = splitter.parentElement as HTMLElement;
-      const w = (n: Element) => n.getBoundingClientRect().width;
-      return {
-        container: w(container),
-        first: w(splitter.previousElementSibling!),
-        splitter: w(splitter),
-        second: w(splitter.nextElementSibling!),
-      };
-    });
-
-    const covered = geometry.first + geometry.splitter + geometry.second;
-    // Sub-pixel rounding only. Before the fix this was short by ~348px.
-    expect(Math.abs(covered - geometry.container)).toBeLessThan(2);
   });
 
   test('shows center empty state after all center tabs are removed', async ({ page }) => {

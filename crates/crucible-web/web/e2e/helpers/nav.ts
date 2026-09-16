@@ -89,43 +89,6 @@ export async function openSession(page: Page, sessionId: string): Promise<void> 
 }
 
 /**
- * Add scratch tabs to the left edge panel for tab-strip DnD tests.
- *
- * The default left roster is Sessions alone — Search is seeded nowhere, and
- * `defaultState.test.ts` pins that. Reorder/cross-zone specs seed their own
- * tabs rather than lean on whatever the shell happens to ship: the roster
- * changing is exactly what broke them before.
- */
-export async function seedLeftTabs(
-  page: Page,
-  tabs: { id: string; title: string }[],
-): Promise<void> {
-  await page.evaluate((seed) => {
-    const store = (window as unknown as Record<string, any>).__windowStore;
-    const actions = (window as unknown as Record<string, any>).__windowActions;
-    const firstGroup = (node: any): string | null => {
-      if (!node || typeof node !== 'object') return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return firstGroup(node.first) ?? firstGroup(node.second);
-    };
-    const groupId = firstGroup(store.edgePanels.left.layout);
-    if (!groupId) throw new Error('seedLeftTabs: left edge panel has no tab group');
-    const wasActive = store.tabGroups[groupId]?.activeTabId ?? null;
-    for (const t of seed) {
-      actions.addTab(groupId, { id: t.id, title: t.title, contentType: 'backlinks' });
-    }
-    // addTab activates what it adds; keep the panel showing what it showed
-    // (callers seed a strip to drag, they don't want the body swapped).
-    if (wasActive) actions.setActiveTab(groupId, wasActive);
-  }, tabs);
-  for (const t of tabs) {
-    await expect(page.locator(`[data-testid="edge-tab-left-${t.id}"]`)).toBeVisible({
-      timeout: READY_TIMEOUT,
-    });
-  }
-}
-
-/**
  * Open a New Session tab and wait for its composer.
  *
  * Ctrl+Shift+N, which is the project-agnostic doorway the app actually ships:

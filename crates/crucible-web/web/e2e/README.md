@@ -55,16 +55,25 @@ bunx playwright show-report                          # View last HTML report
 
 Grouped by area. See each file for details.
 
-### Windowing & layout (6)
+### Windowing & layout
+
+Core specs live in `e2e/windowing/`. They open `windowing-harness.html`, which
+mounts the window manager with the neutral policy and no app, so they use no
+API mocks. App specs stay here and prove the app's own rules.
 
 | Spec                              | Covers                                                              |
 | --------------------------------- | ------------------------------------------------------------------- |
-| `windowing-comprehensive.spec.ts` | Broad windowing flow: split, tab, edge panel, floating window       |
-| `windowing-regression.spec.ts`    | Specific past-bug regressions in the window manager                 |
-| `center-resize.spec.ts`           | Splitter drag in the center tiling area resizes panes               |
-| `cross-zone-dnd.spec.ts`          | Drag-and-drop between zones (tab ↔ edge ↔ floating)                 |
-| `panel-placeholders.spec.ts`      | Empty/placeholder content in panels                                 |
-| `tab-reorder.spec.ts`             | Reordering tabs within a tab group                                  |
+| `windowing/split.spec.ts`         | Core: centre splits, splitter drag, the yielding pane               |
+| `windowing/tabs.spec.ts`          | Core: active tab, close, empty centre, reorder inside one bar       |
+| `windowing/rails.spec.ts`         | Core: collapse, empty rail, cross-zone drag, reduced motion, swap   |
+| `windowing/floating.spec.ts`      | Core: floating window position, pop-out, dock                       |
+| `windowing/restore.spec.ts`       | Core: drag and drop after a layout restore                          |
+| `windowing/modes.spec.ts`         | Core: the edge mode mark on a rail                                  |
+| `windowing-comprehensive.spec.ts` | App: session tabs, and no composer in an emptied centre             |
+| `windowing-regression.spec.ts`    | App: the shell boots and keeps its regions when toggled             |
+| `fixed-rails.spec.ts`             | App: the last Sessions tab stays, and the layout menu re-adds panes |
+| `swap-sides.spec.ts`              | App: the chord swaps the Sessions and Files rails                   |
+| `tab-drag-restored-layout.spec.ts`| App: drag and drop after a legacy server layout restore             |
 
 ### Chat (4)
 

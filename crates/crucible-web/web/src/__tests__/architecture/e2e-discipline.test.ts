@@ -44,12 +44,8 @@ describe('e2e architecture discipline', () => {
   // removed (by switching to a condition wait), never added. The story and
   // live tiers are intentionally absent — they must stay sleep-free.
   const WAIT_FOR_TIMEOUT_ALLOWLIST = new Set([
-    'center-resize.spec.ts',
-    'cross-zone-dnd.spec.ts',
     'empty-state.spec.ts',
     'session-lifecycle.spec.ts',
-    'tab-reorder.spec.ts',
-    'windowing-comprehensive.spec.ts',
   ]);
 
   // UNIQUE: no eslint config exists in web/ (no eslint dep in package.json); eslint-plugin-playwright's no-wait-for-timeout would be the alternative but is not wired in. The vitest source-scan is the only enforcement of the shrinking allowlist invariant.

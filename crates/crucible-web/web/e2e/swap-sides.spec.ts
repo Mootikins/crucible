@@ -2,9 +2,11 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
 
 /**
- * The side swap, through the three doorways it ships with: the keybinding,
- * the ribbon button, and the palette entry. All three must reach the same
- * action — a command with three behaviours is three commands.
+ * The side swap in the app: the app's chord table reaches the layout action,
+ * and the fixed rails (Sessions, Files) change sides.
+ *
+ * The mechanics (the ribbon button, the swap back, Ctrl+\ still splitting)
+ * are core specs in e2e/windowing/rails.spec.ts, which drive the harness.
  */
 
 async function boot(page: Page) {
@@ -52,25 +54,5 @@ test.describe('swap side panels', () => {
 
     await expect.poll(() => sideContents(page, 'left')).toContain('files');
     expect(await sideContents(page, 'right')).toContain('sessions');
-  });
-
-  test('the ribbon button runs the same action', async ({ page }) => {
-    await page.getByTestId('ribbon-cmd-swap-sides').click();
-    await expect.poll(() => sideContents(page, 'left')).toContain('files');
-  });
-
-  test('swapping back restores the original sides', async ({ page }) => {
-    const before = await sideContents(page, 'left');
-    await page.keyboard.press('Control+Shift+\\');
-    await page.keyboard.press('Control+Shift+\\');
-    await expect.poll(() => sideContents(page, 'left')).toEqual(before);
-  });
-
-  // Ctrl+\ splits a pane and must keep doing so — the swap took the adjacent
-  // chord precisely so this binding did not have to move.
-  test('leaves Ctrl+\\ splitting panes', async ({ page }) => {
-    const before = await sideContents(page, 'left');
-    await page.keyboard.press('Control+\\');
-    expect(await sideContents(page, 'left')).toEqual(before);
   });
 });
