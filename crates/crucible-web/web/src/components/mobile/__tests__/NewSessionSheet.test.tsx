@@ -11,12 +11,12 @@ vi.mock('@/contexts/SessionContext', () => ({
     },
   }),
 }));
-// `listKilns` is NOT stubbed: the sheet reads the roster through `useKilns`,
-// which runs the real one against the mocked fetch below.
+// Neither `listKilns` nor `listAgents` is stubbed: the sheet reads both
+// rosters through their query hooks, which run the real functions against the
+// mocked fetch below.
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getConfig: () => Promise.resolve({ kiln_path: '/kilns/home' }),
-  listAgents: () => Promise.resolve([{ name: 'claude', description: 'ACP agent' }]),
   listAllModels: () => Promise.resolve(['sonnet', 'opus']),
   listProjects: () => Promise.resolve([{ path: '/work/alpha', name: 'alpha', kilns: [] }]),
   getTargetProviders: () => Promise.resolve([]),
@@ -29,6 +29,9 @@ import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
 
 const KILNS = [{ path: '/kilns/home', name: 'home' }];
+const AGENTS = [
+  { name: 'claude', description: 'ACP agent', command: 'npx', is_builtin: true, available: true },
+];
 
 let env: TestQueryEnv;
 
@@ -36,7 +39,10 @@ beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'GET /api/agents': () => ({ agents: AGENTS }),
+  });
   created.params = [];
   created.opts = [];
 });

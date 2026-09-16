@@ -6,8 +6,8 @@ import { closeDraftTab } from '@/lib/draft-session';
 import { draftCreateParams, HOST_RUNTIME } from '@/lib/session-draft';
 import { iconForAgent } from '@/lib/agent-icons';
 import { attachableKilns, kilnNameForPath } from '@/lib/kiln-registry';
-import { listAgents, listAllModels } from '@/lib/api';
-import type { AgentProfileEntry } from '@/lib/types';
+import { listAllModels } from '@/lib/api';
+import { useAgents } from '@/lib/query/agents';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects } from '@/lib/query/projects';
@@ -44,8 +44,11 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const [message, setMessage] = createSignal('');
   const [picking, setPicking] = createSignal<Axis | null>(null);
 
-  const [agents, setAgents] = createSignal<AgentProfileEntry[]>([]);
   const [models, setModels] = createSignal<string[]>([]);
+  // The desktop composer's roster, read through the same key: opening the
+  // sheet after the composer has already probed costs nothing.
+  const agentsQuery = useAgents();
+  const agents = () => agentsQuery.data ?? [];
   const kilnsQuery = useKilns();
   const kilns = () => kilnsQuery.data ?? [];
   const projectsQuery = useProjects();
@@ -68,7 +71,6 @@ export const NewSessionSheet: Component<{ draftTabId?: string; workspace?: strin
   const rtTargets = () => Object.values(rtAxis.targets).flat();
 
   onMount(() => {
-    void listAgents().then(setAgents).catch(() => {});
     void listAllModels().then(setModels).catch(() => {});
   });
 

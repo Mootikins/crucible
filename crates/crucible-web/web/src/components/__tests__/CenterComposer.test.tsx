@@ -19,6 +19,18 @@ const KILNS = [
   { path: '/home/user/.crucible/sessions', name: 'sessions', registered: false },
 ];
 
+// `listAgents` is NOT stubbed: the agent chip reads the roster through
+// `useAgents`, which runs the real one against the route below.
+const AGENTS = [
+  {
+    name: 'claude',
+    description: 'Claude Code via ACP',
+    command: 'npx',
+    is_builtin: true,
+    available: true,
+  },
+];
+
 let env: TestQueryEnv;
 
 const createSessionMock = vi.fn().mockResolvedValue({ id: 'sess-1' });
@@ -74,9 +86,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
           ],
     ),
   ),
-  listAgents: vi.fn().mockResolvedValue([
-    { name: 'claude', description: 'Claude Code via ACP', command: 'npx', is_builtin: true, available: true },
-  ]),
   listAllModels: vi.fn().mockResolvedValue(['ollama/llama3.2', 'openai/gpt-4o']),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
   listProviders: vi.fn().mockResolvedValue([
@@ -99,7 +108,10 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 beforeEach(async () => {
   localStorage.clear();
   resetKilnsForTests();
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'GET /api/agents': () => ({ agents: AGENTS }),
+  });
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();
 
@@ -246,10 +258,12 @@ describe('CenterComposer', () => {
     // Internal agent + the mocked 'claude' profile, each iconed. (The chip
     // trigger repeats the selected label, so scope to the option list.)
     const list = await screen.findByRole('listbox', { name: 'agent' });
+    const rowFor = (label: string) =>
+      [...list.querySelectorAll('button')].find((b) => b.textContent?.includes(label));
+    // The probe is a fetch, so the ACP row arrives after the menu does.
+    await waitFor(() => expect(rowFor('claude'), 'no claude row').toBeTruthy());
     for (const label of ['Internal agent', 'claude']) {
-      const row = [...list.querySelectorAll('button')].find((b) =>
-        b.textContent?.includes(label),
-      );
+      const row = rowFor(label);
       expect(row, `no ${label} row`).toBeTruthy();
       expect(row!.querySelector('svg'), `${label} row has no icon`).toBeTruthy();
     }

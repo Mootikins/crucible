@@ -2,7 +2,6 @@ import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-
 import { useSessionSafe } from '@/contexts/SessionContext';
 import {
   isGitRepoUrl,
-  listAgents,
   listAllModels,
   listProviders,
   type ProviderTarget,
@@ -10,7 +9,7 @@ import {
 } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
-import type { AgentProfileEntry, Project } from '@/lib/types';
+import type { Project } from '@/lib/types';
 import { WorkingDots } from '@/components/AssistantTurn';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
@@ -18,6 +17,7 @@ import { syncRecentsFromServer } from '@/lib/recent-files';
 import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { HOST_RUNTIME, draftCreateParams, kilnsForCreate as kilnsToAttach } from '@/lib/session-draft';
 import { swrLocal } from '@/lib/local-cache';
+import { useAgents } from '@/lib/query/agents';
 import { useKilns } from '@/lib/query/kilns';
 import { useConfig } from '@/lib/query/config';
 import { useProjects, useScmClone } from '@/lib/query/projects';
@@ -71,8 +71,12 @@ export const CenterComposer: Component<{
 }> = (props) => {
   const { createSession } = useSessionSafe();
 
-  const [agents, setAgents] = createSignal<AgentProfileEntry[]>([]);
   const [models, setModels] = createSignal<string[]>([]);
+  // The same roster the phone's sheet reads. It keeps the `swrLocal('agents')`
+  // storage key, so the chip still paints its last-known names before the
+  // daemon finishes probing each agent's binary.
+  const agentsQuery = useAgents();
+  const agents = () => agentsQuery.data ?? [];
   // One shared query, not this component's own fetch: the composer, the files
   // panel, the search panel and the scope chips all read the same roster.
   const kilnsQuery = useKilns();
@@ -138,7 +142,6 @@ export const CenterComposer: Component<{
     // No barrier, no blank chips: every source paints its LAST-KNOWN value
     // synchronously (swrLocal) and the fetch corrects it — a hard reload
     // shows real labels immediately instead of "Loading…"/fallback text.
-    swrLocal('agents', listAgents, setAgents);
     swrLocal('models', () => listAllModels(), (mo) =>
       setModels(mo.filter((m) => !m.startsWith('[error]'))),
     );
