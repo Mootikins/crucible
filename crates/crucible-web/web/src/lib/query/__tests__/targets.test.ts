@@ -226,6 +226,41 @@ describe('useResolveWorkspaceTarget', () => {
     await vi.waitFor(() => expect(ranCommand('worktree:list')).toHaveLength(2));
   });
 
+  it('asks again for the per-provider lists the composers read', async () => {
+    env = createTestQueryEnv(targetRoutes());
+
+    const both = inRoot(() => ({
+      axis: useAxisTargets('workspace', () => '/repo/a'),
+      resolve: useResolveWorkspaceTarget(),
+    }));
+
+    await vi.waitFor(() => expect(both.axis.ready).toBe(true));
+    expect(ranCommand('worktree:list')).toHaveLength(1);
+
+    await both.resolve.mutateAsync({ spec: 'worktree:fix/y', workspace: '/repo/a' });
+
+    // The composer's picker is keyed per provider, not under the flat
+    // workspace key the files pane reads. A new checkout makes both wrong.
+    await vi.waitFor(() => expect(ranCommand('worktree:list')).toHaveLength(2));
+  });
+
+  it('leaves the lists of another project alone', async () => {
+    env = createTestQueryEnv(targetRoutes());
+
+    const both = inRoot(() => ({
+      other: useAxisTargets('workspace', () => '/repo/b'),
+      resolve: useResolveWorkspaceTarget(),
+    }));
+
+    await vi.waitFor(() => expect(both.other.ready).toBe(true));
+    expect(ranCommand('worktree:list')).toHaveLength(1);
+
+    await both.resolve.mutateAsync({ spec: 'worktree:fix/y', workspace: '/repo/a' });
+
+    await vi.waitFor(() => expect(ranCommand('worktree:add')).toHaveLength(1));
+    expect(ranCommand('worktree:list')).toHaveLength(1);
+  });
+
   it('reports a provider that resolves nothing, rather than doing nothing', async () => {
     env = createTestQueryEnv({
       'GET /api/plugins/publications': () => PUBLICATIONS as MockFetchHandler,

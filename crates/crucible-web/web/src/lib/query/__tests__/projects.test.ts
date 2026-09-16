@@ -3,7 +3,7 @@ import { createRoot } from 'solid-js';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { Project } from '@/lib/types';
-import { keys } from '../keys';
+import { useKilns, resetKilnsForTests } from '../kilns';
 import {
   useProjects,
   useRegisterProject,
@@ -15,6 +15,8 @@ import {
 
 /** The storage key `swrLocal('projects')` wrote, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:projects';
+/** The kiln roster's own key, which a registration also refreshes. */
+const KILNS_STORAGE_KEY = 'crucible:cache:kilns';
 
 const project = (path: string, name: string): Project => ({
   path,
@@ -31,7 +33,9 @@ let dispose: (() => void) | null = null;
 
 beforeEach(() => {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(KILNS_STORAGE_KEY);
   resetProjectsForTests();
+  resetKilnsForTests();
 });
 
 afterEach(() => {
@@ -39,7 +43,9 @@ afterEach(() => {
   dispose = null;
   env?.restore();
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(KILNS_STORAGE_KEY);
   resetProjectsForTests();
+  resetKilnsForTests();
 });
 
 /** Runs the body under one Solid owner, which the test disposes afterwards. */
@@ -134,19 +140,21 @@ describe('useRegisterProject', () => {
 
   it('asks for the kiln roster again, because a registration can change it', async () => {
     env = createTestQueryEnv({
+      'GET /api/kilns': () => ({ kilns: [] }),
       'GET /api/project/list': () => LIVE,
       'POST /api/project/register': () => project('/repos/added', 'added'),
     });
 
-    const register = inRoot(() => useRegisterProject());
-    env.client.setQueryData(keys.kilns(), []);
-    expect(env.client.getQueryState(keys.kilns())?.isInvalidated).toBe(false);
+    const both = inRoot(() => ({ kilns: useKilns(), register: useRegisterProject() }));
 
-    await register.mutateAsync('/repos/added');
+    await vi.waitFor(() => expect(both.kilns.data).toEqual([]));
+    expect(env.fetch.calls('GET /api/kilns')).toBe(1);
 
-    await vi.waitFor(() =>
-      expect(env.client.getQueryState(keys.kilns())?.isInvalidated).toBe(true),
-    );
+    await both.register.mutateAsync('/repos/added');
+
+    // The kiln read happens in the BACKGROUND: the mutation does not wait for
+    // it, so the wait belongs here rather than on the mutation's promise.
+    await vi.waitFor(() => expect(env.fetch.calls('GET /api/kilns')).toBe(2));
   });
 
   it('reports a failed registration to the caller and leaves the roster alone', async () => {

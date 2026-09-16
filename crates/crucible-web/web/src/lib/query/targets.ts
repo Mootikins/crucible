@@ -184,6 +184,24 @@ export function useWorkspaceTargetsByRoot(
   );
 }
 
+/**
+ * True for every target entry that answers for one workspace.
+ *
+ * Two key shapes answer for a workspace and they hold it in different places:
+ * `['targets', 'workspace', ws]` and `['targets', 'provider', plugin, axis,
+ * ws]`. A prefix match reaches only the first, so the composer's per-provider
+ * pickers would keep a list that a new checkout has already made wrong.
+ */
+function answersForWorkspace(
+  queryKey: readonly unknown[],
+  workspace: string | undefined,
+): boolean {
+  if (queryKey[0] !== 'targets') return false;
+  if (queryKey[1] === 'workspace') return queryKey[2] === workspace;
+  if (queryKey[1] === 'provider') return queryKey[4] === workspace;
+  return false;
+}
+
 /** What one resolve asks for: the target's spec, and the repo it comes from. */
 export interface ResolveTargetRequest {
   spec: string;
@@ -198,9 +216,11 @@ export interface ResolveTargetRequest {
  * say so. That is why this one throws where the enumerating reads answer with
  * an empty list.
  *
- * It invalidates that workspace's target list, which the plan's signature
- * table leaves blank: the list the caller just read said the target had no
- * checkout, and after this it has one.
+ * It invalidates every target entry for that workspace, which the plan's
+ * signature table leaves blank: the list the caller just read said the target
+ * had no checkout, and after this it has one. The files pane reads one key for
+ * that list and the two composers read another per provider, so both shapes
+ * have to go — see `answersForWorkspace`.
  */
 export function useResolveWorkspaceTarget(): UseMutationResult<
   string,
@@ -213,7 +233,7 @@ export function useResolveWorkspaceTarget(): UseMutationResult<
         resolveWorkspaceTarget(spec, workspace),
       onSuccess: (_path, { workspace }) =>
         void getQueryClient().invalidateQueries({
-          queryKey: keys.workspaceTargets(workspace),
+          predicate: (query) => answersForWorkspace(query.queryKey, workspace),
         }),
     }),
     getQueryClient,

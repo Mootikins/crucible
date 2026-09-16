@@ -98,21 +98,21 @@ export function useProjects(): UseQueryResult<Project[], Error> {
  * Asks for the roster again, and for the kiln roster a registration may have
  * changed.
  *
- * The promise is RETURNED rather than dropped, so a mutation settles only once
- * the new roster has landed. Every caller of these three mutations selects the
- * project it just created; a selection made against the roster as it stood
- * before the write finds no row and silently does nothing.
+ * The two are awaited differently on purpose. The project roster is RETURNED,
+ * so a mutation settles only once the new roster has landed: every caller of
+ * these three mutations selects the project it just made, and a selection
+ * against the roster as it stood before the write finds no row. Nothing waits
+ * on the kiln roster, so it goes in the background — awaiting it would make
+ * register and clone pay for a second round trip before the user sees the
+ * project they asked for.
  *
  * Registering a project can add a kiln: the daemon registers the project's own
  * knowledge directory with it, so a stale kiln roster would leave the new
  * kiln out of every picker until something else refreshed it.
  */
 function invalidateRoster(client: QueryClient, alsoKilns: boolean): Promise<void> {
-  const roster = client.invalidateQueries({ queryKey: keys.projects() });
-  if (!alsoKilns) return roster;
-  return Promise.all([roster, client.invalidateQueries({ queryKey: keys.kilns() })]).then(
-    () => undefined,
-  );
+  if (alsoKilns) void client.invalidateQueries({ queryKey: keys.kilns() });
+  return client.invalidateQueries({ queryKey: keys.projects() });
 }
 
 /** Registers a directory as a project; invalidates the project and kiln rosters. */
