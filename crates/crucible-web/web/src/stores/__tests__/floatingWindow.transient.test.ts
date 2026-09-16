@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

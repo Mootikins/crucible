@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { hasTabsOutsidePane, paneHasTabs, subtreeHasTabs } from '../pane-content';
-import type { LayoutNode, TabGroup } from '@/types/windowTypes';
+import { hasTabsOutsidePane, paneHasTabs, subtreeHasTabs } from '../model/pane-content';
+import type { LayoutNode, TabGroup } from '../model/types';
 
 const group = (id: string, count: number): TabGroup => ({
   id,

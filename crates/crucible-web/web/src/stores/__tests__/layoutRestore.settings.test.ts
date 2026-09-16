@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { collectPanes, createInitialState } from '@/stores/windowStoreInternals';
+import { collectPanes } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { SerializedLayout } from '@/lib/layout-serializer';
 
 const resetStore = () => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -57,7 +58,7 @@ const SETTINGS_ONLY: SerializedLayout = {
       activeTabId: 'tab-settings',
     },
   },
-  edgePanels: createInitialState().edgePanels,
+  edgePanels: defaultLayout().edgePanels,
   floatingWindows: [],
 } as unknown as SerializedLayout;
 

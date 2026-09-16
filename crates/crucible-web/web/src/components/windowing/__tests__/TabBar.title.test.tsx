@@ -6,7 +6,8 @@ import { darkTokens, resolveToken } from '@/test-utils/css-tokens';
 import { FileText } from '@/lib/icons';
 import { TabBar, elideTabTitle } from '../TabBar';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
+import { findFirstPane } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 const LONG = '2026-09-15 Web UI Review.md';
 const LONGER = '2026-09-15 Architecture Review Notes.md';
@@ -15,7 +16,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

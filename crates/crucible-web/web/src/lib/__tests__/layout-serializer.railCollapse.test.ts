@@ -5,7 +5,7 @@ import type { LayoutNode, PaneNode } from '@/types/windowTypes';
 
 // v7 → v8 adds `PaneNode.collapsed`: a rail pane collapses to its tab strip on
 // its own. The migration gives a stored layout the same terminal default a
-// fresh one gets from `createInitialState`.
+// fresh one gets from `defaultLayout`.
 
 const panes = (node: LayoutNode): PaneNode[] =>
   node.type === 'pane' ? [node] : [...panes(node.first), ...panes(node.second)];

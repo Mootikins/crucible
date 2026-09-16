@@ -7,14 +7,15 @@ vi.mock('@/lib/recent-files', () => ({ recordRecentFile: vi.fn(), recentFiles: (
 import { openFileInEditor } from '@/lib/file-actions';
 import { openSessionInChat } from '@/lib/session-actions';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { collectLeafGroupIds, createInitialState } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { edgeCenterPane } from '@/lib/panel-actions';
 
 const groupOf = (tabId: string) =>
   Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === tabId))?.id ?? null;
 
 beforeEach(() => {
-  setStore(createInitialState());
+  setStore(defaultLayout());
   device.compact = false;
 });
 

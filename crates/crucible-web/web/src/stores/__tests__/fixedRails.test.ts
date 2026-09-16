@@ -3,9 +3,9 @@ import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import {
   collectLeafGroupIds,
-  createInitialState,
   primaryEdgeGroupId,
-} from '@/stores/windowStoreInternals';
+} from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { EdgePanelPosition, TabContentType } from '@/types/windowTypes';
 import type { SerializedLayout } from '@/lib/layout-serializer';
 
@@ -21,7 +21,7 @@ import type { SerializedLayout } from '@/lib/layout-serializer';
  */
 
 const resetStore = () => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

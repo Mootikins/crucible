@@ -13,7 +13,7 @@ import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import type { LayoutNode, TabGroup } from '@/types/windowTypes';
 import { openSessionInChat, sessionPane } from '../session-actions';
-import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds } from '@/windowing/model/tree';
 
 /** Centre tab groups, left to right. */
 const centreGroups = () => collectLeafGroupIds(windowStore.layout);

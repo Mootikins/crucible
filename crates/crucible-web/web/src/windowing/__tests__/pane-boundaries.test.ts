@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { paneBoundaries, findSplitInLayout } from '../pane-boundaries';
-import type { LayoutNode } from '@/types/windowTypes';
+import { paneBoundaries, findSplitInLayout } from '../model/pane-boundaries';
+import type { LayoutNode } from '../model/types';
 
 const pane = (id: string): LayoutNode => ({ type: 'pane', id, tabGroupId: `g-${id}` });
 

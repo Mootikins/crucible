@@ -1,5 +1,5 @@
 import { windowStore } from '@/stores/windowStore';
-import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds } from '@/windowing/model/tree';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import { getGlobalRegistry, type PanelDefinition } from './panel-registry';
 import { iconForPanelId } from './tab-icons';

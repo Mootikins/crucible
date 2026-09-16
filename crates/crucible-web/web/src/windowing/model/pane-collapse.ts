@@ -1,4 +1,4 @@
-import type { LayoutNode } from '@/types/windowTypes';
+import type { LayoutNode } from './types';
 
 /**
  * The size rule for a collapsed pane, shared by the rail body and the ribbon.

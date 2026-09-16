@@ -4,7 +4,8 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findPaneInLayout } from '@/stores/windowStoreInternals';
+import { findPaneInLayout } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 /**
  * A rail is a COLUMN of panes, so the ribbon carries one marker per pane, not
@@ -45,7 +46,7 @@ const stubGeometry = (container: HTMLElement, tops: Record<string, number>) => {
 };
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;
@@ -341,7 +342,7 @@ describe('the collapsed pane is its own affordance', () => {
  */
 describe('a ribbon button sits on the same half as its pane', () => {
   beforeEach(() => {
-    const fresh = createInitialState();
+    const fresh = defaultLayout();
     setStore(
       produce((s) => {
         s.layout = fresh.layout;

@@ -1,4 +1,4 @@
-import type { Tab } from '@/types/windowTypes';
+import type { Tab } from './types';
 
 // Data-loss guard for window-tab close paths (bug 6). Tabs mirror their
 // editor dirty state via `isModified` (see FileViewerPanel's dirty-sync

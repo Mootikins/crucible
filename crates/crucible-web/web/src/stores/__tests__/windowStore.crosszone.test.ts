@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, setStore, windowActions, findEdgePanelForGroup } from '../windowStore';
-import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/types/windowTypes';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
@@ -71,10 +72,10 @@ const splitLayout = (pane1Id: string, group1Id: string, pane2Id: string, group2I
 // seed it via resetToState() in their own beforeEach, but the read-only
 // "initial state structure" and "findEdgePanelForGroup" describes assert
 // against the pristine default — which only held because they happened to run
-// first. Reset every test to a fresh createInitialState() so their assertions
+// first. Reset every test to a fresh defaultLayout() so their assertions
 // are independent of execution order.
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

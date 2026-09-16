@@ -11,7 +11,7 @@ import {
   IconPin,
   IconTabBar,
 } from './icons';
-import { confirmTabClose } from '@/lib/tab-guards';
+import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { reactiveMetadataProps } from '@/lib/panel-props';
 

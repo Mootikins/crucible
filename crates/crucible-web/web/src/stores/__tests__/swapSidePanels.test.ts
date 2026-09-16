@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import {
   collectLeafGroupIds,
-  createInitialState,
   findFirstPane,
   mirrorLayout,
   primaryEdgeGroupId,
-} from '@/stores/windowStoreInternals';
+} from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { LayoutNode } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 
@@ -15,7 +15,7 @@ const rightGroup = () => primaryEdgeGroupId(windowStore, 'right');
 
 describe('swapSidePanels', () => {
   beforeEach(() => {
-    setStore(createInitialState());
+    setStore(defaultLayout());
   });
 
   it('moves each side’s panes to the other side', () => {
@@ -139,7 +139,7 @@ const railOrder = (side: 'left' | 'right') =>
 
 describe('swapSidePanels — a 100% flip, not a rail swap', () => {
   beforeEach(() => {
-    setStore(createInitialState());
+    setStore(defaultLayout());
   });
 
   it('reverses the CENTRE columns too', () => {

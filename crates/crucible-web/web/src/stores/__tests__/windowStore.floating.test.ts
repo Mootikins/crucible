@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { windowStore, windowActions, setStore } from '../windowStore';
-import { createInitialState, findFirstPane } from '../windowStoreInternals';
+import { findFirstPane } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { Tab } from '@/types/windowTypes';
 
 const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
@@ -13,7 +14,7 @@ const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
 
 /** Reset to a fresh initial state and return the main pane + its group id. */
 function resetStore(): { paneId: string; groupId: string } {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(produce((s) => {
     s.layout = fresh.layout;
     s.tabGroups = fresh.tabGroups;

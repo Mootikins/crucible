@@ -14,12 +14,11 @@ import {
   deserializeLayout,
   serializeLayout,
 } from '@/lib/layout-serializer';
-import { markLayoutRestore } from '@/lib/layout-restore';
-import type { WindowStoreContext } from './windowStoreInternals';
+import { markLayoutRestore } from '@/windowing/model/layout-restore';
+import type { WindowStoreContext } from '@/windowing/model/tree';
 import type { WindowState } from '@/types/windowTypes';
 import {
   collapseEmptyNodes,
-  createInitialState,
   collectLeafGroupIds,
   expandedPanes,
   findFirstPane,
@@ -30,7 +29,8 @@ import {
   regionOfPane,
   updateRootWhere,
   updateSplitRatio,
-} from './windowStoreInternals';
+} from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { statusBarActions } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
 
@@ -170,7 +170,7 @@ export interface LayoutActions {
   resetLayoutToDefaults(): void;
 }
 
-export function createLayoutActions(context: WindowStoreContext): LayoutActions {
+export function createLayoutActions(context: WindowStoreContext<TabContentType>): LayoutActions {
   const { store, setStore } = context;
 
   const setActivePane = (paneId: string | null) => {
@@ -423,7 +423,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
      */
     restored.layout = collapseEmptyNodes(restored.layout, restored.tabGroups);
     // Snap-not-tween marker: effects reacting to this store swap (edge-panel
-    // collapse states) must apply instantly — see lib/layout-restore.
+    // collapse states) must apply instantly — see windowing/model/layout-restore.
     markLayoutRestore(() =>
     setStore(
       produce((s) => {
@@ -448,7 +448,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
    *
    * In-place rather than a page reload: a reload would also drop every open
    * session's live SSE stream and the editor's unsaved buffers, which a
-   * request to rearrange PANES never asked for. `createInitialState` is the
+   * request to rearrange PANES never asked for. `defaultLayout` is the
    * same function that builds the layout on a first run, so "reset" and
    * "never opened this app before" land on exactly one shape.
    *
@@ -458,7 +458,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
    * back on disk under a new version anyway.
    */
   const resetLayoutToDefaults = () => {
-    const fresh = createInitialState();
+    const fresh = defaultLayout();
     markLayoutRestore(() =>
       setStore(
         produce((s) => {

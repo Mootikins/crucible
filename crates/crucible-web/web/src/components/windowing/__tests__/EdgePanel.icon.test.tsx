@@ -4,10 +4,11 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { EdgePanel } from '../EdgePanel';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { collectLeafGroupIds, createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 
-// The old test scraped EdgePanel.tsx and windowStoreInternals.ts for source
+// The old test scraped EdgePanel.tsx and windowing/model/tree.ts for source
 // substrings ("{props.tab.icon ? (", "icon: ClipboardList", …). That never
 // renders and breaks on renames. Here we render the edge ribbon and assert the
 // real output: tabs with an icon render a Lucide <svg>, tabs without one fall
@@ -15,7 +16,7 @@ import type { EdgePanelPosition } from '@/types/windowTypes';
 // component icons (checked against the live store, not the source text).
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

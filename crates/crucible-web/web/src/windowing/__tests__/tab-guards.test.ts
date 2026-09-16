@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Tab } from '@/types/windowTypes';
-import { confirmTabClose } from '../tab-guards';
+import type { Tab } from '../model/types';
+import { confirmTabClose } from '../model/tab-guards';
 
 const tab = (overrides: Partial<Tab> = {}): Tab => ({
   id: 'tab-1',

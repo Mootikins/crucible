@@ -9,10 +9,10 @@ import {
   collectPanes,
   findPaneInLayout,
   primaryEdgeGroupId,
-} from '@/stores/windowStoreInternals';
+} from '@/windowing/model/tree';
 import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
-import { isRestoringLayout } from '@/lib/layout-restore';
+import { isRestoringLayout } from '@/windowing/model/layout-restore';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
 import { terminalAllowed } from '@/lib/terminal-availability';

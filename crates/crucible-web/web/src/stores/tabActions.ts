@@ -5,10 +5,11 @@ import type {
   Tab,
   TabGroup,
   EdgePanelPosition,
+  TabContentType,
 } from '@/types/windowTypes';
 import type { PaneDropPosition } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
-import type { WindowStoreContext } from './windowStoreInternals';
+import type { WindowStoreContext } from '@/windowing/model/tree';
 import { statusBarActions } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
 
@@ -35,7 +36,7 @@ import {
   replacePaneWithSplit,
   updatePaneInLayout,
   updateRootWhere,
-} from './windowStoreInternals';
+} from '@/windowing/model/tree';
 import type { WindowState } from '@/types/windowTypes';
 import { isLastFixedRailTab } from './layoutActions';
 
@@ -89,7 +90,7 @@ export interface TabActions {
   ): void;
 }
 
-export function createTabActions(context: WindowStoreContext): TabActions {
+export function createTabActions(context: WindowStoreContext<TabContentType>): TabActions {
   const { store, setStore } = context;
 
   const addTab = (groupId: string, tab: Tab, insertIndex?: number) => {

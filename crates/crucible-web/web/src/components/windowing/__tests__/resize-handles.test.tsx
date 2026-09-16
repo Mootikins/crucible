@@ -6,7 +6,8 @@ import { SplitPane } from '../SplitPane';
 import { EdgePanel } from '../EdgePanel';
 import { FloatingWindow } from '../FloatingWindow';
 import { windowStore, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
+import { findFirstPane, generateId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 /**
  * Separator + panel-chrome contract (Obsidian-style):
@@ -24,7 +25,7 @@ let mainPaneId: string;
 let mainGroupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

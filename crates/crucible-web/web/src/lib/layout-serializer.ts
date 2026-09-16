@@ -345,7 +345,7 @@ function migrateV6toV7(v6: SerializedLayout): SerializedLayout {
 // A rail pane collapses to its tab strip on its own, which gives the terminal
 // an honest default: a BAR under the file tree instead of a third of the rail
 // held open for a shell nobody started. v7 stored the terminal pane expanded,
-// so the flag is set once here — the same shape `createInitialState` seeds.
+// so the flag is set once here — the same shape `defaultLayout` seeds.
 //
 // Every terminal-only pane in a rail, not the id `migrateV6toV7` minted: a
 // user who dragged the shell into the other rail still gets the new default.

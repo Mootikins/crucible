@@ -2,9 +2,9 @@ import { Component, Show, createSignal, createEffect, onCleanup, onMount } from 
 import { Key } from '@solid-primitives/keyed';
 import { Dynamic } from 'solid-js/web';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { collectPanes } from '@/stores/windowStoreInternals';
-import { isCollapsedLeaf } from '@/lib/pane-collapse';
-import { paneBoundaries, findSplitInLayout } from '@/lib/pane-boundaries';
+import { collectPanes } from '@/windowing/model/tree';
+import { isCollapsedLeaf } from '@/windowing/model/pane-collapse';
+import { paneBoundaries, findSplitInLayout } from '@/windowing/model/pane-boundaries';
 import { startSplitDrag } from '@/lib/split-drag';
 import type { EdgePanelPosition, PaneNode } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';

@@ -2,22 +2,15 @@ import type { SetStoreFunction } from 'solid-js/store';
 import type {
   EdgePanelPosition,
   LayoutNode,
+  PaneDropPosition,
   PaneNode,
-  Tab,
   TabGroup,
-} from '@/types/windowTypes';
-import {
-  Activity,
-  ClipboardList,
-  FolderTree,
-  Link2,
-  Terminal,
-} from '@/lib/icons';
-import type { PaneDropPosition, WindowState } from '@/types/windowTypes';
+  WindowState,
+} from './types';
 
-export interface WindowStoreContext {
-  store: WindowState;
-  setStore: SetStoreFunction<WindowState>;
+export interface WindowStoreContext<C extends string = string> {
+  store: WindowState<C>;
+  setStore: SetStoreFunction<WindowState<C>>;
 }
 
 export const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -72,9 +65,9 @@ export function findFirstPane(layout: LayoutNode): PaneNode | null {
   return findFirstPane(layout.first) || findFirstPane(layout.second);
 }
 
-export function collapseEmptyNodes(
+export function collapseEmptyNodes<C extends string>(
   layout: LayoutNode,
-  tabGroups: Record<string, TabGroup>
+  tabGroups: Record<string, TabGroup<C>>
 ): LayoutNode {
   if (layout.type === 'pane') return layout;
 
@@ -172,8 +165,8 @@ export function expandedPanes(layout: LayoutNode): PaneNode[] {
   return collectPanes(layout).filter((p) => !p.collapsed);
 }
 
-export function findEdgePanelForGroup(
-  state: WindowState,
+export function findEdgePanelForGroup<C extends string>(
+  state: WindowState<C>,
   groupId: string
 ): EdgePanelPosition | null {
   for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
@@ -184,8 +177,8 @@ export function findEdgePanelForGroup(
   return null;
 }
 
-export function findEdgePanelForPane(
-  state: WindowState,
+export function findEdgePanelForPane<C extends string>(
+  state: WindowState<C>,
   paneId: string
 ): EdgePanelPosition | null {
   for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
@@ -195,8 +188,8 @@ export function findEdgePanelForPane(
 }
 
 /** Search every layout root (center tiling + edge panels) for a pane. */
-export function findPaneAnywhere(
-  state: WindowState,
+export function findPaneAnywhere<C extends string>(
+  state: WindowState<C>,
   paneId: string
 ): PaneNode | null {
   const inMain = findPaneInLayout(state.layout, paneId);
@@ -209,8 +202,8 @@ export function findPaneAnywhere(
 }
 
 /** The pane region a pane lives in: an edge position or the center tiling. */
-export function regionOfPane(
-  state: WindowState,
+export function regionOfPane<C extends string>(
+  state: WindowState<C>,
   paneId: string
 ): EdgePanelPosition | 'center' {
   return findEdgePanelForPane(state, paneId) ?? 'center';
@@ -222,8 +215,8 @@ export function regionOfPane(
  * matched. This is what makes every split/drop/collapse operation work
  * identically in the center tiling and inside edge panels.
  */
-export function updateRootWhere(
-  s: WindowState,
+export function updateRootWhere<C extends string>(
+  s: WindowState<C>,
   contains: (root: LayoutNode) => boolean,
   transform: (root: LayoutNode) => LayoutNode
 ): boolean {
@@ -242,150 +235,11 @@ export function updateRootWhere(
 
 /** The group new tabs land in when a whole edge panel is the drop target:
  * its first leaf group (top/leading pane). */
-export function primaryEdgeGroupId(
-  state: WindowState,
+export function primaryEdgeGroupId<C extends string>(
+  state: WindowState<C>,
   pos: EdgePanelPosition
 ): string | null {
   return collectLeafGroupIds(state.edgePanels[pos].layout)[0] ?? null;
-}
-
-const createSampleTabs = (): Tab[] => [];
-
-// Only IMPLEMENTED panels ship in the default layout — no placeholder tabs.
-// Identity on the left, working context on the right. A persisted layout
-// reaches the same shape through migrateV5toV6, and this default must match
-// it or a FRESH profile opens tabs with no registered panel ("Unknown content
-// type").
-// Search is deliberately absent: it spans files, notes and sessions, so it
-// belongs to neither rail and is opened on demand (Ctrl+Shift+F / palette).
-const createLeftPanelTabs = (): Tab[] => [
-  {
-    id: 'sessions-tab',
-    title: 'Sessions',
-    contentType: 'sessions',
-    icon: ClipboardList,
-  },
-];
-
-const createRightPanelTabs = (): Tab[] => [
-  {
-    id: 'files-tab',
-    title: 'Files',
-    contentType: 'files',
-    icon: FolderTree,
-  },
-  {
-    id: 'backlinks-tab',
-    title: 'Backlinks',
-    contentType: 'backlinks',
-    icon: Link2,
-  },
-  {
-    id: 'activity-tab',
-    title: 'Activity',
-    contentType: 'activity',
-    icon: Activity,
-  },
-];
-
-/** The shell under the file tree. */
-const createTerminalTabs = (): Tab[] => [
-  {
-    id: 'terminal-tab-1',
-    title: 'Terminal',
-    contentType: 'terminal',
-    icon: Terminal,
-  },
-];
-
-export function createInitialState(): WindowState {
-  const mainPaneId = generateId();
-  const tabGroupId1 = generateId();
-  const leftGroupId = generateId();
-  const rightGroupId = generateId();
-  const rightTermGroupId = generateId();
-  // Open each edge panel on its FIRST tab, derived rather than hard-coded: a
-  // literal id that a tab-roster change orphans leaves the panel showing "No
-  // tab selected" (it has happened for both the left and right panels).
-  const leftTabs = createLeftPanelTabs();
-  const rightTabs = createRightPanelTabs();
-  const rightTermTabs = createTerminalTabs();
-  return {
-    layout: {
-      id: mainPaneId,
-      type: 'pane' as const,
-      tabGroupId: tabGroupId1,
-    },
-    tabGroups: {
-      [tabGroupId1]: {
-        id: tabGroupId1,
-        tabs: createSampleTabs(),
-        activeTabId: null,
-      },
-      [leftGroupId]: {
-        id: leftGroupId,
-        tabs: leftTabs,
-        activeTabId: leftTabs[0]?.id ?? null,
-      },
-      [rightGroupId]: {
-        id: rightGroupId,
-        tabs: rightTabs,
-        activeTabId: rightTabs[0]?.id ?? null,
-      },
-      [rightTermGroupId]: {
-        id: rightTermGroupId,
-        tabs: rightTermTabs,
-        activeTabId: rightTermTabs[0]?.id ?? null,
-      },
-    },
-    edgePanels: {
-      left: {
-        id: 'left-panel',
-        layout: { id: 'left-pane', type: 'pane' as const, tabGroupId: leftGroupId },
-        mode: 'docked',
-        // A nav rail: the session list and its project groups. The
-        // conversation itself opens as a pane beside the editor, so this
-        // stays a list's width.
-        width: 280,
-      },
-      right: {
-        id: 'right-panel',
-        // A COLUMN, not a single pane: the file tree above, a terminal under
-        // it. The terminal used to be a full-width dock across the bottom of
-        // the window, which cost the editor its height to show a shell that
-        // belongs beside the files it runs against. Stacked inside one rail it
-        // also survives a flip intact — `mirrorLayout` reverses columns and
-        // leaves what is stacked inside them alone.
-        layout: {
-          id: 'right-split',
-          type: 'split' as const,
-          direction: 'vertical' as const,
-          splitRatio: 0.65,
-          first: { id: 'right-pane', type: 'pane' as const, tabGroupId: rightGroupId },
-          // The shell ships COLLAPSED: a fresh rail shows the tree at full
-          // height with a terminal BAR under it, which is the honest default —
-          // a shell nobody started yet does not deserve a third of the rail.
-          // One click on its ribbon marker (or its bar) opens it, and the
-          // 0.65 ratio above is what it opens back to.
-          // A persisted layout reaches the same shape through migrateV7toV8.
-          second: {
-            id: 'right-term-pane',
-            type: 'pane' as const,
-            tabGroupId: rightTermGroupId,
-            collapsed: true,
-          },
-        },
-        mode: 'strip',
-        // The tree side: files, backlinks, activity, and the shell. A
-        // sidebar's width, plus room for a command line.
-        width: 340,
-      },
-    },
-    floatingWindows: [],
-    activePaneId: mainPaneId,
-    focusedRegion: 'center',
-    nextZIndex: 100,
-  };
 }
 
 export function updateSplitRatio(

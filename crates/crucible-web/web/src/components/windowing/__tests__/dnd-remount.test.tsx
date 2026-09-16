@@ -6,7 +6,8 @@ import { TabBar } from '../TabBar';
 import { EdgePanel } from '../EdgePanel';
 import type { EdgePanelPosition } from '@/types/windowTypes';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, generateId, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { findFirstPane, generateId, primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { DragSource } from '@/types/windowTypes';
 
 // Regression: updateTab replaces the tab OBJECT on every write (dirty flag,
@@ -27,7 +28,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(produce((s) => {
     s.layout = fresh.layout;
     s.tabGroups = fresh.tabGroups;
@@ -120,7 +121,7 @@ const swapEdgeGroupId = (position: EdgePanelPosition): string => {
 };
 
 it('collapsed strip icons re-register their draggable with the live group id after a restore', () => {
-  // createInitialState() can ship left.mode='strip', so setting it
+  // defaultLayout() can ship left.mode='strip', so setting it
   // to 'strip' is a no-op that Solid's store setter never notifies on. Force the
   // opposite first so the collapse is a real transition even if the default
   // flips later.
@@ -144,7 +145,7 @@ it('collapsed strip icons re-register their draggable with the live group id aft
 });
 
 it('expanded edge tab bars re-register draggables with the live group id after a restore', () => {
-  // createInitialState() already ships left.mode='docked', so setting it to
+  // defaultLayout() already ships left.mode='docked', so setting it to
   // 'docked' is a no-op Solid never notifies on. Force the opposite first so the
   // expand is a real transition even if the default flips later.
   setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));

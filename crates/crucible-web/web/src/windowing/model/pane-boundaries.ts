@@ -1,4 +1,4 @@
-import type { LayoutNode } from '@/types/windowTypes';
+import type { LayoutNode } from './types';
 
 /**
  * The split each pane's TOP EDGE belongs to, or null for the topmost pane.

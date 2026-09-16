@@ -12,16 +12,16 @@ import { FloatingWindow } from './FloatingWindow';
 import { CornerBar } from './CornerBar';
 import { MinimizedBar } from './MinimizedBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { collectLeafGroupIds, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { collectLeafGroupIds, primaryEdgeGroupId } from '@/windowing/model/tree';
 import type { DragSource, DropTarget, EdgePanelPosition } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 import { elideTabTitle, getPendingReorder, clearPendingReorder } from './TabBar';
 import { matchShortcut } from '@/lib/keyboard-shortcuts';
-import { confirmTabClose } from '@/lib/tab-guards';
+import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { placeNewTab, resolveNewTabTarget } from '@/lib/tab-placement';
-import { lastPointerPosition } from '@/lib/collision-detector';
+import { lastPointerPosition } from '@/windowing/model/collision-detector';
 import { WikilinkHoverPreview } from '@/components/WikilinkHoverPreview';
-import { smallestIntersecting } from '@/lib/collision-detector';
+import { smallestIntersecting } from '@/windowing/model/collision-detector';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 
 // The chrome splits three ways, and none of them is a title bar. The edge

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { placeNewTab, resolveNewTabTarget } from '../tab-placement';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { findFirstPane, primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import type { Tab } from '@/types/windowTypes';
 
 const fileTab = (path: string): Tab => ({
@@ -16,7 +17,7 @@ let paneId: string;
 let centerGroupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(produce((s) => {
     s.layout = fresh.layout;
     s.tabGroups = fresh.tabGroups;

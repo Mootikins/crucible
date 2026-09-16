@@ -4,7 +4,8 @@ import { onMount, onCleanup } from 'solid-js';
 import { produce } from 'solid-js/store';
 import { WindowManager } from '../WindowManager';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { findFirstPane, primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 
 /**
@@ -37,7 +38,7 @@ describe('swapSidePanels keeps the panels mounted', () => {
     resetGlobalRegistry();
     getGlobalRegistry().register('chat', 'Chat', ChatProbe, 'left');
     setStore(produce((s) => {
-      const fresh = createInitialState();
+      const fresh = defaultLayout();
       s.layout = fresh.layout;
       s.tabGroups = fresh.tabGroups;
       s.edgePanels = fresh.edgePanels;

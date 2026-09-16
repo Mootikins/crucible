@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickDroppable, type DroppableLike } from '../collision-detector';
+import { pickDroppable, type DroppableLike } from '../model/collision-detector';
 
 const drop = (id: string, x: number, y: number, w: number, h: number): DroppableLike => ({
   id,

@@ -6,7 +6,7 @@ import { type Page } from '@playwright/test';
  * A pane with no tabs yields its width to the side that holds content, and the
  * splitter between them goes inert — the same rule a collapsed pane follows,
  * because `splitRatio` is the size the pane opens back to (see `splitFlex` in
- * `src/lib/pane-collapse.ts` and `locked` in
+ * `src/windowing/model/pane-collapse.ts` and `locked` in
  * `src/components/windowing/SplitPane.tsx`).
  *
  * So a test that drags a splitter has to put content on BOTH sides. Without

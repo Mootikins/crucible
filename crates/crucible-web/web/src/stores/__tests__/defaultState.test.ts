@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 
-describe('createInitialState default seed', () => {
+describe('defaultLayout default seed', () => {
   // Regression / drift guard: every seeded tab group's activeTabId must be an
   // actual tab in that group. The right panel used to seed 'outline-tab', a tab
   // removed in the clean-slate roster refactor, so it opened to "Select a tab".
   it('every tab group opens to one of its own tabs', () => {
-    const state = createInitialState();
+    const state = defaultLayout();
     for (const [groupId, group] of Object.entries(state.tabGroups)) {
       if (group.activeTabId === null) continue;
       const ids = group.tabs.map((t) => t.id);
@@ -19,7 +20,7 @@ describe('createInitialState default seed', () => {
   });
 
   it('the right edge panel opens to Files', () => {
-    const state = createInitialState();
+    const state = defaultLayout();
     const rightGroupId = primaryEdgeGroupId(state, 'right')!;
     expect(state.tabGroups[rightGroupId].activeTabId).toBe('files-tab');
   });
@@ -27,7 +28,7 @@ describe('createInitialState default seed', () => {
   // The two must be on OPPOSITE rails, both visible at once. A seed that put
   // them in one panel would restore the Navigator's defect under new names.
   it('seeds Sessions on the left and Files on the right', () => {
-    const state = createInitialState();
+    const state = defaultLayout();
     const left = state.tabGroups[primaryEdgeGroupId(state, 'left')!];
     const right = state.tabGroups[primaryEdgeGroupId(state, 'right')!];
     expect(left.tabs.map((t) => t.contentType)).toEqual(['sessions']);
@@ -39,7 +40,7 @@ describe('createInitialState default seed', () => {
   // Search searches files, notes AND sessions. Seeding it into a rail would
   // claim a scope it does not have; Ctrl+Shift+F opens it on demand.
   it('seeds Search into no rail at all', () => {
-    const state = createInitialState();
+    const state = defaultLayout();
     for (const group of Object.values(state.tabGroups)) {
       expect(group.tabs.map((t) => t.contentType)).not.toContain('search');
     }
@@ -53,7 +54,7 @@ describe('createInitialState default seed', () => {
     resetGlobalRegistry();
     registerPanels();
     const registry = getGlobalRegistry();
-    const state = createInitialState();
+    const state = defaultLayout();
     for (const group of Object.values(state.tabGroups)) {
       for (const tab of group.tabs) {
         expect(

@@ -1,16 +1,16 @@
 import { createStore } from 'solid-js/store';
 import { createFloatingWindowActions } from './floatingWindowActions';
 import {
-  createInitialState,
   findEdgePanelForGroup as findEdgePanelForGroupInState,
-} from './windowStoreInternals';
+} from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { createLayoutActions } from './layoutActions';
 import { createTabActions } from './tabActions';
 import type { WindowState } from '@/types/windowTypes';
 
 export type { WindowState } from '@/types/windowTypes';
 
-const initialState = createInitialState();
+const initialState = defaultLayout();
 const [store, setStore] = createStore<WindowState>(initialState);
 
 export { store as windowStore, setStore };

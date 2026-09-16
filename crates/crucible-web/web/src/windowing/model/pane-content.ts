@@ -1,4 +1,4 @@
-import type { LayoutNode, TabGroup } from '@/types/windowTypes';
+import type { LayoutNode, TabGroup } from './types';
 
 /**
  * Which panes hold something, for the two rules that ask that question: the

@@ -10,7 +10,7 @@ import { windowStore, windowActions, findEdgePanelForGroup } from '@/stores/wind
 import { isLastFixedRailTab } from '@/stores/layoutActions';
 import { IconGripVertical, IconClose, IconLayout } from './icons';
 import { ChevronDown } from '@/lib/icons';
-import { confirmTabClose } from '@/lib/tab-guards';
+import { confirmTabClose } from '@/windowing/model/tab-guards';
 import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';

@@ -4,7 +4,8 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { TabBar } from '../TabBar';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
+import { findFirstPane } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 // The old test grepped TabBar.tsx for the exact classList literal
 // ("'opacity-0 group-hover:opacity-100': !props.isActive") plus a couple of
@@ -18,7 +19,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

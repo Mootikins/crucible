@@ -13,7 +13,7 @@ vi.mock('@/lib/note-actions', async (importOriginal) => ({
 
 import { WikilinkHoverPreview } from '../WikilinkHoverPreview';
 import { windowStore, setStore } from '@/stores/windowStore';
-import { createInitialState } from '@/stores/windowStoreInternals';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 const PREVIEW = {
   title: 'Rust',
@@ -48,7 +48,7 @@ const hoverTab = (w: (typeof windowStore.floatingWindows)[number]) =>
 beforeEach(() => {
   vi.clearAllMocks();
   document.body.innerHTML = '';
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

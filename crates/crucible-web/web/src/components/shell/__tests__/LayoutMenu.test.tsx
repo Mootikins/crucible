@@ -3,7 +3,8 @@ import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { produce } from 'solid-js/store';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { windowStore, setStore } from '@/stores/windowStore';
-import { createInitialState, primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { primaryEdgeGroupId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 const resetLayout = vi.fn(async () => {});
 vi.mock('@/lib/api', async (importOriginal) => ({
@@ -22,7 +23,7 @@ import { LayoutMenu } from '../LayoutMenu';
 const Dummy = () => null;
 
 const resetStore = () => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

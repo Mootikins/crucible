@@ -5,7 +5,8 @@ import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { FileText } from '@/lib/icons';
 import { TabBar } from '../TabBar';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane } from '@/stores/windowStoreInternals';
+import { findFirstPane } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 
 // The old test scraped TabBar.tsx for the absence of "▼" and the presence of a
 // "<ChevronDown …class=…" substring with a regex. That never renders the bar
@@ -18,7 +19,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

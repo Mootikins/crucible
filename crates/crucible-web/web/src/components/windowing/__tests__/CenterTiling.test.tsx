@@ -4,8 +4,9 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { CenterTiling } from '../CenterTiling';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
-import { EMPTY_PANE_PX } from '@/lib/pane-collapse';
+import { findFirstPane, generateId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
+import { EMPTY_PANE_PX } from '@/windowing/model/pane-collapse';
 
 // The old test only scraped CenterTiling.tsx to prove the string "Set ratio"
 // was absent — a check that never rendered anything. Here we render the real
@@ -17,7 +18,7 @@ let mainPaneId: string;
 let mainGroupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

@@ -6,7 +6,8 @@ import { produce } from 'solid-js/store';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { Pane } from '../Pane';
 import { windowStore, windowActions, setStore } from '@/stores/windowStore';
-import { createInitialState, findFirstPane, generateId } from '@/stores/windowStoreInternals';
+import { findFirstPane, generateId } from '@/windowing/model/tree';
+import { defaultLayout } from '@/stores/defaultLayout';
 import { shortcutLabel } from '@/lib/keyboard-shortcuts';
 
 // Renders Pane against the real windowStore. An empty pane holds no splash and
@@ -18,7 +19,7 @@ let paneId: string;
 let groupId: string;
 
 beforeEach(() => {
-  const fresh = createInitialState();
+  const fresh = defaultLayout();
   setStore(
     produce((s) => {
       s.layout = fresh.layout;

@@ -5,7 +5,7 @@
  * drag-and-drop abstraction as panes, tabs, and edge panels.
  */
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { primaryEdgeGroupId } from '@/stores/windowStoreInternals';
+import { primaryEdgeGroupId } from '@/windowing/model/tree';
 import type { DropTarget, Tab } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 

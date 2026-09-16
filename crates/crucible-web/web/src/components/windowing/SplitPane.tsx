@@ -2,9 +2,9 @@ import { Component, Show, createEffect, createMemo, createSignal, onCleanup } fr
 import { Key } from '@solid-primitives/keyed';
 import { Pane } from './Pane';
 import type { LayoutNode } from '@/types/windowTypes';
-import { isCollapsedLeaf, splitFlex } from '@/lib/pane-collapse';
-import { subtreeHasTabs } from '@/lib/pane-content';
-import { findSplitInLayout } from '@/lib/pane-boundaries';
+import { isCollapsedLeaf, splitFlex } from '@/windowing/model/pane-collapse';
+import { subtreeHasTabs } from '@/windowing/model/pane-content';
+import { findSplitInLayout } from '@/windowing/model/pane-boundaries';
 import { windowStore } from '@/stores/windowStore';
 import { startSplitDrag } from '@/lib/split-drag';
 
