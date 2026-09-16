@@ -128,9 +128,11 @@ describe('fetchKilnsOnce', () => {
     // The callers of this function cannot render a pending state and cannot
     // render a refusal either, so a resolved `[]` would read to them as "this
     // kiln does not exist". The rejection is what makes them stop instead.
-    // `listKilns` does not ask for the body text, so the sentence carries the
-    // attempt and the status, not the daemon's own words.
-    await expect(fetchKilnsOnce()).rejects.toThrow('Failed to list kilns: HTTP 500');
+    // The sentence carries the attempt AND the daemon's own words: a bare
+    // status is what the user used to be left holding.
+    await expect(fetchKilnsOnce()).rejects.toThrow(
+      'Failed to list kilns: the daemon fell over',
+    );
   });
 });
 

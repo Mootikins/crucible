@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/solid-query';
 import { getQueryClient, queryClientOptions } from '@/lib/query/client';
 import { getBus } from '@/lib/bus';
 import { sessionEvents } from '@/lib/query/sse';
-import { request } from '@/lib/api';
+import { client, decode } from '@/lib/api-client';
 import { apiError, createMockFetch } from '../mock-fetch';
 import { createTestQueryEnv, withQueryClient } from '../query';
 import { installFakeEventSource, onlyEventSource } from '../sse';
@@ -102,9 +102,9 @@ describe('createTestQueryEnv', () => {
     try {
       expect(getQueryClient()).toBe(env.client);
       expect(global.fetch).toBe(env.fetch);
-      await expect(request('GET', '/api/kilns')).resolves.toEqual([
-        { name: 'main', path: '/kilns/main' },
-      ]);
+      await expect(
+        client.GET('/api/kilns').then((r) => decode(r, 'Failed to list kilns')),
+      ).resolves.toEqual([{ name: 'main', path: '/kilns/main' }]);
     } finally {
       env.restore();
     }
@@ -128,7 +128,9 @@ describe('createMockFetch', () => {
       'GET /api/config': { body: { kiln_path: '/k' } },
     });
 
-    await expect(request('GET', '/api/config')).resolves.toEqual({ kiln_path: '/k' });
+    await expect(
+      client.GET('/api/config').then((r) => decode(r, 'Failed to get config')),
+    ).resolves.toEqual({ kiln_path: '/k' });
   });
 
   it('answers a function with the body it returns', async () => {
@@ -136,7 +138,9 @@ describe('createMockFetch', () => {
       'GET /api/kilns': () => [{ name: 'main' }],
     });
 
-    await expect(request('GET', '/api/kilns')).resolves.toEqual([{ name: 'main' }]);
+    await expect(
+      client.GET('/api/kilns').then((r) => decode(r, 'Failed to list kilns')),
+    ).resolves.toEqual([{ name: 'main' }]);
   });
 
   it('gives the function the request, with its method and its body', async () => {
@@ -149,12 +153,11 @@ describe('createMockFetch', () => {
     });
 
     await expect(
-      request('POST', '/api/session', {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'One' }),
-      }),
+      client
+        .POST('/api/session', { body: { kilns: ['One'] } })
+        .then((r) => decode(r, 'Failed to create session')),
     ).resolves.toEqual({ id: 'sess-1' });
-    expect(seen).toEqual(['POST', '{"title":"One"}']);
+    expect(seen).toEqual(['POST', '{"kilns":["One"]}']);
   });
 
   it('answers a Response the function builds itself', async () => {
@@ -164,7 +167,9 @@ describe('createMockFetch', () => {
     });
 
     await expect(
-      request('POST', '/api/session/ses-1/export', { parseAs: 'text' }),
+      client
+        .POST('/api/session/{id}/export', { params: { path: { id: 'ses-1' } }, parseAs: 'text' })
+        .then((r) => decode(r, 'Failed to export session')),
     ).resolves.toBe('# Markdown');
   });
 
@@ -173,8 +178,8 @@ describe('createMockFetch', () => {
     global.fetch = mockFetch;
 
     expect(mockFetch.calls('GET /api/kilns')).toBe(0);
-    await request('GET', '/api/kilns');
-    await request('GET', '/api/kilns?refresh=1');
+    await client.GET('/api/kilns');
+    await client.GET('/api/kilns');
     expect(mockFetch.calls('GET /api/kilns')).toBe(2);
     expect(mockFetch.calls('GET /api/config')).toBe(0);
   });
@@ -183,7 +188,9 @@ describe('createMockFetch', () => {
     const mockFetch = createMockFetch({});
     global.fetch = mockFetch;
 
-    await expect(request('GET', '/api/config')).rejects.toThrow();
+    await expect(
+      client.GET('/api/config').then((r) => decode(r, 'Failed to get config')),
+    ).rejects.toThrow();
 
     expect(mockFetch.calls('GET /api/config')).toBe(1);
   });
@@ -195,17 +202,24 @@ describe('createMockFetch', () => {
     });
 
     await expect(
-      request('GET', '/api/fs/list', {
-        errorMessage: 'Failed to list folder',
-        includeErrorText: true,
-      }),
+      client
+        .GET('/api/fs/list', {
+          params: { query: { root: '/p', rel_path: '', show_ignored: true, show_hidden: false } },
+        })
+        .then((r) => decode(r, 'Failed to list folder')),
     ).rejects.toThrow(`Failed to list folder: ${refusal}`);
   });
 
   it('carries the status of a failure to the caller', async () => {
     global.fetch = createMockFetch({ 'GET /api/fs/list': apiError(500, 'the daemon fell over') });
 
-    await expect(request('GET', '/api/fs/list')).rejects.toMatchObject({ status: 500 });
+    await expect(
+      client
+        .GET('/api/fs/list', {
+          params: { query: { root: '/p', rel_path: '', show_ignored: true, show_hidden: false } },
+        })
+        .then((r) => decode(r, 'Failed to list folder')),
+    ).rejects.toMatchObject({ status: 500 });
   });
 
   it('answers a status a function route names, with the error body', async () => {
@@ -217,7 +231,7 @@ describe('createMockFetch', () => {
     });
 
     await expect(
-      request('POST', '/api/session', { errorMessage: 'Failed', includeErrorText: true }),
+      client.POST('/api/session', { body: { kilns: [] } }).then((r) => decode(r, 'Failed')),
     ).rejects.toThrow('Failed: no');
   });
 });

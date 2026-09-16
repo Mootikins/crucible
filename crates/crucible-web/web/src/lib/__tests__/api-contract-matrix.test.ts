@@ -1,7 +1,25 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi, type Mock } from 'vitest';
 import * as api from '../api';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+/**
+ * One call of a stubbed `fetch`, in parts.
+ *
+ * The generated client hands `fetch` a single `Request`, so a test reads the
+ * path, the method and the body off that rather than off a URL and an init.
+ */
+async function sent(fetch: Mock, index = 0) {
+  const request = fetch.mock.calls[index]![0] as Request;
+  const url = new URL(request.url);
+  const text = request.body === null ? '' : await request.clone().text();
+  return {
+    url: `${url.pathname}${url.search}`,
+    path: url.pathname,
+    method: request.method,
+    body: text ? (JSON.parse(text) as unknown) : undefined,
+  };
+}
 
 type Case = [string, () => Promise<unknown>, unknown, unknown, unknown?];
 
@@ -26,24 +44,24 @@ it('preserves each settings, scope, and knowledge endpoint contract', async () =
     ['/api/session/s%2Fx/config/context-strategy', () => api.setContextStrategy('s/x', 'truncate'), {}, undefined, { context_strategy: 'truncate' }],
     ['/api/commands', api.listSlashCommands, { commands: [{ name: 'help' }] }, [{ name: 'help' }]],
     ['/api/surfaces', api.getSurfaces, { surfaces: [{ id: 'p' }] }, [{ id: 'p' }]],
-    ['/api/notes/resolve?kiln=k&name=a+b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
-    ['/api/backlinks?kiln=k&note=a+b', () => api.getBacklinks('k', 'a b'), { linked: [] }, { linked: [] }],
+    ['/api/notes/resolve?kiln=k&name=a%20b', () => api.resolveNotePath('k', 'a b'), { path: 'a' }, { path: 'a' }],
+    ['/api/backlinks?kiln=k&note=a%20b', () => api.getBacklinks('k', 'a b'), { linked: [] }, { linked: [] }],
     ['/api/scm/clone', () => api.scmClone('owner/repo'), { path: '/repo' }, { path: '/repo' }, { url: 'owner/repo' }],
-    ['/api/kiln/graph?kiln=a+b', () => api.getKilnGraph('a b'), { nodes: [] }, { nodes: [] }],
-    ['/api/kiln/file?path=a+b', () => api.getFileWithHash('a b'), { content: 'text', content_hash: 'h' }, { content: 'text', content_hash: 'h' }],
+    ['/api/kiln/graph?kiln=a%20b', () => api.getKilnGraph('a b'), { nodes: [] }, { nodes: [] }],
+    ['/api/kiln/file?path=a%20b', () => api.getFileWithHash('a b'), { content: 'text', content_hash: 'h' }, { content: 'text', content_hash: 'h' }],
     ['/api/recents', api.fetchRecents, { recents: [{ abs_path: '/a', name: 'a', opened_at: 1 }] }, [{ absPath: '/a', name: 'a' }]],
-    ['/api/canvas?path=a+b', () => api.getCanvas('a b'), { canvas: {} }, { canvas: {} }],
+    ['/api/canvas?path=a%20b', () => api.getCanvas('a b'), { canvas: {} }, { canvas: {} }],
     ['/api/canvas', () => api.saveCanvas('/a', { nodes: [], edges: [] }), {}, undefined, { path: '/a', content: '{"nodes":[],"edges":[]}' }],
   ];
   for (const [path, call, response, expected, body] of cases) {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)));
     vi.stubGlobal('fetch', fetch);
     expect(await call(), path).toEqual(expected);
-    const [url, init] = fetch.mock.calls[0]!;
-    expect(url, path).toBe(path);
+    const wire = await sent(fetch);
+    expect(wire.url, path).toBe(path);
     const method = path.endsWith('/workspace') || path.endsWith('/context-strategy') && body !== undefined || path === '/api/canvas' ? 'PUT' : body === undefined ? 'GET' : 'POST';
-    expect(init.method, path).toBe(method);
-    expect(init.body === undefined ? undefined : JSON.parse(init.body), path).toEqual(body);
+    expect(wire.method, path).toBe(method);
+    expect(wire.body, path).toEqual(body);
   }
 });
 
@@ -55,13 +73,13 @@ it('maps search result fields and supplies defaults without swallowing errors', 
   expect(await api.grepSearch('/r', 'q')).toEqual({ truncated: true, hits: [
     { path: '/a', relPath: 'a', line: 2, text: 'hit', matchStart: 1, matchEnd: 3 },
   ] });
-  expect(JSON.parse(fetch.mock.calls[0]![1].body)).toEqual({ root: '/r', query: 'q', glob: null, limit: 100, case_insensitive: true });
+  expect((await sent(fetch, 0)).body).toEqual({ root: '/r', query: 'q', glob: null, limit: 100, case_insensitive: true });
   fetch.mockResolvedValue(new Response('{"hits":[],"truncated":false}'));
   await api.grepSearch('/r', 'q', { glob: '*.md', limit: 3, caseInsensitive: false });
-  expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ root: '/r', query: 'q', glob: '*.md', limit: 3, case_insensitive: false });
+  expect((await sent(fetch, 1)).body).toEqual({ root: '/r', query: 'q', glob: '*.md', limit: 3, case_insensitive: false });
   fetch.mockResolvedValue(new Response('{"results":[{"path":"/a","rel_path":"a","score":0.8}]}'));
   expect(await api.semanticSearch('k', 'q')).toEqual([{ path: '/a', relPath: 'a', score: 0.8 }]);
-  expect(JSON.parse(fetch.mock.calls[2]![1].body)).toEqual({ kiln: 'k', query: 'q', limit: 20 });
+  expect((await sent(fetch, 2)).body).toEqual({ kiln: 'k', query: 'q', limit: 20 });
 });
 
 it('distinguishes file mutation success, conflict, authorization, and invalid responses', async () => {
@@ -75,19 +93,26 @@ it('distinguishes file mutation success, conflict, authorization, and invalid re
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(c.result ?? {}))));
     vi.stubGlobal('fetch', fetch);
     expect(await c.call(), c.path).toEqual(c.result);
-    expect(fetch.mock.calls[0]![0]).toBe(c.path);
-    expect(fetch.mock.calls[0]![1].method).toBe(c.method);
-    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toEqual(c.body);
+    const wire = await sent(fetch);
+    expect(wire.path).toBe(c.path);
+    expect(wire.method).toBe(c.method);
+    expect(wire.body).toEqual(c.body);
     for (const status of [401, 500]) {
       fetch.mockImplementation(() => Promise.resolve(new Response('{}', { status })));
       await expect(c.call()).rejects.toThrow();
     }
   }
-  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('{"error":"held"}', { status: 409 }))));
-  expect(await api.patchKilnFile('/a', [])).toEqual({ error: 'held' });
+  // A 409 carrying the anchored-edit refusal IS the answer, and the caller
+  // branches on `ok`. A 409 in one of the conflict's other two shapes is a
+  // refusal this caller cannot act on, so it throws like any other failure.
+  const refusal = { ok: false, stale_base: false, current_hash: 'h9', failed: [] };
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(refusal), { status: 409 }))));
+  expect(await api.patchKilnFile('/a', [])).toEqual(refusal);
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('{"error":{"message":"held"}}', { status: 409 }))));
+  await expect(api.patchKilnFile('/a', [])).rejects.toThrow('held');
   await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('held');
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 500 })));
-  await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('move failed: 500');
+  await expect(api.fsMove('/r', 'kiln', 'a', 'b')).rejects.toThrow('move failed: not json');
 });
 
 it('keeps optional discovery fallbacks separate from explicit target resolution failures', async () => {
@@ -102,8 +127,8 @@ it('keeps optional discovery fallbacks separate from explicit target resolution 
   expect(await api.listPendingInteractions()).toEqual([]);
   const publications = { publications: { targets: { p: { axis: 'workspace', targets_command: 'p:list', resolve_command: 'p:resolve' } } } };
   let answer: unknown = { path: '/checkout' };
-  fetch.mockImplementation((url: string) => Promise.resolve(new Response(JSON.stringify(
-    url === '/api/plugins/publications' ? publications : answer,
+  fetch.mockImplementation((request: Request) => Promise.resolve(new Response(JSON.stringify(
+    new URL(request.url).pathname === '/api/plugins/publications' ? publications : answer,
   ))));
   expect(await api.resolveWorkspaceTarget('p:branch:topic', '/repo')).toBe('/checkout');
   answer = { targets: [{ value: 'main', path: '/repo' }] };
@@ -130,12 +155,19 @@ it('delivers filesystem and surface events, reconnects, and cancels pending reco
     let source = Source.instances.at(-1)!;
     expect(source.url).toBe(kind === 'fs' ? '/api/fs/events' : '/api/surfaces/events');
     const names = kind === 'fs' ? ['fs_changed', 'fs_deleted', 'fs_moved'] : ['surface_changed'];
+    // The payload has to be a shape the document declares: the decode checks
+    // the tag an fs event carries and the fields a surface event carries,
+    // rather than believing whatever arrives. `{"id":"a"}` is neither.
+    const payload = kind === 'fs'
+      ? { type: 'deleted', path: '/a' }
+      : { name: 'board', plugin: 'kanban', version: 2 };
     for (const name of names) {
-      source.handlers.get(name)!(new MessageEvent(name, { data: '{"id":"a"}' }));
+      source.handlers.get(name)!(new MessageEvent(name, { data: JSON.stringify(payload) }));
       source.handlers.get(name)!(new MessageEvent(name, { data: 'invalid' }));
+      source.handlers.get(name)!(new MessageEvent(name, { data: '{"id":"a"}' }));
     }
     expect(onEvent).toHaveBeenCalledTimes(names.length);
-    expect(onEvent).toHaveBeenCalledWith({ id: 'a' });
+    expect(onEvent).toHaveBeenCalledWith(payload);
     const count = Source.instances.length;
     source.onerror!();
     expect(source.close).toHaveBeenCalledOnce();

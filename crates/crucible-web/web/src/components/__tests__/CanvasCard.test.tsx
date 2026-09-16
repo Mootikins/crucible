@@ -170,11 +170,11 @@ describe('CanvasNoteCard', () => {
       <CanvasNoteCard absPath="/kiln/Notes/Missing.md" editable={false} />
     ));
 
-    // The banner carries what the read stack says, which is the daemon's
-    // status and the call that failed. The card must not swallow it and paint
-    // an empty note instead.
+    // The banner carries what the read stack says, which is the daemon's own
+    // sentence and the call that failed. The card must not swallow it and
+    // paint an empty note instead.
     const err = await findByTestId('canvas-embed-error');
     expect(err.textContent).toContain('Failed to read file');
-    expect(err.textContent).toContain('404');
+    expect(err.textContent).toContain('File not found');
   });
 });

@@ -1,6 +1,6 @@
 import type { components } from './api-schema';
+import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from './api-client';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
-import { notificationActions } from '@/stores/notificationStore';
 import type {
   AgentProfileEntry,
   ChatEvent,
@@ -209,9 +209,6 @@ export type PluginOptions = Record<string, PluginOptionNode>;
  */
 export type SessionStatusSlot = Schemas['SessionStatusSlot'];
 
-/** Client-only: how `request()` spells a verb. No route declares it. */
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-
 // =============================================================================
 // API auth (browser: HttpOnly session cookie; programmatic: Bearer header)
 // =============================================================================
@@ -254,146 +251,29 @@ export async function login(key: string): Promise<boolean> {
   }
 }
 
-// Throttled so a burst of parallel 401s produces one prompt, not a storm.
-let lastAuthNotify = 0;
-function notifyAuthRequired(): void {
-  try {
-    const now = Date.now();
-    if (now - lastAuthNotify < 5000) return;
-    lastAuthNotify = now;
-    window.dispatchEvent(new CustomEvent('crucible:auth-required'));
-  } catch {
-    // non-browser context
-  }
-}
+/**
+ * The caller header and the app's own name live on the client, which puts the
+ * header on every request. They are re-exported because the plugin blocks and
+ * the tests read them from this module.
+ */
+export { APP_CALLER, PLUGIN_CALLER_HEADER } from './api-client';
 
 /**
- * The header a caller declares itself in, on the plugin routes.
+ * What this file reads out of a payload the document describes only as "an
+ * object" or as "any JSON".
  *
- * **Not a secret and not a credential.** Any script on this origin can set it,
- * so it stops nothing hostile — the server refuses a request that names
- * *nobody*, which turns "a block reached for another plugin's command" from a
- * silent success into an error someone can read. `routes/plugin_caller.rs`
- * carries the long version; read it before treating this as a gate.
+ * These are the fields a route forwards without parsing: the daemon's
+ * effective config and its control tree, an interaction's kind-tagged body,
+ * the pane layout blob. No contract can narrow them, because the vocabulary
+ * belongs to the daemon or to a plugin and grows without this file — a fixed
+ * shape in Rust would make this layer a second owner of it.
  *
- * It rides on every request rather than only the plugin ones, so a route
- * gated later does not need a second pass over the call sites.
+ * It is a CLAIM about an opaque payload, not a second contract, and it is
+ * named so that a reader can count the claims. Everything else in this file
+ * takes its type from the document.
  */
-export const PLUGIN_CALLER_HEADER = 'X-Crucible-Plugin';
-
-/** What the app's own UI calls itself. */
-export const APP_CALLER = 'app';
-
-export interface RequestOptions extends Omit<RequestInit, 'method'> {
-  errorMessage?: string;
-  parseAs?: 'json' | 'text' | 'none';
-  includeErrorText?: boolean;
-  /**
-   * Raise an error notification when the call fails, carrying the server's
-   * own sentence (the body's `error.message`) rather than the status alone.
-   *
-   * For the calls whose callers swallow a failure or fold it into local
-   * state — the file tree's first listing, the model and mode lists — where
-   * a bare "422" used to be all the user ever saw. The store deduplicates a
-   * sentence that repeats within a few seconds, so a burst is one toast.
-   */
-  notify?: boolean;
-  /**
-   * Who is asking: {@link APP_CALLER}, or the plugin this call draws for.
-   *
-   * Defaults to the app, which is a convenience for the app's own call sites
-   * and not the gate — the gate is the server refusing a request that names
-   * nobody at all. A block passes its own plugin instead.
-   */
-  caller?: string;
-}
-
-/**
- * The human half of a `WebError`, which every crucible-web route serializes as
- * `{"error": {code, message}}`.
- *
- * Throwing the raw body instead puts a JSON blob in a toast: the user reads
- * `{"error":{"code":422,"message":"Hunk no longer exists"}}` where the server
- * went to the trouble of writing a sentence. Non-envelope bodies (a plain-text
- * 500 from a proxy, an empty body) fall through unchanged.
- */
-function errorBodyMessage(text: string): string {
-  try {
-    const message = (JSON.parse(text) as { error?: { message?: unknown } })?.error?.message;
-    return typeof message === 'string' && message ? message : text;
-  } catch {
-    return text;
-  }
-}
-
-interface ApiError extends Error {
-  status: number;
-}
-
-function jsonRequest(body: unknown): Pick<RequestOptions, 'headers' | 'body'> {
-  return {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
-
-/**
- * The one HTTP helper. Exported so feature slices (`review-api.ts`) get the
- * 401 re-prompt and the error-envelope unwrapping instead of reimplementing
- * "throw on !ok" and quietly losing both.
- */
-export async function request<T>(
-  method: HttpMethod,
-  url: string,
-  options: RequestOptions = {},
-): Promise<T> {
-  const {
-    errorMessage = 'Request failed',
-    parseAs = 'json',
-    includeErrorText = false,
-    notify = false,
-    caller = APP_CALLER,
-    ...init
-  } = options;
-  const headers = {
-    [PLUGIN_CALLER_HEADER]: caller,
-    ...((init.headers as Record<string, string> | undefined) ?? {}),
-  };
-  const res = await fetch(url, { method, ...init, headers });
-
-  if (!res.ok) {
-    let errorText = '';
-    if (includeErrorText || notify) {
-      errorText = errorBodyMessage(await res.text().catch(() => ''));
-    }
-    if (res.status === 401) {
-      notifyAuthRequired();
-    }
-    const hint =
-      res.status === 401
-        ? ' — Unauthorized: sign in with the API key (from `cru web key` on the host)'
-        : '';
-    // The server's sentence, framed by what was being attempted: "Failed to
-    // list folder: root is not a registered project…" says both what broke
-    // and why, where either half alone leaves the user guessing.
-    const message = errorText ? `${errorMessage}: ${errorText}` : `${errorMessage}: HTTP ${res.status}`;
-    if (notify && res.status !== 401) {
-      notificationActions.addNotification('error', message + hint);
-    }
-    throw Object.assign(new Error(message + hint), {
-      status: res.status,
-    }) as ApiError;
-  }
-
-  if (parseAs === 'none') {
-    return undefined as T;
-  }
-
-  if (parseAs === 'text') {
-    return (await res.text()) as T;
-  }
-
-  return (await res.json()) as T;
+function openJson<T>(value: unknown): T {
+  return value as T;
 }
 
 // =============================================================================
@@ -478,13 +358,12 @@ export async function sendChatMessage(
   sessionId: string,
   content: string,
 ): Promise<string> {
-  return (
-    await request<{ message_id: string }>('POST', '/api/chat/send', {
-      errorMessage: 'Failed to send message',
-      includeErrorText: true,
-      notify: true,
-      ...jsonRequest({ session_id: sessionId, content }),
-    })
+  return decode(
+    await client.POST('/api/chat/send', {
+      body: { session_id: sessionId, content },
+    }),
+    'Failed to send message',
+    { notify: true },
   ).message_id;
 }
 
@@ -534,6 +413,59 @@ const _SSE_EVENT_TYPES_ARE_COMPLETE: [MissingSseEventType] extends [never] ? tru
 void _SSE_EVENT_TYPES_ARE_COMPLETE;
 
 /**
+ * A stream carried a payload this build cannot read.
+ *
+ * Named, and thrown, rather than asserted past. Each of the three streams
+ * used to write `JSON.parse(e.data) as <the type it hoped for>`, so a daemon
+ * one rename ahead reached a reducer as a record of `undefined` fields and
+ * the console said nothing. Modelled on `EventDecodeError` in
+ * `crucible-core/src/protocol/session_events/mod.rs`.
+ */
+class EventDecodeError extends Error {
+  constructor(stream: string, event: string, reason: string) {
+    super(`the ${stream} stream sent a ${event} event this build cannot read: ${reason}`);
+    this.name = 'EventDecodeError';
+  }
+}
+
+/**
+ * One SSE payload, checked before it is believed.
+ *
+ * `carries` is as much of the document as a browser can enforce at run time:
+ * the field that tells the variants apart, or the fields every variant
+ * declares. The one assertion below is guarded by it and stands for all three
+ * streams, where there used to be three unguarded ones.
+ */
+function decodeEvent<T>(
+  stream: string,
+  event: string,
+  raw: string,
+  carries: (payload: object) => boolean,
+): T {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new EventDecodeError(stream, event, 'the payload is not JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new EventDecodeError(stream, event, 'the payload is not an object');
+  }
+  if (!carries(parsed)) {
+    throw new EventDecodeError(stream, event, 'the payload is not a shape the document declares');
+  }
+  return parsed as T;
+}
+
+/** Every `type` a chat event may carry, as a set the decode can ask. */
+const CHAT_EVENT_TAGS = new Set<string>(SSE_EVENT_TYPES);
+
+/** A chat payload tagged with a variant the document declares. */
+function isChatEvent(payload: object): boolean {
+  return 'type' in payload && typeof payload.type === 'string' && CHAT_EVENT_TAGS.has(payload.type);
+}
+
+/**
  * Subscribe to SSE events for a session.
  * Returns a cleanup function that closes the EventSource.
  *
@@ -569,8 +501,7 @@ export function subscribeToEvents(
       source.addEventListener(eventType, (e: MessageEvent) => {
         reconnectAttempts = 0;
         try {
-          const parsed = JSON.parse(e.data) as ChatEvent;
-          onEvent(parsed);
+          onEvent(decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent));
         } catch {
           console.warn(`Failed to parse SSE event (${eventType}):`, e.data);
         }
@@ -638,12 +569,11 @@ export type PendingInteractionEntry = Omit<Schemas['PendingInteraction'], 'reque
  */
 export async function listPendingInteractions(): Promise<PendingInteractionEntry[]> {
   try {
-    const resp = await request<{ pending: PendingInteractionEntry[] }>(
-      'GET',
-      '/api/interactions/pending',
-      { errorMessage: 'Failed to list pending interactions' },
+    const resp = decode(
+      await client.GET('/api/interactions/pending'),
+      'Failed to list pending interactions',
     );
-    return resp.pending ?? [];
+    return openJson<PendingInteractionEntry[]>(resp.pending ?? []);
   } catch {
     return [];
   }
@@ -654,11 +584,12 @@ export async function respondToInteraction(
   requestId: string,
   response: unknown,
 ): Promise<void> {
-  await request<void>('POST', '/api/interaction/respond', {
-    errorMessage: 'Failed to respond',
-    parseAs: 'none',
-    ...jsonRequest({ session_id: sessionId, request_id: requestId, response }),
-  });
+  expectOk(
+    await client.POST('/api/interaction/respond', {
+      body: { session_id: sessionId, request_id: requestId, response },
+    }),
+    'Failed to respond',
+  );
 }
 
 // =============================================================================
@@ -667,7 +598,7 @@ export async function respondToInteraction(
 
 /** Get server configuration including the configured kiln path. */
 export async function getConfig(): Promise<Config> {
-  return request<Config>('GET', '/api/config', { errorMessage: 'Failed to get config' });
+  return openJson<Config>(decode(await client.GET('/api/config'), 'Failed to get config'));
 }
 
 /**
@@ -678,10 +609,10 @@ export async function getConfig(): Promise<Config> {
  * the leaves beside it still saved.
  */
 export async function saveConfig(values: Record<string, unknown>): Promise<ConfigSaveResult> {
-  return request<ConfigSaveResult>('POST', '/api/config', {
-    errorMessage: 'Failed to save config',
-    ...jsonRequest({ values }),
-  });
+  return decode(
+    await client.POST('/api/config', { body: { values } }),
+    'Failed to save config',
+  );
 }
 
 
@@ -709,10 +640,9 @@ export type PluginCommand = Schemas['PluginCommandRow'];
  * browser, so a caller could invoke a command it had no way to discover.
  */
 export async function getPluginCommands(): Promise<PluginCommand[]> {
-  const body = await request<{ commands?: PluginCommand[] }>(
-    'GET',
-    '/api/plugins/commands',
-    { errorMessage: 'Failed to list plugin commands' },
+  const body = decode(
+    await client.GET('/api/plugins/commands'),
+    'Failed to list plugin commands',
   );
   return body.commands ?? [];
 }
@@ -729,18 +659,12 @@ export async function getPluginPublications(
   key?: string,
   caller: string = APP_CALLER,
 ): Promise<PluginPublications> {
-  // The path stays a bare literal and the query is appended to it.
-  // `openapi_contract::every_api_path_the_client_calls_is_in_the_document`
-  // scans this file for route literals and cannot see through an
-  // interpolation, so inlining the query would hide the route from the gate
-  // that proves it exists. (Do not write an example path in this comment
-  // either — the scan reads comments too.)
-  const path = '/api/plugins/publications';
-  const url = key ? `${path}?key=${encodeURIComponent(key)}` : path;
-  const body = await request<{ publications?: PluginPublications }>('GET', url, {
-    errorMessage: 'Failed to get plugin publications',
-    caller,
-  });
+  const body = decode(
+    await client.GET('/api/plugins/publications', {
+      params: { query: { key }, header: callerParam(caller) },
+    }),
+    'Failed to get plugin publications',
+  );
   return body.publications ?? {};
 }
 
@@ -752,20 +676,23 @@ export async function getPluginPublications(
  * what another setting was just changed to — so a stale tree is a wrong one.
  */
 export async function getPluginOptions(): Promise<PluginOptions> {
-  const body = await request<{ options?: PluginOptions }>('GET', '/api/plugins/options', {
-    errorMessage: 'Failed to get plugin settings',
-  });
-  return body.options ?? {};
+  const body = decode(await client.GET('/api/plugins/options'), 'Failed to get plugin settings');
+  return openJson<PluginOptions>(body.options ?? {});
 }
 
 /** Read one option's current value. */
 export async function getPluginOption(plugin: string, path: string[]): Promise<unknown> {
-  const body = await request<{ value?: unknown }>(
-    'POST',
-    `/api/plugins/${encodeURIComponent(plugin)}/option`,
-    { ...jsonRequest({ action: 'get', path }), errorMessage: 'Failed to read plugin setting' },
+  const body = decode(
+    await client.POST('/api/plugins/{name}/option', {
+      params: { path: { name: plugin }, header: callerParam() },
+      body: { action: 'get', path },
+    }),
+    'Failed to read plugin setting',
   );
-  return body.value;
+  // One route answers three actions: `get` carries the value, `set` and
+  // `execute` carry `ok`. The document declares both arms, so the read has to
+  // say which one it wants.
+  return 'value' in body ? body.value : undefined;
 }
 
 /** Write one option. The plugin's own setter decides what that means. */
@@ -774,18 +701,24 @@ export async function setPluginOption(
   path: string[],
   value: unknown,
 ): Promise<void> {
-  await request('POST', `/api/plugins/${encodeURIComponent(plugin)}/option`, {
-    ...jsonRequest({ action: 'set', path, value }),
-    errorMessage: 'Failed to change plugin setting',
-  });
+  expectOk(
+    await client.POST('/api/plugins/{name}/option', {
+      params: { path: { name: plugin }, header: callerParam() },
+      body: { action: 'set', path, value },
+    }),
+    'Failed to change plugin setting',
+  );
 }
 
 /** Press a `type = "execute"` node. */
 export async function executePluginOption(plugin: string, path: string[]): Promise<void> {
-  await request('POST', `/api/plugins/${encodeURIComponent(plugin)}/option`, {
-    ...jsonRequest({ action: 'execute', path }),
-    errorMessage: 'Plugin action failed',
-  });
+  expectOk(
+    await client.POST('/api/plugins/{name}/option', {
+      params: { path: { name: plugin }, header: callerParam() },
+      body: { action: 'execute', path },
+    }),
+    'Plugin action failed',
+  );
 }
 
 
@@ -800,11 +733,14 @@ export async function runPluginCommand(
   args: unknown = {},
   caller: string = APP_CALLER,
 ): Promise<unknown> {
-  return request<unknown>('POST', '/api/plugins/command', {
-    ...jsonRequest({ name, args }),
-    errorMessage: `Plugin command '${name}' failed`,
-    caller,
+  const result = await client.POST('/api/plugins/command', {
+    params: { header: callerParam(caller) },
+    body: { name, args },
   });
+  expectOk(result, `Plugin command '${name}' failed`);
+  // Read whole rather than decoded: a command may answer nothing, and what it
+  // does answer is its own vocabulary. The caller knows the shape it asked for.
+  return result.data;
 }
 
 /** Providers on one axis, sorted by label so the menu is stable. */
@@ -847,6 +783,8 @@ export async function getProviderTargets(
   if (!provider.targets_command) return [];
   try {
     const result = await runPluginCommand(provider.targets_command, { workspace });
+    // A plugin command answers opaque JSON, which no document narrows: the
+    // provider names the command and the plugin decides what comes back.
     const list = Array.isArray(result)
       ? result
       : (result as { targets?: unknown } | null)?.targets;
@@ -908,6 +846,8 @@ export async function resolveWorkspaceTarget(spec: string, workspace?: string): 
     target: rest.join(':'),
     workspace,
   });
+  // Opaque plugin JSON again: the resolve command is the plugin's own, so the
+  // reading is checked here rather than declared anywhere.
   const path = (answer as { path?: unknown } | null)?.path;
   if (typeof path !== 'string' || !path) {
     throw new Error(`Plugin '${plugin}' resolved '${spec}' to no path`);
@@ -921,13 +861,9 @@ export async function resolveWorkspaceTarget(spec: string, workspace?: string): 
 
 
 export async function createSession(params: CreateSessionParams): Promise<Session> {
-  return request<Session>('POST', '/api/session', {
-    errorMessage: 'Failed to create session',
-    // The daemon's reason rides the error; `SessionContext.createSession`
-    // is the one that toasts it, so no `notify` here or it shows twice.
-    includeErrorText: true,
-    ...jsonRequest(params),
-  });
+  // The daemon's reason rides the error; `SessionContext.createSession`
+  // is the one that toasts it, so no `notify` here or it shows twice.
+  return decode(await client.POST('/api/session', { body: params }), 'Failed to create session');
 }
 
 /** List sessions with optional filters. */
@@ -953,19 +889,20 @@ export async function listSessions(filters?: {
   state?: string;
   includeArchived?: boolean;
 }): Promise<Session[]> {
-  const params = new URLSearchParams();
-  if (filters?.kiln) params.set('kiln', filters.kiln);
-  if (filters?.workspace) params.set('workspace', filters.workspace);
-  if (filters?.type) params.set('type', filters.type);
-  if (filters?.state) params.set('state', filters.state);
-  if (filters?.includeArchived) params.set('include_archived', 'true');
-
-  const qs = params.toString();
-  const url = qs ? `/api/session/list?${qs}` : '/api/session/list';
-
-  const data = await request<Schemas['SessionListResponse']>('GET', url, {
-    errorMessage: 'Failed to list sessions',
-  });
+  const data = decode(
+    await client.GET('/api/session/list', {
+      params: {
+        query: {
+          kiln: filters?.kiln,
+          workspace: filters?.workspace,
+          type: filters?.type,
+          state: filters?.state,
+          include_archived: filters?.includeArchived ? true : undefined,
+        },
+      },
+    }),
+    'Failed to list sessions',
+  );
   return expectList(data.sessions, 'sessions', 'Failed to list sessions');
 }
 
@@ -996,16 +933,12 @@ export async function searchSessions(
   kilns?: string | string[],
   limit?: number,
 ): Promise<SessionSearchResponse> {
-  const params = new URLSearchParams({ q: query });
-  for (const kiln of typeof kilns === 'string' ? [kilns] : kilns ?? []) {
-    if (kiln) params.append('kiln', kiln);
-  }
-  if (limit !== undefined) params.set('limit', limit.toString());
-
-  const data = await request<SessionSearchResponse>(
-    'GET',
-    `/api/sessions/search?${params.toString()}`,
-    { errorMessage: 'Failed to search sessions' },
+  const scope = (typeof kilns === 'string' ? [kilns] : kilns ?? []).filter(Boolean);
+  const data = decode(
+    await client.GET('/api/sessions/search', {
+      params: { query: { q: query, kiln: scope, limit } },
+    }),
+    'Failed to search sessions',
   );
   return {
     ...data,
@@ -1014,9 +947,10 @@ export async function searchSessions(
 }
 
 export async function getSession(id: string): Promise<Session> {
-  return request<Session>('GET', `/api/session/${encodeURIComponent(id)}`, {
-    errorMessage: 'Failed to get session',
-  });
+  return decode(
+    await client.GET('/api/session/{id}', { params: { path: { id } } }),
+    'Failed to get session',
+  );
 }
 
 // =============================================================================
@@ -1055,19 +989,17 @@ export async function grepSearch(
   query: string,
   opts?: { glob?: string; limit?: number; caseInsensitive?: boolean },
 ): Promise<GrepResponse> {
-  const data = await request<Schemas['GrepSearchResponse']>(
-    'POST',
-    '/api/search/grep',
-    {
-      errorMessage: 'Search failed',
-      ...jsonRequest({
+  const data = decode(
+    await client.POST('/api/search/grep', {
+      body: {
         root,
         query,
         glob: opts?.glob ?? null,
         limit: opts?.limit ?? 100,
         case_insensitive: opts?.caseInsensitive ?? true,
-      }),
-    },
+      },
+    }),
+    'Search failed',
   );
   return {
     truncated: data.truncated,
@@ -1107,10 +1039,10 @@ export async function semanticSearch(
   query: string,
   limit = 20,
 ): Promise<SemanticHit[]> {
-  const data = await request<Schemas['SemanticSearchResponse']>('POST', '/api/search/semantic', {
-    errorMessage: 'Semantic search failed',
-    ...jsonRequest({ kiln, query, limit }),
-  });
+  const data = decode(
+    await client.POST('/api/search/semantic', { body: { kiln, query, limit } }),
+    'Semantic search failed',
+  );
   return expectList(data.results, 'results', 'Failed to search notes').map((r) => ({
     path: r.path,
     relPath: r.rel_path,
@@ -1120,68 +1052,66 @@ export async function semanticSearch(
 
 /** Pause a session. */
 export async function pauseSession(id: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/pause`, {
-    errorMessage: 'Failed to pause session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/pause', { params: { path: { id } } }),
+    'Failed to pause session',
+  );
 }
 
 /** Resume a session (also auto-subscribes to events on the backend). */
 export async function resumeSession(id: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/resume`, {
-    errorMessage: 'Failed to resume session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/resume', { params: { path: { id } } }),
+    'Failed to resume session',
+  );
 }
 
 /** End a session. */
 export async function endSession(id: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/end`, {
-    errorMessage: 'Failed to end session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/end', { params: { path: { id } } }),
+    'Failed to end session',
+  );
 }
 
 /** Delete a session permanently. */
 export async function deleteSession(id: string): Promise<void> {
-  await request<void>('DELETE', `/api/session/${encodeURIComponent(id)}`, {
-    errorMessage: 'Failed to delete session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.DELETE('/api/session/{id}', { params: { path: { id } } }),
+    'Failed to delete session',
+  );
 }
 
 /** Archive a session (hide from default listing). */
 export async function archiveSession(id: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/archive`, {
-    errorMessage: 'Failed to archive session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/archive', { params: { path: { id } } }),
+    'Failed to archive session',
+  );
 }
 
 /** Unarchive a session (restore to default listing). */
 export async function unarchiveSession(id: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(id)}/unarchive`, {
-    errorMessage: 'Failed to unarchive session',
-    parseAs: 'none',
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/unarchive', { params: { path: { id } } }),
+    'Failed to unarchive session',
+  );
 }
 
 /** Cancel the current agent operation in a session. */
 export async function cancelSession(id: string): Promise<boolean> {
-  return (
-    await request<{ cancelled: boolean }>('POST', `/api/session/${encodeURIComponent(id)}/cancel`, {
-      errorMessage: 'Failed to cancel session',
-    })
+  return decode(
+    await client.POST('/api/session/{id}/cancel', { params: { path: { id } } }),
+    'Failed to cancel session',
   ).cancelled;
 }
 
 /** List available models for a session. */
 export async function listModels(sessionId: string): Promise<string[]> {
-  return (
-    await request<{ models: string[] }>('GET', `/api/session/${encodeURIComponent(sessionId)}/models`, {
-      errorMessage: 'Failed to list models',
-      notify: true,
-    })
+  return decode(
+    await client.GET('/api/session/{id}/models', { params: { path: { id: sessionId } } }),
+    'Failed to list models',
+    { notify: true },
   ).models;
 }
 
@@ -1192,12 +1122,9 @@ export async function listModels(sessionId: string): Promise<string[]> {
  * rather than subscribing.
  */
 export async function getSessionStatus(sessionId: string): Promise<SessionStatusSlot[]> {
-  return (
-    await request<{ status: SessionStatusSlot[] }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/status`,
-      { errorMessage: 'Failed to load session status' },
-    )
+  return decode(
+    await client.GET('/api/session/{id}/status', { params: { path: { id: sessionId } } }),
+    'Failed to load session status',
   ).status;
 }
 
@@ -1209,10 +1136,9 @@ export async function getSessionStatus(sessionId: string): Promise<SessionStatus
  * loop, so the daemon's caps and context policy, and offering one is a control that changes nothing.
  */
 export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> {
-  return request<SessionKnobSupport>(
-    'GET',
-    `/api/session/${encodeURIComponent(sessionId)}/knobs`,
-    { errorMessage: 'Failed to list settings' },
+  return decode(
+    await client.GET('/api/session/{id}/knobs', { params: { path: { id: sessionId } } }),
+    'Failed to list settings',
   );
 }
 
@@ -1223,10 +1149,11 @@ export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> 
  * connects to it. Empty always for an internal agent.
  */
 export async function listAgentOptions(sessionId: string): Promise<AgentConfigOptions> {
-  return request<AgentConfigOptions>(
-    'GET',
-    `/api/session/${encodeURIComponent(sessionId)}/config/agent-options`,
-    { errorMessage: 'Failed to list agent settings' },
+  return decode(
+    await client.GET('/api/session/{id}/config/agent-options', {
+      params: { path: { id: sessionId } },
+    }),
+    'Failed to list agent settings',
   );
 }
 
@@ -1236,46 +1163,55 @@ export async function setAgentOption(
   optionId: string,
   value: string,
 ): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/config/agent-options`, {
-    errorMessage: 'Failed to set agent setting',
-    parseAs: 'none',
-    ...jsonRequest({ option_id: optionId, value }),
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/config/agent-options', {
+      params: { path: { id: sessionId } },
+      body: { option_id: optionId, value },
+    }),
+    'Failed to set agent setting',
+  );
 }
 
 export async function listModes(sessionId: string): Promise<SessionModes> {
-  return request<SessionModes>('GET', `/api/session/${encodeURIComponent(sessionId)}/modes`, {
-    errorMessage: 'Failed to list modes',
-    notify: true,
-  });
+  return decode(
+    await client.GET('/api/session/{id}/modes', { params: { path: { id: sessionId } } }),
+    'Failed to list modes',
+    { notify: true },
+  );
 }
 
 /** Switch the model for a session. */
 export async function switchModel(sessionId: string, modelId: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/model`, {
-    errorMessage: 'Failed to switch model',
-    parseAs: 'none',
-    ...jsonRequest({ model_id: modelId }),
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/model', {
+      params: { path: { id: sessionId } },
+      body: { model_id: modelId },
+    }),
+    'Failed to switch model',
+  );
 }
 
 /** Set the session mode (normal/plan/auto). Confirmation echoes back as a
  * mode_changed SSE event. */
 export async function setSessionMode(sessionId: string, mode: string): Promise<void> {
-  await request<void>('POST', `/api/session/${encodeURIComponent(sessionId)}/mode`, {
-    errorMessage: 'Failed to set session mode',
-    parseAs: 'none',
-    ...jsonRequest({ mode }),
-  });
+  expectOk(
+    await client.POST('/api/session/{id}/mode', {
+      params: { path: { id: sessionId } },
+      body: { mode },
+    }),
+    'Failed to set session mode',
+  );
 }
 
 /** Set the title for a session. */
 export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/title`, {
-    errorMessage: 'Failed to set session title',
-    parseAs: 'none',
-    ...jsonRequest({ title }),
-  });
+  expectOk(
+    await client.PUT('/api/session/{id}/title', {
+      params: { path: { id: sessionId } },
+      body: { title },
+    }),
+    'Failed to set session title',
+  );
 }
 
 /**
@@ -1300,25 +1236,18 @@ export async function getSessionHistory(
   offset?: number,
   signal?: AbortSignal,
 ): Promise<SessionHistoryResponse> {
-  const params = new URLSearchParams();
-  if (limit !== undefined) params.set('limit', limit.toString());
-  if (offset !== undefined) params.set('offset', offset.toString());
-
-  return request<SessionHistoryResponse>(
-    'GET',
-    `/api/session/${encodeURIComponent(sessionId)}/history?${params.toString()}`,
-    {
-      errorMessage: 'Failed to load session history',
+  return decode(
+    await client.GET('/api/session/{id}/history', {
+      params: { path: { id: sessionId }, query: { limit, offset } },
       signal,
-    },
+    }),
+    'Failed to load session history',
   );
 }
 
 /** List available LLM providers and their models. */
 export async function listProviders(): Promise<ProviderInfo[]> {
-  const data = await request<{ providers: ProviderInfo[] }>('GET', '/api/providers', {
-    errorMessage: 'Failed to list providers',
-  });
+  const data = decode(await client.GET('/api/providers'), 'Failed to list providers');
   return expectList(data.providers, 'providers', 'Failed to list providers');
 }
 
@@ -1328,10 +1257,12 @@ export type SessionScope = Schemas['SessionScopeResponse'];
 
 /** Attach a kiln to the session's kiln set. Idempotent. */
 export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
-  return request<SessionScope>(
-    'POST',
-    `/api/session/${encodeURIComponent(sessionId)}/kilns/connect`,
-    { errorMessage: 'Failed to attach kiln', ...jsonRequest({ kiln }) },
+  return decode(
+    await client.POST('/api/session/{id}/kilns/connect', {
+      params: { path: { id: sessionId } },
+      body: { kiln },
+    }),
+    'Failed to attach kiln',
   );
 }
 
@@ -1340,19 +1271,19 @@ export async function disconnectSessionKiln(
   sessionId: string,
   kiln: string,
 ): Promise<SessionScope> {
-  return request<SessionScope>(
-    'POST',
-    `/api/session/${encodeURIComponent(sessionId)}/kilns/disconnect`,
-    { errorMessage: 'Failed to detach kiln', ...jsonRequest({ kiln }) },
+  return decode(
+    await client.POST('/api/session/{id}/kilns/disconnect', {
+      params: { path: { id: sessionId } },
+      body: { kiln },
+    }),
+    'Failed to detach kiln',
   );
 }
 
 
 /** List ACP agent profiles with probed availability. */
 export async function listAgents(): Promise<AgentProfileEntry[]> {
-  return (await request<{ agents: AgentProfileEntry[] }>('GET', '/api/agents', {
-    errorMessage: 'Failed to list agents',
-  })).agents;
+  return decode(await client.GET('/api/agents'), 'Failed to list agents').agents;
 }
 
 /**
@@ -1363,10 +1294,8 @@ export async function listAgents(): Promise<AgentProfileEntry[]> {
  * one; the parameter is gone from both sides rather than converted to a name.
  */
 export async function listAllModels(): Promise<string[]> {
-  return (await request<{ models: string[] }>('GET', '/api/models', {
-    errorMessage: 'Failed to list models',
-    notify: true,
-  })).models;
+  return decode(await client.GET('/api/models'), 'Failed to list models', { notify: true })
+    .models;
 }
 
 // =============================================================================
@@ -1375,22 +1304,23 @@ export async function listAllModels(): Promise<string[]> {
 
 /** Get the precognition state for a session. */
 export async function getPrecognition(sessionId: string): Promise<boolean> {
-  return (
-    await request<{ precognition_enabled: boolean }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/precognition`,
-      { errorMessage: 'Failed to get precognition' },
-    )
+  return decode(
+    await client.GET('/api/session/{id}/config/precognition', {
+      params: { path: { id: sessionId } },
+    }),
+    'Failed to get precognition',
   ).precognition_enabled;
 }
 
 /** Set the precognition state for a session. */
 export async function setPrecognition(sessionId: string, enabled: boolean): Promise<void> {
-  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/precognition`, {
-    errorMessage: 'Failed to set precognition',
-    parseAs: 'none',
-    ...jsonRequest({ enabled }),
-  });
+  expectOk(
+    await client.PUT('/api/session/{id}/config/precognition', {
+      params: { path: { id: sessionId } },
+      body: { enabled },
+    }),
+    'Failed to set precognition',
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -1406,13 +1336,12 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
 
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
-  return (
-    await request<{ context_strategy: string | null }>(
-      'GET',
-      `/api/session/${encodeURIComponent(sessionId)}/config/context-strategy`,
-      { errorMessage: 'Failed to get context strategy' },
-    )
-  ).context_strategy;
+  return decode(
+    await client.GET('/api/session/{id}/config/context-strategy', {
+      params: { path: { id: sessionId } },
+    }),
+    'Failed to get context strategy',
+  ).context_strategy ?? null;
 }
 
 /**
@@ -1423,14 +1352,12 @@ export async function getContextStrategy(sessionId: string): Promise<string | nu
  * every time the enum grows.
  */
 export async function setContextStrategy(sessionId: string, strategy: string): Promise<void> {
-  await request<void>(
-    'PUT',
-    `/api/session/${encodeURIComponent(sessionId)}/config/context-strategy`,
-    {
-      errorMessage: 'Failed to set context strategy',
-      parseAs: 'none',
-      ...jsonRequest({ context_strategy: strategy }),
-    },
+  expectOk(
+    await client.PUT('/api/session/{id}/config/context-strategy', {
+      params: { path: { id: sessionId } },
+      body: { context_strategy: strategy },
+    }),
+    'Failed to set context strategy',
   );
 }
 
@@ -1440,10 +1367,13 @@ export async function setContextStrategy(sessionId: string, strategy: string): P
 
 /** Export a session to markdown. Returns the raw markdown string. */
 export async function exportSession(sessionId: string): Promise<string> {
-  return request<string>('POST', `/api/session/${encodeURIComponent(sessionId)}/export`, {
-    errorMessage: 'Failed to export session',
-    parseAs: 'text',
-  });
+  return decode(
+    await client.POST('/api/session/{id}/export', {
+      params: { path: { id: sessionId } },
+      parseAs: 'text',
+    }),
+    'Failed to export session',
+  );
 }
 
 // =============================================================================
@@ -1454,10 +1384,13 @@ export type CommandResult = Schemas['CommandResponse'];
 
 /** Execute a slash command in a session. */
 export async function executeCommand(sessionId: string, command: string): Promise<CommandResult> {
-  return request<CommandResult>('POST', `/api/session/${encodeURIComponent(sessionId)}/command`, {
-    errorMessage: 'Failed to execute command',
-    ...jsonRequest({ command }),
-  });
+  return decode(
+    await client.POST('/api/session/{id}/command', {
+      params: { path: { id: sessionId } },
+      body: { command },
+    }),
+    'Failed to execute command',
+  );
 }
 
 /** One completable slash command. `args` is the argument placeholder, empty
@@ -1472,11 +1405,7 @@ export type SlashCommand = Schemas['SlashCommand'];
  * hand-maintained frontend copy had already lost `/models`.
  */
 export async function listSlashCommands(): Promise<SlashCommand[]> {
-  return (
-    await request<{ commands: SlashCommand[] }>('GET', '/api/commands', {
-      errorMessage: 'Failed to list commands',
-    })
-  ).commands;
+  return decode(await client.GET('/api/commands'), 'Failed to list commands').commands;
 }
 
 // =============================================================================
@@ -1516,11 +1445,7 @@ export type SurfaceChangedEvent = Schemas['SurfaceChangedEvent'];
  * empty sidebar and filling in.
  */
 export async function getSurfaces(): Promise<Surface[]> {
-  return (
-    await request<{ surfaces: Surface[] }>('GET', '/api/surfaces', {
-      errorMessage: 'Failed to list plugin surfaces',
-    })
-  ).surfaces;
+  return decode(await client.GET('/api/surfaces'), 'Failed to list plugin surfaces').surfaces;
 }
 
 /**
@@ -1544,7 +1469,22 @@ export function subscribeToSurfaceEvents(
     source.addEventListener('surface_changed', (e: MessageEvent) => {
       reconnectAttempts = 0;
       try {
-        onEvent(JSON.parse(e.data) as SurfaceChangedEvent);
+        // The payload carries no tag of its own — the stream has one event
+        // name — so the check is the three fields the document requires.
+        onEvent(
+          decodeEvent<SurfaceChangedEvent>(
+            'surface',
+            'surface_changed',
+            e.data,
+            (payload) =>
+              'name' in payload &&
+              typeof payload.name === 'string' &&
+              'plugin' in payload &&
+              typeof payload.plugin === 'string' &&
+              'version' in payload &&
+              typeof payload.version === 'number',
+          ),
+        );
       } catch {
         console.warn('Failed to parse surface SSE event:', e.data);
       }
@@ -1583,17 +1523,16 @@ export type PluginReloadResult = Schemas['PluginReloadResponse'];
 
 /** List discovered plugins with rich metadata. */
 export async function getPlugins(): Promise<PluginInfo[]> {
-  return (await request<{ plugins: PluginInfo[] }>('GET', `/api/plugins`, {
-    errorMessage: 'Failed to list plugins',
-  })).plugins;
+  return decode(await client.GET('/api/plugins'), 'Failed to list plugins').plugins;
 }
 
 /** Reload a plugin by name. Returns the daemon's capability counts. */
 export async function reloadPlugin(name: string): Promise<PluginReloadResult> {
-  return request<PluginReloadResult>(
-    'POST',
-    `/api/plugins/${encodeURIComponent(name)}/reload`,
-    { errorMessage: 'Failed to reload plugin' },
+  return decode(
+    await client.POST('/api/plugins/{name}/reload', {
+      params: { path: { name }, header: callerParam() },
+    }),
+    'Failed to reload plugin',
   );
 }
 
@@ -1614,10 +1553,13 @@ export type InstallPluginResult = Schemas['PluginInstallResponse'];
  * fresh clone over a slow network. Caller should show a spinner.
  */
 export async function installPlugin(params: InstallPluginParams): Promise<InstallPluginResult> {
-  return request<InstallPluginResult>('POST', '/api/plugins', {
-    errorMessage: 'Failed to install plugin',
-    ...jsonRequest(params),
-  });
+  return decode(
+    await client.POST('/api/plugins', {
+      params: { header: callerParam() },
+      body: params,
+    }),
+    'Failed to install plugin',
+  );
 }
 
 /**
@@ -1632,13 +1574,11 @@ export type RemovePluginResult = Schemas['PluginRemoveResponse'];
 
 /** Remove a plugin by name. If `purge`, the cloned directory is also deleted. */
 export async function removePlugin(name: string, purge = false): Promise<RemovePluginResult> {
-  const params = new URLSearchParams();
-  if (purge) params.set('purge', 'true');
-  const query = params.toString() ? `?${params.toString()}` : '';
-  return request<RemovePluginResult>(
-    'DELETE',
-    `/api/plugins/${encodeURIComponent(name)}${query}`,
-    { errorMessage: 'Failed to remove plugin' },
+  return decode(
+    await client.DELETE('/api/plugins/{name}', {
+      params: { path: { name }, query: { purge: purge || undefined }, header: callerParam() },
+    }),
+    'Failed to remove plugin',
   );
 }
 
@@ -1652,20 +1592,17 @@ export type SkillDetail = Schemas['SkillDetail'];
 
 /** List skills discovered for a kiln, optionally filtered by scope. */
 export async function listSkills(kiln: string, scope?: string): Promise<SkillSummary[]> {
-  const params = new URLSearchParams({ kiln });
-  if (scope) params.set('scope', scope);
-  return (await request<{ skills: SkillSummary[] }>('GET', `/api/skills?${params.toString()}`, {
-    errorMessage: 'Failed to list skills',
-  })).skills;
+  return decode(
+    await client.GET('/api/skills', { params: { query: { kiln, scope } } }),
+    'Failed to list skills',
+  ).skills;
 }
 
 /** Fetch a skill's full body and metadata. */
 export async function getSkill(name: string, kiln: string): Promise<SkillDetail> {
-  const params = new URLSearchParams({ kiln });
-  return request<SkillDetail>(
-    'GET',
-    `/api/skills/${encodeURIComponent(name)}?${params.toString()}`,
-    { errorMessage: 'Failed to load skill' },
+  return decode(
+    await client.GET('/api/skills/{name}', { params: { path: { name }, query: { kiln } } }),
+    'Failed to load skill',
   );
 }
 
@@ -1675,13 +1612,10 @@ export async function searchSkills(
   kiln: string,
   limit?: number,
 ): Promise<SkillSummary[]> {
-  const params = new URLSearchParams({ kiln, q: query });
-  if (limit !== undefined) params.set('limit', String(limit));
-  return (await request<{ skills: SkillSummary[] }>(
-    'GET',
-    `/api/skills/search?${params.toString()}`,
-    { errorMessage: 'Failed to search skills' },
-  )).skills;
+  return decode(
+    await client.GET('/api/skills/search', { params: { query: { kiln, q: query, limit } } }),
+    'Failed to search skills',
+  ).skills;
 }
 
 // =============================================================================
@@ -1699,9 +1633,7 @@ export async function searchSkills(
 export type McpStatus = Schemas['McpStatus'];
 
 export async function getMcpStatus(): Promise<McpStatus> {
-  return request<McpStatus>('GET', '/api/mcp/status', {
-    errorMessage: 'Failed to get MCP status',
-  });
+  return decode(await client.GET('/api/mcp/status'), 'Failed to get MCP status');
 }
 
 // =============================================================================
@@ -1714,20 +1646,13 @@ export async function getMcpStatus(): Promise<McpStatus> {
  * (`GET /api/kilns`) wraps the array under `{ kilns }`.
  */
 export async function listKilns(): Promise<KilnListEntry[]> {
-  return (await request<{ kilns: KilnListEntry[] }>('GET', '/api/kilns', {
-    errorMessage: 'Failed to list kilns',
-  })).kilns;
+  return decode(await client.GET('/api/kilns'), 'Failed to list kilns').kilns;
 }
 
 export async function listNotes(kiln: string, pathFilter?: string): Promise<NoteEntry[]> {
-  const params = new URLSearchParams({ kiln });
-  if (pathFilter) params.set('path_filter', pathFilter);
-
-  return (
-    await request<{ notes: NoteEntry[] }>('GET', `/api/notes?${params.toString()}`, {
-      errorMessage: 'Failed to list notes',
-      includeErrorText: true,
-    })
+  return decode(
+    await client.GET('/api/notes', { params: { query: { kiln, path_filter: pathFilter } } }),
+    'Failed to list notes',
   ).notes;
 }
 
@@ -1743,11 +1668,17 @@ export async function resolveNotePath(
   kiln: string,
   name: string,
 ): Promise<{ path: string; absolutePath: string; title?: string }> {
-  const params = new URLSearchParams({ kiln, name });
-  return request('GET', `/api/notes/resolve?${params.toString()}`, {
-    errorMessage: 'Failed to resolve note',
-    includeErrorText: true,
-  });
+  const answer = decode(
+    await client.GET('/api/notes/resolve', { params: { query: { kiln, name } } }),
+    'Failed to resolve note',
+  );
+  // The wire says `null` for a note with no title; this answer has always said
+  // absent, and its callers read it that way.
+  return {
+    path: answer.path,
+    absolutePath: answer.absolutePath,
+    ...(answer.title === null || answer.title === undefined ? {} : { title: answer.title }),
+  };
 }
 
 
@@ -1756,11 +1687,10 @@ export async function resolveNotePath(
  * kiln-relative path (fuzzy-resolved server-side).
  */
 export async function getBacklinks(kiln: string, note: string): Promise<BacklinksResponse> {
-  const params = new URLSearchParams({ kiln, note });
-  return request<BacklinksResponse>('GET', `/api/backlinks?${params.toString()}`, {
-    errorMessage: 'Failed to get backlinks',
-    includeErrorText: true,
-  });
+  return decode(
+    await client.GET('/api/backlinks', { params: { query: { kiln, note } } }),
+    'Failed to get backlinks',
+  );
 }
 
 
@@ -1770,24 +1700,23 @@ export async function getBacklinks(kiln: string, note: string): Promise<Backlink
 
 /** Register a project. */
 export async function registerProject(path: string): Promise<Project> {
-  return request<Project>('POST', '/api/project/register', {
-    errorMessage: 'Failed to register project',
-    ...jsonRequest({ path }),
-  });
+  return decode(
+    await client.POST('/api/project/register', { body: { path } }),
+    'Failed to register project',
+  );
 }
 
 /** Unregister a project. */
 export async function unregisterProject(path: string): Promise<void> {
-  await request<void>('POST', '/api/project/unregister', {
-    errorMessage: 'Failed to unregister project',
-    parseAs: 'none',
-    ...jsonRequest({ path }),
-  });
+  expectOk(
+    await client.POST('/api/project/unregister', { body: { path } }),
+    'Failed to unregister project',
+  );
 }
 
 /** List all registered projects. */
 export async function listProjects(): Promise<Project[]> {
-  return request<Project[]>('GET', '/api/project/list', { errorMessage: 'Failed to list projects' });
+  return decode(await client.GET('/api/project/list'), 'Failed to list projects');
 }
 
 // =============================================================================
@@ -1810,20 +1739,19 @@ export function isGitRepoUrl(input: string): boolean {
 /** Clone a remote repo into `[workspace] root_dir` and register it as a
  * project. Slow (network clone) — no client-side timeout beyond fetch's. */
 export async function scmClone(url: string): Promise<ScmCloneResponse> {
-  return request<ScmCloneResponse>('POST', '/api/scm/clone', {
-    errorMessage: 'Failed to clone repository',
-    includeErrorText: true,
-    ...jsonRequest({ url }),
-  });
+  return decode(
+    await client.POST('/api/scm/clone', { body: { url } }),
+    'Failed to clone repository',
+  );
 }
 
 /** Get project by path. */
 export async function getProject(path: string): Promise<Project | null> {
-  const params = new URLSearchParams({ path });
   try {
-    return await request<Project>('GET', `/api/project/get?${params.toString()}`, {
-      errorMessage: 'Failed to get project',
-    });
+    return decode(
+      await client.GET('/api/project/get', { params: { query: { path } } }),
+      'Failed to get project',
+    );
   } catch (err) {
     if ((err as ApiError).status === 404) {
       return null;
@@ -1834,34 +1762,34 @@ export async function getProject(path: string): Promise<Project | null> {
 
 /** List files in a kiln directory. */
 export async function listFiles(path: string): Promise<FileEntry[]> {
-  const params = new URLSearchParams({ kiln: path });
-  return (await request<{ files: FileEntry[] }>('GET', `/api/kiln/files?${params.toString()}`, {
-    errorMessage: 'Failed to list files',
-  })).files;
+  return decode(
+    await client.GET('/api/kiln/files', { params: { query: { kiln: path } } }),
+    'Failed to list files',
+  ).files;
 }
 
 /** List kiln notes. */
 export async function listKilnNotes(kilnPath: string): Promise<FileEntry[]> {
-  const params = new URLSearchParams({ kiln: kilnPath });
-  return (await request<{ files: FileEntry[] }>('GET', `/api/kiln/notes?${params.toString()}`, {
-    errorMessage: 'Failed to list kiln notes',
-  })).files;
+  return decode(
+    await client.GET('/api/kiln/notes', { params: { query: { kiln: kilnPath } } }),
+    'Failed to list kiln notes',
+  ).files;
 }
 
 /** Full note-link graph of a kiln (nodes + resolved/unresolved edges). */
 export async function getKilnGraph(kilnPath: string): Promise<import('./graph/types').GraphDto> {
-  const params = new URLSearchParams({ kiln: kilnPath });
-  return request('GET', `/api/kiln/graph?${params.toString()}`, {
-    errorMessage: 'Failed to load graph',
-  });
+  return decode(
+    await client.GET('/api/kiln/graph', { params: { query: { kiln: kilnPath } } }),
+    'Failed to load graph',
+  );
 }
 
 /** Get file content by path. */
 export async function getFileContent(path: string): Promise<string> {
-  const params = new URLSearchParams({ path });
-  return (await request<{ content: string }>('GET', `/api/kiln/file?${params.toString()}`, {
-    errorMessage: 'Failed to get file content',
-  })).content;
+  return decode(
+    await client.GET('/api/kiln/file', { params: { query: { path } } }),
+    'Failed to get file content',
+  ).content;
 }
 
 /** Save file content by path. */
@@ -1876,20 +1804,17 @@ export async function getFileContent(path: string): Promise<string> {
 export async function getFileWithHash(
   path: string,
 ): Promise<{ content: string; content_hash: string }> {
-  const params = new URLSearchParams({ path });
-  return await request<{ content: string; content_hash: string }>(
-    'GET',
-    `/api/kiln/file?${params.toString()}`,
-    { errorMessage: 'Failed to read file' },
+  return decode(
+    await client.GET('/api/kiln/file', { params: { query: { path } } }),
+    'Failed to read file',
   );
 }
 
 export async function saveFileContent(path: string, content: string): Promise<void> {
-  await request<void>('PUT', '/api/kiln/file', {
-    errorMessage: 'Failed to save file',
-    parseAs: 'none',
-    ...jsonRequest({ path, content }),
-  });
+  expectOk(
+    await client.PUT('/api/kiln/file', { body: { path, content } }),
+    'Failed to save file',
+  );
 }
 
 /**
@@ -1944,42 +1869,29 @@ export async function saveFileIfUnchanged(
   baseHash: string,
   baseText?: string,
 ): Promise<GuardedSave> {
-  const response = await fetch('/api/kiln/file', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      path,
-      content,
-      base_hash: baseHash,
-      ...(baseText === undefined ? {} : { base_text: baseText }),
-    }),
+  // `base_text` stays absent when the caller has none: the body serialiser
+  // drops an `undefined` property, and the daemon's own defaults only apply to
+  // a field that is ABSENT.
+  const result = await client.PUT('/api/kiln/file', {
+    body: { path, content, base_hash: baseHash, base_text: baseText },
   });
-  if (response.status === 409) {
-    const body = (await response.json()) as {
-      current_hash?: string;
-      current_content?: string;
-      merged_content?: string;
-      regions?: MergeRegion[];
-    };
+  if (result.response.status === 409 && result.error) {
+    const refused = result.error;
     return {
       ok: false,
-      current_hash: body.current_hash ?? '',
-      ...(body.current_content === undefined ? {} : { current_content: body.current_content }),
-      ...(body.merged_content === undefined ? {} : { merged_content: body.merged_content }),
-      ...(body.regions === undefined ? {} : { regions: body.regions }),
+      current_hash: refused.current_hash,
+      ...('current_content' in refused ? { current_content: refused.current_content } : {}),
+      ...('merged_content' in refused ? { merged_content: refused.merged_content } : {}),
+      ...('regions' in refused ? { regions: refused.regions } : {}),
     };
-  }
-  if (!response.ok) {
-    throw Object.assign(new Error(`Failed to save ${path}`), { status: response.status });
   }
   // The route answers with the hash of what it wrote, so nothing here needs a
   // hash function and nothing needs a second read to learn it.
-  const body = (await response.json()) as { content_hash?: string; merged?: boolean; content?: string };
+  const body = decode(result, `Failed to save ${path}`);
   if (body.merged) {
-    return { ok: true, content_hash: body.content_hash ?? '', merged: true, content: body.content ?? '' };
+    return { ok: true, content_hash: body.content_hash, merged: true, content: body.content ?? '' };
   }
-  return { ok: true, content_hash: body.content_hash ?? '' };
+  return { ok: true, content_hash: body.content_hash };
 }
 
 /** One anchored edit: replace `expect` with `replace`, matched whole-line.
@@ -2018,17 +1930,17 @@ export async function patchKilnFile(
   edits: AnchoredEdit[],
   baseHash?: string,
 ): Promise<{ ok: true; content_hash: string } | PatchRefused> {
-  const response = await fetch('/api/kiln/file', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({ path, edits, base_hash: baseHash }),
+  const result = await client.PATCH('/api/kiln/file', {
+    body: { path, edits, base_hash: baseHash },
   });
-  if (response.status === 409) return (await response.json()) as PatchRefused;
-  if (!response.ok) {
-    throw Object.assign(new Error(`Failed to edit ${path}`), { status: response.status });
+  // Only the anchored-edit arm of the conflict is a value here. A 409 in one
+  // of the other two shapes is a refusal this caller cannot act on, so it
+  // throws with the daemon's reason like any other failure.
+  if (result.response.status === 409 && result.error && 'failed' in result.error) {
+    return { ...result.error, ok: false };
   }
-  return (await response.json()) as { ok: true; content_hash: string };
+  const body = decode(result, `Failed to edit ${path}`);
+  return { ok: true, content_hash: body.content_hash };
 }
 
 // =============================================================================
@@ -2076,11 +1988,7 @@ import type { TabContentType } from '@/types/windowTypes';
 
 export async function saveLayout(layout: SerializedLayout<TabContentType>): Promise<void> {
   try {
-    await request<void>('POST', '/api/layout', {
-      errorMessage: 'Failed to save layout',
-      parseAs: 'none',
-      ...jsonRequest(layout),
-    });
+    expectOk(await client.POST('/api/layout', { body: layout }), 'Failed to save layout');
   } catch (err) {
     console.warn(err instanceof Error ? err.message : 'Failed to save layout');
   }
@@ -2089,9 +1997,9 @@ export async function saveLayout(layout: SerializedLayout<TabContentType>): Prom
 /** The stored layout, at whatever version the server holds. */
 export async function loadLayout(): Promise<StoredLayout<TabContentType> | null> {
   try {
-    return await request<StoredLayout<TabContentType>>('GET', '/api/layout', {
-      errorMessage: 'Failed to load layout',
-    });
+    return openJson<StoredLayout<TabContentType>>(
+      decode(await client.GET('/api/layout'), 'Failed to load layout'),
+    );
   } catch (err) {
     if ((err as ApiError).status === 404) {
       return null;
@@ -2103,10 +2011,7 @@ export async function loadLayout(): Promise<StoredLayout<TabContentType> | null>
 
 export async function resetLayout(): Promise<void> {
   try {
-    await request<void>('DELETE', '/api/layout', {
-      errorMessage: 'Failed to reset layout',
-      parseAs: 'none',
-    });
+    expectOk(await client.DELETE('/api/layout'), 'Failed to reset layout');
   } catch (err) {
     console.warn(err instanceof Error ? err.message : 'Failed to reset layout');
   }
@@ -2118,18 +2023,16 @@ export async function resetLayout(): Promise<void> {
 
 /** Server-persisted recents, newest first. */
 export async function fetchRecents(): Promise<{ absPath: string; name: string }[]> {
-  const raw = await request<Schemas['RecentsResponse']>('GET', '/api/recents', {
-    errorMessage: 'Failed to load recents',
-  });
+  const raw = decode(await client.GET('/api/recents'), 'Failed to load recents');
   return raw.recents.map((r) => ({ absPath: r.abs_path, name: r.name }));
 }
 
 /** Record a file open (fire-and-forget from the caller's perspective). */
 export async function recordRecent(absPath: string, name: string): Promise<void> {
-  await request<unknown>('POST', '/api/recents', {
-    errorMessage: 'Failed to record recent file',
-    ...jsonRequest({ abs_path: absPath, name }),
-  });
+  expectOk(
+    await client.POST('/api/recents', { body: { abs_path: absPath, name } }),
+    'Failed to record recent file',
+  );
 }
 
 // =============================================================================
@@ -2145,29 +2048,26 @@ export async function recordRecent(absPath: string, name: string): Promise<void>
  * sent true); dotfiles stay behind the explicit `showHidden` toggle and
  * `.git` never lists (daemon policy).
  *
- * Goes through `request()` like every other call: a refused root used to
- * surface as `listDir failed: 422`, the status and nothing else, while the
- * daemon had said in a sentence which root it refused and why. The query
- * string is built here exactly as the daemon route parses it (`root` /
- * `rel_path` / `show_ignored` / `show_hidden`).
+ * Goes through the generated client like every other call: a refused root
+ * used to surface as `listDir failed: 422`, the status and nothing else, while
+ * the daemon had said in a sentence which root it refused and why. The query
+ * parameters are the document's own (`root` / `rel_path` / `show_ignored` /
+ * `show_hidden`), so a rename in Rust fails the build here.
  */
 export async function listDir(
   root: string,
   relPath = '',
   showHidden = false,
 ): Promise<FsListing> {
-  const q = new URLSearchParams({
-    root,
-    rel_path: relPath,
-    show_ignored: 'true',
-    show_hidden: String(showHidden),
-  });
-  return request<FsListing>('GET', `/api/fs/list?${q}`, {
-    errorMessage: `Failed to list ${root}`,
-    includeErrorText: true,
-    notify: true,
-    credentials: 'same-origin',
-  });
+  return decode(
+    await client.GET('/api/fs/list', {
+      params: {
+        query: { root, rel_path: relPath, show_ignored: true, show_hidden: showHidden },
+      },
+    }),
+    `Failed to list ${root}`,
+    { notify: true },
+  );
 }
 
 /**
@@ -2193,23 +2093,12 @@ export async function fsMove(
   fromRel: string,
   toRel: string,
 ): Promise<FsMoveOutcome> {
-  const res = await fetch('/api/fs/move', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root, kind, from_rel: fromRel, to_rel: toRel }),
-  });
-  if (!res.ok) {
-    if (res.status === 401) notifyAuthRequired();
-    let detail = '';
-    try {
-      detail = ((await res.json()) as { error?: string }).error ?? '';
-    } catch {
-      // non-JSON error body — status alone is the message
-    }
-    throw new Error(detail || `move failed: ${res.status}`);
-  }
-  return (await res.json()) as FsMoveOutcome;
+  return decode(
+    await client.POST('/api/fs/move', {
+      body: { root, kind, from_rel: fromRel, to_rel: toRel },
+    }),
+    'move failed',
+  );
 }
 
 /** Create a folder (and missing parents) inside one root. */
@@ -2218,16 +2107,10 @@ export async function fsMkdir(
   kind: 'project' | 'kiln',
   relPath: string,
 ): Promise<void> {
-  const res = await fetch('/api/fs/mkdir', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root, kind, rel_path: relPath }),
-  });
-  if (!res.ok) {
-    if (res.status === 401) notifyAuthRequired();
-    throw new Error(`mkdir failed: ${res.status}`);
-  }
+  expectOk(
+    await client.POST('/api/fs/mkdir', { body: { root, kind, rel_path: relPath } }),
+    'mkdir failed',
+  );
 }
 
 /**
@@ -2240,16 +2123,10 @@ export async function fsTrash(
   kind: 'project' | 'kiln',
   relPath: string,
 ): Promise<void> {
-  const res = await fetch('/api/fs/trash', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root, kind, rel_path: relPath }),
-  });
-  if (!res.ok) {
-    if (res.status === 401) notifyAuthRequired();
-    throw new Error(`trash failed: ${res.status}`);
-  }
+  expectOk(
+    await client.POST('/api/fs/trash', { body: { root, kind, rel_path: relPath } }),
+    'trash failed',
+  );
 }
 
 /**
@@ -2258,6 +2135,22 @@ export async function fsTrash(
  * to the `FsEvent` discriminated union.
  */
 const FS_SSE_EVENT_TYPES = ['fs_changed', 'fs_deleted', 'fs_moved'] as const;
+
+/**
+ * The `type` each of those payloads carries, which is NOT the event name: the
+ * stream says `fs_changed` and the body says `changed`.
+ *
+ * `satisfies` binds the tuple to the generated union, and `MissingFsEventTag`
+ * closes the other direction, the way `SSE_EVENT_TYPES` does for chat.
+ */
+const FS_EVENT_TAGS = ['changed', 'deleted', 'moved'] as const satisfies readonly FsEvent['type'][];
+
+/** Every daemon tag the tuple above forgot. Empty, or the build stops. */
+type MissingFsEventTag = Exclude<FsEvent['type'], (typeof FS_EVENT_TAGS)[number]>;
+const _FS_EVENT_TAGS_ARE_COMPLETE: [MissingFsEventTag] extends [never] ? true : never = true;
+void _FS_EVENT_TAGS_ARE_COMPLETE;
+
+const FS_EVENT_TAG_SET = new Set<string>(FS_EVENT_TAGS);
 
 /**
  * Subscribe to live filesystem-change events (`GET /api/fs/events`). Mirrors
@@ -2281,7 +2174,17 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
       source.addEventListener(eventType, (e: MessageEvent) => {
         reconnectAttempts = 0;
         try {
-          onEvent(JSON.parse(e.data) as FsEvent);
+          onEvent(
+            decodeEvent<FsEvent>(
+              'file-system',
+              eventType,
+              e.data,
+              (payload) =>
+                'type' in payload &&
+                typeof payload.type === 'string' &&
+                FS_EVENT_TAG_SET.has(payload.type),
+            ),
+          );
         } catch {
           console.warn(`Failed to parse FS SSE event (${eventType}):`, e.data);
         }
@@ -2319,21 +2222,17 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
  * so a quarantined node can be explained but never fetched.
  */
 export async function getCanvas(path: string): Promise<CanvasResponse> {
-  const params = new URLSearchParams({ path });
-  return request<CanvasResponse>('GET', `/api/canvas?${params.toString()}`, {
-    errorMessage: 'Failed to load canvas',
-    includeErrorText: true,
-  });
+  return openJson<CanvasResponse>(
+    decode(await client.GET('/api/canvas', { params: { query: { path } } }), 'Failed to load canvas'),
+  );
 }
 
 /** Write a `.canvas` document. Refused server-side if any reference escapes the kiln. */
 export async function saveCanvas(path: string, canvas: CanvasDoc): Promise<void> {
-  await request<void>('PUT', '/api/canvas', {
-    errorMessage: 'Failed to save canvas',
-    parseAs: 'none',
-    includeErrorText: true,
-    ...jsonRequest({ path, content: JSON.stringify(canvas) }),
-  });
+  expectOk(
+    await client.PUT('/api/canvas', { body: { path, content: JSON.stringify(canvas) } }),
+    'Failed to save canvas',
+  );
 }
 
 /** URL serving a file's raw bytes, for canvas media nodes and inline images. */

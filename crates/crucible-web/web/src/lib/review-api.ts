@@ -5,7 +5,7 @@
  * are the whole attributed-diff review API and share an error contract nothing
  * else needs.
  *
- * Every call goes through `api.ts`'s `request`, not a private `fetch` wrapper,
+ * Every call goes through the generated client, not a private `fetch` wrapper,
  * so they inherit the 401 re-prompt and the `{"error":{message}}` unwrapping.
  * A local "throw on !ok" would put a raw JSON blob in a toast where the server
  * had already written a sentence, and would leave a remote client whose cookie
@@ -16,27 +16,22 @@
  * spelling existed through eight layers, did nothing the first did not, and
  * cost the agent a duplicate tool description every turn.
  */
-import { request } from './api';
+import { client, decode } from './api-client';
 import type { components } from './api-schema';
 import type { ReviewScope, ReviewState } from './review-types';
 
 type Schemas = components['schemas'];
 
-/** Path prefix, matching the `session` route group's `modes`/`mode`/`status`. */
-const base = (sessionId: string) => `/api/session/${encodeURIComponent(sessionId)}/review`;
-
 /**
- * A JSON body, and the `Content-Type` that comes with it.
+ * The `Content-Type` of a write that carries no body.
  *
- * The header is load-bearing beyond encoding: it takes the request out of the
- * CORS simple-request set, forcing a preflight the server's allowlist refuses.
+ * Three of these routes take no request body, so the client sends none. The
+ * header still has to ride along, because it is load-bearing beyond encoding:
+ * it takes the request out of the CORS simple-request set, forcing a preflight
+ * the server's allowlist refuses. Dropping it makes every review write
+ * something a foreign page can fire blind at a logged-in user.
  */
-function jsonBody(body: unknown): { headers: Record<string, string>; body: string } {
-  return {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
+const preflighted = { headers: { 'Content-Type': 'application/json' } };
 
 /** A root whose attribution the daemon can no longer vouch for. `degraded` is
  * null when the root is intact; the string is shown to the user verbatim. */
@@ -61,27 +56,31 @@ export type ReviewHunksResponse = Schemas['ReviewHunksResponse'];
  * The composed diff under one scope. Always named on the wire, so the answer
  * and the question agree without a default living on two sides.
  */
-export function listReviewHunks(
+export async function listReviewHunks(
   sessionId: string,
   scope: ReviewScope = 'session',
 ): Promise<ReviewHunksResponse> {
-  return request('GET', `${base(sessionId)}/hunks?scope=${scope}`, {
-    errorMessage: 'Failed to load review',
-    includeErrorText: true,
-  });
+  return decode(
+    await client.GET('/api/session/{id}/review/hunks', {
+      params: { path: { id: sessionId }, query: { scope } },
+    }),
+    'Failed to load review',
+  );
 }
 
 /** Accept, reject (which reverts and tells the agent), or return to the queue. */
-export function setHunkState(
+export async function setHunkState(
   sessionId: string,
   hunkId: string,
   state: ReviewState,
 ): Promise<Schemas['ReviewStateResponse']> {
-  return request('POST', `${base(sessionId)}/state`, {
-    errorMessage: 'Failed to record review decision',
-    includeErrorText: true,
-    ...jsonBody({ hunk_id: hunkId, state }),
-  });
+  return decode(
+    await client.POST('/api/session/{id}/review/state', {
+      params: { path: { id: sessionId } },
+      body: { hunk_id: hunkId, state },
+    }),
+    'Failed to record review decision',
+  );
 }
 
 /**
@@ -100,16 +99,18 @@ export type BulkOutcome = Schemas['ReviewUndoRejectResponse'];
  * The ids go in the order given. The daemon applies them in that order, and a
  * reject reverts files as it goes, so the caller's order is the diff order.
  */
-export function setHunkStates(
+export async function setHunkStates(
   sessionId: string,
   hunkIds: string[],
   state: ReviewState,
 ): Promise<Schemas['ReviewStatesResponse']> {
-  return request('POST', `${base(sessionId)}/states`, {
-    errorMessage: 'Failed to record review decision',
-    includeErrorText: true,
-    ...jsonBody({ hunk_ids: hunkIds, state }),
-  });
+  return decode(
+    await client.POST('/api/session/{id}/review/states', {
+      params: { path: { id: sessionId } },
+      body: { hunk_ids: hunkIds, state },
+    }),
+    'Failed to record review decision',
+  );
 }
 
 /**
@@ -119,21 +120,29 @@ export function setHunkStates(
  * pops it. An empty stack answers two empty lists. The `{}` body is the same
  * preflight rule as `rebaseReview` and `resolveReviewComment`.
  */
-export function undoReject(sessionId: string): Promise<Schemas['ReviewUndoRejectResponse']> {
-  return request('POST', `${base(sessionId)}/undo-reject`, {
-    errorMessage: 'Failed to undo the reject',
-    includeErrorText: true,
-    ...jsonBody({}),
-  });
+export async function undoReject(
+  sessionId: string,
+): Promise<Schemas['ReviewUndoRejectResponse']> {
+  return decode(
+    await client.POST('/api/session/{id}/review/undo-reject', {
+      params: { path: { id: sessionId } },
+      ...preflighted,
+    }),
+    'Failed to undo the reject',
+  );
 }
 
 /** The release for a degraded root; nothing else clears one. */
-export function rebaseReview(sessionId: string): Promise<Schemas['ReviewRebaseResponse']> {
-  return request('POST', `${base(sessionId)}/rebase`, {
-    errorMessage: 'Failed to rebase review',
-    includeErrorText: true,
-    ...jsonBody({}),
-  });
+export async function rebaseReview(
+  sessionId: string,
+): Promise<Schemas['ReviewRebaseResponse']> {
+  return decode(
+    await client.POST('/api/session/{id}/review/rebase', {
+      params: { path: { id: sessionId } },
+      ...preflighted,
+    }),
+    'Failed to rebase review',
+  );
 }
 
 /**
@@ -145,34 +154,36 @@ export function rebaseReview(sessionId: string): Promise<Schemas['ReviewRebaseRe
  */
 export type NewComment = Schemas['CommentRequest'];
 
-export function addReviewComment(
+export async function addReviewComment(
   sessionId: string,
   comment: NewComment,
 ): Promise<Schemas['ReviewCommentResponse']> {
-  return request('POST', `${base(sessionId)}/comment`, {
-    errorMessage: 'Failed to comment',
-    includeErrorText: true,
-    // Object spread, so a `line_end`/`root`/`author` the caller omitted stays
-    // omitted on the wire. `JSON.stringify` drops `undefined` properties, and
-    // the daemon's own defaults only apply to a field that is ABSENT — an
-    // explicit null would defeat them.
-    ...jsonBody(comment),
-  });
+  return decode(
+    await client.POST('/api/session/{id}/review/comment', {
+      params: { path: { id: sessionId } },
+      // The caller's object goes whole, so a `line_end`/`root`/`author` it
+      // omitted stays omitted on the wire. `JSON.stringify` drops `undefined`
+      // properties, and the daemon's own defaults only apply to a field that
+      // is ABSENT — an explicit null would defeat them.
+      body: comment,
+    }),
+    'Failed to comment',
+  );
 }
 
-export function resolveReviewComment(
+export async function resolveReviewComment(
   sessionId: string,
   commentId: string,
 ): Promise<Schemas['ReviewResolveCommentResponse']> {
-  return request('POST', `${base(sessionId)}/comment/${encodeURIComponent(commentId)}/resolve`, {
-    errorMessage: 'Failed to resolve comment',
-    includeErrorText: true,
-    // The `{}` body is not redundant and must not be "optimised" away. It is
-    // what puts `Content-Type: application/json` on the request, which takes
-    // it out of the CORS simple-request set and forces a preflight the
-    // server's allowlist refuses. Without it, `POST …/resolve` — and by the
-    // same argument every review write — is something a foreign page can fire
-    // blind at a logged-in user.
-    ...jsonBody({}),
-  });
+  return decode(
+    await client.POST('/api/session/{id}/review/comment/{comment_id}/resolve', {
+      params: { path: { id: sessionId, comment_id: commentId } },
+      // `preflighted` is not redundant and must not be "optimised" away. See
+      // its declaration: without the header, `POST …/resolve` — and by the
+      // same argument every review write — is something a foreign page can
+      // fire blind at a logged-in user.
+      ...preflighted,
+    }),
+    'Failed to resolve comment',
+  );
 }

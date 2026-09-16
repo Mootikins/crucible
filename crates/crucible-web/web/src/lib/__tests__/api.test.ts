@@ -93,10 +93,10 @@ describe('sendChatMessage', () => {
 
     expect(result).toBe('msg-001');
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toBe('/api/chat/send');
-    expect(init!.method).toBe('POST');
-    expect(JSON.parse(init!.body as string)).toEqual({ session_id: 'ses-1', content: 'Hello world' });
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe('/api/chat/send');
+    expect(sent.method).toBe('POST');
+    expect(sent.body).toEqual({ session_id: 'ses-1', content: 'Hello world' });
   });
 
   it('throws on non-ok response', async () => {
@@ -180,17 +180,17 @@ describe('createSession', () => {
 
     // A profile name rides through as-is — the client never interprets it.
     await createSession({ kilns: ['default'], isolation: 'throwaway' });
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string).isolation).toBe('throwaway');
+    expect((await mockFetch.sent(0)).body).toMatchObject({ isolation: 'throwaway' });
 
     // `false` ("no sandbox even if the project has one") must survive: it is
     // an instruction, not a falsy value to drop.
     await createSession({ kilns: ['default'], isolation: false });
-    expect(JSON.parse(mockFetch.mock.calls[1][1]!.body as string).isolation).toBe(false);
+    expect((await mockFetch.sent(1)).body).toMatchObject({ isolation: false });
 
     // Unset stays absent — absent means "resolve normally", which is a
     // different instruction from false.
     await createSession({ kilns: ['default'] });
-    expect(JSON.parse(mockFetch.mock.calls[2][1]!.body as string)).not.toHaveProperty('isolation');
+    expect((await mockFetch.sent(2)).body).not.toHaveProperty('isolation');
   });
 });
 
@@ -211,7 +211,7 @@ describe('listSessions', () => {
     expect(sessions[0].session_id).toBe('ses-abc');
     expect(sessions[0].type).toBe('chat');
     // Verify URL had no query string
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     expect(url).toBe('/api/session/list');
   });
 
@@ -222,7 +222,7 @@ describe('listSessions', () => {
     const mockFetch = createMockFetch({ 'GET /api/session/list': { body: { sessions: [], total: 0 } } });
     global.fetch = mockFetch;
     await listSessions(args);
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     for (const param of expectedParams) expect(url).toContain(param);
   });
 
@@ -296,8 +296,7 @@ describe('executeCommand', () => {
     const result = await executeCommand('ses-1', ':help');
 
     expect(result).toEqual({ result: 'Done!', type: 'success' });
-    const [, init] = mockFetch.mock.calls[0];
-    expect(JSON.parse(init!.body as string)).toEqual({ command: ':help' });
+    expect((await mockFetch.sent(0)).body).toEqual({ command: ':help' });
   });
 
   it('throws on non-ok response', async () => {
@@ -352,9 +351,9 @@ describe('switchModel', () => {
 
     await switchModel('ses-1', 'openai:gpt-4');
 
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('POST');
-    expect(JSON.parse(init!.body as string)).toEqual({ model_id: 'openai:gpt-4' });
+    const sent = await mockFetch.sent(0);
+    expect(sent.method).toBe('POST');
+    expect(sent.body).toEqual({ model_id: 'openai:gpt-4' });
   });
 });
 
@@ -371,9 +370,9 @@ describe('respondToInteraction', () => {
 
     await respondToInteraction('ses-1', 'req-42', { allowed: true, scope: 'session' });
 
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('POST');
-    expect(JSON.parse(init!.body as string)).toEqual({
+    const sent = await mockFetch.sent(0);
+    expect(sent.method).toBe('POST');
+    expect(sent.body).toEqual({
       session_id: 'ses-1',
       request_id: 'req-42',
       response: { allowed: true, scope: 'session' },
@@ -413,7 +412,7 @@ describe('searchSessions', () => {
     expect(found.matches[0].line).toBe(12);
     expect(found.matches[0].context).toBe('the refactor');
     expect(found.total).toBe(1);
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     expect(url).toContain('q=refactor');
   });
 
@@ -440,7 +439,7 @@ describe('searchSessions', () => {
 
     await searchSessions('foo', 'my-kiln', 10);
 
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     expect(url).toContain('kiln=my-kiln');
     expect(url).toContain('limit=10');
   });
@@ -455,7 +454,7 @@ describe('searchSessions', () => {
 
     await searchSessions('foo', ['/kilns/a', '/kilns/b']);
 
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     expect(url).toContain(`kiln=${encodeURIComponent('/kilns/a')}`);
     expect(url).toContain(`kiln=${encodeURIComponent('/kilns/b')}`);
   });
@@ -690,7 +689,7 @@ describe('getSessionStatus', () => {
     await expect(getSessionStatus('a/b')).rejects.toThrow(
       'Failed to load session status: HTTP 502',
     );
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/session/a%2Fb/status');
+    expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/status');
   });
 });
 
@@ -711,8 +710,9 @@ describe('session lifecycle endpoints', () => {
     global.fetch = mockFetch;
     await expect(fn('ses-1')).resolves.toBeUndefined();
     expect(mockFetch).toHaveBeenCalledOnce();
-    expect(mockFetch.mock.calls[0][0]).toBe(route.split(' ')[1]);
-    expect(mockFetch.mock.calls[0][1]!.method).toBe(method);
+    const sent = await mockFetch.sent(0);
+    expect(sent.path).toBe(route.split(' ')[1]);
+    expect(sent.method).toBe(method);
   });
 
   it('cancelSession returns the cancelled bool', async () => {
@@ -755,9 +755,9 @@ describe('session title endpoints', () => {
     });
     global.fetch = mockFetch;
     await setSessionTitle('ses-1', 'New title');
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.method).toBe('PUT');
-    expect(JSON.parse(init!.body as string)).toEqual({ title: 'New title' });
+    const sent = await mockFetch.sent(0);
+    expect(sent.method).toBe('PUT');
+    expect(sent.body).toEqual({ title: 'New title' });
   });
 
 });
@@ -774,7 +774,7 @@ describe('getSessionHistory', () => {
     const mockFetch = createMockFetch({ 'GET /api/session/ses-1/history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
     global.fetch = mockFetch;
     await getSessionHistory('ses-1', limit, offset);
-    const [url] = mockFetch.mock.calls[0];
+    const { url } = await mockFetch.sent(0);
     for (const p of expectPresent) expect(url).toContain(p);
     for (const p of expectAbsent) expect(url).not.toContain(p);
   });
@@ -788,8 +788,12 @@ describe('getSessionHistory', () => {
     global.fetch = mockFetch;
     const controller = new AbortController();
     await getSessionHistory('ses-1', undefined, undefined, controller.signal);
-    const [, init] = mockFetch.mock.calls[0];
-    expect(init!.signal).toBe(controller.signal);
+    // The client builds the `Request`, so the signal it carries FOLLOWS the
+    // caller's rather than being the same object. An abort still reaches it.
+    const { signal } = await mockFetch.sent(0);
+    expect(signal.aborted).toBe(false);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
   });
 });
 
@@ -811,7 +815,7 @@ describe('precognition endpoints', () => {
     });
     global.fetch = mockFetch;
     await setPrecognition('ses-1', false);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ enabled: false });
+    expect((await mockFetch.sent(0)).body).toEqual({ enabled: false });
   });
 
 });
@@ -892,7 +896,7 @@ describe('plugin endpoints', () => {
     });
     global.fetch = mockFetch;
     await reloadPlugin('weird name');
-    expect(mockFetch.mock.calls[0][0]).toContain('weird%20name');
+    expect((await mockFetch.sent(0)).path).toContain('weird%20name');
   });
 
   it('getPlugins throws on error', async () => {
@@ -913,7 +917,7 @@ describe('plugin endpoints', () => {
     global.fetch = mockFetch;
     const result = await installPlugin({ url: 'user/repo', branch: 'main' });
     expect(result.name).toBe('np');
-    const body = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
+    const body = (await mockFetch.sent(0)).body as Record<string, unknown>;
     expect(body).toEqual({ url: 'user/repo', branch: 'main' });
   });
 
@@ -929,7 +933,7 @@ describe('plugin endpoints', () => {
     const mockFetch = createMockFetch({ 'DELETE /api/plugins/my-plugin': { body: { name: 'my-plugin', plugins_toml: '/tmp/plugins.toml', purged_dir: null } } });
     global.fetch = mockFetch;
     await removePlugin('my-plugin', purge);
-    const url = String(mockFetch.mock.calls[0][0]);
+    const url = (await mockFetch.sent(0)).url;
     for (const p of expectPresent) expect(url).toContain(p);
     for (const p of expectAbsent) expect(url).not.toContain(p);
   });
@@ -954,7 +958,7 @@ describe('skills endpoints', () => {
     const skills = await listSkills('/tmp/k');
     expect(skills).toHaveLength(1);
     expect(skills[0].name).toBe('s1');
-    expect(mockFetch.mock.calls[0][0]).toContain('kiln=%2Ftmp%2Fk');
+    expect((await mockFetch.sent(0)).url).toContain('kiln=%2Ftmp%2Fk');
   });
 
   it('listSkills includes scope filter when provided', async () => {
@@ -963,7 +967,7 @@ describe('skills endpoints', () => {
     });
     global.fetch = mockFetch;
     await listSkills('/tmp/k', 'kiln');
-    expect(mockFetch.mock.calls[0][0]).toContain('scope=kiln');
+    expect((await mockFetch.sent(0)).url).toContain('scope=kiln');
   });
 
   it('getSkill URL-encodes the name and returns the detail', async () => {
@@ -981,7 +985,7 @@ describe('skills endpoints', () => {
     global.fetch = mockFetch;
     const detail = await getSkill('my skill', '/tmp/k');
     expect(detail.body).toBe('# Body');
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/skills/my%20skill');
+    expect((await mockFetch.sent(0)).url).toContain('/api/skills/my%20skill');
   });
 
   it.each([
@@ -991,7 +995,7 @@ describe('skills endpoints', () => {
     const mockFetch = createMockFetch({ 'GET /api/skills/search': { body: { skills: [] } } });
     global.fetch = mockFetch;
     await searchSkills(query, kiln, limit);
-    const url = String(mockFetch.mock.calls[0][0]);
+    const url = (await mockFetch.sent(0)).url;
     for (const p of expectPresent) expect(url).toContain(p);
     for (const p of expectAbsent) expect(url).not.toContain(p);
   });
@@ -1047,7 +1051,7 @@ describe('MCP / kilns / notes / search', () => {
     const mockFetch = createMockFetch({ 'GET /api/fs/list': { body: listing } });
     global.fetch = mockFetch;
     expect(await listDir('/proj', 'src/web', true)).toEqual(listing);
-    const url = mockFetch.mock.calls[0][0] as string;
+    const url = (await mockFetch.sent(0)).url;
     expect(url).toContain('root=%2Fproj');
     expect(url).toContain('rel_path=src%2Fweb');
     expect(url).toContain('show_ignored=true');
@@ -1073,7 +1077,7 @@ describe('MCP / kilns / notes / search', () => {
     const mockFetch = createMockFetch({ 'GET /api/notes': { body: { notes: [] } } });
     global.fetch = mockFetch;
     await listNotes(kiln, pathFilter);
-    const url = String(mockFetch.mock.calls[0][0]);
+    const url = (await mockFetch.sent(0)).url;
     for (const p of expectPresent) expect(url).toContain(p);
     for (const p of expectAbsent) expect(url).not.toContain(p);
   });
@@ -1107,7 +1111,7 @@ describe('project endpoints', () => {
     global.fetch = mockFetch;
     const result = await registerProject('/p');
     expect(result).toEqual(project);
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ path: '/p' });
+    expect((await mockFetch.sent(0)).body).toEqual({ path: '/p' });
   });
 
   it('unregisterProject POSTs the path', async () => {
@@ -1116,7 +1120,7 @@ describe('project endpoints', () => {
     });
     global.fetch = mockFetch;
     await unregisterProject('/p');
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({ path: '/p' });
+    expect((await mockFetch.sent(0)).body).toEqual({ path: '/p' });
   });
 
   it('listProjects returns the array', async () => {
@@ -1182,7 +1186,7 @@ describe('file endpoints', () => {
     });
     global.fetch = mockFetch;
     await saveFileContent('/k/a.md', 'new content');
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
+    expect((await mockFetch.sent(0)).body).toEqual({
       path: '/k/a.md',
       content: 'new content',
     });
@@ -1202,7 +1206,7 @@ describe('saveFileIfUnchanged', () => {
 
     const answer = await saveFileIfUnchanged('/k/a.md', 'A\nB\nC\nD\n', 'h0', 'A\nB\nC\n');
 
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
+    expect((await mockFetch.sent(0)).body).toEqual({
       path: '/k/a.md',
       content: 'A\nB\nC\nD\n',
       base_hash: 'h0',
@@ -1216,7 +1220,7 @@ describe('saveFileIfUnchanged', () => {
     global.fetch = mockFetch;
 
     expect(await saveFileIfUnchanged('/k/a.md', 'mine', 'h0')).toEqual({ ok: true, content_hash: 'h2' });
-    expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string)).toEqual({
+    expect((await mockFetch.sent(0)).body).toEqual({
       path: '/k/a.md',
       content: 'mine',
       base_hash: 'h0',
@@ -1277,7 +1281,7 @@ describe('layout persistence (error-swallowing variants)', () => {
     });
     global.fetch = mockFetch;
     await saveLayout({ version: 1, root: null } as never);
-    expect(mockFetch.mock.calls[0][1]!.method).toBe('POST');
+    expect((await mockFetch.sent(0)).method).toBe('POST');
   });
 
   it('saveLayout swallows error and warns instead of throwing', async () => {
@@ -1311,7 +1315,7 @@ describe('layout persistence (error-swallowing variants)', () => {
     const mockFetch = createMockFetch({ 'DELETE /api/layout': { body: {} } });
     global.fetch = mockFetch;
     await resetLayout();
-    expect(mockFetch.mock.calls[0][1]!.method).toBe('DELETE');
+    expect((await mockFetch.sent(0)).method).toBe('DELETE');
   });
 
   it('resetLayout swallows error and warns', async () => {
@@ -1530,9 +1534,8 @@ describe('subscribeToEvents', () => {
 // that stops sending this stops working. It is NOT a credential: any script on
 // this origin can set it. See `routes/plugin_caller.rs`.
 
-function callerOf(mockFetch: ReturnType<typeof createMockFetch>): string | undefined {
-  const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
-  return (init?.headers as Record<string, string> | undefined)?.[PLUGIN_CALLER_HEADER];
+async function callerOf(mockFetch: ReturnType<typeof createMockFetch>): Promise<string | null> {
+  return (await mockFetch.sent(0)).headers.get(PLUGIN_CALLER_HEADER);
 }
 
 describe('caller identity', () => {
@@ -1542,7 +1545,7 @@ describe('caller identity', () => {
 
     await getConfig();
 
-    expect(callerOf(mockFetch)).toBe(APP_CALLER);
+    expect(await callerOf(mockFetch)).toBe(APP_CALLER);
   });
 
   it('carries the plugin a block declares, not the app', async () => {
@@ -1551,7 +1554,7 @@ describe('caller identity', () => {
 
     await runPluginCommand('kanban_move', {}, 'kanban');
 
-    expect(callerOf(mockFetch)).toBe('kanban');
+    expect(await callerOf(mockFetch)).toBe('kanban');
   });
 
   it('keeps the caller alongside a body content type rather than replacing it', async () => {
@@ -1560,10 +1563,9 @@ describe('caller identity', () => {
 
     await runPluginCommand('kanban_move', {}, 'kanban');
 
-    const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
-    const headers = init?.headers as Record<string, string>;
-    expect(headers['Content-Type']).toBe('application/json');
-    expect(headers[PLUGIN_CALLER_HEADER]).toBe('kanban');
+    const { headers } = await mockFetch.sent(0);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get(PLUGIN_CALLER_HEADER)).toBe('kanban');
   });
 
   it('reads publications as the plugin when a block asks', async () => {
@@ -1574,6 +1576,6 @@ describe('caller identity', () => {
 
     await getPluginPublications('kanban:board', 'kanban');
 
-    expect(callerOf(mockFetch)).toBe('kanban');
+    expect(await callerOf(mockFetch)).toBe('kanban');
   });
 });

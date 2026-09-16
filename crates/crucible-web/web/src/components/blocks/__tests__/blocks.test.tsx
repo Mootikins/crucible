@@ -143,17 +143,17 @@ describe('KanbanBlock', () => {
 
   function stubFetch(
     onCommand?: (body: unknown) => void,
-    onCaller?: (url: string, caller: string | undefined) => void,
+    onCaller?: (url: string, caller: string | null) => void,
   ) {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        onCaller?.(
-          String(url),
-          (init?.headers as Record<string, string> | undefined)?.['X-Crucible-Plugin'],
-        );
-        if (String(url).includes('/api/plugins/command')) {
-          onCommand?.(JSON.parse(String(init?.body ?? '{}')));
+      // The generated client hands `fetch` one `Request`, so the stub reads
+      // the URL, the headers and the body off that rather than off an init.
+      vi.fn(async (request: Request) => {
+        const url = request.url;
+        onCaller?.(url, request.headers.get('X-Crucible-Plugin'));
+        if (url.includes('/api/plugins/command')) {
+          onCommand?.(JSON.parse((await request.text()) || '{}'));
           return new Response(JSON.stringify({ result: { ok: true } }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
@@ -205,7 +205,7 @@ describe('KanbanBlock', () => {
   // Asserted, not proved: `props.plugin` is the fence's first line, so a note
   // author chose it. See `routes/plugin_caller.rs`.
   it('declares itself as the plugin it draws for on every call it makes', async () => {
-    const callers = new Map<string, string | undefined>();
+    const callers = new Map<string, string | null>();
     stubFetch(undefined, (url, caller) => {
       callers.set(url.includes('/command') ? 'command' : 'publications', caller);
     });
@@ -275,8 +275,8 @@ describe('PluginBlockPanel', () => {
   it('offers each declared command, with the effect the plugin declared', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+      vi.fn(async (request: Request) => {
+        const url = request.url;
         const body = url.includes('/api/plugins/commands')
           ? {
               commands: [

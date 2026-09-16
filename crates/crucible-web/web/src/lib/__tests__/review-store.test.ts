@@ -119,8 +119,12 @@ function reviewRoutes() {
     });
     return answers.get(session)!();
   };
+  // `undo-reject` and `comment/{id}/resolve` declare no request body, so the
+  // client sends none — the JSON content type rides alone to force the
+  // preflight. A write that sends nothing records an empty body.
   const write = (name: string) => async (request: Request) => {
-    wrote.push({ name, body: (await request.json()) as Record<string, unknown> });
+    const text = await request.text();
+    wrote.push({ name, body: text ? (JSON.parse(text) as Record<string, unknown>) : {} });
     return writeAnswers.get(name)?.() ?? { applied: [], failed: [] };
   };
 

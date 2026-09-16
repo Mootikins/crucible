@@ -38,11 +38,17 @@ export type MockFetchAnswer = MockFetchHandler | MockFetchRoute;
  * `body` is the parsed JSON body, or `undefined` when the call sent none.
  */
 export interface SentRequest {
+  /** The path alone, without the query. */
   path: string;
+  /** The path and the query, as the caller asked for them. */
+  url: string;
   query: URLSearchParams;
   method: string;
   headers: Headers;
+  /** The parsed JSON body, the raw text when it is not JSON, or `undefined`. */
   body: unknown;
+  /** The request's own abort signal, which follows the caller's. */
+  signal: AbortSignal;
 }
 
 /** What `createMockFetch` answers: a `fetch` a test can also question. */
@@ -112,10 +118,12 @@ async function sentPartsOf(request: Request): Promise<SentRequest> {
   }
   return {
     path: url.pathname,
+    url: `${url.pathname}${url.search}`,
     query: url.searchParams,
     method: request.method,
     headers: request.headers,
     body,
+    signal: request.signal,
   };
 }
 
