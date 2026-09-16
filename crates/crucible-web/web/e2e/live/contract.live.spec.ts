@@ -71,21 +71,12 @@ const plan: PlannedOperation[] = buildPlan(doc, values);
  * assertion never would.
  */
 const KNOWN_DEFECTS: Record<string, string> = {
-  // ajv, against the running daemon: `data/origins must be object`.
+  // Empty, and it stays empty until a route and the document disagree again.
   //
-  // The document declares `ConfigResponse.origins` an object. The route
-  // answers an ARRAY of origin rows, which is what its own field comment
-  // ("One row per recorded leaf") and its own Rust test
-  // (`routes/config.rs:224`, `assert!(parsed.origins.is_array())`) say it is.
-  // The field is a `serde_json::Value` (`routes/config.rs:42`), and utoipa
-  // projects a bare `Value` as `type: object`, so the document says the one
-  // thing the route never sends. A generated client reading `origins` gets an
-  // object type and an array at run time.
-  //
-  // The fix belongs to the config route, not to this sweep: give the field a
-  // declared `value_type` and regenerate the document.
-  'GET /api/config':
-    'ConfigResponse.origins is declared an object and answered as an array of origin rows',
+  // It held one entry: `ConfigResponse.origins` was declared an object and
+  // answered as an array of origin rows. The config route now declares the
+  // field as `Vec<ConfigOriginRow>`, so the document says `array` and this
+  // sweep validates `GET /api/config` for real.
 };
 
 const ajv = new Ajv2020({
