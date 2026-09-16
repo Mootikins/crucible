@@ -3,6 +3,7 @@ import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import {
   getBacklinks,
   getKilnGraph,
+  listFiles,
   listKilnNotes,
   listNotes,
   resolveNotePath,
@@ -134,6 +135,23 @@ function kilnNotesOptions(kiln: string) {
 }
 
 /**
+ * The options of one kiln's file list.
+ *
+ * `/api/kiln/files` answers every file in the kiln, notes and the rest; the
+ * `@` completion offers that list, and the note list beside it. It takes the
+ * short window its sibling takes, for the same reason: the list exists to
+ * coalesce the burst of asks one person makes while typing, and a file that
+ * appears while the composer is open must reach the next trigger.
+ */
+function kilnFilesOptions(kiln: string) {
+  return {
+    queryKey: keys.kilnFiles(kiln),
+    queryFn: () => listFiles(kiln),
+    staleTime: KILN_NOTES_STALE_MS,
+  };
+}
+
+/**
  * One kiln's note index.
  *
  * The kiln is an accessor because the browsed kiln is a control the user
@@ -191,7 +209,7 @@ export function fetchResolvedNoteOnce(kiln: string, name: string): Promise<Resol
 /** Drops every held resolution, whatever kiln it belongs to. The test seam. */
 export function invalidateResolvedNotes(): Promise<void> {
   return getQueryClient()
-    .invalidateQueries({ queryKey: ['notes', 'resolve'] })
+    .invalidateQueries({ queryKey: keys.notesResolvePrefix() })
     .then(() => undefined);
 }
 
@@ -277,4 +295,26 @@ export function useListKilnNotes(
  */
 export function fetchKilnNotesOnce(kiln: string): Promise<FileEntry[]> {
   return getQueryClient().fetchQuery(kilnNotesOptions(kiln));
+}
+
+/** One kiln's files, as the `@` completion reads them. */
+export function useListKilnFiles(
+  kiln: Accessor<string | null>,
+): UseQueryResult<FileEntry[], Error> {
+  return useQuery(() => {
+    const asked = kiln();
+    return { ...kilnFilesOptions(asked ?? ''), enabled: asked !== null };
+  }, getQueryClient);
+}
+
+/**
+ * One kiln's files, as a promise.
+ *
+ * The chat autocomplete loads on a trigger character rather than on a render,
+ * and it asks for the files and the notes together. Both reads now go through
+ * this module, so a second trigger inside the freshness window asks the daemon
+ * for neither.
+ */
+export function fetchKilnFilesOnce(kiln: string): Promise<FileEntry[]> {
+  return getQueryClient().fetchQuery(kilnFilesOptions(kiln));
 }

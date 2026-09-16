@@ -66,10 +66,18 @@ export const keys = {
   notesList: (kiln: string) => ['notes', 'list', kiln] as const,
   notesResolve: (kiln: string, name: string) =>
     ['notes', 'resolve', kiln, name] as const,
+  // Every held resolution, whatever kiln it belongs to. It is a factory like
+  // the rest, because an invalidation that spells its own prefix is a literal
+  // that no rename of `notesResolve` can reach.
+  notesResolvePrefix: () => ['notes', 'resolve'] as const,
   notesBacklinks: (kiln: string, note: string) =>
     ['notes', 'backlinks', kiln, note] as const,
   notesGraph: (kiln: string) => ['notes', 'graph', kiln] as const,
   notesKiln: (kiln: string) => ['notes', 'kiln', kiln] as const,
+  // `/api/kiln/files` is the sibling of `/api/kiln/notes`, so it keys into
+  // the `notes` family: the filesystem stream drops a kiln's held answers
+  // by walking that family, and a key outside it would never be dropped.
+  kilnFiles: (kiln: string) => ['notes', 'kiln-files', kiln] as const,
   canvas: (path: string) => ['canvas', path] as const,
   searchSemantic: (kiln: string, q: string) =>
     ['search', 'semantic', kiln, q] as const,

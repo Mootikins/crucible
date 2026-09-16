@@ -7,12 +7,15 @@ import {
   KILN_NOTES_STALE_MS,
   MISS_STALE_MS,
   invalidateNotesUnder,
+  invalidateResolvedNotes,
+  fetchKilnFilesOnce,
   fetchKilnNotesOnce,
   fetchNotesOnce,
   fetchResolvedNoteOnce,
   invalidateNotes,
   useGetBacklinks,
   useGetKilnGraph,
+  useListKilnFiles,
   useListKilnNotes,
   useListNotes,
   useResolveNotePath,
@@ -67,6 +70,7 @@ function noteRoutes() {
     },
     'GET /api/backlinks': record('backlinks', 'note'),
     'GET /api/kiln/notes': record('kilnNotes', 'kiln'),
+    'GET /api/kiln/files': record('kilnFiles', 'kiln'),
     'GET /api/kiln/graph': record('graph', 'kiln'),
   };
 }
@@ -80,6 +84,8 @@ function answerOf(route: string, name: string): unknown {
       return { linked: [{ abs_path: `${KILN}/${name}` }], unlinked: [] };
     case 'kilnNotes':
       return { files: [{ name: 'A', path: 'A.md' }] };
+    case 'kilnFiles':
+      return { files: [{ name: 'B', path: 'B.png' }] };
     default:
       return { nodes: [], edges: [] };
   }
@@ -317,6 +323,90 @@ describe('useListKilnNotes', () => {
     expect(countOf('kilnNotes')).toBe(2);
   });
 
+});
+
+describe('useListKilnFiles', () => {
+  /**
+   * The composer's `@` completion asked `/api/kiln/files` straight through
+   * `lib/api`, so it held its own copy of the list and asked again on every
+   * kiln change. It reads the shared entry now.
+   */
+  it('asks once for the panel and the autocomplete together', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    const query = inRoot(() => useListKilnFiles(() => KILN));
+    await waitFor(() => expect(query.data).toBeDefined());
+    await fetchKilnFilesOnce(KILN);
+
+    expect(countOf('kilnFiles')).toBe(1);
+  });
+
+  it('holds a kiln apart from another kiln', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchKilnFilesOnce(KILN);
+    const other = await fetchKilnFilesOnce(OTHER);
+
+    expect(countOf('kilnFiles')).toBe(2);
+    expect(asked.filter((seen) => seen.route === 'kilnFiles').map((seen) => seen.kiln)).toEqual([
+      KILN,
+      OTHER,
+    ]);
+    expect(other).toHaveLength(1);
+  });
+
+  it('goes stale on the completion window, not the app-wide one', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await fetchKilnFilesOnce(KILN);
+    vi.setSystemTime(Date.now() + KILN_NOTES_STALE_MS + 1);
+    await fetchKilnFilesOnce(KILN);
+
+    expect(countOf('kilnFiles')).toBe(2);
+  });
+
+  // The key lives in the `notes` family, so the filesystem stream's walk of
+  // that family reaches it. A key outside the family is never dropped.
+  it('is dropped when a note is written in its kiln', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchKilnFilesOnce(KILN);
+
+    await invalidateNotesUnder([`${KILN}/Ghost.md`]);
+    await fetchKilnFilesOnce(KILN);
+
+    expect(countOf('kilnFiles')).toBe(2);
+  });
+});
+
+describe('invalidateResolvedNotes', () => {
+  /**
+   * The seam that drops every held resolution, whatever kiln it belongs to.
+   *
+   * It names the resolver's key PREFIX, and it is the only reader of that
+   * prefix, so the prefix is a factory in `keys.ts` beside the key it heads.
+   * Spelled as a literal here it drifted silently: a rename of the key left
+   * this call naming nothing, and nothing failed.
+   */
+  it('drops the resolutions of every kiln, and nothing else', async () => {
+    env = createTestQueryEnv(noteRoutes());
+
+    await fetchResolvedNoteOnce(KILN, 'Rust');
+    await fetchResolvedNoteOnce(OTHER, 'Rust');
+    await fetchNotesOnce(KILN);
+    expect(countOf('resolve')).toBe(2);
+
+    await invalidateResolvedNotes();
+
+    await fetchResolvedNoteOnce(KILN, 'Rust');
+    await fetchResolvedNoteOnce(OTHER, 'Rust');
+    await fetchNotesOnce(KILN);
+    expect(countOf('resolve')).toBe(4);
+    // The index is a sibling under the same family head; the prefix must not
+    // reach it, or one dropped resolution is a refetch of every note list.
+    expect(countOf('notes')).toBe(1);
+  });
 });
 
 describe('invalidateNotesUnder', () => {

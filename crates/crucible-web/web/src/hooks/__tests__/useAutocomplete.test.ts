@@ -138,6 +138,26 @@ describe('useAutocomplete slash commands', () => {
     });
   });
 
+  // The `@` list used to call `listFiles` straight through `lib/api`, so each
+  // composer held its own copy and asked the daemon again. Both lists read
+  // `lib/query/notes.ts` now, so two composers in one kiln cost one GET each.
+  it('fetches the kiln files and notes once for every composer', async () => {
+    await createRoot(async (dispose) => {
+      files = [{ name: 'One.md', path: 'One.md' } as FileEntry];
+      notes = [{ name: 'Two.md', path: 'Two.md' } as FileEntry];
+
+      const first = harness();
+      await first.type('@');
+      const second = harness();
+      await second.type('@O');
+
+      expect(second.auto.isOpen()).toBe(true);
+      expect(env.fetch.calls('GET /api/kiln/files')).toBe(1);
+      expect(env.fetch.calls('GET /api/kiln/notes')).toBe(1);
+      dispose();
+    });
+  });
+
   it('narrows the list as the command name is typed', async () => {
     await createRoot(async (dispose) => {
       const { auto, type } = harness();

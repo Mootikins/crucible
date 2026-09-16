@@ -2,9 +2,19 @@ import { createRoot, getOwner, onCleanup } from 'solid-js';
 import { createEmitter, type Emitter } from '@solid-primitives/event-bus';
 
 /**
- * The payload of each typed event. The 15 events replace the 15 `crucible:*`
- * window CustomEvents of the Part B2 table; the name of each one is the
- * camelCase form of the window event it replaces.
+ * The payload of each typed event.
+ *
+ * Four events, and they are the DATA events: `authOk` and `authRequired` from
+ * the API client, `interactionResolved` from the interactions cache, and
+ * `sessionTitleChanged` from the session stream. Each one reports that
+ * something on the server changed, and each one is emitted by a module that no
+ * component owns.
+ *
+ * The other eleven `crucible:*` window CustomEvents of the Part B2 table stay
+ * on `window`. They are UI COMMANDS — open the palette, open a file, clear the
+ * chat — and the browser specs drive them through `page.evaluate`, which
+ * reaches `window.dispatchEvent` and cannot reach a module singleton. They move
+ * here when a bridge exists that gives a spec the bus.
  *
  * `Record<string, never>` marks an event that carries no data. The window
  * CustomEvent carried no `detail` either, so a caller must write `{}`.
@@ -12,19 +22,8 @@ import { createEmitter, type Emitter } from '@solid-primitives/event-bus';
 export type BusEvents = {
   authOk: Record<string, never>;
   authRequired: Record<string, never>;
-  clearChat: Record<string, never>;
-  exportSession: Record<string, never>;
-  focusSearch: Record<string, never>;
-  focusSessionSearch: Record<string, never>;
   interactionResolved: { sessionId: string; requestId: string };
-  newSession: { workspace?: string };
-  openCommandPalette: { mode?: 'commands' | 'notes' };
-  openFile: { path: string; name?: string };
-  openSession: { sessionId: string; title: string };
-  openSettings: Record<string, never>;
   sessionTitleChanged: { sessionId: string; title: string };
-  switchModel: Record<string, never>;
-  toggleHiddenFiles: Record<string, never>;
 };
 
 /** A handler of one event. The type of its payload comes from `BusEvents`. */
@@ -136,8 +135,8 @@ export function createBus(): Bus {
 }
 
 /**
- * The module singleton. Every dispatch site and every listener site of the
- * Part B2 table reads this one bus, the way they all read one `window` before.
+ * The module singleton. Every emitter and every listener of the four events
+ * above reads this one bus, the way they all read one `window` before.
  */
 const moduleBus = createBus();
 

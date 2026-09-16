@@ -74,7 +74,7 @@ describe('withQueryClient', () => {
 
   it('removes every bus handler the body added', async () => {
     await withQueryClient(async () => {
-      getBus().on('openSettings', vi.fn());
+      getBus().on('authOk', vi.fn());
       expect(getBus().handlerCount()).toBe(1);
     });
 

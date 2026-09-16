@@ -1,6 +1,5 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
-import { listFiles } from '@/lib/api';
-import { fetchKilnNotesOnce } from '@/lib/query/notes';
+import { fetchKilnFilesOnce, fetchKilnNotesOnce } from '@/lib/query/notes';
 import { fetchSlashCommandsOnce } from '@/lib/query/commands';
 import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
@@ -161,10 +160,13 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     }
     if (loadedKiln() === kiln) return;
 
-    // The notes come from the shared entry the link completion reads, so a
+    // Both lists come from the shared entries the link completion reads, so a
     // composer and an open editor in one kiln ask the daemon once between
-    // them. The file list has no key of its own yet and stays a plain read.
-    const [files, notes] = await Promise.all([listFiles(kiln), fetchKilnNotesOnce(kiln)]);
+    // them, and a second trigger inside the freshness window asks for neither.
+    const [files, notes] = await Promise.all([
+      fetchKilnFilesOnce(kiln),
+      fetchKilnNotesOnce(kiln),
+    ]);
     const fileOptions = toAutocompleteItems(files, 'file');
     const noteOptions = toAutocompleteItems(notes, 'note');
     setFileItems([...fileOptions, ...noteOptions]);
