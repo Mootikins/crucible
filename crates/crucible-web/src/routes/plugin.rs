@@ -367,6 +367,11 @@ pub(crate) struct PluginCommandsResponse {
 #[utoipa::path(
     get,
     path = "/api/plugins/commands",
+    // Not the default `list_commands`: `GET /api/commands` takes that name, and
+    // an operation id must be unique in the document. Two operations sharing
+    // one id give the generated TypeScript ONE of the two shapes for both
+    // routes, so this route's reply was typed as the slash-command list.
+    operation_id = "list_plugin_commands",
     responses(
         (status = 200, body = PluginCommandsResponse),
         (status = 502, description = "The daemon could not list the commands, or answered a shape this route cannot read"),

@@ -180,7 +180,7 @@ pub(super) struct SessionAgentRow {
     mode: Option<String>,
     /// Every other field of the daemon's agent record, carried verbatim.
     #[serde(flatten)]
-    #[schema(value_type = Object)]
+    #[schema(value_type = HashMap<String, serde_json::Value>)]
     rest: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -458,7 +458,7 @@ struct CreateSessionRequest {
     /// object → override. Forwarded to the daemon untouched — the vocabulary
     /// belongs to the plugin that resolves it, and an unknown profile comes
     /// back as `-32602`, which `daemon_err` turns into a 422.
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<serde_json::Value>)]
     isolation: Option<serde_json::Value>,
 }
 

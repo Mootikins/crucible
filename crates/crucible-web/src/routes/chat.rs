@@ -138,7 +138,7 @@ struct PendingInteraction {
     /// interaction kind — a permission request carries `tokens` and maybe
     /// `diffs`, an ask carries the question's own fields — and the kinds are
     /// the daemon's to add to. `kind` tells the browser which one it has.
-    #[schema(value_type = Object)]
+    #[schema(value_type = HashMap<String, serde_json::Value>)]
     request: serde_json::Value,
 }
 
@@ -202,7 +202,7 @@ struct InteractionResponseRequest {
     /// Open, because the vocabulary belongs to the daemon's interaction types
     /// and an unreadable answer must come back as this route's 400 naming the
     /// deserialiser's own complaint, not as axum's plain-text rejection.
-    #[schema(value_type = Object)]
+    #[schema(value_type = serde_json::Value)]
     response: serde_json::Value,
 }
 

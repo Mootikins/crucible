@@ -27,7 +27,7 @@ struct ConfigResponse {
     /// the terminal panel connects from LAN clients only when this is true.
     remote_shell: bool,
     /// The daemon's effective config, whole and unrewritten.
-    #[schema(value_type = Object)]
+    #[schema(value_type = HashMap<String, serde_json::Value>)]
     config: serde_json::Value,
     /// Where `init.lua` and `settings.json` live, so a lock can offer a jump
     /// to the file that holds a key. Absent when the daemon booted from a
@@ -46,7 +46,7 @@ struct ConfigResponse {
     /// `config.controls` gives it: `{options, read_only}`. Served here rather
     /// than from a second endpoint because a control and the value it shows
     /// are one screen, and two fetches could disagree about which keys exist.
-    #[schema(value_type = Object)]
+    #[schema(value_type = HashMap<String, serde_json::Value>)]
     controls: serde_json::Value,
 }
 
@@ -56,7 +56,7 @@ struct ConfigResponse {
 /// hold, so the map stays open: which leaves exist is the daemon's answer.
 #[derive(Debug, Deserialize, ToSchema)]
 struct SaveRequest {
-    #[schema(value_type = Object)]
+    #[schema(value_type = HashMap<String, serde_json::Value>)]
     values: serde_json::Map<String, serde_json::Value>,
 }
 

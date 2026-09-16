@@ -1271,7 +1271,7 @@
       "get": {
         "summary": "`GET /api/plugins/commands` — the executable primitives plugins declared.",
         "description": "Each entry carries `plugin`, `name`, `description`, `hint`, `parameters`\nand `effect`. The names are read, so the browser is told what a row holds;\n`parameters` is passed through verbatim, so a caller offering a command as\na button — with a dialog built from the declared parameters — needs no\nchange on this side when a plugin ships a new one.\n\n`parameters` crosses as opaque JSON today. It comes from the same\n`ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON\nSchema output is what would let a dialog be generated rather than\nhand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.",
-        "operationId": "list_commands",
+        "operationId": "list_plugin_commands",
         "responses": {
           "200": {
             "description": "",
@@ -4952,7 +4952,11 @@
           },
           "config": {
             "type": "object",
-            "description": "The daemon's effective config, whole and unrewritten."
+            "description": "The daemon's effective config, whole and unrewritten.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "config_root": {
             "type": [
@@ -4970,7 +4974,11 @@
           },
           "controls": {
             "type": "object",
-            "description": "The declared control tree the settings UI renders, as\n`config.controls` gives it: `{options, read_only}`. Served here rather\nthan from a second endpoint because a control and the value it shows\nare one screen, and two fetches could disagree about which keys exist."
+            "description": "The declared control tree the settings UI renders, as\n`config.controls` gives it: `{options, read_only}`. Served here rather\nthan from a second endpoint because a control and the value it shows\nare one screen, and two fetches could disagree about which keys exist.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -5077,10 +5085,6 @@
             "description": "Internal-agent card name; never resolved in the web layer."
           },
           "isolation": {
-            "type": [
-              "object",
-              "null"
-            ],
             "description": "Isolation override: absent → resolve normally; `false` → no container\neven if the project has one; `true`, a profile name or an environment\nobject → override. Forwarded to the daemon untouched — the vocabulary\nbelongs to the plugin that resolves it, and an unknown profile comes\nback as `-32602`, which `daemon_err` turns into a 422."
           }
         }
@@ -5840,7 +5844,6 @@
             "type": "string"
           },
           "response": {
-            "type": "object",
             "description": "The answer, in the kind-tagged shape `InteractionResponse` takes.\n\nOpen, because the vocabulary belongs to the daemon's interaction types\nand an unreadable answer must come back as this route's 400 naming the\ndeserialiser's own complaint, not as axum's plain-text rejection."
           }
         }
@@ -6434,7 +6437,11 @@
           },
           "request": {
             "type": "object",
-            "description": "The request, in the flat shape the SSE path delivers.\n\nDeliberately open: `normalize_interaction` writes one object per\ninteraction kind — a permission request carries `tokens` and maybe\n`diffs`, an ask carries the question's own fields — and the kinds are\nthe daemon's to add to. `kind` tells the browser which one it has."
+            "description": "The request, in the flat shape the SSE path delivers.\n\nDeliberately open: `normalize_interaction` writes one object per\ninteraction kind — a permission request carries `tokens` and maybe\n`diffs`, an ask carries the question's own fields — and the kinds are\nthe daemon's to add to. `kind` tells the browser which one it has.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -7776,7 +7783,11 @@
         ],
         "properties": {
           "values": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
           }
         }
       },
@@ -7911,32 +7922,27 @@
         }
       },
       "SessionAgentRow": {
-        "allOf": [
-          {
-            "type": "object",
-            "description": "Every other field of the daemon's agent record, carried verbatim."
-          },
-          {
-            "type": "object",
-            "required": [
-              "model"
-            ],
-            "properties": {
-              "model": {
-                "type": "string",
-                "description": "The model this session's agent runs."
-              },
-              "mode": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "The session mode id. Absent when the session is in the normal mode."
-              }
-            }
-          }
+        "type": "object",
+        "description": "The agent record `session.get` nests inside a session.\n\nTwo fields are named because a client reads them: `model`, which\n`session.list` sends flat as `agent_model`, and `mode`. Every other field\nof the daemon's record rides in `rest`, so this projection narrows what the\ndocument describes without dropping anything from the reply.",
+        "required": [
+          "model"
         ],
-        "description": "The agent record `session.get` nests inside a session.\n\nTwo fields are named because a client reads them: `model`, which\n`session.list` sends flat as `agent_model`, and `mode`. Every other field\nof the daemon's record rides in `rest`, so this projection narrows what the\ndocument describes without dropping anything from the reply."
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The model this session's agent runs."
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session mode id. Absent when the session is in the normal mode."
+          }
+        },
+        "additionalProperties": {
+          "description": "Every other field of the daemon's agent record, carried verbatim."
+        }
       },
       "SessionHistoryEvent": {
         "type": "object",

@@ -705,7 +705,7 @@ export interface paths {
          *     Schema output is what would let a dialog be generated rather than
          *     hand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.
          */
-        get: operations["list_commands"];
+        get: operations["list_plugin_commands"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2324,7 +2324,9 @@ export interface components {
          */
         ConfigResponse: {
             /** @description The daemon's effective config, whole and unrewritten. */
-            config: Record<string, never>;
+            config: {
+                [key: string]: unknown;
+            };
             /**
              * @description Where `init.lua` and `settings.json` live, so a lock can offer a jump
              *     to the file that holds a key. Absent when the daemon booted from a
@@ -2337,7 +2339,9 @@ export interface components {
              *     than from a second endpoint because a control and the value it shows
              *     are one screen, and two fetches could disagree about which keys exist.
              */
-            controls: Record<string, never>;
+            controls: {
+                [key: string]: unknown;
+            };
             kiln_path: string;
             /**
              * @description One row per recorded leaf, as `config.origin` gives them. The flat
@@ -2398,7 +2402,7 @@ export interface components {
              *     belongs to the plugin that resolves it, and an unknown profile comes
              *     back as `-32602`, which `daemon_err` turns into a 422.
              */
-            isolation?: Record<string, never> | null;
+            isolation?: unknown;
             /**
              * @description The session's kiln set by registry NAME — flat, no member privileged.
              *     Empty or omitted is a literal empty set, NOT a request for a default:
@@ -2766,7 +2770,7 @@ export interface components {
              *     and an unreadable answer must come back as this route's 400 naming the
              *     deserialiser's own complaint, not as axum's plain-text rejection.
              */
-            response: Record<string, never>;
+            response: unknown;
             session_id: string;
         };
         /** @description What `GET /api/kiln/file` answers. */
@@ -3104,7 +3108,9 @@ export interface components {
              *     `diffs`, an ask carries the question's own fields — and the kinds are
              *     the daemon's to add to. `kind` tells the browser which one it has.
              */
-            request: Record<string, never>;
+            request: {
+                [key: string]: unknown;
+            };
             /** @description The identifier an answer must carry back. */
             request_id: string;
             /** @description The session that asked. */
@@ -3827,7 +3833,9 @@ export interface components {
          *     hold, so the map stays open: which leaves exist is the daemon's answer.
          */
         SaveRequest: {
-            values: Record<string, never>;
+            values: {
+                [key: string]: unknown;
+            };
         };
         /** @description Response for the `scm.clone` RPC. */
         ScmCloneResponse: {
@@ -3899,11 +3907,13 @@ export interface components {
          *     of the daemon's record rides in `rest`, so this projection narrows what the
          *     document describes without dropping anything from the reply.
          */
-        SessionAgentRow: Record<string, never> & {
+        SessionAgentRow: {
             /** @description The session mode id. Absent when the session is in the normal mode. */
             mode?: string | null;
             /** @description The model this session's agent runs. */
             model: string;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * @description One persisted session event, as `session.resume_from_storage` replays it.
@@ -6098,7 +6108,7 @@ export interface operations {
             };
         };
     };
-    list_commands: {
+    list_plugin_commands: {
         parameters: {
             query?: never;
             header?: never;
