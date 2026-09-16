@@ -40,15 +40,18 @@ vi.mock('@/contexts/ChatContext', () => ({
   }),
 }));
 
+// `null` is the daemon's "floating" (no-workspace) state. It used to be
+// spelled `workspace == kilns[0]`, which this side had to re-derive. A test
+// that needs the session's OWN scratch folder sets this instead.
+let workspace: string | null = null;
+
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
     currentSession: () => ({
       id: 'test-session',
       state: 'active',
       kilns: ['/tmp/test-kiln'],
-      // `null` is the daemon's "floating" (no-workspace) state. It used to be
-      // spelled `workspace == kilns[0]`, which this side had to re-derive.
-      workspace: null,
+      workspace,
       agent_model: 'test-model',
     }),
     cancelCurrentOperation: mockCancelCurrentOperation,
@@ -120,6 +123,7 @@ vi.mock('@/lib/review-api', () => ({
 afterEach(() => {
   cleanup();
   setPending(null);
+  workspace = null;
 });
 
 describe('ChatInput', () => {
@@ -246,6 +250,9 @@ describe('ChatInput — the prompt carries only the message', () => {
     }
   });
 
+  // PRIORITY produces this order, not the order `liveChips` lists them in:
+  // the scope chips come from a hook that states 30 and 40, so a model or a
+  // mode without a priority of its own would sort behind both of them.
   it('draws the shared chip row BELOW the capsule: model, mode, then the scope', () => {
     render(() => <ChatInput />);
     const row = screen.getByTestId('composer-chip-row');
@@ -316,5 +323,17 @@ describe('ChatInput — session context chips', () => {
   it('floating session (workspace: null) reads "Session folder" for the project chip', () => {
     render(() => <ChatInput />);
     expect(screen.getByTestId('scope-project').textContent).toContain('Session folder');
+  });
+
+  // An ephemeral session DOES have a workspace — its own scratch folder,
+  // named after the session id. The chip must not wear that id: it is the
+  // longest string on the row and it names nothing the reader can use.
+  it('an ephemeral session reads "Session folder" too, keeping the path in the title', () => {
+    workspace = '/data/workspaces/test-session';
+    render(() => <ChatInput />);
+    const chip = screen.getByTestId('scope-project');
+    expect(chip.textContent).toContain('Session folder');
+    expect(chip.textContent).not.toContain('test-session');
+    expect(chip.getAttribute('title')).toBe('/data/workspaces/test-session');
   });
 });

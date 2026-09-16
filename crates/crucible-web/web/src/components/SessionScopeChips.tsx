@@ -63,9 +63,20 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
 
   // ---- workspace (project) chip -------------------------------------------
   // No project → the session keeps its own scratch folder.
+  //
+  // An ephemeral session HAS a workspace: the daemon gives it
+  // `<session_scratch_dir>/<id>`, whose basename is the session id. Showing
+  // that made the widest chip on the row a 36-character identifier naming a
+  // directory nobody types — it pushed every other chip off a narrow pane and
+  // said nothing when it fitted. So a folder the session owns reads as one,
+  // and the title still carries the full path, id included.
   const projectLabel = () => {
     const ws = workspace();
-    return (ws && pathBasename(ws)) || 'Session folder';
+    if (!ws) return 'Session folder';
+    const base = pathBasename(ws);
+    const id = session()?.id;
+    if (!base || (id && base === id)) return 'Session folder';
+    return base;
   };
 
   // ---- kiln chip (one flat multi-select) ----------------------------------
@@ -155,6 +166,10 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
     return [
       {
         key: 'project',
+        // Where the session acts outranks what it knows: a session in the
+        // wrong folder is a different mistake from one missing a kiln. Both
+        // sit after the model and the mode, which the live composer adds.
+        priority: 30,
         label: 'Project',
         value: projectLabel(),
         // The title carries the full path, as the kiln rows carry theirs.
@@ -165,6 +180,7 @@ export function useSessionScopeChips(): Accessor<ComposerChip[]> {
       },
       {
         key: 'kiln',
+        priority: 40,
         label: 'Kiln',
         value: kilnChipValue(),
         valueLabel: kilnTriggerLabel(),

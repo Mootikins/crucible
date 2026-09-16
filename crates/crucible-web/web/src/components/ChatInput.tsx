@@ -130,10 +130,18 @@ export const ChatInput: Component = () => {
    * detach mid-session, Crucible Shell design 4a/5a) and the plugin status
    * chips (review policy and the like). The same row the draft draws, with
    * fewer and simpler chips.
+   *
+   * Each entry states a `priority`, which is both the draw order and the
+   * order the row folds them in when the pane is too narrow to hold them.
    */
   const liveChips = (): ComposerChip[] => [
     {
       key: 'model',
+      // The row folds from the right when the pane narrows, so the two
+      // controls a user reaches for mid-turn go first. The scope chips state
+      // 30 and 40 in `useSessionScopeChips`; the status chips report rather
+      // than set, so they are the first to fold.
+      priority: 10,
       label: 'Model',
       value: currentSession()?.agent_model ?? '',
       options: availableModels().map((m) => ({ value: m, label: formatModelDisplay(m) })),
@@ -142,9 +150,9 @@ export const ChatInput: Component = () => {
       testid: 'model-picker-button',
       select: { placeholder: currentModel(), optionTestidPrefix: 'model-option' },
     },
-    { key: 'mode', label: 'Mode', value: chatMode(), render: 'mode' },
+    { key: 'mode', priority: 20, label: 'Mode', value: chatMode(), render: 'mode' },
     ...scopeChips(),
-    { key: 'status', label: 'Status', value: '', render: 'custom', element: statusChips },
+    { key: 'status', priority: 90, label: 'Status', value: '', render: 'custom', element: statusChips },
   ];
 
   return (

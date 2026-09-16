@@ -190,10 +190,19 @@ describe('CenterComposer', () => {
       expect(surface.contains(getByTestId(id)), `${id} is inside the capsule`).toBe(false);
       expect(row.contains(getByTestId(id)), `${id} is off the row`).toBe(true);
     }
+    // PRIORITY decides the order, not the order `draftChips` lists them in:
+    // the model is declared last and drawn first, the runtime is declared in
+    // the middle and folds first. The row folds from the right.
     const order = Array.from(row.querySelectorAll('[data-testid]')).map((e) =>
       e.getAttribute('data-testid'),
     );
-    expect(ids.map((id) => order.indexOf(id))).toEqual([...ids.map((id) => order.indexOf(id))].sort((a, b) => a - b));
+    expect(order.filter((id) => ids.includes(id ?? ''))).toEqual([
+      'composer-model',
+      'composer-kiln',
+      'composer-project',
+      'composer-agent',
+      'composer-target',
+    ]);
   });
 
   it('reads every untouched axis as its default, marked as such', async () => {

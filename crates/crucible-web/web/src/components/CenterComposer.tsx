@@ -539,9 +539,20 @@ export const CenterComposer: Component<{
   const bareDefault = (label: string) =>
     label === 'Project default' ? undefined : label.replace(/ · default$/, '');
 
+  /**
+   * The draft's chip row, as data.
+   *
+   * `priority` is the draw order AND the fold order: the row shows as many
+   * whole chips as its width holds and folds the rest into its `+N` button,
+   * from the right. So the two axes a user changes most (the model, the
+   * kiln) lead, and the two the project already answers for (the workspace
+   * target, the runtime) are the first to go. The list below is grouped by
+   * subject rather than by priority, which is why each entry says its own.
+   */
   const draftChips = (): ComposerChip[] => [
     {
       key: 'kiln',
+      priority: 20,
       label: 'Kiln',
       value: kiln(),
       defaultLabel: defaultKilnName() ?? 'No kiln',
@@ -553,6 +564,7 @@ export const CenterComposer: Component<{
     },
     {
       key: 'project',
+      priority: 30,
       label: 'Project',
       value: workspace(),
       defaultLabel: cloning() ? 'Cloning…' : 'Session folder',
@@ -584,6 +596,7 @@ export const CenterComposer: Component<{
       ? [
           {
             key: 'workspaceTarget',
+            priority: 50,
             label: 'Workspace',
             value: wsTarget(),
             // The actual default and not the axis name: the chip already
@@ -604,6 +617,7 @@ export const CenterComposer: Component<{
       : []),
     {
       key: 'runtime',
+      priority: 60,
       label: 'Run on',
       value: runtime(),
       defaultLabel: bareDefault(defaultRuntimeLabel()),
@@ -621,6 +635,7 @@ export const CenterComposer: Component<{
     },
     {
       key: 'agent',
+      priority: 40,
       label: 'Agent',
       value: agentName(),
       defaultLabel: 'Internal agent',
@@ -637,6 +652,7 @@ export const CenterComposer: Component<{
       : [
           {
             key: 'model',
+            priority: 10,
             label: 'Model',
             value: model(),
             defaultLabel: defaultModel() || 'Auto',

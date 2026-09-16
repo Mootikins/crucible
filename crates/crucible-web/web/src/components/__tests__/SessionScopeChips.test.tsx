@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, waitFor, fireEvent, screen, within } from '@solidjs/testing-library';
 import { useSessionScopeChips } from '../SessionScopeChips';
-import { ChipRow } from '@/components/composer/ChipRow';
+import { ChipRow, type ComposerChip } from '@/components/composer/ChipRow';
 import type { Session } from '@/lib/types';
 
 /** The chips as the live composer draws them: on the shared row. */
@@ -77,6 +77,38 @@ describe('SessionScopeChips', () => {
     render(() => <SessionScopeChips />);
     expect(screen.getByTestId('scope-project').textContent).not.toContain('Project ·');
     expect(screen.getByTestId('scope-kiln').textContent).not.toContain('Kiln ·');
+  });
+
+  // An ephemeral session runs in `<session_scratch_dir>/<id>`, so the
+  // basename IS the session id — 36 characters of nothing a reader can use,
+  // and the widest chip on the row. It reads as what it is instead, and the
+  // id stays in the title for whoever needs the actual directory.
+  it("an ephemeral session's own folder reads as one, with the path in the title", () => {
+    const id = 'chat-8f2c1a04-77bd-4c19-9a13-2b6e5d0f41aa';
+    mockSession = { ...baseSession(), id, workspace: `/data/workspaces/${id}` };
+    render(() => <SessionScopeChips />);
+    const chip = screen.getByTestId('scope-project');
+    expect(chip.textContent).toContain('Session folder');
+    expect(chip.textContent).not.toContain(id);
+    expect(chip.getAttribute('title')).toBe(`/data/workspaces/${id}`);
+  });
+
+  // Priority, not list order, decides which chips survive a narrowing pane.
+  // The row folds from the right, so the scope chips have to say where they
+  // sit among the model and mode chips the live composer adds around them.
+  it('states where each chip sits on the row', () => {
+    mockSession = baseSession();
+    let captured: ComposerChip[] = [];
+    const Probe = () => {
+      const chips = useSessionScopeChips();
+      captured = chips();
+      return null;
+    };
+    render(() => <Probe />);
+    expect(captured.map((c) => [c.key, c.priority])).toEqual([
+      ['project', 30],
+      ['kiln', 40],
+    ]);
   });
 
   // A session's project is fixed at creation (the daemon refuses

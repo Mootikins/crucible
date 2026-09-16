@@ -70,6 +70,15 @@ export const ChipSelect: Component<{
   icon?: Component<{ class?: string }>;
   /** Replace the default quiet-chip trigger classes (e.g. a bordered field). */
   triggerClass?: string;
+  /**
+   * `false` lets the trigger be exactly as wide as its text.
+   *
+   * The composer row folds WHOLE chips into its `+N` button rather than
+   * clipping them, so a chip there must state its natural width or the row
+   * has nothing to measure. A caller that caps its own width (the file
+   * tree's root picker) keeps the default and keeps the ellipsis.
+   */
+  truncate?: boolean;
   /** Called when the popout opens (lazy data loads hook in here). */
   onOpen?: () => void;
   /** Offer creating from the filter text when it matches no option exactly
@@ -427,7 +436,9 @@ export const ChipSelect: Component<{
         onClick={() => (open() ? close() : openPopout())}
         classList={{
           [props.triggerClass ??
-          'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]']: true,
+          (props.truncate === false
+            ? 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors whitespace-nowrap'
+            : 'group/chip inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs transition-colors max-w-[220px]')]: true,
           'text-shell-body hover:bg-hover-wash': !props.triggerClass && !open(),
           'bg-hover-wash text-shell-ink': !props.triggerClass && open(),
           'opacity-50 cursor-not-allowed': props.disabled,
@@ -436,7 +447,7 @@ export const ChipSelect: Component<{
         <Show when={props.icon} keyed>
           {(Icon) => <Icon class="w-3.5 h-3.5 flex-shrink-0 text-muted-dark" />}
         </Show>
-        <span class="truncate">
+        <span classList={{ truncate: props.truncate !== false }}>
           <Show when={props.role}>
             <span class="text-muted-dark">{props.role} · </span>
           </Show>
@@ -462,6 +473,10 @@ export const ChipSelect: Component<{
         <Portal>
           <div
             ref={panelRef}
+            // Marks every portaled chip panel, whatever its testid. A control
+            // that owns a chip (the row's `+N` fold) reads this to tell a
+            // click inside one of its own pickers from a click outside itself.
+            data-chip-popout=""
             data-testid={props.testid ? `${props.testid}-popout` : undefined}
             class="fixed z-50 flex flex-col min-w-[220px] max-w-[320px] overflow-hidden bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
             style={{
@@ -633,6 +648,7 @@ export const ChipSelect: Component<{
                 ref={flyoutRef}
                 role="menu"
                 aria-label={visible()[flyoutFor()]?.label}
+                data-chip-popout=""
                 data-testid={props.testid ? `${props.testid}-flyout` : undefined}
                 class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
                 style={{
