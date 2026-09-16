@@ -188,7 +188,7 @@ export const RootDropdown: Component<{
       onSelect={onPick}
       onOpen={loadBranches}
       testid="root-dropdown"
-      triggerClass="inline-flex items-center gap-1 min-w-0 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors"
+      triggerClass="inline-flex items-center gap-1 min-w-0 max-w-[12rem] h-7 bg-surface-elevated text-shell-ink text-xs px-2 rounded border border-hairline hover:border-hairline-strong transition-colors"
       action={{
         label: 'Clone a repository…',
         placeholder: 'github.com/owner/repo or git URL',

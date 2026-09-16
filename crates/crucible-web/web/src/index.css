@@ -93,7 +93,7 @@
     --cru-font-floor: 0.6875rem; /* 11px at a 16px root */
     /* Line height for the reading step; `text-xs` reads it. */
     --cru-font-reading-leading: 1.5;
-    --cru-leading-reading: 1.6;
+    --cru-leading-reading: 1.3125rem; /* 21px at a 16px root: 1.6 gave 20.8px */
 
     /* ── The chat column's measure ────────────────────────────────────────
      * A session is width-controlled and centred: the transcript, the composer
@@ -781,10 +781,12 @@
     border-radius: 8px;
     border: 1px solid var(--color-hairline-strong);
     background: var(--color-surface-elevated);
-    padding: 0.4rem 0.7rem 0.4rem 0.7rem;
+    /* Whole pixels (6px, 11px, a 20px line), so the rows under the bubble
+       land on whole pixels too. */
+    padding: 0.375rem 0.6875rem;
     color: var(--color-shell-ink);
     font-size: var(--text-reading);
-    line-height: var(--leading-reading);
+    line-height: 1.25rem;
   }
 
   /* Assistant turns render as plain full-width text (AssistantTurn) — the

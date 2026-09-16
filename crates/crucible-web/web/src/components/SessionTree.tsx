@@ -5,7 +5,7 @@ import { menuContent, menuItem } from '@/components/ui/menu-style';
 import { sessionDisplayTitle } from '@/lib/session-display';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import type { Project, Session } from '@/lib/types';
-import { Archive, ChevronRight, FolderGit2, GitBranch, MessageCircle, Pin, Plus, Trash2 } from '@/lib/icons';
+import { Archive, ChevronRight, GitBranch, MessageCircle, Pin, Plus, Trash2 } from '@/lib/icons';
 import { treeChevron, treeGroupRow } from '@/components/tree/tree-style';
 import { TreeSection } from '@/components/tree/TreeSection';
 import { shouldUseNativeMenu } from '@/lib/context-menu';
@@ -57,7 +57,7 @@ export const SessionRow: Component<{
        * every file explorer does it.
        */
       class={`group relative flex items-center gap-2 w-full h-(--cru-row-sm) ${
-        props.projectLabel === undefined ? 'pl-6' : 'pl-2.5'
+        props.projectLabel === undefined ? 'pl-6' : 'pl-2'
       } pr-2 rounded transition-colors cursor-pointer ${
         props.selected
           ? 'bg-primary/10 text-shell-ink'
@@ -66,7 +66,10 @@ export const SessionRow: Component<{
       data-testid={`session-item-${props.session.id}`}
       data-session-id={props.session.id}
     >
-      <SessionStatusDot status={sessionStatus(props.session)} />
+      {/* The same 14px leading slot a section's chevron sits in. */}
+      <span class="w-3.5 shrink-0 flex justify-center" aria-hidden="true">
+        <SessionStatusDot status={sessionStatus(props.session)} />
+      </span>
       <span class="text-reading flex-1 min-w-0 truncate">{sessionDisplayTitle(props.session)}</span>
 
       {/* Plain muted text, not a chip: the branch chip below is already the
@@ -357,7 +360,10 @@ export const SessionTree: Component<{
       g.rows = g.sessions.filter((s) => !shownAbove().has(s.id));
     }
     // A group with no session at all is not a place the user works yet.
-    return all.filter((g) => g.sessions.length > 0);
+    // A group draws when it has a row to unfold, or when it is a real project
+    // whose New Session button must stay reachable. The project-less group
+    // has no such button, so with every session in the Inbox it draws nothing.
+    return all.filter((g) => g.rows.length > 0 || (g.sessions.length > 0 && !!g.projectPath));
   });
 
   /** The project an inbox row names: the group its workspace falls in. */
@@ -467,7 +473,7 @@ export const SessionTree: Component<{
   };
 
   /**
-   * One project header — chevron, icon, name, count, and its New Session.
+   * One project header — chevron, name, count, and its New Session.
    *
    * Shared by the pinned list and the folded "Other projects" section, so a
    * folded project is the same row as a pinned one and starting work in it
@@ -482,16 +488,16 @@ export const SessionTree: Component<{
     <div
       // `bg-shell-bg` is the PANEL's own colour, so this reads as no fill at
       // all — it was `bg-shell-panel`, one step lighter, which banded every
-      // project row against the list for no reason. The chevron, the folder
-      // icon and the indent already say "this is a project"; a fill on top of
-      // that is decoration. Sticky still needs SOME opaque paint, or rows
+      // project row against the list for no reason. The chevron and the
+      // indent already say "this is a project"; a fill on top of that is
+      // decoration. Sticky still needs SOME opaque paint, or rows
       // scroll through the header, so it paints the background it sits on.
       class="group/proj sticky top-0 z-10 flex items-center h-(--cru-row-sm) pr-1 bg-shell-bg hover:bg-hover-wash transition-colors"
       data-group-key={g.key}
     >
               <button
                 type="button"
-                class={`${treeGroupRow} flex-1 min-w-0 h-full text-shell-ink hover:bg-transparent`}
+                class={`${treeGroupRow} gap-2 flex-1 min-w-0 h-full text-shell-ink hover:bg-transparent`}
                 aria-expanded={g.rows.length ? !isCollapsed(g) : undefined}
                 data-testid={`session-group-${g.key}`}
                 onClick={() => g.rows.length && toggle(g.key)}
@@ -505,14 +511,14 @@ export const SessionTree: Component<{
                     class={`${treeChevron} ${isCollapsed(g) ? '' : 'rotate-90'}`}
                   />
                 </Show>
-                <FolderGit2
+                <span
                   classList={{
-                    'w-3.5 h-3.5 shrink-0': true,
+                    truncate: true,
                     'text-primary': props.currentProjectPath === g.projectPath && !!g.projectPath,
-                    'text-muted-dark': props.currentProjectPath !== g.projectPath || !g.projectPath,
                   }}
-                />
-                <span class="truncate">{g.name}</span>
+                >
+                  {g.name}
+                </span>
                 <Show when={g.rows.length}>
                   <span class="text-muted-dark font-normal tabular-nums">{g.rows.length}</span>
                 </Show>

@@ -74,6 +74,15 @@ describe('FileTreeView — rendering & a11y', () => {
     expect(container.querySelector('[role="treeitem"][aria-level="1"]')).toBeTruthy();
   });
 
+  it('sets each name a whole-pixel line, so a 28 px row puts its text on a whole pixel', async () => {
+    // 4 + 20 + 4 fills the 28px row; a 19.5px line left a quarter pixel.
+    const { container } = renderTree();
+    await waitFor(() => expect(container.querySelector('[role="tree"]')).toBeTruthy());
+    const texts = container.querySelectorAll('.fade-scroll');
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) expect(text.className).toContain('leading-5');
+  });
+
   // Row metrics come from `data-density` on the tree root and the `tree-row`
   // class on each row (styles/refine-touch.css).
   it('stamps nothing without a prop, so the surface decides', async () => {

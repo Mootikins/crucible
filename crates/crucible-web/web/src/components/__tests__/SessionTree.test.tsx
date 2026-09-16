@@ -491,6 +491,36 @@ describe('SessionTree — the Inbox above the project tier', () => {
     expect(getByTestId('session-group-/repo').querySelector('[data-testid="session-group-chevron"]')).toBeTruthy();
   });
 
+  it('hides the project-less group once every session in it is in the Inbox', () => {
+    const loose = session({ id: 's-loose', workspace: '/scratch/chat-1' });
+    const { queryByText } = render(() => (
+      <SessionTree sessions={[loose]} projects={projects} inbox={[loose]} {...baseProps} />
+    ));
+    expect(queryByText('Session folders')).toBeNull();
+  });
+
+  it('keeps the project-less group while a session is left under it to unfold', () => {
+    const loose = session({ id: 's-loose', workspace: '/scratch/chat-1' });
+    const { getByText } = render(() => (
+      <SessionTree sessions={[loose]} projects={projects} inbox={[]} {...baseProps} />
+    ));
+    expect(getByText('Session folders')).toBeTruthy();
+  });
+
+  it('draws a project row as one leading slot and a name, with no folder icon', () => {
+    const { getByTestId } = draw();
+    expect(getByTestId('session-group-/repo').querySelectorAll('svg')).toHaveLength(1);
+    expect(getByTestId('session-group-/other').querySelectorAll('svg')).toHaveLength(0);
+  });
+
+  it('centres the status dot in the same leading slot the chevron uses', () => {
+    const { getByTestId } = draw();
+    const slot = getByTestId('session-item-s-inbox').firstElementChild as HTMLElement;
+    expect(slot.className).toContain('w-3.5');
+    expect(slot.className).toContain('justify-center');
+    expect(slot.querySelector('svg, span')).toBeTruthy();
+  });
+
   it('counts only the rows the tier draws', () => {
     const { getByTestId } = draw();
     expect(getByTestId('session-group-/repo').textContent).toContain('1');

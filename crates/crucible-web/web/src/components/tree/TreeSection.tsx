@@ -26,9 +26,9 @@ export const TreeSection: Component<{
       data-testid={props.testid}
       aria-expanded={props.open}
       onClick={props.onToggle}
-      class="w-full flex items-center gap-1 px-2 pt-3 pb-1 text-floor font-semibold uppercase tracking-wide text-muted-dark hover:text-shell-body"
+      class="w-full flex items-center gap-2 px-2 pt-3 pb-1 text-floor leading-4 font-semibold uppercase tracking-wide text-muted-dark hover:text-shell-body"
     >
-      <ChevronRight class={`w-3 h-3 shrink-0 transition-transform ${props.open ? 'rotate-90' : ''}`} />
+      <ChevronRight class={`w-3.5 h-3.5 shrink-0 transition-transform ${props.open ? 'rotate-90' : ''}`} />
       <span class="flex-1 text-left truncate">{props.label}</span>
       <span
         class="tabular-nums"
