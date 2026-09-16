@@ -9,11 +9,9 @@ import type {
 } from '@/types/windowTypes';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 import { iconForContentType } from '@/lib/tab-icons';
-import type { SerializedLayout } from '@/lib/layout-serializer';
-import {
-  deserializeLayout,
-  serializeLayout,
-} from '@/lib/layout-serializer';
+import type { SerializedLayout, StoredLayout } from '@/windowing/model/serializer';
+import { deserializeLayout, serializeLayout } from '@/windowing/model/serializer';
+import { appLayoutHooks } from './layoutMigrations';
 import { markLayoutRestore } from '@/windowing/model/layout-restore';
 import type { WindowStoreContext } from '@/windowing/model/tree';
 import type { WindowState } from '@/types/windowTypes';
@@ -164,8 +162,8 @@ export interface LayoutActions {
   getPaneTabGroupId(paneId: string): string | null;
   findPaneById(paneId: string): ReturnType<typeof findPaneAnywhere>;
   commitSplitRatio(splitId: string, ratio: number): void;
-  exportLayout(): SerializedLayout;
-  importLayout(json: SerializedLayout): void;
+  exportLayout(): SerializedLayout<TabContentType>;
+  importLayout(json: StoredLayout<TabContentType>): void;
   /** Throw the local pane layout away and start from the shipped default. */
   resetLayoutToDefaults(): void;
 }
@@ -381,7 +379,7 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
     );
   };
 
-  const exportLayout = (): SerializedLayout => {
+  const exportLayout = (): SerializedLayout<TabContentType> => {
     // Transient (hover) windows are popovers, not workspace state — a saved
     // layout must not resurrect them (or their tab groups) on reload.
     const transientGroups = new Set(
@@ -398,8 +396,8 @@ export function createLayoutActions(context: WindowStoreContext<TabContentType>)
     });
   };
 
-  const importLayout = (json: SerializedLayout) => {
-    const restored = deserializeLayout(json);
+  const importLayout = (json: StoredLayout<TabContentType>) => {
+    const restored = deserializeLayout(json, appLayoutHooks);
     /**
      * A restored layout has to satisfy the same invariant every mutation
      * maintains: no pane may point at a tab group that does not exist.

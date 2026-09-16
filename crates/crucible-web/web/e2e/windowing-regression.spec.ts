@@ -10,7 +10,7 @@ import { setupBasicMocks } from './helpers/mock-api';
  * - WindowManager.tsx
  * - SplitPane.tsx
  * - CenterTiling.tsx
- * - layout-serializer.ts
+ * - windowing/model/serializer.ts and stores/layoutMigrations.ts
  * - layout-persistence.ts
  * - windowTypes.ts
  *

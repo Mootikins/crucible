@@ -36,7 +36,7 @@ export function setupLayoutAutoSave(): void {
 
 // The Navigator's collapse of files/sessions/search used to be remapped here,
 // outside the version chain, so it re-ran on every load. Splitting the
-// Navigator back apart is `migrateV5toV6` in lib/layout-serializer instead:
+// Navigator back apart is `migrateV5toV6` in stores/layoutMigrations instead:
 // versioned, and therefore applied exactly once per stored layout.
 
 export async function loadLayoutOnStartup(): Promise<void> {

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { serializeLayout, deserializeLayout } from '../layout-serializer';
+import { serializeLayout, deserializeLayout as readLayout } from '@/windowing/model/serializer';
+import { appLayoutHooks } from '../layoutMigrations';
 import type {
+  TabContentType,
   TabGroup,
   EdgeCue,
   EdgeMode,
@@ -114,7 +116,11 @@ const arbWindowState = fc
       .map((state) => state as WindowState);
   });
 
-describe('layout-serializer property tests', () => {
+/** The core reader with the app history and prune. */
+const deserializeLayout = (json: Parameters<typeof readLayout<TabContentType>>[0]) =>
+  readLayout(json, appLayoutHooks);
+
+describe('layout round-trip property tests', () => {
   it('round-trip: deserializeLayout(serializeLayout(state)) deep-equals state', () => {
     fc.assert(
       fc.property(arbWindowState, (state) => {

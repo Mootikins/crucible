@@ -1,61 +1,47 @@
 import type {
-  LayoutNode,
-  TabGroup,
-  EdgeCue,
-  EdgeMode,
-  EdgePanel,
   EdgePanelPosition,
-  FloatingWindow,
+  LayoutNode,
   PaneNode,
-  Tab,
   TabContentType,
+  TabGroup,
 } from '@/types/windowTypes';
-import { iconForContentType } from './tab-icons';
-import { getGlobalRegistry } from './panel-registry';
+import type {
+  LayoutCodecHooks,
+  RestoredLayout,
+  SerializedEdgePanelV9,
+  SerializedLayoutV9,
+  SerializedTab as CoreSerializedTab,
+  SerializedTabGroup as CoreSerializedTabGroup,
+} from '@/windowing/model/serializer';
+import { iconForContentType } from '@/lib/tab-icons';
+import { getGlobalRegistry } from '@/lib/panel-registry';
 
-export interface SerializedLayout {
+/**
+ * The saved layout history of this app, from v1 to v9, and the app hooks of
+ * the core layout reader.
+ *
+ * Each step here names content this app had at the time, so the steps stay
+ * with the app. The core reader in `@/windowing/model/serializer` owns the
+ * current format and the step from v9.
+ */
+
+/**
+ * A stored layout at any version from 1 to 9. The steps below share one
+ * loose shape: each one reads the shape its version really had, and a v9
+ * layout is the result.
+ */
+type SerializedLayout = Omit<SerializedLayoutV9<TabContentType>, 'version'> & {
   version: number;
-  layout: LayoutNode;
-  tabGroups: Record<string, SerializedTabGroup>;
-  edgePanels: Record<EdgePanelPosition, SerializedEdgePanel>;
-  floatingWindows: FloatingWindow[];
-}
-
-interface SerializedTabGroup {
-  id: string;
-  tabs: SerializedTab[];
-  activeTabId: string | null;
-}
-
-interface SerializedTab {
-  id: string;
-  title: string;
-  contentType: TabContentType;
-  isModified?: boolean;
-  isPinned?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-interface SerializedEdgePanel {
-  id: string;
-  /** v5+: full layout tree. Pre-v5 panels carried a single `tabGroupId`
-   * (see LegacySerializedEdgePanel / migrateV4toV5). */
-  layout: LayoutNode;
-  /** v10+. `migrateV9toV10` fills it from `isCollapsed`. */
-  mode?: EdgeMode;
-  /** v10+. Absent means `grip`. */
-  cue?: EdgeCue;
-  /** Pre-v10 only. v10 writes `mode` instead. */
-  isCollapsed?: boolean;
-  width?: number;
-  height?: number;
-}
+};
+type SerializedTabGroup = CoreSerializedTabGroup<TabContentType>;
+type SerializedTab = CoreSerializedTab<TabContentType>;
+type SerializedEdgePanel = SerializedEdgePanelV9;
 
 /** Pre-v5 edge panel shape: one tab group, no layout tree. */
 interface LegacySerializedEdgePanel {
   id: string;
   tabGroupId: string;
-  isCollapsed: boolean;
+  isCollapsed?: boolean;
   width?: number;
   height?: number;
 }
@@ -80,48 +66,6 @@ function edgePanelGroupIds(
   }
   const legacy = panel as LegacySerializedEdgePanel;
   return legacy.tabGroupId ? [legacy.tabGroupId] : [];
-}
-
-function stripIcon(tab: Tab): SerializedTab {
-  const { icon: _icon, ...rest } = tab;
-  void _icon;
-  return rest;
-}
-
-export function serializeLayout(state: {
-  layout: LayoutNode;
-  tabGroups: Record<string, TabGroup>;
-  edgePanels: Record<EdgePanelPosition, EdgePanel>;
-  floatingWindows: FloatingWindow[];
-}): SerializedLayout {
-  const serializedGroups: Record<string, SerializedTabGroup> = {};
-  for (const [id, group] of Object.entries(state.tabGroups)) {
-    serializedGroups[id] = {
-      id: group.id,
-      tabs: group.tabs.map(stripIcon),
-      activeTabId: group.activeTabId,
-    };
-  }
-
-  const serializedEdgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
-  for (const [pos, panel] of Object.entries(state.edgePanels)) {
-    serializedEdgePanels[pos as EdgePanelPosition] = {
-      id: panel.id,
-      layout: JSON.parse(JSON.stringify(panel.layout)) as LayoutNode,
-      mode: panel.mode,
-      cue: panel.cue,
-      width: panel.width,
-      height: panel.height,
-    };
-  }
-
-  return {
-    version: 10,
-    layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
-    tabGroups: serializedGroups,
-    edgePanels: serializedEdgePanels,
-    floatingWindows: state.floatingWindows.map((w) => ({ ...w })),
-  };
 }
 
 /** Group ids reachable from the layout tree, edge panels, and floating windows. */
@@ -434,23 +378,6 @@ function migrateV8toV9(v8: SerializedLayout): SerializedLayout {
   };
 }
 
-// A rail had two states, open or collapsed, stored as `isCollapsed`. It now
-// has four modes, stored as `mode`. A collapsed rail becomes a strip, and any
-// other rail stays docked. The legacy field goes, so that one field is the
-// only source of the mode.
-function migrateV9toV10(v9: SerializedLayout): SerializedLayout {
-  // A partial payload reaches this step too, so an absent map stays absent.
-  const edgePanels = {} as Record<EdgePanelPosition, SerializedEdgePanel>;
-  for (const [pos, panel] of Object.entries(v9.edgePanels ?? {})) {
-    const { isCollapsed, ...rest } = panel;
-    edgePanels[pos as EdgePanelPosition] = {
-      ...rest,
-      mode: panel.mode ?? (isCollapsed ? 'strip' : 'docked'),
-    };
-  }
-  return { ...v9, version: 10, edgePanels: v9.edgePanels && edgePanels };
-}
-
 /**
  * Drop every pane that names one of `groups`, and collapse the splits that
  * lose a child.
@@ -585,21 +512,20 @@ function migrateV1toV2(v1: any): SerializedLayout {
   };
 }
 
-export function deserializeLayout(json: SerializedLayout): {
-  layout: LayoutNode;
-  tabGroups: Record<string, TabGroup>;
-  edgePanels: Record<EdgePanelPosition, EdgePanel>;
-  floatingWindows: FloatingWindow[];
-} {
-  // Auto-migrate forward: v1 → v2 (edge-panel tab groups) → v3 (prune tabs
-  // whose content type is no longer registered) → v4 (chat-worthy right
-  // panel width) → v5 (edge panels carry layout trees) → v6 (the Navigator
-  // splits into Sessions / Search / Files) → v7 (the bottom dock goes; the
-  // terminal moves into the file rail) → v8 (rail panes collapse on their
-  // own; the terminal ships collapsed) → v9 (the settings PAGE is gone; its
-  // tabs go, and the panes they empty go with them) → v10 (a rail stores its
-  // mode and its cue instead of `isCollapsed`).
-  let layout = json;
+/**
+ * Bring a stored layout from v1..v8 up to v9. The core reader calls this only
+ * for a version below 9.
+ *
+ * v1 → v2 (edge-panel tab groups) → v3 (prune tabs whose content type is no
+ * longer registered) → v4 (chat-worthy right panel width) → v5 (edge panels
+ * carry layout trees) → v6 (the Navigator splits into Sessions / Search /
+ * Files) → v7 (the bottom dock goes; the terminal moves into the file rail)
+ * → v8 (rail panes collapse on their own; the terminal ships collapsed) → v9
+ * (the settings PAGE is gone; its tabs go, and the panes they empty go with
+ * them).
+ */
+function upgradeLegacy(json: unknown): SerializedLayoutV9<TabContentType> {
+  let layout = json as SerializedLayout;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
   }
@@ -615,7 +541,6 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 5) {
     layout = migrateV5toV6(layout);
   }
-
   if (layout.version === 6) {
     layout = migrateV6toV7(layout);
   }
@@ -625,13 +550,15 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 8) {
     layout = migrateV8toV9(layout);
   }
-  if (layout.version === 9) {
-    layout = migrateV9toV10(layout);
-  }
-  if (layout.version !== 10) {
-    throw new Error(`Unsupported layout version: ${layout.version}`);
-  }
+  // The core reader checks the version that comes back.
+  return layout as SerializedLayoutV9<TabContentType>;
+}
 
+/**
+ * The passes that run on every restore, at every version. They mutate the
+ * restored state; the core gives the icons after them.
+ */
+function pruneRestored(restored: RestoredLayout<TabContentType>): void {
   // Always-on prune of unregistered content types: the v2→v3 migration only
   // covers layouts that were still v2 — a v4 layout persisted before a panel
   // was deleted (e.g. the removed Home page) would otherwise resurrect a
@@ -641,7 +568,7 @@ export function deserializeLayout(json: SerializedLayout): {
     registry.list().length === 0 || registry.get(contentType) !== undefined;
 
   const tabGroups: Record<string, TabGroup> = {};
-  for (const [id, group] of Object.entries(layout.tabGroups)) {
+  for (const [id, group] of Object.entries(restored.tabGroups)) {
     // Always-on prune: a `chat` tab WITHOUT a sessionId is the legacy
     // generic Chat panel from before sessions opened as session-bound tabs
     // in the right pane (WS-220). Restoring it makes the active session
@@ -652,9 +579,7 @@ export function deserializeLayout(json: SerializedLayout): {
     );
     tabGroups[id] = {
       id: group.id,
-      // Icons are components and never survive serialization — resolve them
-      // from the content type on the way back in.
-      tabs: tabs.map((t) => ({ ...t, icon: iconForContentType(t.contentType) })),
+      tabs,
       // Remap ONLY when the active tab was pruned — a stored null must stay
       // null (round-trip identity; the property tests enforce it).
       activeTabId:
@@ -669,13 +594,13 @@ export function deserializeLayout(json: SerializedLayout): {
   // restoring them boots with a stale second chat surface next to the
   // editor. Migrate them into the right panel group and collapse any pane
   // this empties out of the tree.
-  let layoutTree = layout.layout;
+  let layoutTree = restored.layout;
   // First RESOLVABLE leaf group of the right panel: with a split right
   // panel, leaf [0] may be empty/missing from tabGroups, and skipping the
   // chat migration would resurrect the stale center chat surface WS-220
   // exists to prevent.
-  const rightGroupId = layout.edgePanels.right
-    ? edgePanelGroupIds(layout.edgePanels.right).find((id) => tabGroups[id])
+  const rightGroupId = restored.edgePanels.right
+    ? edgePanelGroupIds(restored.edgePanels.right).find((id) => tabGroups[id])
     : undefined;
   if (rightGroupId && tabGroups[rightGroupId]) {
     const centerGroupIds = new Set<string>();
@@ -730,55 +655,23 @@ export function deserializeLayout(json: SerializedLayout): {
         }
       };
       collectInto(layoutTree);
-      for (const panel of Object.values(layout.edgePanels)) {
+      for (const panel of Object.values(restored.edgePanels)) {
         for (const id of edgePanelGroupIds(panel)) stillReferenced.add(id);
       }
-      for (const w of layout.floatingWindows) stillReferenced.add((w as { tabGroupId: string }).tabGroupId);
+      for (const w of restored.floatingWindows) stillReferenced.add((w as { tabGroupId: string }).tabGroupId);
       for (const gid of emptied) {
         if (!stillReferenced.has(gid)) delete tabGroups[gid];
       }
     }
   }
 
-  // Every position MUST come back with a valid panel: a partial payload
-  // (missing edgePanels entries, or an empty object from a truncated write)
-  // otherwise leaves `windowStore.edgePanels[pos]` undefined and every
-  // panel/ribbon/composer read crashes ("can't access property 'layout'"),
-  // bricking the whole shell. Absent positions get a collapsed empty panel.
-  const edgePanels = {} as Record<EdgePanelPosition, EdgePanel>;
-  for (const pos of ['left', 'right'] as EdgePanelPosition[]) {
-    const panel = layout.edgePanels?.[pos];
-    if (!panel) {
-      edgePanels[pos] = {
-        id: `${pos}-panel`,
-        layout: { id: `${pos}-pane`, type: 'pane', tabGroupId: null },
-        mode: 'strip',
-        width: 280,
-      };
-      continue;
-    }
-    edgePanels[pos] = {
-      id: panel.id,
-      // A v5-labeled layout with a null/absent tree (hand-corrupted JSON)
-      // must not boot-block the renderer — degrade to an empty pane.
-      layout: panel.layout ?? {
-        id: `${panel.id}-pane`,
-        type: 'pane',
-        tabGroupId: null,
-      },
-      // A hand-edited v10 payload can lack the mode; a docked rail is the
-      // safe reading, the same one the migration gives an open rail.
-      mode: panel.mode ?? 'docked',
-      ...(panel.cue ? { cue: panel.cue } : {}),
-      width: panel.width,
-      height: panel.height,
-    };
-  }
-
-  return {
-    layout: layoutTree,
-    tabGroups,
-    edgePanels,
-    floatingWindows: layout.floatingWindows.map((w) => ({ ...w })),
-  };
+  restored.layout = layoutTree;
+  restored.tabGroups = tabGroups;
 }
+
+/** The app hooks of the core layout reader. */
+export const appLayoutHooks: LayoutCodecHooks<TabContentType> = {
+  upgradeLegacy,
+  prune: pruneRestored,
+  iconFor: iconForContentType,
+};

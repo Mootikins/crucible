@@ -2312,9 +2312,10 @@ export function generateMessageId(): string {
 // Layout Persistence Endpoints
 // =============================================================================
 
-import type { SerializedLayout } from './layout-serializer';
+import type { SerializedLayout, StoredLayout } from '@/windowing/model/serializer';
+import type { TabContentType } from '@/types/windowTypes';
 
-export async function saveLayout(layout: SerializedLayout): Promise<void> {
+export async function saveLayout(layout: SerializedLayout<TabContentType>): Promise<void> {
   try {
     await request<void>('POST', '/api/layout', {
       errorMessage: 'Failed to save layout',
@@ -2326,9 +2327,10 @@ export async function saveLayout(layout: SerializedLayout): Promise<void> {
   }
 }
 
-export async function loadLayout(): Promise<SerializedLayout | null> {
+/** The stored layout, at whatever version the server holds. */
+export async function loadLayout(): Promise<StoredLayout<TabContentType> | null> {
   try {
-    return await request<SerializedLayout>('GET', '/api/layout', {
+    return await request<StoredLayout<TabContentType>>('GET', '/api/layout', {
       errorMessage: 'Failed to load layout',
     });
   } catch (err) {

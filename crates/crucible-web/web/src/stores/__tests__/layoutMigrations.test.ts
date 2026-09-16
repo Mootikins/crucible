@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { iconForContentType } from '../tab-icons';
-import { serializeLayout, deserializeLayout } from '../layout-serializer';
-import type { SerializedLayout } from '../layout-serializer';
-import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
+import { iconForContentType } from '@/lib/tab-icons';
+import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import type { WindowState } from '@/stores/windowStore';
-import type { EdgeMode, LayoutNode } from '@/types/windowTypes';
+import type { LayoutNode } from '@/types/windowTypes';
+import { serializeLayout, deserializeLayout as readLayout } from '@/windowing/model/serializer';
+import type { StoredLayout } from '@/windowing/model/serializer';
+import { appLayoutHooks } from '../layoutMigrations';
+import type { TabContentType } from '@/types/windowTypes';
+
+/** The core reader with the app history and prune. */
+const deserializeLayout = (json: unknown) =>
+  readLayout(json as StoredLayout<TabContentType>, appLayoutHooks);
 
 const paneLayout = (id: string, tabGroupId: string): LayoutNode => ({
   id,
@@ -79,7 +85,7 @@ function createTestState(): WindowState {
   };
 }
 
-describe('layout-serializer', () => {
+describe('layout history and restore', () => {
   it('round-trip serialization preserves state', () => {
     const state = createTestState();
     const serialized = serializeLayout(state);
@@ -911,65 +917,3 @@ describe('v6 -> v7: the terminal moves under the file tree', () => {
   });
 });
 
-/** A minimal state with two rails, built here so the test needs no app seed. */
-function defaultLayoutFixture(): WindowState {
-  const rail = (pos: 'left' | 'right') => ({
-    id: `${pos}-panel`,
-    layout: { id: `${pos}-pane`, type: 'pane' as const, tabGroupId: `${pos}-group` },
-    mode: 'docked' as EdgeMode,
-    width: 280,
-  });
-  return {
-    layout: { id: 'centre', type: 'pane', tabGroupId: 'centre-group' },
-    tabGroups: {
-      'centre-group': { id: 'centre-group', tabs: [], activeTabId: null },
-      'left-group': { id: 'left-group', tabs: [], activeTabId: null },
-      'right-group': { id: 'right-group', tabs: [], activeTabId: null },
-    },
-    edgePanels: { left: rail('left'), right: rail('right') },
-    floatingWindows: [],
-  } as unknown as WindowState;
-}
-
-describe('v9 → v10: edge modes', () => {
-  it('maps isCollapsed to strip, and its absence to docked', () => {
-    const v9 = {
-      version: 9,
-      layout: { id: 'p', type: 'pane', tabGroupId: 'g' },
-      tabGroups: { g: { id: 'g', tabs: [], activeTabId: null } },
-      edgePanels: {
-        left: { id: 'l', layout: { id: 'lp', type: 'pane', tabGroupId: null }, isCollapsed: true, width: 280 },
-        right: { id: 'r', layout: { id: 'rp', type: 'pane', tabGroupId: null }, isCollapsed: false, width: 340 },
-      },
-      floatingWindows: [],
-    } as unknown as SerializedLayout;
-    const out = deserializeLayout(v9);
-    expect(out.edgePanels.left.mode).toBe('strip');
-    expect(out.edgePanels.right.mode).toBe('docked');
-  });
-
-  it('round-trips a mode', () => {
-    const state = defaultLayoutFixture();
-    state.edgePanels.left.mode = 'hidden';
-    state.edgePanels.left.cue = 'none';
-    const json = serializeLayout(state);
-    expect(json.version).toBe(10);
-    const back = deserializeLayout(json);
-    expect(back.edgePanels.left.mode).toBe('hidden');
-    expect(back.edgePanels.left.cue).toBe('none');
-  });
-
-  it.each<EdgeMode>(['docked', 'strip', 'flyout', 'hidden'])(
-    'keeps the %s mode and the none cue through a save and a reload',
-    (mode) => {
-      const state = defaultLayoutFixture();
-      state.edgePanels.left.mode = mode;
-      state.edgePanels.left.cue = 'none';
-      const json = JSON.parse(JSON.stringify(serializeLayout(state))) as SerializedLayout;
-      expect(json.edgePanels.left).not.toHaveProperty('isCollapsed');
-      const back = deserializeLayout(json);
-      expect(back.edgePanels.left.mode).toBe(mode);
-      expect(back.edgePanels.left.cue).toBe('none');
-    },
-  );
-});

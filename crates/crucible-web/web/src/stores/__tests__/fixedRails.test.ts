@@ -7,7 +7,7 @@ import {
 } from '@/windowing/model/tree';
 import { defaultLayout } from '@/stores/defaultLayout';
 import type { EdgePanelPosition, TabContentType } from '@/types/windowTypes';
-import type { SerializedLayout } from '@/lib/layout-serializer';
+import type { SerializedLayoutV9 } from '@/windowing/model/serializer';
 
 /**
  * The two rails are FIXED: one holds Sessions, the other holds Files. A user
@@ -43,8 +43,8 @@ const railContent = (pos: EdgePanelPosition): TabContentType[] =>
 
 /** A serialized layout with one centre chat pane and the edge panels a test gives. */
 const layoutWith = (
-  edgePanels: Partial<SerializedLayout['edgePanels']>,
-): SerializedLayout =>
+  edgePanels: Partial<SerializedLayoutV9['edgePanels']>,
+): SerializedLayoutV9 =>
   ({
     version: 9,
     layout: { id: 'centre-pane', type: 'pane', tabGroupId: 'centre-group' },
@@ -60,7 +60,7 @@ const layoutWith = (
     },
     edgePanels,
     floatingWindows: [],
-  }) as unknown as SerializedLayout;
+  }) as unknown as SerializedLayoutV9;
 
 /** An empty rail at `pos`; a test fills `${pos}-group` when it wants tabs. */
 const railPanel = (pos: EdgePanelPosition) => ({
