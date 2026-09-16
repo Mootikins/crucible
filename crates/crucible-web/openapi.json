@@ -74,6 +74,143 @@
         }
       }
     },
+    "/api/plugins": {
+      "get": {
+        "summary": "`GET /api/plugins` — list discovered plugins with rich metadata\n(name, version, source, state, dir, capability counts).",
+        "operationId": "list_plugins",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginListResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the plugins, or answered a shape this route cannot read"
+          }
+        }
+      },
+      "post": {
+        "operationId": "install_plugin",
+        "parameters": [
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginInstallResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the app"
+          },
+          "422": {
+            "description": "The URL is empty, or the plugin is already declared in init.lua"
+          },
+          "502": {
+            "description": "The clone failed, or the daemon answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/plugins/command": {
+      "post": {
+        "summary": "`POST /api/plugins/command` — invoke a plugin command by name.",
+        "description": "Not under `/{name}` because a command's name is already globally unique —\nthe daemon refuses a second plugin claiming one — so routing by plugin would\nask the caller for something it does not need to know. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.",
+        "operationId": "run_command",
+        "parameters": [
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRunCommandResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No caller identity was sent, or the command belongs to another plugin"
+          },
+          "422": {
+            "description": "`name` names no command"
+          },
+          "502": {
+            "description": "The daemon could not run the command, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/plugins/commands": {
+      "get": {
+        "summary": "`GET /api/plugins/commands` — the executable primitives plugins declared.",
+        "description": "Each entry carries `plugin`, `name`, `description`, `hint`, `parameters`\nand `effect`. The names are read, so the browser is told what a row holds;\n`parameters` is passed through verbatim, so a caller offering a command as\na button — with a dialog built from the declared parameters — needs no\nchange on this side when a plugin ships a new one.\n\n`parameters` crosses as opaque JSON today. It comes from the same\n`ToolDefinition` a tool uses, so shaping it like `signature.rs`'s JSON\nSchema output is what would let a dialog be generated rather than\nhand-read — see `docs/Meta/Analysis/The Plugin Contract.md`.",
+        "operationId": "list_commands",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCommandsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the commands, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
     "/api/plugins/events": {
       "get": {
         "summary": "`GET /api/plugins/events` — a push when a plugin's published data changes.",
@@ -89,6 +226,230 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/plugins/options": {
+      "get": {
+        "summary": "`GET /api/plugins/options` — the settings trees plugins declared.",
+        "description": "Keyed by plugin, and each tree is passed through verbatim. Nothing here knows what any\noption means: a node is `{type, name, desc, order, …}` and the renderer\ndraws it from that, so a plugin shipped tomorrow gets a settings pane with\nno change on this side. Re-read rather than cached — a tree's\nfunction-valued fields describe the box as it is now.",
+        "operationId": "list_options",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOptionsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the settings trees, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/plugins/publications": {
+      "get": {
+        "summary": "`GET /api/plugins/publications` — what plugins published about themselves.",
+        "description": "The two levels are read; the values are passed through verbatim. Nothing\nhere interprets one, which is the point: the frontend used to learn what\nisolation a box offered by having the server match on the shape of the `oci`\nplugin's config, so one plugin's schema lived in the rendering layer and a\nsecond isolating plugin would not have appeared at all.",
+        "operationId": "list_publications",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Narrow to one contribution kind.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginPublicationsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No caller identity was sent"
+          },
+          "502": {
+            "description": "The daemon could not read the publications, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}": {
+      "delete": {
+        "summary": "`DELETE /api/plugins/:name?purge=true` — remove a plugin declaration.",
+        "operationId": "remove_plugin",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The plugin to remove",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "purge",
+            "in": "query",
+            "description": "Also delete the cloned directory. Without it the directory stays in a\npermanent search path and loads again on the next daemon start.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRemoveResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the app"
+          },
+          "422": {
+            "description": "The plugin is declared in init.lua, or is not in the installed manifest"
+          },
+          "502": {
+            "description": "The removal failed, or the daemon answered a shape this route cannot read"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/option": {
+      "post": {
+        "summary": "`POST /api/plugins/:name/option` — read, write, or press one option.",
+        "operationId": "option_call",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The plugin whose settings tree is read or written",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOptionCallResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No caller identity was sent, or the caller draws for another plugin"
+          },
+          "422": {
+            "description": "`path` names no option, or the plugin refused the value"
+          },
+          "502": {
+            "description": "The daemon could not reach the plugin"
+          }
+        }
+      }
+    },
+    "/api/plugins/{name}/reload": {
+      "post": {
+        "summary": "`POST /api/plugins/:name/reload` — reload a plugin by name.\nReturns the daemon's reload response (counts of tools, commands, etc.).",
+        "operationId": "reload_plugin",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The plugin to reload",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-crucible-plugin",
+            "in": "header",
+            "description": "Who is asking: `app`, or the plugin being drawn for. A request without it is refused.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginReloadResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the app"
+          },
+          "502": {
+            "description": "The reload failed, or the daemon answered a shape this route cannot read"
           }
         }
       }
@@ -1613,6 +1974,28 @@
         }
       }
     },
+    "/api/surfaces": {
+      "get": {
+        "summary": "`GET /api/surfaces` — every declared surface, rows included.",
+        "description": "Rows come with the list because a surface is a panel, not a feed: fetching\neach one separately would draw an empty sidebar first. The registry's row cap\nkeeps the response bounded.",
+        "operationId": "list_surfaces",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurfaceListResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the surfaces, or answered a shape this route cannot read"
+          }
+        }
+      }
+    },
     "/api/surfaces/events": {
       "get": {
         "summary": "Live stream of surface changes.",
@@ -2348,6 +2731,27 @@
         ],
         "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
+      "CommandEffectRow": {
+        "type": "string",
+        "description": "Whether running a command changes state a user could lose, mirroring\n[`crucible_lua::CommandEffect`].\n\n**Declared by the plugin and verified by nothing.** A consumer must present\nit as a claim, and a permission layer must treat it as a hint about what to\nask — never as permission to skip asking.\n\nA closed set, not the open string a passthrough would give, because the\ndaemon writes `CommandEffect::as_str()` and nothing else: a command that\ndeclares no effect arrives as `write`, never as an unknown word.\n`the_mirrored_vocabularies_stay_closed` holds the two lists together.",
+        "enum": [
+          "read",
+          "write"
+        ]
+      },
+      "CommandRequest": {
+        "type": "object",
+        "description": "One plugin command invocation.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "args": {}
+        }
+      },
       "CommentAuthorRow": {
         "type": "string",
         "description": "Who wrote a comment.",
@@ -2562,6 +2966,30 @@
         ],
         "description": "A filesystem change delivered to the browser.\n\nSerializes with an internal `type` tag whose values are `changed` /\n`deleted` / `moved` (e.g. `{\"type\":\"changed\",\"path\":\"/abs\",\"kind\":\"modified\"}`).\nThe SSE `event:` name is separate — see [`FsEvent::event_name`]."
       },
+      "InstallRequest": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Plugin URL (e.g. \"user/repo\" or full git URL)."
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "KilnRequest": {
         "type": "object",
         "description": "The body of `POST /connect_kiln` and `POST /disconnect_kiln`.\n\nNamed without the `Session` prefix its siblings drop, because the daemon's\nRPC client declares a `SessionKilnRequest` that is a different shape going\nthe other way: that one is `Serialize` and carries `session_id`, this one is\n`Deserialize` and takes the id from the URL path.",
@@ -2694,6 +3122,441 @@
         "properties": {
           "ok": {
             "type": "boolean"
+          }
+        }
+      },
+      "OptionRequest": {
+        "type": "object",
+        "description": "One read, write, or button press against a plugin's settings tree.\n\nA single endpoint because the three differ only in which Lua callback they\nreach — the same reason the daemon handler is one function. `value` is\npresent for a set and ignored otherwise.",
+        "required": [
+          "action",
+          "path"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "get",
+              "set",
+              "execute"
+            ]
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The path through the settings tree to the option."
+          },
+          "value": {
+            "description": "The new value, for a `set`. Ignored otherwise."
+          }
+        }
+      },
+      "PluginCommandRow": {
+        "type": "object",
+        "description": "One executable primitive a plugin declared, and the arguments it takes.",
+        "required": [
+          "plugin",
+          "name",
+          "description",
+          "hint",
+          "parameters",
+          "effect"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "description": "The plugin that declared it."
+          },
+          "name": {
+            "type": "string",
+            "description": "Globally unique: the daemon refuses a second plugin claiming a name,\nwhich is why `POST /api/plugins/command` does not route by plugin."
+          },
+          "description": {
+            "type": "string"
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The one-line argument hint, or `null`. Always written, so `required`."
+          },
+          "parameters": {
+            "description": "The declared parameters, as the JSON Schema `signature.rs` emits, or\n`null` for a command that takes none.\n\nOpaque on purpose, like a publication: the reader turns it into the\ncontrols a dialog draws, and a shape validated here would be one only\ntoday's plugins could send."
+          },
+          "effect": {
+            "$ref": "#/components/schemas/CommandEffectRow"
+          }
+        }
+      },
+      "PluginCommandsResponse": {
+        "type": "object",
+        "description": "What `GET /api/plugins/commands` answers.",
+        "required": [
+          "commands"
+        ],
+        "properties": {
+          "commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginCommandRow"
+            }
+          }
+        }
+      },
+      "PluginInstallOutcomeRow": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Cloned, and checked out at the pin if one was given.",
+            "required": [
+              "dest",
+              "kind"
+            ],
+            "properties": {
+              "dest": {
+                "type": "string",
+                "description": "Where the clone landed."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cloned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Already cloned at the expected destination; no work done.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "already_present"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Disabled in config; skipped.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "disabled"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "`POST /api/plugins` — clone a plugin from a git URL and record it in\nthe installed manifest (`plugins.installed.json`), the same record\n`cru plugin add` writes. The operator's own spec entries live in\n`init.lua`, which nothing here edits. Synchronous; can take 10+ seconds.\nWhat the clone did, tagged by `kind`.\n\nMirrors `crucible_daemon::BootstrapOutcome`, which is what\n`server/plugin_install.rs` matches on to write these three objects.\n`the_mirrored_vocabularies_stay_closed` fails to compile if a fourth\noutcome appears there."
+      },
+      "PluginInstallResponse": {
+        "type": "object",
+        "description": "What `POST /api/plugins` answers.",
+        "required": [
+          "name",
+          "installed",
+          "loaded",
+          "tools",
+          "commands",
+          "services",
+          "error",
+          "watch",
+          "outcome",
+          "manifest"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The installed plugin's name, as the URL resolved it."
+          },
+          "installed": {
+            "type": "boolean",
+            "description": "The clone and the manifest record happened."
+          },
+          "loaded": {
+            "type": "boolean",
+            "description": "The plugin also activated on the running daemon.\n\n`installed: true` with `loaded: false` is a plugin that reached the disk\nand broke on load; `error` says why, and the next boot tries again. A\nclient must not read `installed` alone as success."
+          },
+          "tools": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "commands": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "services": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the plugin did not load, or `null`. Always written, so `required`."
+          },
+          "watch": {
+            "type": "string",
+            "description": "A sentence about hot reload. The watcher's list is a boot-time\nsnapshot, so a plugin installed at runtime works but is not rewatched."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PluginInstallOutcomeRow"
+          },
+          "manifest": {
+            "type": "string",
+            "description": "The installed manifest the entry was written to\n(`plugins.installed.json`).\n\nThe browser's hand-written type calls this key `plugins_toml`, which the\ndaemon has not sent since the record moved out of TOML — so today that\nfield reads `undefined` at run time and nothing said so. A12 renames it."
+          }
+        }
+      },
+      "PluginListResponse": {
+        "type": "object",
+        "description": "What `GET /api/plugins` answers.",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginRow"
+            }
+          }
+        }
+      },
+      "PluginOptionCallResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PluginOptionValueResponse",
+            "description": "The answer to `action: \"get\"`."
+          },
+          {
+            "$ref": "#/components/schemas/OkResponse",
+            "description": "The answer to `action: \"set\"` and `action: \"execute\"`."
+          }
+        ],
+        "description": "What `POST /api/plugins/{name}/option` answers.\n\nUntagged, because one endpoint serves three actions: a `get` answers a\nvalue where a `set` and an `execute` answer an acknowledgement.\n\n**The variant order is load-bearing** — the hazard `ResumeSessionResponse`\nwas fixed for. Serde takes the first variant that fits, so a union whose\nfirst variant also fits the second's bodies reads every one of them as the\nwrong thing. These two are disjoint today because neither field has a\ndefault: `{\"ok\": true}` has no `value` and `{\"value\": …}` has no `ok`.\n`an_option_reply_reads_back_as_the_action_that_sent_it` asserts both\ndirections, so a `#[serde(default)]` added to either field fails there\nrather than on a browser."
+      },
+      "PluginOptionValueResponse": {
+        "type": "object",
+        "description": "One option's current value.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "description": "Whatever the plugin's getter returned, and `null` is an answer.\n\nOpaque: an option's type belongs to the plugin, and the renderer reads\nthe value against the node that declared it."
+          }
+        }
+      },
+      "PluginOptionsResponse": {
+        "type": "object",
+        "description": "What `GET /api/plugins/options` answers: one settings tree per plugin.\n\n**A deliberate narrowing to the envelope.** The tree itself stays opaque,\nand that is not laziness about a shape nobody wrote down — the nodes are\nfully described in `crucible-lua`'s `describe_node`. It is about numbers:\n`order`, `min`, `max`, `step` and every entry under `values` reach here as\nwhatever `lua_to_json` made of the plugin's Lua, so reading one into an\n`f64` and writing it back would send `100.0` where the daemon sent `100`.\nThe browser renders a node generically anyway, so naming the map's keys is\nthe whole gain a mirrored node type would offer.",
+        "required": [
+          "options"
+        ],
+        "properties": {
+          "options": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "PluginPublicationsResponse": {
+        "type": "object",
+        "description": "What `GET /api/plugins/publications` answers.",
+        "required": [
+          "publications"
+        ],
+        "properties": {
+          "publications": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "PluginReloadResponse": {
+        "type": "object",
+        "description": "What `POST /api/plugins/{name}/reload` answers: the capabilities the\nreloaded spec declares.",
+        "required": [
+          "name",
+          "reloaded",
+          "tools",
+          "commands",
+          "handlers",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The plugin that was reloaded, echoed."
+          },
+          "reloaded": {
+            "type": "boolean"
+          },
+          "tools": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "commands": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "handlers": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "services": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PluginRemoveResponse": {
+        "type": "object",
+        "description": "What `DELETE /api/plugins/{name}` answers.",
+        "required": [
+          "name",
+          "manifest",
+          "purged_dir",
+          "purge_error",
+          "kept_dir"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The plugin that was removed, as the manifest named it."
+          },
+          "manifest": {
+            "type": "string",
+            "description": "The installed manifest the entry left. See\n[`PluginInstallResponse::manifest`] for the name the browser still uses."
+          },
+          "purged_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The directory that was deleted, or `null` without `?purge=true`."
+          },
+          "purge_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The manifest entry went but deleting the directory failed."
+          },
+          "kept_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Removed without a purge, and the directory is still there.\n\nIt sits in a permanent search path, so the next daemon start discovers\nand loads it again. `null` when nothing is left behind, which is the\nonly case where \"removed\" means gone."
+          }
+        }
+      },
+      "PluginRow": {
+        "type": "object",
+        "description": "One discovered plugin, as `plugin.list`'s `plugin_info` rows describe it.\n\nEvery discovered plugin, not only the healthy ones: a plugin that failed to\nload carries its reason in `last_error`, and dropping it would make \"broken\"\nread as \"not installed\".",
+        "required": [
+          "name",
+          "version",
+          "source",
+          "state",
+          "last_error",
+          "dir",
+          "tools",
+          "commands",
+          "handlers",
+          "services"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`null` when the plugin has no fragment, or its fragment names no\nversion. The daemon always writes the key, so `required` rather than\noptional."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the plugin came from: `User`, `Runtime`, `EnvPath` or `Builtin`.\nA plain string, because the daemon writes `Display` output rather than\na serde spelling."
+          },
+          "state": {
+            "type": "string",
+            "description": "The lifecycle state: `Active`, `Error` or `Disabled`. A plain string\nfor the same reason as `source`."
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the plugin is not `Active`, or `null` for a healthy one. Always\nwritten, so `required`."
+          },
+          "dir": {
+            "type": "string",
+            "description": "The absolute directory the plugin was discovered in."
+          },
+          "tools": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "commands": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "handlers": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "services": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PluginRunCommandResponse": {
+        "type": "object",
+        "description": "What `POST /api/plugins/command` answers.\n\nThe browser's hand-written caller types this as a bare `unknown`, so a\nreader had to know to look under `result` without anything saying so. The\nenvelope is the daemon's (`server/plugins.rs`'s `handle_plugin_run_command`),\nand naming it costs the plugin nothing: `result` stays opaque.",
+        "required": [
+          "name",
+          "result"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The command that ran, echoed."
+          },
+          "result": {
+            "description": "Whatever the command's Lua `fn` returned.\n\nOpaque, like publications and options: what a command returns is the\nplugin's vocabulary, and a shape validated here would be one only\ntoday's plugins could send."
           }
         }
       },
@@ -3965,6 +4828,124 @@
             "description": "The surface is gone, so the browser drops it instead of refetching.\n\nPassed through rather than re-derived. The daemon knew this when it\ndropped the entry, and a browser that had to ask `GET /api/surfaces`\nto find out would pay a round trip for a fact the event already held."
           }
         }
+      },
+      "SurfaceLineRow": {
+        "type": "object",
+        "description": "One line of a surface.\n\nNamed for a line rather than for a row, because the daemon calls both the\npanel and its entries a row and this file needs to name them apart. The\nwire key stays `rows`.",
+        "required": [
+          "id",
+          "text",
+          "detail",
+          "mark"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identity, chosen by the plugin. What an action names later, and\nwhat a client keys a selection on across a re-push."
+          },
+          "text": {
+            "type": "string",
+            "description": "The line's own text."
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Secondary text, or `null`. The daemon always writes the key, so\n`required` rather than optional."
+          },
+          "mark": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SurfaceMarkRow",
+                "description": "Status, or `null` for a line that has none. `null` is \"no status\",\nnever \"unknown\". Always written, so `required`."
+              }
+            ]
+          }
+        }
+      },
+      "SurfaceListResponse": {
+        "type": "object",
+        "description": "What `GET /api/surfaces` answers.",
+        "required": [
+          "surfaces"
+        ],
+        "properties": {
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SurfaceRow"
+            }
+          }
+        }
+      },
+      "SurfaceMarkRow": {
+        "type": "string",
+        "description": "A row's status, mirroring [`crucible_lua::Mark`].\n\nStated semantically, so each client picks its own glyph. Closed for the same\nreason [`SurfaceShapeRow`] is closed.",
+        "enum": [
+          "busy",
+          "blocked",
+          "ok",
+          "failed"
+        ]
+      },
+      "SurfaceRow": {
+        "type": "object",
+        "description": "One declared surface, as `surface.list` reports it.",
+        "required": [
+          "plugin",
+          "name",
+          "title",
+          "shape",
+          "session",
+          "version",
+          "rows"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "description": "The plugin that declared it, so a stale surface can be attributed."
+          },
+          "name": {
+            "type": "string",
+            "description": "The plugin's own name for it. Stable across a reload."
+          },
+          "title": {
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/SurfaceShapeRow"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session this surface is about, or `null` when it is about the\nplugin. Always written, so `required`."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bumped on every row change, so a client redraws on a change it sees\nrather than on a timer.",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SurfaceLineRow"
+            }
+          }
+        }
+      },
+      "SurfaceShapeRow": {
+        "type": "string",
+        "description": "What a client draws, mirroring [`crucible_lua::Shape`].\n\nA closed set here, and not the open string the browser's hand-written type\ndeclares, because the daemon cannot send anything else: `Shape::parse`\nrefuses an unknown name when the plugin declares the surface, so a spelling\noutside this list never reaches a reply. `the_mirrored_vocabularies_stay_closed`\nholds the two lists together — a variant added in `crucible-lua` fails that\ntest rather than reaching the browser as a shape no renderer knows.",
+        "enum": [
+          "list"
+        ]
       },
       "SwitchModelRequest": {
         "type": "object",

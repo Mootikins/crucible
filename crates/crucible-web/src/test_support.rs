@@ -884,6 +884,10 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // Echoes the `key` it was asked for, so a contract test can prove the
         // route's `?key=` actually reaches the daemon rather than being
         // dropped and filtered client-side.
+        // `effect` is written by every row `commands_json` builds — an
+        // undeclared command arrives as `write` rather than as nothing — so
+        // the fixture writes it too. Without it the route's reply struct
+        // could not be exercised at all.
         "plugin.commands" => json!({
             "commands": [{
                 "plugin": "mock-plugin",
@@ -894,6 +898,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                     { "name": "target", "type": "string", "desc": "What to act on" },
                     { "name": "count", "type": "number", "desc": "How many", "optional": true },
                 ],
+                "effect": "write",
             }]
         }),
         "plugin.publications" => {
@@ -920,6 +925,9 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "version": "0.1.0",
                 "source": "User",
                 "state": "Active",
+                // Written for every row, so "broken" stays distinguishable
+                // from "not installed". Null is a healthy plugin.
+                "last_error": Value::Null,
                 "dir": "/tmp/mock-plugin",
                 "tools": 3,
                 "commands": 1,
@@ -948,6 +956,30 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 },
             },
         }),
+        // Shaped as `surface_json` writes it: one panel, two rows, one of
+        // them marked. The route answered nothing for this method before, so
+        // the fallthrough `null` read back as an empty list and no contract
+        // test could see a row at all.
+        "surface.list" => json!({
+            "surfaces": [{
+                "plugin": "mock-plugin",
+                "name": "sessions",
+                "title": "Sessions",
+                "shape": "list",
+                "session": Value::Null,
+                "version": 3,
+                "rows": [
+                    { "id": "a", "text": "first", "detail": "and more", "mark": "busy" },
+                    { "id": "b", "text": "second", "detail": Value::Null, "mark": Value::Null },
+                ],
+            }]
+        }),
+        // Echoes the name it was asked for, beside an opaque result, exactly
+        // as `handle_plugin_run_command` does.
+        "plugin.run_command" => json!({
+            "name": param_str(msg, "name"),
+            "result": { "branches": ["main", "next"] },
+        }),
         "plugin.option_get" => json!({ "value": "alpine" }),
         "plugin.option_set" => json!({ "ok": true }),
         "plugin.option_execute" => json!({ "ok": true }),
@@ -969,6 +1001,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "commands": 0,
             "services": 0,
             "error": Value::Null,
+            "watch": "not hot-watched until restart",
         }),
         "plugin.remove" => json!({
             "name": "removed-plugin",
@@ -1171,13 +1204,30 @@ pub async fn request_json(
     uri: &str,
     body: Option<Value>,
 ) -> (axum::http::StatusCode, Value) {
+    request_json_as(method, uri, body, Vec::new()).await
+}
+
+/// [`request_json`], plus the headers a route reads.
+///
+/// The plugin routes need one: `PluginCaller` refuses a request that declares
+/// no identity, so a test that cannot set `x-crucible-plugin` can only ever see
+/// their 403.
+pub async fn request_json_as(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    headers: Vec<(&str, String)>,
+) -> (axum::http::StatusCode, Value) {
     use tower::ServiceExt;
 
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
     let app = build_test_app(state);
 
-    let builder = axum::http::Request::builder().method(method).uri(uri);
+    let mut builder = axum::http::Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
     let request = match body {
         Some(body) => builder
             .header("content-type", "application/json")
@@ -1193,6 +1243,52 @@ pub async fn request_json(
         .unwrap();
     let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, json)
+}
+
+/// Drive one request and decode the body into the reply struct `T`.
+///
+/// A test that reads `status == 200` proves nothing about a shape: the route
+/// groups answered `serde_json::Value` until tasks A5 to A10 named their
+/// replies, and a renamed field passed every such test. Decoding fails on a
+/// missing or retyped field instead.
+pub async fn shape<T: serde::de::DeserializeOwned>(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> T {
+    shape_as(method, uri, body, Vec::new()).await
+}
+
+/// [`shape`], plus the headers a route reads. See [`request_json_as`].
+pub async fn shape_as<T: serde::de::DeserializeOwned>(
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    headers: Vec<(&str, String)>,
+) -> T {
+    let (status, json) = request_json_as(method, uri, body, headers).await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{method} {uri}: {json}");
+    serde_json::from_value(json.clone()).unwrap_or_else(|e| {
+        panic!("{method} {uri} answered a body the struct cannot read: {e}\n{json}")
+    })
+}
+
+/// A reply struct reads what the daemon wrote, and writes the same thing back.
+///
+/// The claim that makes naming a forwarded reply safe at all. A route that
+/// passed the daemon's object through verbatim could not drop a key the daemon
+/// added later; a named struct can. So the caller builds the object from the
+/// daemon's *own* type, reads it into the row, writes it back, and demands the
+/// same JSON — which turns a silently dropped field into a failing test.
+pub fn survives<T: serde::Serialize + serde::de::DeserializeOwned>(sent: &impl serde::Serialize) {
+    let wire = serde_json::to_value(sent).expect("the daemon's type writes JSON");
+    let row: T = serde_json::from_value(wire.clone())
+        .unwrap_or_else(|e| panic!("the row cannot read what the daemon sent: {e}\n{wire}"));
+    assert_eq!(
+        serde_json::to_value(row).expect("the row writes JSON"),
+        wire,
+        "the row changed the object on the way through"
+    );
 }
 
 #[cfg(test)]

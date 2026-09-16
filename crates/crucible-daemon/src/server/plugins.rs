@@ -177,7 +177,13 @@ pub(crate) async fn handle_session_status(
 /// The shape and the mark are their declared strings, never a glyph: each client
 /// picks its own, which is the whole reason `Mark` is a stated vocabulary rather
 /// than a character the plugin chose.
-fn surface_json(surface: &crucible_lua::Surface) -> serde_json::Value {
+///
+/// `pub` so the web crate can prove its own `SurfaceRow` writes back exactly
+/// what this wrote (`crucible-web/src/routes/surface.rs`). That route named its
+/// reply instead of forwarding this object verbatim, and a named struct can
+/// drop a key this one adds; calling the real projection is what keeps the two
+/// from separating.
+pub fn surface_json(surface: &crucible_lua::Surface) -> serde_json::Value {
     serde_json::json!({
         "plugin": surface.plugin,
         "name": surface.name,

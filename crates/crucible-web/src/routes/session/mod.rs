@@ -19,14 +19,24 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 // =========================================================================
 
 /// Standard acknowledgment response for successful mutations.
+// `pub(crate)`, not `pub(super)`: the plugin option endpoint answers this too,
+// as one arm of an untagged union. One `{"ok": true}` shape, one schema in the
+// document. The doc comment above is published to the browser, so the reason
+// stays here rather than there.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct OkResponse {
-    ok: bool,
+pub(crate) struct OkResponse {
+    pub(crate) ok: bool,
 }
 
 impl OkResponse {
-    pub(super) fn success() -> Json<Self> {
-        Json(Self { ok: true })
+    pub(crate) fn success() -> Json<Self> {
+        Json(Self::ok())
+    }
+
+    /// The bare value, for a caller that wraps it in something other than
+    /// [`Json`].
+    pub(crate) fn ok() -> Self {
+        Self { ok: true }
     }
 }
 
@@ -331,7 +341,7 @@ struct ProvidersResponse {
 /// shape is decided. A reply that does not fit is a protocol failure between
 /// two Crucible processes rather than a client error, so it answers 502 like
 /// every other daemon fault.
-pub(super) fn daemon_shape<T: serde::de::DeserializeOwned>(
+pub(crate) fn daemon_shape<T: serde::de::DeserializeOwned>(
     value: serde_json::Value,
     method: &str,
 ) -> Result<T, WebError> {

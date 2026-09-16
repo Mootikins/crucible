@@ -35,14 +35,6 @@ lib/api.ts  /api/mcp/status
 lib/api.ts  /api/notes
 lib/api.ts  /api/notes/resolve
 lib/api.ts  /api/notes/{}
-lib/api.ts  /api/plugins
-lib/api.ts  /api/plugins/command
-lib/api.ts  /api/plugins/commands
-lib/api.ts  /api/plugins/options
-lib/api.ts  /api/plugins/publications
-lib/api.ts  /api/plugins/{}
-lib/api.ts  /api/plugins/{}/option
-lib/api.ts  /api/plugins/{}/reload
 lib/api.ts  /api/project/get
 lib/api.ts  /api/project/list
 lib/api.ts  /api/project/register
@@ -56,4 +48,3 @@ lib/api.ts  /api/session/{}/command
 lib/api.ts  /api/skills
 lib/api.ts  /api/skills/search
 lib/api.ts  /api/skills/{}
-lib/api.ts  /api/surfaces

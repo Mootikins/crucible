@@ -10,25 +10,26 @@
 //! which is a *filesystem* change by its own definition. A focused type per
 //! channel is what keeps either one honest.
 
+use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
-    routing::get,
     Json,
 };
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::SessionEvent;
 use futures::stream::Stream;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
+use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn surface_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
-        .route("/api/surfaces", get(list_surfaces))
+        .routes(routes!(list_surfaces))
         .routes(routes!(surface_event_stream))
 }
 
@@ -84,14 +85,105 @@ impl SurfaceChangedEvent {
     }
 }
 
+/// What a client draws, mirroring [`crucible_lua::Shape`].
+///
+/// A closed set here, and not the open string the browser's hand-written type
+/// declares, because the daemon cannot send anything else: `Shape::parse`
+/// refuses an unknown name when the plugin declares the surface, so a spelling
+/// outside this list never reaches a reply. `the_mirrored_vocabularies_stay_closed`
+/// holds the two lists together — a variant added in `crucible-lua` fails that
+/// test rather than reaching the browser as a shape no renderer knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SurfaceShapeRow {
+    /// Rows in order, one line each.
+    List,
+}
+
+/// A row's status, mirroring [`crucible_lua::Mark`].
+///
+/// Stated semantically, so each client picks its own glyph. Closed for the same
+/// reason [`SurfaceShapeRow`] is closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SurfaceMarkRow {
+    /// Work is underway.
+    Busy,
+    /// Waiting on a person.
+    Blocked,
+    /// Finished, nothing wrong.
+    Ok,
+    /// Finished, something is wrong.
+    Failed,
+}
+
+/// One line of a surface.
+///
+/// Named for a line rather than for a row, because the daemon calls both the
+/// panel and its entries a row and this file needs to name them apart. The
+/// wire key stays `rows`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SurfaceLineRow {
+    /// Stable identity, chosen by the plugin. What an action names later, and
+    /// what a client keys a selection on across a re-push.
+    pub id: String,
+    /// The line's own text.
+    pub text: String,
+    /// Secondary text, or `null`. The daemon always writes the key, so
+    /// `required` rather than optional.
+    #[schema(required = true)]
+    pub detail: Option<String>,
+    /// Status, or `null` for a line that has none. `null` is "no status",
+    /// never "unknown". Always written, so `required`.
+    #[schema(required = true)]
+    pub mark: Option<SurfaceMarkRow>,
+}
+
+/// One declared surface, as `surface.list` reports it.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SurfaceRow {
+    /// The plugin that declared it, so a stale surface can be attributed.
+    pub plugin: String,
+    /// The plugin's own name for it. Stable across a reload.
+    pub name: String,
+    pub title: String,
+    pub shape: SurfaceShapeRow,
+    /// The session this surface is about, or `null` when it is about the
+    /// plugin. Always written, so `required`.
+    #[schema(required = true)]
+    pub session: Option<String>,
+    /// Bumped on every row change, so a client redraws on a change it sees
+    /// rather than on a timer.
+    pub version: u64,
+    pub rows: Vec<SurfaceLineRow>,
+}
+
+/// What `GET /api/surfaces` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SurfaceListResponse {
+    pub surfaces: Vec<SurfaceRow>,
+}
+
 /// `GET /api/surfaces` — every declared surface, rows included.
 ///
 /// Rows come with the list because a surface is a panel, not a feed: fetching
 /// each one separately would draw an empty sidebar first. The registry's row cap
 /// keeps the response bounded.
-async fn list_surfaces(State(state): State<AppState>) -> Result<Json<serde_json::Value>, WebError> {
+#[utoipa::path(
+    get,
+    path = "/api/surfaces",
+    responses(
+        (status = 200, body = SurfaceListResponse),
+        (status = 502, description = "The daemon could not list the surfaces, or answered a shape this route cannot read"),
+    )
+)]
+async fn list_surfaces(
+    State(state): State<AppState>,
+) -> Result<Json<SurfaceListResponse>, WebError> {
     let surfaces = state.daemon.surfaces().await.daemon_err()?;
-    Ok(Json(serde_json::json!({ "surfaces": surfaces })))
+    Ok(Json(SurfaceListResponse {
+        surfaces: daemon_shape(surfaces, "surface.list")?,
+    }))
 }
 
 /// Live stream of surface changes.
@@ -136,6 +228,147 @@ async fn surface_event_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{shape, survives};
+    use crucible_lua::{Mark, Shape, Surface, SurfaceRow as LuaSurfaceRow};
+
+    // =====================================================================
+    // The route answers the shape it declares
+    // =====================================================================
+
+    #[tokio::test]
+    async fn list_surfaces_answers_the_declared_shape() {
+        let listing: SurfaceListResponse = shape("GET", "/api/surfaces", None).await;
+
+        let panel = &listing.surfaces[0];
+        assert_eq!(panel.name, "sessions");
+        assert_eq!(panel.shape, SurfaceShapeRow::List);
+        // About the plugin rather than about one session, and the key is
+        // written either way.
+        assert_eq!(panel.session, None);
+        assert_eq!(panel.rows[0].mark, Some(SurfaceMarkRow::Busy));
+        // A line with no status. `null` is "no status", never "unknown".
+        assert_eq!(panel.rows[1].mark, None);
+        assert_eq!(panel.rows[1].detail, None);
+    }
+
+    // =====================================================================
+    // The reply writes back the object the daemon sent
+    // =====================================================================
+
+    /// Every field of a surface survives [`SurfaceRow`].
+    ///
+    /// Built by the daemon's own projection rather than from a JSON literal:
+    /// `surface_json` is what `surface.list` answers with, so a field added to
+    /// `crucible_lua::Surface` and written there fails here instead of vanishing
+    /// on the way to the browser. That loss is the risk this route took on when
+    /// it stopped forwarding the object verbatim.
+    #[test]
+    fn a_surface_writes_back_the_object_surface_list_sent() {
+        let surface = Surface {
+            plugin: "mock-plugin".to_string(),
+            name: "sessions".to_string(),
+            title: "Sessions".to_string(),
+            shape: Shape::List,
+            session: Some("session-1".to_string()),
+            version: 7,
+            // One line per mark, plus one with none, so no variant reaches the
+            // row untested.
+            rows: [
+                Some(Mark::Busy),
+                Some(Mark::Blocked),
+                Some(Mark::Ok),
+                Some(Mark::Failed),
+                None,
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, mark)| LuaSurfaceRow {
+                id: format!("row-{index}"),
+                text: format!("line {index}"),
+                detail: mark.map(|_| "and more".to_string()),
+                mark,
+            })
+            .collect(),
+        };
+
+        survives::<SurfaceRow>(&crucible_daemon::server::plugins::surface_json(&surface));
+    }
+
+    /// A surface about the plugin rather than about a session.
+    ///
+    /// `session` is `null` here and a string above, and both spellings are
+    /// written: an absent key would be a different answer, which is why the
+    /// field is `required` in the document.
+    #[test]
+    fn a_plugin_wide_surface_writes_back_its_null_session() {
+        let surface = Surface {
+            plugin: "mock-plugin".to_string(),
+            name: "about".to_string(),
+            title: "About".to_string(),
+            shape: Shape::List,
+            session: None,
+            version: 0,
+            rows: Vec::new(),
+        };
+
+        let wire = crucible_daemon::server::plugins::surface_json(&surface);
+        assert_eq!(wire["session"], serde_json::Value::Null);
+        survives::<SurfaceRow>(&wire);
+    }
+
+    // =====================================================================
+    // The mirrored vocabularies stay closed
+    // =====================================================================
+
+    /// The wire spelling of every shape a plugin can declare.
+    ///
+    /// An exhaustive match, so a variant added to `crucible_lua`'s enum fails
+    /// to compile here rather than reaching [`SurfaceShapeRow`] as a string it
+    /// cannot read. `Shape::as_str` carries the same rule on the other side,
+    /// and this is what holds the two together.
+    fn shape_spelling(shape: Shape) -> &'static str {
+        match shape {
+            Shape::List => "list",
+        }
+    }
+
+    /// The wire spelling of every mark. Exhaustive for the same reason.
+    fn mark_spelling(mark: Mark) -> &'static str {
+        match mark {
+            Mark::Busy => "busy",
+            Mark::Blocked => "blocked",
+            Mark::Ok => "ok",
+            Mark::Failed => "failed",
+        }
+    }
+
+    /// Every shape a plugin can declare. One today; the exhaustive
+    /// [`shape_spelling`] is what makes a second one announce itself.
+    const EVERY_SHAPE: &[Shape] = &[Shape::List];
+
+    /// Every mark a row can carry.
+    const EVERY_MARK: &[Mark] = &[Mark::Busy, Mark::Blocked, Mark::Ok, Mark::Failed];
+
+    #[test]
+    fn the_mirrored_vocabularies_stay_closed() {
+        for &declared in EVERY_SHAPE {
+            let spelling = shape_spelling(declared);
+            assert_eq!(declared.as_str(), spelling, "the daemon's spelling moved");
+            serde_json::from_value::<SurfaceShapeRow>(serde_json::json!(spelling))
+                .unwrap_or_else(|e| panic!("`SurfaceShapeRow` cannot read `{spelling}`: {e}"));
+        }
+
+        for &declared in EVERY_MARK {
+            let spelling = mark_spelling(declared);
+            assert_eq!(declared.as_str(), spelling, "the daemon's spelling moved");
+            serde_json::from_value::<SurfaceMarkRow>(serde_json::json!(spelling))
+                .unwrap_or_else(|e| panic!("`SurfaceMarkRow` cannot read `{spelling}`: {e}"));
+        }
+    }
+
+    // =====================================================================
+    // The push frame
+    // =====================================================================
 
     fn event(data: serde_json::Value) -> SessionEvent {
         SessionEvent::new("system", SurfaceChangedEvent::EVENT_NAME, data)

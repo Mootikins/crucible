@@ -11,7 +11,6 @@
 #
 # One `METHOD /path` per line, sorted.
 DELETE /api/layout
-DELETE /api/plugins/{name}
 GET /api/agents
 GET /api/backlinks
 GET /api/canvas
@@ -30,17 +29,12 @@ GET /api/mcp/status
 GET /api/notes
 GET /api/notes/resolve
 GET /api/notes/{name}
-GET /api/plugins
-GET /api/plugins/commands
-GET /api/plugins/options
-GET /api/plugins/publications
 GET /api/project/get
 GET /api/project/list
 GET /api/recents
 GET /api/skills
 GET /api/skills/search
 GET /api/skills/{name}
-GET /api/surfaces
 GET /api/terminal/ws
 PATCH /api/kiln/file
 POST /api/chat/send
@@ -50,10 +44,6 @@ POST /api/fs/move
 POST /api/fs/trash
 POST /api/interaction/respond
 POST /api/layout
-POST /api/plugins
-POST /api/plugins/command
-POST /api/plugins/{name}/option
-POST /api/plugins/{name}/reload
 POST /api/project/register
 POST /api/project/unregister
 POST /api/recents

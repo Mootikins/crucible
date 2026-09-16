@@ -83,5 +83,11 @@ nix = { version = "0.31", features = ["signal"] }
 # 101 and never performs the upgrade, so the contract-test harness cannot reach
 # the session loop the keepalive lives in.
 tokio-tungstenite = { workspace = true }
+# Tests only. The surface and plugin-command replies mirror vocabularies this
+# crate declares (`Shape`, `Mark`, `CommandEffect`), and the round-trip tests in
+# `routes/surface.rs` build a real `Surface` and hand it to the daemon's own
+# projection. Already in the graph through crucible-daemon, so this costs no
+# extra build.
+crucible-lua = { path = "../crucible-lua", features = ["send"] }
 crucible-web = { path = ".", features = ["test-utils"] }
 tokio = { workspace = true, features = ["full"] }
