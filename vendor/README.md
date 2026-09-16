@@ -21,6 +21,24 @@ This directory contains local patches for upstream crates with bugs or missing f
      bar_
    ```
 
+2. **emph_pair.rs backtrack fix** (same upstream issue)
+   - The `saturating_sub` in patch 1 stopped the underflow panic but left
+     `state.pos` at 0, and the tokenizer then added the token length back.
+     The position landed at an arbitrary offset, and the next inline rule
+     sliced the string there — panicking inside a multi-byte character.
+   - `state.pos` indexes the de-indented, joined list-item buffer; the source
+     map the backtrack reads holds document offsets. They agree for ordinary
+     inline text and disagree when an emphasis pair spans list-item lines.
+   - The rewind now applies only when it lands on a real char boundary of that
+     buffer. Otherwise the rule advances plainly by the marker length, trading
+     one note's source map for a parse that finishes.
+   - Regression: `emphasis_across_list_item_lines_before_a_multibyte_char_parses`
+     in `crates/crucible-core/src/parser/basic_markdown_it.rs`.
+   - Why it mattered: `BasicMarkdownItExtension::parse` wraps `md.parse` in
+     `catch_unwind`, but the release profile sets `panic = "abort"`, so the
+     guard cannot run in a shipped build. One docs note aborted the whole
+     daemon mid-index.
+
 ### Updating
 
 To pull in upstream changes:

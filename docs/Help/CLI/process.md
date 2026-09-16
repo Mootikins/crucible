@@ -103,6 +103,23 @@ This makes subsequent runs fast - only changed files are processed.
 cru process --force
 ```
 
+## Indexing at Daemon Start
+
+The daemon does not index a kiln when it starts. It opens each registered
+eager kiln, which costs one SQLite open, one pipeline and one file watcher.
+The measured cost is approximately 15 ms for one kiln. The daemon opens the
+kilns in a background task, after it binds its socket. Clients can therefore
+call the daemon while a kiln still opens.
+
+The index is derived data, and it stays in the kiln. The daemon reads it again
+at the next start. A restart does not re-parse or re-embed an unchanged note.
+Only `cru process`, `--watch` and the daemon's file watcher write to the index.
+
+To measure the incremental path, run `cru process` twice. The second run
+reports every file as skipped. Over the 184 notes in `docs/`, the second run
+takes approximately 0.02 s. The first run takes approximately 93 s, and the
+embeddings account for more than 95% of that time.
+
 ## Processing Pipeline
 
 Files go through these stages:

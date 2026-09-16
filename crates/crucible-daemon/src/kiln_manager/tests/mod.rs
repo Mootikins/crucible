@@ -796,3 +796,62 @@ async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
         .unwrap();
     assert_eq!(listed.len(), 1, "sanity: the note is visible to the walk");
 }
+
+// ===========================================================================
+// Concurrent open
+// ===========================================================================
+
+/// Two callers that ask for the same kiln at once must open it once.
+///
+/// `open` reads `connections`, drops the lock, then does every expensive thing
+/// — SQLite handle, link reindex, text backfill, pipeline, file watcher —
+/// before it inserts. Two callers that both miss the read therefore both do
+/// all of it, and the second insert replaces the first connection. The daemon
+/// paid for two SQLite pools and set two `notify` watches on one directory,
+/// and on a cold kiln both would walk and index the whole corpus.
+///
+/// It is not a rare race. Boot alone has two callers: the startup task opens
+/// the registered kilns, and the first client request that names one reaches
+/// `get_or_open` before that task finishes. It was visible in a real boot log
+/// as two "Opening kiln" lines 48ms apart for one path.
+///
+/// `classification_required` is the observable: `open` emits exactly one per
+/// open of a kiln with no classification, so counting them counts opens
+/// without a counter that exists only for this test.
+#[tokio::test]
+async fn opening_one_kiln_from_two_callers_at_once_opens_it_once() {
+    let (tx, mut rx) = broadcast::channel(64);
+    let km = Arc::new(KilnManager::with_event_tx(
+        tx,
+        None,
+        crucible_core::config::default_max_precognition_chars(),
+    ));
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path().join("contested");
+    std::fs::create_dir_all(&kiln).unwrap();
+
+    let (a, b) = tokio::join!(
+        {
+            let km = Arc::clone(&km);
+            let kiln = kiln.clone();
+            async move { km.open(&kiln).await }
+        },
+        {
+            let km = Arc::clone(&km);
+            let kiln = kiln.clone();
+            async move { km.open(&kiln).await }
+        }
+    );
+    a.expect("the first open must succeed");
+    b.expect("the second open must succeed");
+
+    let mut opens = 0;
+    while let Ok(msg) = rx.try_recv() {
+        if msg.event == "classification_required" {
+            opens += 1;
+        }
+    }
+
+    assert_eq!(opens, 1, "the kiln was opened {opens} times, not once");
+    assert_eq!(km.list().await.len(), 1);
+}

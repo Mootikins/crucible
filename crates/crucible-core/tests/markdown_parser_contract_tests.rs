@@ -132,7 +132,36 @@ mod never_panics_on_multibyte {
         "| a | b |\n|---|---|\n| 1 | 2 |",
         "---",
         "> quoted",
+        // An emphasis pair that opens on one list-item line and closes on the
+        // next. A list item parses from a de-indented, joined buffer, so this
+        // is the one shape where the inline rules' byte offsets and the
+        // document's disagree — and the only one that put `state.pos` inside
+        // a codepoint.
+        "- **opens here\n  closes here**",
+        "- _opens here\n  closes here_",
+        "```\n```\n- **opens here\n  closes here**",
     ];
+
+    /// A caught panic is still a panic.
+    ///
+    /// `BasicMarkdownItExtension::parse` wraps markdown-it in `catch_unwind`
+    /// and reports the panic as a `SyntaxError`, so `parse_content` answers
+    /// `Ok` with a note that has no blocks. Asserting only `is_ok()` therefore
+    /// passes on exactly the failure this module exists to catch. It also
+    /// understates the damage: the release profile sets `panic = "abort"`, so
+    /// in a shipped build the guard never runs and the process dies.
+    fn assert_no_caught_panic(parsed: &crucible_core::parser::types::ParsedNote, what: &str) {
+        let panicked: Vec<&str> = parsed
+            .parse_errors
+            .iter()
+            .filter(|e| e.message.contains("parser panicked"))
+            .map(|e| e.message.as_str())
+            .collect();
+        assert!(
+            panicked.is_empty(),
+            "the parser panicked on {what}: {panicked:?}"
+        );
+    }
 
     /// Every multibyte string against every syntax fragment, in the positions
     /// where a byte/char mix-up bites: before, inside, and after.
@@ -161,6 +190,7 @@ mod never_panics_on_multibyte {
                         "parsing failed for {mb:?} with {syn:?}: {:?}",
                         result.err()
                     );
+                    assert_no_caught_panic(&result.unwrap(), &format!("{mb:?} with {syn:?}"));
                 }
             }
         }
@@ -186,6 +216,7 @@ mod never_panics_on_multibyte {
             .await
             .expect("a dense multibyte note must parse");
 
+        assert_no_caught_panic(&parsed, "the dense multibyte note");
         assert!(parsed.content.word_count > 0);
     }
 

@@ -196,6 +196,39 @@ mod tests {
             .collect()
     }
 
+    /// Emphasis that opens on one list-item line and closes on the next used
+    /// to leave `state.pos` inside a multi-byte character.
+    ///
+    /// The vendored `emph_pair` rule backtracks `state.pos` by a length it
+    /// reads off the closer's source map. That map counts document bytes;
+    /// `state.pos` indexes the de-indented, joined buffer a list item parses
+    /// from, so the two disagree exactly when the pair spans lines. The
+    /// subtraction then clamped to zero and the tokenizer added the length
+    /// back, which put `state.pos` at an arbitrary offset — here inside the
+    /// em dash — and the next rule sliced the string there and panicked.
+    ///
+    /// `BasicMarkdownItExtension::parse` catches that panic, so the visible
+    /// cost is a note indexed with no blocks and a `SyntaxError`. In a release
+    /// build the guard cannot run: the workspace sets `panic = "abort"`, so
+    /// the same input aborts the whole daemon mid-index.
+    #[test]
+    fn emphasis_across_list_item_lines_before_a_multibyte_char_parses() {
+        let ext = BasicMarkdownItExtension::new();
+        let mut content = NoteContent::default();
+
+        // Shrunk from docs/Meta/Plans/2026-08-14-plugin-lifecycle-fixes.md.
+        // The empty code fence is load-bearing: it is what puts the list
+        // item's buffer offset far enough from its document offset to make
+        // the backtrack underflow.
+        let errors = ext.parse("```\n```\n- **o\n m**\u{2014}", &mut content);
+
+        assert!(
+            !errors.iter().any(|e| e.message.contains("parser panicked")),
+            "the parser panicked instead of parsing: {:?}",
+            errors
+        );
+    }
+
     #[test]
     fn headings_keep_their_level_and_text() {
         use crate::parser::types::BlockKind;

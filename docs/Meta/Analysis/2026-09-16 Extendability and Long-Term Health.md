@@ -53,7 +53,7 @@ The daemon returns a structured `RpcError` (`crates/crucible-core/src/protocol/r
 
 ### The protocol types
 
-`schemars` is a dependency and four files derive `JsonSchema`, but nothing generates a TypeScript contract from it. The web's `lib/types.ts` is written by hand, and the web's slash-command list already recorded the cost in `lib/api.ts`: "the previously hand-maintained frontend copy had already lost `/models`". Every new field on a daemon type is typed twice, and the second copy drifts. One projection: a `cru schema` step that writes `lib/generated/protocol.ts` from the core types, checked in and diffed in CI.
+`schemars` is a dependency and four files derive `JsonSchema`, but nothing generates a TypeScript contract from it. The web's `lib/types.ts` is written by hand, and the web's slash-command list already recorded the cost in `lib/api.ts`: "the previously hand-maintained frontend copy had already lost `/models`". Every new field on a daemon type is typed twice, and the second copy drifts. One projection: a `cru schema` step that writes a generated `protocol.ts` under the web `lib/generated` directory from the core types, checked in and diffed in CI.
 
 ### The model list
 

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig};
@@ -347,6 +347,20 @@ pub struct KilnConnection {
 /// Manages connections to multiple kilns
 pub struct KilnManager {
     connections: RwLock<HashMap<PathBuf, KilnConnection>>,
+    /// One gate per kiln root, held for the whole of [`Self::open`].
+    ///
+    /// `connections` alone cannot serialize opening, because an entry only
+    /// lands there after every expensive step has run: two callers both read
+    /// an empty map and both build a SQLite pool, a pipeline and a file
+    /// watcher for one directory. Boot has two such callers by construction —
+    /// the startup task and the first client request that names the kiln.
+    ///
+    /// Keyed by the CANONICAL path, the same key `connections` uses, so two
+    /// spellings of one directory take the same gate. Entries are left in
+    /// place: one `Arc<Mutex<()>>` per kiln this process ever opened is
+    /// bounded by the kilns themselves, and removing one would reopen the race
+    /// between a caller that holds it and a caller about to look it up.
+    opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
     event_tx: Option<broadcast::Sender<SessionEventMessage>>,
     enrichment_config: Option<EmbeddingProviderConfig>,
     max_precognition_chars: usize,
@@ -368,6 +382,7 @@ impl KilnManager {
     pub fn new() -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
+            opening: Mutex::new(HashMap::new()),
             event_tx: None,
             enrichment_config: None,
             max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
@@ -383,6 +398,7 @@ impl KilnManager {
     ) -> Self {
         Self {
             connections: RwLock::new(HashMap::new()),
+            opening: Mutex::new(HashMap::new()),
             event_tx: Some(event_tx),
             enrichment_config,
             max_precognition_chars,
@@ -488,6 +504,28 @@ impl KilnManager {
             let conns = self.connections.read().await;
             if conns.contains_key(&canonical) {
                 return Ok(()); // Already open
+            }
+        }
+
+        // Everything below happens once per kiln, even when two callers arrive
+        // together. The read above is the cheap path for a kiln that is
+        // already open; this gate is what makes the miss safe, and the second
+        // read under it is what turns the loser of the race into the same
+        // no-op the cheap path would have been.
+        let gate = {
+            let mut opening = self.opening.lock().await;
+            Arc::clone(
+                opening
+                    .entry(canonical.clone())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _opening = gate.lock().await;
+
+        {
+            let conns = self.connections.read().await;
+            if conns.contains_key(&canonical) {
+                return Ok(()); // Opened while this caller waited
             }
         }
 

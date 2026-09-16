@@ -128,12 +128,34 @@ impl<const MARKER: char, const CAN_SPLIT_WORD: bool> InlineRule for EmphPairScan
         node = scan_and_match_delimiters::<MARKER>(state, node);
         let map = node.srcmap.unwrap().get_byte_offsets();
         // backtrack to keep correct source maps
-        // NOTE(crucible): Use saturating arithmetic to prevent underflow panics
-        // when emphasis spans across list item lines. See upstream issue #48.
-        state.pos += scanned.length;
+        //
+        // NOTE(crucible): the backtrack mixes two coordinate systems and must
+        // be abandoned, not clamped, when they disagree. See upstream issue
+        // #48.
+        //
+        // `map` holds DOCUMENT byte offsets. `state.pos` indexes `state.src`,
+        // which for a list item is the de-indented, joined item body. The two
+        // agree for ordinary inline text, so `token_len == scanned.length` and
+        // the rewind-then-`state.pos += len` in `tokenize` cancels out. They
+        // disagree exactly when the pair opens on one list-item line and
+        // closes on the next: `token_len` then counts indentation this buffer
+        // does not contain, and the rewind goes below zero.
+        //
+        // Saturating the subtraction stopped the underflow panic but left
+        // `state.pos` at 0, and `tokenize` added `token_len` back — putting
+        // the position at an arbitrary offset that the next rule sliced,
+        // panicking inside a multi-byte character instead. So take the
+        // backtrack only when it lands on a real boundary of this buffer, and
+        // otherwise advance plainly by the marker length: one note's source
+        // map is worth less than the whole parse.
         let token_len = map.1.saturating_sub(map.0);
-        state.pos = state.pos.saturating_sub(token_len);
-        Some((node, token_len))
+        match (state.pos + scanned.length).checked_sub(token_len) {
+            Some(back) if state.src.is_char_boundary(back) => {
+                state.pos = back;
+                Some((node, token_len))
+            }
+            _ => Some((node, scanned.length)),
+        }
     }
 }
 

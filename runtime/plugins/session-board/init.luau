@@ -59,7 +59,12 @@ function M.rows(): { { [string]: any } }
                 -- A title when the session has earned one, else its id. A board
                 -- of identical ids is unreadable.
                 text = s.title or id,
-                detail = s.agent_model or s.type,
+                -- `model` and `session_type`, not `agent_model` and `type`:
+                -- the record a session handle reads comes from `session_json`
+                -- in the daemon, and a name it does not carry RAISES rather
+                -- than answering nil. In a release build that error aborts the
+                -- daemon, so this line stopped the whole boot.
+                detail = s.model or s.session_type,
                 mark = MARKS[tostring(s.state)],
             })
         end
