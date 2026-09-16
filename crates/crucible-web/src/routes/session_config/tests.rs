@@ -29,7 +29,9 @@ use crate::test_support::{build_mock_state, start_mock_daemon, MockDaemon};
 /// `(method, uri, body)` → `(status, response JSON, the mock daemon)`.
 async fn call(method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value, MockDaemon) {
     let (mock, client) = start_mock_daemon().await;
-    let app = session_routes_fail_closed().with_state(build_mock_state(client));
+    // The group carries an OpenAPI document now, and only the axum half of it
+    // answers a request.
+    let app = axum::Router::from(session_routes_fail_closed()).with_state(build_mock_state(client));
 
     let builder = axum::http::Request::builder().method(method).uri(uri);
     let request = match body {

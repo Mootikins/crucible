@@ -93,6 +93,973 @@
         }
       }
     },
+    "/api/providers": {
+      "get": {
+        "summary": "Served through the SWR catalog cache — provider probing takes ~0.7s and\nmust not gate every splash render. Shape: `{providers: [ProviderInfo]}`.",
+        "description": "Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and\nforward the raw directory to the daemon, which fed it to\n`find_workspace_and_resolve_classification` — so an arbitrary directory\ncould influence which providers a caller was told about, an input door\nstanding outside the registry floor every other kiln input now passes\nthrough. Nothing ever sent it (`listProviders()` takes no argument), so\nconverting it to a name would have preserved a door for no caller.",
+        "operationId": "list_providers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the providers"
+          }
+        }
+      }
+    },
+    "/api/session": {
+      "post": {
+        "summary": "Map a `session.create` daemon error to an HTTP status. An `INVALID_PARAMS`\nerror (JSON-RPC code `-32602` — e.g. an unknown ACP profile or an\nunparseable provider override, both now resolved daemon-side) is a client\nerror (422), preserving the pre-consolidation behavior where the web\nvalidated the profile itself. Anything else is a daemon/transport failure\n(502).",
+        "operationId": "create_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request named an endpoint, an agent type or a card the server refuses"
+          },
+          "502": {
+            "description": "The daemon could not create the session"
+          }
+        }
+      }
+    },
+    "/api/session/list": {
+      "get": {
+        "operationId": "list_sessions",
+        "parameters": [
+          {
+            "name": "kiln",
+            "in": "query",
+            "description": "The kiln's registry NAME. A query string carrying a path is a 422 —\nwhich is the honest answer, because a path names no kiln.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The `kiln` query carried a path rather than a registry name"
+          },
+          "502": {
+            "description": "The daemon could not list the sessions"
+          }
+        }
+      }
+    },
+    "/api/session/{id}": {
+      "get": {
+        "operationId": "get_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRow"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the session"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to delete",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session of that id"
+          },
+          "502": {
+            "description": "The daemon could not delete the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/archive": {
+      "post": {
+        "operationId": "archive_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to archive",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session of that id"
+          },
+          "502": {
+            "description": "The daemon could not archive the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/auto-title": {
+      "post": {
+        "summary": "Auto-generate a title for a session from its conversation history.",
+        "description": "Delegates to the daemon's `session.generate_title`, which produces a\ntopic-based title via the session's own LLM provider (falling back to\nfirst-message truncation daemon-side). Idempotent: an already-titled\nsession returns its existing title.",
+        "operationId": "auto_title",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to title",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not generate a title"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/cancel": {
+      "post": {
+        "operationId": "cancel_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose turn to cancel",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelledResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not cancel the turn"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/end": {
+      "post": {
+        "operationId": "end_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to end",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not end the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/export": {
+      "post": {
+        "operationId": "export_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to export",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/markdown; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/history": {
+      "get": {
+        "operationId": "get_session_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to replay",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many events to return.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many events to skip.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the transcript"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/kilns/connect": {
+      "post": {
+        "summary": "Updated session scope, echoed by kiln/workspace mutations.",
+        "operationId": "connect_kiln",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to attach the kiln to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KilnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionScopeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body named a path rather than a registry name"
+          },
+          "502": {
+            "description": "The daemon could not attach the kiln"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/kilns/disconnect": {
+      "post": {
+        "operationId": "disconnect_kiln",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to detach the kiln from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KilnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionScopeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body named a path rather than a registry name"
+          },
+          "502": {
+            "description": "The daemon could not detach the kiln"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/knobs": {
+      "get": {
+        "summary": "Which settings this session can change.",
+        "description": "The browser drew a fixed set of controls, which was wrong for every ACP\nsession: the protocol has no temperature and no token cap, so the panel\noffered a slider for each that changed nothing. As with modes, the web\nlayer adds nothing — the answer is the daemon's, so the TUI and the\nbrowser cannot disagree about what a session can do.",
+        "operationId": "list_knobs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose settings to describe",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionKnobsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not describe the settings"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/mode": {
+      "get": {
+        "summary": "Read the session mode. `session.get_mode` has existed all along with no web\nreader, so the panel could set a mode and then render whatever it last\nguessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so\nnothing would have failed if this stayed missing.",
+        "operationId": "get_mode",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose mode to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the mode"
+          }
+        }
+      },
+      "post": {
+        "summary": "Set the session mode (normal/plan/auto). The daemon persists it on the\nagent config and applies it to the live handle; confirmation reaches the\nUI as a `mode_changed` SSE event.",
+        "operationId": "set_mode",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose mode to set",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetModeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not set the mode"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/model": {
+      "post": {
+        "operationId": "switch_model",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose model to switch",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not switch the model"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/models": {
+      "get": {
+        "operationId": "list_models",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose models to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the models"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/modes": {
+      "get": {
+        "summary": "The session's modes, forwarded from the daemon unchanged.",
+        "description": "The web layer deliberately adds nothing here: mode labels and ordering are\nthe daemon's, so the TUI and the browser cannot drift into showing\ndifferent names for the same mode.",
+        "operationId": "list_modes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose modes to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionModesResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not list the modes"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/pause": {
+      "post": {
+        "operationId": "pause_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to pause",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not pause the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/resume": {
+      "post": {
+        "operationId": "resume_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to resume",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeSessionResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session of that id"
+          },
+          "502": {
+            "description": "The daemon could not resume the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/status": {
+      "get": {
+        "summary": "Proxy `session.status` verbatim.",
+        "description": "The daemon answers `{\"status\": [{key, plugin, text, level}, …]}`, sorted by\nkey. Nothing here reads a key: slots are keyed precisely so the chrome\nowner renders any plugin's state generically, and a match on a known key\nwould be this crate learning what one particular plugin does. Every future\nplugin gets the channel for free, so long as this stays a passthrough.\n\nA session that published nothing — the overwhelmingly common case, and any\nsession the daemon has never seen — comes back as an empty array, not an\nerror.",
+        "operationId": "session_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose slots to read",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the slots"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/title": {
+      "put": {
+        "operationId": "set_session_title",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to rename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTitleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not set the title"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session to unarchive",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session of that id"
+          },
+          "502": {
+            "description": "The daemon could not unarchive the session"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/workspace": {
+      "put": {
+        "operationId": "set_workspace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The session whose workspace to set",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionScopeResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not set the workspace"
+          }
+        }
+      }
+    },
+    "/api/sessions/search": {
+      "get": {
+        "summary": "`GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`",
+        "description": "`kiln` repeats. Search scope is kiln-set *overlap*, so the caller states\nevery kiln it is cleared for rather than one member standing in for the\nrest — one member matches only the sessions sharing that one. Parsed from\nthe raw pairs because `serde_urlencoded`, which `Query` uses, cannot\ndeserialize a repeated key into a sequence.",
+        "operationId": "search_sessions",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "The substring to match, case-insensitive",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kiln",
+            "in": "query",
+            "description": "The caller's whole kiln set, one `kiln` key per member",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many matches to return. The default is 20",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No `q`, or every `kiln` named an unusable name"
+          },
+          "502": {
+            "description": "The daemon could not run the search"
+          }
+        }
+      }
+    },
     "/api/shell/exec": {
       "post": {
         "summary": "Run one command and stream its output.",
@@ -144,6 +1111,30 @@
   },
   "components": {
     "schemas": {
+      "ArchiveResponse": {
+        "type": "object",
+        "description": "Response for session archive/unarchive status changes.",
+        "required": [
+          "archived"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CancelledResponse": {
+        "type": "object",
+        "description": "Response for session cancellation.",
+        "required": [
+          "cancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          }
+        }
+      },
       "ChatEvent": {
         "oneOf": [
           {
@@ -700,6 +1691,88 @@
         ],
         "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
+      "CreateSessionRequest": {
+        "type": "object",
+        "properties": {
+          "session_type": {
+            "type": "string"
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The session's kiln set by registry NAME — flat, no member privileged.\nEmpty or omitted is a literal empty set, NOT a request for a default:\nit creates a session with no corpus attached. The daemon stopped\nsubstituting its data root here because that root is the parent of the\nsessions store, so \"default\" quietly put every transcript in scope."
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "LLM provider (e.g., \"ollama\", \"openai\", \"anthropic\")"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model name (e.g., \"llama3.2\", \"gpt-4o\", \"claude-3-5-sonnet\")"
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Custom endpoint URL (optional, for self-hosted models)"
+          },
+          "agent_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"internal\" (default) or \"acp\""
+          },
+          "agent_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ACP agent profile name (e.g. \"claude\", \"opencode\"); required when agent_type == \"acp\""
+          },
+          "agent_card": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Internal-agent card name; never resolved in the web layer."
+          },
+          "isolation": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Isolation override: absent → resolve normally; `false` → no container\neven if the project has one; `true`, a profile name or an environment\nobject → override. Forwarded to the daemon untouched — the vocabulary\nbelongs to the plugin that resolves it, and an unknown profile comes\nback as `-32602`, which `daemon_err` turns into a 422."
+          }
+        }
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "description": "Response for session deletion.",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
       "FsEvent": {
         "oneOf": [
           {
@@ -767,6 +1840,92 @@
         ],
         "description": "A filesystem change delivered to the browser.\n\nSerializes with an internal `type` tag whose values are `changed` /\n`deleted` / `moved` (e.g. `{\"type\":\"changed\",\"path\":\"/abs\",\"kind\":\"modified\"}`).\nThe SSE `event:` name is separate — see [`FsEvent::event_name`]."
       },
+      "KilnRequest": {
+        "type": "object",
+        "description": "The body of `POST /connect_kiln` and `POST /disconnect_kiln`.\n\nNamed without the `Session` prefix its siblings drop, because the daemon's\nRPC client declares a `SessionKilnRequest` that is a different shape going\nthe other way: that one is `Serialize` and carries `session_id`, this one is\n`Deserialize` and takes the id from the URL path.",
+        "required": [
+          "kiln"
+        ],
+        "properties": {
+          "kiln": {
+            "type": "string",
+            "description": "The kiln's registry NAME, validated on the way in — a browser that sent\na path gets a 422 rather than a session attached to a directory the\nregistration floor never saw."
+          }
+        }
+      },
+      "KnobRow": {
+        "type": "object",
+        "description": "One setting and whether this session can change it.\n\nMirrors `crucible_core::types::KnobDescriptor`, for the reason\n[`ReviewPolicyRow`] gives.",
+        "required": [
+          "id",
+          "supported"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The knob id, such as `context_strategy`."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "`false` means the control should not be offered: the daemon refuses\nthe call."
+          }
+        }
+      },
+      "ModeResponse": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session's mode id. `null` is the normal mode."
+          }
+        }
+      },
+      "ModeRow": {
+        "type": "object",
+        "description": "One mode a session may enter.\n\nMirrors `crucible_core::types::mode::ModeDescriptor` field for field, for\nthe reason [`ReviewPolicyRow`] gives.",
+        "required": [
+          "id",
+          "name",
+          "review_policy"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The mode id, such as `plan`."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label to draw."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An emoji or an icon name."
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A hex colour."
+          },
+          "review_policy": {
+            "$ref": "#/components/schemas/ReviewPolicyRow",
+            "description": "The review this mode asks for, already degraded to what this session's\nagent can enforce."
+          }
+        }
+      },
       "ModelsResponse": {
         "type": "object",
         "description": "Response for model listings — the session-scoped `list_models` and the\nsession-less `list_all_models` return the same `{ models: [...] }` shape.",
@@ -779,6 +1938,18 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "OkResponse": {
+        "type": "object",
+        "description": "Standard acknowledgment response for successful mutations.",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
           }
         }
       },
@@ -797,6 +1968,74 @@
           }
         }
       },
+      "ProviderRow": {
+        "type": "object",
+        "description": "One LLM provider the daemon found.\n\nMirrors `crucible_core::types::ProviderInfo` field for field. It is\ndeclared here rather than re-exported because `crucible-core` takes no\nutoipa dependency, and a schema is what puts the fields in the document.",
+        "required": [
+          "name",
+          "provider_type",
+          "available",
+          "models",
+          "is_local"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string",
+            "description": "The backend behind the provider, such as `ollama` or `openai`."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether the provider answered its probe."
+          },
+          "default_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the provider is unavailable, when it is."
+          },
+          "is_local": {
+            "type": "boolean",
+            "description": "Whether the provider runs on this machine."
+          }
+        }
+      },
+      "ProvidersResponse": {
+        "type": "object",
+        "description": "What `GET /api/providers` answers.",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderRow"
+            }
+          }
+        }
+      },
       "PublicationChangedEvent": {
         "type": "object",
         "description": "A plugin's published data changed, delivered to the browser.\n\nCarries who published and under which key, never the value — the same\ncontract the daemon event has, and for the same reason: a publication is\nopaque JSON of the plugin's own choosing. The browser refetches through\n`GET /api/plugins/publications`.\n\nProjected through a named type rather than passed through as raw `data`,\nwhich is the treatment `SurfaceChangedEvent` already gets: a field the\ndaemon renames then breaks the browser with nothing on this side to notice.",
@@ -810,6 +2049,494 @@
           },
           "key": {
             "type": "string"
+          }
+        }
+      },
+      "ResumeSessionResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SessionLifecycleResponse",
+            "description": "The session was resident and merely paused."
+          },
+          {
+            "$ref": "#/components/schemas/SessionHistoryResponse",
+            "description": "The session came back from the store."
+          }
+        ],
+        "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves."
+      },
+      "ReviewPolicyRow": {
+        "type": "string",
+        "description": "How much review a mode asks for before the agent writes.\n\nMirrors `crucible_core::types::mode::ReviewPolicy`, which carries no\nschema: `crucible-core` takes no utoipa dependency, and a client that\nrenders a mode chip has to know the three values it can read.",
+        "enum": [
+          "none",
+          "post_turn",
+          "pre_write"
+        ]
+      },
+      "SessionAgentRow": {
+        "allOf": [
+          {
+            "type": "object",
+            "description": "Every other field of the daemon's agent record, carried verbatim."
+          },
+          {
+            "type": "object",
+            "required": [
+              "model"
+            ],
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "The model this session's agent runs."
+              },
+              "mode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The session mode id. Absent when the session is in the normal mode."
+              }
+            }
+          }
+        ],
+        "description": "The agent record `session.get` nests inside a session.\n\nTwo fields are named because a client reads them: `model`, which\n`session.list` sends flat as `agent_model`, and `mode`. Every other field\nof the daemon's record rides in `rest`, so this projection narrows what the\ndocument describes without dropping anything from the reply."
+      },
+      "SessionHistoryEvent": {
+        "type": "object",
+        "description": "One persisted session event, as `session.resume_from_storage` replays it.\n\nThe same envelope the SSE stream carries, but this route replays whatever\nthe transcript holds — including an event name a newer daemon minted — so\n`data` stays untyped here rather than narrowing to [`crate::events::ChatEvent`].",
+        "required": [
+          "type",
+          "session_id",
+          "event",
+          "data"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The envelope kind. Always `event`."
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string",
+            "description": "The event name, such as `user_message` or `text_delta`."
+          },
+          "data": {
+            "description": "The event payload. Its shape follows `event`."
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionHistoryResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/history` answers.",
+        "required": [
+          "session_id",
+          "type",
+          "state",
+          "kilns",
+          "history",
+          "total_events"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "The session type prefix."
+          },
+          "state": {
+            "type": "string"
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionHistoryEvent"
+            },
+            "description": "The page of events the query asked for."
+          },
+          "total_events": {
+            "type": "integer",
+            "description": "How many events the whole transcript holds, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionKnobsResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/knobs` answers.",
+        "required": [
+          "knobs"
+        ],
+        "properties": {
+          "knobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnobRow"
+            },
+            "description": "Every knob Crucible has, answered for. A client that finds an id\nmissing is talking to an older daemon."
+          }
+        }
+      },
+      "SessionLifecycleResponse": {
+        "type": "object",
+        "description": "What `session.pause`, `session.resume` and `session.end` answer.",
+        "required": [
+          "session_id",
+          "state"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "previous_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The state the session left. `session.end` does not send it."
+          },
+          "state": {
+            "type": "string",
+            "description": "The state the session is in now."
+          },
+          "kilns": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The session's kilns. Only `session.end` sends them."
+          }
+        }
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/list` answers.",
+        "required": [
+          "sessions",
+          "total"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "How many sessions the reply carries.",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionModesResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/modes` answers.",
+        "required": [
+          "current_mode_id",
+          "modes"
+        ],
+        "properties": {
+          "current_mode_id": {
+            "type": "string",
+            "description": "The mode the session is in. Always one of `modes`."
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModeRow"
+            },
+            "description": "Every mode the session may switch to, in declaration order."
+          }
+        }
+      },
+      "SessionRow": {
+        "type": "object",
+        "description": "One session, as every session route answers it.\n\nThree daemon methods build three different objects for one entity.\n`session.create` sends no `started_at` and no `title`. `session.get` nests\nthe model under `agent` and sends no `event_count`, `last_activity` or\n`archived`. `session.list` sends the model flat and sends all three. This\ndeclares the union once, so a client reads one type instead of reconciling\nthree. The divergence is a daemon bug (`server/session/list.rs:155` against\n`:302`); this route does not fix it.\n\nA field that one shape omits and another sends as `null` carries\n`Option<Option<T>>`. The outer level is \"the daemon wrote no key\", the\ninner one is \"the key is null\". Both spellings then reach the browser as\nthe daemon wrote them, which is what keeps this projection lossless.",
+        "required": [
+          "session_id",
+          "type",
+          "kilns",
+          "state"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "The session id. The wire name is `session_id`, never `id`."
+          },
+          "type": {
+            "type": "string",
+            "description": "The session type prefix, such as `chat`."
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every kiln the session can query, by registry name."
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session's working directory. `null` is a session with no workspace."
+          },
+          "state": {
+            "type": "string",
+            "description": "The session state, such as `active` or `paused`."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the session started. `session.create` does not send it."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session title. `session.create` does not send it."
+          },
+          "agent_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The resolved model. `session.get` does not send it; read `agent.model`\nthere."
+          },
+          "last_activity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The last event's time. Only `session.list` sends it."
+          },
+          "event_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "How many events the transcript holds. Only `session.list` sends it.",
+            "minimum": 0
+          },
+          "archived": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the session is archived. Only `session.list` sends it."
+          },
+          "parent_session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The parent of a delegated session. `session.create` does not send it."
+          },
+          "continued_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session this one continues. Only `session.get` sends it."
+          },
+          "agent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionAgentRow",
+                "description": "The session's agent record. Only `session.get` sends it."
+              }
+            ]
+          },
+          "recording_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the session records its transcript. `session.get` sends it only\nwhen the session has a recording mode."
+          }
+        }
+      },
+      "SessionScopeResponse": {
+        "type": "object",
+        "description": "The session scope that a kiln or workspace mutation echoes.",
+        "required": [
+          "session_id",
+          "kilns"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "kilns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every kiln the session can query, by registry name."
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session's working directory. `null` is a session with no workspace."
+          }
+        }
+      },
+      "SessionSearchMatch": {
+        "type": "object",
+        "description": "One transcript line that matched a session search.\n\nNot a session: the daemon answers the line it matched on, so a caller that\nwants the session reads `session_id` and asks for it.",
+        "required": [
+          "session_id",
+          "line",
+          "context"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The 1-based line of the transcript. `0` marks a title match on a\nsession whose transcript has not reached disk yet.",
+            "minimum": 0
+          },
+          "context": {
+            "type": "string",
+            "description": "The matched line, truncated to 100 characters."
+          }
+        }
+      },
+      "SessionSearchResponse": {
+        "type": "object",
+        "description": "What `GET /api/sessions/search` answers.",
+        "required": [
+          "matches",
+          "total"
+        ],
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionSearchMatch"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "How many matches the reply carries.",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionStatusResponse": {
+        "type": "object",
+        "description": "What `GET /api/session/{id}/status` answers.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionStatusSlot"
+            },
+            "description": "Every slot the session has, sorted by key. A session that published\nnothing answers an empty list."
+          }
+        }
+      },
+      "SessionStatusSlot": {
+        "type": "object",
+        "description": "One keyed status slot a plugin published for a session.\n\n`key`, `plugin` and `level` stay plain strings rather than unions on\npurpose. The moment a client enumerates them, a new plugin needs a client\nchange to be visible at all, which is the thing this channel exists to\navoid.",
+        "required": [
+          "key",
+          "plugin",
+          "text",
+          "level"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "What the slot is about. The plugin chooses it."
+          },
+          "plugin": {
+            "type": "string",
+            "description": "Which plugin published the slot."
+          },
+          "text": {
+            "type": "string",
+            "description": "The line to draw."
+          },
+          "level": {
+            "type": "string",
+            "description": "How loud the line is, such as `info` or `warn`."
+          }
+        }
+      },
+      "SetModeRequest": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "SetTitleRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "SetWorkspaceRequest": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Omitted/null → detach: the session is then left with no workspace."
           }
         }
       },
@@ -938,6 +2665,29 @@
           "withdrawn": {
             "type": "boolean",
             "description": "The surface is gone, so the browser drops it instead of refetching.\n\nPassed through rather than re-derived. The daemon knew this when it\ndropped the entry, and a browser that had to ask `GET /api/surfaces`\nto find out would pay a round trip for a fact the event already held."
+          }
+        }
+      },
+      "SwitchModelRequest": {
+        "type": "object",
+        "required": [
+          "model_id"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TitleResponse": {
+        "type": "object",
+        "description": "Response for title operations.",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
           }
         }
       }

@@ -145,7 +145,9 @@ fn api_router(
         // `http://localhost:11434` (the local-Ollama path) working, a LAN or
         // wildcard bind refuses it. `session_routes_fail_closed()` is the harness form; this
         // must be the `_with` form or the default bind loses local Ollama.
-        .merge(session_routes_with(EndpointPolicy::for_bind_host(&web_config.host)).into())
+        .merge(session_routes_with(EndpointPolicy::for_bind_host(
+            &web_config.host,
+        )))
         .merge(project_routes().into())
         .merge(scm_routes().into())
         .merge(fs_routes())

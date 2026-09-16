@@ -1,23 +1,25 @@
 use super::session_commands::{execute_command, list_commands};
-use super::session_status::session_status;
+use super::session_status::{__path_session_status, session_status};
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
     extract::{Path, State},
-    routing::{get, post, put},
-    Extension, Json, Router,
+    routing::{get, post},
+    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
+use utoipa::{IntoParams, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 // =========================================================================
 // Typed Response Structs
 // =========================================================================
 
 /// Standard acknowledgment response for successful mutations.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(super) struct OkResponse {
     ok: bool,
 }
@@ -29,27 +31,295 @@ impl OkResponse {
 }
 
 /// Response for session archive/unarchive status changes.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ArchiveResponse {
     archived: bool,
 }
 
 /// Response for session deletion.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct DeleteResponse {
     deleted: bool,
 }
 
 /// Response for session cancellation.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct CancelledResponse {
     cancelled: bool,
 }
 
 /// Response for title operations.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct TitleResponse {
     title: String,
+}
+
+/// Read a present `null` as a present-and-null value rather than as an absent
+/// key.
+///
+/// `Option<Option<T>>` alone cannot tell the two apart on the way in: serde
+/// reads a `null` into the outer `None`, which then writes no key at all. The
+/// three session shapes differ by exactly that distinction, so it has to
+/// survive the round trip.
+fn present_or_null<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// One session, as every session route answers it.
+///
+/// Three daemon methods build three different objects for one entity.
+/// `session.create` sends no `started_at` and no `title`. `session.get` nests
+/// the model under `agent` and sends no `event_count`, `last_activity` or
+/// `archived`. `session.list` sends the model flat and sends all three. This
+/// declares the union once, so a client reads one type instead of reconciling
+/// three. The divergence is a daemon bug (`server/session/list.rs:155` against
+/// `:302`); this route does not fix it.
+///
+/// A field that one shape omits and another sends as `null` carries
+/// `Option<Option<T>>`. The outer level is "the daemon wrote no key", the
+/// inner one is "the key is null". Both spellings then reach the browser as
+/// the daemon wrote them, which is what keeps this projection lossless.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub(super) struct SessionRow {
+    /// The session id. The wire name is `session_id`, never `id`.
+    session_id: String,
+    /// The session type prefix, such as `chat`.
+    #[serde(rename = "type")]
+    session_type: String,
+    /// Every kiln the session can query, by registry name.
+    kilns: Vec<String>,
+    /// The session's working directory. `null` is a session with no workspace.
+    workspace: Option<String>,
+    /// The session state, such as `active` or `paused`.
+    state: String,
+    /// When the session started. `session.create` does not send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    started_at: Option<String>,
+    /// The session title. `session.create` does not send it.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    title: Option<Option<String>>,
+    /// The resolved model. `session.get` does not send it; read `agent.model`
+    /// there.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    agent_model: Option<Option<String>>,
+    /// The last event's time. Only `session.list` sends it.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    last_activity: Option<Option<String>>,
+    /// How many events the transcript holds. Only `session.list` sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    event_count: Option<u64>,
+    /// Whether the session is archived. Only `session.list` sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archived: Option<bool>,
+    /// The parent of a delegated session. `session.create` does not send it.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    parent_session_id: Option<Option<String>>,
+    /// The session this one continues. Only `session.get` sends it.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    continued_from: Option<Option<String>>,
+    /// The session's agent record. Only `session.get` sends it.
+    #[serde(
+        default,
+        deserialize_with = "present_or_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    agent: Option<Option<SessionAgentRow>>,
+    /// How the session records its transcript. `session.get` sends it only
+    /// when the session has a recording mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recording_mode: Option<String>,
+}
+
+/// The agent record `session.get` nests inside a session.
+///
+/// Two fields are named because a client reads them: `model`, which
+/// `session.list` sends flat as `agent_model`, and `mode`. Every other field
+/// of the daemon's record rides in `rest`, so this projection narrows what the
+/// document describes without dropping anything from the reply.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub(super) struct SessionAgentRow {
+    /// The model this session's agent runs.
+    model: String,
+    /// The session mode id. Absent when the session is in the normal mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+    /// Every other field of the daemon's agent record, carried verbatim.
+    #[serde(flatten)]
+    #[schema(value_type = Object)]
+    rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// What `GET /api/session/list` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionListResponse {
+    sessions: Vec<SessionRow>,
+    /// How many sessions the reply carries.
+    total: usize,
+}
+
+/// One transcript line that matched a session search.
+///
+/// Not a session: the daemon answers the line it matched on, so a caller that
+/// wants the session reads `session_id` and asks for it.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionSearchMatch {
+    session_id: String,
+    /// The 1-based line of the transcript. `0` marks a title match on a
+    /// session whose transcript has not reached disk yet.
+    line: u64,
+    /// The matched line, truncated to 100 characters.
+    context: String,
+}
+
+/// What `GET /api/sessions/search` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionSearchResponse {
+    matches: Vec<SessionSearchMatch>,
+    /// How many matches the reply carries.
+    total: usize,
+}
+
+/// One persisted session event, as `session.resume_from_storage` replays it.
+///
+/// The same envelope the SSE stream carries, but this route replays whatever
+/// the transcript holds — including an event name a newer daemon minted — so
+/// `data` stays untyped here rather than narrowing to [`crate::events::ChatEvent`].
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionHistoryEvent {
+    /// The envelope kind. Always `event`.
+    #[serde(rename = "type")]
+    message_type: String,
+    session_id: String,
+    /// The event name, such as `user_message` or `text_delta`.
+    event: String,
+    /// The event payload. Its shape follows `event`.
+    data: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timestamp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seq: Option<u64>,
+}
+
+/// What `GET /api/session/{id}/history` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionHistoryResponse {
+    session_id: String,
+    /// The session type prefix.
+    #[serde(rename = "type")]
+    session_type: String,
+    state: String,
+    kilns: Vec<String>,
+    /// The page of events the query asked for.
+    history: Vec<SessionHistoryEvent>,
+    /// How many events the whole transcript holds, for paging.
+    total_events: usize,
+}
+
+/// What `session.pause`, `session.resume` and `session.end` answer.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionLifecycleResponse {
+    session_id: String,
+    /// The state the session left. `session.end` does not send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_state: Option<String>,
+    /// The state the session is in now.
+    state: String,
+    /// The session's kilns. Only `session.end` sends them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kilns: Option<Vec<String>>,
+}
+
+/// What `POST /api/session/{id}/resume` answers, which depends on the path
+/// that resumed the session.
+///
+/// The warm path answers the state change. The cold path reloads the session
+/// from the store and answers its history, because that call is also what
+/// `GET /api/session/{id}/history` serves.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+enum ResumeSessionResponse {
+    /// The session was resident and merely paused.
+    Live(SessionLifecycleResponse),
+    /// The session came back from the store.
+    Restored(Box<SessionHistoryResponse>),
+}
+
+/// The session scope that a kiln or workspace mutation echoes.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionScopeResponse {
+    session_id: String,
+    /// Every kiln the session can query, by registry name.
+    kilns: Vec<String>,
+    /// The session's working directory. `null` is a session with no workspace.
+    workspace: Option<String>,
+}
+
+/// One LLM provider the daemon found.
+///
+/// Mirrors `crucible_core::types::ProviderInfo` field for field. It is
+/// declared here rather than re-exported because `crucible-core` takes no
+/// utoipa dependency, and a schema is what puts the fields in the document.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct ProviderRow {
+    name: String,
+    /// The backend behind the provider, such as `ollama` or `openai`.
+    provider_type: String,
+    /// Whether the provider answered its probe.
+    available: bool,
+    default_model: Option<String>,
+    models: Vec<String>,
+    endpoint: Option<String>,
+    /// Why the provider is unavailable, when it is.
+    reason: Option<String>,
+    /// Whether the provider runs on this machine.
+    is_local: bool,
+}
+
+/// What `GET /api/providers` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct ProvidersResponse {
+    providers: Vec<ProviderRow>,
+}
+
+/// Read a daemon reply into the shape this route promises.
+///
+/// The daemon answers `serde_json::Value`, so the route is where the wire
+/// shape is decided. A reply that does not fit is a protocol failure between
+/// two Crucible processes rather than a client error, so it answers 502 like
+/// every other daemon fault.
+pub(super) fn daemon_shape<T: serde::de::DeserializeOwned>(
+    value: serde_json::Value,
+    method: &str,
+) -> Result<T, WebError> {
+    serde_json::from_value(value).map_err(|e| {
+        WebError::Daemon(format!(
+            "{method} answered a shape this route cannot read: {e}"
+        ))
+    })
 }
 
 // =========================================================================
@@ -73,41 +343,41 @@ fn map_session_not_found(err: impl std::fmt::Display, id: &str) -> WebError {
 /// default: `start_server` called it, and a default `cru web` silently refused
 /// `http://localhost:11434` — the local-Ollama path — until someone noticed.
 /// Production callers have a bind address and must pass it.
-pub fn session_routes_fail_closed() -> Router<AppState> {
+pub fn session_routes_fail_closed() -> OpenApiRouter<AppState> {
     session_routes_with(EndpointPolicy::for_bind_host(UNKNOWN_BIND))
 }
 
 /// Session routes carrying `policy`, which `create_session` reads when
 /// validating a custom provider endpoint.
-pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
-    Router::new()
-        .route("/api/session", post(create_session))
-        .route("/api/session/list", get(list_sessions))
-        .route("/api/sessions/search", get(search_sessions))
-        .route("/api/session/{id}", get(get_session).delete(delete_session))
-        .route("/api/session/{id}/history", get(get_session_history))
-        .route("/api/session/{id}/pause", post(pause_session))
-        .route("/api/session/{id}/resume", post(resume_session))
-        .route("/api/session/{id}/end", post(end_session))
-        .route("/api/session/{id}/archive", post(archive_session))
-        .route("/api/session/{id}/unarchive", post(unarchive_session))
-        .route("/api/session/{id}/cancel", post(cancel_session))
-        .route("/api/session/{id}/models", get(list_models))
-        .route("/api/session/{id}/model", post(switch_model))
-        .route("/api/session/{id}/modes", get(list_modes))
-        .route("/api/session/{id}/knobs", get(list_knobs))
-        .route("/api/session/{id}/status", get(session_status))
-        .route("/api/session/{id}/kilns/connect", post(connect_kiln))
-        .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
-        .route("/api/session/{id}/workspace", put(set_workspace))
-        .route("/api/session/{id}/mode", post(set_mode).get(get_mode))
-        .route("/api/session/{id}/title", put(set_session_title))
-        .route("/api/session/{id}/auto-title", post(auto_title))
-        .route("/api/providers", get(list_providers))
+pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(create_session))
+        .routes(routes!(list_sessions))
+        .routes(routes!(search_sessions))
+        .routes(routes!(get_session, delete_session))
+        .routes(routes!(get_session_history))
+        .routes(routes!(pause_session))
+        .routes(routes!(resume_session))
+        .routes(routes!(end_session))
+        .routes(routes!(archive_session))
+        .routes(routes!(unarchive_session))
+        .routes(routes!(cancel_session))
+        .routes(routes!(list_models))
+        .routes(routes!(switch_model))
+        .routes(routes!(list_modes))
+        .routes(routes!(list_knobs))
+        .routes(routes!(session_status))
+        .routes(routes!(connect_kiln))
+        .routes(routes!(disconnect_kiln))
+        .routes(routes!(set_workspace))
+        .routes(routes!(set_mode, get_mode))
+        .routes(routes!(set_session_title))
+        .routes(routes!(auto_title))
+        .routes(routes!(list_providers))
         // Config knobs register themselves in `session_config`, next to their
         // handlers: fifteen route pairs is 60 lines that pushed this file past the
         // 1000-line budget, and the group has no reason to be spelled out here.
-        .merge(super::session_config::config_routes())
+        .merge(super::session_config::config_routes().into())
         // Review lives inside this group, not beside it: bearer auth, the host
         // guard, the CORS allowlist, the body limit and the security headers
         // are applied to the session router, and a separate group is how the
@@ -125,14 +395,14 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
             "/api/session/{id}/review/comment/{comment_id}/resolve",
             post(review::resolve_comment),
         )
-        .route("/api/session/{id}/export", post(export_session))
+        .routes(routes!(export_session))
         .route("/api/session/{id}/command", post(execute_command))
         // Session-independent: the command set is static, so the composer can
         // fetch it once instead of per session.
         .route("/api/commands", get(list_commands))
         .layer(Extension(policy))
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
     session_type: String,
@@ -142,7 +412,9 @@ struct CreateSessionRequest {
     /// substituting its data root here because that root is the parent of the
     /// sessions store, so "default" quietly put every transcript in scope.
     #[serde(default)]
+    #[schema(value_type = Vec<String>)]
     kilns: Vec<crucible_core::config::KilnName>,
+    #[schema(value_type = Option<String>)]
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
     provider: Option<String>,
@@ -161,6 +433,7 @@ struct CreateSessionRequest {
     /// object → override. Forwarded to the daemon untouched — the vocabulary
     /// belongs to the plugin that resolves it, and an unknown profile comes
     /// back as `-32602`, which `daemon_err` turns into a 422.
+    #[schema(value_type = Option<Object>)]
     isolation: Option<serde_json::Value>,
 }
 
@@ -424,11 +697,21 @@ where
 /// error (422), preserving the pre-consolidation behavior where the web
 /// validated the profile itself. Anything else is a daemon/transport failure
 /// (502).
+#[utoipa::path(
+    post,
+    path = "/api/session",
+    request_body = CreateSessionRequest,
+    responses(
+        (status = 200, body = SessionRow),
+        (status = 422, description = "The request named an endpoint, an agent type or a card the server refuses"),
+        (status = 502, description = "The daemon could not create the session"),
+    )
+)]
 async fn create_session(
     State(state): State<AppState>,
     Extension(endpoint_policy): Extension<EndpointPolicy>,
     Json(req): Json<CreateSessionRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionRow>, WebError> {
     if let Some(ref endpoint) = req.endpoint {
         validate_endpoint(endpoint, endpoint_policy).await?;
     }
@@ -501,14 +784,17 @@ async fn create_session(
         .await
         .daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.create")?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ListSessionsQuery {
     /// The kiln's registry NAME. A query string carrying a path is a 422 —
     /// which is the honest answer, because a path names no kiln.
+    #[param(value_type = Option<String>)]
     kiln: Option<crucible_core::config::KilnName>,
+    #[param(value_type = Option<String>)]
     workspace: Option<PathBuf>,
     #[serde(rename = "type")]
     session_type: Option<String>,
@@ -517,10 +803,20 @@ struct ListSessionsQuery {
     include_archived: Option<bool>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/session/list",
+    params(ListSessionsQuery),
+    responses(
+        (status = 200, body = SessionListResponse),
+        (status = 422, description = "The `kiln` query carried a path rather than a registry name"),
+        (status = 502, description = "The daemon could not list the sessions"),
+    )
+)]
 async fn list_sessions(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<ListSessionsQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionListResponse>, WebError> {
     let result = state
         .daemon
         .session_list(
@@ -533,7 +829,7 @@ async fn list_sessions(
         .await
         .daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.list")?))
 }
 
 /// `GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`
@@ -543,10 +839,24 @@ async fn list_sessions(
 /// rest — one member matches only the sessions sharing that one. Parsed from
 /// the raw pairs because `serde_urlencoded`, which `Query` uses, cannot
 /// deserialize a repeated key into a sequence.
+#[utoipa::path(
+    get,
+    path = "/api/sessions/search",
+    params(
+        ("q" = String, Query, description = "The substring to match, case-insensitive"),
+        ("kiln" = Option<Vec<String>>, Query, description = "The caller's whole kiln set, one `kiln` key per member"),
+        ("limit" = Option<usize>, Query, description = "How many matches to return. The default is 20"),
+    ),
+    responses(
+        (status = 200, body = SessionSearchResponse),
+        (status = 422, description = "No `q`, or every `kiln` named an unusable name"),
+        (status = 502, description = "The daemon could not run the search"),
+    )
+)]
 async fn search_sessions(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<Vec<(String, String)>>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionSearchResponse>, WebError> {
     let mut query = None;
     // Names, parsed rather than accepted. The daemon draws a deliberate
     // distinction at `server/session/scope.rs`: "no kiln key at all" is an
@@ -592,62 +902,105 @@ async fn search_sessions(
         .await
         .daemon_err()?;
 
-    Ok(Json(results))
+    Ok(Json(daemon_shape(results, "session.search")?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}",
+    params(("id" = String, Path, description = "The session to read")),
+    responses(
+        (status = 200, body = SessionRow),
+        (status = 502, description = "The daemon could not read the session"),
+    )
+)]
 async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionRow>, WebError> {
     let result = state.daemon.session_get(&id).await.daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.get")?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 struct HistoryQuery {
+    /// How many events to return.
     limit: Option<usize>,
+    /// How many events to skip.
     offset: Option<usize>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/history",
+    params(("id" = String, Path, description = "The session to replay"), HistoryQuery),
+    responses(
+        (status = 200, body = SessionHistoryResponse),
+        (status = 502, description = "The daemon could not read the transcript"),
+    )
+)]
 async fn get_session_history(
     State(state): State<AppState>,
     Path(id): Path<String>,
     axum::extract::Query(query): axum::extract::Query<HistoryQuery>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionHistoryResponse>, WebError> {
     let result = state
         .daemon
         .session_resume_from_storage(&id, query.limit, query.offset)
         .await
         .daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.resume_from_storage")?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/pause",
+    params(("id" = String, Path, description = "The session to pause")),
+    responses(
+        (status = 200, body = SessionLifecycleResponse),
+        (status = 502, description = "The daemon could not pause the session"),
+    )
+)]
 async fn pause_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionLifecycleResponse>, WebError> {
     let result = state.daemon.session_pause(&id).await.daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.pause")?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/resume",
+    params(("id" = String, Path, description = "The session to resume")),
+    responses(
+        (status = 200, body = ResumeSessionResponse),
+        (status = 404, description = "No session of that id"),
+        (status = 502, description = "The daemon could not resume the session"),
+    )
+)]
 async fn resume_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ResumeSessionResponse>, WebError> {
     // Transparent resume: sessions are always resumable. Try the warm path
     // (session still resident and merely paused); on any failure — ended,
     // evicted, or not in memory — fall back to reloading it from the daemon's
     // session store so an idle session is never a dead end for the UI.
-    let result = match state.daemon.session_resume(&id).await {
-        Ok(result) => result,
-        Err(_) => state
-            .daemon
-            .session_resume_from_storage(&id, None, None)
-            .await
-            .map_err(|e| map_session_not_found(e, &id))?,
+    let reply = match state.daemon.session_resume(&id).await {
+        Ok(result) => ResumeSessionResponse::Live(daemon_shape(result, "session.resume")?),
+        Err(_) => {
+            let result = state
+                .daemon
+                .session_resume_from_storage(&id, None, None)
+                .await
+                .map_err(|e| map_session_not_found(e, &id))?;
+            ResumeSessionResponse::Restored(daemon_shape(result, "session.resume_from_storage")?)
+        }
     };
 
     let session_id = id.as_str();
@@ -657,20 +1010,39 @@ async fn resume_session(
         .await
         .daemon_err()?;
 
-    Ok(Json(result))
+    Ok(Json(reply))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/end",
+    params(("id" = String, Path, description = "The session to end")),
+    responses(
+        (status = 200, body = SessionLifecycleResponse),
+        (status = 502, description = "The daemon could not end the session"),
+    )
+)]
 async fn end_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionLifecycleResponse>, WebError> {
     let result = state.daemon.session_end(&id).await.daemon_err()?;
 
     state.events.remove_session(&id).await;
 
-    Ok(Json(result))
+    Ok(Json(daemon_shape(result, "session.end")?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/archive",
+    params(("id" = String, Path, description = "The session to archive")),
+    responses(
+        (status = 200, body = ArchiveResponse),
+        (status = 404, description = "No session of that id"),
+        (status = 502, description = "The daemon could not archive the session"),
+    )
+)]
 async fn archive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -684,6 +1056,16 @@ async fn archive_session(
     Ok(Json(ArchiveResponse { archived: true }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/unarchive",
+    params(("id" = String, Path, description = "The session to unarchive")),
+    responses(
+        (status = 200, body = ArchiveResponse),
+        (status = 404, description = "No session of that id"),
+        (status = 502, description = "The daemon could not unarchive the session"),
+    )
+)]
 async fn unarchive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -696,6 +1078,16 @@ async fn unarchive_session(
     Ok(Json(ArchiveResponse { archived: false }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/session/{id}",
+    params(("id" = String, Path, description = "The session to delete")),
+    responses(
+        (status = 200, body = DeleteResponse),
+        (status = 404, description = "No session of that id"),
+        (status = 502, description = "The daemon could not delete the session"),
+    )
+)]
 async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -709,6 +1101,15 @@ async fn delete_session(
     Ok(Json(DeleteResponse { deleted: true }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/cancel",
+    params(("id" = String, Path, description = "The session whose turn to cancel")),
+    responses(
+        (status = 200, body = CancelledResponse),
+        (status = 502, description = "The daemon could not cancel the turn"),
+    )
+)]
 async fn cancel_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -717,6 +1118,15 @@ async fn cancel_session(
     Ok(Json(CancelledResponse { cancelled }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/models",
+    params(("id" = String, Path, description = "The session whose models to list")),
+    responses(
+        (status = 200, body = ModelsResponse),
+        (status = 502, description = "The daemon could not list the models"),
+    )
+)]
 async fn list_models(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -725,17 +1135,104 @@ async fn list_models(
     Ok(Json(ModelsResponse { models }))
 }
 
+/// How much review a mode asks for before the agent writes.
+///
+/// Mirrors `crucible_core::types::mode::ReviewPolicy`, which carries no
+/// schema: `crucible-core` takes no utoipa dependency, and a client that
+/// renders a mode chip has to know the three values it can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum ReviewPolicyRow {
+    /// No gate at all.
+    None,
+    /// The review queue surfaces at turn end; nothing ever blocks.
+    PostTurn,
+    /// A writing tool call waits while its target has unreviewed hunks.
+    PreWrite,
+}
+
+impl From<crucible_core::types::mode::ReviewPolicy> for ReviewPolicyRow {
+    fn from(policy: crucible_core::types::mode::ReviewPolicy) -> Self {
+        use crucible_core::types::mode::ReviewPolicy;
+        match policy {
+            ReviewPolicy::None => Self::None,
+            ReviewPolicy::PostTurn => Self::PostTurn,
+            ReviewPolicy::PreWrite => Self::PreWrite,
+        }
+    }
+}
+
+/// One mode a session may enter.
+///
+/// Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
+/// the reason [`ReviewPolicyRow`] gives.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct ModeRow {
+    /// The mode id, such as `plan`.
+    id: String,
+    /// The label to draw.
+    name: String,
+    description: Option<String>,
+    /// An emoji or an icon name.
+    icon: Option<String>,
+    /// A hex colour.
+    color: Option<String>,
+    /// The review this mode asks for, already degraded to what this session's
+    /// agent can enforce.
+    review_policy: ReviewPolicyRow,
+}
+
+impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
+    fn from(mode: crucible_core::types::mode::ModeDescriptor) -> Self {
+        Self {
+            id: mode.id,
+            name: mode.name,
+            description: mode.description,
+            icon: mode.icon,
+            color: mode.color,
+            review_policy: mode.review_policy.into(),
+        }
+    }
+}
+
+/// What `GET /api/session/{id}/modes` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionModesResponse {
+    /// The mode the session is in. Always one of `modes`.
+    current_mode_id: String,
+    /// Every mode the session may switch to, in declaration order.
+    modes: Vec<ModeRow>,
+}
+
+impl From<crucible_core::types::mode::SessionModes> for SessionModesResponse {
+    fn from(modes: crucible_core::types::mode::SessionModes) -> Self {
+        Self {
+            current_mode_id: modes.current_mode_id,
+            modes: modes.modes.into_iter().map(ModeRow::from).collect(),
+        }
+    }
+}
+
 /// The session's modes, forwarded from the daemon unchanged.
 ///
 /// The web layer deliberately adds nothing here: mode labels and ordering are
 /// the daemon's, so the TUI and the browser cannot drift into showing
 /// different names for the same mode.
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/modes",
+    params(("id" = String, Path, description = "The session whose modes to list")),
+    responses(
+        (status = 200, body = SessionModesResponse),
+        (status = 502, description = "The daemon could not list the modes"),
+    )
+)]
 async fn list_modes(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<crucible_core::types::mode::SessionModes>, WebError> {
+) -> Result<Json<SessionModesResponse>, WebError> {
     let modes = state.daemon.session_list_modes(&id).await.daemon_err()?;
-    Ok(Json(modes))
+    Ok(Json(modes.into()))
 }
 
 /// Which settings this session can change.
@@ -745,19 +1242,74 @@ async fn list_modes(
 /// offered a slider for each that changed nothing. As with modes, the web
 /// layer adds nothing — the answer is the daemon's, so the TUI and the
 /// browser cannot disagree about what a session can do.
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/knobs",
+    params(("id" = String, Path, description = "The session whose settings to describe")),
+    responses(
+        (status = 200, body = SessionKnobsResponse),
+        (status = 502, description = "The daemon could not describe the settings"),
+    )
+)]
 async fn list_knobs(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<crucible_core::types::SessionKnobSupport>, WebError> {
+) -> Result<Json<SessionKnobsResponse>, WebError> {
     let knobs = state.daemon.session_list_knobs(&id).await.daemon_err()?;
-    Ok(Json(knobs))
+    Ok(Json(knobs.into()))
 }
 
-#[derive(Debug, Deserialize)]
+/// One setting and whether this session can change it.
+///
+/// Mirrors `crucible_core::types::KnobDescriptor`, for the reason
+/// [`ReviewPolicyRow`] gives.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct KnobRow {
+    /// The knob id, such as `context_strategy`.
+    id: String,
+    /// `false` means the control should not be offered: the daemon refuses
+    /// the call.
+    supported: bool,
+}
+
+/// What `GET /api/session/{id}/knobs` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct SessionKnobsResponse {
+    /// Every knob Crucible has, answered for. A client that finds an id
+    /// missing is talking to an older daemon.
+    knobs: Vec<KnobRow>,
+}
+
+impl From<crucible_core::types::SessionKnobSupport> for SessionKnobsResponse {
+    fn from(support: crucible_core::types::SessionKnobSupport) -> Self {
+        Self {
+            knobs: support
+                .knobs
+                .into_iter()
+                .map(|knob| KnobRow {
+                    id: knob.id,
+                    supported: knob.supported,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 struct SwitchModelRequest {
     model_id: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/model",
+    params(("id" = String, Path, description = "The session whose model to switch")),
+    request_body = SwitchModelRequest,
+    responses(
+        (status = 200, body = OkResponse),
+        (status = 502, description = "The daemon could not switch the model"),
+    )
+)]
 async fn switch_model(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -777,61 +1329,95 @@ async fn switch_model(
 /// RPC client declares a `SessionKilnRequest` that is a different shape going
 /// the other way: that one is `Serialize` and carries `session_id`, this one is
 /// `Deserialize` and takes the id from the URL path.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct KilnRequest {
     /// The kiln's registry NAME, validated on the way in — a browser that sent
     /// a path gets a 422 rather than a session attached to a directory the
     /// registration floor never saw.
+    #[schema(value_type = String)]
     kiln: crucible_core::config::KilnName,
 }
 
 /// Updated session scope, echoed by kiln/workspace mutations.
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/kilns/connect",
+    params(("id" = String, Path, description = "The session to attach the kiln to")),
+    request_body = KilnRequest,
+    responses(
+        (status = 200, body = SessionScopeResponse),
+        (status = 422, description = "The body named a path rather than a registry name"),
+        (status = 502, description = "The daemon could not attach the kiln"),
+    )
+)]
 async fn connect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<KilnRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
         .session_connect_kiln(&id, &req.kiln)
         .await
         .daemon_err()?;
-    Ok(Json(scope))
+    Ok(Json(daemon_shape(scope, "session.connect_kiln")?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/kilns/disconnect",
+    params(("id" = String, Path, description = "The session to detach the kiln from")),
+    request_body = KilnRequest,
+    responses(
+        (status = 200, body = SessionScopeResponse),
+        (status = 422, description = "The body named a path rather than a registry name"),
+        (status = 502, description = "The daemon could not detach the kiln"),
+    )
+)]
 async fn disconnect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<KilnRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
         .session_disconnect_kiln(&id, &req.kiln)
         .await
         .daemon_err()?;
-    Ok(Json(scope))
+    Ok(Json(daemon_shape(scope, "session.disconnect_kiln")?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct SetWorkspaceRequest {
     /// Omitted/null → detach: the session is then left with no workspace.
+    #[schema(value_type = Option<String>)]
     workspace: Option<PathBuf>,
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/session/{id}/workspace",
+    params(("id" = String, Path, description = "The session whose workspace to set")),
+    request_body = SetWorkspaceRequest,
+    responses(
+        (status = 200, body = SessionScopeResponse),
+        (status = 502, description = "The daemon could not set the workspace"),
+    )
+)]
 async fn set_workspace(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetWorkspaceRequest>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<SessionScopeResponse>, WebError> {
     let scope = state
         .daemon
         .session_set_workspace(&id, req.workspace.as_deref())
         .await
         .daemon_err()?;
-    Ok(Json(scope))
+    Ok(Json(daemon_shape(scope, "session.set_workspace")?))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct SetModeRequest {
     mode: String,
 }
@@ -839,6 +1425,16 @@ struct SetModeRequest {
 /// Set the session mode (normal/plan/auto). The daemon persists it on the
 /// agent config and applies it to the live handle; confirmation reaches the
 /// UI as a `mode_changed` SSE event.
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/mode",
+    params(("id" = String, Path, description = "The session whose mode to set")),
+    request_body = SetModeRequest,
+    responses(
+        (status = 200, body = OkResponse),
+        (status = 502, description = "The daemon could not set the mode"),
+    )
+)]
 async fn set_mode(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -852,8 +1448,9 @@ async fn set_mode(
     Ok(OkResponse::success())
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ModeResponse {
+    /// The session's mode id. `null` is the normal mode.
     mode: Option<String>,
 }
 
@@ -861,6 +1458,15 @@ struct ModeResponse {
 /// reader, so the panel could set a mode and then render whatever it last
 /// guessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so
 /// nothing would have failed if this stayed missing.
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/mode",
+    params(("id" = String, Path, description = "The session whose mode to read")),
+    responses(
+        (status = 200, body = ModeResponse),
+        (status = 502, description = "The daemon could not read the mode"),
+    )
+)]
 async fn get_mode(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -869,11 +1475,21 @@ async fn get_mode(
     Ok(Json(ModeResponse { mode }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct SetTitleRequest {
     title: String,
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/session/{id}/title",
+    params(("id" = String, Path, description = "The session to rename")),
+    request_body = SetTitleRequest,
+    responses(
+        (status = 200, body = OkResponse),
+        (status = 502, description = "The daemon could not set the title"),
+    )
+)]
 async fn set_session_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -893,6 +1509,15 @@ async fn set_session_title(
 /// topic-based title via the session's own LLM provider (falling back to
 /// first-message truncation daemon-side). Idempotent: an already-titled
 /// session returns its existing title.
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/auto-title",
+    params(("id" = String, Path, description = "The session to title")),
+    responses(
+        (status = 200, body = TitleResponse),
+        (status = 502, description = "The daemon could not generate a title"),
+    )
+)]
 async fn auto_title(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -912,6 +1537,15 @@ async fn auto_title(
     Ok(Json(TitleResponse { title }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/session/{id}/export",
+    params(("id" = String, Path, description = "The session to export")),
+    responses(
+        (status = 200, content_type = "text/markdown; charset=utf-8", body = String),
+        (status = 502, description = "The daemon could not read the session"),
+    )
+)]
 async fn export_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -982,18 +1616,30 @@ async fn export_session(
 /// standing outside the registry floor every other kiln input now passes
 /// through. Nothing ever sent it (`listProviders()` takes no argument), so
 /// converting it to a name would have preserved a door for no caller.
+#[utoipa::path(
+    get,
+    path = "/api/providers",
+    responses(
+        (status = 200, body = ProvidersResponse),
+        (status = 502, description = "The daemon could not list the providers"),
+    )
+)]
 async fn list_providers(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, WebError> {
+) -> Result<Json<ProvidersResponse>, WebError> {
     let providers = crate::services::catalog::providers_value(&state)
         .await
         .daemon_err()?;
-    Ok(Json(serde_json::json!({ "providers": providers })))
+    Ok(Json(ProvidersResponse {
+        providers: daemon_shape(providers, "providers.list")?,
+    }))
 }
 
 mod review;
 
 #[cfg(test)]
 mod search_scope_tests;
+#[cfg(test)]
+mod shape_tests;
 #[cfg(test)]
 mod tests;

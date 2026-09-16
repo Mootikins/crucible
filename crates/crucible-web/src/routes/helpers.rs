@@ -9,7 +9,9 @@ use crate::WebError;
 
 /// Response for model listings — the session-scoped `list_models` and the
 /// session-less `list_all_models` return the same `{ models: [...] }` shape.
-#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+// `Deserialize` is for the route tests, which read a reply back into the
+// struct that wrote it. Nothing deserialises it on the wire.
+#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub(crate) struct ModelsResponse {
     pub(crate) models: Vec<String>,
 }

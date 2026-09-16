@@ -507,7 +507,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             if session_type == "__no_session_id__" {
                 json!({})
             } else {
-                json!({"session_id": "test-session-001"})
+                // The daemon's own projection (`server/session/create.rs:45`):
+                // no `started_at` and no `title`, unlike `session.get`.
+                json!({
+                    "session_id": "test-session-001",
+                    "type": "chat",
+                    "kilns": ["test-kiln"],
+                    "workspace": "/tmp/test-kiln",
+                    "state": "active",
+                    "agent_model": "ollama:llama3.2",
+                })
             }
         }
         // Two slots from two different plugins — one the repo ships, one the
@@ -530,16 +539,48 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 ]})
             }
         }
-        "session.list" => json!([]),
+        // `{sessions, total}`, as `server/session/list.rs:145` builds it.
+        "session.list" => json!({"sessions": [], "total": 0}),
+        // The daemon's own projection (`server/session/list.rs:302`): the wire
+        // name is `type`, the model is nested under `agent`, and
+        // `event_count`, `last_activity` and `archived` are absent — all three
+        // of which `session.list` sends.
         "session.get" => json!({
             "session_id": "test-session-001",
+            "type": "chat",
+            "kilns": ["test-kiln"],
+            "workspace": "/tmp/test-kiln",
             "state": "active",
-            "session_type": "chat",
+            "started_at": "2026-01-01T00:00:00Z",
+            "title": null,
+            "continued_from": null,
+            "parent_session_id": null,
+            "agent": {
+                "agent_type": "internal",
+                "provider": "ollama",
+                "model": "ollama:llama3.2",
+                "system_prompt": "",
+                "precognition_enabled": true,
+                "context_strategy": "recent"
+            }
+        }),
+        // `server/session/lifecycle.rs:13` and `:33` answer the state change,
+        // `:116` answers the session's kilns instead of a previous state.
+        "session.pause" => json!({
+            "session_id": "test-session-001",
+            "previous_state": "active",
+            "state": "paused"
+        }),
+        "session.resume" => json!({
+            "session_id": "test-session-001",
+            "previous_state": "paused",
+            "state": "active"
+        }),
+        "session.end" => json!({
+            "session_id": "test-session-001",
+            "state": "ended",
             "kilns": ["test-kiln"]
         }),
-        "session.pause" => json!({"ok": true}),
-        "session.resume" => json!({"ok": true}),
-        "session.end" => json!({"ok": true}),
         "session.cancel" => json!({"cancelled": true}),
         "session.delete" => json!({"deleted": true}),
         "session.archive" => json!({"archived": true}),
@@ -551,6 +592,14 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.list_models" => json!({"models": ["llama3.2", "mistral"]}),
         "session.switch_model" => json!(null),
         "session.set_mode" => json!(null),
+        // `{knobs: [{id, supported}]}`, one entry per `SessionKnob::ALL`
+        // member. The route answered `null` here until it named its reply.
+        "session.list_knobs" => json!({"knobs": [
+            {"id": "model", "supported": true},
+            {"id": "mode", "supported": true},
+            {"id": "context_strategy", "supported": true},
+            {"id": "precognition", "supported": true},
+        ]}),
         "session.list_modes" => json!({
             "session_id": "test-session-001",
             "current_mode_id": "ask",
@@ -566,7 +615,12 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "session_id": "test-session-001",
             "title": "Merkle tree sync design"
         }),
-        "session.search" => json!([{"session_id": "s1", "title": "Test Session"}]),
+        // `{matches, total}` of transcript LINES, not of sessions
+        // (`server/session/list.rs:277`).
+        "session.search" => json!({
+            "matches": [{"session_id": "s1", "line": 12, "context": "Test Session"}],
+            "total": 1
+        }),
         // Mirrors the daemon's real response shape: a `history` array of
         // SessionEventMessage entries, NOT a `messages` array. Session id
         // "empty-session-001" yields an empty history for fallback tests.
@@ -577,10 +631,20 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 .and_then(|v| v.as_str())
                 .unwrap_or("test-session-001");
             if session_id == "empty-session-001" {
-                json!({"session_id": session_id, "history": [], "total_events": 0})
+                json!({
+                    "session_id": session_id,
+                    "type": "chat",
+                    "state": "active",
+                    "kilns": ["test-kiln"],
+                    "history": [],
+                    "total_events": 0
+                })
             } else {
                 json!({
                     "session_id": session_id,
+                    "type": "chat",
+                    "state": "active",
+                    "kilns": ["test-kiln"],
                     "history": [
                         {
                             "type": "event",

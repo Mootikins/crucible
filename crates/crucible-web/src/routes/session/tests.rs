@@ -447,7 +447,12 @@ async fn post_create_session_bound_to(
 ) -> axum::http::StatusCode {
     let (_mock, client) = crate::test_support::start_mock_daemon().await;
     let state = crate::test_support::build_mock_state(client);
-    let app = session_routes_with(EndpointPolicy::from_bind(bind_host, false)).with_state(state);
+    // The group carries an OpenAPI document now, and only the axum half of it
+    // answers a request.
+    let app = axum::Router::from(session_routes_with(EndpointPolicy::from_bind(
+        bind_host, false,
+    )))
+    .with_state(state);
 
     let request = axum::http::Request::builder()
         .method("POST")

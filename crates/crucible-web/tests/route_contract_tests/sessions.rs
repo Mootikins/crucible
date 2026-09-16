@@ -366,7 +366,11 @@ async fn get_session_returns_session_data() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["session_id"], "test-session-001");
     assert_eq!(json["state"], "active");
-    assert_eq!(json["session_type"], "chat");
+    // `type`, not `session_type`: that is the name the daemon writes
+    // (`server/session/list.rs:302`) and the name the browser reads. The mock
+    // answered `session_type` until this route named its reply, and this
+    // assertion held the mock's spelling rather than the wire's.
+    assert_eq!(json["type"], "chat");
 }
 
 // =========================================================================
