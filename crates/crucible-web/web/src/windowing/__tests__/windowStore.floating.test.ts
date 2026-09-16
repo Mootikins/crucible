@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
 import { emptyState, findFirstPane } from '@/windowing/model/tree';
-import { stubPolicy } from './stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 import type { Tab } from '@/windowing/model/types';
 
 const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
@@ -13,7 +13,7 @@ const tab = (id: string, overrides: Partial<Tab> = {}): Tab => ({
 
 /** Reset to an empty seed and return the main pane + its group id. */
 function resetStore(): { paneId: string; groupId: string } {
-  configureWindowing(stubPolicy({ seed: emptyState }));
+  configureWindowing(neutralPolicy({ seed: emptyState }));
   const pane = findFirstPane(windowStore.layout)!;
   return { paneId: pane.id, groupId: pane.tabGroupId! };
 }

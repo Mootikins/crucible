@@ -3,16 +3,16 @@ import { render, fireEvent } from '@solidjs/testing-library';
 import { DragDropProvider } from '@thisbeyond/solid-dnd';
 import { configureWindowing, windowStore } from '@/windowing/store';
 import { WindowingProvider } from '@/windowing/components/context';
-import { stubPolicy } from '@/windowing/__tests__/stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 import { primaryEdgeGroupId } from '@/windowing/model/tree';
 import { Ribbon } from '../Ribbon';
 
 /** A tab that the policy gives a reason is greyed out, and says why. */
 beforeEach(() => {
   configureWindowing(
-    stubPolicy({
+    neutralPolicy({
       seed: () => {
-        const s = stubPolicy().seed();
+        const s = neutralPolicy().seed();
         const g = primaryEdgeGroupId(s, 'right')!;
         s.tabGroups[g]!.tabs = [
           { id: 'ok', title: 'Fine', contentType: 'alpha' },

@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
 import { configureWindowing, windowStore, setStore, windowActions } from '@/windowing/store';
-import { stubPolicy } from './stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 import type { Tab, TabGroup } from '@/windowing/model/types';
 
 const makeTab = (id: string, title = id): Tab => ({
@@ -15,7 +15,7 @@ const makeTab = (id: string, title = id): Tab => ({
 });
 
 describe('addTab ghost-group self-heal', () => {
-  beforeEach(() => configureWindowing(stubPolicy()));
+  beforeEach(() => configureWindowing(neutralPolicy()));
 
   it('materializes a missing group instead of dropping the tab', () => {
     setStore(

@@ -5,9 +5,10 @@ import {
   windowActions,
   resetWindowingForTest,
 } from '@/windowing/store';
-import { stubPolicy } from './stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
+import { primaryEdgeGroupId } from '@/windowing/model/tree';
 
-/** The centre group of the stub seed. */
+/** The centre group of the neutral seed. */
 function centreGroupId(): string {
   const layout = windowStore.layout;
   if (layout.type !== 'pane' || !layout.tabGroupId) throw new Error('seed has no centre group');
@@ -22,7 +23,7 @@ describe('WindowPolicy', () => {
   });
 
   it('lets a spy replace an action', () => {
-    configureWindowing(stubPolicy());
+    configureWindowing(neutralPolicy());
     // A call before the spy, as the app makes before a test spies.
     windowActions.toggleEdgePanel('left');
     const spy = vi.spyOn(windowActions, 'toggleEdgePanel').mockImplementation(() => {});
@@ -37,43 +38,57 @@ describe('WindowPolicy', () => {
   });
 
   it('seeds the store from the policy', () => {
-    configureWindowing(stubPolicy());
-    expect(windowStore.tabGroups[centreGroupId()]!.tabs.map((t) => t.id)).toEqual(['t1']);
+    configureWindowing(neutralPolicy());
+    expect(windowStore.tabGroups[centreGroupId()]!.tabs.map((t) => t.id)).toEqual([
+      'tab-alpha',
+      'tab-beta',
+    ]);
+  });
+
+  it('gives each rail of the neutral seed one tab, the left docked and the right a strip', () => {
+    configureWindowing(neutralPolicy());
+    const tabsOf = (side: 'left' | 'right') =>
+      windowStore.tabGroups[primaryEdgeGroupId(windowStore, side)!]!.tabs.map((t) => t.id);
+    expect(tabsOf('left')).toEqual(['tab-left']);
+    expect(tabsOf('right')).toEqual(['tab-right']);
+    expect(windowStore.edgePanels.left.mode).toBe('docked');
+    expect(windowStore.edgePanels.right.mode).toBe('strip');
+    expect(windowStore.tabGroups[centreGroupId()]!.activeTabId).toBe('tab-alpha');
   });
 
   it('asks the policy before it closes a tab', () => {
     const mayCloseTab = vi.fn(() => false);
-    configureWindowing(stubPolicy({ mayCloseTab }));
+    configureWindowing(neutralPolicy({ mayCloseTab }));
     const g = centreGroupId();
-    windowActions.removeTab(g, 't1');
-    expect(mayCloseTab).toHaveBeenCalledWith(expect.anything(), g, 't1');
-    expect(windowStore.tabGroups[g]!.tabs).toHaveLength(1);
+    windowActions.removeTab(g, 'tab-alpha');
+    expect(mayCloseTab).toHaveBeenCalledWith(expect.anything(), g, 'tab-alpha');
+    expect(windowStore.tabGroups[g]!.tabs).toHaveLength(2);
   });
 
   it('answers canCloseTab from the policy', () => {
-    configureWindowing(stubPolicy({ mayCloseTab: () => false }));
-    expect(windowActions.canCloseTab(centreGroupId(), 't1')).toBe(false);
+    configureWindowing(neutralPolicy({ mayCloseTab: () => false }));
+    expect(windowActions.canCloseTab(centreGroupId(), 'tab-alpha')).toBe(false);
   });
 
   it('lets the policy repair a restored layout', () => {
     const repairLayout = vi.fn();
-    configureWindowing(stubPolicy({ repairLayout }));
+    configureWindowing(neutralPolicy({ repairLayout }));
     windowActions.importLayout(windowActions.exportLayout());
     expect(repairLayout).toHaveBeenCalledTimes(1);
   });
 
   it('reads a stored layout with the policy hooks', () => {
-    const base = stubPolicy();
+    const base = neutralPolicy();
     const prune = vi.fn();
-    configureWindowing(stubPolicy({ layoutHooks: { ...base.layoutHooks, prune } }));
+    configureWindowing(neutralPolicy({ layoutHooks: { ...base.layoutHooks, prune } }));
     windowActions.importLayout(windowActions.exportLayout());
     expect(prune).toHaveBeenCalledTimes(1);
   });
 
   it('resets from the policy seed, then repairs', () => {
-    const seed = vi.fn(stubPolicy().seed);
+    const seed = vi.fn(neutralPolicy().seed);
     const repairLayout = vi.fn();
-    configureWindowing(stubPolicy({ seed, repairLayout }));
+    configureWindowing(neutralPolicy({ seed, repairLayout }));
     seed.mockClear();
     windowActions.resetLayoutToDefaults();
     expect(seed).toHaveBeenCalledTimes(1);
@@ -85,8 +100,8 @@ describe('WindowPolicy', () => {
 
   it('reports the active tab to the policy', () => {
     const onActiveTabChange = vi.fn();
-    configureWindowing(stubPolicy({ onActiveTabChange }));
-    windowActions.setActiveTab(centreGroupId(), 't1');
-    expect(onActiveTabChange).toHaveBeenCalledWith(expect.objectContaining({ id: 't1' }));
+    configureWindowing(neutralPolicy({ onActiveTabChange }));
+    windowActions.setActiveTab(centreGroupId(), 'tab-alpha');
+    expect(onActiveTabChange).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-alpha' }));
   });
 });

@@ -6,7 +6,7 @@ import type { WindowPolicy } from '@/windowing/store/policy';
 import { WindowingProvider, type WindowingContextValue } from '@/windowing/components/context';
 import type { Tab, WindowState } from '@/windowing/model/types';
 import { emptyState, generateId } from '@/windowing/model/tree';
-import { stubPolicy } from '@/windowing/__tests__/stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 
 /**
  * A state with the shape that the component tests need, and no product in it.
@@ -65,9 +65,9 @@ export function railSeed(): WindowState {
   };
 }
 
-/** Configure the core with the stub policy, seeded by `railSeed`. */
+/** Configure the core with the neutral policy, seeded by `railSeed`. */
 export function configureRails(over: Partial<WindowPolicy> = {}): void {
-  configureWindowing(stubPolicy({ seed: railSeed, ...over }));
+  configureWindowing(neutralPolicy({ seed: railSeed, ...over }));
 }
 
 /** A tab body with no product in it: a box that names the tab. */

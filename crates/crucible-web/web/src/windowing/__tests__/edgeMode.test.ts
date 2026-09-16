@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { configureWindowing, windowStore, windowActions } from '@/windowing/store';
-import { stubPolicy } from './stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 
 function paneIdOf(layout: { type: string; id: string }): string {
   if (layout.type !== 'pane') throw new Error('the seed layout is not a single pane');
@@ -8,7 +8,7 @@ function paneIdOf(layout: { type: string; id: string }): string {
 }
 
 describe('edge modes', () => {
-  beforeEach(() => configureWindowing(stubPolicy()));
+  beforeEach(() => configureWindowing(neutralPolicy()));
 
   it('setEdgeMode writes the mode and the cue', () => {
     windowActions.setEdgeMode('left', 'hidden', { cue: 'none' });

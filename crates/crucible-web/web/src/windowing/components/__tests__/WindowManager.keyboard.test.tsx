@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@solidjs/testing-library';
 import { configureWindowing, windowStore } from '@/windowing/store';
 import { LAYOUT_SHORTCUTS } from '@/windowing/shortcuts';
-import { stubPolicy } from '@/windowing/__tests__/stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 import { WindowManager } from '../WindowManager';
 
 /**
@@ -15,7 +15,7 @@ const onShortcut = vi.fn((action: string) => action === 'appConsumes');
 beforeEach(() => {
   onShortcut.mockClear();
   configureWindowing(
-    stubPolicy({
+    neutralPolicy({
       shortcuts: [
         ...LAYOUT_SHORTCUTS,
         { key: 'k', modifiers: ['ctrl'], action: 'appConsumes', description: 'consumed' },

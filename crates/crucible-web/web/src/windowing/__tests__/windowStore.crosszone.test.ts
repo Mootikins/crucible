@@ -8,7 +8,7 @@ import {
   findEdgePanelForGroup,
 } from '@/windowing/store';
 import { collectLeafGroupIds, emptyState, primaryEdgeGroupId } from '@/windowing/model/tree';
-import { stubPolicy } from './stubPolicy';
+import { neutralPolicy } from '@/windowing/testing/neutralPolicy';
 import type { Tab, EdgeMode, EdgePanelPosition, TabGroup, LayoutNode } from '@/windowing/model/types';
 
 const LEGACY_EDGE_TAB_FIELD = 'panel' + 'Position';
@@ -90,7 +90,7 @@ function railSeed() {
 // against the pristine seed — which only held because they happened to run
 // first. Reset every test to a fresh seed so their assertions are
 // independent of execution order.
-beforeEach(() => configureWindowing(stubPolicy({ seed: railSeed })));
+beforeEach(() => configureWindowing(neutralPolicy({ seed: railSeed })));
 
 describe('initial state structure', () => {
   it('creates 3 tab groups (1 center + 2 edge)', () => {
