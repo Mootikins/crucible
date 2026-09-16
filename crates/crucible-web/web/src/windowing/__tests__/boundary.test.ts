@@ -71,6 +71,32 @@ function isTestSupport(file: string): boolean {
   );
 }
 
+/** True for a file outside the core that the public-entry rule skips. */
+function mayImportDeep(file: string): boolean {
+  const parts = relative(SRC, file).split(sep);
+  return (
+    parts[0] === 'test-harness' ||
+    parts.includes('__tests__') ||
+    /\.test\.[^.]+$/.test(file)
+  );
+}
+
+/**
+ * The imports of `src` that pass the public entry, for a file at `file`
+ * outside the core. The app imports `@/windowing` and nothing deeper. A
+ * relative path may name the core folder or its index, and no other module.
+ */
+function deepImportsIn(file: string, src: string): string[] {
+  return specifiers(src).filter((spec) => {
+    if (spec.startsWith('.')) {
+      const target = resolve(dirname(file), spec);
+      if (target === ROOT || /^index(\.tsx?)?$/.test(relative(ROOT, target))) return false;
+      return target.startsWith(ROOT + sep);
+    }
+    return spec.startsWith('@/windowing/');
+  });
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -101,6 +127,51 @@ describe('windowing core boundary', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('lets the app reach the core only through its index', () => {
+    const offenders: string[] = [];
+    const outside = walk(SRC).filter(
+      (f) => !f.startsWith(ROOT + sep) && !mayImportDeep(f),
+    );
+    for (const file of outside) {
+      for (const spec of deepImportsIn(file, readFileSync(file, 'utf8'))) {
+        offenders.push(`${relative(SRC, file)} -> ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  describe('the public entry matcher', () => {
+    const file = join(SRC, 'lib', 'probe.ts');
+
+    it.each([
+      ['a deep alias import', `import { x } from '@/windowing/model/tree';`],
+      ['a deep type import', `import type { Tab } from "@/windowing/model/types";`],
+      ['a relative path into the core', `import { x } from '../windowing/store';`],
+      ['a dynamic deep import', `const m = await import('@/windowing/components/WindowManager');`],
+    ])('flags %s', (_name, src) => {
+      expect(deepImportsIn(file, src)).toHaveLength(1);
+    });
+
+    it('passes the index and paths outside the core', () => {
+      const src = [
+        `import { windowStore } from '@/windowing';`,
+        `import { windowActions } from '../windowing';`,
+        `import { WindowManager } from '../windowing/index';`,
+        `import { cn } from '@/lib/cn';`,
+        `import { x } from './windowing-helpers';`,
+      ].join('\n');
+      expect(deepImportsIn(file, src)).toEqual([]);
+    });
+
+    it('skips tests and the harness, and nothing else', () => {
+      expect(mayImportDeep(join(SRC, 'test-harness', 'windowing-harness.tsx'))).toBe(true);
+      expect(mayImportDeep(join(SRC, 'lib', '__tests__', 'x.ts'))).toBe(true);
+      expect(mayImportDeep(join(SRC, 'lib', 'x.test.tsx'))).toBe(true);
+      expect(mayImportDeep(join(SRC, 'lib', 'file-dnd.ts'))).toBe(false);
+      expect(mayImportDeep(join(SRC, 'App.tsx'))).toBe(false);
+    });
   });
 
   describe('the testing matcher', () => {

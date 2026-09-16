@@ -1,6 +1,6 @@
 import type { EdgePanelPosition, Tab, TabContentType, WindowState } from '@/types/windowTypes';
 import { iconForContentType } from '@/lib/tab-icons';
-import { collectLeafGroupIds, findFirstPane, generateId } from '@/windowing/model/tree';
+import { collectLeafGroupIds, findFirstPane, generateId } from '@/windowing';
 
 /**
  * The two panels the shell always keeps, and the rail each one belongs to.

@@ -20,10 +20,10 @@ vi.mock('@atlaskit/pragmatic-drag-and-drop/element/adapter', () => ({
   },
 }));
 
-import { attachPaneDropTarget, DROP_OVER_ATTR } from '@/lib/file-dnd';
+import { attachPaneDropTarget } from '@/lib/file-dnd';
 import { windowStore, setStore } from '@/stores/windowStore';
 import { defaultLayout } from '@/stores/defaultLayout';
-import { findFirstPane } from '@/windowing/model/tree';
+import { DROP_OVER_ATTR, findFirstPane } from '@/windowing';
 
 const file = {
   type: 'fileNode',

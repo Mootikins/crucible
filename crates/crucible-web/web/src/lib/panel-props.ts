@@ -1,5 +1,5 @@
 import { createMemo, untrack } from 'solid-js';
-import type { Tab } from '@/windowing/model/types';
+import type { Tab } from '@/windowing';
 
 /**
  * A tab's metadata as REACTIVE panel props.

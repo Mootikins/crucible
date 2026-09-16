@@ -13,7 +13,7 @@ import type { TabContentType } from '@/types/windowTypes';
 import { getConfig } from '@/lib/api';
 import { markShell, startLayoutPersistence } from '@/lib/shell-boot';
 import { isCompact } from '@/stores/deviceStore';
-import { matchShortcut } from '@/windowing/shortcuts';
+import { matchShortcut } from '@/windowing';
 import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
 import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';

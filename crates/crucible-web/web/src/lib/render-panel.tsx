@@ -1,6 +1,6 @@
 import { untrack, type Accessor, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import type { Tab } from '@/windowing/model/types';
+import type { Tab } from '@/windowing';
 import { getGlobalRegistry } from './panel-registry';
 import { reactiveMetadataProps } from './panel-props';
 

@@ -25,7 +25,7 @@ import { PanelShell } from './PanelShell';
 import { ImageViewer } from './ImageViewer';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
-import { attachNativeMenuGuard } from '@/windowing/context-menu';
+import { attachNativeMenuGuard } from '@/windowing';
 import { EditorView } from '@codemirror/view';
 import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
 import { pendingReveal, reviewActions, reviewStore, toolCallLabel } from '@/lib/review-store';

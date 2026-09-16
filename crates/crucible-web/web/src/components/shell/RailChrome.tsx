@@ -1,6 +1,5 @@
 import { Component, Show, createSignal, type JSX } from 'solid-js';
-import type { EdgePanelPosition } from '@/windowing/model/types';
-import { RibbonCommand, ribbonBtn } from '@/windowing/components/Ribbon';
+import { RibbonCommand, ribbonBtn, type EdgePanelPosition } from '@/windowing';
 import { Bell, Moon, Settings, Sun } from '@/lib/icons';
 import { LayoutMenu } from '@/components/shell/LayoutMenu';
 import { OfflineBadge } from '@/components/OfflineBadge';

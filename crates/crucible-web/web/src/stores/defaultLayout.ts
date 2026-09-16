@@ -6,7 +6,7 @@ import {
   Terminal,
 } from '@/lib/icons';
 import type { Tab, WindowState } from '@/types/windowTypes';
-import { generateId } from '@/windowing/model/tree';
+import { generateId } from '@/windowing';
 
 const createSampleTabs = (): Tab[] => [];
 

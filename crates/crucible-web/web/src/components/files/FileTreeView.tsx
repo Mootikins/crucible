@@ -14,7 +14,7 @@ import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { FileTreeNode, type FileTreeDnd } from './FileTreeNode';
 import { attachFileDropTarget, canDropIntoFolder } from '@/lib/file-dnd';
-import { shouldUseNativeMenu } from '@/windowing/context-menu';
+import { shouldUseNativeMenu } from '@/windowing';
 import { FileTreeContextMenu, itemsForNode, type ContextAction } from './FileTreeContextMenu';
 
 /**

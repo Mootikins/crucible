@@ -4,8 +4,9 @@ import {
   setStore,
   windowActions,
   findEdgePanelForGroup,
-} from '@/windowing/store';
-import type { WindowActions, WindowPolicy } from '@/windowing/store';
+  type WindowActions,
+  type WindowPolicy,
+} from '@/windowing';
 import type { Tab, TabContentType, WindowState } from '@/types/windowTypes';
 import { defaultLayout } from './defaultLayout';
 import { ensureFixedRails, isLastFixedRailTab } from './fixedRails';

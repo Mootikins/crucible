@@ -8,6 +8,7 @@ import { paneBoundaries, findSplitInLayout } from '@/windowing/model/pane-bounda
 import { startSplitDrag } from '@/windowing/components/split-drag';
 import type { EdgePanelPosition, PaneNode } from '@/windowing/model/types';
 import { isEdgeCollapsed } from '@/windowing/model/types';
+import { ribbonBtn } from './RibbonButton';
 
 /** A pane's marker band is exactly a tab bar: TabBar is `h-9`. */
 const MARKER_PX = 36;
@@ -21,9 +22,6 @@ interface Band {
   boundarySplitId: string | null;
   collapsed: boolean;
 }
-
-const ribbonBtn =
-  'flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors';
 
 /**
  * The ribbon's markers, each sitting on its pane's own top edge.

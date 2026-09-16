@@ -8,7 +8,7 @@ import type { Project, Session } from '@/lib/types';
 import { Archive, ChevronRight, GitBranch, MessageCircle, Pin, Plus, Trash2 } from '@/lib/icons';
 import { treeChevron, treeGroupRow } from '@/components/tree/tree-style';
 import { TreeSection } from '@/components/tree/TreeSection';
-import { shouldUseNativeMenu } from '@/windowing/context-menu';
+import { shouldUseNativeMenu } from '@/windowing';
 import { terseAge } from '@/lib/format-time';
 import { sessionStatus } from '@/lib/session-status';
 import { byRecency, touchedAt } from '@/lib/session-inbox';

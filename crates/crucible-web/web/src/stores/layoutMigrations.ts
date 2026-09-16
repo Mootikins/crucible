@@ -5,15 +5,15 @@ import type {
   TabContentType,
   TabGroup,
 } from '@/types/windowTypes';
-import type {
-  LayoutCodecHooks,
-  RestoredLayout,
-  SerializedEdgePanelV9,
-  SerializedLayoutV9,
-  SerializedTab as CoreSerializedTab,
-  SerializedTabGroup as CoreSerializedTabGroup,
-} from '@/windowing/model/serializer';
-import { isLegacyV9 } from '@/windowing/model/serializer';
+import {
+  isLegacyV9,
+  type LayoutCodecHooks,
+  type RestoredLayout,
+  type SerializedEdgePanelV9,
+  type SerializedLayoutV9,
+  type SerializedTab as CoreSerializedTab,
+  type SerializedTabGroup as CoreSerializedTabGroup,
+} from '@/windowing';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 
 /**

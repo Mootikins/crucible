@@ -22,7 +22,7 @@ import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { isMarkdownPath, noteStem } from './markdown-path';
 import { openFileInGroup } from './file-actions';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
-import { collectPanes } from '@/windowing/model/tree';
+import { collectPanes, DROP_OVER_ATTR } from '@/windowing';
 
 type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor';
 
@@ -141,12 +141,6 @@ export function attachFileDropTarget(
     }),
   );
 }
-
-/**
- * The attribute a pane drop target carries while a file drag hovers it. The
- * window manager styles its drop surfaces from this attribute.
- */
-export const DROP_OVER_ATTR = 'data-drop-over';
 
 /** The pane that shows `groupId`, in the centre or on a rail. */
 function paneShowing(groupId: string) {

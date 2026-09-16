@@ -1,7 +1,7 @@
 import { edgeCenterPane, filesSide } from './panel-actions';
 import { isCompact } from '@/stores/deviceStore';
 import { findEdgePanelForGroup, windowActions, windowStore } from '@/stores/windowStore';
-import { primaryEdgeGroupId } from '@/windowing/model/tree';
+import { primaryEdgeGroupId } from '@/windowing';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { editorGroupId, findFirstCenterPaneGroupId } from '@/lib/panel-actions';

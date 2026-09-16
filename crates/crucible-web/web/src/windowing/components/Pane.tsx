@@ -75,7 +75,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
 
   // Native drags from outside the window manager reach the pane body through
   // the app's drop target. The app marks the body with
-  // `data-drop-over` while a drag hovers it.
+  // DROP_OVER_ATTR (context.tsx) while a drag hovers it. Tailwind reads class
+  // names as literal text, so the `data-drop-over:` variant below names the
+  // attribute.
   const attachDrop = (el: HTMLElement) => {
     const cleanup = windowing.slots.attachDropTarget?.(el, tabGroupId);
     onCleanup(() => cleanup?.());

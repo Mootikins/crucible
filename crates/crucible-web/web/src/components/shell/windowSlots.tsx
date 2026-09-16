@@ -1,4 +1,4 @@
-import type { WindowingSlots } from '@/windowing/components/context';
+import type { WindowingSlots } from '@/windowing';
 import { railHead, railTail } from './RailChrome';
 import { CornerBar } from './CornerBar';
 import { attachPaneDropTarget } from '@/lib/file-dnd';

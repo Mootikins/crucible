@@ -101,7 +101,11 @@ export default defineConfig(({ mode }) => ({
         'src/test-harness/**',
         'src/windowing/testing/**',
         'src/**/*.d.ts',
-        'src/**/index.ts',
+        // Barrel files hold re-exports only. The windowing store index holds
+        // code (configureWindowing, requirePolicy), so the glob skips an
+        // index.ts in a folder named `store`, and coverage measures it. A
+        // `!` negation does not work here: it removes every file from the report.
+        'src/**/!(store)/index.ts',
         '*.config.ts',
         '*.config.js',
         'postcss.config.js',

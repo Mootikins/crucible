@@ -1,4 +1,4 @@
-import { chordLabel, LAYOUT_SHORTCUTS, type ShortcutAction } from '@/windowing/shortcuts';
+import { chordLabel, LAYOUT_SHORTCUTS, type ShortcutAction } from '@/windowing';
 
 /** The chords the app owns. The layout chords come from the windowing core. */
 const APP_SHORTCUTS: ShortcutAction[] = [

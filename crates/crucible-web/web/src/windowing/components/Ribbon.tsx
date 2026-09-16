@@ -8,6 +8,7 @@ import { isEdgeCollapsed } from '@/windowing/model/types';
 import { useWindowing } from '@/windowing/components/context';
 import { chordLabel } from '@/windowing/shortcuts';
 import { RibbonPaneStrip } from './RibbonPaneStrip';
+import { RibbonCommand, ribbonBtn } from './RibbonButton';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -95,29 +96,6 @@ const RibbonTabButton: Component<{
     </button>
   );
 };
-
-/** The look of every ribbon button. The app's rail chrome uses it too. */
-export const ribbonBtn =
-  'flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors';
-
-/** One command button on the ribbon (opens a modal/panel — Obsidian puts
- * these on the ribbon: palette, quick actions, settings gear at bottom). */
-export const RibbonCommand: Component<{
-  title: string;
-  testId: string;
-  onClick: () => void;
-  children: ReturnType<Component>;
-}> = (props) => (
-  <button
-    type="button"
-    data-testid={props.testId}
-    class={`${ribbonBtn} w-10 h-9 flex-none`}
-    title={props.title}
-    onClick={() => props.onClick()}
-  >
-    {props.children}
-  </button>
-);
 
 /** The always-visible icon bar at the window edge (Obsidian's ribbon):
  * panels grow out of it, so the toggles never move or disappear. The top
@@ -210,6 +188,8 @@ export const Ribbon: Component<{ position: EdgePanelPosition }> = (props) => {
       }}
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
+        // `data-drop-over` is DROP_OVER_ATTR (context.tsx). Tailwind reads
+        // class names as literal text, so the variant names the attribute.
         'relative flex flex-col bg-shell-bg border-hairline transition-colors data-drop-over:bg-primary/20': true,
         // Border faces the center/panel it grows toward.
         'border-r': props.position === 'left',

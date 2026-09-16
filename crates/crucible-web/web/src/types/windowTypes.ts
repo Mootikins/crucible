@@ -1,4 +1,4 @@
-import type * as Core from '@/windowing/model/types';
+import type * as Core from '@/windowing';
 
 // Tab types — every entry is a REGISTERED panel (register-panels.tsx),
 // except the legacy 'settings' below.
@@ -30,8 +30,8 @@ export type {
   EdgePanelPosition,
   LayoutNode,
   PaneNode,
-} from '@/windowing/model/types';
-export { isEdgeCollapsed } from '@/windowing/model/types';
+} from '@/windowing';
+export { isEdgeCollapsed } from '@/windowing';
 
 export type Tab = Core.Tab<TabContentType>;
 export type TabGroup = Core.TabGroup<TabContentType>;

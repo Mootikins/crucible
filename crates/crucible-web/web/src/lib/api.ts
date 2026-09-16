@@ -2312,7 +2312,7 @@ export function generateMessageId(): string {
 // Layout Persistence Endpoints
 // =============================================================================
 
-import type { SerializedLayout, StoredLayout } from '@/windowing/model/serializer';
+import type { SerializedLayout, StoredLayout } from '@/windowing';
 import type { TabContentType } from '@/types/windowTypes';
 
 export async function saveLayout(layout: SerializedLayout<TabContentType>): Promise<void> {

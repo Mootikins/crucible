@@ -1,6 +1,13 @@
 import { createContext, useContext, type Accessor, type JSX, type ParentComponent } from 'solid-js';
 import type { EdgePanelPosition, Tab } from '../model/types';
 
+/**
+ * The attribute that a drop target carries while a native drag hovers it.
+ * The `attachDropTarget` slot sets it, and the pane and ribbon styles read it
+ * through the Tailwind variant `data-drop-over:`.
+ */
+export const DROP_OVER_ATTR = 'data-drop-over';
+
 /** What the app hangs on the window manager's chrome. Every slot is optional. */
 export interface WindowingSlots {
   /** Above the tab icons on a rail. */
@@ -14,7 +21,7 @@ export interface WindowingSlots {
   /**
    * Attach a native drop target to a pane body or a rail ribbon, for the
    * group that `groupId` names. Returns the cleanup. While a drag hovers the
-   * element, the slot sets `data-drop-over` on it, and the window
+   * element, the slot sets DROP_OVER_ATTR on it, and the window
    * manager styles the element from that attribute.
    */
   attachDropTarget?: (el: HTMLElement, groupId: () => string | null) => () => void;
