@@ -41,6 +41,9 @@ async function openAsk(page: Page, frame: { type: string; data: object }) {
   return { getRespond: () => respondBody };
 }
 
+// The question is on screen twice once asked: the transcript keeps an
+// "Asked: …" record at the point of the request, and the card that takes the
+// answer is docked on the prompt. The card is the thing under test.
 test.describe('WS-105 Ask interactions', () => {
   test('single-select: pick one option', async ({ page }, testInfo) => {
     const story = createStory(testInfo);
@@ -49,7 +52,7 @@ test.describe('WS-105 Ask interactions', () => {
       askFrame('ask-1', { question: 'Pick a framework', choices: ['SolidJS', 'React', 'Svelte'] }),
     );
 
-    await expect(page.getByText('Pick a framework')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('composer-dock').getByText('Pick a framework')).toBeVisible({ timeout: 5000 });
     await story.step(page, 'single-select question');
     await page.getByRole('radio').nth(1).check(); // React
 
@@ -74,7 +77,7 @@ test.describe('WS-105 Ask interactions', () => {
       }),
     );
 
-    await expect(page.getByText('Which files?')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('composer-dock').getByText('Which files?')).toBeVisible({ timeout: 5000 });
     await page.getByRole('checkbox').nth(0).check();
     await page.getByRole('checkbox').nth(2).check();
     await story.step(page, 'multi-select two checked');
@@ -91,7 +94,7 @@ test.describe('WS-105 Ask interactions', () => {
     const story = createStory(testInfo);
     const ctx = await openAsk(page, askFrame('ask-3', { question: 'Name the branch?' }));
 
-    await expect(page.getByText('Name the branch?')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('composer-dock').getByText('Name the branch?')).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('Type your answer...').fill('feat/web-tests');
     await story.step(page, 'free-text entered');
 
@@ -114,7 +117,7 @@ test.describe('WS-105 Ask interactions', () => {
         allow_other: true,
       }),
     );
-    await expect(page.getByText('Pick or type')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('composer-dock').getByText('Pick or type')).toBeVisible({ timeout: 5000 });
     await page.getByPlaceholder('Or type your own...').fill('three');
     await page.getByRole('button', { name: 'Submit' }).click();
     await expect.poll(() => (ctx.getRespond() as { response?: { other?: string } })?.response?.other)

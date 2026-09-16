@@ -22,9 +22,26 @@ async function submitAndCaptureCreate(
   const request = page.waitForRequest(
     (req) => req.url().endsWith('/api/session') && req.method() === 'POST',
   );
+  // The fold's popover, when a test opened it, sits over the send button;
+  // filling the prompt does not close it, Escape does.
+  await page.keyboard.press('Escape');
   await page.getByTestId('composer-input').fill(text);
   await page.getByTestId('composer-send').click();
   return JSON.parse((await request).postData() ?? '{}');
+}
+
+/**
+ * Bring every composer chip into the document.
+ *
+ * The chip row folds the chips that do not fit on one line behind a "+N"
+ * button, in priority order, and the workspace-target and runtime chips are
+ * last. A folded chip lives inside the fold's popover, so a test that reads
+ * it opens the fold first. The popover stays open while a chip inside it is
+ * used; a click on the prompt closes it, which every test here does last.
+ */
+async function unfoldChips(page: Page): Promise<void> {
+  const fold = page.getByTestId('composer-chip-overflow');
+  if (await fold.count()) await fold.click();
 }
 
 test('a runtime target rides through session create, addressed to its provider', async ({
@@ -33,6 +50,7 @@ test('a runtime target rides through session create, addressed to its provider',
   await setupBasicMocks(page);
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   const chip = page.getByTestId('composer-target');
   await expect(chip).toBeVisible();
@@ -57,6 +75,7 @@ test('a workspace target rides through as a provider-addressed spec', async ({ p
   await setupBasicMocks(page);
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   const chip = page.getByTestId('composer-workspace-target');
   await expect(chip).toBeVisible();
@@ -74,6 +93,7 @@ test('both axes ride through together', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   await page.getByTestId('composer-workspace-target').click();
   await page.getByRole('option', { name: 'feat/x' }).click();
@@ -92,6 +112,7 @@ test('an untouched composer sends neither axis', async ({ page }) => {
   await setupBasicMocks(page);
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
   await expect(page.getByTestId('composer-target')).toBeVisible();
 
   // Absent means "resolve normally" — the project's own setting still applies.
@@ -104,6 +125,7 @@ test('choosing this machine explicitly opts the session out of isolation', async
   await setupBasicMocks(page);
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   await page.getByTestId('composer-target').click();
   await page.getByRole('option', { name: 'This PC' }).click();
@@ -119,6 +141,7 @@ test('a box with no providers still offers this machine, and no workspace chip',
   await setupBasicMocks(page, { publications: { publications: {} } });
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   await expect(page.getByTestId('composer-kiln')).toBeVisible();
   // Running here cannot depend on a plugin being installed.
@@ -147,6 +170,7 @@ test('a second provider on an axis turns the menu into a drill-down', async ({ p
   });
   await page.goto('/');
   await openNewSessionTab(page);
+  await unfoldChips(page);
 
   await page.getByTestId('composer-target').click();
   const popout = page.getByTestId('composer-target-popout');

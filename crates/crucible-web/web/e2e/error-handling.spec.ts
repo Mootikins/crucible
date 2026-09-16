@@ -30,13 +30,11 @@ test.describe('Error handling', () => {
     await chatInput.fill('Hello');
     await page.getByTestId('send-button').click();
 
-    // Assert: the failure surfaces in the transcript. sendChatMessage throws
-    // "Failed to send message: HTTP 500"; ChatContext keeps the user's text
-    // and appends an inline "Failed to send: …" system notice (the turn-based
-    // transcript restyle replaced the old text-error banner).
-    await expect(
-      page.getByText('Failed to send message: HTTP 500').first(),
-    ).toBeVisible({ timeout: 5000 });
+    // Assert: the failure surfaces in the transcript. `request()` words a
+    // failed send as "Failed to send message: <the body's sentence>", or
+    // ": HTTP 500" when the body says nothing; ChatContext keeps the user's
+    // text and appends an inline "Failed to send: …" system notice.
+    await expect(page.getByText(/Failed to send/).first()).toBeVisible({ timeout: 5000 });
   });
 
   test('shows error when SSE stream contains error event', async ({ page }) => {
