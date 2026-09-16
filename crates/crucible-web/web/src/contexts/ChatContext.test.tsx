@@ -4,7 +4,8 @@ import { createEffect, createSignal } from 'solid-js';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
 import { resetSseForTests } from '@/lib/query/sse';
-import { setQueryClientForTests } from '@/lib/query/client';
+import type { QueryClient } from '@tanstack/solid-query';
+import { queryClientOptions, setQueryClientForTests } from '@/lib/query/client';
 import { createTestQueryClient } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
@@ -60,8 +61,11 @@ vi.mock('@/lib/api', () => ({
 // one test cannot answer the next one. The cache is per case for the same
 // reason: `session.get` is answered from it, so one case's session would
 // hydrate the next case's mode.
+let queryClient: QueryClient;
+
 beforeEach(() => {
-  setQueryClientForTests(createTestQueryClient());
+  queryClient = createTestQueryClient();
+  setQueryClientForTests(queryClient);
 });
 
 afterEach(() => {
@@ -1212,5 +1216,77 @@ describe('the shared session stream', () => {
       expect(mockSendChatMessage).toHaveBeenCalledWith(mockSession.id, 'first message from draft'),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+});
+
+// The transcript itself, not the mock of it. `lib/query/history.ts` owns one
+// document per session, and every pane reads that one; these cases prove the
+// provider reaches it through that key, so the count of history requests is
+// the count of sessions read and not the count of binds onto them.
+describe('the shared session transcript', () => {
+  /** The session of each history request, in order. */
+  const asked = () => mockGetSessionHistory.mock.calls.map((call) => call[0]);
+
+  /** Lets every pending answer land, so a second request would be counted. */
+  const flush = async () => {
+    for (let tick = 0; tick < 3; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The describe above hands the provider the real `subscribeToEvents`; this
+    // one counts binds, so it hands back a stream that does nothing.
+    mockSubscribeToEvents.mockImplementation(() => () => {});
+    // The record answers under the id it was asked for: the bind reads the
+    // transcript of the session the daemon named, so a fixed record would
+    // have every pane read one transcript whatever it bound to.
+    mockGetSession.mockImplementation(async (id: string) => ({ ...mockSession, id }));
+    mockListSessions.mockResolvedValue([]);
+    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
+  });
+
+  it('reads the transcript once for two panes on one session', async () => {
+    render(() => (
+      <>
+        <ChatProvider sessionId={mockSession.id}>
+          <span />
+        </ChatProvider>
+        <ChatProvider sessionId={mockSession.id}>
+          <span />
+        </ChatProvider>
+      </>
+    ));
+
+    await waitFor(() => expect(asked()).toEqual([mockSession.id]));
+    // Both panes have bound, and a second request would have been made by the
+    // time the first one's answer has been folded twice over.
+    await flush();
+    expect(asked()).toEqual([mockSession.id]);
+  });
+
+  it('a bind onto another session asks for that one, and not again for the first', async () => {
+    // The pane used to abort the load in flight and start over on every bind,
+    // so coming back to a session it had read asked for the whole transcript
+    // again. The test client drops an unobserved entry at once (`gcTime: 0`);
+    // this case is about the lifetime the app gives an entry, so it asks for
+    // that lifetime.
+    queryClient.setDefaultOptions({ queries: { ...queryClientOptions.defaultOptions?.queries } });
+    const [id, setId] = createSignal('session-a');
+
+    render(() => (
+      <ChatProvider sessionId={id()}>
+        <span />
+      </ChatProvider>
+    ));
+    await waitFor(() => expect(asked()).toEqual(['session-a']));
+
+    setId('session-b');
+    await waitFor(() => expect(asked()).toEqual(['session-a', 'session-b']));
+
+    setId('session-a');
+    await flush();
+    expect(asked()).toEqual(['session-a', 'session-b']);
   });
 });

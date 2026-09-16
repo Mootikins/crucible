@@ -19,20 +19,24 @@ import type {
   ConnectionStatus,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
+import type { SessionHistoryResponse } from '@/lib/api';
 import {
   listModes,
   listPendingInteractions,
   setSessionMode,
-  sendChatMessage,
   respondToInteraction as apiRespondToInteraction,
   generateMessageId,
-  getSessionHistory,
   turnResponseId,
   turnSegmentId,
   stripFrozenPrefix,
 } from '@/lib/api';
 import { sessionEvents } from '@/lib/query/sse';
 import { useCancelSession } from '@/lib/query/sessions';
+import {
+  fetchSessionHistoryOnce,
+  useSendChatMessage,
+  useSessionHistory,
+} from '@/lib/query/history';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -54,6 +58,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   // The one cancel, shared with `SessionContext`'s stop control: two panes
   // stopping one turn send one shape of request.
   const cancel = useCancelSession();
+  // The persisted transcript, from the one key every pane reads. Two panes on
+  // this session share the request, and a rebind is a change of key rather
+  // than an abort and a second read of the same transcript.
+  const history = useSessionHistory(() => props.sessionId || null);
+  const send = useSendChatMessage();
   const [messages, setMessages] = createStore<Message[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
   const [isStreaming, setIsStreamingRaw] = createSignal(false);
@@ -96,7 +105,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   };
   void refreshModes();
-  const [isLoadingHistory, setIsLoadingHistory] = createSignal(false);
+  /**
+   * This pane has nothing to draw and is waiting for the transcript.
+   *
+   * The query's own state. A bind onto a session this browser read already
+   * paints from the cache instead of showing the skeleton a second time, and a
+   * refetch of a document this pane has folded is not a load.
+   */
+  const isLoadingHistory = () => history.isLoading;
   
   // Mirror interaction/streaming state into the global attention store so
   // the Inbox and header badge see every session with an open tab, not just
@@ -124,7 +140,17 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    *  `props.sessionId` is not it: the stream is opened by an effect that also
    *  handles the null case, so the two can disagree for a tick. */
   let streamSessionId: string | null = null;
-  let historyAbortController: AbortController | null = null;
+  /**
+   * The mark that this bind is superseded, which a late answer checks.
+   *
+   * It aborts no request any more. The transcript is a query keyed by session
+   * id, so an answer for the session this pane has left writes to that
+   * session's key and never onto the transcript now on screen — which is what
+   * the abort of the in-flight history load used to prevent.
+   */
+  let bindAbortController: AbortController | null = null;
+  /** True once this bind folded the persisted transcript it binds to. */
+  let boundHistoryFolded = false;
   let currentStreamingMessageId: string | null = null;
   let previousSessionId: string | null = null;
   const [sessionTitle, setSessionTitle] = createSignal<string | null>(null);
@@ -270,184 +296,179 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setIsStreaming,
   });
 
-  const loadHistory = async (sessionId: string, signal?: AbortSignal) => {
-    setIsLoadingHistory(true);
-    try {
-      // Explicit high limit: the server pages from the FRONT, and a long
-      // agentic turn can log hundreds of thinking events — the default page
-      // cut off the tail, which holds the tool results and message_complete
-      // (i.e. the assistant's actual text).
-      const response = await getSessionHistory(sessionId, 10000, undefined, signal);
-      const loadedMessages: Message[] = [];
+  /**
+   * Folds one persisted transcript into this pane's messages.
+   *
+   * The document is the query's, not this pane's: `useSessionHistory` fetched
+   * it, and every pane on this session reads the same one. The fold is per
+   * pane, because the transcript a pane DRAWS is more than the daemon
+   * persisted — the thinking block of a turn, a system notice a failed send
+   * left, the optimistic entries of a turn in flight. The bind folds the
+   * document once for that reason; the stream carries what follows to every
+   * pane on its own.
+   */
+  const foldHistory = (response: SessionHistoryResponse) => {
+    const loadedMessages: Message[] = [];
 
-      // Pre-tool narration segments of the CURRENT turn, in order. A segmented
-      // turn (text → tool → text) persists a `segment_complete` per boundary;
-      // each becomes its own assistant bubble here, and the turn's final
-      // message_complete bubble drops their concatenated prefix — exactly the
-      // shape the live reducer produces, so a reload converges on it. Reset at
-      // each new turn (user_message) so segments never leak across turns.
-      let pendingSegments: string[] = [];
+    // Pre-tool narration segments of the CURRENT turn, in order. A segmented
+    // turn (text → tool → text) persists a `segment_complete` per boundary;
+    // each becomes its own assistant bubble here, and the turn's final
+    // message_complete bubble drops their concatenated prefix — exactly the
+    // shape the live reducer produces, so a reload converges on it. Reset at
+    // each new turn (user_message) so segments never leak across turns.
+    let pendingSegments: string[] = [];
 
-      // Attach a result to the newest matching tool entry.
-      const findToolMessage = (callId: string): Message | undefined =>
-        [...loadedMessages].reverse().find((m) => {
-          const tool = m.toolCall;
-          return m.role === 'tool' && tool && tool.callId === callId;
+    // Attach a result to the newest matching tool entry.
+    const findToolMessage = (callId: string): Message | undefined =>
+      [...loadedMessages].reverse().find((m) => {
+        const tool = m.toolCall;
+        return m.role === 'tool' && tool && tool.callId === callId;
+      });
+
+    // Real event times, so a reloaded turn shows the same duration the
+    // live one did. A missing stamp falls back to the old synthetic spacing.
+    const eventTime = (evt: { timestamp?: string }): number | undefined => {
+      const n = evt.timestamp ? Date.parse(evt.timestamp) : NaN;
+      return Number.isNaN(n) ? undefined : n;
+    };
+    const synthetic = () => Date.now() - (response.history.length - loadedMessages.length) * 1000;
+    // A turn's assistant bubbles carry the turn's START (the user message
+    // time), the same stamp a live placeholder gets when the turn is sent.
+    let turnStart: number | undefined;
+    for (const evt of response.history) {
+      if (evt.event === 'user_message' && evt.data?.content) {
+        turnStart = eventTime(evt);
+        // New turn: drop any segments a prior turn left uncollected.
+        pendingSegments = [];
+        loadedMessages.push({
+          id: evt.data.message_id as string || `user-${loadedMessages.length}`,
+          role: 'user',
+          content: evt.data.content,
+          timestamp: turnStart ?? synthetic(),
         });
-
-      // Real event times, so a reloaded turn shows the same duration the
-      // live one did. A missing stamp falls back to the old synthetic spacing.
-      const eventTime = (evt: { timestamp?: string }): number | undefined => {
-        const n = evt.timestamp ? Date.parse(evt.timestamp) : NaN;
-        return Number.isNaN(n) ? undefined : n;
-      };
-      const synthetic = () => Date.now() - (response.history.length - loadedMessages.length) * 1000;
-      // A turn's assistant bubbles carry the turn's START (the user message
-      // time), the same stamp a live placeholder gets when the turn is sent.
-      let turnStart: number | undefined;
-      for (const evt of response.history) {
-        if (evt.event === 'user_message' && evt.data?.content) {
-          turnStart = eventTime(evt);
-          // New turn: drop any segments a prior turn left uncollected.
-          pendingSegments = [];
+      } else if (evt.event === 'segment_complete') {
+        // Canonical id derivation identical to the live reducer's, so a
+        // reloaded segment bubble carries the same id it streamed under.
+        const data = (evt.data ?? {}) as Record<string, unknown>;
+        const content = typeof data.content === 'string' ? data.content : '';
+        const index = typeof data.index === 'number' ? data.index : Number(data.index ?? 0);
+        const messageId = typeof data.message_id === 'string' ? data.message_id : undefined;
+        pendingSegments.push(content);
+        loadedMessages.push({
+          id: messageId ? turnSegmentId(messageId, index) : `assistant-seg-${loadedMessages.length}`,
+          role: 'assistant',
+          content,
+          timestamp: turnStart ?? synthetic(),
+        });
+      } else if (evt.event === 'tool_call') {
+        // Reconstruct tool entries so past tool activity stays visible in
+        // the transcript after a reload (they used to vanish at turn end).
+        // Canonical daemon payload: {call_id, tool, args}.
+        const data = (evt.data ?? {}) as Record<string, unknown>;
+        const callId = String(data.call_id ?? `hist-${loadedMessages.length}`);
+        const name = String(data.tool ?? 'tool');
+        const args = data.args;
+        loadedMessages.push({
+          id: `tool-${callId}`,
+          role: 'tool',
+          content: '',
+          timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+          toolCall: {
+            id: callId,
+            callId,
+            name,
+            args: args === undefined ? '' : JSON.stringify(args),
+            status: 'complete',
+          },
+        });
+      } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
+        const data = (evt.data ?? {}) as Record<string, unknown>;
+        const callId = String(data.call_id ?? '');
+        const target = findToolMessage(callId);
+        if (target?.toolCall) {
+          const raw = evt.event === 'tool_result_error' ? data.error : data.result;
+          target.toolCall = {
+            ...target.toolCall,
+            status: evt.event === 'tool_result_error' ? 'error' : 'complete',
+            result: raw === undefined ? target.toolCall.result
+              : typeof raw === 'string' ? raw : JSON.stringify(raw),
+          };
+        }
+      } else if (evt.event === 'precognition_complete') {
+        // Metadata, not a bubble: reattach it to the user message that
+        // triggered the retrieval — the same target the live reducer picks.
+        // Field mapping mirrors the SSE path (which normalises in Rust):
+        // the persisted payload is a PrecognitionNoteInfo, so `title`/`score`
+        // become `name`/`relevance` here.
+        const data = (evt.data ?? {}) as Record<string, unknown>;
+        const lastUser = [...loadedMessages].reverse().find((m) => m.role === 'user');
+        if (lastUser) {
+          const notes = (Array.isArray(data.notes) ? data.notes : [])
+            .map((raw) => {
+              const note = (raw ?? {}) as Record<string, unknown>;
+              const name = note.title ?? note.name;
+              return typeof name === 'string'
+                ? { name, relevance: typeof note.score === 'number' ? note.score : 0 }
+                : null;
+            })
+            .filter((n): n is { name: string; relevance: number } => n !== null);
+          lastUser.precognition = {
+            notesCount:
+              typeof data.notes_count === 'number' ? data.notes_count : notes.length,
+            notes,
+          };
+        }
+      } else if (evt.event === 'message_complete' && evt.data?.full_response) {
+        // The persisted full_response is the WHOLE turn; strip the prefix
+        // already rendered as segment bubbles (same helper the live reducer
+        // uses). Skip an empty trailing bubble when segments covered the
+        // whole turn — the live reducer adds none in that case either.
+        const hadSegments = pendingSegments.length > 0;
+        const finalContent = stripFrozenPrefix(
+          evt.data.full_response as string,
+          pendingSegments,
+        );
+        pendingSegments = [];
+        if (finalContent !== '' || !hadSegments) {
           loadedMessages.push({
-            id: evt.data.message_id as string || `user-${loadedMessages.length}`,
-            role: 'user',
-            content: evt.data.content,
-            timestamp: turnStart ?? synthetic(),
-          });
-        } else if (evt.event === 'segment_complete') {
-          // Canonical id derivation identical to the live reducer's, so a
-          // reloaded segment bubble carries the same id it streamed under.
-          const data = (evt.data ?? {}) as Record<string, unknown>;
-          const content = typeof data.content === 'string' ? data.content : '';
-          const index = typeof data.index === 'number' ? data.index : Number(data.index ?? 0);
-          const messageId = typeof data.message_id === 'string' ? data.message_id : undefined;
-          pendingSegments.push(content);
-          loadedMessages.push({
-            id: messageId ? turnSegmentId(messageId, index) : `assistant-seg-${loadedMessages.length}`,
+            // Same derivation the live reducer uses, so a reloaded transcript
+            // carries identical ids to the one that streamed.
+            id: evt.data.message_id
+              ? turnResponseId(evt.data.message_id as string)
+              : `assistant-${loadedMessages.length}`,
             role: 'assistant',
-            content,
+            content: finalContent,
             timestamp: turnStart ?? synthetic(),
+            completedAt: eventTime(evt),
           });
-        } else if (evt.event === 'tool_call') {
-          // Reconstruct tool entries so past tool activity stays visible in
-          // the transcript after a reload (they used to vanish at turn end).
-          // Canonical daemon payload: {call_id, tool, args}.
-          const data = (evt.data ?? {}) as Record<string, unknown>;
-          const callId = String(data.call_id ?? `hist-${loadedMessages.length}`);
-          const name = String(data.tool ?? 'tool');
-          const args = data.args;
-          loadedMessages.push({
-            id: `tool-${callId}`,
-            role: 'tool',
-            content: '',
-            timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
-            toolCall: {
-              id: callId,
-              callId,
-              name,
-              args: args === undefined ? '' : JSON.stringify(args),
-              status: 'complete',
-            },
-          });
-        } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
-          const data = (evt.data ?? {}) as Record<string, unknown>;
-          const callId = String(data.call_id ?? '');
-          const target = findToolMessage(callId);
-          if (target?.toolCall) {
-            const raw = evt.event === 'tool_result_error' ? data.error : data.result;
-            target.toolCall = {
-              ...target.toolCall,
-              status: evt.event === 'tool_result_error' ? 'error' : 'complete',
-              result: raw === undefined ? target.toolCall.result
-                : typeof raw === 'string' ? raw : JSON.stringify(raw),
-            };
-          }
-        } else if (evt.event === 'precognition_complete') {
-          // Metadata, not a bubble: reattach it to the user message that
-          // triggered the retrieval — the same target the live reducer picks.
-          // Field mapping mirrors the SSE path (which normalises in Rust):
-          // the persisted payload is a PrecognitionNoteInfo, so `title`/`score`
-          // become `name`/`relevance` here.
-          const data = (evt.data ?? {}) as Record<string, unknown>;
-          const lastUser = [...loadedMessages].reverse().find((m) => m.role === 'user');
-          if (lastUser) {
-            const notes = (Array.isArray(data.notes) ? data.notes : [])
-              .map((raw) => {
-                const note = (raw ?? {}) as Record<string, unknown>;
-                const name = note.title ?? note.name;
-                return typeof name === 'string'
-                  ? { name, relevance: typeof note.score === 'number' ? note.score : 0 }
-                  : null;
-              })
-              .filter((n): n is { name: string; relevance: number } => n !== null);
-            lastUser.precognition = {
-              notesCount:
-                typeof data.notes_count === 'number' ? data.notes_count : notes.length,
-              notes,
-            };
-          }
-        } else if (evt.event === 'message_complete' && evt.data?.full_response) {
-          // The persisted full_response is the WHOLE turn; strip the prefix
-          // already rendered as segment bubbles (same helper the live reducer
-          // uses). Skip an empty trailing bubble when segments covered the
-          // whole turn — the live reducer adds none in that case either.
-          const hadSegments = pendingSegments.length > 0;
-          const finalContent = stripFrozenPrefix(
-            evt.data.full_response as string,
-            pendingSegments,
-          );
-          pendingSegments = [];
-          if (finalContent !== '' || !hadSegments) {
-            loadedMessages.push({
-              // Same derivation the live reducer uses, so a reloaded transcript
-              // carries identical ids to the one that streamed.
-              id: evt.data.message_id
-                ? turnResponseId(evt.data.message_id as string)
-                : `assistant-${loadedMessages.length}`,
-              role: 'assistant',
-              content: finalContent,
-              timestamp: turnStart ?? synthetic(),
-              completedAt: eventTime(evt),
-            });
-          }
         }
       }
-      
-      // MERGE, don't clobber: messages that arrived after the history
-      // snapshot (optimistic sends, live SSE events during a slow load)
-      // aren't in `loadedMessages`. Backend-canonical ids make the overlap
-      // exact — anything already reconstructed is dropped from the live
-      // set, everything newer is kept in order after it.
-      setMessages((prev) => {
-        const reconstructed = new Set(loadedMessages.map((m) => m.id));
-        const newer = prev.filter((m) => !reconstructed.has(m.id));
-        // Events stored before canonical message_ids existed reconstruct under
-        // fallback ids (user-N / assistant-N), so a live-added canonical copy
-        // of the same prompt escapes the exact-id overlap above and renders
-        // twice. Drop a live message that an id-less reconstructed entry
-        // already represents (same role + content). Only fires when a fallback
-        // id is present, so current-daemon sessions (always canonical) are
-        // untouched.
-        const isFallbackId = (id: string) => /^(?:user|assistant)-\d+$/.test(id);
-        const hasFallback = loadedMessages.some((m) => isFallbackId(m.id));
-        const merged = hasFallback
-          ? newer.filter((live) => !loadedMessages.some(
-              (h) => isFallbackId(h.id) && h.role === live.role && h.content === live.content,
-            ))
-          : newer;
-        return [...loadedMessages, ...merged];
-      });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        // Silently ignore — expected when session switches rapidly
-        return;
-      }
-      console.error('Failed to load session history:', err);
-    } finally {
-      setIsLoadingHistory(false);
     }
+    
+    // MERGE, don't clobber: messages that arrived after the history
+    // snapshot (optimistic sends, live SSE events during a slow load)
+    // aren't in `loadedMessages`. Backend-canonical ids make the overlap
+    // exact — anything already reconstructed is dropped from the live
+    // set, everything newer is kept in order after it.
+    setMessages((prev) => {
+      const reconstructed = new Set(loadedMessages.map((m) => m.id));
+      const newer = prev.filter((m) => !reconstructed.has(m.id));
+      // Events stored before canonical message_ids existed reconstruct under
+      // fallback ids (user-N / assistant-N), so a live-added canonical copy
+      // of the same prompt escapes the exact-id overlap above and renders
+      // twice. Drop a live message that an id-less reconstructed entry
+      // already represents (same role + content). Only fires when a fallback
+      // id is present, so current-daemon sessions (always canonical) are
+      // untouched.
+      const isFallbackId = (id: string) => /^(?:user|assistant)-\d+$/.test(id);
+      const hasFallback = loadedMessages.some((m) => isFallbackId(m.id));
+      const merged = hasFallback
+        ? newer.filter((live) => !loadedMessages.some(
+            (h) => isFallbackId(h.id) && h.role === live.role && h.content === live.content,
+          ))
+        : newer;
+      return [...loadedMessages, ...merged];
+    });
   };
 
   createEffect(() => {
@@ -459,11 +480,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       streamSessionId = null;
     }
     
-    // Abort any in-flight history load from a previous session
-    if (historyAbortController) {
-      historyAbortController.abort();
-      historyAbortController = null;
+    // Supersede the bind before it: its remaining reads must write nothing.
+    if (bindAbortController) {
+      bindAbortController.abort();
+      bindAbortController = null;
     }
+    // The transcript on screen belongs to the bind that is ending, so the new
+    // one folds its own document even when it names the same session.
+    boundHistoryFolded = false;
     
     if (newSessionId !== previousSessionId && previousSessionId !== null) {
       clearMessages();
@@ -476,14 +500,17 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
 
     const abortController = new AbortController();
-    historyAbortController = abortController;
+    bindAbortController = abortController;
 
     const bootstrapPromise = bootstrapSessionWithFallback({
       sessionId: newSessionId,
       signal: abortController.signal,
       setSessionTitle,
       setChatMode,
-      loadHistory,
+      // The one request `useSessionHistory` is making for this session, under
+      // the key it reads. The bind awaits the document, and the fold below
+      // puts it on screen.
+      loadHistory: (id) => fetchSessionHistoryOnce(id).then(() => undefined),
     });
 
     // The stream carries only NEW interaction requests. A request the daemon
@@ -551,15 +578,36 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   });
 
+  /**
+   * Puts the persisted transcript on screen, once for each bind.
+   *
+   * Once, and not on every revision of the document, because the fold
+   * REPLACES what this pane draws. The cached document is what the daemon
+   * wrote down; the pane holds more than that — the thinking block of a turn,
+   * the system notice a failed send left, a turn in flight. Folding a refetch
+   * onto those would drop them, or move them to the end of the transcript,
+   * for no gain: every pane of this session hears the same stream and folds
+   * each event as it arrives.
+   *
+   * It runs after the bind effect above, which is what resets the flag, so a
+   * rebind folds again and a document that arrives later still lands.
+   */
+  createEffect(() => {
+    const document = history.data;
+    if (!document || boundHistoryFolded) return;
+    boundHistoryFolded = true;
+    foldHistory(document);
+  });
+
   onCleanup(() => {
     if (streamUnsubscribe) {
       streamUnsubscribe();
       streamUnsubscribe = null;
       streamSessionId = null;
     }
-    if (historyAbortController) {
-      historyAbortController.abort();
-      historyAbortController = null;
+    if (bindAbortController) {
+      bindAbortController.abort();
+      bindAbortController = null;
     }
     if (props.sessionId) {
       attentionActions.clear(props.sessionId);
@@ -620,7 +668,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   ) => {
     if (!props.sessionId) return;
     try {
-      const messageId = await sendChatMessage(props.sessionId, trimmed);
+      const messageId = await send.mutateAsync({ id: props.sessionId, message: trimmed });
 
       // Canonicalize the user entry — unless the SSE echo already added it.
       if (messages.some((m) => m.id === messageId)) {
