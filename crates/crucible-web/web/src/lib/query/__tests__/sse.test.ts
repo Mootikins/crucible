@@ -311,3 +311,144 @@ describe('resetSseForTests', () => {
     expect(FakeEventSource.instances.every((s) => s.closed)).toBe(true);
   });
 });
+
+describe('reconnect', () => {
+  it('opens a new source, closes the old one, and keeps every subscriber', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const stream = sessionEvents('s1');
+    stream.subscribe(first);
+    stream.subscribe(second);
+    const original = onlySource();
+
+    stream.reconnect();
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(original.closed).toBe(true);
+    const replacement = FakeEventSource.instances[1]!;
+    expect(replacement.url).toBe('/api/chat/events/s1');
+    expect(replacement.closed).toBe(false);
+
+    replacement.emit('token', { type: 'token', content: 'after' });
+    expect(first).toHaveBeenCalledWith({ type: 'token', content: 'after' });
+    expect(second).toHaveBeenCalledWith({ type: 'token', content: 'after' });
+  });
+
+  it('keeps the route on the new source', () => {
+    const route = vi.fn();
+    setSessionEventRoute(route);
+    const stream = sessionEvents('s1');
+    stream.subscribe(vi.fn());
+
+    stream.reconnect();
+    FakeEventSource.instances[1]!.emit('token', { type: 'token', content: 'after' });
+
+    expect(route).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing when no subscriber is there', () => {
+    sessionEvents('s1').reconnect();
+
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  it('closes the last source when the last subscriber leaves after it', () => {
+    const stream = sessionEvents('s1');
+    const stop = stream.subscribe(vi.fn());
+    stream.reconnect();
+
+    stop();
+
+    expect(FakeEventSource.instances.every((s) => s.closed)).toBe(true);
+  });
+
+  it('opens a new plugin source too', () => {
+    const handler = vi.fn();
+    const stream = pluginEvents();
+    stream.subscribe(handler);
+    const original = onlySource();
+
+    stream.reconnect();
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(original.closed).toBe(true);
+    FakeEventSource.instances[1]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
+    expect(handler).toHaveBeenCalledWith('board', 'rows');
+  });
+
+  it('makes a joiner wait for the next open', () => {
+    const stream = sessionEvents('s1');
+    stream.subscribe(vi.fn(), vi.fn());
+    onlySource().open();
+
+    stream.reconnect();
+    const later = vi.fn();
+    stream.subscribe(vi.fn(), later);
+    expect(later).not.toHaveBeenCalled();
+
+    FakeEventSource.instances[1]!.open();
+    expect(later).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the open state of the chat stream', () => {
+  it('makes a joiner wait through a drop and the backoff behind it', () => {
+    // `subscribeToEvents` owns the backoff and reports the transport through
+    // the `connection` event it builds itself. The test drives that real path:
+    // the source fails, the retry timer runs, and the new source opens.
+    vi.useFakeTimers();
+    try {
+      const stream = sessionEvents('s1');
+      stream.subscribe(vi.fn());
+      FakeEventSource.instances[0]!.open();
+
+      FakeEventSource.instances[0]!.onerror?.(new Event('error'));
+      const later = vi.fn();
+      stream.subscribe(vi.fn(), later);
+      expect(later).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      expect(later).not.toHaveBeenCalled();
+
+      FakeEventSource.instances[1]!.open();
+      expect(later).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a handler that throws', () => {
+  it('leaves the handlers behind it with their event', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const broken = vi.fn(() => {
+      throw new Error('handler is broken');
+    });
+    const good = vi.fn();
+    sessionEvents('s1').subscribe(broken);
+    sessionEvents('s1').subscribe(good);
+
+    onlySource().emit('token', { type: 'token', content: 'hi' });
+
+    expect(broken).toHaveBeenCalledTimes(1);
+    expect(good).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('leaves the stream open for the next event', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const broken = vi.fn(() => {
+      throw new Error('handler is broken');
+    });
+    sessionEvents('s1').subscribe(broken);
+
+    onlySource().emit('token', { type: 'token', content: 'one' });
+    onlySource().emit('token', { type: 'token', content: 'two' });
+
+    expect(broken).toHaveBeenCalledTimes(2);
+    expect(onlySource().closed).toBe(false);
+    warn.mockRestore();
+  });
+});

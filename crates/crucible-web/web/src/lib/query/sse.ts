@@ -1,5 +1,5 @@
 /**
- * One singleton root per server-sent-event stream.
+ * One shared root per server-sent-event stream.
  *
  * Four streams reach the browser: a session's chat events, surface changes,
  * filesystem changes, and plugin publications. Before this module each
@@ -15,23 +15,16 @@
  * Part D install them, so the translation of an event to a query key lives
  * beside the hook that owns that key, not here.
  *
- * Refcount by subscriber, not by reactive owner. `createSingletonRoot` counts
- * the owners that read it, which is the wrong unit for two of the consumers:
- * `review-store.ts` subscribes from module scope, where there is no owner, and
- * every consumer already holds an unsubscribe function it must be able to run
- * on its own. So the root here is entered once, under one detached owner, and
- * the subscriber count decides when the source closes.
+ * Refcount by subscriber, not by reactive owner. The plan names
+ * `createSingletonRoot`, whose count is the number of reactive owners that
+ * read it. That is the wrong unit for two of the consumers: `review-store.ts`
+ * subscribes from module scope, where there is no owner to count, and every
+ * consumer already holds an unsubscribe function it must be able to run on its
+ * own. Its count would therefore never fall to zero and no source would ever
+ * close, so this module counts subscribers and owns one detached
+ * `createRoot` per stream instead.
  */
-import {
-  createRoot,
-  createSignal,
-  getOwner,
-  onCleanup,
-  runWithOwner,
-  type Accessor,
-  type Owner,
-} from 'solid-js';
-import { createSingletonRoot } from '@solid-primitives/rootless';
+import { createRoot, createSignal, onCleanup, type Accessor } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
 import {
   subscribeToEvents,
@@ -53,11 +46,19 @@ export interface SseStream<E> {
    * Adds a handler, and opens the stream when it is the first one. The answer
    * removes that handler again, and closes the stream when it was the last.
    *
-   * `onOpen` fires once, when the stream is open. A consumer that joins an
-   * open stream gets it at once, because the source it shares opened before
-   * it arrived and will not announce that again.
+   * `onOpen` fires once, the first time this subscriber sees an open stream.
+   * A consumer that joins a stream that is open already gets it at once. A
+   * consumer that joins while the stream is down waits for the next open, so
+   * an open callback never announces a source that cannot carry events.
    */
   subscribe(handler: (event: E) => void, onOpen?: () => void): () => void;
+  /**
+   * Closes the source and opens a new one, keeping every subscriber and the
+   * route. It is the manual retry: the backoff of a stream that dropped can
+   * stand at 30 seconds, and a user who asks to reconnect must not wait it
+   * out. The new source starts the backoff again from the first step.
+   */
+  reconnect(): void;
   /** The event that arrived last, or undefined before the first one. */
   latest: Accessor<E | undefined>;
 }
@@ -65,6 +66,7 @@ export interface SseStream<E> {
 /** What `pluginEvents` gives, where an event names a plugin and a key. */
 export interface PluginEventStream {
   subscribe(handler: (plugin: string, key: string) => void, onOpen?: () => void): () => void;
+  reconnect(): void;
   latest: Accessor<PluginPublicationEvent | undefined>;
 }
 
@@ -129,12 +131,17 @@ function routeContext(): SseRouteContext {
  * a broken translation of one event type would otherwise end the chat stream
  * of a running turn.
  */
-function runRoute<E, C>(route: ((event: E, context: C) => void) | null, event: E, context: C): void {
+function runRoute<E, C>(
+  name: string,
+  route: ((event: E, context: C) => void) | null,
+  event: E,
+  context: C,
+): void {
   if (!route) return;
   try {
     route(event, context);
   } catch (error) {
-    console.warn('SSE route failed:', error);
+    console.warn(`SSE route failed (${name}):`, error);
   }
 }
 
@@ -145,6 +152,20 @@ function runRoute<E, C>(route: ((event: E, context: C) => void) | null, event: E
 /** Opens the source, and answers the function that closes it. */
 type Connect<E> = (onEvent: (event: E) => void, onOpen: () => void) => () => void;
 
+/** What one stream needs to run. */
+interface StreamSpec<E> {
+  /** Names the stream in a warning. */
+  name: string;
+  connect: Connect<E>;
+  route: (event: E) => void;
+  /**
+   * Reads the transport state out of an event: true for open, false for down,
+   * undefined for an event that says nothing about it. The chat stream carries
+   * such an event (`connection`); the three others do not, and leave it out.
+   */
+  openState?: (event: E) => boolean | undefined;
+}
+
 /** One handler, the open callback that arrived with it, and whether it ran. */
 interface Subscriber<E> {
   handler: (event: E) => void;
@@ -152,64 +173,65 @@ interface Subscriber<E> {
   openDelivered: boolean;
 }
 
-/**
- * The owner of every root. It is never disposed, so the cleanup that
- * `createSingletonRoot` registers on it never runs and the subscriber count
- * below is the only thing that closes a source.
- */
-let detachedOwner: Owner | null = null;
-
-function sseOwner(): Owner {
-  if (!detachedOwner) createRoot(() => (detachedOwner = getOwner()));
-  return detachedOwner as Owner;
-}
-
 /** Closes every live root. The reset seam runs them. */
 const liveRoots = new Set<() => void>();
 
-function createStream<E>(
-  connect: Connect<E>,
-  route: (event: E) => void,
-  dispose: () => void,
-): SseStream<E> {
+function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E> {
   const subscribers = new Set<Subscriber<E>>();
   const [latest, setLatest] = createSignal<E | undefined>(undefined);
   let close: (() => void) | null = null;
-  let opened = false;
+  let open = false;
 
   onCleanup(() => {
     close?.();
     close = null;
+    open = false;
   });
 
   function deliver(event: E): void {
     setLatest(() => event);
-    route(event);
+    const state = spec.openState?.(event);
+    if (state === true) announceOpen();
+    else if (state === false) open = false;
+    spec.route(event);
     // A copy, because a handler may unsubscribe itself while the loop runs.
-    for (const subscriber of [...subscribers]) subscriber.handler(event);
+    for (const subscriber of [...subscribers]) {
+      // One handler that throws must not cost the handlers behind it their
+      // event: three panes share this loop, and two of them are innocent.
+      try {
+        subscriber.handler(event);
+      } catch (error) {
+        console.warn(`SSE handler failed (${spec.name}):`, error);
+      }
+    }
   }
 
   /** Runs one open callback, and runs it once whichever path reaches it. */
   function deliverOpen(subscriber: Subscriber<E>): void {
     if (!subscriber.onOpen || subscriber.openDelivered) return;
     subscriber.openDelivered = true;
-    subscriber.onOpen();
+    try {
+      subscriber.onOpen();
+    } catch (error) {
+      console.warn(`SSE open callback failed (${spec.name}):`, error);
+    }
   }
 
   function announceOpen(): void {
-    opened = true;
+    open = true;
     for (const subscriber of [...subscribers]) deliverOpen(subscriber);
   }
 
   return {
     latest,
+
     subscribe(handler, onOpen) {
       const subscriber: Subscriber<E> = { handler, onOpen, openDelivered: false };
       subscribers.add(subscriber);
       // The connect may open at once, which announces to this subscriber too;
       // `deliverOpen` then does nothing on the line below.
-      if (!close) close = connect(deliver, announceOpen);
-      if (opened) deliverOpen(subscriber);
+      if (!close) close = spec.connect(deliver, announceOpen);
+      if (open) deliverOpen(subscriber);
       let live = true;
       return () => {
         if (!live) return;
@@ -218,36 +240,46 @@ function createStream<E>(
         if (subscribers.size === 0) dispose();
       };
     },
+
+    reconnect() {
+      // Nobody subscribes, so there is no source to reissue. The next
+      // `subscribe` opens one.
+      if (!close) return;
+      close();
+      open = false;
+      // A new connect, not a reopen of the old one: the backoff of each
+      // stream lives in the closure `connect` builds, so a new closure starts
+      // the wait again at its first step.
+      close = spec.connect(deliver, announceOpen);
+    },
   };
 }
 
 /**
  * Answers the one stream of a key, and builds it when there is none.
  *
- * The stream object is held, not the accessor `createSingletonRoot` answers,
- * so the accessor runs once per source and registers one cleanup on the
- * detached owner per source, rather than one per call.
+ * The root is detached (`createRoot(fn, null)`). Without that it would belong
+ * to the owner of whichever consumer asked for the stream first, and that
+ * component going away would close the source under every other consumer.
  */
 function rootFor<E>(
   roots: Map<string, SseStream<E>>,
   key: string,
-  connect: Connect<E>,
-  route: (event: E) => void,
+  spec: StreamSpec<E>,
 ): SseStream<E> {
   const existing = roots.get(key);
   if (existing) return existing;
 
   let disposeRoot: () => void = () => {};
-  const accessor = createSingletonRoot<SseStream<E>>((dispose) => {
+  const stream = createRoot<SseStream<E>>((dispose) => {
     disposeRoot = dispose;
     onCleanup(() => {
       roots.delete(key);
       liveRoots.delete(dispose);
     });
-    return createStream(connect, route, dispose);
+    return createStream(spec, dispose);
   }, null);
 
-  const stream = runWithOwner(sseOwner(), accessor) as SseStream<E>;
   roots.set(key, stream);
   liveRoots.add(disposeRoot);
   return stream;
@@ -272,32 +304,37 @@ const GLOBAL = 'global';
  * another session opens its own.
  */
 export function sessionEvents(sessionId: string): SseStream<ChatEvent> {
-  return rootFor(
-    sessionRoots,
-    sessionId,
-    (onEvent, onOpen) => subscribeToEvents(sessionId, onEvent, onOpen),
-    (event) => runRoute(sessionRoute, event, { ...routeContext(), sessionId }),
-  );
+  return rootFor(sessionRoots, sessionId, {
+    name: `chat events ${sessionId}`,
+    connect: (onEvent, onOpen) => subscribeToEvents(sessionId, onEvent, onOpen),
+    route: (event) =>
+      runRoute(`chat events ${sessionId}`, sessionRoute, event, {
+        ...routeContext(),
+        sessionId,
+      }),
+    // `subscribeToEvents` reports the transport through this event: it sends
+    // `reconnecting` from its error handler and `connected` from its open
+    // handler. Without reading it the stream would look open through a drop.
+    openState: (event) => (event.type === 'connection' ? event.status === 'connected' : undefined),
+  });
 }
 
 /** The surface changes of every plugin (`GET /api/surfaces/events`). */
 export function surfaceEvents(): SseStream<SurfaceChangedEvent> {
-  return rootFor(
-    surfaceRoots,
-    GLOBAL,
-    (onEvent) => subscribeToSurfaceEvents(onEvent),
-    (event) => runRoute(surfaceRoute, event, routeContext()),
-  );
+  return rootFor(surfaceRoots, GLOBAL, {
+    name: 'surface events',
+    connect: (onEvent) => subscribeToSurfaceEvents(onEvent),
+    route: (event) => runRoute('surface events', surfaceRoute, event, routeContext()),
+  });
 }
 
 /** The filesystem changes of every watched root (`GET /api/fs/events`). */
 export function fsEvents(): SseStream<FsEvent> {
-  return rootFor(
-    fsRoots,
-    GLOBAL,
-    (onEvent) => subscribeToFsEvents(onEvent),
-    (event) => runRoute(fsRoute, event, routeContext()),
-  );
+  return rootFor(fsRoots, GLOBAL, {
+    name: 'fs events',
+    connect: (onEvent) => subscribeToFsEvents(onEvent),
+    route: (event) => runRoute('fs events', fsRoute, event, routeContext()),
+  });
 }
 
 /** The URL of the plugin stream. `api.ts` has no function for it yet. */
@@ -306,9 +343,10 @@ const PLUGIN_EVENTS_URL = '/api/plugins/events';
 /**
  * Opens the plugin stream.
  *
- * It reconnects on no error, which is what the stream did before this module:
- * the three other streams back off and retry inside `api.ts`, and Task D4
- * moves this one's consumer here without changing that.
+ * It does not reconnect on an error, which is what the stream does today: the
+ * three other streams back off and retry inside `api.ts`, and Task D4 moves
+ * this one's consumer here without changing that. A consumer that must get
+ * back on calls `reconnect()`.
  */
 function connectPluginEvents(
   onEvent: (event: PluginPublicationEvent) => void,
@@ -331,11 +369,14 @@ function connectPluginEvents(
 
 /** The publications of every plugin (`GET /api/plugins/events`). */
 export function pluginEvents(): PluginEventStream {
-  const stream = rootFor(pluginRoots, GLOBAL, connectPluginEvents, (event) =>
-    runRoute(pluginRoute, event, routeContext()),
-  );
+  const stream = rootFor(pluginRoots, GLOBAL, {
+    name: 'plugin events',
+    connect: connectPluginEvents,
+    route: (event) => runRoute('plugin events', pluginRoute, event, routeContext()),
+  });
   return {
     latest: stream.latest,
+    reconnect: () => stream.reconnect(),
     subscribe(handler, onOpen) {
       return stream.subscribe((event) => handler(event.plugin, event.key), onOpen);
     },
