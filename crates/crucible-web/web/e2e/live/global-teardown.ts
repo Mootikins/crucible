@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { rmSync, existsSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { readState, STATE_FILE } from './_state';
 
@@ -53,6 +53,24 @@ async function globalTeardown(): Promise<void> {
       if (existsSync(stamp)) unlinkSync(stamp);
     } catch {
       /* best effort */
+    }
+  }
+  // Keep the evidence when asked. The temp root holds `web.log`, the daemon's
+  // own log under CRUCIBLE_HOME, `kilns.json` and the fake model server's
+  // request log — everything a post-mortem of a live failure needs, and all of
+  // it goes away with the directory. `CRUCIBLE_LIVE_LOG_DIR` copies it out
+  // first. Off by default: a passing run should leave nothing behind.
+  const keepDir = process.env.CRUCIBLE_LIVE_LOG_DIR;
+  if (keepDir && state.tmpDir) {
+    try {
+      mkdirSync(keepDir, { recursive: true });
+      cpSync(state.tmpDir, path.join(keepDir, path.basename(state.tmpDir)), {
+        recursive: true,
+        force: true,
+      });
+      console.log(`[live] logs kept in ${path.join(keepDir, path.basename(state.tmpDir))}`);
+    } catch (err) {
+      console.log(`[live] could not keep logs: ${String(err).slice(0, 200)}`);
     }
   }
   if (state.tmpDir) {
