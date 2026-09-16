@@ -17,7 +17,7 @@ import { keys } from '../keys';
 import { setSurfaceEventRoute, type SseRouteContext } from '../sse';
 
 /** Turns one surface event into the cache write it owes every panel. */
-export function routeSurfaceEvent(event: SurfaceChangedEvent, { client }: SseRouteContext): void {
+function routeSurfaceEvent(event: SurfaceChangedEvent, { client }: SseRouteContext): void {
   if (event.withdrawn) {
     client.setQueryData<Surface[]>(keys.surfaces(), (held) => {
       // Nothing read the list, so there is nothing to keep current. Minting one

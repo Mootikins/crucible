@@ -23,10 +23,11 @@ export function isLocalhost(): boolean {
  * from render paths, and a bare `getConfig()` behind a cooldown was a request
  * every three seconds for the whole life of a page the daemon kept refusing.
  *
- * The new behaviour has NO timer. The first read starts the one config fetch,
- * and the query answers every later read from its cache until `staleTime`
- * expires; the next reader after that refetches. A transport failure is
- * therefore asked again when the config goes stale, not on a loop of its own.
+ * The new behaviour has NO timer and no second fetch. The first read binds one
+ * observer, which fetches once; every later read answers from that observer's
+ * cache entry. Nothing here refetches on staleness, because a plain accessor
+ * has no reader to trigger one. A fresh answer comes only from an explicit
+ * invalidation — a config save, or the sign-in below.
  *
  * `undefined`, never `false`, when the fetch fails: we did not learn that the
  * terminal is denied, we learned nothing. Only `remote_shell === false` is a

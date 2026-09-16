@@ -1,10 +1,5 @@
 import type { Accessor } from 'solid-js';
-import {
-  useMutation,
-  useQuery,
-  type UseMutationResult,
-  type UseQueryResult,
-} from '@tanstack/solid-query';
+import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import {
   addReviewComment,
   listReviewHunks,
@@ -128,71 +123,4 @@ export function resolveReviewCommentOnce(
   commentId: string,
 ): Promise<{ comment_id: string }> {
   return writing(sessionId, () => resolveReviewComment(sessionId, commentId));
-}
-
-/**
- * The same six writes, for a caller that wants their pending and error state.
- *
- * `lib/review-store.ts` reaches the plain functions above instead, because its
- * actions are called from three surfaces that do not share an owner and one of
- * them acts as it goes away.
- */
-export function useSetHunkState(
-  sessionId: Accessor<string>,
-): UseMutationResult<{ hunk_id: string; state: ReviewState }, Error, { hunkId: string; state: ReviewState }> {
-  return useMutation(
-    () => ({
-      mutationFn: ({ hunkId, state }: { hunkId: string; state: ReviewState }) =>
-        setHunkStateOnce(sessionId(), hunkId, state),
-    }),
-    getQueryClient,
-  );
-}
-
-export function useSetHunkStates(
-  sessionId: Accessor<string>,
-): UseMutationResult<BulkOutcome & { state: ReviewState }, Error, { hunkIds: string[]; state: ReviewState }> {
-  return useMutation(
-    () => ({
-      mutationFn: ({ hunkIds, state }: { hunkIds: string[]; state: ReviewState }) =>
-        setHunkStatesOnce(sessionId(), hunkIds, state),
-    }),
-    getQueryClient,
-  );
-}
-
-export function useUndoReject(
-  sessionId: Accessor<string>,
-): UseMutationResult<BulkOutcome, Error, void> {
-  return useMutation(
-    () => ({ mutationFn: () => undoRejectOnce(sessionId()) }),
-    getQueryClient,
-  );
-}
-
-export function useRebaseReview(
-  sessionId: Accessor<string>,
-): UseMutationResult<{ roots: DegradedRoot[] }, Error, void> {
-  return useMutation(
-    () => ({ mutationFn: () => rebaseReviewOnce(sessionId()) }),
-    getQueryClient,
-  );
-}
-
-export function useAddReviewComment(
-  sessionId: Accessor<string>,
-): UseMutationResult<{ comment: ReviewComment }, Error, NewComment> {
-  return useMutation(
-    () => ({ mutationFn: (comment: NewComment) => addReviewCommentOnce(sessionId(), comment) }),
-    getQueryClient,
-  );
-}
-
-export function useResolveReviewComment(
-  sessionId: Accessor<string>,
-): UseMutationResult<{ comment_id: string }, Error, string> {
-  return useMutation(
-    () => ({ mutationFn: (commentId: string) => resolveReviewCommentOnce(sessionId(), commentId) }),
-    getQueryClient,
-  );
 }

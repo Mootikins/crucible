@@ -39,7 +39,7 @@ import { keys } from './keys';
  * callers asking one session for different lengths would overwrite each
  * other's answer under one key, and the shorter one would win at random.
  */
-export const HISTORY_LIMIT = 10000;
+const HISTORY_LIMIT = 10000;
 
 /** The one fetch every reader of one session's transcript shares. */
 function fetchHistory(sessionId: string, signal?: AbortSignal): Promise<SessionHistoryResponse> {

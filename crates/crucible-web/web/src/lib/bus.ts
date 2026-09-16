@@ -28,7 +28,7 @@ export type BusEvents = {
 };
 
 /** A handler of one event. The type of its payload comes from `BusEvents`. */
-export type BusHandler<K extends keyof BusEvents> = (payload: BusEvents[K]) => void;
+type BusHandler<K extends keyof BusEvents> = (payload: BusEvents[K]) => void;
 
 /** The typed replacement of `window.dispatchEvent` and `window.addEventListener`. */
 export type Bus = {

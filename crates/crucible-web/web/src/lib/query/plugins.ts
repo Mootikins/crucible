@@ -251,11 +251,10 @@ export function useRunPluginCommand(): UseMutationResult<unknown, Error, RunPlug
   return useMutation(
     () => ({
       mutationFn: ({ command, args, caller }: RunPluginCommand) =>
-        // Omitted rather than passed as `undefined`, so the app's own caller
-        // name comes from the one place that declares it.
-        caller === undefined
-          ? runPluginCommand(command, args ?? {})
-          : runPluginCommand(command, args ?? {}, caller),
+        // `caller` goes through as it is. An absent one falls to the default
+        // parameter of `runPluginCommand`, which is the one place that
+        // declares the app's own caller name.
+        runPluginCommand(command, args ?? {}, caller),
     }),
     getQueryClient,
   );

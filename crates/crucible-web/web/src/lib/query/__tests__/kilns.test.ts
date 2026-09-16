@@ -119,6 +119,19 @@ describe('fetchKilnsOnce', () => {
     await expect(fetchKilnsOnce()).resolves.toEqual(MAIN);
     expect(env.fetch.calls('GET /api/kilns')).toBe(1);
   });
+
+  it('rejects when the daemon refuses, rather than answering an empty list', async () => {
+    // No stored list: a seeded entry would be answered from the cache, and
+    // this is about what the FETCH does when the daemon refuses it.
+    env = createTestQueryEnv({ 'GET /api/kilns': apiError(500, 'the daemon fell over') });
+
+    // The callers of this function cannot render a pending state and cannot
+    // render a refusal either, so a resolved `[]` would read to them as "this
+    // kiln does not exist". The rejection is what makes them stop instead.
+    // `listKilns` does not ask for the body text, so the sentence carries the
+    // attempt and the status, not the daemon's own words.
+    await expect(fetchKilnsOnce()).rejects.toThrow('Failed to list kilns: HTTP 500');
+  });
 });
 
 describe('kilnsSnapshot', () => {

@@ -122,7 +122,7 @@ function routeSessionSubEvent(
 }
 
 /** Turns one chat event into the cache writes it owes every pane. */
-export function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void {
+function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void {
   const { client, bus, sessionId } = context;
 
   switch (event.type) {
@@ -155,6 +155,8 @@ export function routeSessionEvent(event: ChatEvent, context: SessionRouteContext
     // Both lists, because the archived flag is part of the key and a rename
     // reaches the row under either flag.
     case 'title_changed':
+      // Named one at a time: the flag sits in an OBJECT inside the key, so a
+      // prefix match on `['sessions']` would not reach either variant.
       void client.invalidateQueries({ queryKey: keys.sessions(false) });
       void client.invalidateQueries({ queryKey: keys.sessions(true) });
       bus.emit('sessionTitleChanged', { sessionId, title: event.title });

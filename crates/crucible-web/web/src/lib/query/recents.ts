@@ -1,9 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  type UseMutationResult,
-  type UseQueryResult,
-} from '@tanstack/solid-query';
+import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import { fetchRecents, recordRecent } from '@/lib/api';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -21,12 +16,6 @@ import { keys } from './keys';
 export interface RecentFile {
   absPath: string;
   name: string;
-}
-
-/** What one record names. */
-export interface RecordRecentParams {
-  readonly path: string;
-  readonly name: string;
 }
 
 /** The options of the list. */
@@ -64,14 +53,4 @@ export function recordRecentOnce(path: string, name: string): Promise<void> {
         .invalidateQueries({ queryKey: keys.recents() })
         .then(() => undefined),
     );
-}
-
-/** The same write, for a caller that wants its pending and error state. */
-export function useRecordRecent(): UseMutationResult<void, Error, RecordRecentParams> {
-  return useMutation(
-    () => ({
-      mutationFn: ({ path, name }: RecordRecentParams) => recordRecentOnce(path, name),
-    }),
-    getQueryClient,
-  );
 }

@@ -105,7 +105,14 @@ const [snapshot, setSnapshot] = createSignal<KilnListEntry[]>([]);
 let boundClient: QueryClient | null = null;
 let unbind: (() => void) | null = null;
 
-/** Mirrors the current client's kiln entry into the signal, and starts the fetch. */
+/**
+ * Mirrors the current client's kiln entry into the signal, and starts the
+ * fetch.
+ *
+ * The subscription is permanent for the life of the tab, by design: the signal
+ * has no owner to clean it up, and every reader of it is a render path that
+ * can appear again at any time. One observer for one roster is the cost.
+ */
 function bindSnapshot(): void {
   const client = seededClient();
   if (boundClient === client) return;
@@ -128,7 +135,9 @@ function bindSnapshot(): void {
 /**
  * The roster as a plain reactive accessor, outside any component.
  *
- * Reading it starts the fetch, the same way `kilnStore.ensureLoaded` did.
+ * Reading it starts the fetch, the same way `kilnStore.ensureLoaded` did. The
+ * first read binds the observer above, and nothing unbinds it until the tab
+ * closes or a test calls `resetKilnsForTests`.
  */
 export const kilnsSnapshot: Accessor<KilnListEntry[]> = () => {
   bindSnapshot();

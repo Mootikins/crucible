@@ -87,13 +87,19 @@ describe('PluginCommandDialog', () => {
     fireEvent.input(field('bands'), { target: { value: 'red\ngreen' } });
     fireEvent.click(getByText('Run'));
 
+    // The third argument is the caller. This dialog names none, so it passes
+    // `undefined` and `runPluginCommand`'s default names the app.
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenCalledWith('spectrometer_calibrate', {
-        sample: 'ref-12',
-        passes: 3,
-        dry_run: true,
-        bands: ['red', 'green'],
-      }),
+      expect(mocks.runPluginCommand).toHaveBeenCalledWith(
+        'spectrometer_calibrate',
+        {
+          sample: 'ref-12',
+          passes: 3,
+          dry_run: true,
+          bands: ['red', 'green'],
+        },
+        undefined,
+      ),
     );
   });
 
@@ -138,6 +144,8 @@ describe('PluginCommandDialog', () => {
 
     expect(controlsByName(container)).toEqual({});
     fireEvent.click(getByText('Run'));
-    await waitFor(() => expect(mocks.runPluginCommand).toHaveBeenCalledWith('bare', {}));
+    await waitFor(() =>
+      expect(mocks.runPluginCommand).toHaveBeenCalledWith('bare', {}, undefined),
+    );
   });
 });

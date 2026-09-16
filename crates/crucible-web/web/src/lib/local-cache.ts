@@ -33,22 +33,3 @@ export function writeLocalCache<T>(key: string, value: T): void {
     /* private mode / quota: the live value still reached the caller */
   }
 }
-
-/** Apply the cached value (if any) synchronously, then fetch, re-apply, and
- * persist. Fetch failures keep the cached value on screen. */
-export function swrLocal<T>(
-  key: string,
-  fetcher: () => Promise<T>,
-  apply: (value: T) => void,
-): void {
-  const cached = readLocalCache<T>(key);
-  if (cached !== null) apply(cached);
-  void fetcher()
-    .then((value) => {
-      apply(value);
-      writeLocalCache(key, value);
-    })
-    .catch(() => {
-      /* offline / server gone: last-known value stands */
-    });
-}

@@ -44,7 +44,7 @@ export const SEARCH_DEBOUNCE_MS = 220;
  * back-and-forth of narrowing a query and short enough that reopening the
  * panel later asks again.
  */
-export const SEARCH_STALE_MS = 30_000;
+const SEARCH_STALE_MS = 30_000;
 
 /** How many hits the daemon returns. NOT in the key — see `grepOptions`. */
 const HIT_LIMIT = 60;

@@ -3,7 +3,6 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
-import { connectSessionKiln } from '@/lib/api';
 import {
   fetchDirOnce,
   invalidateDirsUnder,
@@ -15,6 +14,7 @@ import {
 } from '@/lib/query/fs';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { useKilns } from '@/lib/query/kilns';
+import { useConnectSessionKiln } from '@/lib/query/scope';
 import { invalidateNotes, useListNotes } from '@/lib/query/notes';
 import { fsEvents } from '@/lib/query/sse';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
@@ -105,6 +105,10 @@ export const FilesPanel: Component<{
   const makeFolder = useFsMkdir();
   const trashEntry = useFsTrash();
   const saveFile = useSaveFileContent();
+  // The kiln attach. The mutation folds the echoed scope into every cached
+  // copy of the session; the echo also goes to the session context below,
+  // which owns the selection signal this panel reads.
+  const connectKiln = useConnectSessionKiln();
   const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [building, setBuilding] = createSignal(false);
@@ -227,7 +231,7 @@ export const FilesPanel: Component<{
     if (!id || r.kind !== 'kiln') return;
     void (async () => {
       try {
-        applySessionScope(await connectSessionKiln(id, r.name));
+        applySessionScope(await connectKiln.mutateAsync({ id, kiln: r.name }));
         setError(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to attach ${r.name}`);

@@ -19,7 +19,7 @@ import { keys } from '../keys';
 import { setPluginEventRoute, type PluginPublicationEvent, type SseRouteContext } from '../sse';
 
 /** Turns one publication event into the cache write it owes every block. */
-export function routePluginEvent(
+function routePluginEvent(
   event: PluginPublicationEvent,
   { client }: SseRouteContext,
 ): void {

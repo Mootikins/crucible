@@ -7,7 +7,7 @@
  * time beside every name. Both are invalidated, and neither is patched: the
  * frame carries a path and no content, so there is nothing here to write.
  *
- * Paths on this stream are ABSOLUTE (`web/fs_events.rs`), so the folder of an
+ * Paths on this stream are ABSOLUTE (`crates/crucible-web/src/fs_events.rs`), so the folder of an
  * event is the text before its last separator. The keys this route names are
  * absolute for the same reason, and `useListDir` keys its listing the same way.
  *
@@ -36,7 +36,7 @@ function pathsOf(event: FsEvent): string[] {
 }
 
 /** Turns one filesystem event into the cache writes it owes every reader. */
-export function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
+function routeFsEvent(event: FsEvent, { client }: SseRouteContext): void {
   const paths = pathsOf(event);
   for (const path of paths) {
     void client.invalidateQueries({ queryKey: keys.fsFile(path) });

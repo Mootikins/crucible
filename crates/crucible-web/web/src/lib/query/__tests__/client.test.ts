@@ -32,14 +32,12 @@ describe('getQueryClient', () => {
     expect(queryClientOptions.defaultOptions?.queries?.staleTime).toBe(5 * 60 * 1000);
   });
 
-  it('answers undefined for a key it did not cache', () => {
-    expect(getQueryClient().getQueryData(keys.session('sess-1'))).toBeUndefined();
-  });
-
-  it('answers the cached value for a key it did cache', () => {
-    const client = getQueryClient();
-    client.setQueryData(keys.session('sess-1'), { id: 'sess-1', title: 'One' });
-    expect(client.getQueryData(keys.session('sess-1'))).toEqual({
+  it('carries a cached entry from one call to the next', () => {
+    // The point of the module singleton: a hook that writes the cache and a
+    // hook that reads it never share a variable, only this accessor. Two
+    // independent calls must therefore see one cache.
+    getQueryClient().setQueryData(keys.session('sess-1'), { id: 'sess-1', title: 'One' });
+    expect(getQueryClient().getQueryData(keys.session('sess-1'))).toEqual({
       id: 'sess-1',
       title: 'One',
     });
