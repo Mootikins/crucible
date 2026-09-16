@@ -316,6 +316,15 @@ pub(crate) enum CommandEffectRow {
 }
 
 /// One executable primitive a plugin declared, and the arguments it takes.
+///
+/// **A deliberate reshape, so it keeps its own struct.** The daemon builds a
+/// row from `crucible_core::traits::tools::ToolDefinition`, but it sends three
+/// of that type's seven fields — `name`, `description` and `parameters` — and
+/// adds three the command registry owns: the declaring `plugin`, the
+/// `hint`, and the declared `effect`. `category`, `returns`, `examples` and
+/// `required_permissions` never reach a client. Re-exporting `ToolDefinition`
+/// would therefore promise four keys the wire does not carry, which is why
+/// this is not one of the types to derive `ToSchema` on in `crucible-core`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(crate) struct PluginCommandRow {
     /// The plugin that declared it.

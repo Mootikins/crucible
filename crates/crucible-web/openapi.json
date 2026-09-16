@@ -3155,7 +3155,7 @@
       },
       "PluginCommandRow": {
         "type": "object",
-        "description": "One executable primitive a plugin declared, and the arguments it takes.",
+        "description": "One executable primitive a plugin declared, and the arguments it takes.\n\n**A deliberate reshape, so it keeps its own struct.** The daemon builds a\nrow from `crucible_core::traits::tools::ToolDefinition`, but it sends three\nof that type's seven fields — `name`, `description` and `parameters` — and\nadds three the command registry owns: the declaring `plugin`, the\n`hint`, and the declared `effect`. `category`, `returns`, `examples` and\n`required_permissions` never reach a client. Re-exporting `ToolDefinition`\nwould therefore promise four keys the wire does not carry, which is why\nthis is not one of the types to derive `ToSchema` on in `crucible-core`.",
         "required": [
           "plugin",
           "name",
