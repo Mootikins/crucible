@@ -21,9 +21,7 @@ import type {
 import type { ChatContextValue } from '@/lib/types/context';
 import type { SessionHistoryResponse } from '@/lib/api';
 import {
-  listModes,
   listPendingInteractions,
-  setSessionMode,
   respondToInteraction as apiRespondToInteraction,
   generateMessageId,
   turnResponseId,
@@ -37,6 +35,7 @@ import {
   useSendChatMessage,
   useSessionHistory,
 } from '@/lib/query/history';
+import { useSessionModes, useSetSessionMode } from '@/lib/query/modes';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
@@ -77,34 +76,38 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
   const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
   const [chatMode, setChatMode] = createSignal<ChatMode>('ask');
-  // Modes are declared in Lua, so the list is per-session and comes from the
-  // daemon. Held here rather than in ChatModeControl because Shift+Tab cycles
-  // from ChatInput — two fetches would be two lists, and they would disagree
-  // the moment one failed.
-  const [availableModes, setAvailableModes] = createSignal<ModeDescriptor[]>(FALLBACK_MODES);
-  /// Pull the session's modes from the daemon.
-  ///
-  /// Called at mount and again whenever the list proves stale — a rejected
-  /// switch, or a `mode_changed` naming a mode we do not have. Without the
-  /// re-fetch the list is whatever it was at mount, so a mode declared later
-  /// never appears and one removed later stays clickable.
-  const refreshModes = async () => {
-    if (!props.sessionId) return;
-    try {
-      const listed = await listModes(props.sessionId);
-      if (listed.modes.length === 0) return;
-      setAvailableModes(listed.modes);
-      // The daemon's `current_mode_id` is authoritative and the persisted
-      // string is not: `session.get` returns whatever was last written, while
-      // the daemon clamps to a mode that still exists. Taking the persisted
-      // one left the chip showing a mode nobody would run — or, when it
-      // matched no option, showing its own placeholder.
-      setChatMode(listed.current_mode_id);
-    } catch {
-      // Keep the built-ins: an empty chip offers no way to change mode at all.
-    }
+  // Modes are declared in Lua, so the list is per session and comes from the
+  // daemon. It is read through the one key `SessionStatusChips` reads, which
+  // fetched a second copy of its own on every mount, and the id is an
+  // accessor: the read this replaced ran once, when the pane was built, for
+  // whichever session it held then, so a rebound pane kept the first
+  // session's modes. Held here rather than in ChatModeControl because
+  // Shift+Tab cycles from ChatInput.
+  const modes = useSessionModes(() => props.sessionId || null);
+  const setMode = useSetSessionMode();
+  /**
+   * The modes this pane offers.
+   *
+   * The built-ins stand in until the daemon answers, and stay if it answers an
+   * empty list: a chip with no options offers no way to change mode at all.
+   */
+  const availableModes = (): ModeDescriptor[] => {
+    const listed = modes.data;
+    return listed && listed.modes.length > 0 ? listed.modes : FALLBACK_MODES;
   };
-  void refreshModes();
+  /**
+   * Follows the mode the daemon says is current.
+   *
+   * `session.get` answers whatever was last written, and the daemon clamps to
+   * a mode that still exists — so the persisted string can name a mode nobody
+   * would run, and the chip showed its own placeholder for it. The list is
+   * the authority, and the stream's route asks for it again whenever the mode
+   * moves.
+   */
+  createEffect(() => {
+    const listed = modes.data;
+    if (listed && listed.modes.length > 0) setChatMode(listed.current_mode_id);
+  });
   /**
    * This pane has nothing to draw and is waiting for the transcript.
    *
@@ -239,16 +242,18 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    const switchMode = (mode: ChatMode) => {
      const previous = chatMode();
      setChatMode(mode);
-     void setSessionMode(props.sessionId, mode).catch((err) => {
+     // The mutation moves the cached `current_mode_id` and puts it back on a
+     // refusal, which is what the other readers of the list see. This pane
+     // holds its own chip, because the chip must answer the click whether or
+     // not the daemon has answered the list at all. The mutation also asks
+     // for the list again once it settles, so a mode the daemon rejects stops
+     // being offered.
+     void setMode.mutateAsync({ id: props.sessionId, mode }).catch((err) => {
        setChatMode(previous);
        notificationActions.addNotification(
          'error',
          err instanceof Error ? err.message : 'Failed to set session mode'
        );
-       // We offered a mode the daemon rejects, so the list it came from is
-       // stale — most often the built-in fallback after the mount-time fetch
-       // failed. Refresh so the options stop lying.
-       void refreshModes();
      });
    };
 
@@ -262,9 +267,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    };
 
   const handleEvent = createChatEventReducer({
-    onUnknownMode: (mode) => {
-      if (!availableModes().some((m) => m.id === mode)) void refreshModes();
-    },
+    // No `onUnknownMode`: the stream's own route invalidates this session's
+    // mode list on EVERY `mode_changed`, so the list is read again whether or
+    // not this pane knows the mode the event names.
     messages: () => messages,
     currentStreamingMessageId: () => currentStreamingMessageId,
     setCurrentStreamingMessageId: (id) => {

@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { SessionStatusChips } from '../SessionStatusChips';
+import { ChatProvider } from '@/contexts/ChatContext';
 import { __resetReviewStore } from '@/lib/review-store';
 import type { Session } from '@/lib/types';
+import { setQueryClientForTests } from '@/lib/query/client';
+import { createTestQueryClient } from '@/test-utils/query';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
 vi.mock('@/contexts/SessionContext', () => ({
@@ -14,10 +17,32 @@ const getSessionStatusMock = vi.fn();
 const listModesMock = vi.fn(async () => ({ current_mode_id: 'ask', modes: [] }));
 // The chips retain the session's review state, which opens one SSE stream and
 // lists the composed diff. Both are stubbed: this suite is about the chips.
+//
+// The last case mounts the chat pane around the chips, to count the reads of
+// one mode list; the rest of this factory is what that pane touches on mount.
 vi.mock('@/lib/api', () => ({
   getSessionStatus: (...args: unknown[]) => getSessionStatusMock(...args),
   listModes: (...args: unknown[]) => listModesMock(...(args as [])),
   subscribeToEvents: () => () => {},
+  getSession: vi.fn(async (id: string) => ({
+    id,
+    session_type: 'chat',
+    kilns: ['/kilns/main'],
+    workspace: '/kilns/main',
+    state: 'active',
+    title: null,
+    agent_model: null,
+    agent_mode: null,
+    started_at: '2026-01-01T00:00:00Z',
+    event_count: 0,
+  })),
+  getSessionHistory: vi.fn(async () => ({ session_id: 's1', history: [], total_events: 0 })),
+  listPendingInteractions: vi.fn(async () => []),
+  generateMessageId: () => 'msg_test',
+  turnResponseId: (id: string) => `${id}-response`,
+  turnSegmentId: (id: string, index: number) => `${id}-seg-${index}`,
+  turnThinkingId: (id: string) => `${id}-thinking`,
+  stripFrozenPrefix: (full: string) => full,
 }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: vi.fn(async () => ({ session_id: 's', hunks: [], comments: [] })),
@@ -36,11 +61,18 @@ const baseSession = (id = 's1'): Session => ({
   event_count: 0,
 });
 
+beforeEach(() => {
+  // The mode list is a query now, and its cache outlives one case. A fresh
+  // client per case keeps one session's answer from serving the next one.
+  setQueryClientForTests(createTestQueryClient());
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   setCurrentSession(undefined);
   __resetReviewStore();
+  setQueryClientForTests(null);
 });
 
 describe('SessionStatusChips', () => {
@@ -96,6 +128,26 @@ describe('SessionStatusChips', () => {
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalled());
     expect(screen.queryByTestId('session-status')).toBeNull();
+  });
+
+  it('reads the one mode list the chat pane asked for', async () => {
+    // The gate: the chips held a second `createResource` over `listModes` and
+    // refetched the list on every mount, beside the chat pane's own read.
+    setCurrentSession(baseSession());
+    getSessionStatusMock.mockResolvedValue([]);
+
+    render(() => (
+      <ChatProvider sessionId="s1">
+        <SessionStatusChips />
+      </ChatProvider>
+    ));
+
+    await waitFor(() => expect(listModesMock).toHaveBeenCalled());
+    // Both readers have bound; a second request would have been made by now.
+    for (let tick = 0; tick < 3; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(listModesMock).toHaveBeenCalledTimes(1);
   });
 
   it('drops the previous session slots BEFORE the new fetch resolves', async () => {

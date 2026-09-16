@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import type { Session, ChatEvent } from '@/lib/types';
+import { setQueryClientForTests } from '@/lib/query/client';
+import { createTestQueryClient } from '@/test-utils/query';
 import type { ReviewAwareMode } from '@/lib/review-types';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
@@ -57,6 +59,9 @@ const mode = (id: string, review_policy?: ReviewAwareMode['review_policy']): Rev
 });
 
 beforeEach(() => {
+  // The mode list is a query now, and its cache outlives one case. A fresh
+  // client per case keeps one session's answer from serving the next one.
+  setQueryClientForTests(createTestQueryClient());
   handlers.length = 0;
   listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
   modes('ask', mode('ask'));
@@ -66,6 +71,7 @@ afterEach(() => {
   cleanup();
   setCurrentSession(undefined);
   __resetReviewStore();
+  setQueryClientForTests(null);
   vi.clearAllMocks();
 });
 

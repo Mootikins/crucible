@@ -918,6 +918,11 @@ describe('mode hydration', () => {
     // The old hydrateMode checked the id against 'ask' | 'plan' | 'auto'
     // and dropped anything else, so a session persisted in `review` came back
     // showing Normal while the agent kept running review.
+    //
+    // The mode list is the authority when it answers (the case below), so it
+    // is kept out of the way here: the persisted string is then the only
+    // source the chip has, which is the path this case is about.
+    (api.listModes as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('daemon down'));
     mockGetSession.mockResolvedValue({ ...mockSession, agent_mode: 'review' });
 
     let mode: () => string = () => '';

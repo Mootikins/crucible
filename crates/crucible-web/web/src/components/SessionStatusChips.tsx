@@ -1,6 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, on } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { getSessionStatus, listModes, type SessionStatusSlot } from '@/lib/api';
+import { getSessionStatus, type SessionStatusSlot } from '@/lib/api';
+import { useSessionModes } from '@/lib/query/modes';
 import { reviewStore, useReviewSession } from '@/lib/review-store';
 import {
   type ReviewAwareMode,
@@ -34,10 +35,13 @@ const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
   const [slots, setSlots] = createSignal<SessionStatusSlot[]>([]);
-  const [policy, setPolicy] = createSignal<ReviewPolicy | null>(null);
 
   const sessionId = () => currentSession()?.id;
   useReviewSession(sessionId);
+  // The chat pane reads this same list for its mode control. This component
+  // used to fetch a second copy of it on every mount, and the two disagreed
+  // the moment one of them failed.
+  const modes = useSessionModes(() => sessionId() ?? null);
 
   // No SSE event carries plugin status, so the fetch hangs off the session id.
   // Scoped to the ACTIVE session rather than polling every open one: this is a
@@ -65,23 +69,20 @@ export const SessionStatusChips: Component = () => {
   // back as `post_turn`. A chip reading "gated" on a session that cannot gate
   // is a lie about a safety property, and inferring it client-side is exactly
   // how that lie gets told.
-  createEffect(
-    on(sessionId, (id) => {
-      setPolicy(null);
-      if (!id) return;
-      listModes(id)
-        .then((modes) => {
-          if (currentSession()?.id !== id) return;
-          const current = (modes.modes as ReviewAwareMode[]).find(
-            (m) => m.id === modes.current_mode_id,
-          );
-          // Absent on daemons that predate the feature — no chip rather than
-          // a guessed one.
-          setPolicy(current?.review_policy ?? null);
-        })
-        .catch(() => currentSession()?.id === id && setPolicy(null));
-    }),
-  );
+  //
+  // It reads the query rather than holding a copy, so a session with no answer
+  // yet — a new one, or one whose list failed — reports no policy instead of
+  // the policy of the session before it.
+  const policy = (): ReviewPolicy | null => {
+    const listed = modes.data;
+    if (!listed) return null;
+    const current = (listed.modes as ReviewAwareMode[]).find(
+      (mode) => mode.id === listed.current_mode_id,
+    );
+    // Absent on daemons that predate the feature — no chip rather than a
+    // guessed one.
+    return current?.review_policy ?? null;
+  };
 
   const gate = () => reviewStore.session(sessionId()).gate;
   const blocked = () => gate()?.blocked === true;
