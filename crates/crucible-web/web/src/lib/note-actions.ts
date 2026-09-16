@@ -5,7 +5,7 @@
  * Used by chat messages, the editor's wikilink decorations, and the
  * backlinks panel so every surface resolves links the same way.
  */
-import { resolveNotePath } from './api';
+import { fetchResolvedNoteOnce, invalidateResolvedNotes } from './query/notes';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { mostRecentKilnPath } from '@/stores/kilnStore';
@@ -73,12 +73,8 @@ export function kilnForElement(el: Element | null | undefined): string | undefin
 async function resolveTarget(name: string, kiln?: string): Promise<NotePreview | null> {
   const resolvedKiln = resolveKiln(kiln);
   if (!resolvedKiln) return null;
-  try {
-    const hit = await resolveNotePath(resolvedKiln, name);
-    return { title: hit.title ?? name, path: hit.path, absPath: hit.absolutePath };
-  } catch {
-    return null;
-  }
+  const hit = await fetchResolvedNoteOnce(resolvedKiln, name);
+  return hit ? { title: hit.title ?? name, path: hit.path, absPath: hit.absolutePath } : null;
 }
 
 
@@ -187,33 +183,28 @@ export function insertWikilink(
   return content.slice(0, at) + link + content.slice(at + mention.length);
 }
 
-const previewCache = new Map<string, NotePreview | null>();
-const PREVIEW_CACHE_MAX = 50;
-
-/** Drop all cached previews (call after note writes; used by tests). */
+/**
+ * Drop every held resolution (call after a note write; used by tests).
+ *
+ * There is no preview cache of its own any more. It held fifty entries and
+ * was emptied whole at the fifty-first, under keys nothing else knew, beside
+ * a second copy of the same answers in the query cache. Both are now the ONE
+ * entry under `keys.notesResolve`, and this is what drops it.
+ */
 export function clearNotePreviewCache(): void {
-  previewCache.clear();
+  void invalidateResolvedNotes();
 }
 
 /**
  * Fetch a preview for a wikilink target. Returns `null` when the note
- * doesn't resolve. Results (including misses) are cached per kiln+name.
+ * doesn't resolve.
+ *
+ * The same ladder as opening — literally the same function — so a preview can
+ * never describe a different note than the click will open. The cache under it
+ * is the same entry too, so a hover costs the daemon one walk of the kiln and
+ * the click that follows costs it nothing. A MISS is held as well, because a
+ * link that names no note is what the user is looking at while they type one.
  */
-export async function fetchNotePreview(name: string, kiln?: string): Promise<NotePreview | null> {
-  const resolvedKiln = resolveKiln(kiln);
-  if (!resolvedKiln) return null;
-  const cacheKey = `${resolvedKiln}:${name.toLowerCase()}`;
-  if (previewCache.has(cacheKey)) {
-    return previewCache.get(cacheKey) ?? null;
-  }
-
-  // Same ladder as opening — literally the same function, so a preview can
-  // never describe a different note than the click will open.
-  const preview = await resolveTarget(name, resolvedKiln);
-
-  if (previewCache.size >= PREVIEW_CACHE_MAX) {
-    previewCache.clear();
-  }
-  previewCache.set(cacheKey, preview);
-  return preview;
+export function fetchNotePreview(name: string, kiln?: string): Promise<NotePreview | null> {
+  return resolveTarget(name, kiln);
 }

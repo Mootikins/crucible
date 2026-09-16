@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const getNoteMock = vi.fn();
 const getConfigMock = vi.fn();
-const resolveNotePathMock = vi.fn();
 const kilnInUse = vi.hoisted(() => ({ path: null as string | null }));
 vi.mock('@/stores/kilnStore', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -14,7 +13,6 @@ vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getNote: (...args: unknown[]) => getNoteMock(...args),
   getConfig: (...args: unknown[]) => getConfigMock(...args),
-  resolveNotePath: (...args: unknown[]) => resolveNotePathMock(...args),
 }));
 
 vi.mock('../file-actions', async (importOriginal) => ({
@@ -22,6 +20,7 @@ vi.mock('../file-actions', async (importOriginal) => ({
   openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
 }));
 
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import {
   noteAbsolutePath,
   kilnForPath,
@@ -32,13 +31,45 @@ import {
   insertWikilink,
 } from '../note-actions';
 
+/**
+ * The resolver answers on the WIRE, not through a mocked module.
+ *
+ * Its answers are held in the query cache now, and a mock counts the calls
+ * that reach the module rather than the ones that reach the daemon — so a
+ * caller that went around the cache would still look like one call.
+ */
+let env: TestQueryEnv;
+/** The `(kiln, name)` of every resolve the daemon answered, in order. */
+let resolved: [string, string][] = [];
+/** The hit `GET /api/notes/resolve` answers next, or `null` for a miss. */
+let resolveHit: { path: string; absolutePath: string; title?: string } | null = null;
+
+/** What the daemon answers for the next resolve. Absent means a miss. */
+function setResolveHit(hit: { path: string; absolutePath: string; title?: string }): void {
+  resolveHit = hit;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  clearNotePreviewCache();
+  resolved = [];
   // The on-disk resolver misses by default, so each test opts INTO it; the
   // index fallback stays the path most of these assertions exercise.
-  resolveNotePathMock.mockRejectedValue(new Error('404 Not Found'));
+  resolveHit = null;
+  env = createTestQueryEnv({
+    'GET /api/notes/resolve': (request: Request) => {
+      const params = new URL(request.url).searchParams;
+      resolved.push([params.get('kiln') ?? '', params.get('name') ?? '']);
+      if (resolveHit) return resolveHit;
+      return new Response(JSON.stringify({ error: { code: 404, message: 'Not Found' } }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+  });
+  clearNotePreviewCache();
 });
+
+afterEach(() => env?.restore());
 
 describe('kilnRoot', () => {
   it('strips a trailing .crucible config dir to the kiln root', () => {
@@ -104,7 +135,7 @@ describe('kilnForPath', () => {
 
 describe('fetchNotePreview', () => {
   it('resolves note metadata via the on-disk resolver', async () => {
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'notes/rust.md',
       absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
@@ -119,15 +150,13 @@ describe('fetchNotePreview', () => {
   });
 
   it('returns null for unresolvable notes and caches the miss', async () => {
-    resolveNotePathMock.mockRejectedValue(new Error('404 Not Found'));
-
     expect(await fetchNotePreview('ghost', '/kiln')).toBeNull();
     expect(await fetchNotePreview('ghost', '/kiln')).toBeNull();
-    expect(resolveNotePathMock).toHaveBeenCalledTimes(1);
+    expect(resolved).toHaveLength(1);
   });
 
   it('caches hits per kiln and note name', async () => {
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'notes/rust.md',
       absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
@@ -135,7 +164,7 @@ describe('fetchNotePreview', () => {
 
     await fetchNotePreview('rust', '/kiln');
     await fetchNotePreview('Rust', '/kiln'); // case-insensitive cache key
-    expect(resolveNotePathMock).toHaveBeenCalledTimes(1);
+    expect(resolved).toHaveLength(1);
   });
 
   /**
@@ -146,7 +175,7 @@ describe('fetchNotePreview', () => {
    * Same order as openNoteInEditor: exact on-disk path, then a unique filename stem.
    */
   it('prefers the on-disk resolver over the fuzzy index, like opening does', async () => {
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'Notes/Architecture.md',
       absolutePath: '/kiln/Notes/Architecture.md',
       title: 'Architecture',
@@ -164,14 +193,14 @@ describe('fetchNotePreview', () => {
       path: 'Notes/Architecture.md',
       absPath: '/kiln/Notes/Architecture.md',
     });
-    expect(resolveNotePathMock).toHaveBeenCalledWith('/kiln', 'Architecture');
+    expect(resolved).toEqual([['/kiln', 'Architecture']]);
     expect(getNoteMock).not.toHaveBeenCalled();
   });
 });
 
 describe('openNoteInEditor', () => {
   it('opens the resolved note by absolute path', async () => {
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'notes/rust.md',
       absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
@@ -195,7 +224,7 @@ describe('openNoteInEditor', () => {
    */
   it('refuses to resolve when no kiln is given, rather than guessing one', async () => {
     getConfigMock.mockResolvedValue({ kiln_path: '/default-kiln' });
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'notes/rust.md',
       absolutePath: '/default-kiln/notes/rust.md',
       title: 'Rust',
@@ -203,14 +232,14 @@ describe('openNoteInEditor', () => {
 
     await openNoteInEditor('rust');
 
-    expect(resolveNotePathMock).not.toHaveBeenCalled();
+    expect(resolved).toEqual([]);
     expect(getNoteMock).not.toHaveBeenCalled();
     expect(openFileInEditorMock).not.toHaveBeenCalled();
   });
 
   it('titles the tab from the resolved file when the resolver gives no title', async () => {
     // No `title` in the payload: the tab falls back to the link target.
-    resolveNotePathMock.mockResolvedValue({
+    setResolveHit({
       path: 'Help/Wikilinks.md',
       absolutePath: '/kiln/Help/Wikilinks.md',
     });
@@ -257,9 +286,9 @@ describe('openNoteInEditor with no kiln on the element', () => {
     // carries no data-kiln. The click used to resolve nothing and toast
     // "Note not found" for a note that exists in the kiln on screen.
     kilnInUse.path = '/vault';
-    resolveNotePathMock.mockResolvedValue({ path: 'A.md', absolutePath: '/vault/A.md', title: 'A' });
+    setResolveHit({ path: 'A.md', absolutePath: '/vault/A.md', title: 'A' });
     const { openNoteInEditor } = await import('../note-actions');
     await openNoteInEditor('A');
-    expect(resolveNotePathMock).toHaveBeenCalledWith('/vault', 'A');
+    expect(resolved).toEqual([['/vault', 'A']]);
   });
 });

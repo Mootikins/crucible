@@ -2,19 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor, fireEvent } from '@solidjs/testing-library';
 import type { BacklinksResponse } from '@/lib/types';
 
-const getBacklinksMock = vi.fn();
-const getConfigMock = vi.fn();
 const openFileInEditorMock = vi.fn();
 const updateFileContentMock = vi.fn();
 
 let activeFilePath: string | null = '/kiln/notes/focused.md';
 let openFileContent = 'Other Note is mentioned here.';
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
-  getConfig: (...args: unknown[]) => getConfigMock(...args),
-}));
 
 vi.mock('@/lib/file-actions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -39,6 +31,18 @@ const LINKER_NOTE = 'intro line\n\nsee [[notes/focused]] for the rest\n';
 
 /** The path of every file read the daemon answered, in order. */
 let reads: string[] = [];
+/** The `note` of every backlinks read the daemon answered, in order. */
+let backlinksAsked: string[] = [];
+/** What `GET /api/backlinks` answers next: a body, or a `Response` to refuse. */
+let backlinksAnswer: () => unknown;
+
+/** A refusal in the envelope `request()` unwraps, carrying its status. */
+function refuse(status: number, message: string): Response {
+  return new Response(JSON.stringify({ error: { code: status, message } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 const RESPONSE: BacklinksResponse = {
   note: { path: 'notes/focused.md', abs_path: '/kiln/notes/focused.md', title: 'Focused Note' },
@@ -62,8 +66,17 @@ beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
   reads = [];
+  backlinksAsked = [];
+  backlinksAnswer = () => RESPONSE;
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [{ path: '/kiln', name: 'kiln' }] }),
+    'GET /api/config': () => ({ kiln_path: '/kiln' }),
+    // The mentions themselves, on the wire: a panel that went around the cache
+    // would still count as one call against a mocked module.
+    'GET /api/backlinks': (request: Request) => {
+      backlinksAsked.push(new URL(request.url).searchParams.get('note') ?? '');
+      return backlinksAnswer();
+    },
     // The snippet beside each row is the linking note's own text, read through
     // the shared file cache rather than a mocked module.
     'GET /api/kiln/file': (request: Request) => {
@@ -73,8 +86,6 @@ beforeEach(() => {
   });
   activeFilePath = '/kiln/notes/focused.md';
   openFileContent = 'Other Note is mentioned here.';
-  getConfigMock.mockResolvedValue({ kiln_path: '/kiln' });
-  getBacklinksMock.mockResolvedValue(RESPONSE);
 });
 
 describe('noteKeyForPath', () => {
@@ -113,7 +124,7 @@ describe('BacklinksPanel', () => {
     expect(unlinked).toHaveLength(1);
     expect(unlinked[0].textContent).toContain('Other Note');
 
-    expect(getBacklinksMock).toHaveBeenCalledWith('/kiln', 'notes/focused.md');
+    expect(backlinksAsked).toEqual(['notes/focused.md']);
   });
 
   it('shows an empty state when no note is focused', async () => {
@@ -123,7 +134,7 @@ describe('BacklinksPanel', () => {
     await waitFor(() => {
       expect(getByTestId('backlinks-empty').textContent).toContain('Open a note');
     });
-    expect(getBacklinksMock).not.toHaveBeenCalled();
+    expect(backlinksAsked).toEqual([]);
   });
 
   it('ignores non-markdown files', async () => {
@@ -133,7 +144,7 @@ describe('BacklinksPanel', () => {
     await waitFor(() => {
       expect(getByTestId('backlinks-empty')).not.toBeNull();
     });
-    expect(getBacklinksMock).not.toHaveBeenCalled();
+    expect(backlinksAsked).toEqual([]);
   });
 
   it('clicking a linked mention dispatches the global open-file event', async () => {
@@ -155,7 +166,7 @@ describe('BacklinksPanel', () => {
   it('renders an error state, not an empty one, when the fetch fails', async () => {
     // The panel used to swallow every failure and say "No notes link here
     // yet" — a claim about the data that it had no answer for.
-    getBacklinksMock.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    backlinksAnswer = () => refuse(404, 'not found');
 
     const { getByTestId, queryByTestId } = render(() => <BacklinksPanel />);
 
@@ -172,8 +183,10 @@ describe('BacklinksPanel', () => {
   });
 
   it('Retry re-runs the fetch and clears the error', async () => {
-    getBacklinksMock.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
-    getBacklinksMock.mockResolvedValue(RESPONSE);
+    backlinksAnswer = () => {
+      backlinksAnswer = () => RESPONSE;
+      return refuse(500, 'boom');
+    };
 
     const { getByTestId, getAllByTestId } = render(() => <BacklinksPanel />);
 
@@ -189,11 +202,11 @@ describe('BacklinksPanel', () => {
     await waitFor(() => {
       expect(getAllByTestId('backlinks-linked-item')).toHaveLength(1);
     });
-    expect(getBacklinksMock).toHaveBeenCalledTimes(2);
+    expect(backlinksAsked).toHaveLength(2);
   });
 
   it('keeps the empty tone for a real empty answer', async () => {
-    getBacklinksMock.mockResolvedValue({ ...RESPONSE, linked: [], unlinked: [] });
+    backlinksAnswer = () => ({ ...RESPONSE, linked: [], unlinked: [] });
 
     const { getByTestId, queryByTestId } = render(() => <BacklinksPanel />);
 

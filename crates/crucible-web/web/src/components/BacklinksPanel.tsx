@@ -7,9 +7,9 @@
  * wikilink in the open editor buffer. Rows carry `data-note`, so the
  * app-wide hover preview works on them.
  */
-import { Component, Show, For, createSignal, createResource, createMemo } from 'solid-js';
+import { Component, Show, For, createEffect, createMemo, createResource, createSignal, on } from 'solid-js';
 import { useEditorSafe } from '@/contexts/EditorContext';
-import { getBacklinks } from '@/lib/api';
+import { useGetBacklinks } from '@/lib/query/notes';
 import { fetchFileContentOnce } from '@/lib/query/fs';
 import type { BacklinksResponse, UnlinkedMention } from '@/lib/types';
 import { blockAtByteOffset, findLinkingBlock, type LinkingBlock } from '@/lib/backlink-context';
@@ -78,11 +78,6 @@ export const BacklinksPanel: Component = () => {
   const editor = useEditorSafe();
   // Suggestions applied (or failed) since the last fetch — hidden locally.
   const [dismissed, setDismissed] = createSignal<Set<string>>(new Set());
-  const [refreshTick, setRefreshTick] = createSignal(0);
-  // The last fetch failure, or null. A failure is a STATE, not a missing
-  // answer — see `backlinksFailureText`.
-  const [failure, setFailure] = createSignal<string | null>(null);
-  const retry = () => setRefreshTick((t) => t + 1);
 
   const focusedFile = createMemo(() => {
     const path = editor.activeFile();
@@ -92,23 +87,30 @@ export const BacklinksPanel: Component = () => {
 
   const kilnPath = useKilnPath(() => focusedFile() ?? undefined);
 
-  const [backlinks] = createResource(
-    () => {
-      const path = focusedFile();
-      const kiln = kilnPath();
-      if (!path || !kiln) return null;
-      return { path, kiln, tick: refreshTick() };
-    },
-    async ({ path, kiln }): Promise<BacklinksResponse | null> => {
-      setDismissed(new Set<string>());
-      setFailure(null);
-      try {
-        return await getBacklinks(kiln, noteKeyForPath(path, kiln));
-      } catch (e) {
-        setFailure(backlinksFailureText(e));
-        return null;
-      }
-    },
+  /** The note as the daemon's link index names it: kiln-relative, with `.md`. */
+  const focusedNote = createMemo(() => {
+    const path = focusedFile();
+    const kiln = kilnPath();
+    return path && kiln ? noteKeyForPath(path, kiln) : null;
+  });
+
+  // The mentions of the focused note, held under (kiln, note). A second panel
+  // on the same note joins this entry, and the refresh button re-asks rather
+  // than counting a tick nothing else can see.
+  const backlinksQuery = useGetBacklinks(() => kilnPath() || null, focusedNote);
+  const backlinks = (): BacklinksResponse | null => backlinksQuery.data ?? null;
+  const retry = () => void backlinksQuery.refetch();
+
+  // A failure is a STATE, not a missing answer — see `backlinksFailureText`.
+  const failure = () => (backlinksQuery.error ? backlinksFailureText(backlinksQuery.error) : null);
+
+  // A new note, or a fresh answer for this one, retires the suggestions the
+  // user dismissed: they name spans of a document this answer recomputed.
+  createEffect(
+    on(
+      () => [focusedNote(), backlinksQuery.dataUpdatedAt] as const,
+      () => setDismissed(new Set<string>()),
+    ),
   );
 
   /** Wikilink identities of the focused note (stem + kiln-relative path)
@@ -196,7 +198,7 @@ export const BacklinksPanel: Component = () => {
               data-testid="backlinks-refresh"
               class="rounded p-1 text-muted-dark hover:bg-hover-wash hover:text-shell-body"
               title="Refresh backlinks"
-              onClick={() => setRefreshTick((t) => t + 1)}
+              onClick={retry}
             >
               <RefreshCw class="h-3.5 w-3.5" />
             </button>

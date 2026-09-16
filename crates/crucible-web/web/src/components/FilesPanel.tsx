@@ -3,7 +3,7 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
-import { connectSessionKiln, listNotes } from '@/lib/api';
+import { connectSessionKiln } from '@/lib/api';
 import {
   fetchDirOnce,
   invalidateDirsUnder,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/query/fs';
 import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { useKilns } from '@/lib/query/kilns';
+import { invalidateNotes, useListNotes } from '@/lib/query/notes';
 import { fsEvents } from '@/lib/query/sse';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { FsEntry, FsListing } from '@/lib/types';
@@ -107,11 +108,12 @@ export const FilesPanel: Component<{
   const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [building, setBuilding] = createSignal(false);
-  // The panel is busy while the daemon is answering for the top level AND
-  // while the expanded folders under it are read. The first half belongs to
-  // the query now, so reading only the second would drop the spinner for the
-  // whole of the first fetch — the longest part of opening a big root.
-  const loading = () => building() || topLevel.isFetching;
+  // The panel is busy while the daemon is answering for the root AND while
+  // the expanded folders under it are read. The first half belongs to the
+  // query now — the note index for a kiln, the top level for a project — so
+  // reading only the second would drop the spinner for the whole of the first
+  // fetch, the longest part of opening a big root.
+  const loading = () => building() || topLevel.isFetching || kilnNotes.isFetching;
   const [sort, setSort] = createSignal<SortSpec>(readJson<SortSpec>(SORT_KEY, DEFAULT_SORT));
   const [showHidden, setShowHidden] = createSignal<boolean>(
     readJson<boolean>(SHOW_HIDDEN_KEY, false),
@@ -234,19 +236,27 @@ export const FilesPanel: Component<{
   };
 
   // ---- data-source discriminant --------------------------------------------
-  async function loadKilnTree(kilnPath: string) {
-    setBuilding(true);
-    setError(null);
-    try {
-      const notes = await listNotes(kilnPath);
-      setRawRoot(notesToTree(notes, kilnPath));
-    } catch (e) {
-      setRawRoot(null);
-      setError(e instanceof Error ? e.message : 'Failed to load notes');
-    } finally {
-      setBuilding(false);
-    }
-  }
+
+  /**
+   * The browsed kiln, or nothing while a project is on screen.
+   *
+   * A kiln's whole tree comes from its note index in ONE answer, which is why
+   * a kiln has no per-folder read and a project does.
+   */
+  const kilnRootPath = createMemo<string | null>(() => {
+    const root = activeRoot();
+    return root && root.kind === 'kiln' ? root.path : null;
+  });
+
+  /**
+   * That index, as a cache entry.
+   *
+   * The command palette and the canvas note picker hold the same entry, so a
+   * palette opened over this panel asks the daemon nothing. The refresh action
+   * invalidates it (`reloadRoot`) rather than calling a loader, which is the
+   * same shape the project side already has.
+   */
+  const kilnNotes = useListNotes(kilnRootPath);
 
   /**
    * A root the daemon refused to list.
@@ -362,14 +372,34 @@ export const FilesPanel: Component<{
     on(activeRootKey, (key) => {
       setRawRoot(null);
       if (!key) return;
-      const root = activeRoot();
-      if (!root) return;
-      // A project root builds from `topLevel` below, which is already asking
-      // for it: starting a second read here is the duplicate fetch this panel
+      // Neither kind starts a read here. A project root builds from
+      // `topLevel` and a kiln from `kilnNotes`, both of which are already
+      // asking for it: a second read here is the duplicate fetch this panel
       // spent three fixes removing.
-      if (root.kind === 'kiln') void loadKilnTree(root.path);
     }),
   );
+
+  // The kiln tree, rebuilt from the index whenever the cache answers — which
+  // is on the first read, on a refresh, and on an invalidation from anywhere
+  // else holding the same entry.
+  createEffect(
+    on(
+      () => [kilnNotes.data, kilnNotes.dataUpdatedAt] as const,
+      ([notes]) => {
+        const kiln = kilnRootPath();
+        if (!kiln || !notes) return;
+        setRawRoot(notesToTree(notes, kiln));
+        setError(null);
+      },
+    ),
+  );
+
+  createEffect(() => {
+    const failure = kilnNotes.error;
+    if (!kilnRootPath() || !failure) return;
+    setRawRoot(null);
+    setError(failure.message || 'Failed to load notes');
+  });
 
   // `dataUpdatedAt` moves on every answer, including one that equals the last.
   // Without it a refresh that found no change would leave the expanded folders
@@ -464,7 +494,7 @@ export const FilesPanel: Component<{
   });
 
   const reloadRoot = async (root: TreeRoot) => {
-    if (root.kind === 'kiln') await loadKilnTree(root.path);
+    if (root.kind === 'kiln') await invalidateNotes(root.path);
     else await refreshProjectTree(root);
   };
 

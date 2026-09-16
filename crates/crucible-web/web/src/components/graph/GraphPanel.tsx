@@ -22,7 +22,7 @@ import {
 import { PanelShell } from '../PanelShell';
 import { IconButton } from '../ui/IconButton';
 import { Crosshair, Settings } from '@/lib/icons';
-import { getKilnGraph } from '@/lib/api';
+import { useGetKilnGraph } from '@/lib/query/notes';
 import { fetchConfigOnce } from '@/lib/query/config';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { openFileInEditor } from '@/lib/file-actions';
@@ -265,6 +265,10 @@ export const GraphPanel: Component = () => {
   };
 
   // --- data ---
+
+  // The kiln is settled first and the graph is read from it, rather than one
+  // `await` chain doing both: the graph of a kiln is an entry other readers of
+  // the same kiln join, and an entry needs a key before it needs an answer.
   onMount(() => {
     void (async () => {
       try {
@@ -275,13 +279,24 @@ export const GraphPanel: Component = () => {
           return;
         }
         setKiln(kilnRoot(kilnPath));
-        // Strip external-URL targets (https://…, mailto:…) at ingest so they
-        // never surface as phantom nodes in the graph.
-        setDto(stripExternalTargets(await getKilnGraph(kilnRoot(kilnPath))));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load graph');
       }
     })();
+  });
+
+  const graphQuery = useGetKilnGraph(kiln);
+
+  createEffect(() => {
+    const answer = graphQuery.data;
+    // Strip external-URL targets (https://…, mailto:…) at ingest so they never
+    // surface as phantom nodes in the graph.
+    if (answer) setDto(stripExternalTargets(answer));
+  });
+
+  createEffect(() => {
+    const failure = graphQuery.error;
+    if (failure) setError(failure.message || 'Failed to load graph');
   });
 
   // Rebuild on data arrival, any filter change, or a local-mode change. The

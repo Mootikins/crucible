@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { CommandPalette, parseOmniQuery, type PaletteCommand } from '../CommandPalette';
+import { NotePicker } from '../canvas/NotePicker';
 import { statusBarActions } from '@/stores/statusBarStore';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { NoteEntry } from '@/lib/types';
 
 const CMD_PLACEHOLDER = 'Run a command… ( [[ to open a note )';
@@ -25,9 +27,17 @@ const mockNotes: NoteEntry[] = [
   },
 ];
 
-vi.mock('@/lib/api', () => ({
-  listNotes: vi.fn(() => Promise.resolve(mockNotes)),
-}));
+/**
+ * The note index answers on the WIRE, not through a mocked module.
+ *
+ * The palette shares one entry with the canvas picker and the file tree, and a
+ * mock of `listNotes` counts the calls that reach the module rather than the
+ * ones that reach the daemon — so a reader that went around the cache would
+ * still look like one fetch.
+ */
+let env: TestQueryEnv;
+/** How many times `GET /api/notes` was asked, and for which kiln. */
+let notesAsked: string[] = [];
 
 // Kobalte's Dialog renders into a Portal appended to document.body. Even
 // though solid-testing-library auto-cleans the render container, the
@@ -37,7 +47,16 @@ vi.mock('@/lib/api', () => ({
 beforeEach(() => {
   document.body.innerHTML = '';
   statusBarActions.setKilnPath('/kilns/helios');
+  notesAsked = [];
+  env = createTestQueryEnv({
+    'GET /api/notes': (request: Request) => {
+      notesAsked.push(new URL(request.url).searchParams.get('kiln') ?? '');
+      return { notes: mockNotes };
+    },
+  });
 });
+
+afterEach(() => env?.restore());
 
 function cmd(overrides: Partial<PaletteCommand> = {}): PaletteCommand {
   return {
@@ -302,5 +321,35 @@ describe('CommandPalette — query reset on close', () => {
     setOpen(true);
 
     expect(getInput().value).toBe('');
+  });
+});
+
+describe('CommandPalette — the shared note index', () => {
+  /**
+   * The palette and the canvas picker ask one question of one kiln.
+   *
+   * They held separate resources before, so opening the palette over a canvas
+   * listed the whole vault a second time — and the two lists then disagreed
+   * about a note either of them had seen created.
+   */
+  it('lists a kiln once for the palette and the note picker together', async () => {
+    render(() => (
+      <>
+        <CommandPalette open commands={[cmd()]} onOpenChange={() => {}} />
+        <NotePicker kiln="/kilns/helios" onPick={() => {}} onClose={() => {}} />
+      </>
+    ));
+
+    await waitFor(() => expect(screen.getAllByText('Architecture').length).toBeGreaterThan(0));
+    expect(notesAsked).toEqual(['/kilns/helios']);
+  });
+
+  // The negative: a closed palette holds no list at all, so opening the app
+  // does not list every note of the kiln before anyone asks for one.
+  it('asks for nothing while the palette is closed', async () => {
+    render(() => <CommandPalette open={false} commands={[cmd()]} onOpenChange={() => {}} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(notesAsked).toEqual([]);
   });
 });

@@ -3,12 +3,11 @@ import {
   For,
   Show,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
   onMount,
 } from 'solid-js';
-import { listNotes } from '@/lib/api';
+import { useListNotes } from '@/lib/query/notes';
 import { FileText } from '@/lib/icons';
 
 /**
@@ -33,16 +32,10 @@ export const NotePicker: Component<{
   let input: HTMLInputElement | undefined;
   let dialog: HTMLDivElement | undefined;
 
-  const [notes] = createResource(
-    () => props.kiln,
-    async (kiln) => {
-      try {
-        return await listNotes(kiln);
-      } catch {
-        return [];
-      }
-    },
-  );
+  // The index of the canvas's own kiln, which the command palette and the file
+  // tree hold too: opening the picker beside either of them asks nothing.
+  const notesQuery = useListNotes(() => props.kiln);
+  const notes = () => notesQuery.data;
 
   const relative = (path: string) => {
     const root = props.kiln.replace(/\/$/, '');

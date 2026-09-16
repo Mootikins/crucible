@@ -1,7 +1,7 @@
-import { Component, For, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Command } from 'cmdk-solid';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { listNotes } from '@/lib/api';
+import { useListNotes } from '@/lib/query/notes';
 import { openFileInEditor } from '@/lib/file-actions';
 import { noteAbsolutePath } from '@/lib/note-actions';
 import { fuzzyScore } from '@/lib/fuzzy';
@@ -100,12 +100,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     setQuery('');
   });
 
-  // Notes load lazily when the palette opens (and re-fetch per open so
-  // freshly written notes appear without a reload).
-  const [notes] = createResource(
-    () => (props.open ? statusBarStore.kilnPath() : null),
-    (kiln) => listNotes(kiln).catch(() => [])
-  );
+  // Notes load lazily when the palette opens: the kiln is `null` while the
+  // palette is closed, which is what keeps the list unasked until it is
+  // wanted. The entry is the one the canvas picker and the file tree hold, so
+  // opening the palette beside either of them asks nothing.
+  const notesQuery = useListNotes(() => (props.open ? statusBarStore.kilnPath() : null));
+  const notes = () => notesQuery.data;
 
   const noteItems = (): OmniItem[] =>
     (notes() ?? [])

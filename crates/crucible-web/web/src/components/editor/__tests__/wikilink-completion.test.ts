@@ -3,10 +3,33 @@ import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { wikilinkCompletionSource } from '../wikilink-completion';
 
-const listKilnNotesMock = vi.fn();
-vi.mock('@/lib/api', () => ({ listKilnNotes: (p: string) => listKilnNotesMock(p) }));
+/**
+ * The completion answers on the WIRE, not through a mocked module.
+ *
+ * The list is cached now, and a mock of `listKilnNotes` counts the calls that
+ * reach the module rather than the calls that reach the daemon — so a source
+ * that went around the cache would still look like one fetch.
+ */
+let env: TestQueryEnv;
+/** What `GET /api/kiln/notes` answers next, and how often it was asked. */
+let served: { name: string; path: string }[] = [];
+let asks = 0;
+
+function openKiln(notes: { name: string; path: string }[]): void {
+  served = notes;
+  asks = 0;
+  env = createTestQueryEnv({
+    'GET /api/kiln/notes': () => {
+      asks += 1;
+      return { files: served };
+    },
+  });
+}
+
+afterEach(() => env?.restore());
 
 const NOTES = [
   { name: 'Wikilinks', path: 'Help/Wikilinks.md' },
@@ -31,10 +54,7 @@ async function complete(
 }
 
 describe('wikilinkCompletionSource', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    listKilnNotesMock.mockResolvedValue(NOTES);
-  });
+  beforeEach(() => openKiln(NOTES));
 
   it('offers kiln notes as soon as "[[" is typed', async () => {
     const result = await complete('see [[|');
@@ -77,7 +97,7 @@ describe('wikilinkCompletionSource', () => {
     });
     const source = wikilinkCompletionSource(() => undefined);
     expect(await source(new CompletionContext(state, 6, false))).toBeNull();
-    expect(listKilnNotesMock).not.toHaveBeenCalled();
+    expect(asks).toBe(0);
   });
 
   it('closes the link on accept and leaves the cursor after it', async () => {
@@ -121,10 +141,7 @@ describe('wikilinkCompletionSource', () => {
 });
 
 describe('wikilinkCompletionSource note caching', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    listKilnNotesMock.mockResolvedValue(NOTES);
-  });
+  beforeEach(() => openKiln(NOTES));
   afterEach(() => vi.useRealTimers());
 
   /** Run a source directly so cache lifetime is observable. */
@@ -142,16 +159,16 @@ describe('wikilinkCompletionSource note caching', () => {
     await fire(source);
     await fire(source);
     await fire(source);
-    expect(listKilnNotesMock).toHaveBeenCalledTimes(1);
+    expect(asks).toBe(1);
   });
 
   it('picks up notes created since the last fetch', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const source = wikilinkCompletionSource(() => '/kiln');
     const first = await fire(source);
     expect(first!.options.map((o) => o.label)).not.toContain('Brand New');
 
-    listKilnNotesMock.mockResolvedValue([...NOTES, { name: 'Brand New', path: 'Brand New.md' }]);
+    served = [...NOTES, { name: 'Brand New', path: 'Brand New.md' }];
     // A long-lived cache would hide a note created in another pane until reload.
     await vi.advanceTimersByTimeAsync(6_000);
 
@@ -159,27 +176,34 @@ describe('wikilinkCompletionSource note caching', () => {
     expect(second!.options.map((o) => o.label)).toContain('Brand New');
   });
 
-  it('does not serve one editor stale notes fetched by another', async () => {
+  /**
+   * The inverse of what this file asserted before the shared cache.
+   *
+   * Each source held a snapshot of its own, so two editors open on one kiln
+   * asked the daemon twice for one answer and neither learnt what the other
+   * had. They read one entry now, which is the whole point: the second editor
+   * offers completions without a round trip.
+   */
+  it('serves a second editor the notes the first just fetched', async () => {
     const a = wikilinkCompletionSource(() => '/kiln');
     await fire(a);
-    listKilnNotesMock.mockResolvedValue([{ name: 'Only In B', path: 'Only In B.md' }]);
 
-    // A second editor gets its own cache rather than inheriting A's snapshot.
     const b = wikilinkCompletionSource(() => '/kiln');
     const result = await fire(b);
-    expect(result!.options.map((o) => o.label)).toEqual(['Only In B']);
+
+    expect(result!.options.map((o) => o.label)).toEqual(NOTES.map((n) => n.name));
+    expect(asks).toBe(1);
   });
 });
 
 describe('wikilinkCompletionSource with duplicate titles', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    listKilnNotesMock.mockResolvedValue([
+  beforeEach(() =>
+    openKiln([
       { name: 'Index', path: 'Help/Index.md' },
       { name: 'Index', path: 'Guides/Index.md' },
       { name: 'Unique', path: 'Help/Unique.md' },
-    ]);
-  });
+    ]),
+  );
 
   /** Apply an option against a scratch view and return the resulting doc. */
   function applied(option: { apply?: unknown }, doc: string, from: number, to: number): string {

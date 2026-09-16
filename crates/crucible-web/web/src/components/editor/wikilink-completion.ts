@@ -15,40 +15,12 @@ import {
 } from '@codemirror/autocomplete';
 import type { Extension } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
-import { listKilnNotes } from '@/lib/api';
+import { fetchKilnNotesOnce } from '@/lib/query/notes';
 import { inCodeContext } from './md-context';
 
 interface Note {
   name: string;
   path: string;
-}
-
-/**
- * How long a fetched note list is reused.
- *
- * The cache exists to coalesce the burst of requests a user generates while
- * typing a link, not to be a store — so it is deliberately short-lived. A
- * long-lived cache goes stale the moment a note is created, renamed or moved,
- * and the completion list then silently omits it until the page is reloaded.
- */
-const NOTE_TTL_MS = 5_000;
-
-/** Per-source cache — not module-global, so one editor can't serve another stale notes. */
-function createNoteLoader(): (kiln: string) => Promise<Note[]> {
-  let cached: { kiln: string; at: number; notes: Promise<Note[]> } | null = null;
-
-  return (kiln: string) => {
-    if (cached && cached.kiln === kiln && Date.now() - cached.at < NOTE_TTL_MS) {
-      return cached.notes;
-    }
-    // A rejected fetch must not be cached — a later keystroke retries.
-    const notes = listKilnNotes(kiln).catch((err) => {
-      cached = null;
-      throw err;
-    });
-    cached = { kiln, at: Date.now(), notes };
-    return notes;
-  };
 }
 
 /** `Help/Index.md` → `Help/Index` — the link target, not the filename. */
@@ -99,8 +71,6 @@ function applyNote(target: string) {
 export function wikilinkCompletionSource(
   kiln: () => string | undefined,
 ): CompletionSource {
-  const loadNotes = createNoteLoader();
-
   return async (context: CompletionContext): Promise<CompletionResult | null> => {
     // `[[` plus anything that isn't a closing bracket or a line break — so a
     // finished `[[Tags]]` stops matching and prose never triggers.
@@ -116,7 +86,7 @@ export function wikilinkCompletionSource(
 
     let notes: Note[];
     try {
-      notes = await loadNotes(kilnPath);
+      notes = await fetchKilnNotesOnce(kilnPath);
     } catch {
       return null;
     }

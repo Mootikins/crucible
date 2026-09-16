@@ -3,8 +3,8 @@ import { FileText } from '@/lib/icons';
 import { useEditorSafe } from '@/contexts/EditorContext';
 import { EditorWithPreview } from './editor/EditorWithPreview';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
-import { resolveNotePath } from '@/lib/api';
 import { useKilns } from '@/lib/query/kilns';
+import { fetchResolvedNoteOnce } from '@/lib/query/notes';
 import { kilnForPath } from '@/lib/note-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
@@ -71,7 +71,11 @@ export const EditorPanel: Component = () => {
   // window tabs).
   const followLink = async (target: string) => {
     const kiln = owningKiln(activeFile() ?? undefined);
-    const hit = kiln ? await resolveNotePath(kiln, target).catch(() => null) : null;
+    // Through the cache, so the hover that previewed this link and the click
+    // that follows it ask the daemon once between them. A target that names no
+    // note answers `null`, which is held: a broken link costs one walk of the
+    // kiln, not one per click.
+    const hit = kiln ? await fetchResolvedNoteOnce(kiln, target) : null;
     if (!hit) {
       notificationActions.addNotification('warning', `Note not found: ${target}`);
       return;
