@@ -24,16 +24,10 @@ vi.mock('@/contexts/SessionContext', () => ({
   }),
 }));
 
-// None of the three skills calls is stubbed: the panel reads them through
-// `useSkillList`, `useSkillSearch` and `useSkillDetail`, which run the real
-// functions against the mocked fetch below. `getConfig` stays a stub because
-// the kiln resolver awaits it outside the query layer.
-const getConfigMock = vi.fn().mockResolvedValue({ kiln_path: '/tmp/k' });
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getConfig: () => getConfigMock(),
-}));
+// None of the four reads is stubbed: the panel reads the three skills calls
+// through `useSkillList`, `useSkillSearch` and `useSkillDetail`, and the
+// configured kiln through the plain `getConfig` — all against the routes in
+// `beforeEach`, so what reaches the panel is what the daemon would send.
 
 const addNotificationMock = vi.fn();
 vi.mock('@/stores/notificationStore', () => ({
@@ -89,6 +83,9 @@ beforeEach(() => {
     },
     'GET /api/skills/search': () => ({ skills: found }),
     'GET /api/skills/alpha': () => ALPHA_DETAIL,
+    // The kiln resolver awaits this outside the query layer; same route
+    // seam, same answer.
+    'GET /api/config': () => ({ kiln_path: '/tmp/k' }),
   });
 });
 

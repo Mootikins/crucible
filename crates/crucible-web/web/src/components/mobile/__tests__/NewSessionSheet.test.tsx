@@ -13,14 +13,10 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 // Neither `listKilns`, `listAgents` nor `listAllModels` is stubbed: the sheet
 // reads all three through their query hooks, which run the real functions
-// against the mocked fetch below.
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getConfig: () => Promise.resolve({ kiln_path: '/kilns/home' }),
-  listProjects: () => Promise.resolve([{ path: '/work/alpha', name: 'alpha', kilns: [] }]),
-  getTargetProviders: () => Promise.resolve([]),
-  getProviderTargets: () => Promise.resolve([]),
-}));
+// against the mocked fetch below. The configured kiln, the project roster and
+// the (empty) provider declarations ride the same fetch — `getTargetProviders`
+// reads publications, so an empty `targets` map is what "no plugin declares
+// an axis" looks like on the wire.
 vi.mock('@/lib/draft-session', () => ({ closeDraftTab: vi.fn() }));
 
 import { NewSessionSheet } from '@/components/mobile/NewSessionSheet';
@@ -42,6 +38,9 @@ beforeEach(() => {
     'GET /api/kilns': () => ({ kilns: KILNS }),
     'GET /api/agents': () => ({ agents: AGENTS }),
     'GET /api/models': () => ({ models: ['sonnet', 'opus'] }),
+    'GET /api/config': () => ({ kiln_path: '/kilns/home' }),
+    'GET /api/project/list': () => [{ path: '/work/alpha', name: 'alpha', kilns: [] }],
+    'GET /api/plugins/publications': () => ({ publications: { targets: {} } }),
   });
   created.params = [];
   created.opts = [];
