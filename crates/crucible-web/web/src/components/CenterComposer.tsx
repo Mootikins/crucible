@@ -1,10 +1,7 @@
 import { Component, Show, createEffect, createSignal, on, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import {
-  isGitRepoUrl,
-  type ProviderTarget,
-  type TargetProvider,
-} from '@/lib/api';
+import { isGitRepoUrl } from '@/lib/paths';
+import type { ProviderTarget, TargetProvider } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { closeDraftTab } from '@/lib/draft-session';
 import type { Project } from '@/lib/types';

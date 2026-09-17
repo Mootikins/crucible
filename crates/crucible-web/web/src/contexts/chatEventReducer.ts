@@ -5,7 +5,7 @@ import {
   turnSegmentId,
   turnThinkingId,
   stripFrozenPrefix,
-} from '@/lib/api';
+} from '@/lib/turn';
 import type {
   Message,
   ChatEvent,

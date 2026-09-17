@@ -20,8 +20,8 @@ vi.mock('@/stores/statusBarStore', () => ({
   },
 }));
 
-vi.mock('@/lib/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/api')>();
+vi.mock('@/lib/turn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/turn')>();
   // Unique per call: a segmented turn (text → tool → text → tool → text)
   // materializes a fresh streaming assistant message per segment, and a fixed
   // id would collide so updateMessage would target the wrong bubble.

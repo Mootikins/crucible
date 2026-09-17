@@ -4,7 +4,7 @@ const { load, autosave } = vi.hoisted(() => ({
   load: vi.fn().mockResolvedValue(undefined),
   autosave: vi.fn(),
 }));
-vi.mock('@/lib/layout-persistence', () => ({
+vi.mock('@/lib/query/layout', () => ({
   loadLayoutOnStartup: load,
   setupLayoutAutoSave: autosave,
 }));

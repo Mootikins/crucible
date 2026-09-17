@@ -52,11 +52,11 @@ import {
   getFileContent,
   saveFileContent,
   saveFileIfUnchanged,
-  generateMessageId,
   saveLayout,
   loadLayout,
   resetLayout,
 } from '../api';
+import { generateMessageId } from '../turn';
 
 // Preserve original fetch so we can restore it after each test
 const originalFetch = global.fetch;

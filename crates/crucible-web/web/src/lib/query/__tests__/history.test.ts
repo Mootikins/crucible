@@ -3,7 +3,7 @@ import { createRoot, createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { queryClientOptions } from '@/lib/query/client';
 import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
-import type { SessionHistoryResponse } from '@/lib/api';
+import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
 import { sessionEvents } from '../sse';
 import { installSessionEventRoute } from '../routes/session';

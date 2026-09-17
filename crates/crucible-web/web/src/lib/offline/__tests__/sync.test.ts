@@ -20,7 +20,6 @@ vi.mock('@/lib/api', () => ({
   patchKilnFile: (p: string, e: unknown, b?: string) => net.patch(p, e, b),
   getFileContent: async () => '',
   listNotes: (k: string) => net.list(k),
-  rawFileUrl: (p: string) => `/raw?${p}`,
   getConfig: async () => {
     // The real one is a plain fetch with no service-worker cache, so it
     // THROWS offline. A mock that always resolves hides the whole defect.

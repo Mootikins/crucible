@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, createEffect } from 'solid-js';
 import { X } from '@/lib/icons';
-import type { PluginCommand } from '@/lib/api';
+import type { PluginCommand } from '@/lib/types';
 import { useRunPluginCommand } from '@/lib/query/plugins';
 import {
   commandArgs,

@@ -3,7 +3,7 @@ import { createRoot } from 'solid-js';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
-import type { PendingInteractionEntry } from '@/lib/api';
+import type { PendingInteractionEntry } from '@/lib/types';
 import type { InteractionOf } from '@/lib/types';
 import { getBus } from '@/lib/bus';
 import { keys } from '../keys';

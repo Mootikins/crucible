@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import { getSurfaces, type Surface } from '@/lib/api';
+import { getSurfaces } from '@/lib/api';
+import type { Surface } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

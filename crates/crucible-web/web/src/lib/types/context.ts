@@ -19,7 +19,7 @@ import type {
   ConnectionStatus,
 } from '../types';
 import type { Accessor } from 'solid-js';
-import type { SessionScope } from '@/lib/api';
+import type { SessionScope } from '../types';
 
 // =============================================================================
 // Chat Context

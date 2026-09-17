@@ -1,4 +1,4 @@
-import type { AnchoredEdit } from '@/lib/api';
+import type { AnchoredEdit } from '@/lib/types';
 
 /**
  * Fold anchored edits into text this device holds.

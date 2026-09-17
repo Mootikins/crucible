@@ -3,7 +3,7 @@ import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
 import type { SessionRoot } from '@/lib/session-roots';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
-import { isGitRepoUrl } from '@/lib/api';
+import { isGitRepoUrl } from '@/lib/paths';
 import { useRegisterProject, useScmClone } from '@/lib/query/projects';
 import { useResolveWorkspaceTarget, useWorkspaceTargets } from '@/lib/query/targets';
 

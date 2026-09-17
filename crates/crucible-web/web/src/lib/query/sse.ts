@@ -29,6 +29,7 @@ import type { QueryClient } from '@tanstack/solid-query';
 import {
   subscribeToEvents,
   subscribeToFsEvents,
+  subscribeToPluginEvents,
   subscribeToSurfaceEvents,
   type SurfaceChangedEvent,
 } from '@/lib/api';
@@ -337,41 +338,17 @@ export function fsEvents(): SseStream<FsEvent> {
   });
 }
 
-/** The URL of the plugin stream. `api.ts` has no function for it yet. */
-const PLUGIN_EVENTS_URL = '/api/plugins/events';
-
 /**
- * Opens the plugin stream.
+ * The publications of every plugin (`GET /api/plugins/events`).
  *
- * It does not reconnect on an error, which is what the stream does today: the
- * three other streams back off and retry inside `api.ts`, and Task D4 moves
- * this one's consumer here without changing that. A consumer that must get
- * back on calls `reconnect()`.
+ * The connect is a route call in `api.ts`, like the three other streams. It
+ * does not reconnect on an error, which is what the stream does today; a
+ * consumer that must get back on calls `reconnect()`.
  */
-function connectPluginEvents(
-  onEvent: (event: PluginPublicationEvent) => void,
-  onOpen: () => void,
-): () => void {
-  const source = new EventSource(PLUGIN_EVENTS_URL);
-  source.addEventListener('publication_changed', (e: MessageEvent) => {
-    try {
-      const { plugin, key } = JSON.parse(e.data) as PluginPublicationEvent;
-      onEvent({ plugin, key });
-    } catch {
-      // A malformed frame is not worth tearing the stream down for; the next
-      // one will arrive, and a stale block is better than a dead one.
-      console.warn('Failed to parse plugin SSE event:', e.data);
-    }
-  });
-  source.onopen = () => onOpen();
-  return () => source.close();
-}
-
-/** The publications of every plugin (`GET /api/plugins/events`). */
 export function pluginEvents(): PluginEventStream {
   const stream = rootFor(pluginRoots, GLOBAL, {
     name: 'plugin events',
-    connect: connectPluginEvents,
+    connect: (onEvent, onOpen) => subscribeToPluginEvents(onEvent, onOpen),
     route: (event) => runRoute('plugin events', pluginRoute, event, routeContext()),
   });
   return {

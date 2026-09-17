@@ -15,6 +15,11 @@ const getNote = vi.fn(async () => ({
 
 // `listKilns` is NOT stubbed: the context resolves a path's kiln through the
 // shared kiln query, which runs the real one against the mocked fetch.
+// The moved helper (`lib/paths.ts`), stubbed where it lives now.
+vi.mock('@/lib/paths', () => ({
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+}));
+
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer, which wants the hash the
@@ -33,7 +38,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
     return { ok: true, content_hash: 'written' };
   },
   getNote: () => getNote(),
-  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: '/home/user/kiln', config_root: '/etc/crucible' }),
   listNotes: async () => [],
 }));

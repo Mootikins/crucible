@@ -14,7 +14,7 @@ import { EditorWithPreview } from './editor/EditorWithPreview';
 import { pendingDiffStore, pendingDiffActions } from '@/stores/pendingDiffStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { kilnForPath, openNoteInEditor } from '@/lib/note-actions';
-import { rawFileUrl } from '@/lib/api';
+import { rawFileUrl } from '@/lib/paths';
 import { tabHost } from '@/lib/tab-host';
 import { isCompact } from '@/stores/deviceStore';
 import { hit } from '@/lib/touch';

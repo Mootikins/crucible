@@ -3,7 +3,7 @@ import { render, cleanup, waitFor, screen, fireEvent } from '@solidjs/testing-li
 import { createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { PluginSettings } from '../PluginSettings';
-import type { PluginOptionNode } from '@/lib/api';
+import type { PluginOptionNode } from '@/lib/types';
 
 const addNotification = vi.fn();
 vi.mock('@/stores/notificationStore', () => ({

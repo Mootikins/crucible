@@ -2,7 +2,8 @@ import {
   useMutation,
   type UseMutationResult,
 } from '@tanstack/solid-query';
-import { connectSessionKiln, disconnectSessionKiln, type SessionScope } from '@/lib/api';
+import { connectSessionKiln, disconnectSessionKiln } from '@/lib/api';
+import type { SessionScope } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 import { patchCachedSession } from './sessions';

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import type { InteractionOf } from '@/lib/types';
-import type { PendingInteractionEntry } from '@/lib/api';
+import type { PendingInteractionEntry } from '@/lib/types';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 // No `vi.mock('@/lib/api')`. The remote layer is the shared

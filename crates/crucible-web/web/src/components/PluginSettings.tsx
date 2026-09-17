@@ -1,5 +1,5 @@
 import { Component, For, Index, Show, createSignal } from 'solid-js';
-import type { PluginOptionNode } from '@/lib/api';
+import type { PluginOptionNode } from '@/lib/types';
 import {
   useExecutePluginOption,
   usePluginOption,

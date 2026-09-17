@@ -1,12 +1,7 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import {
-  getSkill,
-  listSkills,
-  searchSkills,
-  type SkillDetail,
-  type SkillSummary,
-} from '@/lib/api';
+import { getSkill, listSkills, searchSkills, type SkillDetail } from '@/lib/api';
+import type { SkillSummary } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

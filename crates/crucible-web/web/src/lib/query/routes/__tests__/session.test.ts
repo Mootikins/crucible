@@ -3,7 +3,7 @@ import type { QueryKey } from '@tanstack/solid-query';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
 import { getBus } from '@/lib/bus';
-import type { SessionHistoryResponse } from '@/lib/api';
+import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../../keys';
 import { sessionEvents } from '../../sse';
 import {

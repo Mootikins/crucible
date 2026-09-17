@@ -45,7 +45,7 @@ import { SkillsPanel } from '../SkillsPanel';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { apiError, type MockFetchHandler } from '@/test-utils/mock-fetch';
 import { resetKilnsForTests } from '@/lib/query/kilns';
-import type { SkillSummary } from '@/lib/api';
+import type { SkillSummary } from '@/lib/types';
 
 // The panel resolves a kiln NAME to a directory through `kilnPathOf`, which
 // reads the shared kiln query. An empty registry is the case under test:

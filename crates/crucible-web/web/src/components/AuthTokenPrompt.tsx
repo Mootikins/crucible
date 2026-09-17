@@ -1,5 +1,5 @@
 import { Component, Show, createSignal } from 'solid-js';
-import { login } from '@/lib/api';
+import { useLogin } from '@/lib/query/auth';
 import { getBus } from '@/lib/bus';
 
 interface AuthTokenPromptProps {
@@ -17,6 +17,7 @@ interface AuthTokenPromptProps {
  * (`cru web key` prints it).
  */
 export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
+  const loginMutation = useLogin();
   const [open, setOpen] = createSignal(false);
   const [value, setValue] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
@@ -27,8 +28,7 @@ export const AuthTokenPrompt: Component<AuthTokenPromptProps> = (props) => {
 
   const save = async () => {
     const key = value().trim();
-    if (!key) return;
-    if (await login(key)) {
+    if (await loginMutation.mutateAsync(key)) {
       setOpen(false);
       (props.onSaved ?? (() => window.location.reload()))();
     } else {

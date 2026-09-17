@@ -2,7 +2,7 @@ import { Component, Show, createSignal } from 'solid-js';
 import { LayoutDashboard } from '@/lib/icons';
 import { SectionHeader } from './primitives';
 import { windowActions } from '@/stores/windowStore';
-import { resetLayout } from '@/lib/api';
+import { useResetLayout } from '@/lib/query/layout';
 import { notificationActions } from '@/stores/notificationStore';
 
 /**
@@ -14,8 +14,9 @@ import { notificationActions } from '@/stores/notificationStore';
  * one where finding any other control is the problem.
  */
 export const WorkspaceSettingsSection: Component = () => {
-  const [confirming, setConfirming] = createSignal(false);
+  const resetMutation = useResetLayout();
   const [busy, setBusy] = createSignal(false);
+  const [confirming, setConfirming] = createSignal(false);
 
   const reset = async () => {
     setBusy(true);
@@ -23,7 +24,7 @@ export const WorkspaceSettingsSection: Component = () => {
       // Server copy FIRST. The store write below triggers the layout
       // auto-save, so deleting afterwards would race it and could leave the
       // old layout on disk to come back on the next load.
-      await resetLayout();
+      await resetMutation.mutateAsync();
       windowActions.resetLayoutToDefaults();
       notificationActions.addNotification('info', 'Pane layout reset to defaults');
     } catch (err) {

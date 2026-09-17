@@ -1,4 +1,4 @@
-import type { AnchoredEdit, MergeRegion } from '@/lib/api';
+import type { AnchoredEdit, MergeRegion } from '@/lib/types';
 import { applyAnchoredEdits } from '@/lib/offline/fold';
 import type { OfflineStore } from '@/lib/offline/store';
 import { sameDaemon } from '@/lib/offline/identity';

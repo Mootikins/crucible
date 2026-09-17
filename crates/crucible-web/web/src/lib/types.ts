@@ -555,6 +555,251 @@ export type InteractionResponse =
   | CancelledResponse;
 
 // =============================================================================
+// Wire Rows Read Without a Request
+// =============================================================================
+//
+// The rows and shapes below lived in `lib/api.ts` until it was vacated of
+// everything that is not a route call. They are aliases into the generated
+// contract unless a comment says otherwise, and they live HERE — not in the
+// api module — because components, contexts and stores read them without
+// making any request.
+
+/**
+ * A plugin that provides session targets on one of the two axes.
+ *
+ * Hand-written: providers arrive as the RESULT of a plugin command, which the
+ * daemon forwards without parsing, so no route declares this shape.
+ *
+ * **workspace** answers *where do the files live?* — a worktree, a checkout on
+ * another machine. **runtime** answers *where does the process run?* — a
+ * container, an ssh host. They are orthogonal and compose: a session can run in
+ * a container against a worktree, which is why one setting could never have
+ * carried both.
+ *
+ * The targets themselves are not here. They are enumerated on demand through
+ * `targets_command`, because the workspace axis is context-dependent — the
+ * branch list depends on which project is selected, and changes when someone
+ * creates a branch outside the app.
+ */
+export interface TargetProvider {
+  /** The publishing plugin, and the prefix in a `provider:target` spec. */
+  plugin: string;
+  axis: 'workspace' | 'runtime';
+  label: string;
+  /** Plugin command that lists this provider's targets. */
+  targets_command?: string;
+  /**
+   * Plugin command that materialises one target and answers with a path.
+   * Workspace-axis only — a runtime provider resolves nothing, it relocates
+   * the process.
+   */
+  resolve_command?: string;
+}
+
+/** One target a provider offered. Hand-written for the same reason as
+ * `TargetProvider`: a plugin command answers it, not a route. */
+export interface ProviderTarget {
+  value: string;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+  /** `provider:target` — what `session.create` takes, built once here. */
+  spec: string;
+  /**
+   * An existing path this target already resolves to, when the provider knows
+   * one. The worktree provider fills it for branches that have a checkout,
+   * which is what lets the session tree label a checkout with its branch and
+   * the files-pane picker jump to it — without either asking the daemon for
+   * its own copy of the branch list.
+   */
+  path?: string;
+  /** Set when this target is the one currently in effect. */
+  current?: boolean;
+  /**
+   * Set on the one target the provider applies when the session says nothing
+   * on this axis — what an untouched chip actually gets. Declared by the
+   * provider, because only it knows its precedence (a devcontainer over a
+   * configured image, say); the composer renders the answer and never
+   * derives it.
+   */
+  default?: boolean;
+}
+
+/**
+ * One node of a plugin's settings tree.
+ *
+ * Hand-written: `PluginOptionsResponse.options` is an open map on the wire,
+ * because the tree is a projection of a plugin's Lua declaration and the
+ * daemon does not model it.
+ *
+ * Deliberately shallow: the renderer switches on `type` and reads
+ * `name`/`desc`, and knows nothing about any particular option. `type` stays a
+ * plain string for the same reason `level` does on a status slot — the moment
+ * this becomes a union, a plugin declaring a widget kind added later renders
+ * as nothing instead of degrading to a sensible default.
+ *
+ * `args` is present on groups. `values` on a select, already ordered by the
+ * daemon. `writable` is false when no `set` is inherited, so a read-only
+ * option renders as one rather than offering an edit that will be refused.
+ */
+export interface PluginOptionNode {
+  key?: string;
+  type: string;
+  name?: string;
+  desc?: string;
+  order?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  values?: { value: unknown; label: string }[];
+  disabled?: boolean;
+  hidden?: boolean;
+  writable?: boolean;
+  args?: PluginOptionNode[];
+}
+
+/**
+ * One node of the app-config tree: a plugin option node plus the two fields
+ * only app config has.
+ *
+ * A plugin owns its storage and answers `get`; app config is stored by the
+ * daemon and read back through the effective config, so a node carries the
+ * config `path` it writes and the `default` a frontend shows when nothing set
+ * it.
+ */
+export interface AppConfigNode extends Omit<PluginOptionNode, 'args' | 'values'> {
+  /** Dot-joined config path — also the key a save writes. */
+  path?: string;
+  /** What the type defaults to when no layer set the leaf. */
+  default?: unknown;
+  values?: { value: unknown; label: string; desc?: string }[];
+  args?: AppConfigNode[];
+}
+
+/**
+ * Where one config leaf came from, as `config.origin` reports it.
+ *
+ * `source` is one word, and the complete set: `default`, `plugin`, `settings`,
+ * `toml`, `lua`, `registered`, `cli`, `rpc`. That is `ConfigSource::short` in
+ * `crucible-core`, NOT the serde variant name. `pinned` is the daemon's answer
+ * to "would a save of this leaf be refused", never re-derived here from
+ * `source`: which layers pin IS the refusal rule, and a copy of it in the
+ * browser would go wrong the moment a layer is added.
+ */
+export type ConfigOrigin = Schemas['ConfigOriginRow'];
+
+/**
+ * What plugins published about themselves, as `key -> plugin -> value`.
+ *
+ * The generic contribution channel. Values are opaque here so a contribution
+ * kind added later needs no change in this file — a plugin states what it
+ * offers and clients render it.
+ */
+export type PluginPublications = Schemas['PluginPublicationsResponse']['publications'];
+
+/**
+ * One executable primitive a plugin declared, and the arguments it takes.
+ *
+ * `parameters` is the JSON Schema `signature.rs` emits, and stays `unknown`:
+ * read it with `commandFields` in `@/lib/command-form`, which turns it into the
+ * controls a dialog draws.
+ *
+ * `effect` — `read` or `write` — is **declared by the plugin and verified by
+ * nothing.** Present it as a claim the plugin makes; a `read` badge that reads
+ * as a guarantee teaches a user to trust a promise nothing keeps. A command
+ * that declares nothing arrives as `write`, because an undeclared command is
+ * unknown and unknown must cost a question rather than a file. See
+ * `crates/crucible-lua/src/command_effect.rs`.
+ */
+export type PluginCommand = Schemas['PluginCommandRow'];
+
+/**
+ * One matched line, in the panel's own camelCase.
+ *
+ * Client-only: `grepSearch` maps the wire's `GrepHit` (snake_case, with
+ * `rel_path`/`match_start`/`match_end`) onto this. The mapping is the reason
+ * the type is hand-written — the panel reads one spelling and the document
+ * keeps the other.
+ */
+export interface GrepHit {
+  path: string;
+  relPath: string;
+  line: number;
+  text: string;
+  matchStart: number;
+  matchEnd: number;
+}
+
+/** One semantically-matched note. `score` is a bounded similarity (higher =
+ * closer). `path` is absolute (open in the editor); `relPath` is kiln-relative
+ * (display). Requires the kiln's notes to be embedded/processed. */
+export interface SemanticHit {
+  path: string;
+  relPath: string;
+  score: number;
+}
+
+/** What `GET /api/session/search` answers, as the document declares it. */
+export type SessionSearchResponse = Schemas['SessionSearchResponse'];
+
+/** Session scope echoed by kiln mutations. `workspace` is `null` when the
+ * session has none — see `sessionWorkspace()`. */
+export type SessionScope = Schemas['SessionScopeResponse'];
+
+/**
+ * One recorded daemon event from `session.jsonl`.
+ *
+ * `data` is `unknown` on the wire: the payload differs per `event`, the daemon
+ * owns the vocabulary, and a reader narrows what it needs.
+ */
+export type DaemonHistoryEvent = Schemas['SessionHistoryEvent'];
+
+/**
+ * What `GET /api/session/{id}/history` answers.
+ *
+ * It carries the session's `type`, `state` and `kilns` beside the events, so a
+ * resume does not need a second `session.get` to learn what it resumed.
+ */
+export type SessionHistoryResponse = Schemas['SessionHistoryResponse'];
+
+/** One row of a plugin surface. The mark is declared; the client picks the
+ * glyph. An unknown mark renders blank. */
+export type SurfaceRow = Schemas['SurfaceLineRow'];
+
+/** A panel a plugin declared, as the daemon reports it. `shape` is `list`
+ * today — a shape arrives with its renderer, never before it. */
+export type Surface = Schemas['SurfaceRow'];
+
+/** One skill of a kiln, as `GET /api/skills` lists it. */
+export type SkillSummary = Schemas['SkillSummary'];
+
+/**
+ * One correlated request waiting for an answer.
+ *
+ * `request` is an open object on the wire — the web route forwards the daemon's
+ * body untouched — so the generated type knows none of its fields. It is
+ * narrowed here to the union `crucible-core` actually serializes, which is what
+ * every renderer switches on.
+ */
+export type PendingInteractionEntry = Omit<Schemas['PendingInteraction'], 'request'> & {
+  request: InteractionRequest;
+};
+
+/**
+ * One span of a note both writers changed differently.
+ *
+ * `crucible_core::note_merge::Region` on the wire: the lines are 1-based and
+ * end-exclusive, and they point into the MERGED text, so a view shows the span
+ * without diffing anything again. This is the only shape the browser has for a
+ * conflict; there is no second definition of it here.
+ */
+export type MergeRegion = Schemas['MergeRegion'];
+
+/** One anchored edit: replace `expect` with `replace`, matched whole-line.
+ * `occurrence` picks which match, zero-based, when `expect` appears twice. */
+export type AnchoredEdit = Schemas['AnchoredEdit'];
+
+// =============================================================================
 // Editor Types
 // =============================================================================
 

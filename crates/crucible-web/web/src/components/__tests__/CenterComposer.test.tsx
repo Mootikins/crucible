@@ -43,6 +43,11 @@ vi.mock('@/lib/file-actions', () => ({
   openFileInEditor: (...args: unknown[]) => openFileInEditorMock(...args),
 }));
 
+// The moved helper (`lib/paths.ts`), stubbed where it lives now.
+vi.mock('@/lib/paths', () => ({
+  isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
+}));
+
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getConfig: vi.fn().mockResolvedValue({
@@ -92,7 +97,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   fetchRecents: vi.fn().mockResolvedValue([]),
   recordRecent: vi.fn().mockResolvedValue(undefined),
   // Clone-from-popout flow.
-  isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
   scmClone: vi.fn(),
   registerProject: vi.fn().mockResolvedValue({}),
 }));

@@ -14,13 +14,17 @@ import { resetKilnsForTests } from '@/lib/query/kilns';
 // effect, stubbing only the heavy editor child and side-effecting stores.
 
 const getFileContent = vi.fn(async (_p: string) => 'content\n');
+// The moved helper (`lib/paths.ts`), stubbed where it lives now.
+vi.mock('@/lib/paths', () => ({
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+}));
+
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer, which asks for the hash the
   // buffer was read at; the endpoint underneath is unchanged.
   getFileWithHash: async (p: string) => ({ content: await getFileContent(p), content_hash: 'h' }),
   getFileContent: (p: string) => getFileContent(p),
-  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: '/kiln', config_root: '/etc/crucible' }),
   listNotes: async () => [],
   saveFileContent: vi.fn(async () => {}),

@@ -1,4 +1,4 @@
-import type { AnchoredEdit } from '@/lib/api';
+import type { AnchoredEdit } from '@/lib/types';
 
 /**
  * Ticking a checkbox in the reading view, as a one-line anchored edit.

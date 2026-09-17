@@ -14,13 +14,13 @@ import type {
   ModeDescriptor,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
-import type { DaemonHistoryEvent, SessionHistoryResponse } from '@/lib/api';
+import type { DaemonHistoryEvent, SessionHistoryResponse } from '@/lib/types';
 import {
   generateMessageId,
   turnResponseId,
   turnSegmentId,
   stripFrozenPrefix,
-} from '@/lib/api';
+} from '@/lib/turn';
 import {
   fetchPendingInteractionsOnce,
   useRespondToInteraction,

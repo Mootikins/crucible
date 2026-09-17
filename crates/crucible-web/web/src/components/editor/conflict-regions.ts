@@ -20,7 +20,7 @@
 import { StateEffect, StateField, type EditorState, type Extension, type Text } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
 import { diffWords } from 'diff';
-import type { MergeRegion } from '@/lib/api';
+import type { MergeRegion } from '@/lib/types';
 
 /** What a person can do with one region. Never "accept": that word is the review's. */
 export type ConflictChoice = 'mine' | 'theirs' | 'both';

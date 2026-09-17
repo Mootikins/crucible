@@ -1,6 +1,6 @@
 import { Component, For, Index, Show, createSignal } from 'solid-js';
 import { ExternalLink, FileLock } from '@/lib/icons';
-import type { AppConfigNode, ConfigOrigin } from '@/lib/api';
+import type { AppConfigNode, ConfigOrigin } from '@/lib/types';
 import {
   patchCachedConfig,
   refetchConfig,

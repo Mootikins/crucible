@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createRoot, createSignal } from 'solid-js';
 import { apiError } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
-import type { SkillDetail, SkillSummary } from '@/lib/api';
+import type { SkillDetail } from '@/lib/api';
+import type { SkillSummary } from '@/lib/types';
 import { useSkillDetail, useSkillList, useSkillSearch } from '../skills';
 
 const ALPHA: SkillSummary = {

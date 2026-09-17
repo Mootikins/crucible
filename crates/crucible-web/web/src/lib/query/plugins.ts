@@ -20,13 +20,12 @@ import {
   setPluginOption,
   type InstallPluginParams,
   type InstallPluginResult,
-  type PluginCommand,
   type PluginInfo,
   type PluginOptions,
-  type PluginPublications,
   type PluginReloadResult,
   type RemovePluginResult,
 } from '@/lib/api';
+import type { PluginCommand, PluginPublications } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

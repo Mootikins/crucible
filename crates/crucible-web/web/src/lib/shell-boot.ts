@@ -1,4 +1,4 @@
-import { loadLayoutOnStartup, setupLayoutAutoSave } from '@/lib/layout-persistence';
+import { loadLayoutOnStartup, setupLayoutAutoSave } from '@/lib/query/layout';
 
 /**
  * Start layout persistence for the shell this page chose.

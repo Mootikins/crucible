@@ -8,7 +8,7 @@ import {
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import type { SessionContextValue } from '@/lib/types/context';
 import { treeRootActions } from '@/stores/treeRootStore';
-import type { SessionScope } from '@/lib/api';
+import type { SessionScope } from '@/lib/types';
 import {
   dropCachedSession,
   fetchSessionOnce,

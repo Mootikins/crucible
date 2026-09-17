@@ -1,12 +1,13 @@
 import {
+  fetchRawFile,
   getFileWithHash,
   saveFileIfUnchanged,
   listNotes,
   patchKilnFile,
-  rawFileUrl,
-  type AnchoredEdit,
   type PatchRefused,
 } from '@/lib/api';
+import type { AnchoredEdit } from '@/lib/types';
+import { rawFileUrl } from '@/lib/paths';
 import { applyAnchoredEdits } from '@/lib/offline/fold';
 import { daemonStore } from './namespace';
 import { daemonIdentity } from '@/lib/offline/identity';
@@ -90,11 +91,7 @@ export const networkSource: MirrorSource = {
       tags: note.tags,
     })),
   readNote: async (path) => getFileWithHash(path),
-  readAttachment: async (path) => {
-    const response = await fetch(rawFileUrl(path));
-    if (!response.ok) throw new Error(`attachment ${path}: ${response.status}`);
-    return await response.blob();
-  },
+  readAttachment: async (path) => fetchRawFile(path),
 };
 
 export const networkSink: OutboxSink = {

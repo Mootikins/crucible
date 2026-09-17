@@ -5,7 +5,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import { getSessionHistory, sendChatMessage, type SessionHistoryResponse } from '@/lib/api';
+import { getSessionHistory, sendChatMessage } from '@/lib/api';
+import type { SessionHistoryResponse } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

@@ -1,4 +1,4 @@
-import type { SessionSearchResponse } from '@/lib/api';
+import type { SessionSearchResponse } from '@/lib/types';
 import type {
   Session,
   SessionState,

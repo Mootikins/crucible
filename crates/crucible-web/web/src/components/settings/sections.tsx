@@ -23,7 +23,7 @@ import { TranscriptionSettingsSection } from './TranscriptionSettings';
 import { AdvancedSessionSettingsSection } from './AdvancedSessionSettings';
 import { AppConfigSettingsSection } from './AppConfigSettings';
 import { PluginSettings } from '@/components/PluginSettings';
-import type { PluginOptionNode } from '@/lib/api';
+import type { PluginOptionNode } from '@/lib/types';
 import { OfflineSettingsSection } from './OfflineSettings';
 import { WorkspaceSettingsSection } from './WorkspaceSettings';
 

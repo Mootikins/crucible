@@ -34,7 +34,7 @@ import {
   ZoomOut,
 } from '@/lib/icons';
 import { CanvasMinimap } from './CanvasMinimap';
-import { rawFileUrl } from '@/lib/api';
+import { rawFileUrl } from '@/lib/paths';
 import {
   CANVAS_SAVE_DEBOUNCE_MS,
   saveCanvasOnce,

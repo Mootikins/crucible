@@ -12,7 +12,7 @@ import { Portal } from 'solid-js/web';
 import { PanelShell } from './PanelShell';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import type { GrepHit, SemanticHit } from '@/lib/api';
+import type { GrepHit, SemanticHit } from '@/lib/types';
 import type { KilnListEntry } from '@/lib/types';
 import { useGrepSearch, useSearchSessions, useSemanticSearch } from '@/lib/query/search';
 import { useKilns } from '@/lib/query/kilns';

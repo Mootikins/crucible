@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import type { MergeRegion } from '@/lib/api';
+import type { MergeRegion } from '@/lib/types';
 import {
   conflictRegions,
   openConflictRegions,

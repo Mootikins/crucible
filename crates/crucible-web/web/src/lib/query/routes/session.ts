@@ -17,7 +17,7 @@
  */
 import type { QueryClient } from '@tanstack/solid-query';
 import type { ChatEvent } from '@/lib/types';
-import type { SessionHistoryResponse } from '@/lib/api';
+import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
 import { setSessionEventRoute, type SessionRouteContext } from '../sse';
 

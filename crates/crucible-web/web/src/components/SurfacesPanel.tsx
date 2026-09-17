@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, onCleanup } from 'solid-js';
-import type { Surface, SurfaceRow } from '@/lib/api';
+import type { Surface, SurfaceRow } from '@/lib/types';
 import { surfaceEvents } from '@/lib/query/sse';
 import { useSurfaces } from '@/lib/query/surfaces';
 import { PanelShell } from './PanelShell';

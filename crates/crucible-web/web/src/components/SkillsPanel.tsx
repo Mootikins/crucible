@@ -9,7 +9,7 @@ import {
   onCleanup,
 } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import type { SkillSummary } from '@/lib/api';
+import type { SkillSummary } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';

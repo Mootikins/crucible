@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isGitRepoUrl } from '@/lib/api';
+import { isGitRepoUrl } from '../paths';
 
 describe('isGitRepoUrl', () => {
   it('accepts https, ssh, and owner/repo shorthand', () => {

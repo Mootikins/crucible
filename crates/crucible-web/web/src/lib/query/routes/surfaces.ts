@@ -12,7 +12,8 @@
  * The route runs once per event inside the shared root of `lib/query/sse.ts`,
  * so two panels on one browser invalidate one key once.
  */
-import type { Surface, SurfaceChangedEvent } from '@/lib/api';
+import type { SurfaceChangedEvent } from '@/lib/api';
+import type { Surface } from '@/lib/types';
 import { keys } from '../keys';
 import { setSurfaceEventRoute, type SseRouteContext } from '../sse';
 

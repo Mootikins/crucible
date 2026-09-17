@@ -1,7 +1,7 @@
 import { Accessor, createSignal } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useChatSafe } from '@/contexts/ChatContext';
-import type { SessionScope } from '@/lib/api';
+import type { SessionScope } from '@/lib/types';
 import { useConnectSessionKiln, useDisconnectSessionKiln } from '@/lib/query/scope';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';

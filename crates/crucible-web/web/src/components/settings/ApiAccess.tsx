@@ -3,7 +3,7 @@ import { Component, Show, createSignal } from 'solid-js';
 import { Key } from '@/lib/icons';
 
 import { SectionHeader } from './primitives';
-import { login } from '@/lib/api';
+import { useLogin } from '@/lib/query/auth';
 
 /**
  * API access for non-localhost clients. The pasted key is exchanged for an
@@ -12,13 +12,14 @@ import { login } from '@/lib/api';
  * `~/.config/crucible/api_key` on the machine running `cru web`.
  */
 export const ApiAccessSection: Component = () => {
+  const loginMutation = useLogin();
   const [draft, setDraft] = createSignal('');
   const [rejected, setRejected] = createSignal(false);
 
   const save = async () => {
     const key = draft().trim();
     if (!key) return;
-    if (await login(key)) {
+    if (await loginMutation.mutateAsync(key)) {
       window.location.reload();
     } else {
       setRejected(true);

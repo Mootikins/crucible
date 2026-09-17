@@ -45,6 +45,11 @@ const diskSays = (event: FsEvent) => {
 
 // `listKilns` is NOT stubbed: the context resolves a path's kiln through the
 // shared kiln query, which runs the real one against the mocked fetch.
+// The moved helper (`lib/paths.ts`), stubbed where it lives now.
+vi.mock('@/lib/paths', () => ({
+  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
+}));
+
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The editor reads through the offline layer now, which asks for the hash
@@ -61,7 +66,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   saveFileIfUnchanged: (p: string, c: string, base: string, baseText?: string) =>
     guardedSave(p, c, base, baseText),
   getNote: () => getNote(),
-  rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
   getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   listNotes: async () => [],
   subscribeToFsEvents: (cb: (event: FsEvent) => void) => subscribeToFsEvents(cb),

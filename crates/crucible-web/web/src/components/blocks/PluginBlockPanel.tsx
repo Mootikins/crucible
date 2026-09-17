@@ -3,7 +3,7 @@ import { PanelShell } from '../PanelShell';
 import { PanelHeader } from '../PanelHeader';
 import { PluginBlock } from './PluginBlock';
 import { PluginCommandDialog } from './PluginCommandDialog';
-import type { PluginCommand, PluginPublications } from '@/lib/api';
+import type { PluginCommand, PluginPublications } from '@/lib/types';
 import { usePluginCommands, usePluginPublications } from '@/lib/query/plugins';
 
 /**

@@ -12,24 +12,9 @@ import { createTestQueryClient } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
 
-vi.mock('@/lib/api', () => ({
-  // Resolves the backend-minted turn id (the transcript is keyed on it).
-  sendChatMessage: vi.fn(async () => 'msg-turn-1'),
-  subscribeToEvents: vi.fn(() => () => {}),
-  cancelSession: vi.fn(async () => true),
-  getSession: vi.fn(),
-  getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
-  getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
-  listSessions: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({
-    current_mode_id: 'ask',
-    modes: [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null },
-    ],
-  })),
-  setSessionTitle: vi.fn(),
-  setSessionMode: vi.fn(async () => {}),
+// The turn helpers now live in `lib/turn.ts`; the deterministic ids they
+// are mocked for live there too.
+vi.mock('@/lib/turn', () => ({
   // Monotonic — sendMessage mints two temp ids back-to-back, and a
   // Date.now()-based id would collide within one millisecond.
   generateMessageId: (() => {
@@ -55,6 +40,26 @@ vi.mock('@/lib/api', () => ({
     }
     return rest;
   },
+}));
+
+vi.mock('@/lib/api', () => ({
+  // Resolves the backend-minted turn id (the transcript is keyed on it).
+  sendChatMessage: vi.fn(async () => 'msg-turn-1'),
+  subscribeToEvents: vi.fn(() => () => {}),
+  cancelSession: vi.fn(async () => true),
+  getSession: vi.fn(),
+  getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
+  getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
+  listSessions: vi.fn(async () => []),
+  listModes: vi.fn(async () => ({
+    current_mode_id: 'ask',
+    modes: [
+      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
+      { id: 'review', name: 'Review', description: null, icon: null, color: null },
+    ],
+  })),
+  setSessionTitle: vi.fn(),
+  setSessionMode: vi.fn(async () => {}),
 }));
 
 // Every pane of one session shares one root in `lib/query/sse.ts`, and a root

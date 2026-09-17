@@ -1,6 +1,36 @@
 import { createEffect, onCleanup } from 'solid-js';
+import { useMutation, type UseMutationResult } from '@tanstack/solid-query';
+import { loadLayout, resetLayout, saveLayout } from '@/lib/api';
 import { windowActions } from '@/stores/windowStore';
-import { saveLayout, loadLayout } from './api';
+import { getQueryClient } from './client';
+
+/**
+ * The layout's server access: the reset a component offers, and the load/save
+ * plumbing the shell runs at boot.
+ *
+ * The layout is deliberately NOT a cache entry — it is a signal the window
+ * manager owns, written to the daemon's disk, loaded once at start — so there
+ * are no keys and no invalidation here. The hooks exist for the import rule:
+ * a component reads the query layer, never the api module. The boot functions
+ * are plain functions beside them because their caller is `lib/shell-boot.ts`,
+ * which runs before any component exists (the same shape `recordRecentOnce`
+ * takes in `recents.ts`).
+ */
+
+/**
+ * Ask the daemon to forget the stored layout.
+ *
+ * The caller resets the local store afterwards; this only deletes the server
+ * copy, because the store write triggers the layout auto-save below, so a
+ * delete after it would race it and could leave the old layout on disk to
+ * come back on the next load.
+ */
+export function useResetLayout(): UseMutationResult<void, Error, void, unknown> {
+  return useMutation(
+    () => ({ mutationFn: () => resetLayout() }),
+    () => getQueryClient(),
+  );
+}
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 // The startup load runs concurrently with auto-save setup. Until it finishes,

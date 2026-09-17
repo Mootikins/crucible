@@ -4,11 +4,8 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/solid-query';
-import {
-  listPendingInteractions,
-  respondToInteraction,
-  type PendingInteractionEntry,
-} from '@/lib/api';
+import { listPendingInteractions, respondToInteraction } from '@/lib/api';
+import type { PendingInteractionEntry } from '@/lib/types';
 import { getBus } from '@/lib/bus';
 import { getQueryClient } from './client';
 import { keys } from './keys';

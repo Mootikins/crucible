@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createRoot } from 'solid-js';
 import { createStore, produce, reconcile } from 'solid-js/store';
 import type { InteractionRequest } from '@/lib/types';
-import type { PendingInteractionEntry } from '@/lib/api';
+import type { PendingInteractionEntry } from '@/lib/types';
 import { refetchPendingInteractions, usePendingInteractions } from '@/lib/query/interactions';
 
 // ── Cross-session attention state ────────────────────────────────────────

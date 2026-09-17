@@ -3,7 +3,7 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { windowActions } from '@/stores/windowStore';
 import { closedPanels, openPanelTab } from '@/lib/panel-actions';
-import { resetLayout } from '@/lib/api';
+import { useResetLayout } from '@/lib/query/layout';
 import { notificationActions } from '@/stores/notificationStore';
 import { menuContent, menuItem, menuSeparator, menuTrigger } from '@/components/ui/menu-style';
 import { ChevronRight, MoreHorizontal, RefreshCw } from '@/lib/icons';
@@ -31,6 +31,7 @@ const ADD = 'add:';
  * sessions rail, beside the projects they act on — see `ProjectMenu`.
  */
 export const LayoutMenu: Component = () => {
+  const resetMutation = useResetLayout();
   const [busy, setBusy] = createSignal(false);
   const closed = createMemo(() => closedPanels());
 
@@ -53,7 +54,7 @@ export const LayoutMenu: Component = () => {
       // The server copy FIRST: the store write below triggers the layout
       // auto-save, so deleting afterwards races it and can leave the old
       // layout on disk to come back on the next load.
-      await resetLayout();
+      await resetMutation.mutateAsync();
       windowActions.resetLayoutToDefaults();
       notificationActions.addNotification('info', 'Pane layout reset to defaults');
     } catch (err) {

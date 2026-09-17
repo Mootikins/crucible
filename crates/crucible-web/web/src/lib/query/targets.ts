@@ -11,9 +11,8 @@ import {
   getTargetProviders,
   listWorkspaceTargets,
   resolveWorkspaceTarget,
-  type ProviderTarget,
-  type TargetProvider,
 } from '@/lib/api';
+import type { ProviderTarget, TargetProvider } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

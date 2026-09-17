@@ -4,14 +4,14 @@ import { createRoot, createEffect } from 'solid-js';
 const saveLayoutMock = vi.fn().mockResolvedValue(undefined);
 const loadLayoutMock = vi.fn().mockResolvedValue(null);
 
-vi.mock('../api', () => ({
+vi.mock('@/lib/api', () => ({
   saveLayout: (...args: unknown[]) => saveLayoutMock(...args),
   loadLayout: (...args: unknown[]) => loadLayoutMock(...args),
 }));
 
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { isEdgeCollapsed } from '@/types/windowTypes';
-import { setupLayoutAutoSave, loadLayoutOnStartup } from '../layout-persistence';
+import { setupLayoutAutoSave, loadLayoutOnStartup } from '../layout';
 
 describe('layout auto-save tracking', () => {
   // Regression: the auto-save effect serializes via exportLayout() INSIDE its

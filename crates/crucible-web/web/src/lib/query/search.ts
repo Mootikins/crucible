@@ -5,9 +5,8 @@ import {
   searchSessions,
   semanticSearch,
   type GrepResponse,
-  type SemanticHit,
-  type SessionSearchResponse,
 } from '@/lib/api';
+import type { SemanticHit, SessionSearchResponse } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 

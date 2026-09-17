@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
-import type { Surface, SurfaceChangedEvent, SurfaceRow } from '@/lib/api';
+import type { SurfaceChangedEvent } from '@/lib/api';
+import type { Surface, SurfaceRow } from '@/lib/types';
 import { installSurfaceEventRoute } from '@/lib/query/routes/surfaces';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
