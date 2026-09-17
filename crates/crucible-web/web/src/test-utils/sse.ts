@@ -44,9 +44,12 @@ export class FakeEventSource {
   }
 
   /** Acts as the server: one frame of the named type arrives. */
-  emit(type: string, data: unknown): void {
+  emit(type: string, data: unknown, options?: { lastEventId?: string }): void {
     for (const listener of [...(this.listeners.get(type) ?? [])]) {
-      listener({ data: JSON.stringify(data) } as MessageEvent);
+      listener({
+        data: JSON.stringify(data),
+        lastEventId: options?.lastEventId ?? '',
+      } as MessageEvent);
     }
   }
 }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::rpc_client::{
-    SessionExportToFileRequest, SessionIdRequest, SessionRenderMarkdownRequest,
+    SessionEventsAfterRequest, SessionExportToFileRequest, SessionIdRequest,
+    SessionRenderMarkdownRequest,
 };
 use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
@@ -27,6 +28,37 @@ pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Pat
     let session_dir = session_id.dir_under(sessions_root);
 
     match crate::observe::load_events(&session_dir).await {
+        Ok(events) => match serde_json::to_value(&events) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => internal_error(req.id, e),
+        },
+        Err(e) => internal_error(req.id, e),
+    }
+}
+
+/// Replay the persisted wire envelopes past a seq cursor.
+///
+/// Params:
+///   - `session_id` (string, required): The session id.
+///   - `after` (u64, required): The caller's cursor — the last seq it applied.
+///
+/// The reconnect path of the web chat stream. Raw envelopes, not the
+/// [`crate::observe::load_events`] projection: the cursor is compared against
+/// the `seq` stamped at emit, which the projection drops. A session with no
+/// log, a cursor past the end, and an unknown id all answer the same clean
+/// empty tail — a reconnect must not fail for having nothing to replay.
+pub(crate) async fn handle_session_events_after(req: Request, sessions_root: &Path) -> Response {
+    let params = match typed_params::<SessionEventsAfterRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
+    let session_dir = session_id.dir_under(sessions_root);
+
+    match crate::observe::events_after(&session_dir, params.after).await {
         Ok(events) => match serde_json::to_value(&events) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),

@@ -40,6 +40,7 @@ import { attentionActions } from '@/stores/attentionStore';
 import {
   clearTranscript,
   patchTranscript,
+  recordTranscriptHydration,
   releaseTranscript,
   retainTranscript,
   retryTranscriptStream,
@@ -381,6 +382,17 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         : newer;
       return [...loadedMessages, ...merged];
     });
+
+    // The cursor's other half: the hydration covered every event above, so
+    // it records the max seq — AFTER the update finished, not before, or a
+    // stream reopened mid-fold would replay events this fold was about to
+    // draw anyway. Monotonic inside the seam; a fold that lands behind a
+    // live-applied seq never drags the watermark back.
+    const maxSeq = response.history.reduce(
+      (max, evt) => (typeof evt.seq === 'number' && evt.seq > max ? evt.seq : max),
+      0,
+    );
+    recordTranscriptHydration(props.sessionId, maxSeq > 0 ? maxSeq : undefined);
   };
 
   /**

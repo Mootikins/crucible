@@ -366,6 +366,14 @@ impl ReconnectingDaemon {
         session_resume_from_storage(session_id: &str, limit: Option<usize>, offset: Option<usize>)
         -> serde_json::Value = session_resume_from_storage(&session_id, limit, offset);
     }
+    forward_rpc! {
+        /// The persisted wire envelopes past a seq cursor — the tail the chat
+        /// stream replays to a reconnecting client before its live tail.
+        Safe SessionEventsAfter =>
+        session_events_after(session_id: &str, after: u64)
+        -> Vec<SessionEvent> = session_events_after(&session_id, after);
+    }
+
 
     forward_rpc! {
         Once SessionPause =>
@@ -713,6 +721,15 @@ impl EventBroker {
         if let Some(tx) = sessions.get(&event.session_id) {
             let _ = tx.send(event);
         }
+    }
+
+    /// Publish one event into the fan-out, as the daemon's router task would.
+    ///
+    /// Test-only: production events enter through `dispatch` from the
+    /// daemon's event stream, and no production caller may inject.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub async fn publish_for_tests(&self, event: SessionEvent) {
+        self.dispatch(event).await;
     }
 
     pub async fn remove_session(&self, session_id: &str) {

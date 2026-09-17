@@ -31,6 +31,7 @@ import type {
   FileEntry,
   NoteEntry,
   BacklinksResponse,
+  SequencedChatEvent,
   KilnListEntry,
   FsListing,
   FsEvent,
@@ -291,11 +292,15 @@ function isChatEvent(payload: object): boolean {
  * Returns a cleanup function that closes the EventSource.
  *
  * Call this BEFORE sending a message so no events are missed.
- * Automatically reconnects on disconnect with exponential backoff.
+ * Automatically reconnects on disconnect with exponential backoff. Each
+ * (re)connect states the caller's cursor — the last seq it APPLIED — as
+ * `?after=`, and the server replays the persisted events past it; the
+ * browser's own retry of one source sends the same number as
+ * `Last-Event-ID`, which the route honours too.
  */
 export function subscribeToEvents(
   sessionId: string,
-  onEvent: (event: ChatEvent) => void,
+  onEvent: (event: SequencedChatEvent) => void,
   /**
    * Fires once, when the stream is first open. The server subscribes the
    * daemon session before returning stream headers, so "open" means events
@@ -303,10 +308,17 @@ export function subscribeToEvents(
    * (lazy-created sessions auto-sending their first message) wait for this.
    */
   onOpen?: () => void,
+  /**
+   * Reads the resume cursor: the last seq APPLIED for this session. Polled at
+   * every (re)connect, because a reconnect must name the position the store
+   * has actually reached — not the last frame received, which an apply that
+   * never ran would have lost.
+   */
+  cursor?: () => number | undefined,
 ): () => void {
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
-  const url = `/api/chat/events/${encodeURIComponent(sessionId)}`;
+  const base = `/api/chat/events/${encodeURIComponent(sessionId)}`;
   let source: EventSource | null = null;
   let reconnectAttempts = 0;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -316,13 +328,19 @@ export function subscribeToEvents(
   function connect() {
     if (closed) return;
 
+    const after = cursor?.();
+    const url = after === undefined ? base : `${base}?after=${after}`;
     source = new EventSource(url);
 
     for (const eventType of SSE_EVENT_TYPES) {
       source.addEventListener(eventType, (e: MessageEvent) => {
         reconnectAttempts = 0;
         try {
-          onEvent(decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent));
+          const event = decodeEvent<ChatEvent>('chat', eventType, e.data, isChatEvent);
+          // The seq the route stamped as the frame's `id:` — absent when the
+          // frame carried none, and then the event travels without one.
+          const seq = readSeq(e.lastEventId);
+          onEvent(seq === undefined ? event : { ...event, seq });
         } catch {
           console.warn(`Failed to parse SSE event (${eventType}):`, e.data);
         }
@@ -331,13 +349,13 @@ export function subscribeToEvents(
 
     source.onerror = () => {
       if (closed) return;
-      
+
       source?.close();
       source = null;
-      
+
       reconnectAttempts++;
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
-      
+
       console.warn(`SSE disconnected, reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
       // Transient transport status — NOT a daemon 'error' (that path overwrites
       // the streaming message and nulls the streaming id, permanently losing
@@ -366,6 +384,12 @@ export function subscribeToEvents(
     }
     source?.close();
   };
+}
+
+/** The seq off a frame's `id:` field, or undefined when the frame sent none. */
+function readSeq(lastEventId: string): number | undefined {
+  const seq = Number.parseInt(lastEventId, 10);
+  return Number.isInteger(seq) && seq > 0 ? seq : undefined;
 }
 
 /**

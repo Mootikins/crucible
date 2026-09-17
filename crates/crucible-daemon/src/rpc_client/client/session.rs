@@ -256,6 +256,16 @@ pub struct SessionResumeFromStorageRequest {
     pub offset: Option<usize>,
 }
 
+/// Request for `session.events_after`.
+///
+/// `after` is the caller's seq cursor: the last event it APPLIED. The reply
+/// carries the persisted wire envelopes strictly past it, in order.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionEventsAfterRequest {
+    pub session_id: String,
+    pub after: u64,
+}
+
 /// Request for `session.send_message`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSendMessageRequest {
@@ -696,6 +706,24 @@ impl DaemonClient {
             "session.load_events",
             SessionIdRequest {
                 session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// The persisted wire envelopes past a seq cursor (`session.events_after`),
+    /// in order — the tail a reconnecting chat stream replays before its live
+    /// forwarding begins. Envelopes carry the `seq` they were stamped with.
+    pub async fn session_events_after(
+        &self,
+        session_id: &str,
+        after: u64,
+    ) -> Result<Vec<crucible_core::protocol::SessionEventMessage>> {
+        self.typed_call(
+            "session.events_after",
+            SessionEventsAfterRequest {
+                session_id: session_id.to_string(),
+                after,
             },
         )
         .await

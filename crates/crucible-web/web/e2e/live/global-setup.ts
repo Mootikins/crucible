@@ -243,7 +243,22 @@ function assertProviderInjected(
  * carried the text, not about the text.
  */
 const LIVE_SCRIPT = {
-  rules: [{ contains: 'hermetic', reply: 'The live chain answered.' }],
+  rules: [
+    { contains: 'hermetic', reply: 'The live chain answered.' },
+    // The reconnect/reload specs' producer: long enough (40 words at 120ms)
+    // that a turn is still streaming after a connection is pulled and put
+    // back. The phrasing is deliberately unique so nothing else — the title
+    // generator included — matches it before its own rule.
+    {
+      contains: 'spin the slow wheel',
+      reply:
+        'The slow wheel turns and the mill grinds steadily onward through ' +
+        'every grain the season brought, and the stones remember each ' +
+        'passage as the wheel counts them one by one until the hopper ' +
+        'finally runs empty and the day is done.',
+      wordDelayMs: 120,
+    },
+  ],
   fallback: 'The live chain answered.',
   modelName: 'live-model',
 };

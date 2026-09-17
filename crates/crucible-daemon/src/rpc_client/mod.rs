@@ -34,11 +34,11 @@ pub use client::{
     ReviewResolveCommentRequest, ReviewSetStateRequest, ReviewSetStatesRequest, ScmCloneRequest,
     SearchVectorsRequest, SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams,
     SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
-    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
-    SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
-    SurfaceRequest, VectorHit, VersionCheck,
+    SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest, SessionIdRequest,
+    SessionInjectContextRequest, SessionInteractionRespondRequest, SessionRenderMarkdownRequest,
+    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionSwitchModelRequest, SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest,
+    SkillsSearchRequest, SurfaceRequest, VectorHit, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 // `DaemonClient::fts_search` returns this type, so callers of the client

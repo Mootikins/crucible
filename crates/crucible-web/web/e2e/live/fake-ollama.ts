@@ -34,6 +34,12 @@ interface OllamaRule {
   toolCall?: { name: string; arguments: Record<string, unknown> };
   /** Text reply streamed once the tool result round-trips back. */
   replyAfterTool?: string;
+  /**
+   * Pause between the reply's word chunks, in ms. The reconnect specs need a
+   * turn still streaming when they pull the connection; every other rule
+   * leaves it unset and streams at full speed.
+   */
+  wordDelayMs?: number;
 }
 
 export interface FakeOllamaOptions {
@@ -108,11 +114,21 @@ function pickRule(opts: FakeOllamaOptions, prompt: string): OllamaRule | undefin
 }
 
 /** Stream an assistant reply as Ollama NDJSON: per-word chunks, then done. */
-function streamChat(res: http.ServerResponse, model: string, reply: string): void {
+async function streamChat(
+  res: http.ServerResponse,
+  model: string,
+  reply: string,
+  wordDelayMs = 0,
+): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
   // Split into word chunks so streaming is observable but deterministic.
   const words = reply.split(/(\s+)/).filter((w) => w.length > 0);
   for (const w of words) {
+    if (wordDelayMs > 0) {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, wordDelayMs);
+      await promise;
+    }
     res.write(
       JSON.stringify({ model, message: { role: 'assistant', content: w }, done: false }) + '\n',
     );
@@ -218,7 +234,7 @@ export async function startFakeOllama(opts: FakeOllamaOptions): Promise<FakeOlla
           if (hasToolResult(messages)) {
             const reply = rule.replyAfterTool ?? opts.fallback;
             opts.onChat?.(prompt, reply);
-            streamChat(res, model, reply);
+            void streamChat(res, model, reply, rule?.wordDelayMs ?? 0);
           } else {
             toolRounds.push(rule.toolCall);
             opts.onChat?.(prompt, `[tool_call:${rule.toolCall.name}]`);
@@ -229,7 +245,7 @@ export async function startFakeOllama(opts: FakeOllamaOptions): Promise<FakeOlla
 
         const reply = rule?.reply ?? opts.fallback;
         opts.onChat?.(prompt, reply);
-        streamChat(res, model, reply);
+        void streamChat(res, model, reply, rule?.wordDelayMs ?? 0);
       });
       return;
     }

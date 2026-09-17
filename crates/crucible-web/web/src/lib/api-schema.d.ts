@@ -91,9 +91,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The session's live event stream.
+         * The session's live event stream, resuming from a seq cursor.
          * @description The body schema describes one SSE `data:` payload, not the whole stream:
-         *     OpenAPI has no way to say "many of these, one per line".
+         *     OpenAPI has no way to say "many of these, one per line". Each event's seq
+         *     rides the SSE `id:` field, so a client that reconnects can name the last
+         *     event it applied — through `?after=` on a fresh `EventSource` (the browser
+         *     API cannot set headers) or the automatic `Last-Event-ID` a browser sends
+         *     when it retries the same source.
          */
         get: operations["event_stream"];
         put?: never;
@@ -4776,7 +4780,10 @@ export interface operations {
     };
     event_stream: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Replay the persisted events past this seq. */
+                after?: number;
+            };
             header?: never;
             path: {
                 /** @description The session to stream */

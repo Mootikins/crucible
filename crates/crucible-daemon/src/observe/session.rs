@@ -6,6 +6,7 @@
 //! reads. See [`crate::observe`] for the two line shapes a log can hold.
 
 use crate::observe::events::LogEvent;
+use crate::protocol::SessionEventMessage;
 use std::path::Path;
 use tokio::fs;
 
@@ -42,6 +43,35 @@ pub async fn load_events(session_dir: impl AsRef<Path>) -> Result<Vec<LogEvent>,
     Ok(crate::observe::events::parse_session_log(
         &fs::read_to_string(&jsonl_path).await?,
     ))
+}
+
+/// The wire envelopes a session log holds past a seq cursor, in order.
+///
+/// The replay path of a reconnecting chat stream (`session.events_after`):
+/// unlike [`load_events`], this reads the RAW envelopes — `seq` is stamped at
+/// emit and the `LogEvent` projection drops it, so the cursor can only be
+/// compared against the wire form a live subscriber receives.
+///
+/// A line joins the tail only when it is a wire event carrying a seq: view
+/// lines (`init`, `user`, …) have no `event`/`data` fields to deserialize and
+/// fail on the envelope, and an unstamped wire line (the direct-send bypasses
+/// `no_production_code_bypasses_emit_event` allows) has no position to filter
+/// on — dropping it is the only answer that cannot misorder the tail.
+pub async fn events_after(
+    session_dir: impl AsRef<Path>,
+    after: u64,
+) -> Result<Vec<SessionEventMessage>, SessionError> {
+    let jsonl_path = session_dir.as_ref().join("session.jsonl");
+    if !jsonl_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let raw = fs::read_to_string(&jsonl_path).await?;
+    Ok(raw
+        .lines()
+        .filter_map(|line| serde_json::from_str::<SessionEventMessage>(line.trim()).ok())
+        .filter(|event| event.seq.is_some_and(|seq| seq > after))
+        .collect())
 }
 
 #[cfg(test)]

@@ -33,7 +33,7 @@ import {
   subscribeToSurfaceEvents,
   type SurfaceChangedEvent,
 } from '@/lib/api';
-import type { ChatEvent, FsEvent } from '@/lib/types';
+import type { ChatEvent, FsEvent, SequencedChatEvent } from '@/lib/types';
 import { getBus, type Bus } from '@/lib/bus';
 import { getQueryClient } from './client';
 
@@ -290,7 +290,7 @@ function rootFor<E>(
 // The four streams
 // =============================================================================
 
-const sessionRoots = new Map<string, SseStream<ChatEvent>>();
+const sessionRoots = new Map<string, SseStream<SequencedChatEvent>>();
 const surfaceRoots = new Map<string, SseStream<SurfaceChangedEvent>>();
 const fsRoots = new Map<string, SseStream<FsEvent>>();
 const pluginRoots = new Map<string, SseStream<PluginPublicationEvent>>();
@@ -298,16 +298,45 @@ const pluginRoots = new Map<string, SseStream<PluginPublicationEvent>>();
 /** The key of a stream the whole app shares, which has no id to key on. */
 const GLOBAL = 'global';
 
+// =============================================================================
+// The resume cursor
+// =============================================================================
+
+/**
+ * The last seq APPLIED for a session, per session.
+ *
+ * This is the number a reopened stream states as `?after=` and the server
+ * replays past. It advances ONLY after an event (or a history fold) has been
+ * applied to the session's store — never on receipt, because a frame received
+ * and then dropped before its apply would otherwise be skipped by the replay
+ * as well and lost twice (T3 Code's rule).
+ */
+const sessionCursors = new Map<string, number>();
+
+/** The session's resume cursor, or undefined before anything was applied. */
+export function sessionCursor(sessionId: string): number | undefined {
+  return sessionCursors.get(sessionId);
+}
+
+/** Advances the cursor, monotonically. A lower seq never moves it back. */
+export function advanceSessionCursor(sessionId: string, seq: number): void {
+  const current = sessionCursors.get(sessionId);
+  if (current === undefined || seq > current) {
+    sessionCursors.set(sessionId, seq);
+  }
+}
+
 /**
  * The chat events of one session (`GET /api/chat/events/{id}`).
  *
  * One source per session id: two panes on one session share it, and a pane on
  * another session opens its own.
  */
-export function sessionEvents(sessionId: string): SseStream<ChatEvent> {
+export function sessionEvents(sessionId: string): SseStream<SequencedChatEvent> {
   return rootFor(sessionRoots, sessionId, {
     name: `chat events ${sessionId}`,
-    connect: (onEvent, onOpen) => subscribeToEvents(sessionId, onEvent, onOpen),
+    connect: (onEvent, onOpen) =>
+      subscribeToEvents(sessionId, onEvent, onOpen, () => sessionCursor(sessionId)),
     route: (event) =>
       runRoute(`chat events ${sessionId}`, sessionRoute, event, {
         ...routeContext(),
@@ -377,6 +406,7 @@ export function resetSseForTests(): void {
   surfaceRoots.clear();
   fsRoots.clear();
   pluginRoots.clear();
+  sessionCursors.clear();
   sessionRoute = null;
   surfaceRoute = null;
   fsRoute = null;

@@ -162,8 +162,8 @@
     },
     "/api/chat/events/{session_id}": {
       "get": {
-        "summary": "The session's live event stream.",
-        "description": "The body schema describes one SSE `data:` payload, not the whole stream:\nOpenAPI has no way to say \"many of these, one per line\".",
+        "summary": "The session's live event stream, resuming from a seq cursor.",
+        "description": "The body schema describes one SSE `data:` payload, not the whole stream:\nOpenAPI has no way to say \"many of these, one per line\". Each event's seq\nrides the SSE `id:` field, so a client that reconnects can name the last\nevent it applied — through `?after=` on a fresh `EventSource` (the browser\nAPI cannot set headers) or the automatic `Last-Event-ID` a browser sends\nwhen it retries the same source.",
         "operationId": "event_stream",
         "parameters": [
           {
@@ -173,6 +173,17 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Replay the persisted events past this seq.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
             }
           }
         ],

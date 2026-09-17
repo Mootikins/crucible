@@ -2,15 +2,16 @@ use crate::events::ChatEvent;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
+    http::HeaderMap,
     response::sse::{Event, Sse},
     Json,
 };
-use futures::stream::Stream;
+use futures::stream::{iter, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
-use tokio_stream::StreamExt;
-use utoipa::ToSchema;
+use tokio_stream::wrappers::BroadcastStream;
+use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 pub fn chat_routes() -> OpenApiRouter<AppState> {
@@ -64,27 +65,83 @@ async fn send_message(
     Ok(Json(SendMessageResponse { message_id }))
 }
 
-/// The session's live event stream.
+/// The resume cursor of `GET /api/chat/events/{session_id}`.
+///
+/// `after` is the last event seq the client APPLIED for this session. A
+/// request that sends none is a fresh viewer: it hydrates from the history
+/// route, and replaying the whole log at it would duplicate every turn.
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+struct EventStreamQuery {
+    /// Replay the persisted events past this seq.
+    after: Option<u64>,
+}
+
+/// The session's live event stream, resuming from a seq cursor.
 ///
 /// The body schema describes one SSE `data:` payload, not the whole stream:
-/// OpenAPI has no way to say "many of these, one per line".
+/// OpenAPI has no way to say "many of these, one per line". Each event's seq
+/// rides the SSE `id:` field, so a client that reconnects can name the last
+/// event it applied — through `?after=` on a fresh `EventSource` (the browser
+/// API cannot set headers) or the automatic `Last-Event-ID` a browser sends
+/// when it retries the same source.
 #[utoipa::path(
     get,
     path = "/api/chat/events/{session_id}",
-    params(("session_id" = String, Path, description = "The session to stream")),
+    params(
+        ("session_id" = String, Path, description = "The session to stream"),
+        EventStreamQuery,
+    ),
     responses((status = 200, content_type = "text/event-stream", body = ChatEvent))
 )]
 async fn event_stream(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
+    Query(query): Query<EventStreamQuery>,
+    headers: HeaderMap,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+    // The cursor, either way a client can state it. A non-numeric
+    // `Last-Event-ID` is ignored rather than refused: the ids are this
+    // route's own numbers, and a client forwarding one it never received
+    // from us gets a fresh tail, not a 400 over a header it cannot fix.
+    let after = query.after.or_else(|| {
+        headers
+            .get("last-event-id")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+    });
+
+    // ORDERING IS LOAD-BEARING, twice over. The broker receiver comes before
+    // the daemon subscription (the window `fs_event_stream` documents:
+    // `EventBroker::dispatch` drops events for sessions with no local
+    // channel), and BOTH come before the replay read. An event emitted while
+    // the read runs must land in this receiver's buffer — if it can land in
+    // neither the snapshot nor the live tail, it is lost exactly when the
+    // client reconnected because it was already losing events.
+    let rx = state.events.subscribe(&session_id).await;
     state
         .daemon
         .session_subscribe(&[session_id.as_str()])
         .await
         .daemon_err()?;
 
-    let rx = state.events.subscribe(&session_id).await;
+    let replayed = match after {
+        Some(after) => state
+            .daemon
+            .session_events_after(&session_id, after)
+            .await
+            .daemon_err()?,
+        None => Vec::new(),
+    };
+    // Live forwarding starts strictly above the replayed tail. An event at or
+    // below its max seq is either in the tail, or a non-persisted frame (a
+    // text delta) whose content the tail's turn-end event supersedes — a
+    // plain comparison, no identity tracking.
+    let max_replayed = replayed
+        .iter()
+        .filter_map(|event| event.seq)
+        .max()
+        .unwrap_or(after.unwrap_or(0));
 
     // A browser that falls behind loses events here for the same reason it used
     // to lose them in the daemon's forwarder, and `.ok()` discarded the very
@@ -95,7 +152,7 @@ async fn event_stream(
     // Not fatal: the receiver stays usable after lagging, having been advanced to
     // the oldest surviving event, so the stream continues rather than ending the
     // SSE connection and provoking a reconnect that would lose more.
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+    let live = BroadcastStream::new(rx)
         .map(move |result| match result {
             Ok(event) => event,
             Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
@@ -113,16 +170,32 @@ async fn event_stream(
                 crucible_daemon::SessionEvent::new(session_id.clone(), event_type, data)
             }
         })
-        .map(|event| {
-            let chat_event = ChatEvent::from_daemon_event(&event);
-            let event_name = chat_event.event_name();
-            let data = serde_json::to_string(&chat_event).unwrap_or_default();
-            Ok(Event::default().event(event_name).data(data))
-        });
+        .filter(move |event| {
+            futures::future::ready(event.seq.map_or(true, |seq| seq > max_replayed))
+        })
+        .map(|event| to_sse(&event));
+
+    let stream = iter(replayed).map(|event| to_sse(&event)).chain(live);
 
     // Keep-alive comments stop idle proxies/load balancers from dropping the
     // stream, which the client would otherwise treat as a reconnect.
     Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
+}
+
+/// One daemon event as one SSE frame, its seq (when stamped) as the `id:`.
+///
+/// The seq is the cursor's vocabulary: the client reads it back off
+/// `MessageEvent.lastEventId` and states it on reconnect, and nothing else on
+/// the frame needs it.
+fn to_sse(event: &crucible_daemon::SessionEvent) -> Result<Event, Infallible> {
+    let chat_event = ChatEvent::from_daemon_event(event);
+    let event_name = chat_event.event_name();
+    let data = serde_json::to_string(&chat_event).unwrap_or_default();
+    let frame = Event::default().event(event_name).data(data);
+    Ok(match event.seq {
+        Some(seq) => frame.id(seq.to_string()),
+        None => frame,
+    })
 }
 
 /// One interaction a session is waiting on an answer to.

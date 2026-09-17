@@ -10,6 +10,8 @@ import {
   setFsEventRoute,
   setPluginEventRoute,
   resetSseForTests,
+  advanceSessionCursor,
+  sessionCursor,
 } from '../sse';
 import { getQueryClient, setQueryClientForTests } from '../client';
 import { getBus } from '../../bus';
@@ -168,6 +170,53 @@ describe('sessionEvents', () => {
     onlySource().emit('token', { type: 'token', content: 'hi' });
 
     expect(route).not.toHaveBeenCalled();
+  });
+});
+
+describe('the session resume cursor', () => {
+  it('is absent before anything was applied, and the stream opens bare', () => {
+    expect(sessionCursor('s1')).toBeUndefined();
+    sessionEvents('s1').subscribe(vi.fn());
+
+    expect(onlySource().url).toBe('/api/chat/events/s1');
+  });
+
+  it('states the applied seq as ?after= on every reopen', () => {
+    advanceSessionCursor('s1', 7);
+    sessionEvents('s1').subscribe(vi.fn());
+
+    expect(onlySource().url).toBe('/api/chat/events/s1?after=7');
+
+    // A manual reconnect re-reads the cursor at connect time, so a watermark
+    // that moved while the stream was down travels on the new source.
+    advanceSessionCursor('s1', 9);
+    sessionEvents('s1').reconnect();
+
+    expect(FakeEventSource.instances[1]!.url).toBe('/api/chat/events/s1?after=9');
+  });
+
+  it('advances monotonically and never walks back', () => {
+    advanceSessionCursor('s1', 5);
+    advanceSessionCursor('s1', 3);
+
+    expect(sessionCursor('s1')).toBe(5);
+  });
+
+  it('carries the seq a frame stamped, and nothing when it did not', () => {
+    const seen: Array<{ seq?: number; type: string }> = [];
+    sessionEvents('s1').subscribe((event) => seen.push(event));
+
+    onlySource().emit('token', { type: 'token', content: 'a' }, { lastEventId: '12' });
+    onlySource().emit('token', { type: 'token', content: 'b' });
+    onlySource().emit('message_complete', {
+      type: 'message_complete', id: 'm1', content: 'c',
+    }, { lastEventId: '13' });
+
+    expect(seen.map((event) => [event.type, event.seq])).toEqual([
+      ['token', 12],
+      ['token', undefined],
+      ['message_complete', 13],
+    ]);
   });
 });
 

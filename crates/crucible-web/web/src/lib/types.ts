@@ -351,6 +351,18 @@ interface ConnectionEvent {
  */
 export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
 
+/**
+ * A chat event carrying the `seq` the stream stamped on its frame, when it
+ * stamped one.
+ *
+ * The seq rides the SSE `id:` field (not the payload — it is transport
+ * bookkeeping, not event data), so `subscribeToEvents` copies it off
+ * `MessageEvent.lastEventId` onto the decoded event. Absent on client-minted
+ * events (`connection`), on the synthetic `stream_gap`, and from a server
+ * predating the cursor protocol.
+ */
+export type SequencedChatEvent = ChatEvent & { seq?: number };
+
 
 
 // =============================================================================

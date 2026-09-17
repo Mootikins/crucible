@@ -97,6 +97,113 @@ async fn session_load_events_refuses_an_id_that_escapes_the_sessions_root() {
     );
 }
 
+// ── session.events_after: the seq cursor replay ────────────────────
+//
+// The chat stream replays the persisted tail above a caller's cursor, so a
+// reconnect mid-turn loses nothing the log holds. The reader is over RAW wire
+// envelopes — not the `LogEvent` projection `session.load_events` answers —
+// because the cursor compares the `seq` the daemon stamped at emit, which the
+// projection drops.
+
+/// A session whose JSONL holds the two shapes a real log mixes: wire
+/// envelopes with seqs (what `persist_event` appends) and view lines written
+/// by the fork handlers (no `event`/`data`, so no seq to filter on).
+fn seed_wire_session(tmp: &TempDir) -> (PathBuf, String) {
+    let sessions_root = tmp.path().join("sessions");
+    let session_id = "chat-20260101-1200-abcd".to_string();
+    let session_dir = sessions_root.join(&session_id);
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let lines = [
+        // A view line the reader must skip: no `event` field, no seq.
+        "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
+        // Wire envelopes, seqs 1-4.
+        "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"user_message\",\"data\":{\"content\":\"one\"},\"seq\":1}",
+        "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"message_complete\",\"data\":{\"full_response\":\"one\"},\"seq\":2}",
+        "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"user_message\",\"data\":{\"content\":\"two\"},\"seq\":3}",
+        "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"message_complete\",\"data\":{\"full_response\":\"two\"},\"seq\":4}",
+        // A wire line without a seq: stamped events are the majority, but a
+        // direct-send bypass writes no seq at all. It cannot be ordered
+        // against the cursor, so the reader drops it rather than guessing.
+        "{\"type\":\"event\",\"session_id\":\"chat-20260101-1200-abcd\",\"event\":\"model_switched\",\"data\":{}}",
+    ];
+    std::fs::write(session_dir.join("session.jsonl"), lines.join("\n") + "\n").unwrap();
+    (sessions_root, session_id)
+}
+
+/// The seqs the handler answered, in order — the ordered tail a reconnect
+/// replays before its live forwarding begins.
+fn answered_seqs(resp: &Response) -> Vec<u64> {
+    resp.result
+        .as_ref()
+        .and_then(|v| v.as_array())
+        .map(|events| {
+            events
+                .iter()
+                .map(|e| e["seq"].as_u64().expect("a replayed envelope carries its seq"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn session_events_after_filters_by_the_wire_seq() {
+    let tmp = TempDir::new().unwrap();
+    let (sessions_root, session_id) = seed_wire_session(&tmp);
+
+    // Cursor 0: the whole wire tail.
+    let req = make_request("session.events_after", json!({ "session_id": session_id, "after": 0 }));
+    let resp = handle_session_events_after(req, &sessions_root).await;
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert_eq!(answered_seqs(&resp), vec![1, 2, 3, 4]);
+
+    // Cursor between events: everything strictly after it.
+    let req = make_request("session.events_after", json!({ "session_id": session_id, "after": 2 }));
+    let resp = handle_session_events_after(req, &sessions_root).await;
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert_eq!(answered_seqs(&resp), vec![3, 4]);
+
+    // The reply is the raw envelope, not a projection: a caller replays
+    // exactly what a live subscriber would have received.
+    let events = resp.result.unwrap();
+    assert_eq!(events[0]["event"], json!("user_message"));
+    assert_eq!(events[0]["data"]["content"], json!("two"));
+    assert_eq!(events[0]["type"], json!("event"));
+}
+
+/// A cursor past the end is the common reconnect-after-completion case, and it
+/// must be a clean empty tail — not an error the route would turn into a 502.
+#[tokio::test]
+async fn session_events_after_beyond_the_end_answers_an_empty_tail() {
+    let tmp = TempDir::new().unwrap();
+    let (sessions_root, session_id) = seed_wire_session(&tmp);
+
+    let req = make_request(
+        "session.events_after",
+        json!({ "session_id": session_id, "after": 4000 }),
+    );
+    let resp = handle_session_events_after(req, &sessions_root).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert_eq!(answered_seqs(&resp), Vec::<u64>::new());
+}
+
+/// A session that never existed answers the same empty tail as
+/// `session.load_events` — pinned in `missing_session_contract.rs` too.
+#[tokio::test]
+async fn session_events_after_unknown_id_answers_an_empty_tail() {
+    let tmp = TempDir::new().unwrap();
+    let (sessions_root, _) = seed_wire_session(&tmp);
+
+    let req = make_request(
+        "session.events_after",
+        json!({ "session_id": "chat-does-not-exist", "after": 0 }),
+    );
+    let resp = handle_session_events_after(req, &sessions_root).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert_eq!(answered_seqs(&resp), Vec::<u64>::new());
+}
+
 #[tokio::test]
 async fn session_render_markdown_produces_output() {
     let tmp = TempDir::new().unwrap();

@@ -151,6 +151,7 @@ rpc_methods! {
     SessionGenerateTitle = "session.generate_title",
     SessionSearch = "session.search",
     SessionLoadEvents = "session.load_events",
+    SessionEventsAfter = "session.events_after",
     SessionListPersisted = "session.list_persisted",
     SessionRenderMarkdown = "session.render_markdown",
     SessionExportToFile = "session.export_to_file",
@@ -570,6 +571,13 @@ impl RpcDispatcher {
             RpcMethod::SessionLoadEvents => forward!(
                 id,
                 crate::server::observe::handle_session_load_events(
+                    req.clone(),
+                    self.ctx.sessions.sessions_root()
+                )
+            ),
+            RpcMethod::SessionEventsAfter => forward!(
+                id,
+                crate::server::observe::handle_session_events_after(
                     req.clone(),
                     self.ctx.sessions.sessions_root()
                 )

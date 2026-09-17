@@ -269,6 +269,11 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             Answer::Succeeds(json!([])),
         ),
         (
+            "session.events_after",
+            json!({ "after": 0 }),
+            Answer::Succeeds(json!([])),
+        ),
+        (
             "session.render_markdown",
             json!({}),
             Answer::Succeeds(json!({"markdown": ""})),

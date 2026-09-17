@@ -87,6 +87,11 @@ nix = { version = "0.31", features = ["signal"] }
 # 101 and never performs the upgrade, so the contract-test harness cannot reach
 # the session loop the keepalive lives in.
 tokio-tungstenite = { workspace = true }
+# Tests only. Reading the FIRST frames of an SSE body: `to_bytes` waits for an
+# EOF a live stream never sends, so the stream-route contract tests drain the
+# body frame by frame under a timeout instead. Already in the graph through
+# axum, so this costs no extra build.
+http-body-util = "0.1"
 # Tests only. The surface and plugin-command replies mirror vocabularies this
 # crate declares (`Shape`, `Mark`, `CommandEffect`), and the round-trip tests in
 # `routes/surface.rs` build a real `Surface` and hand it to the daemon's own

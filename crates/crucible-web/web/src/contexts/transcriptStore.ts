@@ -8,7 +8,7 @@ import type {
   Message,
   SubagentEvent,
 } from '@/lib/types';
-import { sessionEvents } from '@/lib/query/sse';
+import { advanceSessionCursor, sessionEvents } from '@/lib/query/sse';
 import { attentionActions } from '@/stores/attentionStore';
 import { tabHost } from '@/lib/tab-host';
 import { createChatEventReducer } from './chatEventReducer';
@@ -66,8 +66,18 @@ const [transcripts, setTranscripts] = createStore<Record<string, TranscriptState
 const refcounts = new Map<string, number>();
 /** The unsubscribe of the one stream subscription per session. */
 const unsubscribers = new Map<string, () => void>();
-/** One-shot event identities already folded, so a replay cannot double-draw.
- *  (A `seq` cursor replaces this once the stream carries one.) */
+/**
+ * The last seq APPLIED to the session's transcript. A streamed or replayed
+ * event at or below it has already been folded — by this stream, or by the
+ * history hydration that recorded it — and applying it again would draw the
+ * turn twice.
+ */
+const lastAppliedSeq = new Map<string, number>();
+/**
+ * One-shot event identities already folded WITHOUT a seq — synthetic events
+ * (`stream_gap`) and client-minted ones (`connection`), for which the seq
+ * comparison has nothing to compare.
+ */
 const appliedEvents = new Map<string, Set<string>>();
 /** Waiters for the session's first stream open, and whether it happened. */
 const openWaiters = new Map<string, { opened: boolean; waiters: (() => void)[] }>();
@@ -204,6 +214,24 @@ function ensureStream(sessionId: string): void {
 
   const unsubscribe = sessionEvents(sessionId).subscribe(
     (event) => {
+      const seq = event.seq;
+      if (seq !== undefined) {
+        // The seq comparison replaces the identity set for stamped events:
+        // it covers every event kind (not only the one-shots) and every
+        // replay boundary, because the cursor and the seq share one scale.
+        if (seq <= (lastAppliedSeq.get(sessionId) ?? 0)) return;
+        reducer(event);
+        // Advance only AFTER the apply. A receipt that advanced the watermark
+        // and then never applied would be skipped by the next replay too —
+        // lost twice (T3 Code's rule). A reducer that throws propagates out
+        // of this handler before these lines run, leaving the watermark
+        // where the last successful apply left it.
+        lastAppliedSeq.set(sessionId, seq);
+        advanceSessionCursor(sessionId, seq);
+        return;
+      }
+      // No seq: synthetic or client-minted. Identity dedup, so a replayed
+      // one-shot cannot double-draw.
       const key = oneShotKey(event);
       if (key) {
         const seen = appliedEvents.get(sessionId);
@@ -231,7 +259,14 @@ export function retainTranscript(sessionId: string): void {
   ensureStream(sessionId);
 }
 
-/** A pane left this session; the last one out frees the state and stream. */
+/**
+ * A pane left this session; the last one out frees the state and stream.
+ *
+ * The seq watermark and the resume cursor OUTLIVE the last pane on purpose:
+ * the daemon's log still holds everything past them, so a pane that rebinds
+ * reopens the stream from the same position instead of losing the events no
+ * one was watching.
+ */
 export function releaseTranscript(sessionId: string): void {
   const held = (refcounts.get(sessionId) ?? 1) - 1;
   if (held > 0) {
@@ -250,6 +285,24 @@ export function releaseTranscript(sessionId: string): void {
 export function transcriptOf(sessionId: string): TranscriptState {
   ensureState(sessionId);
   return transcripts[sessionId];
+}
+
+/**
+ * Records the max seq a history hydration folded, after the fold finished.
+ *
+ * One seam: the hydration is the OTHER apply path (it reconstructed the
+ * transcript the log holds), so it moves the same watermark the stream's
+ * applies move — and the resume cursor with it, because a stream reopened
+ * after a hydration must replay only what the hydration did not cover.
+ * Monotonic: a hydration that lands behind the stream (a slow read racing a
+ * live turn) never drags the watermark back.
+ */
+export function recordTranscriptHydration(sessionId: string, maxSeq: number | undefined): void {
+  if (maxSeq === undefined) return;
+  if (maxSeq > (lastAppliedSeq.get(sessionId) ?? 0)) {
+    lastAppliedSeq.set(sessionId, maxSeq);
+    advanceSessionCursor(sessionId, maxSeq);
+  }
 }
 
 /** Resolves when the session's stream first opened (at once, if it already has). */
@@ -319,12 +372,15 @@ export function clearTranscript(sessionId: string): void {
   appliedEvents.set(sessionId, new Set());
 }
 
-/** The test seam: forgets every session, so one case cannot answer the next. */
+/** The test seam: forgets every session, so one case cannot answer the next.
+ *  The seq watermark goes with them; `resetSseForTests` retires the cursors
+ *  the streams derived from it. */
 export function resetTranscriptsForTests(): void {
   for (const unsubscribe of unsubscribers.values()) unsubscribe();
   unsubscribers.clear();
   refcounts.clear();
   appliedEvents.clear();
+  lastAppliedSeq.clear();
   openWaiters.clear();
   for (const sessionId of Object.keys(transcripts)) {
     forgetSession(sessionId);

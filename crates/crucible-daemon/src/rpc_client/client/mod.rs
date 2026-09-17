@@ -182,9 +182,10 @@ pub use review::{
 };
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionDismissNotificationRequest,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
-    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionTestInteractionRequest,
+    SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest, SessionIdRequest,
+    SessionInjectContextRequest, SessionInteractionRespondRequest, SessionRenderMarkdownRequest,
+    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionTestInteractionRequest,
 };
 pub use storage_requests::{
     first_per_note, FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest,

@@ -854,6 +854,53 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 })
             }
         }
+        // The wire envelopes `session.events_after` replays for
+        // "test-session-001": a two-turn transcript, seqs 1-4, filtered by the
+        // caller's cursor exactly as the daemon's reader does. Other sessions
+        // answer the same empty tail an unknown id does.
+        "session.events_after" => {
+            let session_id = msg
+                .get("params")
+                .and_then(|p| p.get("session_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let after = msg
+                .get("params")
+                .and_then(|p| p.get("after"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            if session_id == "test-session-001" {
+                let log = [
+                    json!({
+                        "type": "event", "session_id": session_id, "event": "user_message",
+                        "data": {"message_id": "msg-001", "content": "First turn"},
+                        "timestamp": "2026-01-01T00:00:00Z", "seq": 1,
+                    }),
+                    json!({
+                        "type": "event", "session_id": session_id, "event": "message_complete",
+                        "data": {"message_id": "msg-001", "full_response": "First answer"},
+                        "timestamp": "2026-01-01T00:00:01Z", "seq": 2,
+                    }),
+                    json!({
+                        "type": "event", "session_id": session_id, "event": "user_message",
+                        "data": {"message_id": "msg-002", "content": "Second turn"},
+                        "timestamp": "2026-01-01T00:00:02Z", "seq": 3,
+                    }),
+                    json!({
+                        "type": "event", "session_id": session_id, "event": "message_complete",
+                        "data": {"message_id": "msg-002", "full_response": "Second answer"},
+                        "timestamp": "2026-01-01T00:00:03Z", "seq": 4,
+                    }),
+                ];
+                Value::Array(
+                    log.into_iter()
+                        .filter(|e| e["seq"].as_u64().is_some_and(|seq| seq > after))
+                        .collect(),
+                )
+            } else {
+                json!([])
+            }
+        }
         "project.list" => as_rpc_result(vec![mock_project()]),
         "fs.list_dir" => as_rpc_result(mock_fs_listing()),
         "fs.move" => as_rpc_result(mock_fs_move_reply()),

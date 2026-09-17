@@ -1519,6 +1519,7 @@ dependencies = [
  "dns-lookup",
  "futures",
  "gethostname",
+ "http-body-util",
  "libc",
  "mime_guess",
  "nix 0.31.3",
