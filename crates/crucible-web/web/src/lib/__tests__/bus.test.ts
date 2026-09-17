@@ -318,6 +318,18 @@ describe('the types of the bus', () => {
     expect(seen).toEqual(['clearChat', 'switchModel', 'toggleHiddenFiles']);
   });
 
+  it('delivers a focus payload to its handler', () => {
+    const bus = createBus();
+    const seen: string[] = [];
+    bus.on('focusSearch', () => seen.push('focusSearch'));
+    bus.on('focusSessionSearch', () => seen.push('focusSessionSearch'));
+
+    bus.emit('focusSearch', {});
+    bus.emit('focusSessionSearch', {});
+
+    expect(seen).toEqual(['focusSearch', 'focusSessionSearch']);
+  });
+
   it('gives the handler the payload type of its event', () => {
     const bus = createBus();
     bus.on('sessionTitleChanged', (payload) => {

@@ -178,7 +178,7 @@ const App: Component = () => {
       action: () => {
         windowActions.setEdgePanelCollapsed('left', false);
         // Defer to next tick so the panel is visible before focusing
-        setTimeout(() => window.dispatchEvent(new CustomEvent('crucible:focus-session-search')), 100);
+        setTimeout(() => getBus().emit('focusSessionSearch', {}), 100);
       },
     },
     {
@@ -278,7 +278,7 @@ const App: Component = () => {
         event.stopPropagation();
         openPanelTab('search');
         // Panel focuses its input on mount; re-focus if it was already open.
-        window.dispatchEvent(new CustomEvent('crucible:focus-search'));
+        getBus().emit('focusSearch', {});
       }
     };
 

@@ -16,6 +16,7 @@ import type { GrepHit, SemanticHit } from '@/lib/api';
 import type { KilnListEntry } from '@/lib/types';
 import { useGrepSearch, useSearchSessions, useSemanticSearch } from '@/lib/query/search';
 import { useKilns } from '@/lib/query/kilns';
+import { getBus } from '@/lib/bus';
 import { useConfig } from '@/lib/query/config';
 import { openFileInEditor } from '@/lib/file-actions';
 import { pathBasename } from '@/stores/statusBarStore';
@@ -182,9 +183,7 @@ export const SearchPanel: Component = () => {
 
   onMount(() => {
     queueMicrotask(() => inputRef?.focus());
-    const onFocus = () => { inputRef?.focus(); inputRef?.select(); };
-    window.addEventListener('crucible:focus-search', onFocus);
-    onCleanup(() => window.removeEventListener('crucible:focus-search', onFocus));
+    getBus().on('focusSearch', () => { inputRef?.focus(); inputRef?.select(); });
   });
 
   // Prefill the scope from the current session's kiln (context), until the user

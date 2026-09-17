@@ -21,8 +21,11 @@ export type BusEvents = {
   authRequired: Record<string, never>;
   /** Clears the transcript of the session the status bar names. */
   clearChat: Record<string, never>;
+  /** Focuses the search panel's input, once the panel is on screen. */
+  focusSearch: Record<string, never>;
+  /** Focuses the session filter inside the sessions rail. */
+  focusSessionSearch: Record<string, never>;
   interactionResolved: { sessionId: string; requestId: string };
-  /** Starts the draft surface. `workspace` names the project to act in. */
   newSession: { workspace?: string };
   /** Opens the command palette; `mode` picks the notes tree over commands. */
   openCommandPalette: { mode?: 'commands' | 'notes' };
