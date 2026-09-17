@@ -158,4 +158,28 @@ describe('api ownership discipline', () => {
     expect(EVENT_SOURCE.test(`const s = new EventSource(url);`)).toBe(true);
     expect(EVENT_SOURCE.test(`const s = new FakeEventSource(url);`)).toBe(false);
   });
+
+  it('no test mocks the api module: routes, not module doubles', () => {
+    // G7: a test that replaces `@/lib/api` cannot see the route a hook
+    // calls, so it re-states the wire in a fixture nobody checks. Tests
+    // answer routes through the fetch seam (`test-utils/mock-fetch.ts`) or
+    // an injected QueryClient; pure helpers are mocked at their own module
+    // (`@/lib/turn`, `@/lib/paths`). Comment lines that say
+    // `No \`vi.mock('@/lib/api')\`` are the tombstones of retired mocks —
+    // they are not calls.
+    const TEST_FILES = walk(SRC_DIR).filter((f) => isTestOrGenerated(f));
+    const offenders = TEST_FILES.flatMap((f) => {
+      const calls = read(f)
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => !l.startsWith('//'))
+        .filter((l) => /vi\.mock\(\s*['"](@\/lib\/api|\.[./]*api)['"]/.test(l));
+      return calls.length ? [`${f} -> ${calls.length} vi.mock block(s)`] : [];
+    });
+    expect(
+      offenders,
+      `A test doubles \`@/lib/api\` instead of answering the route. Use the ` +
+        `fetch seam or an injected QueryClient:\n${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
 });
