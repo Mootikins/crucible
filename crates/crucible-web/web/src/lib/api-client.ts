@@ -102,6 +102,13 @@ function notifyAuthRequired(): void {
   getBus().emit('authRequired', {});
 }
 
+/**
+ * The terminal needs this too: its socket is refused before the fetch layer
+ * ever runs, so without it the one surface that fails FIRST when credentials
+ * are missing was also the one surface that never asked for them.
+ */
+export { notifyAuthRequired };
+
 /** Forgets the throttle, so one test's 401 does not silence the next one's. */
 export function resetAuthThrottleForTests(): void {
   lastAuthNotify = 0;

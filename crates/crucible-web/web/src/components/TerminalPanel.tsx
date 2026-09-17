@@ -14,6 +14,9 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
 import { nextReconnectDelay } from '@/lib/terminal-backoff';
+import { classifyTerminalAuth } from '@/lib/terminal-auth';
+import { getBus } from '@/lib/bus';
+import { notifyAuthRequired } from '@/lib/api-client';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 import { theme } from '@/lib/theme';
@@ -103,9 +106,9 @@ function wsUrl(): string {
 }
 
 export const TerminalPanel: Component = () => {
-  const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed' | 'reconnecting'>(
-    'connecting',
-  );
+  const [status, setStatus] = createSignal<
+    'connecting' | 'open' | 'closed' | 'reconnecting' | 'locked'
+  >('connecting');
   // Terminal font: its own setting when set, else the Appearance code font,
   // else the shell default. xterm renders to canvas, so CSS vars can't reach
   // it — the resolved family is passed as a real option.
@@ -167,6 +170,9 @@ export const TerminalPanel: Component = () => {
    */
   const scheduleReconnect = () => {
     if (disposed || reconnectTimer) return;
+    // A refused credential does not heal on a timer — only `authOk` leaves
+    // `locked` — so the scheduler must not re-arm behind the banner.
+    if (status() === 'locked') return;
     // A hidden tab retrying on a timer is pure waste; the visibility listener
     // below re-arms the moment it comes back.
     if (document.hidden) {
@@ -186,8 +192,28 @@ export const TerminalPanel: Component = () => {
     const ws = new WebSocket(wsUrl());
     ws.binaryType = 'arraybuffer';
     socket = ws;
+    // A failed handshake fires BOTH `error` and `close`; judge it once.
+    let opened = false;
+    let handshakeJudged = false;
+    const judgeHandshake = () => {
+      if (opened || handshakeJudged) return;
+      handshakeJudged = true;
+      // The close event carries no HTTP status, so ask the endpoint directly:
+      // a 401/403 is permanent (no key will materialize mid-storm) and belongs
+      // to the sign-in flow, not the backoff timer. See terminal-auth.ts.
+      void classifyTerminalAuth(wsUrl()).then((verdict) => {
+        if (disposed || opened) return;
+        if (verdict === 'auth') {
+          setStatus('locked');
+          notifyAuthRequired();
+        } else {
+          scheduleReconnect();
+        }
+      });
+    };
 
     ws.onopen = () => {
+      opened = true;
       // Reset here, not on the attempt: a socket that opens and immediately
       // dies must keep escalating, or a half-broken server gets hammered at
       // the base delay forever.
@@ -204,8 +230,8 @@ export const TerminalPanel: Component = () => {
         t.write(new Uint8Array(ev.data as ArrayBuffer));
       }
     };
-    ws.onclose = () => scheduleReconnect();
-    ws.onerror = () => scheduleReconnect();
+    ws.onclose = () => judgeHandshake();
+    ws.onerror = () => judgeHandshake();
 
     const dataSub = t.onData((d) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -247,6 +273,12 @@ export const TerminalPanel: Component = () => {
     reconnectAttempts = 0;
     if (term) connect(term);
   };
+
+  // Signing in is the only thing that changes a `locked` terminal's facts, so
+  // it is the only event that may re-arm one. Same contract as the availability
+  // module's `authOk` refetch: new credentials are new information.
+  const offAuthOk = getBus().on('authOk', () => retryNow());
+  onCleanup(offAuthOk);
 
   const init = (el: HTMLDivElement) => {
     container = el;
@@ -390,6 +422,21 @@ export const TerminalPanel: Component = () => {
                 onRetry={reconnect}
                 testid="terminal-connection-banner"
                 retryTestid="terminal-reconnect"
+              />
+            </div>
+          </Show>
+          <Show when={status() === 'locked'}>
+            {/* `error`, not `transient`: a refused key does not heal on a
+                timer. The control opens the sign-in prompt rather than
+                pretending a reconnect could help. */}
+            <div class="absolute inset-0 z-20 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
+              <ConnectionBanner
+                tone="error"
+                message="Terminal needs sign-in — paste the API key from `cru web key`"
+                retryLabel="Sign in"
+                onRetry={() => notifyAuthRequired()}
+                testid="terminal-connection-banner"
+                retryTestid="terminal-sign-in"
               />
             </div>
           </Show>

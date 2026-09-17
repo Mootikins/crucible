@@ -135,6 +135,14 @@ cru.config.set({
 })
 ```
 
+Because `remote_shell` requires the API key **including from localhost**, a
+page that has not signed in cannot open the terminal. The terminal panel says
+so instead of retrying: its first refused handshake is probed once over plain
+HTTP, and a 401/403 answer locks the panel behind a "Terminal needs sign-in"
+banner and opens the token prompt. A locked terminal does not re-arm on its
+own — signing in (which fires `authOk`) is what lets it connect. Drops after
+a working connection keep the ordinary reconnect backoff.
+
 ## Host validation
 
 Every request is checked against the set of authorities this server answers to, and the check

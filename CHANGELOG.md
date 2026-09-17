@@ -152,6 +152,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An unauthenticated terminal now asks for the key instead of retrying
+  forever.** With `remote_shell` enabled the PTY endpoint demands the API key
+  even from localhost, but a WebSocket handshake carries no status the client
+  can read: the terminal panel saw a refused socket, filed it under "server
+  down", and retried on the reconnect timer for the life of the tab — silent,
+  because `authRequired` is emitted by the fetch layer and a socket bypasses
+  the fetch layer. The user saw a terminal that reconnects forever and was
+  never once asked for the key that would fix it.
+
+  The first failed handshake is now probed once over plain HTTP
+  (`terminal-auth.ts`); a 401/403 locks the panel behind a "Terminal needs
+  sign-in" banner with a Sign in control and opens the token prompt. A locked
+  terminal re-arms only on `authOk`. Drops after a working connection keep the
+  ordinary backoff.
+
 - **Auto-compaction and budget truncation now run.** Neither did. Both
   `should_autocompact` and `enforce_context_budget` return early without a
   `context_budget`, and `context_budget` defaulted to `None`, so on a default
