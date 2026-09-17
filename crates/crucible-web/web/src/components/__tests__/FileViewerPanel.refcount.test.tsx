@@ -13,23 +13,14 @@ import { resetKilnsForTests } from '@/lib/query/kilns';
 // resurrects stale edits). These tests use the REAL EditorContext + real panel
 // effect, stubbing only the heavy editor child and side-effecting stores.
 
-const getFileContent = vi.fn(async (_p: string) => 'content\n');
 // The moved helper (`lib/paths.ts`), stubbed where it lives now.
 vi.mock('@/lib/paths', () => ({
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
 }));
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  // The editor reads through the offline layer, which asks for the hash the
-  // buffer was read at; the endpoint underneath is unchanged.
-  getFileWithHash: async (p: string) => ({ content: await getFileContent(p), content_hash: 'h' }),
-  getFileContent: (p: string) => getFileContent(p),
-  getConfig: async () => ({ kiln_path: '/kiln', config_root: '/etc/crucible' }),
-  listNotes: async () => [],
-  saveFileContent: vi.fn(async () => {}),
-  getNote: vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' })),
-}));
+// No `vi.mock('@/lib/api')`: the buffer's read — content AND the hash an
+// offline write anchors on — the daemon config and the note listing all
+// arrive over the ROUTES in `beforeEach`.
 vi.mock('../editor/EditorWithPreview', () => ({
   EditorWithPreview: () => <div data-testid="editor-stub" />,
 }));
@@ -60,9 +51,15 @@ let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 describe('FileViewerPanel — open refcount does not leak', () => {
   beforeEach(() => {
     resetKilnsForTests();
-    kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
-    getFileContent.mockClear();
-    getFileContent.mockResolvedValue('content\n');
+    kilnEnv = createTestQueryEnv({
+      'GET /api/kilns': () => ({ kilns: [] }),
+      // The same route answers the plain-text read and the hashed one the
+      // offline layer asks for.
+      'GET /api/kiln/file': () => ({ content: 'content\n', content_hash: 'h' }),
+      'PUT /api/kiln/file': () => ({}),
+      'GET /api/config': () => ({ kiln_path: '/kiln', config_root: '/etc/crucible' }),
+      'GET /api/notes': () => ({ notes: [] }),
+    });
   });
 
   afterEach(() => {

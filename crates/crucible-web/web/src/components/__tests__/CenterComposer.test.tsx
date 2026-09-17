@@ -48,66 +48,55 @@ vi.mock('@/lib/paths', () => ({
   isGitRepoUrl: (s: string) => /^(https?:\/\/|git@)/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s),
 }));
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getConfig: vi.fn().mockResolvedValue({
-    kiln_path: '/home/user/kilns/helios',
-  }),
-  // The two axes, as plugins published them. Not read out of plugin config:
-  // the composer renders what providers declared and nothing more.
-  getTargetProviders: vi.fn().mockImplementation((axis: string) =>
-    Promise.resolve(
-      axis === 'runtime'
-        ? [{ plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' }]
-        : [
-            {
-              plugin: 'worktree',
-              axis,
-              label: 'Worktree',
-              targets_command: 'worktree.targets',
-              resolve_command: 'worktree.resolve',
-            },
-          ],
-    ),
-  ),
-  getProviderTargets: vi.fn().mockImplementation((provider: { plugin: string }) =>
-    Promise.resolve(
-      provider.plugin === 'oci'
-        ? [
-            // Flagged by the provider: this is what an untouched session gets.
-            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:', default: true },
-            { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
-          ]
-        : [
-            {
-              value: 'master',
-              label: 'master',
-              hint: 'current',
-              spec: 'worktree:master',
-              path: '/repos/crucible',
-              current: true,
-            },
-            { value: 'feat/x', label: 'feat/x', hint: 'new worktree', spec: 'worktree:feat/x' },
-          ],
-    ),
-  ),
-  listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
-  // Server-backed recents: empty server list keeps localStorage-driven
-  // fixtures in charge; record is fire-and-forget.
-  fetchRecents: vi.fn().mockResolvedValue([]),
-  recordRecent: vi.fn().mockResolvedValue(undefined),
-  // Clone-from-popout flow.
-  scmClone: vi.fn(),
-  registerProject: vi.fn().mockResolvedValue({}),
-}));
+// No `vi.mock('@/lib/api')`. The config, the project roster, the recents and
+// the two axes all arrive over the ROUTES in `beforeEach`:
+//
+// - `getConfig` is the `GET /api/config` answer.
+// - `getTargetProviders` reads `GET /api/plugins/publications` — the two axes
+//   are what plugins PUBLISHED, not plugin config.
+// - `getProviderTargets` issues each provider's `targets_command` against
+//   `POST /api/plugins/command`, so a target list is answered per command
+//   name the way the daemon answers it.
+/** What the publications route declares next: plugin → declaration. */
+let declared: Record<string, Record<string, unknown>>;
+/** What the command route answers next, by command name. */
+let commands: Record<string, unknown>;
+/** What the config route answers next. */
+let configReply: Record<string, unknown>;
+/** What the clone route answers next. */
+let cloneAnswer: Record<string, unknown>;
+/** The URL the clone route was last posted. */
+let clonedUrl: string | null;
 
-// Re-established per test, not just cleared: a test that narrows a provider
-// (no targets, a second provider) would otherwise leave its implementation
-// installed for everything that follows — which is exactly how four of these
-// silently started asserting against an empty menu.
 beforeEach(async () => {
   localStorage.clear();
   resetKilnsForTests();
+  // The defaults a test narrows by reassigning one of these — which is the
+  // same discipline the old per-test `vi.mocked` overrides kept: a test that
+  // narrowed a provider must not decide what the next test sees.
+  configReply = { kiln_path: '/home/user/kilns/helios' };
+  declared = {
+    oci: { axis: 'runtime', label: 'Container', targets_command: 'oci.targets' },
+    worktree: {
+      axis: 'workspace',
+      label: 'Worktree',
+      targets_command: 'worktree.targets',
+      resolve_command: 'worktree.resolve',
+    },
+  };
+  commands = {
+    // Flagged by the provider: this is what an untouched session gets.
+    'oci.targets': [
+      { value: '', label: 'Default', hint: 'alpine:latest', default: true },
+      { value: 'throwaway', label: 'throwaway' },
+    ],
+    'worktree.targets': [
+      { value: 'master', label: 'master', hint: 'current', path: '/repos/crucible', current: true },
+      { value: 'feat/x', label: 'feat/x', hint: 'new worktree' },
+    ],
+  };
+  cloneAnswer = {};
+  clonedUrl = null;
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: KILNS }),
     'GET /api/agents': () => ({ agents: AGENTS }),
@@ -126,54 +115,29 @@ beforeEach(async () => {
         },
       ],
     }),
+    'GET /api/config': () => configReply,
+    'GET /api/project/list': () => [{ path: '/repos/crucible', name: 'crucible', kilns: [] }],
+    'GET /api/plugins/publications': () => ({ publications: { targets: declared } }),
+    'POST /api/plugins/command': async (request) => {
+      const { name } = (await request.json()) as { name: string };
+      return commands[name] ?? [];
+    },
+    // Server-backed recents: an empty server list keeps localStorage-driven
+    // fixtures in charge; record is fire-and-forget.
+    'GET /api/recents': () => ({ recents: [] }),
+    'POST /api/recents': () => ({}),
+    // Clone-from-popout flow.
+    'POST /api/scm/clone': async (request) => {
+      const { url } = (await request.json()) as { url: string };
+      clonedUrl = url;
+      return cloneAnswer;
+    },
+    'POST /api/project/register': () => ({}),
   });
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();
-
-  const { getConfig, getTargetProviders, getProviderTargets } = await import('@/lib/api');
-  // The kiln chip reads its default from here, so a test that overrides the
-  // config must not decide what the next test sees. Re-declared per test
-  // rather than left to the module factory, which only runs once.
-  vi.mocked(getConfig).mockResolvedValue({
-    kiln_path: '/home/user/kilns/helios',
-  } as Awaited<ReturnType<typeof getConfig>>);
-  vi.mocked(getTargetProviders).mockImplementation((axis) =>
-    Promise.resolve(
-      axis === 'runtime'
-        ? [{ plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' }]
-        : [
-            {
-              plugin: 'worktree',
-              axis,
-              label: 'Worktree',
-              targets_command: 'worktree.targets',
-              resolve_command: 'worktree.resolve',
-            },
-          ],
-    ),
-  );
-  vi.mocked(getProviderTargets).mockImplementation((provider) =>
-    Promise.resolve(
-      provider.plugin === 'oci'
-        ? [
-            // Flagged by the provider: this is what an untouched session gets.
-            { value: '', label: 'Default', hint: 'alpine:latest', spec: 'oci:', default: true },
-            { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
-          ]
-        : [
-            {
-              value: 'master',
-              label: 'master',
-              hint: 'current',
-              spec: 'worktree:master',
-              path: '/repos/crucible',
-              current: true,
-            },
-            { value: 'feat/x', label: 'feat/x', hint: 'new worktree', spec: 'worktree:feat/x' },
-          ],
-    ),
-  );
 });
+
 afterEach(() => {
   cleanup();
   env.restore();
@@ -345,12 +309,9 @@ describe('CenterComposer', () => {
   // "default" row that quietly creates a kiln-less session labelled with a
   // directory basename — the empty set has to deny, not stand in for one.
   it('offers no default kiln when the configured one is not registered', async () => {
-    const { getConfig } = await import('@/lib/api');
-    // Safe to set permanently: beforeEach re-establishes the default config
-    // for every test, so this cannot leak into the next one.
-    vi.mocked(getConfig).mockResolvedValue({
-      kiln_path: '/home/user/kilns/unregistered',
-    } as Awaited<ReturnType<typeof getConfig>>);
+    // Safe to set here: beforeEach re-establishes the default config for
+    // every test, so this cannot leak into the next one.
+    configReply = { kiln_path: '/home/user/kilns/unregistered' };
 
     const { getByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('No kiln'));
@@ -393,13 +354,12 @@ describe('CenterComposer', () => {
     const submit = screen.getByTestId('composer-project-action-submit') as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
 
-    const { scmClone } = await import('@/lib/api');
-    vi.mocked(scmClone).mockResolvedValue({
+    cloneAnswer = {
       path: '/home/user/Projects/Spoon-Knife',
       project: { path: '/home/user/Projects/Spoon-Knife', name: 'Spoon-Knife', kilns: [], last_accessed: '' },
-    });
+    };
     fireEvent.click(submit);
-    await waitFor(() => expect(scmClone).toHaveBeenCalledWith('octocat/Spoon-Knife'));
+    await waitFor(() => expect(clonedUrl).toBe('octocat/Spoon-Knife'));
   });
 
   const submitWith = async (getByTestId: (id: string) => HTMLElement, text: string) => {
@@ -473,8 +433,7 @@ describe('CenterComposer', () => {
   });
 
   it('shows no workspace chip when no provider offers anything', async () => {
-    const { getProviderTargets } = await import('@/lib/api');
-    vi.mocked(getProviderTargets).mockResolvedValue([]);
+    commands['worktree.targets'] = [];
 
     const { queryByTestId, getByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
@@ -488,8 +447,7 @@ describe('CenterComposer', () => {
   // ---------------------------------------------------------------------------
 
   it('always offers this machine, whatever plugins are installed', async () => {
-    const { getProviderTargets } = await import('@/lib/api');
-    vi.mocked(getProviderTargets).mockResolvedValue([]);
+    commands['oci.targets'] = [];
 
     const { getByTestId } = render(() => <CenterComposer />);
     fireEvent.click(getByTestId('composer-target'));
@@ -556,12 +514,10 @@ describe('CenterComposer', () => {
   });
 
   it('names this machine as the default when no provider claims the session', async () => {
-    const { getProviderTargets } = await import('@/lib/api');
     // Profiles only: the provider offers rows but flags none as what an
-    // unset session gets, so an unset session runs here.
-    vi.mocked(getProviderTargets).mockResolvedValue([
-      { value: 'throwaway', label: 'throwaway', spec: 'oci:throwaway' },
-    ]);
+    // unset session gets, so an unset session runs here. (The spec is the
+    // caller's to build; the wire row carries only what the plugin said.)
+    commands['oci.targets'] = [{ value: 'throwaway', label: 'throwaway' }];
 
     const { getByTestId } = render(() => <CenterComposer />);
     await waitFor(() =>
@@ -570,8 +526,8 @@ describe('CenterComposer', () => {
   });
 
   it('says only that a default applies until the provider has answered', async () => {
-    const { getProviderTargets } = await import('@/lib/api');
-    vi.mocked(getProviderTargets).mockReturnValue(new Promise(() => {}));
+    const held = new Promise(() => {});
+    commands = { 'oci.targets': held, 'worktree.targets': held };
 
     const { getByTestId } = render(() => <CenterComposer />);
     await waitFor(() => expect(getByTestId('composer-target')).toBeInTheDocument());
@@ -607,17 +563,13 @@ describe('CenterComposer', () => {
   });
 
   it('drills into a submenu once a second provider answers on an axis', async () => {
-    const { getTargetProviders } = await import('@/lib/api');
-    vi.mocked(getTargetProviders).mockImplementation((axis: string) =>
-      Promise.resolve(
-        axis === 'runtime'
-          ? [
-              { plugin: 'oci', axis, label: 'Container', targets_command: 'oci.targets' },
-              { plugin: 'ssh', axis, label: 'Remote Machines', targets_command: 'ssh.targets' },
-            ]
-          : [],
-      ),
-    );
+    // A second runtime provider on the axis; the workspace axis loses its
+    // declaration entirely, which is what "no provider" is on the wire.
+    declared = {
+      oci: { axis: 'runtime', label: 'Container', targets_command: 'oci.targets' },
+      ssh: { axis: 'runtime', label: 'Remote Machines', targets_command: 'ssh.targets' },
+    };
+    commands['ssh.targets'] = [{ value: 'host-1', label: 'host-1' }];
 
     const { getByTestId } = render(() => <CenterComposer />);
     fireEvent.click(getByTestId('composer-target'));
