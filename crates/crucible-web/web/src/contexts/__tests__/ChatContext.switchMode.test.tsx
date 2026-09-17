@@ -1,39 +1,59 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
-import { setQueryClientForTests } from '@/lib/query/client';
-import { createTestQueryClient } from '@/test-utils/query';
-
-// The provider subscribes to SSE and bootstraps history on mount; stub the
-// whole api surface it touches so only the switchMode flow is under test.
-const setSessionModeMock = vi.fn();
-let getSessionMode: string | undefined;
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api')>()),
-  setSessionMode: (...args: unknown[]) => setSessionModeMock(...args),
-  subscribeToEvents: () => () => {},
-  getSessionHistory: async () => ({ history: [] }),
-  // The wire shape of `session.get`: `session_id`, `type`, and the mode nested
-  // under `agent`. Hydration reads it from there, because that is the only
-  // route that sends a mode at all.
-  getSession: async () => ({
-    session_id: 's1',
-    type: 'chat',
-    title: 'T',
-    state: 'active',
-    kilns: ['/k'],
-    workspace: '/w',
-    agent_model: null,
-    agent: getSessionMode === undefined ? null : { model: 'm', mode: getSessionMode },
-    started_at: '',
-    event_count: 0,
-    archived: false,
-  }),
-}));
-
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
+
+// No `vi.mock('@/lib/api')`. The provider subscribes to the (fake) stream and
+// bootstraps through the query layer on mount; the three routes it touches
+// answer here, so the switchMode flow is what is left under test — and the
+// assertions read what reached the wire, not a module double.
+
+/** What `GET /api/session/s1` nests under `agent`: the only route that sends a mode at all. */
+let agent: { model: string; mode: string } | null = null;
+/** The bodies the mode route took, in order. */
+const modeWrites: { mode: string }[] = [];
+/** What `POST /api/session/s1/mode` answers; a case that means a refusal replaces it. */
+let modeAnswer: () => Response = () => new Response(null, { status: 204 });
+
+let env: TestQueryEnv;
+
+beforeEach(() => {
+  installFakeEventSource();
+  agent = null;
+  modeWrites.length = 0;
+  modeAnswer = () => new Response(null, { status: 204 });
+  env = createTestQueryEnv({
+    'GET /api/interactions/pending': () => ({ pending: [] }),
+    'GET /api/session/s1': () => ({
+      session_id: 's1',
+      type: 'chat',
+      title: 'T',
+      state: 'active',
+      kilns: ['/k'],
+      workspace: '/w',
+      agent_model: null,
+      agent,
+      started_at: '',
+      event_count: 0,
+      archived: false,
+    }),
+    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'POST /api/session/s1/mode': async (request) => {
+      modeWrites.push((await request.clone().json()) as { mode: string });
+      return modeAnswer();
+    },
+  });
+});
+
+afterEach(() => {
+  env?.restore();
+  // The transcript store is a module singleton keyed by session; forget it
+  // so one case's session cannot answer the next one.
+  resetTranscriptsForTests();
+});
 
 function mountProvider(): ChatContextValue {
   let ctx!: ChatContextValue;
@@ -49,38 +69,22 @@ function mountProvider(): ChatContextValue {
   return ctx;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  getSessionMode = undefined;
-  // `session.get` is answered from the query cache now, so a case that
-  // reads session `s1` must not be answered with the record the previous
-  // case cached under that id.
-  setQueryClientForTests(createTestQueryClient());
-});
-
-afterEach(() => {
-  setQueryClientForTests(null);
-  // The transcript store is a module singleton keyed by session; forget it
-  // so one case's session cannot answer the next one.
-  resetTranscriptsForTests();
-});
-
 describe('ChatContext.switchMode', () => {
   it('optimistically sets the mode and persists it via the API', async () => {
-    setSessionModeMock.mockResolvedValue(undefined);
     const ctx = mountProvider();
 
     ctx.switchMode('plan');
 
     expect(ctx.chatMode()).toBe('plan'); // optimistic
     await waitFor(() => {
-      expect(setSessionModeMock).toHaveBeenCalledWith('s1', 'plan');
+      // The wire took the mode the chip offered, for this session.
+      expect(modeWrites).toEqual([{ mode: 'plan' }]);
     });
     expect(ctx.chatMode()).toBe('plan'); // stays after success
   });
 
   it('hydrates the persisted mode from session.get on mount', async () => {
-    getSessionMode = 'plan';
+    agent = { model: 'm', mode: 'plan' };
     const ctx = mountProvider();
 
     await waitFor(() => {
@@ -91,7 +95,11 @@ describe('ChatContext.switchMode', () => {
   });
 
   it('reverts the optimistic mode when the daemon rejects it', async () => {
-    setSessionModeMock.mockRejectedValue(new Error('unknown mode'));
+    modeAnswer = () =>
+      new Response(JSON.stringify({ error: { code: 422, message: 'unknown mode' } }), {
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+      });
     const ctx = mountProvider();
 
     ctx.switchMode('plan');

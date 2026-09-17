@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 // A reloaded transcript must not claim a tool completed when the events say
@@ -8,20 +8,17 @@ import { render, waitFor } from '@solidjs/testing-library';
 // before the reload and ✓ after it.
 
 const T0 = Date.parse('2026-09-15T18:01:00.000Z');
-/** The log the mock answers with; each case sets the events it means. */
+/** The transcript the history route answers with; each case sets the events it means. */
 let held: unknown[] = [];
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api')>()),
-  subscribeToEvents: () => () => {},
-  getSessionHistory: async () => ({ session_id: 's1', history: held, total_events: held.length }),
-  // `session.get`'s wire shape: `session_id`, `type`, a `kilns` LIST of
-  // registry names, and the model nested under `agent`.
-  getSession: async () => ({
-    session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
-    agent: { model: null }, started_at: '', event_count: 0, archived: false,
-  }),
-}));
+// No `vi.mock('@/lib/api')`. The provider reads the daemon through the query
+// layer, so the ROUTES answer: the session record, the transcript the reload
+// reconstructs, and the pending aggregate a bind asks for. The stream is the
+// fake one below; no frame ever arrives, so the reload is the only source.
+const SESSION = {
+  session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
+  agent: { model: null }, started_at: '', event_count: 0, archived: false,
+};
 
 // One turn whose only tool never answered: a tool_call with no tool_result.
 const TURN_WITH_DANGLING_TOOL = [
@@ -47,13 +44,13 @@ let env: TestQueryEnv;
 
 beforeEach(() => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/interactions/pending': () => ({ pending: [] }) });
+  env = createTestQueryEnv({
+    'GET /api/interactions/pending': () => ({ pending: [] }),
+    'GET /api/session/s1': () => SESSION,
+    'GET /api/session/s1/history': () => ({ session_id: 's1', history: held, total_events: held.length }),
+  });
 });
 
-afterEach(() => {
-  env?.restore();
-  resetTranscriptsForTests();
-});
 
 function mountProvider(): ChatContextValue {
   let ctx!: ChatContextValue;

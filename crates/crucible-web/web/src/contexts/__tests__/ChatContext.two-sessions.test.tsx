@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import { createEffect, createSignal } from 'solid-js';
 
@@ -7,16 +7,15 @@ import { createEffect, createSignal } from 'solid-js';
 // to a session another pane is already showing must see the transcript that
 // session built, and neither session's events may land in the other's view.
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api')>()),
-  // The REAL subscribeToEvents: the FakeEventSource below answers it, one
-  // source per session, so each pane's stream is its session's alone.
-  getSessionHistory: async (id: string) => ({ session_id: id, history: [], total_events: 0 }),
-  getSession: async (id: string) => ({
-    session_id: id, type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
-    agent: { model: null }, started_at: '', event_count: 0, archived: false,
-  }),
-}));
+// No `vi.mock('@/lib/api')`. The REAL subscribeToEvents runs: the
+// FakeEventSource below answers it, one source per session, so each pane's
+// stream is its session's alone. Each session's record and transcript answer
+// under their own id, so a pane that binds reads the session it named.
+const sessionOf = (id: string) => ({
+  session_id: id, type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
+  agent: { model: null }, started_at: '', event_count: 0, archived: false,
+});
+const historyOf = (id: string) => ({ session_id: id, history: [], total_events: 0 });
 
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
@@ -26,10 +25,15 @@ import { resetSseForTests } from '@/lib/query/sse';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 let env: TestQueryEnv;
-
 beforeEach(() => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/interactions/pending': () => ({ pending: [] }) });
+  env = createTestQueryEnv({
+    'GET /api/interactions/pending': () => ({ pending: [] }),
+    'GET /api/session/session-a': () => sessionOf('session-a'),
+    'GET /api/session/session-b': () => sessionOf('session-b'),
+    'GET /api/session/session-a/history': () => historyOf('session-a'),
+    'GET /api/session/session-b/history': () => historyOf('session-b'),
+  });
 });
 
 afterEach(() => {

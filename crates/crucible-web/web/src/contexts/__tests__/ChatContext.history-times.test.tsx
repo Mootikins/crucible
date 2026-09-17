@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 // A reloaded turn must show the same duration the live one did, so the
@@ -10,17 +10,14 @@ const history = [
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 2 },
 ];
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api')>()),
-  subscribeToEvents: () => () => {},
-  getSessionHistory: async () => ({ session_id: 's1', history, total_events: history.length }),
-  // `session.get`'s wire shape: `session_id`, `type`, a `kilns` LIST of
-  // registry names, and the model nested under `agent`.
-  getSession: async () => ({
-    session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
-    agent: { model: null }, started_at: '', event_count: 0, archived: false,
-  }),
-}));
+// No `vi.mock('@/lib/api')`. The provider reads the daemon through the query
+// layer, so the ROUTES answer — the session record, the persisted transcript,
+// and the pending aggregate a bind asks for. The stream is the fake one below;
+// no frame ever arrives, so the reload is the only source under test.
+const SESSION = {
+  session_id: 's1', type: 'chat', title: 'T', state: 'active', kilns: ['k'], workspace: '/w',
+  agent: { model: null }, started_at: '', event_count: 0, archived: false,
+};
 
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
@@ -28,13 +25,15 @@ import type { ChatContextValue } from '@/lib/types/context';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource } from '@/test-utils/sse';
 
-// The pending aggregate is the shared query now, so it answers the route
-// rather than a stub of `listPendingInteractions`.
 let env: TestQueryEnv;
 
 beforeEach(() => {
   installFakeEventSource();
-  env = createTestQueryEnv({ 'GET /api/interactions/pending': () => ({ pending: [] }) });
+  env = createTestQueryEnv({
+    'GET /api/interactions/pending': () => ({ pending: [] }),
+    'GET /api/session/s1': () => SESSION,
+    'GET /api/session/s1/history': () => ({ session_id: 's1', history, total_events: history.length }),
+  });
 });
 
 afterEach(() => {

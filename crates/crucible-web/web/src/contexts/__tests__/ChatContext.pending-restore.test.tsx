@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 
 // A permission request that the daemon still holds must survive a page
@@ -17,27 +17,22 @@ const pendingEntry = {
   },
 };
 
-// `listPendingInteractions` is NOT stubbed any more: the aggregate is the
-// shared `usePendingInteractions()` list, so it answers the ROUTE below.
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/api')>()),
-  subscribeToEvents: () => () => {},
-  getSessionHistory: async () => ({ history: [] }),
-  // `session.get`'s wire shape: `session_id`, `type`, a `kilns` LIST of
-  // registry names, and the model nested under `agent`.
-  getSession: async () => ({
-    session_id: 's1',
-    type: 'chat',
-    title: 'T',
-    state: 'active',
-    kilns: ['k'],
-    workspace: '/w',
-    agent: { model: null },
-    started_at: '',
-    event_count: 0,
-    archived: false,
-  }),
-}));
+// No `vi.mock('@/lib/api')`. The aggregate IS the shared
+// `usePendingInteractions()` list, so it answers the ROUTE below — which is
+// also what proves the provider asks for it on bind. The session records and
+// the transcripts each session's bind reads answer beside it.
+const sessionOf = (id: string) => ({
+  session_id: id,
+  type: 'chat',
+  title: 'T',
+  state: 'active',
+  kilns: ['k'],
+  workspace: '/w',
+  agent: { model: null },
+  started_at: '',
+  event_count: 0,
+  archived: false,
+});
 
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
@@ -51,8 +46,13 @@ beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv({
     'GET /api/interactions/pending': () => ({ pending: [pendingEntry] }),
+    'GET /api/session/s1': () => sessionOf('s1'),
+    'GET /api/session/s2': () => sessionOf('s2'),
+    'GET /api/session/s1/history': () => ({ session_id: 's1', history: [], total_events: 0 }),
+    'GET /api/session/s2/history': () => ({ session_id: 's2', history: [], total_events: 0 }),
   });
 });
+
 
 afterEach(() => {
   env?.restore();

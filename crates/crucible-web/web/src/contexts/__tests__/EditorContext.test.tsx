@@ -1,20 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
 import type { FsEvent } from '@/lib/types';
+import { FakeEventSource } from '@/test-utils/sse';
 
 // get_note_by_name returns metadata only (no content), so the editor must load
-// file bytes via GET /api/kiln/file (getFileContent). These mocks let us assert
-// which endpoint openFile actually hits.
+// file bytes via GET /api/kiln/file. The read and the write answer as ROUTES
+// below, scripted by the spies, so the assertions read what actually reached
+// the daemon — which endpoint, which body, which base.
 const getFileContent = vi.fn(async (_path: string) => '');
 const saveFileContent = vi.fn(async (_path: string, _content: string) => {});
-const getNote = vi.fn(async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' }));
 // The daemon's answer to a whole write. The default writes through the body
 // spy, so the older tests below keep one place to read. A test that needs a
 // stale or a queued answer overrides one call.
 const guardedSave = vi.fn(async (p: string, c: string, _base: string, _baseText?: string) => {
   await saveFileContent(p, c);
   return { ok: true, content_hash: 'written' } as
-    | { ok: true; content_hash: string; merged?: true; content?: string }
+    | { ok: true; content_hash: string; merged?: false }
     | {
         ok: false;
         current_hash: string;
@@ -29,48 +30,10 @@ let readHash = 'base-hash';
 
 const KILN = '/home/user/kiln';
 
-/**
- * The kiln watcher, in the hand. Every live subscription the provider opens
- * lands here, so a test can say what the disk did and count how many streams
- * the editor holds open.
- */
-const fsListeners = new Set<(event: FsEvent) => void>();
-const subscribeToFsEvents = vi.fn((cb: (event: FsEvent) => void) => {
-  fsListeners.add(cb);
-  return () => fsListeners.delete(cb);
-});
-const diskSays = (event: FsEvent) => {
-  for (const listener of [...fsListeners]) listener(event);
-};
-
-// `listKilns` is NOT stubbed: the context resolves a path's kiln through the
-// shared kiln query, which runs the real one against the mocked fetch.
 // The moved helper (`lib/paths.ts`), stubbed where it lives now.
 vi.mock('@/lib/paths', () => ({
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
 }));
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  // The editor reads through the offline layer now, which asks for the hash
-  // the buffer was read at; the transport underneath is the same endpoint.
-  getFileWithHash: async (p: string) => ({
-    content: await getFileContent(p),
-    content_hash: readHash,
-  }),
-  getFileContent: (p: string) => getFileContent(p),
-  saveFileContent: (p: string, c: string) => saveFileContent(p, c),
-  // The base TEXT is the fourth argument: it is what asks the route to merge
-  // a stale write instead of refusing it, so a mock that dropped it would
-  // hide every merge the editor now asks for.
-  saveFileIfUnchanged: (p: string, c: string, base: string, baseText?: string) =>
-    guardedSave(p, c, base, baseText),
-  getNote: () => getNote(),
-  getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
-  listNotes: async () => [],
-  subscribeToFsEvents: (cb: (event: FsEvent) => void) => subscribeToFsEvents(cb),
-}));
-
 
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: (...a: unknown[]) => addNotification(...a) },
@@ -88,14 +51,64 @@ vi.mock('@/lib/conflicts', () => ({
 const { createTestQueryEnv } = await import('@/test-utils/query');
 const { resetKilnsForTests } = await import('@/lib/query/kilns');
 const { resetSseForTests } = await import('@/lib/query/sse');
+const { installFakeEventSource } = await import('@/test-utils/sse');
 
-// The roster `kilnOf` resolves an open path against, over the mocked fetch.
+/** The one stream every watcher of the disk shares. */
+const FS_STREAM = '/api/fs/events';
+/** The watcher sources still open — a root that closed no longer hears. */
+const openFsSources = () =>
+  FakeEventSource.instances.filter((s) => s.url === FS_STREAM && !s.closed);
+/** The disk spoke: one frame off the stream the panel and the editor share. */
+const diskSays = (event: FsEvent) => {
+  const source = openFsSources().at(-1);
+  if (!source) throw new Error('no fs stream is open for the disk to speak on');
+  source.emit(`fs_${event.type}`, event);
+};
+
+// The routes `kilnOf` resolves against and the offline layer reads and writes
+// on, over the mocked fetch.
 let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 
 beforeEach(() => {
+  installFakeEventSource();
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+    // The read: the bytes with the hash they were read at, so the buffer's
+    // next save can name the base it edited from.
+    'GET /api/kiln/file': async (request) => ({
+      content: await getFileContent(new URL(request.url).searchParams.get('path')!),
+      content_hash: readHash,
+    }),
+    // The whole write. The daemon compares the base INSIDE its write, so the
+    // 409 arm carries the texts a refusal must hand back, and the merge arm
+    // the text neither writer holds alone.
+    'PUT /api/kiln/file': async (request) => {
+      const body = (await request.clone().json()) as {
+        path: string;
+        content: string;
+        base_hash?: string;
+        base_text?: string;
+      };
+      if (body.base_hash === undefined) {
+        // The blind write nothing here should issue; the spy keeps the claim
+        // below checkable.
+        await saveFileContent(body.path, body.content);
+        return { ok: true, content_hash: 'written' };
+      }
+      const answer = await guardedSave(body.path, body.content, body.base_hash, body.base_text);
+      if (answer.ok) {
+        return 'merged' in answer && answer.merged
+          ? { content_hash: answer.content_hash, merged: true, content: answer.content }
+          : { content_hash: answer.content_hash };
+      }
+      return new Response(JSON.stringify(answer), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    'GET /api/notes': () => ({ notes: [] }),
+    'GET /api/config': () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   });
 });
 
@@ -131,10 +144,9 @@ describe('EditorContext — content load path (bug 8)', () => {
   beforeEach(() => {
     getFileContent.mockClear();
     saveFileContent.mockClear();
-    getNote.mockClear();
   });
 
-  it('openFile loads the file bytes (GET /api/kiln/file), not getNote', async () => {
+  it('openFile loads the file bytes from GET /api/kiln/file, and only from it', async () => {
     const path = `${KILN}/notes/from-tui.md`;
     getFileContent.mockResolvedValueOnce('terminal was here\n');
 
@@ -142,8 +154,10 @@ describe('EditorContext — content load path (bug 8)', () => {
     editor = withEditor(() => {});
     await editor!.openFile(path);
 
+    // One read of the file route, by the path the editor was asked for —
+    // not a metadata lookup, not a second fetch of anything else.
+    expect(getFileContent).toHaveBeenCalledTimes(1);
     expect(getFileContent).toHaveBeenCalledWith(path);
-    expect(getNote).not.toHaveBeenCalled();
 
     await waitFor(() => {
       const f = editor!.openFiles().find((x) => x.path === path);
@@ -724,7 +738,7 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
     getFileContent.mockClear();
     guardedSave.mockClear();
     addNotification.mockClear();
-    fsListeners.clear();
+    installFakeEventSource();
     readHash = 'base-hash';
     setOfflineStore(memoryStore());
   });
@@ -738,21 +752,21 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
     const editor = withEditor(() => {});
     await editor.openFile(PATH);
     await waitFor(() => expect(editor.openFiles().length).toBe(1));
-    await waitFor(() => expect(fsListeners.size).toBe(1));
+    await waitFor(() => expect(openFsSources()).toHaveLength(1));
     return editor;
   };
 
   // One stream, and only while there is a buffer it could speak about.
   it('listens to the watcher only while a file is open', async () => {
     const editor = withEditor(() => {});
-    expect(subscribeToFsEvents).not.toHaveBeenCalled();
+    expect(FakeEventSource.instances.filter((s) => s.url === FS_STREAM)).toHaveLength(0);
 
     getFileContent.mockResolvedValueOnce('on disk\n');
     await editor.openFile(PATH);
-    await waitFor(() => expect(subscribeToFsEvents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(openFsSources()).toHaveLength(1));
 
     editor.closeFile(PATH, { force: true });
-    await waitFor(() => expect(fsListeners.size).toBe(0));
+    await waitFor(() => expect(openFsSources()).toHaveLength(0));
   });
 
   it('a clean buffer takes the disk text and the new base', async () => {

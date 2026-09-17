@@ -7,39 +7,15 @@ import { render, waitFor } from '@solidjs/testing-library';
  * The context now hands the banner the actual failed call.
  */
 
+// No `vi.mock('@/lib/api')`. The editor writes through the offline layer onto
+// the daemon's own routes; the two below answer, scripted by the spies, so a
+// case that fails a call fails it ON THE WIRE and the retry re-issues it there.
 const getFileContent = vi.fn(async (_path: string) => '');
 const saveFileContent = vi.fn(async (_path: string, _content: string) => {});
-const getNote = vi.fn(async () => ({
-  name: '', path: '', content: '', title: null, tags: [], updated_at: '',
-}));
 
-// `listKilns` is NOT stubbed: the context resolves a path's kiln through the
-// shared kiln query, which runs the real one against the mocked fetch.
 // The moved helper (`lib/paths.ts`), stubbed where it lives now.
 vi.mock('@/lib/paths', () => ({
   rawFileUrl: (p: string) => `/api/file/raw?path=${encodeURIComponent(p)}`,
-}));
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  // The editor reads through the offline layer, which wants the hash the
-  // buffer was read at; the endpoint underneath is the same.
-  getFileWithHash: async (p: string) => ({
-    content: await getFileContent(p),
-    content_hash: 'base-hash',
-  }),
-  getFileContent: (p: string) => getFileContent(p),
-  saveFileContent: (p: string, c: string) => saveFileContent(p, c),
-  // The whole write now sends its base through the guarded route. The spy
-  // still records the body that reached the daemon, so the assertions below
-  // read one place; the base is not what these tests are about.
-  saveFileIfUnchanged: async (p: string, c: string, _base: string) => {
-    await saveFileContent(p, c);
-    return { ok: true, content_hash: 'written' };
-  },
-  getNote: () => getNote(),
-  getConfig: async () => ({ kiln_path: '/home/user/kiln', config_root: '/etc/crucible' }),
-  listNotes: async () => [],
 }));
 
 const KILN = '/home/user/kiln';
@@ -47,14 +23,30 @@ const PATH = `${KILN}/notes/dirty.md`;
 
 const { createTestQueryEnv } = await import('@/test-utils/query');
 const { resetKilnsForTests } = await import('@/lib/query/kilns');
+const { installFakeEventSource } = await import('@/test-utils/sse');
 
-// The roster `kilnOf` resolves an open path against, over the mocked fetch.
+// The routes the roster resolves against, and the editor reads and writes on.
 let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 
 beforeEach(() => {
+  installFakeEventSource();
   resetKilnsForTests();
   kilnEnv = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+    // The read: the bytes with the hash they were read at.
+    'GET /api/kiln/file': async (request) => ({
+      content: await getFileContent(new URL(request.url).searchParams.get('path')!),
+      content_hash: 'base-hash',
+    }),
+    // The write: the body that reached the daemon goes through the spy, so
+    // the assertions below read one place.
+    'PUT /api/kiln/file': async (request) => {
+      const body = (await request.clone().json()) as { path: string; content: string };
+      await saveFileContent(body.path, body.content);
+      return { ok: true, content_hash: 'written' };
+    },
+    'GET /api/notes': () => ({ notes: [] }),
+    'GET /api/config': () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
   });
 });
 
@@ -83,7 +75,6 @@ describe('EditorContext — a failed operation keeps its own retry', () => {
   beforeEach(() => {
     getFileContent.mockClear();
     saveFileContent.mockClear();
-    getNote.mockClear();
   });
 
   it('offers nothing to retry while nothing has failed', () => {
