@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { PLUGIN_CALLER_HEADER } from '@/lib/api';
