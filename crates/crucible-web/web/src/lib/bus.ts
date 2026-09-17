@@ -4,17 +4,14 @@ import { createEmitter, type Emitter } from '@solid-primitives/event-bus';
 /**
  * The payload of each typed event.
  *
- * Four events, and they are the DATA events: `authOk` and `authRequired` from
- * the API client, `interactionResolved` from the interactions cache, and
- * `sessionTitleChanged` from the session stream. Each one reports that
- * something on the server changed, and each one is emitted by a module that no
- * component owns.
- *
- * The other eleven `crucible:*` window CustomEvents of the Part B2 table stay
- * on `window`. They are UI COMMANDS — open the palette, open a file, clear the
- * chat — and the browser specs drive them through `page.evaluate`, which
- * reaches `window.dispatchEvent` and cannot reach a module singleton. They move
- * here when a bridge exists that gives a spec the bus.
+ * Two kinds travel here. DATA events report that something on the server
+ * changed — `authOk` and `authRequired` from the API client,
+ * `interactionResolved` from the interactions cache, `sessionTitleChanged`
+ * from the session stream — and each is emitted by a module no component
+ * owns. The rest are UI COMMANDS — start a session, open a file, clear the
+ * chat — that used to be `crucible:*` window CustomEvents; they live here so
+ * that namespace dies outright, and a browser spec drives them through the
+ * `window.__bus` bridge at the bottom of this module.
  *
  * `Record<string, never>` marks an event that carries no data. The window
  * CustomEvent carried no `detail` either, so a caller must write `{}`.
@@ -23,6 +20,10 @@ export type BusEvents = {
   authOk: Record<string, never>;
   authRequired: Record<string, never>;
   interactionResolved: { sessionId: string; requestId: string };
+  /** Starts the draft surface. `workspace` names the project to act in. */
+  newSession: { workspace?: string };
+  /** Opens one session's chat tab. */
+  openSession: { sessionId: string; title: string };
   sessionTitleChanged: { sessionId: string; title: string };
 };
 
@@ -135,8 +136,8 @@ export function createBus(): Bus {
 }
 
 /**
- * The module singleton. Every emitter and every listener of the four events
- * above reads this one bus, the way they all read one `window` before.
+ * The module singleton. Every emitter and every listener reads this one bus,
+ * the way they all read one `window` before.
  */
 const moduleBus = createBus();
 
@@ -152,4 +153,11 @@ export function getBus(): Bus {
  */
 export function resetBusForTests(): void {
   moduleBus.clear();
+}
+
+// A browser spec reaches the bus through the page, the way it reaches the
+// window store through `__windowStore`: `page.evaluate` cannot touch a module
+// singleton, so the module puts its one bus on `window` for it.
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__bus = moduleBus;
 }

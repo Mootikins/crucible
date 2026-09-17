@@ -36,6 +36,7 @@ vi.mock('@/lib/session-status', () => ({
 
 import { SessionsTab } from '@/components/mobile/SessionsTab';
 import { INBOX_SIZE } from '@/lib/session-inbox';
+import { getBus, type BusEvents } from '@/lib/bus';
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
@@ -136,11 +137,12 @@ describe('SessionsTab', () => {
   });
 
   it('starts a new session aimed at the chosen project', () => {
-    const events: unknown[] = [];
-    window.addEventListener('crucible:new-session', (e) => events.push((e as CustomEvent).detail));
+    const started: BusEvents['newSession'][] = [];
+    const off = getBus().on('newSession', (payload) => started.push(payload));
     render(() => <SessionsTab />);
     fireEvent.click(screen.getByRole('button', { name: 'New session in alpha' }));
-    expect(events).toEqual([{ workspace: '/work/alpha' }]);
+    off();
+    expect(started).toEqual([{ workspace: '/work/alpha' }]);
   });
 
   // A pass a plugin ran has no workspace, so the project switcher can never

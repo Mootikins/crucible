@@ -257,8 +257,28 @@ describe('the types of the bus', () => {
       sessionId: string;
       title: string;
     }>();
+    expectTypeOf<BusEvents['newSession']>().toEqualTypeOf<{ workspace?: string }>();
+    expectTypeOf<BusEvents['openSession']>().toEqualTypeOf<{
+      sessionId: string;
+      title: string;
+    }>();
     expectTypeOf<BusEvents['authOk']>().toEqualTypeOf<Record<string, never>>();
     expectTypeOf<BusEvents['authRequired']>().toEqualTypeOf<Record<string, never>>();
+  });
+
+  it('delivers a session-opening payload to its handler', () => {
+    const bus = createBus();
+    const newPayloads: BusEvents['newSession'][] = [];
+    const openPayloads: BusEvents['openSession'][] = [];
+    bus.on('newSession', (payload) => newPayloads.push(payload));
+    bus.on('openSession', (payload) => openPayloads.push(payload));
+
+    bus.emit('newSession', { workspace: '/home/me/atlas' });
+    bus.emit('newSession', {});
+    bus.emit('openSession', { sessionId: 's1', title: 'One' });
+
+    expect(newPayloads).toEqual([{ workspace: '/home/me/atlas' }, {}]);
+    expect(openPayloads).toEqual([{ sessionId: 's1', title: 'One' }]);
   });
 
   it('gives the handler the payload type of its event', () => {

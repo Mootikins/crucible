@@ -10,6 +10,7 @@ import { byRecency, inboxSessions } from '@/lib/session-inbox';
 import { reflectionSessions } from '@/lib/session-reflections';
 import { SessionRow, SessionTree } from './SessionTree';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { getBus } from '@/lib/bus';
 import { ProjectMenu } from '@/components/shell/ProjectMenu';
 
 /**
@@ -127,9 +128,7 @@ export const SessionsPanel: Component = () => {
 
   /** Start a session in one project. The tree offers it per group row. */
   const newSessionIn = (projectPath: string) =>
-    window.dispatchEvent(
-      new CustomEvent('crucible:new-session', { detail: { workspace: projectPath } }),
-    );
+    getBus().emit('newSession', { workspace: projectPath });
 
   // Created here, outside the tree's own context menu: an ark Menu.Root that
   // mounts inside another becomes its submenu.
@@ -162,11 +161,11 @@ export const SessionsPanel: Component = () => {
           <EmptyState
             title="No sessions yet"
             body="Start one to give an agent a workspace and a kiln."
-            // No workspace in the detail: there is no project to name, so
-            // the draft asks for one. The palette dispatches the same event.
+            // No workspace in the payload: there is no project to name, so
+            // the draft asks for one. The palette emits the same event.
             action={{
               label: 'New session',
-              onClick: () => window.dispatchEvent(new CustomEvent('crucible:new-session')),
+              onClick: () => getBus().emit('newSession', {}),
             }}
             testid="sessions-empty"
           />

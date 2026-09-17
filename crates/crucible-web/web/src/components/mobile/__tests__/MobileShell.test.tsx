@@ -29,6 +29,7 @@ import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { __resetConflictStore } from '@/lib/conflicts';
 import type { Tab } from '@/types/windowTypes';
 import type { Conflicted } from '@/lib/offline/outbox';
+import { getBus } from '@/lib/bus';
 
 /** One note whose write waits on a person. */
 const conflict = (path: string): Conflicted => ({
@@ -229,9 +230,8 @@ describe('MobileShell tabs', () => {
     expect(screen.getByRole('heading').textContent).toBe('Note A');
   });
   it('offers a way out of the empty surface', () => {
-    const started: Event[] = [];
-    const listener = (e: Event) => started.push(e);
-    window.addEventListener('crucible:new-session', listener);
+    let started = 0;
+    const off = getBus().on('newSession', () => { started += 1; });
     render(() => <MobileShell />);
 
     const empty = screen.getByTestId('mobile-empty');
@@ -246,7 +246,7 @@ describe('MobileShell tabs', () => {
     ).toBe('true');
 
     fireEvent.click(actions[1]);
-    window.removeEventListener('crucible:new-session', listener);
-    expect(started).toHaveLength(1);
+    off();
+    expect(started).toBe(1);
   });
 });

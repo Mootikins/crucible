@@ -27,6 +27,7 @@ import { NotificationToast } from '@/components/NotificationToast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { AuthTokenPrompt } from '@/components/AuthTokenPrompt';
+import { getBus } from '@/lib/bus';
 
 function focusChatInput(): void {
   const candidate = document.querySelector<HTMLTextAreaElement | HTMLInputElement | HTMLElement>(
@@ -107,7 +108,7 @@ const App: Component = () => {
       shortcut: 'Ctrl+Shift+N',
       category: 'Chat',
       keywords: ['new', 'session', 'chat'],
-      action: () => window.dispatchEvent(new CustomEvent('crucible:new-session')),
+      action: () => getBus().emit('newSession', {}),
     },
     {
       id: 'chat-clear',
@@ -291,17 +292,11 @@ const App: Component = () => {
     window.addEventListener('crucible:export-session', onExportSession);
     // Every new-session entry point (ribbon, Home, palette, empty states)
     // opens the draft surface; the session is created lazily on first send.
-    // `detail.workspace` names the project the session acts in — the sessions
+    // `workspace` names the project the session acts in — the sessions
     // tree's per-project New Session row sends it. Absent means "unset", which
     // the composer leaves for the user to pick.
-    const onNewSession = (e: Event) =>
-      openDraftSession({ workspace: (e as CustomEvent).detail?.workspace });
-    window.addEventListener('crucible:new-session', onNewSession);
-    const onOpenSession = (e: Event) => {
-      const { sessionId, title } = (e as CustomEvent<{ sessionId: string; title: string }>).detail;
-      openSessionInChat(sessionId, title);
-    };
-    window.addEventListener('crucible:open-session', onOpenSession);
+    getBus().on('newSession', ({ workspace }) => openDraftSession({ workspace }));
+    getBus().on('openSession', ({ sessionId, title }) => openSessionInChat(sessionId, title));
     // Open a kiln file in the editor programmatically (symmetric with
     // open-session). Lets other panels/commands "reveal in editor" a path
     // without a sidebar click.
@@ -321,8 +316,6 @@ const App: Component = () => {
       stopAttentionPolling();
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
-      window.removeEventListener('crucible:new-session', onNewSession);
-      window.removeEventListener('crucible:open-session', onOpenSession);
       window.removeEventListener('crucible:open-file', onOpenFile);
       window.removeEventListener('crucible:open-command-palette', onOpenPalette);
     });

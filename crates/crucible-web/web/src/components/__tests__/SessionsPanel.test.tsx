@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, screen } from '@solidjs/testing-library';
 import type { Project, Session } from '@/lib/types';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { getBus, resetBusForTests, type BusEvents } from '@/lib/bus';
 
 let sessionList: Session[] = [];
 let projectList: Project[] = [];
@@ -40,6 +41,18 @@ let env: TestQueryEnv;
 
 beforeEach(() => {
   env = createTestQueryEnv();
+});
+
+/** Records every new-session payload for the duration of one case. */
+function recordNewSession(): { started: BusEvents['newSession'][]; off: () => void } {
+  const started: BusEvents['newSession'][] = [];
+  const off = getBus().on('newSession', (payload) => started.push(payload));
+  return { started, off };
+}
+
+afterEach(() => {
+  // A handler left behind by a failed case must not answer the next one.
+  resetBusForTests();
 });
 
 afterEach(() => {
@@ -120,15 +133,13 @@ describe('SessionsPanel — two tiers, project over session', () => {
   });
 
   it('starts a session in the project whose row was clicked', () => {
-    const started: unknown[] = [];
-    const listener = (e: Event) => started.push((e as CustomEvent).detail);
-    window.addEventListener('crucible:new-session', listener);
+    const { started, off } = recordNewSession();
 
     render(() => <SessionsPanel />);
     fireEvent.click(screen.getByTestId('idle-projects-toggle'));
     fireEvent.click(screen.getByTestId('session-group-new-/home/me/atlas'));
 
-    window.removeEventListener('crucible:new-session', listener);
+    off();
     expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });
 
@@ -150,9 +161,7 @@ describe('SessionsPanel — nothing yet', () => {
   });
 
   it('offers a first session from the empty state', () => {
-    const started: unknown[] = [];
-    const listener = (e: Event) => started.push((e as CustomEvent).detail);
-    window.addEventListener('crucible:new-session', listener);
+    const { started, off } = recordNewSession();
 
     render(() => <SessionsPanel />);
     const empty = screen.getByTestId('sessions-empty');
@@ -160,9 +169,9 @@ describe('SessionsPanel — nothing yet', () => {
     expect(empty.getAttribute('data-tone')).toBe('empty');
 
     fireEvent.click(empty.querySelector('[data-testid="empty-state-action"]')!);
-    window.removeEventListener('crucible:new-session', listener);
+    off();
     // No workspace: there is no project to name, so the draft asks for one.
-    expect(started).toEqual([null]);
+    expect(started).toEqual([{}]);
   });
 
   it('shows the empty state, not an empty Inbox, when only projects exist', () => {
@@ -302,15 +311,13 @@ describe('SessionsPanel — the tree is scoped to the pinned project', () => {
   });
 
   it('keeps a folded project fully usable', () => {
-    const started: unknown[] = [];
-    const listener = (e: Event) => started.push((e as CustomEvent).detail);
-    window.addEventListener('crucible:new-session', listener);
+    const { started, off } = recordNewSession();
 
     render(() => <SessionsPanel />);
     fireEvent.click(screen.getByTestId('idle-projects-toggle'));
     fireEvent.click(screen.getByTestId('session-group-new-/home/me/atlas'));
 
-    window.removeEventListener('crucible:new-session', listener);
+    off();
     // A folded project is the SAME header row as a pinned one.
     expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });

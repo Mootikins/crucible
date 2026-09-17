@@ -225,9 +225,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         if (opts?.initialMessage) {
           setPendingFirstMessage(created.session_id, opts.initialMessage);
         }
-        window.dispatchEvent(new CustomEvent('crucible:open-session', {
-          detail: { sessionId: created.session_id, title: created.title || 'New Session' },
-        }));
+        getBus().emit('openSession', {
+          sessionId: created.session_id,
+          title: created.title || 'New Session',
+        });
         // Non-blocking: the model list is picker chrome — don't hold the
         // draft surface (and the first message) hostage to a models.list RPC.
         void refreshModels(created);
@@ -310,9 +311,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
           // Continue to open session even if resume fails (graceful degradation)
         }
       }
-      window.dispatchEvent(new CustomEvent('crucible:open-session', {
-        detail: { sessionId: id, title: existing.title || `Session ${id.slice(0, 8)}` },
-      }));
+      getBus().emit('openSession', {
+        sessionId: id,
+        title: existing.title || `Session ${id.slice(0, 8)}`,
+      });
       await refreshModels(existing);
       return;
     }
@@ -333,9 +335,10 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
           // Continue to open session even if resume fails (graceful degradation)
         }
       }
-      window.dispatchEvent(new CustomEvent('crucible:open-session', {
-        detail: { sessionId: id, title: session.title || `Session ${id.slice(0, 8)}` },
-      }));
+      getBus().emit('openSession', {
+        sessionId: id,
+        title: session.title || `Session ${id.slice(0, 8)}`,
+      });
       await refreshModels(session);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load session';

@@ -20,6 +20,7 @@ import { getGlobalRegistry } from '@/lib/panel-registry';
 import { navStack } from '@/components/mobile/NavStack';
 import { tabStack, tabStackActions } from '@/stores/tabStackStore';
 import { LayoutDashboard } from '@/lib/icons';
+import { getBus } from '@/lib/bus';
 
 /**
  * Panels the overflow menu does NOT offer.
@@ -249,7 +250,7 @@ export const MobileShell: Component = () => {
                 { label: 'Open a note', onClick: openFilesDrawer },
                 {
                   label: 'Start a session',
-                  onClick: () => window.dispatchEvent(new CustomEvent('crucible:new-session')),
+                  onClick: () => getBus().emit('newSession', {}),
                 },
               ]}
               testid="mobile-empty"

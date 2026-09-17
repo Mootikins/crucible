@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 import { appReady, openSessionsList } from '../helpers/nav';
+import { busEmit } from '../helpers/bus';
 import { readState } from './_state';
 
 /**
@@ -59,7 +60,7 @@ test.describe('live session management', () => {
       if (req.url().endsWith('/api/session') && req.method() === 'POST') createdEarly = true;
     });
 
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:new-session')));
+    await busEmit(page, 'newSession');
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 });
     expect(createdEarly).toBe(false);
     // And the daemon agrees: lazy creation is a claim about the daemon's

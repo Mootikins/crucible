@@ -13,6 +13,7 @@ import { ChevronDown, GitBranch, Plus } from '@/lib/icons';
 import { treeChevron, treeRow, treeSectionHeader } from '@/components/tree/tree-style';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import type { Session } from '@/lib/types';
+import { getBus } from '@/lib/bus';
 
 /** The switcher's "every project" choice. Not a path, so it collides with none. */
 const ALL_PROJECTS = '__all__';
@@ -128,11 +129,7 @@ export const SessionsTab: Component = () => {
             type="button"
             aria-label={`New session in ${chosenName()}`}
             class="w-11 h-11 flex items-center justify-center shrink-0 rounded text-muted-dark hover:text-shell-ink hover:bg-hover-wash focus-ring"
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent('crucible:new-session', { detail: { workspace: chosen() } }),
-              )
-            }
+            onClick={() => getBus().emit('newSession', { workspace: chosen() })}
           >
             <Plus class="w-5 h-5" />
           </button>

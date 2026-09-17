@@ -3,6 +3,7 @@ import type { Tab, TabContentType } from '@/types/windowTypes';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { openPanelTab } from '@/lib/panel-actions';
 import { tabHost } from '@/lib/tab-host';
+import { getBus } from '@/lib/bus';
 
 // ── Shell surface state ──────────────────────────────────────────────────
 // The shell has three navigable surfaces: Inbox (everything waiting on
@@ -62,8 +63,7 @@ function goSession(): void {
       return;
     }
   }
-  if (focusMostRecentTabOfType('chat')) return;
-  window.dispatchEvent(new CustomEvent('crucible:new-session'));
+  getBus().emit('newSession', {});
 }
 
 /** Focus the editor: most recent file tab, else an empty editor tab plus

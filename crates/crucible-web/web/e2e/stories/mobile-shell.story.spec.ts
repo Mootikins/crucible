@@ -1,6 +1,7 @@
 import { test, expect, devices } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
+import { busEmit } from '../helpers/bus';
 import { waitForFonts } from './_helpers/fonts';
 
 /**
@@ -97,7 +98,7 @@ test.describe('WS-317 the compact shell', () => {
 
   test('starts a session in three steps', async ({ page }, testInfo) => {
     const story = createStory(testInfo);
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:new-session')));
+    await busEmit(page, 'newSession');
 
     await expect(page.getByRole('heading', { name: 'Agent' })).toBeVisible();
     await story.step(page, 'pick an agent');

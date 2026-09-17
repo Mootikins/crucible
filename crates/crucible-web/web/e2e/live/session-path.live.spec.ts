@@ -2,6 +2,7 @@ import { test, expect, request as playwrightRequest, type Page, type APIRequestC
 import { execFileSync } from 'node:child_process';
 import { appReady } from '../helpers/nav';
 import { readState } from './_state';
+import { busEmit } from '../helpers/bus';
 
 /**
  * The session path, end to end, against the real chain.
@@ -94,7 +95,7 @@ async function openDraft(page: Page): Promise<void> {
   if (await emptyAction.count()) {
     await emptyAction.first().click();
   } else {
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:new-session')));
+    await busEmit(page, 'newSession');
   }
   await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 });
 }

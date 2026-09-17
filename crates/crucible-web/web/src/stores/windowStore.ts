@@ -16,6 +16,7 @@ import { terminalAllowed } from '@/lib/terminal-availability';
 import { DEFAULT_SHORTCUTS } from '@/lib/keyboard-shortcuts';
 import { statusBarActions, statusBarStore } from './statusBarStore';
 import { syncShellSurface } from './shellStore';
+import { getBus } from '@/lib/bus';
 
 export type { WindowState } from '@/types/windowTypes';
 
@@ -48,7 +49,7 @@ export const appWindowPolicy: WindowPolicy<TabContentType> = {
         document.querySelector<HTMLTextAreaElement>('textarea[data-testid="chat-input"]')?.focus();
         return true;
       case 'newSession':
-        window.dispatchEvent(new CustomEvent('crucible:new-session'));
+        getBus().emit('newSession', {});
         return true;
       case 'clearChat':
         window.dispatchEvent(new CustomEvent('crucible:clear-chat'));

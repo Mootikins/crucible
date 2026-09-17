@@ -5,6 +5,7 @@ import { apiError, type MockFetchAnswer } from '@/test-utils/mock-fetch';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetSessionsForTests } from '@/lib/query/sessions';
 import { statusBarActions } from '@/stores/statusBarStore';
+import { getBus, resetBusForTests } from '@/lib/bus';
 import type { Session } from '@/lib/types';
 
 // No `vi.mock('@/lib/api')`. The context reads the daemon through
@@ -117,14 +118,18 @@ describe('selectSession auto-resume', () => {
     );
   }
 
-  let dispatchSpy: ReturnType<typeof vi.spyOn>;
+  // The provider announces the session it opened on the bus, not on `window`.
+  const opened: string[] = [];
+  let offOpened: () => void;
 
   beforeEach(() => {
-    dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    offOpened = getBus().on('openSession', ({ sessionId }) => opened.push(sessionId));
   });
 
   afterEach(() => {
-    dispatchSpy.mockRestore();
+    offOpened();
+    opened.length = 0;
+    resetBusForTests();
   });
 
   /** Serves one session by id, its models, and its resume route. */
@@ -155,9 +160,7 @@ describe('selectSession auto-resume', () => {
     await waitFor(() =>
       expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(1),
     );
-    expect(dispatchSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'crucible:open-session' })
-    );
+    expect(opened).toContain('test-id');
   });
 
   it('does not call resumeSession for active sessions', async () => {
@@ -167,9 +170,7 @@ describe('selectSession auto-resume', () => {
     screen.getByTestId('select').click();
 
     await waitFor(() => {
-      expect(dispatchSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'crucible:open-session' })
-      );
+      expect(opened).toContain('test-id');
     });
 
     expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(0);
@@ -186,9 +187,7 @@ describe('selectSession auto-resume', () => {
     await waitFor(() =>
       expect(served.fetch.calls('POST /api/session/test-id/resume')).toBe(1),
     );
-    expect(dispatchSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'crucible:open-session' })
-    );
+    expect(opened).toContain('test-id');
   });
 
   it('opens a stored session from the list with one read, no history page first', async () => {
@@ -204,9 +203,7 @@ describe('selectSession auto-resume', () => {
     expect(served.fetch.calls('GET /api/session/test-id/history')).toBe(0);
 
     await waitFor(() => {
-      expect(dispatchSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'crucible:open-session' })
-      );
+      expect(opened).toContain('test-id');
     });
   });
 
