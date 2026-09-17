@@ -47,10 +47,6 @@ vi.mock('@/stores/windowStore', () => ({
   windowStore: { tabGroups: {}, layout: { id: 'p', type: 'pane', tabGroupId: null } },
   setStore: vi.fn(),
 }));
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  subscribeToEvents: () => () => {},
-}));
 const listReviewHunks = vi.fn();
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),

@@ -15,10 +15,9 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 
 // The panel lives in the RIGHT edge region, outside any ChatProvider — its
-// only inputs are SessionContext and its own event stream.
-vi.mock('@/lib/api', () => ({
-  subscribeToEvents: () => () => {},
-}));
+// only inputs are SessionContext and its own event stream, which the
+// `FakeEventSource` of `beforeEach` answers through the REAL
+// `subscribeToEvents`.
 
 // The shell is decided once at page load; the test stages it before a render.
 const device = vi.hoisted(() => ({ compact: false }));

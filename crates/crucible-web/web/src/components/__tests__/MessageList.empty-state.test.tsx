@@ -37,10 +37,6 @@ vi.mock('@/contexts/SessionContext', () => ({
     sessions: () => [],
   }),
 }));
-vi.mock('@/lib/api', () => ({
-  respondToInteraction: vi.fn(),
-  getFileContent: vi.fn().mockResolvedValue(''),
-}));
 vi.mock('@/components/DiffViewer', () => ({
   DiffViewer: () => <div data-testid="diff-viewer" />,
 }));

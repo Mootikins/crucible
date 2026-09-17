@@ -14,10 +14,10 @@ vi.mock('../DiffViewer', () => ({
 vi.mock('../MultiEditDiff', () => ({
   MultiEditDiff: () => <div data-testid="multi-edit-diff" />,
 }));
-vi.mock('@/lib/api', () => ({
-  getFileContent: vi.fn(async () => ''),
-  subscribeToEvents: () => () => {},
-}));
+// No `vi.mock('@/lib/api')`: the reveal path reads the file through the
+// real `getFileContent` against the `GET /api/kiln/file` route below, and the
+// review stream opens through the real `subscribeToEvents` onto the
+// `FakeEventSource` of `beforeEach`.
 vi.mock('@/lib/file-actions', () => ({ openFileWithDiff: vi.fn() }));
 // The shell is decided once at page load; the test stages it before a render.
 const device = vi.hoisted(() => ({ compact: false }));
@@ -115,7 +115,7 @@ const seed = async (hunks: ComposedHunk[]) => {
 
 beforeEach(() => {
   installFakeEventSource();
-  env = createTestQueryEnv({});
+  env = createTestQueryEnv({ 'GET /api/kiln/file': () => ({ content: '' }) });
   setSessionId('s1');
   setHunkState.mockReset();
   setHunkState.mockResolvedValue({ hunk_id: 'h1', state: 'accepted' });
