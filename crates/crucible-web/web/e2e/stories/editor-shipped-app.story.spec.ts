@@ -54,10 +54,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     // Open the file through the product's own file-open function (what
     // FilesPanel.handleFileClick calls). Registry is left intact so the REAL
     // FileViewerPanel renders under the REAL EditorProvider.
-    await page.evaluate(
-      (args) => busEmit(page, 'openFile', { path: args.filePath, name: args.fileName }),
-      { filePath: FILE_PATH, fileName: 'from-tui.md' },
-    );
+    await busEmit(page, 'openFile', { path: FILE_PATH, name: 'from-tui.md' });
 
     // Content hydrates through the real EditorContext → CodeMirror.
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10000 });
@@ -107,10 +104,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
       localStorage.setItem('crucible:settings', JSON.stringify({ editor: { vimMode: false } }));
     });
     await page.goto('/');
-    await page.evaluate(
-      (args) => busEmit(page, 'openFile', { path: args.filePath, name: args.fileName }),
-      { filePath: FILE_PATH, fileName: 'from-tui.md' },
-    );
+    await busEmit(page, 'openFile', { path: FILE_PATH, name: 'from-tui.md' });
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10000 });
 
     await page.locator('.cm-content').first().click();
