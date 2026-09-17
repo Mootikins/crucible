@@ -18,39 +18,12 @@ import { render, cleanup, fireEvent, screen } from '@solidjs/testing-library';
  * section may bring a second scroll container or a full-height box.
  */
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => false }));
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getPluginOptions: vi.fn(async () => ({
-    widget: {
-      type: 'group',
-      name: 'Widget',
-      args: [{ key: 'shade', path: 'shade', type: 'input', name: 'Shade', default: '' }],
-    },
-  })),
-  getPluginOption: vi.fn(async () => ({ value: '' })),
-  setPluginOption: vi.fn(async () => {}),
-  executePluginOption: vi.fn(async () => ({})),
-  getPlugins: vi.fn(async () => []),
-  reloadPlugin: vi.fn(async () => {}),
-  installPlugin: vi.fn(async () => ({})),
-  login: vi.fn(async () => true),
-  resetLayout: vi.fn(async () => {}),
-  getContextStrategy: vi.fn(async () => ({ strategy: 'default' })),
-  setContextStrategy: vi.fn(async () => {}),
-  getConfig: vi.fn(async () => ({
-    kiln_path: '/kilns/main',
-    config: {},
-    config_root: '/home/u/.config/crucible',
-    origins: [],
-    controls: { options: { type: 'group', name: 'Crucible', args: [] } },
-  })),
-  saveConfig: vi.fn(async () => {}),
-  getPrecognition: vi.fn(async () => true),
-  setPrecognition: vi.fn(async () => {}),
-  listKnobs: vi.fn(async () => ({ knobs: [] })),
-  listAgentOptions: vi.fn(async () => ({ options: [] })),
-  setAgentOption: vi.fn(async () => {}),
-}));
+// No `vi.mock('@/lib/api')`: every read the sections make on render — the
+// daemon config, the plugin settings trees, the plugin roster, one option's
+// current value — arrives over the ROUTES in `beforeEach`. The writes the
+// sections can issue stay unnamed: nothing here presses them, and an unnamed
+// route answers 404 the way a test that wanted one would see.
+
 // The offline section reads IndexedDB, which jsdom does not have.
 vi.mock('@/lib/offline/sync', () => ({
   cacheKiln: async () => ({ notes: 0, attachments: 0, failed: [] }),
@@ -84,6 +57,26 @@ beforeEach(() => {
     // `getMcpStatus` is NOT stubbed: the MCP section reads it through
     // `useMcpStatus`, which runs the real one against this route.
     'GET /api/mcp/status': () => ({ servers: [] }),
+    'GET /api/config': () => ({
+      kiln_path: '/kilns/main',
+      config: {},
+      config_root: '/home/u/.config/crucible',
+      origins: [],
+      controls: { options: { type: 'group', name: 'Crucible', args: [] } },
+    }),
+    // The one plugin section: its tree is what names `plugin:widget` above.
+    'GET /api/plugins/options': () => ({
+      options: {
+        widget: {
+          type: 'group',
+          name: 'Widget',
+          args: [{ key: 'shade', path: 'shade', type: 'input', name: 'Shade', default: '' }],
+        },
+      },
+    }),
+    // One route answers all three option actions; `get` carries the value.
+    'POST /api/plugins/widget/option': () => ({ value: '', ok: true }),
+    'GET /api/plugins': () => ({ plugins: [] }),
   });
 });
 
