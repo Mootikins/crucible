@@ -1,17 +1,41 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRoot, createEffect } from 'solid-js';
-
-const saveLayoutMock = vi.fn().mockResolvedValue(undefined);
-const loadLayoutMock = vi.fn().mockResolvedValue(null);
-
-vi.mock('@/lib/api', () => ({
-  saveLayout: (...args: unknown[]) => saveLayoutMock(...args),
-  loadLayout: (...args: unknown[]) => loadLayoutMock(...args),
-}));
-
+import { createMockFetch, type MockFetch } from '@/test-utils/mock-fetch';
 import { windowActions, windowStore } from '@/stores/windowStore';
 import { isEdgeCollapsed } from '@/types/windowTypes';
 import { setupLayoutAutoSave, loadLayoutOnStartup } from '../layout';
+
+// No `vi.mock('@/lib/api')`. The boot functions call the real module, so the
+// daemon's two layout routes answer, and a case counts what reached the wire
+// rather than a module double — which is also the only way to see that the
+// POST the debounce owed was actually sent.
+
+const SAVE = 'POST /api/layout';
+const LOAD = 'GET /api/layout';
+
+/** The daemon's answer for a user who never stored a layout. */
+const noLayout = (): Response =>
+  new Response(JSON.stringify({ error: { code: 404, message: 'no stored layout' } }), {
+    status: 404,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+let fetchMock: MockFetch;
+/** Releases the startup load, which starts held: it is the slow thing. */
+let answerLoad!: (reply: Response) => void;
+const realFetch = global.fetch;
+
+beforeEach(() => {
+  fetchMock = createMockFetch({
+    [SAVE]: () => ({ ok: true }),
+    [LOAD]: () => new Promise<Response>((resolve) => (answerLoad = resolve)),
+  });
+  global.fetch = fetchMock;
+});
+
+afterEach(() => {
+  global.fetch = realFetch;
+});
 
 describe('layout auto-save tracking', () => {
   // Regression: the auto-save effect serializes via exportLayout() INSIDE its
@@ -52,14 +76,6 @@ describe('layout auto-save startup gating', () => {
   // imported. Saves are gated until loadLayoutOnStartup resolves.
   it('does not persist the default layout before a slow startup load finishes', async () => {
     vi.useFakeTimers();
-    saveLayoutMock.mockClear();
-
-    let resolveLoad!: (v: unknown) => void;
-    loadLayoutMock.mockReturnValueOnce(
-      new Promise((r) => {
-        resolveLoad = r;
-      })
-    );
 
     let dispose!: () => void;
     createRoot((d) => {
@@ -70,10 +86,10 @@ describe('layout auto-save startup gating', () => {
 
     // Debounce elapses while the load is still in flight.
     await vi.advanceTimersByTimeAsync(600);
-    expect(saveLayoutMock).not.toHaveBeenCalled();
+    expect(fetchMock.calls(SAVE)).toBe(0);
 
     // Load resolves (no saved layout → defaults kept). Gate opens.
-    resolveLoad(null);
+    answerLoad(noLayout());
     await loading;
 
     // A genuine post-load edit now persists on the next debounce. Toggle
@@ -85,7 +101,7 @@ describe('layout auto-save startup gating', () => {
       !isEdgeCollapsed(windowStore.edgePanels.left),
     );
     await vi.advanceTimersByTimeAsync(600);
-    expect(saveLayoutMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.calls(SAVE)).toBe(1);
 
     dispose();
     vi.useRealTimers();

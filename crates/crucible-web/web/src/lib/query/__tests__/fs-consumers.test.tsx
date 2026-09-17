@@ -18,20 +18,11 @@ import type { TestQueryEnv } from '@/test-utils/query';
 
 const KILN = '/home/user/kiln';
 
+// No `vi.mock('@/lib/api')`: these hooks are the sanctioned importer, so the
+// routes they call answer. The read stays scripted by the `getFileContent`
+// spy, which the route handler consults — a case that re-reads overrides one
+// answer and the wire carries it.
 const getFileContent = vi.fn(async (_path: string) => 'on disk\n');
-
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  listNotes: async () => [],
-  listDir: async () => ({ entries: [] }),
-  getFileWithHash: async (path: string) => ({
-    content: await getFileContent(path),
-    content_hash: 'base-hash',
-  }),
-  getFileContent: (path: string) => getFileContent(path),
-  getConfig: async () => ({ kiln_path: KILN, config_root: '/etc/crucible' }),
-  getNote: async () => ({ name: '', path: '', content: '', title: null, tags: [], updated_at: '' }),
-}));
 
 // The tree roots on the session's kiln, so the panel has something to browse.
 vi.mock('@/contexts/ProjectContext', () => ({
@@ -69,6 +60,15 @@ beforeEach(() => {
   localStorage.clear();
   env = createTestQueryEnv({
     'GET /api/kilns': () => ({ kilns: [{ path: KILN, name: 'kiln' }] }),
+    // The read the offline layer makes: the bytes with the hash they were
+    // read at, so a buffer's next save can name the base it edited from.
+    'GET /api/kiln/file': async (request) => ({
+      content: await getFileContent(new URL(request.url).searchParams.get('path')!),
+      content_hash: 'base-hash',
+    }),
+    // The tree the panel browses, and the note list the shell may ask for.
+    'GET /api/fs/list': () => ({ entries: [] }),
+    'GET /api/notes': () => ({ notes: [] }),
   });
 });
 
