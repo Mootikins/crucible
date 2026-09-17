@@ -1088,7 +1088,7 @@ earlier draft argued Oil against a native component and left the choice open.
 The choice is settled and **the work is on master** — `web/src/components/oil/`
 is gone and `web/src/components/blocks/` is in its place. Read
 `docs/Meta/Analysis/The Plugin Contract.md` for the design and
-[[Meta/Analysis/Plugin API Plan]] for the settled API decisions.
+Plugin API Plan for the settled API decisions.
 
 The rule is one sentence: **a plugin owns data, and each frontend draws it
 natively.** A plugin publishes opaque JSON through `cru.plugin.publish`; the
@@ -1196,7 +1196,7 @@ place independently. Both are about the same missing boundary.
 - This draft: `server.rs:241` sets `script-src 'self' 'wasm-unsafe-eval'`, so a
   plugin bundle the daemon serves IS `'self'`. The policy admits it and protects
   nothing. The service worker's root scope leans on that same control.
-- [[Meta/Analysis/Plugin API Plan]]: until blocks are isolated, a header is
+- Plugin API Plan: until blocks are isolated, a header is
   forgeable by same-origin script. Attribution is not a security boundary.
 - The old plugin `Capability` enum is gone. Operator-installed Lua is trusted
   code; the remaining plugin tool-interception declaration does not isolate
@@ -1204,7 +1204,7 @@ place independently. Both are about the same missing boundary.
 
 The three describe one gap. **Nothing separates plugin code from app code on
 this origin**, and every proposed control assumes an isolation that does not
-exist yet. [[Meta/Analysis/Plugin Web Delivery]] selects an opaque-origin
+exist yet. Plugin Web Delivery selects an opaque-origin
 sandboxed iframe and MessageChannel bridge; implementation waits for a
 third-party web-asset consumer. The existing exemplars are not the same strength:
 
@@ -1885,7 +1885,7 @@ means duplicating it, or extracting it first.
    review index wants a *session* scope and tree expansion wants a *viewer*
    scope. A saved query is a third case. **Design the scope vocabulary once,
    jointly, rather than growing one on each side.** Owner: this draft and
-   [[Meta/Analysis/Plugin API Plan]] together.
+   Plugin API Plan together.
    **One constraint is already agreed and is not open: the binding resolves
    server-side.** A scope a caller asserts is a caller reading another caller's
    state. So `data/session/<id>/…` takes `<id>` from the request's resolved

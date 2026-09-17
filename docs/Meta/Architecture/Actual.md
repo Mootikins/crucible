@@ -397,9 +397,9 @@ them.
 | `LinkSuggestion` | `crucible-daemon/src/tools/autolink.rs:12` | One unlinked mention (`suggest_links`) |
 | `GrepHit`, `GrepSearchResponse` | `crucible-daemon/src/tools/grep_engine.rs:55,74` | ripgrep-crate grep |
 
-The schema ladder and the DDL ownership rules are in [[Storage Schema]] and
-are still true. The canvas model, containment and index rules are in [[Canvas]]
-and are still true.
+The schema ladder and the DDL ownership rules are in Storage Schema and
+are still true. The canvas model, containment and index rules are in
+[[Help/Concepts/Canvas]] and are still true.
 
 **Traits.** `MarkdownParser` (`parser/traits.rs:17`, 4 required, 1 impl, `dyn`
 at `note_pipeline.rs:59`). `SyntaxExtension` (`parser/extensions.rs:18`, 5

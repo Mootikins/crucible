@@ -21,7 +21,7 @@ there.
 This is the *workspace* axis — **where the files live**. It composes with the
 *runtime* axis — **where the process runs** — which is [[Container Isolation]]'s
 business. A session can run in a container against a worktree, and the two are
-chosen independently. See [[Workspace and Runtime Targets]] for the design.
+chosen independently. See Workspace and Runtime Targets for the design.
 
 ## Using it
 
@@ -125,5 +125,5 @@ hand does — `git worktree remove` when you are done with it, and
 ## See Also
 
 - [[Container Isolation]] — the runtime axis, and how the two compose
-- [[Workspace and Runtime Targets]] — the design, and how to write a provider
+- Workspace and Runtime Targets — the design, and how to write a provider
 - [[Help/Extending/Creating Plugins]] — the plugin API this is built on

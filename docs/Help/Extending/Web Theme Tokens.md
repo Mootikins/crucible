@@ -30,7 +30,7 @@ The contract has three promises:
 > `crates/crucible-web/web/src/index.css`, with tests that hold them there.
 > The route that serves a plugin stylesheet is NOT. This page defines the
 > names so that plugin authors and the app agree before the first theme
-> ships. Read [[Meta/Analysis/Plugin Web Delivery]] for that design and its
+> ships. Read Plugin Web Delivery for that design and its
 > open questions.
 
 ## How an override wins
@@ -364,6 +364,6 @@ the next frame. Three places do not, and a plugin author should know which:
   stylesheet.
 - [[Help/Extending/Scripted UI]] themes the TUI. The TUI and the web UI use
   separate theme systems, and a Lua theme does not reach the browser.
-- [[Meta/Analysis/Plugin Web Delivery]] records the design for plugin web
+- Plugin Web Delivery records the design for plugin web
   assets and its open questions.
 - [[Help/Config/web]] configures the web server.

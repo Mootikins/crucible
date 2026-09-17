@@ -34,7 +34,7 @@ with `docs/`.
 Verdicts: `code-wrong` (the code should move), `expectation-wrong` (the clean
 room guessed wrong and had no reason to guess right), `expectation-incomplete`
 (the clean room lacked an input, usually a security invariant from
-[[Filesystem Containment]] or a live surface the product docs do not name;
+Filesystem Containment or a live surface the product docs do not name;
 Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 `not-built`, and `closed` (a Tier 1 to 3 commit removed the difference; section
 6 names the commit).
@@ -43,7 +43,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 |---|---|---|---|---|---|
 | G1 | scope | One `CapabilityHandle` is the only path door (4.4) | `FsScope` is the door, but the `Component::Normal` whitelist loop is written six times (`server/fs/mod.rs:160,387,460`, `server/session/review/mod.rs:605`, `server/note_refactor.rs:232`, `crucible-core/src/canvas/containment.rs:215`) | code-wrong | M |
 | G2 | scope | `PermissionEngine` returns `GateDecision` with the deciding `Layer`; it never prompts (4.12, 8.7) | `PermissionDecision` is `Allow`, `Deny`, `Ask` with no layer (`permissions/types.rs:98`); the prompt runs inside `messaging/permission.rs`; a second door `PermissionGate` exists as `Arc<dyn>` with one impl (`permission_bridge.rs:19`) | code-wrong | M |
-| G3 | scope | One project `PatternStore` for saved allows (3.2) | Three bash allowlists and two deny lists in one module (`patterns.rs:57`, `security.rs:56,163`, `hardcoded.rs:21`); the layers have different override semantics, so T3-C9 documented the order in [[Bash Permission Layers]] instead of a merge | both-acceptable | - |
+| G3 | scope | One project `PatternStore` for saved allows (3.2) | Three bash allowlists and two deny lists in one module (`patterns.rs:57`, `security.rs:56,163`, `hardcoded.rs:21`); the layers have different override semantics, so T3-C9 documented the order in Bash Permission Layers instead of a merge | both-acceptable | - |
 | G4 | scope | One `PermDecision` enum `AllowOnce`, `AllowSession`, `AllowProject`, `Deny` (3.15, D13) | Two `PermissionScope` enums with one name (`interaction/permission.rs:20` has `Once`, `Session`; `permissions/types.rs:5` has `Project`, `User`); the TUI maps one to the other by hand (`crucible-cli/src/tui/oil/chat_app/shell.rs:113-121`) | code-wrong | S |
 | G5 | scope | The Lua permission hook has a 1 s budget (9.4) | `execute_permission_hooks_with_timeout` has no timeout; it discards a late result (`messaging/permission.rs:1108`) | code-wrong | S |
 | G6 | scope | Permission requests are serialized per session (3.15) | `PermissionSerializer` serializes ACP prompts (`messaging/permission.rs:76`); the internal path is serial because tools dispatch one at a time (`messaging/tool_call.rs:647`) | both-acceptable | - |
@@ -239,7 +239,7 @@ disappears; `DaemonPermissionGate` becomes a free function. First step: add the
 
 **G3.** Moved to `both-acceptable` on 2026-08-22. T3-C9 found that the three
 allow lists have different override semantics and documented the order in
-[[Bash Permission Layers]] instead of a merge. One defect stays open from that
+Bash Permission Layers instead of a merge. One defect stays open from that
 pass: `PatternStore::matches_bash` matches a prefix on the whole command and
 does not split chained statements
 (`crates/crucible-core/src/config/patterns.rs:289`).

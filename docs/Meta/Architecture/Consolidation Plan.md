@@ -27,7 +27,7 @@ treating their line numbers or "no callers" claims as current is unsafe.
   confirmed defects or a maintained backlog.
 - September removed the unused block-extraction subsystem and redundant typed
   block lists. This did not retire the live note/block retrieval stores.
-  [[Meta/Analysis/2026-09-14 Code Reduction Review]] records the later sweep.
+  2026-09-14 Code Reduction Review records the later sweep.
 
 ## Decisions to preserve
 
@@ -41,7 +41,7 @@ treating their line numbers or "no callers" claims as current is unsafe.
   migration readers, feature-specific integrations and drop guards need their
   own evidence before deletion.
 - Bash permission layers have distinct scopes and overrides; see
-  [[Meta/Analysis/Bash Permission Layers]]. Do not merge them from similar names.
+  Bash Permission Layers. Do not merge them from similar names.
 - Required trait methods expose incomplete adapters at compilation. Test
   doubles and dependency firewalls are legitimate traits; zero-call wrappers
   and test-only alternative implementations are not.

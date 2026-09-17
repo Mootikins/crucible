@@ -596,7 +596,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [x] **Taffy Layout** `P0` — flexbox-based terminal layout; one spacing system via `gap()` for both graduated and viewport content · `crucible-oil`
   - **Gets you:** consistent spacing between scrollback and viewport, from one mechanism rather than two.
   - **Proof:** `taffy = "0.12"` at `crates/crucible-oil/Cargo.toml`:19; `Node::gap` at `crucible-oil/src/node.rs:484`, exercised by `tests/spacing_tests.rs`, `layout_tests.rs`, `graduation_tests.rs` and the `vt100_runtime_tests/spacing.rs` frame tests
-- [x] **Theme System** `P0` — token-based theming · [[Meta/TUI-Style-Guide]] · `crucible-oil`
+- [x] **Theme System** `P0` — token-based theming · [[Meta/TUI Style Guide]] · `crucible-oil`
   - **Gets you:** theme tokens (mode colour, toast severity colours, syntax theme) come out as real ANSI in the painted frame.
   - **Proof:** the ANSI status-bar snapshots resolve through `theme::active()` and carry the token-derived SGR sequences (`…status_bar_normal.snap`, `…status_bar_plan.snap`, `…statusline_count_badges_narrow_width_40.snap`); diff/syntax colours in `…diff_view__snapshot_tests__snap_python_syntax_highlighting.snap`
 - [-] **Theme Overrides** `P0` — user-supplied colours replace the defaults on screen · `crucible-cli`, `crucible-oil`
@@ -1097,7 +1097,7 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Gets you:** the RPCs are dispatched and reachable from the CLI, which is a real user-visible capability set with no prior entry at all.
   - **Proof:** _none — the methods are present in `rpc/dispatch.rs:437-440` and the command module exists, but the sweep did not verify that any handler reaches a real effect. Enter as in-progress until one does._
 - [x] **Git / SCM Project Integration** `P0` — `scm.clone` in the daemon; branches and worktrees in the bundled `worktree` Lua plugin · `crucible-daemon`, `crucible-lua`, `crucible-web`
-  - **Gets you:** create a project from a remote repo URL, and back a workspace-target picker on the web composer — pick a branch to jump to its worktree or create one from the `[plugins.worktree] template`. N sessions across N worktrees without leaving the composer. Config knobs are `[workspace] root_dir` / `session_scratch_dir`, plus `[plugins.worktree] template` (worktrees moved to the plugin; see [[Workspace and Runtime Targets]]).
+  - **Gets you:** create a project from a remote repo URL, and back a workspace-target picker on the web composer — pick a branch to jump to its worktree or create one from the `[plugins.worktree] template`. N sessions across N worktrees without leaving the composer. Config knobs are `[workspace] root_dir` / `session_scratch_dir`, plus `[plugins.worktree] template` (worktrees moved to the plugin; see Workspace and Runtime Targets).
   - **Proof:** clone in Rust — `crates/crucible-daemon/src/scm.rs`::clone_repo_against_real_git_fixture, `::clone_dest_contained_to_workspace_root_dir`, `::clone_dest_rejects_symlink_hop_out_of_base`, `::rejects_hostile_clone_urls`. Branches and worktrees in Lua — `runtime/plugins/worktree/tests/git_test.lua` and `tests/init_test.lua`, plus `crates/crucible-daemon/tests/workspace_targets_e2e.rs` end to end (six tests: provider declaration, target enumeration, birth-in-worktree, checkout reuse, unknown provider refusal, new-branch creation).
   - **Corrected twice on 2026-08-18.** First pass flagged that this entry cited a test named `collect_branches_and_add_worktree_against_real_git` which is in no file, and concluded the two RPCs were "shipped and unproven". That conclusion was wrong: `scm.branches` and `scm.worktree_add` **no longer exist**. They were removed from the daemon and reimplemented in the bundled `worktree` plugin, which states it in its own header (`runtime/plugins/worktree/init.lua`:15-18 — "Zero Rust git knowledge … What this replaces: `scm.rs`'s `add_worktree` and `collect_branches`, the `scm.branches` / `scm.worktree_add` RPCs"). The web stopped parsing git too (`web/src/lib/api.ts`:623). The missing test was missing because the code it tested was deleted — a citation surviving its subject, which is the failure mode this map's proof lines exist to catch, caught one layer late.
   - **What is left in Rust, and why:** `scm.clone` plus `normalize_clone_url`, `sanitize_repo_name`, `validate_clone_dest` and `resolve_workspace_root_dir`. These are URL hardening and path containment — `validate_clone_dest` refuses a symlink hop out of the workspace root dir — and belong beside `fs_scope.rs` and `protected.rs` rather than in a plugin a user can shadow. The git *invocation* could move; the guard around it should not, and splitting the two buys nothing.
@@ -1405,7 +1405,7 @@ failure is why the Reflection Pass is propose-only; see Self-Improvement Avenues
 
 ## Links
 
-- [[Meta/Analysis/Systems]] — System architecture and boundaries
+- Systems — System architecture and boundaries
 - [[Meta/Product Decision Log]] — Dated product decisions, with reversals annotated
 - [[Meta/TUI User Stories]] — TUI requirements
 - [[Meta/Web User Stories]] — Web requirements

@@ -90,4 +90,4 @@ entry to edit. A leftover `plugins.toml` is imported into the manifest idempoten
 warned about each boot (`sweep_legacy_plugins_toml`); the file is inert.
 
 See also [[Config Boot]] for how the config side is produced, and
-[[Storage Schema]] for the session and note storage this note does not cover.
+Storage Schema for the session and note storage this note does not cover.

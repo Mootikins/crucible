@@ -116,4 +116,4 @@ row that reads as current when it is not is a trap.
 ## Links
 
 - [[Meta/Product]] — the capability inventory these decisions shaped
-- [[Meta/Analysis/Systems]] — system architecture and boundaries
+- Systems — system architecture and boundaries

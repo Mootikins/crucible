@@ -85,12 +85,14 @@ WORKTREE.md
 # Local thoughts/plans (not committed)
 thoughts/
 
-# Plans and research are working notes, not repository content. They date
-# instantly, they cite line numbers that move, and — because `docs/` is a
-# validated kiln — a draft left here fails `just lint docs` for everyone on
-# broken wikilinks and stale code refs in a file no commit contains.
-# `/2_create_plan` and `/1_research_codebase` already write to `thoughts/`.
+# Plans, research and analysis are working notes, not repository content.
+# They date instantly, they cite line numbers that move, and — because
+# `docs/` is a validated kiln — a draft left here fails `just lint docs` for
+# everyone on broken wikilinks and stale code refs in a file no commit
+# contains. Architecture notes and the product/story docs stay tracked;
+# nothing tracked may link into these directories.
 docs/Meta/Plans/
+docs/Meta/Analysis/
 crates/crucible-cli/proptest-regressions/
 .sisyphus/
 
