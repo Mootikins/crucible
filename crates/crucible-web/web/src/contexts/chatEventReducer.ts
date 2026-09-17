@@ -64,6 +64,22 @@ function upsertSubagentEvent(
   return next;
 }
 
+/**
+ * The state a tool is left in when its turn ended without an answer for it:
+ * a partial result completes it, no result at all surfaces the error. The
+ * live reducer sweeps with this at turn end, and the history fold reuses it
+ * so a reload derives the same state the live transcript showed — not a
+ * blanket 'complete' the events never said.
+ */
+export function finalizeDanglingTool(tool: ToolCallDisplay): ToolCallDisplay {
+  const hasResult = tool.result != null && tool.result !== '';
+  return {
+    ...tool,
+    status: hasResult ? 'complete' : 'error',
+    result: hasResult ? tool.result : 'tool did not complete',
+  };
+}
+
 export function createChatEventReducer(deps: ChatEventReducerDeps) {
   // A viewer that attaches mid-turn (page reload, PWA update, second pane)
   // has no streaming placeholder — sendMessage ran in another instance.
@@ -98,14 +114,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
       .map((m) => m.toolCall!.callId)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     for (const callId of runningCallIds) {
-      deps.updateToolMessage(callId, (tool) => {
-        const hasResult = tool.result != null && tool.result !== '';
-        return {
-          ...tool,
-          status: hasResult ? 'complete' : 'error',
-          result: hasResult ? tool.result : 'tool did not complete',
-        };
-      });
+      deps.updateToolMessage(callId, finalizeDanglingTool);
     }
   };
 

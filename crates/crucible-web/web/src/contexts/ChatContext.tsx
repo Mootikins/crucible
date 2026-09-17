@@ -51,6 +51,7 @@ import {
   updateTranscriptMessages,
 } from './transcriptStore';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
+import { finalizeDanglingTool } from './chatEventReducer';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
 
 
@@ -264,7 +265,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       } else if (evt.event === 'tool_call') {
         // Reconstruct tool entries so past tool activity stays visible in
         // the transcript after a reload (they used to vanish at turn end).
-        // Canonical daemon payload: {call_id, tool, args}.
+        // Canonical daemon payload: {call_id, tool, args}. The entry starts
+        // RUNNING and the sweep below finalizes it from its own events, the
+        // way the live reducer does — a blanket 'complete' here would show a
+        // cancelled tool as finished after the reload that live never showed.
         const callId = String(data.call_id ?? `hist-${loadedMessages.length}`);
         const name = String(data.tool ?? 'tool');
         const args = data.args;
@@ -278,7 +282,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             callId,
             name,
             args: args === undefined ? '' : JSON.stringify(args),
-            status: 'complete',
+            status: 'running',
           },
         });
       } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
@@ -340,6 +344,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             completedAt: eventTime(evt),
           });
         }
+      }
+    }
+
+    // A turn can end (or the log can stop) with a tool still "running" — no
+    // tool_result ever arrived. Finalize each with the same rule the live
+    // reducer applies at turn end, so the reloaded transcript shows the state
+    // the events describe rather than one the reload invented.
+    for (const message of loadedMessages) {
+      if (message.role === 'tool' && message.toolCall && message.toolCall.status === 'running') {
+        message.toolCall = finalizeDanglingTool(message.toolCall);
       }
     }
 
