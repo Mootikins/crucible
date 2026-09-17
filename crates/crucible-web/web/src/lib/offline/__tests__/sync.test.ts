@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 const notify = vi.hoisted(() => vi.fn());
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: (...a: unknown[]) => notify(...a) },
 }));
 
+// The daemon, scripted — but on its ROUTES now, not on the module. The spies
+// stay the per-case control surface; the handlers below answer through them,
+// so `net.guardedSave.mockResolvedValue(...)` scripts what
+// `PUT /api/kiln/file` answers, in the wire shapes the route carries.
 const net = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
@@ -13,20 +18,67 @@ const net = vi.hoisted(() => ({
   list: vi.fn(async (_kiln: string) => [] as unknown[]),
   online: true,
 }));
-vi.mock('@/lib/api', () => ({
-  getFileWithHash: (p: string) => net.read(p),
-  saveFileContent: (p: string, c: string) => net.save(p, c),
-  saveFileIfUnchanged: (...args: unknown[]) => net.guardedSave(...args),
-  patchKilnFile: (p: string, e: unknown, b?: string) => net.patch(p, e, b),
-  getFileContent: async () => '',
-  listNotes: (k: string) => net.list(k),
-  getConfig: async () => {
-    // The real one is a plain fetch with no service-worker cache, so it
-    // THROWS offline. A mock that always resolves hides the whole defect.
-    if (!net.online) throw new TypeError('Failed to fetch');
-    return { config_root: '/etc/crucible' };
-  },
-}));
+
+/** The JSON body one request sent. */
+const bodyOf = async (request: Request): Promise<Record<string, unknown>> =>
+  (await request.clone().json()) as Record<string, unknown>;
+
+/** A wire answer, as the daemon serialises it. */
+const json = (value: unknown, status = 200): Response =>
+  new Response(JSON.stringify(value), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+/** What one guarded write answered, as the module's own type words it. */
+type Guarded =
+  | { ok: true; content_hash: string; merged?: false }
+  | { ok: true; content_hash: string; merged: true; content: string }
+  | {
+      ok: false;
+      current_hash: string;
+      current_content?: string;
+      merged_content?: string;
+      regions?: unknown[];
+    };
+
+/**
+ * A guarded write onto the wire: the hash it wrote, or the 409 that carries
+ * the texts of a refusal (`saveFileIfUnchanged` reads them off that body).
+ */
+const guardedWire = (answer: Guarded): Response =>
+  answer.ok
+    ? json({
+        content_hash: answer.content_hash,
+        ...('merged' in answer && answer.merged ? { merged: true, content: answer.content } : {}),
+      })
+    : json(answer, 409);
+
+/** An anchored edit onto the wire: the hash it wrote, or the 409 that names why not. */
+const patchWire = (
+  answer: { ok: true; content_hash: string } | ({ ok: false } & Record<string, unknown>),
+): Response => (answer.ok ? json({ content_hash: answer.content_hash }) : json(answer, 409));
+
+/**
+ * A spy rejection that names a status is the daemon ANSWERING — put it on
+ * wire as that status, so the client throws the shaped error the callers
+ * branch on. Anything else is a network that never answered: keep it a
+ * rejected fetch.
+ */
+async function answeredOnWire(err: unknown): Promise<Response> {
+  if (err instanceof Error && typeof (err as Error & { status?: number }).status === 'number') {
+    const { status, message } = err as Error & { status: number };
+    return json({ error: { code: status, message } }, status);
+  }
+  throw err;
+}
+
+let env: TestQueryEnv;
+
+// The store the facade holds during a test. `setOfflineStore` is the seam.
+let store = memoryStore();
+const KILN = '/kilns/notes';
+const PATH = `${KILN}/Note.md`;
 
 import { memoryStore } from '@/lib/offline/store';
 import { keptActions } from '@/lib/offline/kept';
@@ -46,12 +98,6 @@ import {
   warmIdentity,
   writeNote,
 } from '@/lib/offline/sync';
-
-// The store the facade holds during a test. `setOfflineStore` is the seam.
-let store = memoryStore();
-const KILN = '/kilns/notes';
-const PATH = `${KILN}/Note.md`;
-
 beforeEach(() => {
   localStorage.clear();
   net.read.mockReset();
@@ -59,9 +105,63 @@ beforeEach(() => {
   net.guardedSave.mockReset();
   net.patch.mockReset();
   notify.mockReset();
+  net.online = true;
   store = memoryStore();
   setOfflineStore(store);
   keptActions.keep(KILN, 'notes');
+  env = createTestQueryEnv({
+    // The read of one note: the bytes with the hash they were read at.
+    'GET /api/kiln/file': (request) =>
+      net.read(new URL(request.url).searchParams.get('path')!),
+    // The write. `base_hash` present is the guarded one the document layer
+    // sends; absent is the blind PUT nothing here should ever issue — the
+    // `net.save` assertions below are exactly that claim.
+    'PUT /api/kiln/file': async (request) => {
+      const body = await bodyOf(request);
+      if (body.base_hash === undefined) {
+        await net.save(body.path as string, body.content as string);
+        return { ok: true, content_hash: 'written' };
+      }
+      try {
+        return guardedWire(
+          await net.guardedSave(
+            body.path as string,
+            body.content as string,
+            body.base_hash as string,
+            body.base_text as string | undefined,
+          ),
+        );
+      } catch (err) {
+        return answeredOnWire(err);
+      }
+    },
+    // The anchored edit, replayed with no base.
+    'PATCH /api/kiln/file': async (request) => {
+      const body = await bodyOf(request);
+      try {
+        return patchWire(
+          await net.patch(body.path as string, body.edits, body.base_hash),
+        );
+      } catch (err) {
+        return answeredOnWire(err);
+      }
+    },
+    // The kiln's notes, with the wire's RELATIVE paths.
+    'GET /api/notes': async (request) => ({
+      notes: await net.list(new URL(request.url).searchParams.get('kiln')!),
+    }),
+    // The identity the stamp reads. The real one is a plain fetch with no
+    // service-worker cache, so it THROWS offline. A mock that always resolves
+    // hides the whole defect.
+    'GET /api/config': () => {
+      if (!net.online) throw new TypeError('Failed to fetch');
+      return { config_root: '/etc/crucible' };
+    },
+  });
+});
+
+afterEach(() => {
+  env?.restore();
 });
 
 describe('readNote', () => {
