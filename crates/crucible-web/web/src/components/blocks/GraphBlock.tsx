@@ -41,6 +41,39 @@ interface Neighborhood {
   error?: string | null;
 }
 
+/**
+ * Refuse a reply that is not a `Neighborhood`, instead of asserting it.
+ *
+ * The `run_command` route answers every command with a bare JSON value
+ * (`PluginRunCommandResponse.result`), so no contract types this shape for
+ * us: one generic route serves every plugin, and a shape it validated would
+ * be a shape only today's plugins could send. The check is as strict as the
+ * renderer below is — exactly the fields it reads, no more — so a plugin
+ * adding a field still renders.
+ */
+function isNeighborhood(value: unknown): value is Neighborhood {
+  const v = value as Record<string, unknown> | null;
+  const ringOk = (ring: unknown) => {
+    const r = ring as Record<string, unknown> | null;
+    return r !== null && typeof r === 'object'
+      && typeof r.hops === 'number' && Number.isFinite(r.hops)
+      && Array.isArray(r.paths) && r.paths.every((p) => typeof p === 'string');
+  };
+  return v !== null && typeof v === 'object'
+    && typeof v.root === 'string'
+    && typeof v.depth === 'number' && Number.isFinite(v.depth)
+    && typeof v.total === 'number' && Number.isFinite(v.total)
+    && typeof v.truncated === 'boolean'
+    && (v.error == null || typeof v.error === 'string')
+    && Array.isArray(v.rings) && v.rings.every(ringOk);
+}
+
+/** Decode the plugin's reply, or throw — the caller shows its error state. */
+function decodeNeighborhood(value: unknown): Neighborhood {
+  if (!isNeighborhood(value)) throw new Error('malformed graph_neighborhood reply');
+  return value;
+}
+
 /** What the plugin will accept; mirrors `MAX_DEPTH` in its `init.luau`. */
 const MAX_DEPTH = 4;
 
@@ -102,11 +135,24 @@ export const GraphBlock: Component<BlockProps> = (props) => {
         // same as `KanbanBlock`. Without it the call defaults to `APP_CALLER`
         // and the block is indistinguishable from the app, so the route's
         // per-plugin comparison never runs in production.
-        return (await runCommand.mutateAsync({
+        return decodeNeighborhood(await runCommand.mutateAsync({
           command: 'graph_neighborhood',
           args,
           caller: props.plugin,
-        })) as Neighborhood;
+        }));
+      } catch (e) {
+        // A refused shape or a failed call reaches the reader through the one
+        // error surface the block already has. Throwing instead would park the
+        // resource on "reading the neighbourhood…" forever: the render reads
+        // `answer()`, never `answer.error`.
+        return {
+          root: args.path,
+          depth: args.depth,
+          total: 0,
+          truncated: false,
+          rings: [],
+          error: e instanceof Error ? e.message : String(e),
+        };
       } finally {
         setElapsed(performance.now() - started);
       }

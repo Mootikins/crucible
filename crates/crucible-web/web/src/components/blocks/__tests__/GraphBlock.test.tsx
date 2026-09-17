@@ -173,6 +173,26 @@ describe('GraphBlock', () => {
     await waitFor(() => expect(container.textContent).toContain('no kiln is open'));
   });
 
+  // The command route answers a bare JSON value, so nothing between the
+  // daemon and this block vouches for the shape. A reply that is not a
+  // Neighborhood must be refused, not cast: before the decode, the cast
+  // rendered this fixture as a plausible empty neighbourhood.
+  it('refuses a malformed reply instead of rendering it', async () => {
+    mocks.runPluginCommand.mockResolvedValue({
+      root: 'Meta/Canvas.md',
+      depth: 1,
+      total: 0,
+      truncated: false,
+    });
+
+    const { container } = render(() => (
+      <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
+    ));
+
+    await waitFor(() => expect(container.textContent).toContain('malformed graph_neighborhood reply'));
+    expect(container.textContent).not.toContain('Nothing links to or from');
+  });
+
   it('says an isolated note has no neighbours rather than drawing nothing', async () => {
     mocks.runPluginCommand.mockResolvedValue({
       root: 'Meta/Canvas.md',
