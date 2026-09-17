@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createRoot, createEffect } from 'solid-js';
 import { createMockFetch, type MockFetch } from '@/test-utils/mock-fetch';
 import { windowActions, windowStore } from '@/stores/windowStore';

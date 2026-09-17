@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const getNoteMock = vi.fn();
-const getConfigMock = vi.fn();
 const kilnInUse = vi.hoisted(() => ({ path: null as string | null }));
 vi.mock('@/stores/kilnStore', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -9,11 +7,9 @@ vi.mock('@/stores/kilnStore', async (importOriginal) => ({
 }));
 const openFileInEditorMock = vi.fn();
 
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getNote: (...args: unknown[]) => getNoteMock(...args),
-  getConfig: (...args: unknown[]) => getConfigMock(...args),
-}));
+// No `vi.mock('../api')`: nothing under test imports it any more. The note
+// metadata and config reads these cases guard against have no module double
+// left to stub — the claims are proven by what reaches the daemon below.
 
 vi.mock('../file-actions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -180,21 +176,15 @@ describe('fetchNotePreview', () => {
       absolutePath: '/kiln/Notes/Architecture.md',
       title: 'Architecture',
     });
-    getNoteMock.mockResolvedValue({
-      name: 'Component Architecture',
-      path: 'Meta/Component Architecture.md',
-      title: 'Component Architecture',
-      tags: [],
-      updated_at: '',
-    });
 
     expect(await fetchNotePreview('Architecture', '/kiln')).toEqual({
       title: 'Architecture',
       path: 'Notes/Architecture.md',
       absPath: '/kiln/Notes/Architecture.md',
     });
+    // The one read the daemon took was the resolver's — no fuzzy index, no
+    // second note-metadata request beside it.
     expect(resolved).toEqual([['/kiln', 'Architecture']]);
-    expect(getNoteMock).not.toHaveBeenCalled();
   });
 });
 
@@ -204,13 +194,6 @@ describe('openNoteInEditor', () => {
       path: 'notes/rust.md',
       absolutePath: '/kiln/notes/rust.md',
       title: 'Rust',
-    });
-    getNoteMock.mockResolvedValue({
-      name: 'rust',
-      path: 'notes/rust.md',
-      title: 'Rust',
-      tags: [],
-      updated_at: '',
     });
 
     await openNoteInEditor('rust', '/kiln');
@@ -223,7 +206,6 @@ describe('openNoteInEditor', () => {
    * another; content with no known kiln has no links to follow.
    */
   it('refuses to resolve when no kiln is given, rather than guessing one', async () => {
-    getConfigMock.mockResolvedValue({ kiln_path: '/default-kiln' });
     setResolveHit({
       path: 'notes/rust.md',
       absolutePath: '/default-kiln/notes/rust.md',
@@ -233,7 +215,8 @@ describe('openNoteInEditor', () => {
     await openNoteInEditor('rust');
 
     expect(resolved).toEqual([]);
-    expect(getNoteMock).not.toHaveBeenCalled();
+    // No default kiln was read from anywhere: the daemon was not even asked.
+    expect(env.fetch.calls('GET /api/config')).toBe(0);
     expect(openFileInEditorMock).not.toHaveBeenCalled();
   });
 

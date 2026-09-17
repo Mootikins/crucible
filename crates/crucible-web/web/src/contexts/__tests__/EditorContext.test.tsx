@@ -16,6 +16,7 @@ const guardedSave = vi.fn(async (p: string, c: string, _base: string, _baseText?
   await saveFileContent(p, c);
   return { ok: true, content_hash: 'written' } as
     | { ok: true; content_hash: string; merged?: false }
+    | { ok: true; content_hash: string; merged: true; content: string }
     | {
         ok: false;
         current_hash: string;

@@ -51,7 +51,12 @@ beforeEach(() => {
   });
 });
 
-
+afterEach(() => {
+  env?.restore();
+  // The transcript store is a module singleton keyed by session; forget it
+  // so one case's session cannot answer the next one.
+  resetTranscriptsForTests();
+});
 function mountProvider(): ChatContextValue {
   let ctx!: ChatContextValue;
   const Probe = () => { ctx = useChat(); return null; };

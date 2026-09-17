@@ -3,12 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEffect, createSignal } from 'solid-js';
 import { resetTranscriptsForTests } from './transcriptStore';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
-import * as api from '@/lib/api';
 import { resetSseForTests } from '@/lib/query/sse';
-import type { QueryClient } from '@tanstack/solid-query';
-import { queryClientOptions, setQueryClientForTests } from '@/lib/query/client';
+import { queryClientOptions } from '@/lib/query/client';
 import { keys } from '@/lib/query/keys';
-import { createTestQueryClient } from '@/test-utils/query';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
 import type { Session } from '@/lib/types';
 
@@ -42,51 +40,17 @@ vi.mock('@/lib/turn', () => ({
   },
 }));
 
-vi.mock('@/lib/api', () => ({
-  // Resolves the backend-minted turn id (the transcript is keyed on it).
-  sendChatMessage: vi.fn(async () => 'msg-turn-1'),
-  subscribeToEvents: vi.fn(() => () => {}),
-  cancelSession: vi.fn(async () => true),
-  getSession: vi.fn(),
-  getSessionHistory: vi.fn(async () => ({ history: [], total_events: 0 })),
-  getConfig: vi.fn(async () => ({ kiln_path: '/tmp/test-kiln' })),
-  listSessions: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({
-    current_mode_id: 'ask',
-    modes: [
-      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-      { id: 'review', name: 'Review', description: null, icon: null, color: null },
-    ],
-  })),
-  setSessionTitle: vi.fn(),
-  setSessionMode: vi.fn(async () => {}),
-}));
+// No `vi.mock('@/lib/api')`. The provider reads the daemon through the query
+// layer and the shared stream root, so the ROUTES answer: each case counts
+// requests and reads bodies off the wire, which a module double cannot prove.
+// The stream is the FakeEventSource of the outer beforeEach; a case that means
+// the daemon to speak emits a frame on it directly.
 
-// Every pane of one session shares one root in `lib/query/sse.ts`, and a root
-// outlives the test that opened it. Forget them between cases, so a source of
-// one test cannot answer the next one. The cache is per case for the same
-// reason: `session.get` is answered from it, so one case's session would
-// hydrate the next case's mode.
-let queryClient: QueryClient;
-
-beforeEach(() => {
-  queryClient = createTestQueryClient();
-  setQueryClientForTests(queryClient);
-});
-
-afterEach(() => {
-  resetSseForTests();
-  // The transcript store is a module singleton keyed by session; forget it
-  // so one case's session cannot answer the next one.
-  resetTranscriptsForTests();
-  setQueryClientForTests(null);
-});
-
-const mockSendChatMessage = api.sendChatMessage as ReturnType<typeof vi.fn>;
-const mockSubscribeToEvents = api.subscribeToEvents as ReturnType<typeof vi.fn>;
-const mockGetSession = api.getSession as ReturnType<typeof vi.fn>;
-const mockGetSessionHistory = api.getSessionHistory as ReturnType<typeof vi.fn>;
-const mockListSessions = api.listSessions as ReturnType<typeof vi.fn>;
+const ID = 'test-session-1';
+const HISTORY_ROUTE = `GET /api/session/${ID}/history`;
+const SEND_ROUTE = 'POST /api/chat/send';
+/** Every session id some case binds a pane to. */
+const IDS = [ID, 'test-session-2', 'session-a', 'session-b'] as const;
 
 const mockSession: Session = {
   session_id: 'test-session-1',
@@ -99,6 +63,108 @@ const mockSession: Session = {
   started_at: new Date().toISOString(),
   event_count: 0,
 };
+
+// ---- What each route answers this case. The outer beforeEach sets the
+// standing answers; a case replaces what it means before it renders. ----
+
+/** `GET /api/session/{id}` for the main session. */
+let sessionAnswer: () => unknown;
+/** `GET /api/session/{id}/history` for the main session. */
+let historyAnswer: () => unknown;
+/** The answers the modes route owes in order; the standing one follows them. */
+let modesOnce: Array<() => unknown>;
+let modesAnswer: () => unknown;
+/** What `POST /api/chat/send` answers: the turn id the daemon minted. */
+let sendAnswer: () => unknown;
+/** What `GET /api/session/list` answers. */
+let listAnswer: () => unknown;
+/** What `POST /api/session/{id}/mode` answers. */
+let setModeAnswer: () => unknown;
+/** The session each history read asked for, in order. */
+const historyAsked: string[] = [];
+/** The `limit` each history read asked with, in order. */
+const historyLimits: (string | null)[] = [];
+/** The bodies that reached the send route, in order. */
+const sentTurns: { session_id: string; content: string }[] = [];
+
+/** The daemon's refusal, as its routes serialise it. */
+const refusal = (status: number, message: string): Response =>
+  new Response(JSON.stringify({ error: { code: status, message } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+/**
+ * A promise a case holds and releases by hand. The tsconfig targets ES2022,
+ * one lib short of `Promise.withResolvers`, so the pair is built once here.
+ */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+let env: TestQueryEnv;
+
+/** Installs the query env with every route a pane's mount reaches. */
+function serve(): void {
+  const routes: Record<string, (request: Request) => unknown> = {
+    'GET /api/interactions/pending': () => ({ pending: [] }),
+    'GET /api/kilns': () => ({ kilns: [] }),
+    'GET /api/session/list': () => listAnswer(),
+    [SEND_ROUTE]: async (request) => {
+      sentTurns.push((await request.clone().json()) as { session_id: string; content: string });
+      return sendAnswer();
+    },
+  };
+  for (const id of IDS) {
+    // A pane that binds reads the session it named: the record answers under
+    // the id it was asked for, so a fixed record would hand every pane one
+    // session whatever it bound to.
+    routes[`GET /api/session/${id}`] = () =>
+      id === ID ? sessionAnswer() : { ...mockSession, session_id: id };
+    routes[`GET /api/session/${id}/history`] = (request) => {
+      historyAsked.push(id);
+      historyLimits.push(new URL(request.url).searchParams.get('limit'));
+      return id === ID
+        ? historyAnswer()
+        : { session_id: id, history: [], total_events: 0 };
+    };
+    routes[`GET /api/session/${id}/modes`] = () =>
+      modesOnce.length ? modesOnce.shift()!() : modesAnswer();
+    routes[`POST /api/session/${id}/mode`] = () => setModeAnswer();
+  }
+  env = createTestQueryEnv(routes);
+}
+
+beforeEach(() => {
+  installFakeEventSource();
+  sessionAnswer = () => mockSession;
+  historyAnswer = () => ({ session_id: ID, history: [], total_events: 0 });
+  modesOnce = [];
+  modesAnswer = () => ({
+    current_mode_id: 'ask',
+    modes: [
+      { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
+      { id: 'review', name: 'Review', description: null, icon: null, color: null },
+    ],
+  });
+  sendAnswer = () => ({ message_id: 'msg-turn-1' });
+  listAnswer = () => ({ sessions: [], total: 0 });
+  setModeAnswer = () => new Response(null, { status: 204 });
+  historyAsked.length = 0;
+  historyLimits.length = 0;
+  sentTurns.length = 0;
+  serve();
+});
+
+afterEach(() => {
+  resetSseForTests();
+  // The transcript store is a module singleton keyed by session; forget it
+  // so one case cannot answer the next one.
+  resetTranscriptsForTests();
+  env?.restore();
+});
 
 function TestConsumer() {
   const { messages, isLoading, sendMessage } = useChat();
@@ -135,13 +201,6 @@ function TestWrapper(props: { children: any; session?: Session | null }) {
 }
 
 describe('ChatContext', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSubscribeToEvents.mockReturnValue(() => {});
-    mockGetSession.mockResolvedValue(mockSession);
-    mockListSessions.mockResolvedValue([]);
-  });
-
   it('starts with empty messages', () => {
     render(() => (
       <TestWrapper>
@@ -154,7 +213,7 @@ describe('ChatContext', () => {
   });
 
   it('adds user message when sending', async () => {
-    mockSendChatMessage.mockResolvedValue('msg_server_1');
+    sendAnswer = () => ({ message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper>
@@ -164,8 +223,8 @@ describe('ChatContext', () => {
 
     // Let the mount-time bootstrap (empty history) fire its load first — the
     // merge in loadHistory must not clobber the optimistic messages. Anchor on
-    // the actual bootstrap call rather than an arbitrary sleep.
-    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    // the actual history read rather than an arbitrary sleep.
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
 
     const sendButton = screen.getByText('Send');
     sendButton.click();
@@ -180,7 +239,7 @@ describe('ChatContext', () => {
   });
 
   it('does not send without session', async () => {
-    mockSendChatMessage.mockResolvedValue('msg_server_1');
+    sendAnswer = () => ({ message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper session={null}>
@@ -197,17 +256,11 @@ describe('ChatContext', () => {
     await Promise.resolve();
 
     expect(screen.getByTestId('count').textContent).toBe('0');
-    expect(mockSendChatMessage).not.toHaveBeenCalled();
+    expect(env.fetch.calls(SEND_ROUTE)).toBe(0);
   });
 
   it('shows loading state while sending', async () => {
-    let eventCallback: ((event: any) => void) | null = null;
-    
-    mockSubscribeToEvents.mockImplementation((_sessionId: string, callback: (event: any) => void) => {
-      eventCallback = callback;
-      return () => { eventCallback = null; };
-    });
-    mockSendChatMessage.mockResolvedValue('msg_server_1');
+    sendAnswer = () => ({ message_id: 'msg_server_1' });
 
     render(() => (
       <TestWrapper>
@@ -215,13 +268,14 @@ describe('ChatContext', () => {
       </TestWrapper>
     ));
 
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     screen.getByText('Send').click();
 
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('loading');
     });
 
-    eventCallback!({
+    FakeEventSource.instances[0]!.emit('message_complete', {
       type: 'message_complete',
       id: 'msg_server_1',
       content: 'Response from assistant',
@@ -234,25 +288,10 @@ describe('ChatContext', () => {
 });
 
 describe('streaming reconciliation', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetSession.mockResolvedValue(mockSession);
-    mockListSessions.mockResolvedValue([]);
-    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
-  });
-
   it('reconciles a message minted by a token that beat the send POST (no orphan bubble)', async () => {
-    let eventCallback: ((event: any) => void) | null = null;
-    mockSubscribeToEvents.mockImplementation(
-      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
-        eventCallback = callback;
-        onOpen?.();
-        return () => { eventCallback = null; };
-      },
-    );
     // Hold the POST open so a token can arrive mid-flight.
-    let resolveSend!: (id: string) => void;
-    mockSendChatMessage.mockReturnValue(new Promise<string>((r) => { resolveSend = r; }));
+    const held = deferred<{ message_id: string }>();
+    sendAnswer = () => held.promise;
 
     render(() => (
       <TestWrapper>
@@ -260,21 +299,25 @@ describe('streaming reconciliation', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(eventCallback).not.toBeNull());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     screen.getByText('Send').click();
-    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
 
     // Token arrives before the POST resolves → reducer mints a random-id
     // assistant and streams into it.
-    eventCallback!({ type: 'token', content: 'partial ' });
+    FakeEventSource.instances[0]!.emit('token', { type: 'token', content: 'partial ' });
 
     // POST resolves with the canonical turn id. The early streaming message
     // must be reconciled into `${id}-response`, not left orphaned beside a new
     // empty placeholder.
-    resolveSend('msg-turn-1');
+    held.resolve({ message_id: 'msg-turn-1' });
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
 
-    eventCallback!({ type: 'message_complete', id: 'msg-turn-1', content: 'partial answer' });
+    FakeEventSource.instances[0]!.emit('message_complete', {
+      type: 'message_complete',
+      id: 'msg-turn-1',
+      content: 'partial answer',
+    });
 
     await waitFor(() => {
       const items = screen.getAllByRole('listitem');
@@ -287,13 +330,6 @@ describe('streaming reconciliation', () => {
 });
 
 describe('a reply the provider cut off', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetSession.mockResolvedValue(mockSession);
-    mockListSessions.mockResolvedValue([]);
-    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
-  });
-
   // The daemon names the reason on `message_complete` and WORDS the note
   // beside it. This is where a reader meets it: a system line under the reply.
   //
@@ -301,15 +337,7 @@ describe('a reply the provider cut off', () => {
   // must draw the string it received, so a test that used the real wording
   // could pass while the page derived the words itself.
   it('draws the note the daemon worded', async () => {
-    let eventCallback: ((event: any) => void) | null = null;
-    mockSubscribeToEvents.mockImplementation(
-      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
-        eventCallback = callback;
-        onOpen?.();
-        return () => { eventCallback = null; };
-      },
-    );
-    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+    sendAnswer = () => ({ message_id: 'msg-turn-1' });
 
     render(() => (
       <TestWrapper>
@@ -317,11 +345,11 @@ describe('a reply the provider cut off', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(eventCallback).not.toBeNull());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     screen.getByText('Send').click();
-    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
 
-    eventCallback!({
+    FakeEventSource.instances[0]!.emit('message_complete', {
       type: 'message_complete',
       id: 'msg-turn-1',
       content: 'Half an ans',
@@ -339,15 +367,7 @@ describe('a reply the provider cut off', () => {
   // No `stop_notice`, so no note — even though the reason is one the page used
   // to keep a wording for. The page derives nothing.
   it('draws nothing extra when the reply finished', async () => {
-    let eventCallback: ((event: any) => void) | null = null;
-    mockSubscribeToEvents.mockImplementation(
-      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
-        eventCallback = callback;
-        onOpen?.();
-        return () => { eventCallback = null; };
-      },
-    );
-    mockSendChatMessage.mockResolvedValue('msg-turn-2');
+    sendAnswer = () => ({ message_id: 'msg-turn-2' });
 
     render(() => (
       <TestWrapper>
@@ -355,11 +375,11 @@ describe('a reply the provider cut off', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(eventCallback).not.toBeNull());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     screen.getByText('Send').click();
-    await waitFor(() => expect(mockSendChatMessage).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(SEND_ROUTE)).toBe(1));
 
-    eventCallback!({
+    FakeEventSource.instances[0]!.emit('message_complete', {
       type: 'message_complete',
       id: 'msg-turn-2',
       content: 'A whole answer',
@@ -373,11 +393,6 @@ describe('a reply the provider cut off', () => {
 });
 
 describe('draft first-message handoff', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockListSessions.mockResolvedValue([]);
-  });
-
   afterEach(async () => {
     // The staged message survives rendering now (peek, not consume — the
     // destructive read happens only at dispatch, which these tests hold
@@ -391,10 +406,9 @@ describe('draft first-message handoff', () => {
     // Neither gate ever resolves: bootstrap hangs, SSE never opens. The
     // optimistic turn must render anyway — the user should never stare at an
     // empty transcript after sending their first draft message.
-    mockGetSession.mockReturnValue(new Promise(() => {}));
-    mockGetSessionHistory.mockReturnValue(new Promise(() => {}));
-    mockSubscribeToEvents.mockImplementation(() => () => {});
-    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+    sessionAnswer = () => new Promise(() => {});
+    historyAnswer = () => new Promise(() => {});
+    sendAnswer = () => ({ message_id: 'msg-turn-1' });
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
     setPendingFirstMessage(mockSession.session_id, 'first message from draft');
@@ -413,7 +427,7 @@ describe('draft first-message handoff', () => {
     expect(items[1].textContent).toBe('');
     expect(screen.getByTestId('loading').textContent).toBe('loading');
     // The POST is still gated — only the rendering is immediate.
-    expect(mockSendChatMessage).not.toHaveBeenCalled();
+    expect(env.fetch.calls(SEND_ROUTE)).toBe(0);
   });
 
   /**
@@ -427,11 +441,9 @@ describe('draft first-message handoff', () => {
    */
   it('draws the staged turn once when the seeded record carries no title', async () => {
     const seeded = { ...mockSession, title: undefined } as unknown as Session;
-    queryClient.setQueryData(keys.session(mockSession.session_id), seeded);
-    mockGetSession.mockResolvedValue(seeded);
-    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
-    mockSubscribeToEvents.mockImplementation(() => () => {});
-    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+    env.client.setQueryData(keys.session(mockSession.session_id), seeded);
+    sessionAnswer = () => seeded;
+    sendAnswer = () => ({ message_id: 'msg-turn-1' });
 
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
     setPendingFirstMessage(mockSession.session_id, 'first message from draft');
@@ -447,7 +459,7 @@ describe('draft first-message handoff', () => {
     // The bootstrap writes the title before it reads the history, so a history
     // read is the mark that the write has happened. Then let every effect the
     // write queued run.
-    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
     for (let flush = 0; flush < 5; flush += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
@@ -484,15 +496,8 @@ describe('session switching', () => {
     );
   }
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSubscribeToEvents.mockReturnValue(() => {});
-    mockGetSession.mockResolvedValue(mockSession);
-    mockListSessions.mockResolvedValue([]);
-  });
-
   it('does not clear messages on initial mount', async () => {
-    mockSendChatMessage.mockResolvedValue('msg_server_1');
+    sendAnswer = () => ({ message_id: 'msg_server_1' });
 
     render(() => (
       <DynamicTestWrapper>
@@ -508,7 +513,7 @@ describe('session switching', () => {
   });
 
   it('clears messages when switching to different session', async () => {
-    mockSendChatMessage.mockResolvedValue('msg_server_1');
+    sendAnswer = () => ({ message_id: 'msg_server_1' });
 
     render(() => (
       <DynamicTestWrapper>
@@ -603,19 +608,9 @@ describe('isLoadingHistory', () => {
     );
   }
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockSubscribeToEvents.mockReturnValue(() => {});
-    mockGetSession.mockResolvedValue(mockSession);
-    mockListSessions.mockResolvedValue([]);
-  });
-
   it('is true during history load and false after', async () => {
-    let resolveHistory!: (value: any) => void;
-    const historyPromise = new Promise((resolve) => {
-      resolveHistory = resolve;
-    });
-    mockGetSessionHistory.mockReturnValue(historyPromise);
+    const held = deferred<unknown>();
+    historyAnswer = () => held.promise;
 
     render(() => (
       <TestWrapper>
@@ -627,7 +622,7 @@ describe('isLoadingHistory', () => {
       expect(screen.getByTestId('history-loading').textContent).toBe('loading');
     });
 
-    resolveHistory({ history: [], total_events: 0 });
+    held.resolve({ session_id: ID, history: [], total_events: 0 });
 
     await waitFor(() => {
       expect(screen.getByTestId('history-loading').textContent).toBe('idle');
@@ -635,7 +630,7 @@ describe('isLoadingHistory', () => {
   });
 
   it('resets to false on error', async () => {
-    mockGetSessionHistory.mockRejectedValue(new Error('Network error'));
+    historyAnswer = () => refusal(500, 'Network error');
 
     render(() => (
       <TestWrapper>
@@ -649,7 +644,8 @@ describe('isLoadingHistory', () => {
   });
 
   it('populates messages from session history events', async () => {
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         {
           type: 'event',
@@ -666,6 +662,7 @@ describe('isLoadingHistory', () => {
       ],
       total_events: 2,
     });
+
 
     render(() => (
       <TestWrapper>
@@ -688,7 +685,8 @@ describe('isLoadingHistory', () => {
     // The badge used to vanish on reload because precognition was a live-only
     // event. Now that the daemon persists it, replay must reattach it to the
     // user message that triggered it — same target the live reducer picks.
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         {
           type: 'event',
@@ -734,7 +732,8 @@ describe('isLoadingHistory', () => {
   it('ignores a precognition event with no preceding user message', async () => {
     // Truncated/paginated history can start mid-turn; attaching to nothing
     // must not throw or invent a message.
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         {
           type: 'event',
@@ -765,7 +764,8 @@ describe('isLoadingHistory', () => {
   });
 
   it('attaches precognition to its own turn when the history holds several', async () => {
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'first', message_id: 'u1' } },
         {
@@ -803,7 +803,8 @@ describe('isLoadingHistory', () => {
     // into a segment bubble + a trailing bubble with the SAME canonical ids
     // the live reducer streams (turnSegmentId / turnResponseId) — that identity
     // is what makes live and reloaded transcripts converge.
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'find it', message_id: 'msg1' } },
         { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'Let me look. ' } },
@@ -840,7 +841,8 @@ describe('isLoadingHistory', () => {
     // text → tool with no trailing narration: the whole turn is the single
     // segment, so message_complete's stripped content is empty and no final
     // bubble is added — the same shape the live reducer produces.
-    mockGetSessionHistory.mockResolvedValue({
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         { type: 'event', session_id: 'test-session-1', event: 'user_message', data: { content: 'go', message_id: 'msg1' } },
         { type: 'event', session_id: 'test-session-1', event: 'segment_complete', data: { message_id: 'msg1', index: 0, content: 'All done via tool.' } },
@@ -869,15 +871,9 @@ describe('isLoadingHistory', () => {
   });
 
   it('falls back to persisted history when getSession fails', async () => {
-    mockGetSession.mockRejectedValue(new Error('Session not found'));
-    mockListSessions.mockResolvedValue([
-      {
-        ...mockSession,
-        id: 'test-session-1',
-        kilns: ['/tmp/test-kiln'],
-      },
-    ]);
-    mockGetSessionHistory.mockResolvedValue({
+    sessionAnswer = () => refusal(404, 'no such session');
+    historyAnswer = () => ({
+      session_id: ID,
       history: [
         {
           type: 'event',
@@ -905,26 +901,16 @@ describe('isLoadingHistory', () => {
       expect(screen.getByTestId('msg-count').textContent).toBe('2');
     });
 
-    expect(mockGetSessionHistory).toHaveBeenCalledWith(
-      'test-session-1',
-      10000,
-      undefined,
-      expect.any(AbortSignal),
-    );
+    // The transcript read the daemon's own store — the whole of it, the
+    // `HISTORY_LIMIT` the query layer always asks with.
+    expect(historyAsked).toContain('test-session-1');
+    expect(historyLimits).toContain('10000');
   });
 
   it('dedups a live canonical user message against a pre-canonical reconstructed one', async () => {
-    let eventCallback: ((event: any) => void) | null = null;
-    mockSubscribeToEvents.mockImplementation(
-      (_sessionId: string, callback: (event: any) => void, onOpen?: () => void) => {
-        eventCallback = callback;
-        onOpen?.();
-        return () => { eventCallback = null; };
-      },
-    );
     // Hold history open so a live SSE echo lands in the message list first.
-    let resolveHistory!: (value: any) => void;
-    mockGetSessionHistory.mockReturnValue(new Promise((resolve) => { resolveHistory = resolve; }));
+    const held = deferred<unknown>();
+    historyAnswer = () => held.promise;
 
     render(() => (
       <TestWrapper>
@@ -933,18 +919,19 @@ describe('isLoadingHistory', () => {
     ));
 
     // Live echo adds the prompt under its canonical id.
-    await waitFor(() => expect(eventCallback).not.toBeNull());
-    eventCallback!({
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    FakeEventSource.instances[0]!.emit('session_event', {
       type: 'session_event',
       event: 'user_message',
       data: { message_id: 'msg-live', content: 'hello' },
     });
     await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('1'));
-    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
 
     // History replays the SAME prompt from an old event that predates canonical
     // message_ids → reconstructed under a fallback id (user-0).
-    resolveHistory({
+    held.resolve({
+      session_id: ID,
       history: [
         {
           type: 'event',
@@ -972,10 +959,10 @@ describe('mode hydration', () => {
     // The mode list is the authority when it answers (the case below), so it
     // is kept out of the way here: the persisted string is then the only
     // source the chip has, which is the path this case is about.
-    (api.listModes as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('daemon down'));
+    modesOnce.push(() => refusal(503, 'daemon down'));
     // `session.get` nests the persisted mode under `agent`; nothing sends a
     // top-level `agent_mode`.
-    mockGetSession.mockResolvedValue({
+    sessionAnswer = () => ({
       ...mockSession,
       agent: { model: 'ollama:neural-chat', mode: 'review' },
     });
@@ -995,7 +982,7 @@ describe('mode hydration', () => {
   });
 
   it('offers the daemon modes, not a hardcoded three', async () => {
-    mockGetSession.mockResolvedValue(mockSession);
+    sessionAnswer = () => mockSession;
 
     let modes: () => { id: string }[] = () => [];
     const Probe = () => {
@@ -1018,11 +1005,11 @@ describe('mode hydration', () => {
     // that describes what will actually run.
     // `session.get` nests the persisted mode under `agent`; nothing sends a
     // top-level `agent_mode`.
-    mockGetSession.mockResolvedValue({
+    sessionAnswer = () => ({
       ...mockSession,
       agent: { model: 'ollama:neural-chat', mode: 'review' },
     });
-    (api.listModes as ReturnType<typeof vi.fn>).mockResolvedValue({
+    modesAnswer = () => ({
       current_mode_id: 'ask',
       modes: [
         { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
@@ -1048,18 +1035,8 @@ describe('mode hydration', () => {
     // The mount-time fetch fails, so the chip falls back to the built-in three
     // and offers `plan` in a session that may not declare it. Clicking it
     // POSTs a mode the daemon rejects; the list it came from must not survive.
-    const listModes = api.listModes as ReturnType<typeof vi.fn>;
-    listModes.mockRejectedValueOnce(new Error('daemon down'));
-    listModes.mockResolvedValue({
-      current_mode_id: 'ask',
-      modes: [
-        { id: 'ask', name: 'Ask', description: null, icon: null, color: null },
-        { id: 'review', name: 'Review', description: null, icon: null, color: null },
-      ],
-    });
-    (api.setSessionMode as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error("unknown mode 'plan'")
-    );
+    modesOnce.push(() => refusal(503, 'daemon down'));
+    setModeAnswer = () => refusal(422, "unknown mode 'plan'");
 
     let ctx: { switchMode: (m: string) => void; availableModes: () => { id: string }[] } | null =
       null;
@@ -1092,22 +1069,10 @@ describe('a slow history load cannot duplicate a finished turn', () => {
   const ANSWER = 'Here is what a new user does first.';
 
   it('merges the reconstructed answer onto the live one', async () => {
-    let emit: ((event: unknown) => void) | null = null;
-    mockSubscribeToEvents.mockImplementation(
-      (_sessionId: string, onEvent: (event: unknown) => void, onOpen?: () => void) => {
-        emit = onEvent;
-        onOpen?.();
-        return () => {};
-      },
-    );
     // Held open until the live turn has finished.
-    let releaseHistory: ((value: unknown) => void) | null = null;
-    mockGetSessionHistory.mockImplementation(
-      () => new Promise((resolve) => {
-        releaseHistory = resolve;
-      }),
-    );
-    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+    const held = deferred<unknown>();
+    historyAnswer = () => held.promise;
+    sendAnswer = () => ({ message_id: 'msg-turn-1' });
 
     render(() => (
       <TestWrapper>
@@ -1115,26 +1080,28 @@ describe('a slow history load cannot duplicate a finished turn', () => {
       </TestWrapper>
     ));
 
-    await waitFor(() => expect(emit).not.toBeNull());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const stream = () => FakeEventSource.instances[0]!;
     screen.getByText('Send').click();
     // The send POST returns the turn id, which renames the optimistic
     // placeholder to the canonical response id.
     await waitFor(() => expect(screen.queryByTestId('msg-msg-turn-1-response')).not.toBeNull());
 
     // Live turn: reason, call a tool, reason again, then answer.
-    emit!({ type: 'thinking', content: 'The user wants the guide. ' });
-    emit!({ type: 'tool_call', id: 'call-a', title: 'read_note', arguments: { path: 'g.md' } });
-    emit!({ type: 'tool_result', id: 'call-a', result: '{}' });
-    emit!({ type: 'thinking', content: 'Now I can answer. ' });
-    emit!({ type: 'token', content: ANSWER });
-    emit!({ type: 'message_complete', id: 'msg-turn-1', content: ANSWER, total_tokens: 6707 });
+    stream().emit('thinking', { type: 'thinking', content: 'The user wants the guide. ' });
+    stream().emit('tool_call', { type: 'tool_call', id: 'call-a', title: 'read_note', arguments: { path: 'g.md' } });
+    stream().emit('tool_result', { type: 'tool_result', id: 'call-a', result: '{}' });
+    stream().emit('thinking', { type: 'thinking', content: 'Now I can answer. ' });
+    stream().emit('token', { type: 'token', content: ANSWER });
+    stream().emit('message_complete', { type: 'message_complete', id: 'msg-turn-1', content: ANSWER, total_tokens: 6707 });
 
     await waitFor(() =>
       expect(screen.getAllByRole('listitem').some((li) => li.textContent === ANSWER)).toBe(true)
     );
 
     // The daemon's own record of the same turn arrives now.
-    releaseHistory!({
+    held.resolve({
+      session_id: ID,
       history: [
         { event: 'user_message', data: { message_id: 'msg-turn-1', content: 'test message' } },
         { event: 'tool_call', data: { call_id: 'call-a', tool: 'read_note', args: { path: 'g.md' } } },
@@ -1144,7 +1111,7 @@ describe('a slow history load cannot duplicate a finished turn', () => {
       total_events: 4,
     });
 
-    await waitFor(() => expect(mockGetSessionHistory).toHaveBeenCalled());
+    await waitFor(() => expect(env.fetch.calls(HISTORY_ROUTE)).toBeGreaterThan(0));
     await waitFor(() => {
       const answers = screen.getAllByRole('listitem').filter((li) => li.textContent === ANSWER);
       expect(answers).toHaveLength(1);
@@ -1152,22 +1119,11 @@ describe('a slow history load cannot duplicate a finished turn', () => {
   });
 });
 
-
-// The stream itself, not the mock of it. `lib/query/sse.ts` owns one source per
-// session and every pane subscribes to it; these cases prove that the provider
-// reaches the stream through that root, so the count of EventSources is the
-// count of sessions on screen and not the count of panes.
+// The stream itself, not a double of it. `lib/query/sse.ts` owns one source
+// per session and every pane subscribes to it; these cases prove that the
+// provider reaches the stream through that root, so the count of EventSources
+// is the count of sessions on screen and not the count of panes.
 describe('the shared session stream', () => {
-  let realSubscribeToEvents: typeof api.subscribeToEvents;
-
-  beforeEach(async () => {
-    const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
-    realSubscribeToEvents = actual.subscribeToEvents;
-    installFakeEventSource();
-    mockSubscribeToEvents.mockImplementation(realSubscribeToEvents);
-    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
-  });
-
   afterEach(async () => {
     const { consumePendingFirstMessage } = await import('@/lib/draft-session');
     consumePendingFirstMessage(mockSession.session_id);
@@ -1258,7 +1214,7 @@ describe('the shared session stream', () => {
 
   it('gives a pane that joins an open stream its open gate at once', async () => {
     const { setPendingFirstMessage } = await import('@/lib/draft-session');
-    mockSendChatMessage.mockResolvedValue('msg-turn-1');
+    sendAnswer = () => ({ message_id: 'msg-turn-1' });
 
     render(() => (
       <ChatProvider sessionId={mockSession.session_id}>
@@ -1277,20 +1233,23 @@ describe('the shared session stream', () => {
       </ChatProvider>
     ));
 
+    // The wire took the staged turn, for the session the pane had bound to.
     await waitFor(() =>
-      expect(mockSendChatMessage).toHaveBeenCalledWith(mockSession.session_id, 'first message from draft'),
+      expect(sentTurns).toEqual([
+        { session_id: mockSession.session_id, content: 'first message from draft' },
+      ]),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
 
-// The transcript itself, not the mock of it. `lib/query/history.ts` owns one
+// The transcript itself, not a double of it. `lib/query/history.ts` owns one
 // document per session, and every pane reads that one; these cases prove the
 // provider reaches it through that key, so the count of history requests is
 // the count of sessions read and not the count of binds onto them.
 describe('the shared session transcript', () => {
-  /** The session of each history request, in order. */
-  const asked = () => mockGetSessionHistory.mock.calls.map((call) => call[0]);
+  /** The session of each history read, in order. */
+  const asked = () => [...historyAsked];
 
   /** Lets every pending answer land, so a second request would be counted. */
   const flush = async () => {
@@ -1299,18 +1258,6 @@ describe('the shared session transcript', () => {
     }
   };
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // The describe above hands the provider the real `subscribeToEvents`; this
-    // one counts binds, so it hands back a stream that does nothing.
-    mockSubscribeToEvents.mockImplementation(() => () => {});
-    // The record answers under the id it was asked for: the bind reads the
-    // transcript of the session the daemon named, so a fixed record would
-    // have every pane read one transcript whatever it bound to.
-    mockGetSession.mockImplementation(async (id: string) => ({ ...mockSession, session_id: id }));
-    mockListSessions.mockResolvedValue([]);
-    mockGetSessionHistory.mockResolvedValue({ history: [], total_events: 0 });
-  });
 
   it('reads the transcript once for two panes on one session', async () => {
     render(() => (
@@ -1337,19 +1284,29 @@ describe('the shared session transcript', () => {
     // again. The test client drops an unobserved entry at once (`gcTime: 0`);
     // this case is about the lifetime the app gives an entry, so it asks for
     // that lifetime.
-    queryClient.setDefaultOptions({ queries: { ...queryClientOptions.defaultOptions?.queries } });
+    env.client.setDefaultOptions({ queries: { ...queryClientOptions.defaultOptions?.queries } });
     const [id, setId] = createSignal('session-a');
+
+    // A read that has landed, not merely started: the wire answers over a
+    // real fetch, and switching mid-read aborts it — a different claim than
+    // the one this case exists for.
+    const read = (session: string) =>
+      waitFor(() => expect(env.client.getQueryData(keys.sessionHistory(session))).toBeDefined());
 
     render(() => (
       <ChatProvider sessionId={id()}>
         <span />
       </ChatProvider>
     ));
-    await waitFor(() => expect(asked()).toEqual(['session-a']));
+    await read('session-a');
+    expect(asked()).toEqual(['session-a']);
 
     setId('session-b');
-    await waitFor(() => expect(asked()).toEqual(['session-a', 'session-b']));
+    await read('session-b');
+    expect(asked()).toEqual(['session-a', 'session-b']);
 
+    // Back to the first: the app's cache holds its transcript, so the bind
+    // reads it where it sits instead of asking the daemon again.
     setId('session-a');
     await flush();
     expect(asked()).toEqual(['session-a', 'session-b']);
