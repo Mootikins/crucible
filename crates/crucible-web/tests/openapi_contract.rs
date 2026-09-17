@@ -395,6 +395,30 @@ fn every_stream_route_answers_with_an_event_stream() {
     }
 }
 
+/// The four versioned streams document their protocol header (Task G6).
+///
+/// `shell/exec` is deliberately not in this set: it is a POST that streams
+/// one command's output, not one of the four long-lived streams the browser
+/// holds open, and versioning it buys nothing a caller could act on.
+#[test]
+fn every_versioned_stream_documents_the_protocol_header() {
+    let spec = spec_json();
+
+    for path in [
+        "/api/chat/events/{session_id}",
+        "/api/fs/events",
+        "/api/plugins/events",
+        "/api/surfaces/events",
+    ] {
+        let headers = &spec["paths"][path]["get"]["responses"]["200"]["headers"]
+            ["X-Crucible-Stream-Version"];
+        assert!(
+            !headers.is_null(),
+            "{path} does not document `X-Crucible-Stream-Version`"
+        );
+    }
+}
+
 // ===========================================================================
 // Task A4 — the router and the document describe the same routes.
 //

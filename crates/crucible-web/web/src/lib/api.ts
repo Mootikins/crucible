@@ -3,6 +3,7 @@ import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
 import { rawFileUrl } from './paths';
+import { assertStreamVersion } from './stream-version';
 import type {
   AgentProfileEntry,
   AnchoredEdit,
@@ -279,6 +280,34 @@ function decodeEvent<T>(
   return parsed as T;
 }
 
+/**
+ * Installs the fail-closed version gate on one stream source.
+ *
+ * The server's first `stream_version` frame names the protocol it speaks (the
+ * mirror of the `X-Crucible-Stream-Version` header, which `EventSource`
+ * cannot read). A version this build does not understand closes the stream
+ * for good — a reconnect would only re-meet the same protocol — and nothing
+ * the stream carries is delivered. An absent handshake is the legacy
+ * protocol and is allowed.
+ */
+function guardStreamVersion(
+  stream: string,
+  source: EventSource,
+  shutDown: () => void,
+): void {
+  source.addEventListener('stream_version', (e: MessageEvent) => {
+    try {
+      assertStreamVersion(stream, e.data);
+    } catch (error) {
+      // Surface the refusal, do not guess: the error is the user-visible
+      // statement, the close is the fail-closed half.
+      console.error(error);
+      shutDown();
+      source.close();
+    }
+  });
+}
+
 /** Every `type` a chat event may carry, as a set the decode can ask. */
 const CHAT_EVENT_TAGS = new Set<string>(SSE_EVENT_TYPES);
 
@@ -331,6 +360,13 @@ export function subscribeToEvents(
     const after = cursor?.();
     const url = after === undefined ? base : `${base}?after=${after}`;
     source = new EventSource(url);
+    guardStreamVersion('chat', source, () => {
+      closed = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+    });
 
     for (const eventType of SSE_EVENT_TYPES) {
       source.addEventListener(eventType, (e: MessageEvent) => {
@@ -1214,6 +1250,13 @@ export function subscribeToSurfaceEvents(
   function connect() {
     if (closed) return;
     source = new EventSource(url);
+    guardStreamVersion('surface', source, () => {
+      closed = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+    });
 
     source.addEventListener('surface_changed', (e: MessageEvent) => {
       reconnectAttempts = 0;
@@ -1886,6 +1929,13 @@ export function subscribeToFsEvents(onEvent: (event: FsEvent) => void): () => vo
     if (closed) return;
 
     source = new EventSource(url);
+    guardStreamVersion('file-system', source, () => {
+      closed = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+    });
 
     for (const eventType of FS_SSE_EVENT_TYPES) {
       source.addEventListener(eventType, (e: MessageEvent) => {
@@ -1941,6 +1991,7 @@ export function subscribeToPluginEvents(
   // EventSource cannot set headers; the HttpOnly session cookie (set by
   // login()) authenticates the stream for non-localhost clients.
   const source = new EventSource('/api/plugins/events');
+  guardStreamVersion('plugin', source, () => {});
   source.addEventListener('publication_changed', (e: MessageEvent) => {
     try {
       onEvent(

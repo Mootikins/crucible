@@ -1,4 +1,5 @@
 use crate::events::ChatEvent;
+use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -92,14 +93,27 @@ struct EventStreamQuery {
         ("session_id" = String, Path, description = "The session to stream"),
         EventStreamQuery,
     ),
-    responses((status = 200, content_type = "text/event-stream", body = ChatEvent))
+    responses((
+        status = 200,
+        content_type = "text/event-stream",
+        body = ChatEvent,
+        headers((
+            "X-Crucible-Stream-Version" = u64,
+            description = "The stream protocol this build speaks (also the first \
+                           `stream_version` frame, for clients whose transport \
+                           cannot read headers)"
+        ))
+    ))
 )]
 async fn event_stream(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     Query(query): Query<EventStreamQuery>,
     headers: HeaderMap,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+) -> Result<
+    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    WebError,
+> {
     // The cursor, either way a client can state it. A non-numeric
     // `Last-Event-ID` is ignored rather than refused: the ids are this
     // route's own numbers, and a client forwarding one it never received
@@ -174,12 +188,15 @@ async fn event_stream(
             futures::future::ready(event.seq.map_or(true, |seq| seq > max_replayed))
         })
         .map(|event| to_sse(&event));
-
-    let stream = iter(replayed).map(|event| to_sse(&event)).chain(live);
+    let stream = iter([Ok(stream_version_frame())])
+        .chain(iter(replayed).map(|event| to_sse(&event)))
+        .chain(live);
 
     // Keep-alive comments stop idle proxies/load balancers from dropping the
     // stream, which the client would otherwise treat as a reconnect.
-    Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
+    Ok(versioned(Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::default(),
+    )))
 }
 
 /// One daemon event as one SSE frame, its seq (when stamped) as the `id:`.

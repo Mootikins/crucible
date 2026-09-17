@@ -1,3 +1,4 @@
+use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::routes::plugin_caller::PluginCaller;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -587,29 +588,40 @@ impl PublicationChangedEvent {
     responses((
         status = 200,
         content_type = "text/event-stream",
-        body = PublicationChangedEvent
+        body = PublicationChangedEvent,
+        headers((
+            "X-Crucible-Stream-Version" = u64,
+            description = "The stream protocol this build speaks (also the first \
+                           `stream_version` frame, for clients whose transport \
+                           cannot read headers)"
+        ))
     ))
 )]
 async fn publication_event_stream(
     State(state): State<AppState>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+) -> Result<
+    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    WebError,
+> {
     let rx = state.events.subscribe("system").await;
     state.daemon.subscribe_sticky("system").await.daemon_err()?;
 
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|result| result.ok())
-        .filter_map(|event| {
-            // The system channel carries the file watcher and the
-            // classification prompt too; this stream is only about plugin data.
-            PublicationChangedEvent::from_daemon_event(&event).map(|pe| {
-                let data = serde_json::to_string(&pe).unwrap_or_default();
-                Ok(Event::default()
-                    .event(PublicationChangedEvent::EVENT_NAME)
-                    .data(data))
-            })
-        });
+    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
+        tokio_stream::wrappers::BroadcastStream::new(rx)
+            .filter_map(|result| result.ok())
+            .filter_map(|event| {
+                // The system channel carries the file watcher and the
+                // classification prompt too; this stream is only about plugin data.
+                PublicationChangedEvent::from_daemon_event(&event).map(|pe| {
+                    let data = serde_json::to_string(&pe).unwrap_or_default();
+                    Ok(Event::default()
+                        .event(PublicationChangedEvent::EVENT_NAME)
+                        .data(data))
+                })
+            }),
+    );
 
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
 }
 
 /// What `POST /api/plugins/command` answers.

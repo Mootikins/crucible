@@ -9,7 +9,7 @@
 //! Its own channel rather than a variant on [`FsEvent`](crate::fs_events::FsEvent),
 //! which is a *filesystem* change by its own definition. A focused type per
 //! channel is what keeps either one honest.
-
+use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::routes::session::daemon_shape;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -195,12 +195,21 @@ async fn list_surfaces(
     responses((
         status = 200,
         content_type = "text/event-stream",
-        body = SurfaceChangedEvent
+        body = SurfaceChangedEvent,
+        headers((
+            "X-Crucible-Stream-Version" = u64,
+            description = "The stream protocol this build speaks (also the first \
+                           `stream_version` frame, for clients whose transport \
+                           cannot read headers)"
+        ))
     ))
 )]
 async fn surface_event_stream(
     State(state): State<AppState>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, WebError> {
+) -> Result<
+    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    WebError,
+> {
     // ORDERING IS LOAD-BEARING, same as `fs_event_stream`: open the LOCAL broker
     // channel BEFORE telling the daemon to forward. The daemon forwards "system"
     // events only after `subscribe_sticky` lands, and `EventBroker::dispatch`
@@ -211,18 +220,20 @@ async fn surface_event_stream(
     // daemon-wide, so "system" is the right address.
     state.daemon.subscribe_sticky("system").await.daemon_err()?;
 
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|result| result.ok())
-        .filter_map(|event| {
-            SurfaceChangedEvent::from_daemon_event(&event).map(|se| {
-                let data = serde_json::to_string(&se).unwrap_or_default();
-                Ok(Event::default()
-                    .event(SurfaceChangedEvent::EVENT_NAME)
-                    .data(data))
-            })
-        });
+    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
+        tokio_stream::wrappers::BroadcastStream::new(rx)
+            .filter_map(|result| result.ok())
+            .filter_map(|event| {
+                SurfaceChangedEvent::from_daemon_event(&event).map(|se| {
+                    let data = serde_json::to_string(&se).unwrap_or_default();
+                    Ok(Event::default()
+                        .event(SurfaceChangedEvent::EVENT_NAME)
+                        .data(data))
+                })
+            }),
+    );
 
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
 }
 
 #[cfg(test)]

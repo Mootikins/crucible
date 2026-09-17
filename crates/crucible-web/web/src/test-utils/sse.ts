@@ -45,6 +45,9 @@ export class FakeEventSource {
 
   /** Acts as the server: one frame of the named type arrives. */
   emit(type: string, data: unknown, options?: { lastEventId?: string }): void {
+    // A closed source delivers nothing — the browser's own behavior, and the
+    // fail-closed version gate depends on it.
+    if (this.closed) return;
     for (const listener of [...(this.listeners.get(type) ?? [])]) {
       listener({
         data: JSON.stringify(data),

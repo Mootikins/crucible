@@ -4795,6 +4795,8 @@ export interface operations {
         responses: {
             200: {
                 headers: {
+                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
+                    "X-Crucible-Stream-Version"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4973,6 +4975,8 @@ export interface operations {
         responses: {
             200: {
                 headers: {
+                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
+                    "X-Crucible-Stream-Version"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -6152,6 +6156,8 @@ export interface operations {
         responses: {
             200: {
                 headers: {
+                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
+                    "X-Crucible-Stream-Version"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -8081,6 +8087,8 @@ export interface operations {
         responses: {
             200: {
                 headers: {
+                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
+                    "X-Crucible-Stream-Version"?: number;
                     [name: string]: unknown;
                 };
                 content: {

@@ -190,6 +190,16 @@
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "X-Crucible-Stream-Version": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
+              }
+            },
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -352,6 +362,16 @@
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "X-Crucible-Stream-Version": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
+              }
+            },
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -1308,6 +1328,16 @@
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "X-Crucible-Stream-Version": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
+              }
+            },
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -3578,6 +3608,16 @@
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "X-Crucible-Stream-Version": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
+              }
+            },
             "content": {
               "text/event-stream": {
                 "schema": {

@@ -17,6 +17,41 @@ pub(crate) struct ModelsResponse {
 }
 
 // =========================================================================
+// Stream versioning (Task G6)
+// =========================================================================
+
+/// The stream protocol version this build speaks.
+///
+/// Daemon and browser upgrade from one repo, so skew is small — but a browser
+/// one protocol ahead of a daemon must refuse to mis-parse, not guess. The
+/// version travels TWICE on every stream: as the
+/// `X-Crucible-Stream-Version` response header (for fetch-based clients and
+/// the contract tests), and as the stream's first `stream_version` frame —
+/// because `EventSource`, the browser's own transport, cannot read response
+/// headers at all.
+pub(crate) const STREAM_VERSION: u64 = 1;
+
+/// The first frame of every versioned stream, mirroring the header.
+pub(crate) fn stream_version_frame() -> axum::response::sse::Event {
+    axum::response::sse::Event::default()
+        .event("stream_version")
+        .data(format!("{{\"version\":{STREAM_VERSION}}}"))
+}
+
+/// Wraps an SSE body with the version response header.
+pub(crate) fn versioned<S>(
+    stream: axum::response::sse::Sse<S>,
+) -> (
+    [(axum::http::HeaderName, String); 1],
+    axum::response::sse::Sse<S>,
+) {
+    ([(
+        axum::http::HeaderName::from_static("x-crucible-stream-version"),
+        STREAM_VERSION.to_string(),
+    )], stream)
+}
+
+// =========================================================================
 // Note mapping
 // =========================================================================
 
