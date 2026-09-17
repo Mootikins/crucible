@@ -284,9 +284,8 @@ const App: Component = () => {
 
     document.addEventListener('keydown', onGlobalKeyDown, true);
 
-    const onExportSession = () => setIsExportDialogOpen(true);
     getBus().on('openSettings', () => setIsSettingsOpen(true));
-    window.addEventListener('crucible:export-session', onExportSession);
+    getBus().on('exportSession', () => setIsExportDialogOpen(true));
     // Every new-session entry point (ribbon, Home, palette, empty states)
     // opens the draft surface; the session is created lazily on first send.
     // `workspace` names the project the session acts in — the sessions
@@ -307,7 +306,6 @@ const App: Component = () => {
     onCleanup(() => {
       stopAttentionPolling();
       document.removeEventListener('keydown', onGlobalKeyDown, true);
-      window.removeEventListener('crucible:export-session', onExportSession);
     });
   });
 

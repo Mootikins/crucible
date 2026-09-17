@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { busEmit } from '../helpers/bus';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
 import { openSessionsList } from '../helpers/nav';
@@ -36,7 +37,7 @@ test.describe('WS-109 export a session', () => {
     await expect(page.getByTestId('chat-input')).toBeEnabled({ timeout: 5000 });
 
     // Open the export dialog (same event the command palette dispatches).
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:export-session')));
+    await busEmit(page, 'exportSession');
 
     await expect(page.getByRole('heading', { name: 'Export Session' })).toBeVisible({ timeout: 5000 });
     // Preview shows the first lines and a total-lines count.

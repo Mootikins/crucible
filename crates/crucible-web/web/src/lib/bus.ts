@@ -26,6 +26,8 @@ export type BusEvents = {
   /** Focuses the session filter inside the sessions rail. */
   focusSessionSearch: Record<string, never>;
   interactionResolved: { sessionId: string; requestId: string };
+  /** Opens the export dialog for the session the status bar names. */
+  exportSession: Record<string, never>;
   newSession: { workspace?: string };
   /** Opens the command palette; `mode` picks the notes tree over commands. */
   openCommandPalette: { mode?: 'commands' | 'notes' };

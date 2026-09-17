@@ -330,6 +330,14 @@ describe('the types of the bus', () => {
     expect(seen).toEqual(['focusSearch', 'focusSessionSearch']);
   });
 
+  it('delivers an export payload to its handler', () => {
+    const bus = createBus();
+    let asked = 0;
+    bus.on('exportSession', () => { asked += 1; });
+    bus.emit('exportSession', {});
+    expect(asked).toBe(1);
+  });
+
   it('gives the handler the payload type of its event', () => {
     const bus = createBus();
     bus.on('sessionTitleChanged', (payload) => {
