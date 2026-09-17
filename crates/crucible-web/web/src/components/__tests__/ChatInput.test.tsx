@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@solidjs/testing-library';
+import { installFakeEventSource } from '@/test-utils/sse';
 import { createSignal } from 'solid-js';
 import type { InteractionRequest } from '@/lib/types';
 import { ChatInput } from '../ChatInput';
@@ -98,22 +99,12 @@ vi.mock('../AutocompletePopup', () => ({
   AutocompletePopup: () => <div data-testid="autocomplete-popup-mock" />,
 }));
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  // The docked permission card reads the file it is about to overwrite.
-  getFileContent: vi.fn(async () => ''),
-  // SessionScopeChips (rendered inside ChatInput) loads this on mount. Its
-  // kiln roster is NOT stubbed here: it arrives over the fetch below.
-  listProjects: vi.fn(async () => []),
-  connectSessionKiln: vi.fn(),
-  disconnectSessionKiln: vi.fn(),
-  setSessionWorkspace: vi.fn(),
-  // SessionStatusChips (also rendered inside ChatInput): no plugin slots, no
-  // review policy, and a review event stream that never emits.
-  getSessionStatus: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({ current_mode_id: 'ask', modes: [] })),
-  subscribeToEvents: vi.fn(() => () => {}),
-}));
+// No `vi.mock('@/lib/api')`. Everything the composer's chips read arrives
+// over the routes in `beforeEach` — the scope chips' project roster, the
+// status chips' mode list and status slots, and the file the docked
+// permission card is about to overwrite — and the review stream the status
+// chips bind opens through the real `subscribeToEvents` onto the
+// `FakeEventSource` of `beforeEach`.
 
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
@@ -125,7 +116,15 @@ let kilnEnv: TestQueryEnv;
 beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
-  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+  installFakeEventSource();
+  kilnEnv = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [] }),
+    'GET /api/project/list': () => [],
+    'GET /api/session/test-session/modes': () => ({ current_mode_id: 'ask', modes: [] }),
+    'GET /api/session/test-session/status': () => ({ status: [] }),
+    // The docked permission card reads the file it is about to overwrite.
+    'GET /api/kiln/file': () => ({ content: '' }),
+  });
 });
 
 afterEach(() => {
@@ -135,7 +134,6 @@ afterEach(() => {
   setPending(null);
   workspace = null;
 });
-
 describe('ChatInput', () => {
   beforeEach(() => {
     vi.clearAllMocks();

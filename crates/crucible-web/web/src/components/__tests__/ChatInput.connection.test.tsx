@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
+import { installFakeEventSource } from '@/test-utils/sse';
 import type { ConnectionStatus } from '@/lib/types';
 
 /**
@@ -80,16 +81,10 @@ vi.mock('../ChatModeControl', () => ({
 }));
 vi.mock('../AutocompletePopup', () => ({ AutocompletePopup: () => <div /> }));
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  listProjects: vi.fn(async () => []),
-  connectSessionKiln: vi.fn(),
-  disconnectSessionKiln: vi.fn(),
-  setSessionWorkspace: vi.fn(),
-  getSessionStatus: vi.fn(async () => []),
-  listModes: vi.fn(async () => ({ current_mode_id: 'ask', modes: [] })),
-  subscribeToEvents: vi.fn(() => () => {}),
-}));
+// No `vi.mock('@/lib/api')`. The chips inside the composer read the project
+// roster, the mode list and the status slots over the ROUTES in `beforeEach`,
+// and the review stream the status chips bind opens through the real
+// `subscribeToEvents` onto the `FakeEventSource` of `beforeEach`.
 
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
@@ -105,7 +100,13 @@ let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 beforeEach(() => {
   localStorage.clear();
   resetKilnsForTests();
-  kilnEnv = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: [] }) });
+  installFakeEventSource();
+  kilnEnv = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: [] }),
+    'GET /api/project/list': () => [],
+    'GET /api/session/test-session/modes': () => ({ current_mode_id: 'ask', modes: [] }),
+    'GET /api/session/test-session/status': () => ({ status: [] }),
+  });
 });
 
 afterEach(() => {
