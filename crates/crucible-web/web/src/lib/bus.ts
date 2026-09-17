@@ -19,6 +19,8 @@ import { createEmitter, type Emitter } from '@solid-primitives/event-bus';
 export type BusEvents = {
   authOk: Record<string, never>;
   authRequired: Record<string, never>;
+  /** Clears the transcript of the session the status bar names. */
+  clearChat: Record<string, never>;
   interactionResolved: { sessionId: string; requestId: string };
   /** Starts the draft surface. `workspace` names the project to act in. */
   newSession: { workspace?: string };
@@ -31,6 +33,10 @@ export type BusEvents = {
   /** Opens the settings dialog from surfaces that cannot reach its signal. */
   openSettings: Record<string, never>;
   sessionTitleChanged: { sessionId: string; title: string };
+  /** Opens the model switcher of the chat the user is looking at. */
+  switchModel: Record<string, never>;
+  /** Flips the file tree's dotfile visibility. */
+  toggleHiddenFiles: Record<string, never>;
 };
 
 /** A handler of one event. The type of its payload comes from `BusEvents`. */

@@ -1,4 +1,4 @@
-import { Component, createSignal, Show, onCleanup } from 'solid-js';
+import { Component, createSignal, Show } from 'solid-js';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { nextChatMode } from './ChatModeControl';
@@ -6,6 +6,7 @@ import { useSessionScopeChips } from './SessionScopeChips';
 import { SessionStatusChips } from './SessionStatusChips';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import type { ComposerChip } from '@/components/composer/ChipRow';
+import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln } from '@/lib/session-scope';
@@ -46,15 +47,13 @@ export const ChatInput: Component = () => {
   // Palette "Switch Model" opens the same picker as the chip below.
   // Gate on the focused chat so split panes don't all pop their pickers
   // (activeSessionId tracks tab/pane focus via the window store).
-  const onSwitchModelEvent = () => {
+  getBus().on('switchModel', () => {
     const active = statusBarStore.activeSessionId();
     if (active && sessionId() !== active) return;
     if (session()) {
       (formRef?.querySelector('[data-testid="model-picker-button"]') as HTMLElement | null)?.click();
     }
-  };
-  window.addEventListener('crucible:switch-model', onSwitchModelEvent);
-  onCleanup(() => window.removeEventListener('crucible:switch-model', onSwitchModelEvent));
+  });
 
   const handleSubmit = async (e?: Event) => {
     e?.preventDefault();

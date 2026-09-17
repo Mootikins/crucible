@@ -2,6 +2,7 @@ import { Component, Show, createSignal, createEffect, createMemo, on, onMount, o
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
+import { getBus } from '@/lib/bus';
 import { PanelShell } from './PanelShell';
 import {
   fetchDirOnce,
@@ -712,9 +713,7 @@ export const FilesPanel: Component<{
   };
 
   onMount(() => {
-    const onToggleHidden = () => toggleHidden();
-    window.addEventListener('crucible:toggle-hidden-files', onToggleHidden);
-    onCleanup(() => window.removeEventListener('crucible:toggle-hidden-files', onToggleHidden));
+    getBus().on('toggleHiddenFiles', () => toggleHidden());
     // One source for the stream, whatever the count of readers: `fsEvents()`
     // is the shared root of `lib/query/sse.ts`, and the editor watches the same
     // stream for its open buffers. Each side keeps its own handler on it.

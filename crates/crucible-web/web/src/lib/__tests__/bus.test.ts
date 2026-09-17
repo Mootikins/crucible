@@ -303,6 +303,21 @@ describe('the types of the bus', () => {
     expect(settings).toBe(1);
   });
 
+
+  it('delivers a chat-input payload to its handler', () => {
+    const bus = createBus();
+    const seen: string[] = [];
+    bus.on('clearChat', () => seen.push('clearChat'));
+    bus.on('switchModel', () => seen.push('switchModel'));
+    bus.on('toggleHiddenFiles', () => seen.push('toggleHiddenFiles'));
+
+    bus.emit('clearChat', {});
+    bus.emit('switchModel', {});
+    bus.emit('toggleHiddenFiles', {});
+
+    expect(seen).toEqual(['clearChat', 'switchModel', 'toggleHiddenFiles']);
+  });
+
   it('gives the handler the payload type of its event', () => {
     const bus = createBus();
     bus.on('sessionTitleChanged', (payload) => {

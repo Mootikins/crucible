@@ -117,7 +117,7 @@ const App: Component = () => {
       shortcut: 'Ctrl+K',
       category: 'Chat',
       keywords: ['clear', 'chat', 'messages'],
-      action: () => window.dispatchEvent(new CustomEvent('crucible:clear-chat')),
+      action: () => getBus().emit('clearChat', {}),
     },
     {
       id: 'chat-focus-input',
@@ -153,13 +153,13 @@ const App: Component = () => {
       category: 'Settings',
       keywords: ['settings', 'preferences', 'options', 'config', 'theme', 'font'],
       action: () => setIsSettingsOpen(true),
-    },    {
+    }, {
       id: 'files-toggle-hidden',
       label: 'Toggle Hidden Files',
       description: 'Show or hide dotfiles in the file tree.',
       category: 'Navigation',
       keywords: ['hidden', 'dotfiles', 'files', 'tree', 'show'],
-      action: () => window.dispatchEvent(new CustomEvent('crucible:toggle-hidden-files')),
+      action: () => getBus().emit('toggleHiddenFiles', {}),
     },
     {
       id: 'session-switch-model',
@@ -167,7 +167,7 @@ const App: Component = () => {
       description: 'Open model switcher for this session.',
       category: 'Session',
       keywords: ['model', 'llm', 'switch'],
-      action: () => window.dispatchEvent(new CustomEvent('crucible:switch-model')),
+      action: () => getBus().emit('switchModel', {}),
     },
     {
       id: 'session-search',

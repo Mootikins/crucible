@@ -52,7 +52,7 @@ export const appWindowPolicy: WindowPolicy<TabContentType> = {
         getBus().emit('newSession', {});
         return true;
       case 'clearChat':
-        window.dispatchEvent(new CustomEvent('crucible:clear-chat'));
+        getBus().emit('clearChat', {});
         return true;
       case 'toggleThinking':
         statusBarActions.setShowThinking(!statusBarStore.showThinking());

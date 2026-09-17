@@ -654,13 +654,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
   // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
   // (split panes); only the one showing the active session clears its view.
-  const onClearChatEvent = () => {
+  getBus().on('clearChat', () => {
     if (props.sessionId && statusBarStore.activeSessionId() === props.sessionId) {
       clearMessages();
     }
-  };
-  window.addEventListener('crucible:clear-chat', onClearChatEvent);
-  onCleanup(() => window.removeEventListener('crucible:clear-chat', onClearChatEvent));
+  });
 
   // Optimistic entries go in BEFORE the POST so transcript order stays
   // user → answer even when SSE events beat the POST response, and so the
