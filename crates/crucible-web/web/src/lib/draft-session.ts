@@ -4,7 +4,7 @@ import { tabHost } from './tab-host';
 
 /**
  * First-message handoff for lazy session creation: the draft surface stores
- * the typed message here BEFORE `crucible:open-session` mounts the real
+ * the typed message here BEFORE the bus's `openSession` event mounts the real
  * ChatProvider, which consumes it and sends through the normal optimistic
  * path. In-memory on purpose — tab metadata is persisted with the layout,
  * and a persisted first message would re-send on every reload.

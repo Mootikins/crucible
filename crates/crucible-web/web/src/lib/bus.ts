@@ -22,8 +22,14 @@ export type BusEvents = {
   interactionResolved: { sessionId: string; requestId: string };
   /** Starts the draft surface. `workspace` names the project to act in. */
   newSession: { workspace?: string };
+  /** Opens the command palette; `mode` picks the notes tree over commands. */
+  openCommandPalette: { mode?: 'commands' | 'notes' };
+  /** Opens one file in the editor, from any panel that names it. */
+  openFile: { path: string; name?: string };
   /** Opens one session's chat tab. */
   openSession: { sessionId: string; title: string };
+  /** Opens the settings dialog from surfaces that cannot reach its signal. */
+  openSettings: Record<string, never>;
   sessionTitleChanged: { sessionId: string; title: string };
 };
 

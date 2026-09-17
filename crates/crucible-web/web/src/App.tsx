@@ -284,11 +284,8 @@ const App: Component = () => {
 
     document.addEventListener('keydown', onGlobalKeyDown, true);
 
-    // Listen for export-session custom event (dispatched from command palette or other sources)
     const onExportSession = () => setIsExportDialogOpen(true);
-    const onOpenSettings = () => setIsSettingsOpen(true);
-    window.addEventListener('crucible:open-settings', onOpenSettings);
-    onCleanup(() => window.removeEventListener('crucible:open-settings', onOpenSettings));
+    getBus().on('openSettings', () => setIsSettingsOpen(true));
     window.addEventListener('crucible:export-session', onExportSession);
     // Every new-session entry point (ribbon, Home, palette, empty states)
     // opens the draft surface; the session is created lazily on first send.
@@ -300,24 +297,17 @@ const App: Component = () => {
     // Open a kiln file in the editor programmatically (symmetric with
     // open-session). Lets other panels/commands "reveal in editor" a path
     // without a sidebar click.
-    const onOpenFile = (e: Event) => {
-      const { path, name } = (e as CustomEvent<{ path: string; name?: string }>).detail;
-      openFileInEditor(path, name ?? path.split('/').pop() ?? path);
-    };
-    window.addEventListener('crucible:open-file', onOpenFile);
+    getBus().on('openFile', ({ path, name }) =>
+      openFileInEditor(path, name ?? path.split('/').pop() ?? path));
     // Ribbon palette button (WindowManager can't reach the palette signal).
-    // detail.mode lets non-App surfaces (center composer CTAs) open the
-    // notes tree directly instead of the commands list.
-    const onOpenPalette = (e: Event) =>
-      openPalette(((e as CustomEvent).detail?.mode as PaletteMode) ?? 'commands');
-    window.addEventListener('crucible:open-command-palette', onOpenPalette);
+    // `mode` lets non-App surfaces (center composer CTAs) open the notes tree
+    // directly instead of the commands list.
+    getBus().on('openCommandPalette', ({ mode }) => openPalette(mode ?? 'commands'));
 
     onCleanup(() => {
       stopAttentionPolling();
       document.removeEventListener('keydown', onGlobalKeyDown, true);
       window.removeEventListener('crucible:export-session', onExportSession);
-      window.removeEventListener('crucible:open-file', onOpenFile);
-      window.removeEventListener('crucible:open-command-palette', onOpenPalette);
     });
   });
 

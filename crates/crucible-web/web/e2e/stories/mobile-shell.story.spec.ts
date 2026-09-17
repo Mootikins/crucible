@@ -121,7 +121,7 @@ test.describe('WS-317 the compact shell', () => {
   test('walks settings by drilling in, and back out again', async ({ page }, testInfo) => {
     const story = createStory(testInfo);
 
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    await busEmit(page, 'openSettings');
     const dialog = page.getByTestId('settings-modal');
     await expect(dialog).toBeVisible();
 
@@ -155,7 +155,7 @@ test.describe('WS-317 the compact shell', () => {
     await page.reload();
     await expect(page.getByTestId('mobile-shell')).toBeVisible();
 
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    await busEmit(page, 'openSettings');
     const dialog = page.getByTestId('settings-modal');
     const title = dialog.getByRole('heading').first();
 
@@ -191,7 +191,7 @@ test.describe('WS-317 the compact shell', () => {
       page.evaluate(() => (history.state as { crucibleNav?: number } | null)?.crucibleNav ?? 0);
     const before = await navId();
 
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('crucible:open-settings')));
+    await busEmit(page, 'openSettings');
     const dialog = page.getByTestId('settings-modal');
     await dialog.getByTestId('settings-nav-appearance').click();
     await expect(dialog.getByTestId('settings-back')).toBeVisible();

@@ -6,6 +6,7 @@ import { OfflineBadge } from '@/components/OfflineBadge';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { applyTheme, theme } from '@/lib/theme';
 import { notificationStore } from '@/stores/notificationStore';
+import { getBus } from '@/lib/bus';
 
 /**
  * The notification bell, at the bottom of the right ribbon.
@@ -96,7 +97,7 @@ export function railTail(position: EdgePanelPosition): JSX.Element {
         testId="ribbon-cmd-settings"
         // A dialog, not a tab. Changing a setting is a detour you return
         // from; it never wanted a pane, a split or a place in the layout.
-        onClick={() => window.dispatchEvent(new CustomEvent('crucible:open-settings'))}
+        onClick={() => getBus().emit('openSettings', {})}
       >
         <Settings class="w-4 h-4" />
       </RibbonCommand>

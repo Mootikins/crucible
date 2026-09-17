@@ -251,8 +251,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   /**
    * Make `id` the current session without opening a tab for it.
    *
-   * `selectSession` is the *user-initiated* path: it dispatches
-   * `crucible:open-session`, which mounts a tab. Adoption is the reverse
+   * `selectSession` is the *user-initiated* path: it emits `openSession`
+   * on the bus, which mounts a tab. Adoption is the reverse
    * direction — a pane that already exists telling the context to catch up —
    * so it must not re-dispatch, or a restored tab would try to open itself.
    */

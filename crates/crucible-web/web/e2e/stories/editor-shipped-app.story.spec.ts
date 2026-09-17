@@ -1,5 +1,6 @@
 import { test, expect, type Route } from '@playwright/test';
 import { createStory } from './_helpers/story';
+import { busEmit } from '../helpers/bus';
 import { setupBasicMocks } from '../helpers/mock-api';
 
 /**
@@ -10,7 +11,7 @@ import { setupBasicMocks } from '../helpers/mock-api';
  * genuine product path:
  *   - App.tsx now mounts <EditorProvider> (bug 3), so FileViewerPanel resolves a
  *     real EditorContext instead of the noop fallback.
- *   - the `crucible:open-file` product event (handled in App.tsx) opens a 'file'
+ *   - the bus's `openFile` event (handled in App.tsx) opens a 'file'
  *     tab via openFileInEditor — the same function FilesPanel's click calls; the
  *     real FileViewerPanel renders (registry NOT bypassed, cf. file-tab.spec.ts).
  *   - Content loads via GET /api/kiln/file (bug 8) — get_note_by_name returns no
@@ -54,11 +55,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     // FilesPanel.handleFileClick calls). Registry is left intact so the REAL
     // FileViewerPanel renders under the REAL EditorProvider.
     await page.evaluate(
-      ({ filePath, fileName }) => {
-        window.dispatchEvent(
-          new CustomEvent('crucible:open-file', { detail: { path: filePath, name: fileName } }),
-        );
-      },
+      (args) => busEmit(page, 'openFile', { path: args.filePath, name: args.fileName }),
       { filePath: FILE_PATH, fileName: 'from-tui.md' },
     );
 
@@ -111,11 +108,7 @@ test.describe('WS-202 editor round-trip (shipped App)', () => {
     });
     await page.goto('/');
     await page.evaluate(
-      ({ filePath, fileName }) => {
-        window.dispatchEvent(
-          new CustomEvent('crucible:open-file', { detail: { path: filePath, name: fileName } }),
-        );
-      },
+      (args) => busEmit(page, 'openFile', { path: args.filePath, name: args.fileName }),
       { filePath: FILE_PATH, fileName: 'from-tui.md' },
     );
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10000 });

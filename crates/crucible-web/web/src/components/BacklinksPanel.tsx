@@ -21,6 +21,7 @@ import { RefreshCw } from '@/lib/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useKilns } from '@/lib/query/kilns';
 import { isMarkdownPath } from '@/lib/markdown-path';
+import { getBus } from '@/lib/bus';
 
 /**
  * The kiln holding the file the panel is describing.
@@ -264,11 +265,7 @@ export const BacklinksPanel: Component = () => {
                     onClick={() =>
                       // Global open event: the app routes it to the window-tab
                       // editor; harnesses route it to their own EditorContext.
-                      window.dispatchEvent(
-                        new CustomEvent('crucible:open-file', {
-                          detail: { path: entry.abs_path, name: entry.name },
-                        }),
-                      )
+                      getBus().emit('openFile', { path: entry.abs_path, name: entry.name })
                     }
                   >
                     <span class="block truncate text-sm text-shell-ink">

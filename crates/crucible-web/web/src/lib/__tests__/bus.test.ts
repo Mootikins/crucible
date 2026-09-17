@@ -281,6 +281,28 @@ describe('the types of the bus', () => {
     expect(openPayloads).toEqual([{ sessionId: 's1', title: 'One' }]);
   });
 
+  it('delivers a file/settings payload to its handler', () => {
+    const bus = createBus();
+    const files: BusEvents['openFile'][] = [];
+    const palettes: BusEvents['openCommandPalette'][] = [];
+    let settings = 0;
+    bus.on('openFile', (payload) => files.push(payload));
+    bus.on('openCommandPalette', (payload) => palettes.push(payload));
+    bus.on('openSettings', () => { settings += 1; });
+
+    bus.emit('openFile', { path: '/kiln/notes/linker.md', name: 'linker' });
+    bus.emit('openFile', { path: '/kiln/notes/plain.md' });
+    bus.emit('openCommandPalette', { mode: 'notes' });
+    bus.emit('openCommandPalette', {});
+    bus.emit('openSettings', {});
+    expect(files).toEqual([
+      { path: '/kiln/notes/linker.md', name: 'linker' },
+      { path: '/kiln/notes/plain.md' },
+    ]);
+    expect(palettes).toEqual([{ mode: 'notes' }, {}]);
+    expect(settings).toBe(1);
+  });
+
   it('gives the handler the payload type of its event', () => {
     const bus = createBus();
     bus.on('sessionTitleChanged', (payload) => {
@@ -294,8 +316,8 @@ describe('the types of the bus', () => {
     bus.emit('sessionTitleChanged', { sessionId: 'sess-1', path: '/a.md' });
     // @ts-expect-error The bus names no `crucible:new-session` event.
     bus.on('crucible:new-session', () => {});
-    // @ts-expect-error `openFile` is a UI command; it stays a window event.
-    bus.on('openFile', () => {});
+    // @ts-expect-error `openFile` demands a `path`, not a `name` alone.
+    bus.emit('openFile', { name: 'no path' });
     // @ts-expect-error `interactionResolved` demands a `requestId` too.
     bus.emit('interactionResolved', { sessionId: 'sess-1' });
   });

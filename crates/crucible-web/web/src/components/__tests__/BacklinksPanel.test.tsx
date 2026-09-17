@@ -25,6 +25,7 @@ vi.mock('@/contexts/EditorContext', () => ({
 import { BacklinksPanel, noteKeyForPath } from '../BacklinksPanel';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
+import { getBus } from '@/lib/bus';
 
 /** The linking note's text on disk: one line, and it names the focused note. */
 const LINKER_NOTE = 'intro line\n\nsee [[notes/focused]] for the rest\n';
@@ -147,11 +148,9 @@ describe('BacklinksPanel', () => {
     expect(backlinksAsked).toEqual([]);
   });
 
-  it('clicking a linked mention dispatches the global open-file event', async () => {
+  it('clicking a linked mention emits the global open-file event', async () => {
     const events: Array<{ path: string; name?: string }> = [];
-    const listener = (e: Event) =>
-      events.push((e as CustomEvent<{ path: string; name?: string }>).detail);
-    window.addEventListener('crucible:open-file', listener);
+    const off = getBus().on('openFile', (payload) => events.push(payload));
 
     const { getAllByTestId } = render(() => <BacklinksPanel />);
     await waitFor(() => {
@@ -159,7 +158,7 @@ describe('BacklinksPanel', () => {
     });
 
     fireEvent.click(getAllByTestId('backlinks-linked-item')[0]);
-    window.removeEventListener('crucible:open-file', listener);
+    off();
     expect(events).toEqual([{ path: '/kiln/notes/linker.md', name: 'linker' }]);
   });
 

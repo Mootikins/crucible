@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { readState } from './_state';
+import { busEmit } from '../helpers/bus';
 
 /**
  * WS-322 — two writers on one line, settled in the conflict view.
@@ -73,9 +74,7 @@ async function shellReady(page: Page): Promise<void> {
 /** Open a note in the real editor, through the product's own door. */
 async function openNote(page: Page, file: string, name: string): Promise<void> {
   await page.evaluate(
-    ({ p, n }) => {
-      window.dispatchEvent(new CustomEvent('crucible:open-file', { detail: { path: p, name: n } }));
-    },
+    (args) => busEmit(page, 'openFile', { path: args.p, name: args.n }),
     { p: file, n: name },
   );
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });

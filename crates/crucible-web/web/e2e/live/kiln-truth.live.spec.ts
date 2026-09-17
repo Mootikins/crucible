@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readState } from './_state';
 import { appReady } from '../helpers/nav';
+import { busEmit } from '../helpers/bus';
 
 /**
  * Live tier — real `cru web` + daemon + TempDir kiln. Exercises the kiln/notes
@@ -545,11 +546,7 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
 
     // The product's own open-file door — a source import would not reach the
     // bundled live app.
-    await page.evaluate((file) => {
-      window.dispatchEvent(
-        new CustomEvent('crucible:open-file', { detail: { path: file, name: 'Watched.md' } }),
-      );
-    }, notePath);
+    await busEmit(page, 'openFile', { path: notePath, name: 'Watched.md' });
     await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.cm-content')).toContainText('the first text');
 

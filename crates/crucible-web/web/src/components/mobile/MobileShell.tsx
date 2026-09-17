@@ -292,7 +292,7 @@ export const MobileShell: Component = () => {
           icon={iconForPanelId('settings')}
           onSelect={() => {
             setMenuOpen(false);
-            window.dispatchEvent(new CustomEvent('crucible:open-settings'));
+            getBus().emit('openSettings', {});
           }}
         />
       </BottomSheet>

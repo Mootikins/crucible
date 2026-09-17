@@ -151,18 +151,17 @@ describe('MobileShell overflow menu', () => {
   // page was registered, this row opened a centre tab of stacked sections
   // instead of the drill-down that replaced it.
   it('opens the settings dialog, without a tab behind it', () => {
-    const opened: Event[] = [];
-    const listen = (e: Event) => opened.push(e);
-    window.addEventListener('crucible:open-settings', listen);
+    let opened = 0;
+    const off = getBus().on('openSettings', () => { opened += 1; });
     try {
       render(() => <MobileShell />);
       fireEvent.click(screen.getByRole('button', { name: 'More' }));
       fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
-      expect(opened).toHaveLength(1);
+      expect(opened).toBe(1);
       expect(tabStackActions.activeTab()?.contentType).not.toBe('settings');
     } finally {
-      window.removeEventListener('crucible:open-settings', listen);
+      off();
     }
   });
 

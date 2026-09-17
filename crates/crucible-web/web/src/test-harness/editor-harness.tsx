@@ -18,7 +18,7 @@
  */
 import '@/index.css';
 import { render } from 'solid-js/web';
-import { Show, For, onMount, onCleanup, type Component } from 'solid-js';
+import { Show, For, type Component } from 'solid-js';
 import { DragDropProvider, DragDropSensors } from '@thisbeyond/solid-dnd';
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { SettingsProvider } from '@/contexts/SettingsContext';
@@ -31,6 +31,7 @@ import { WindowingProvider } from '@/windowing/components/context';
 import { windowStore } from '@/stores/windowStore';
 import { renderPanel } from '@/lib/render-panel';
 import { registerPanels } from '@/lib/register-panels';
+import { getBus } from '@/lib/bus';
 
 // Floating windows resolve their content through the panel registry — the
 // hover popover's 'file' tab needs FileViewerPanel registered here too.
@@ -69,17 +70,10 @@ const HarnessInner: Component = () => {
     if (p) void editor.saveFile(p);
   };
 
-  // The app routes crucible:open-file to its window-tab editor (App.tsx);
-  // here the same event opens the file as an EditorPanel tab, so panels that
-  // dispatch it (BacklinksPanel linked mentions) work under the harness.
-  onMount(() => {
-    const onOpenFile = (e: Event) => {
-      const { path } = (e as CustomEvent<{ path: string }>).detail;
-      void editor.openFile(path);
-    };
-    window.addEventListener('crucible:open-file', onOpenFile);
-    onCleanup(() => window.removeEventListener('crucible:open-file', onOpenFile));
-  });
+  // The app routes openFile to its window-tab editor (App.tsx); here the same
+  // event opens the file as an EditorPanel tab, so panels that emit it
+  // (BacklinksPanel linked mentions) work under the harness.
+  getBus().on('openFile', ({ path }) => void editor.openFile(path));
 
   return (
     <div class="h-screen flex flex-col bg-shell-bg text-shell-ink">

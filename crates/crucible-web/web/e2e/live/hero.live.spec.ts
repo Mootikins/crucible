@@ -5,6 +5,7 @@ import { readHeroState, STATE_FILE } from './hero-state';
 import { HERO_REPLIES } from './hero-script';
 import { findTuiTestBinary, runTuiLeg } from './tui-leg-runner';
 import { appReady, openSessionsList } from '../helpers/nav';
+import { busEmit } from '../helpers/bus';
 
 /**
  * The hero flow — one cross-surface journey proving the mental model:
@@ -97,11 +98,7 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
 
   // Open notes/from-tui.md in the REAL editor via the product open-file event
   // (works against the bundled live app — a source import would not).
-  await page.evaluate((filePath) => {
-    window.dispatchEvent(
-      new CustomEvent('crucible:open-file', { detail: { path: filePath, name: 'from-tui.md' } }),
-    );
-  }, notePath);
+  await busEmit(page, 'openFile', { path: notePath, name: 'from-tui.md' });
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('.cm-content')).toContainText('terminal was here');
 
@@ -128,11 +125,7 @@ test('hero flow: TUI → web → TUI, one session across three consoles', async 
 
   // Editing opened a file tab (now active). Re-focus the chat tab (open-session
   // re-activates the existing tab) so the composer is reachable.
-  await page.evaluate((id) => {
-    window.dispatchEvent(
-      new CustomEvent('crucible:open-session', { detail: { sessionId: id, title: 'hero' } }),
-    );
-  }, sessionId);
+  await busEmit(page, 'openSession', { sessionId, title: 'hero' });
 
   // Turn 2 from the web console (deterministic reply via fake-ollama). Submit
   // with Enter — the send button re-renders with streaming state and loses
