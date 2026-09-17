@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@solidjs/testing-library';
+import { usePublication } from '../usePublication';
+import { pluginEvents } from '@/lib/query/sse';
+import { installPluginEventRoute } from '@/lib/query/routes/plugins';
+import { FakeEventSource, installFakeEventSource } from '@/test-utils/sse';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { PLUGIN_CALLER_HEADER } from '@/lib/api';
 
 /**
  * The plugin blocks, on the stream every other reader is on.
@@ -16,21 +22,15 @@ import { render, waitFor } from '@solidjs/testing-library';
  * entry this block mounted.
  */
 
-const getPluginPublications = vi.fn(
-  async (_key: string, _plugin: string) => ({}) as Record<string, Record<string, unknown>>,
-);
+// No `vi.mock('@/lib/api')`: the cache entry's fetch runs the real
+// `getPluginPublications` against the `GET /api/plugins/publications` route
+// below, so the narrowed KEY and the plugin CALLER are read off the wire.
+/** Every read the stream's cache issued, as it went out. */
+const asked: { key: string; plugin: string }[] = [];
+/** What the publications route answers for the pair it was asked for. */
+let reply: (key: string, plugin: string) => Record<string, Record<string, unknown>> = () => ({});
 
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  getPluginPublications: (key: string, plugin: string) => getPluginPublications(key, plugin),
-}));
-
-const { usePublication } = await import('../usePublication');
-const { pluginEvents, resetSseForTests } = await import('@/lib/query/sse');
-const { installPluginEventRoute } = await import('@/lib/query/routes/plugins');
-const { FakeEventSource, installFakeEventSource } = await import('@/test-utils/sse');
-const { createTestQueryClient } = await import('@/test-utils/query');
-const { setQueryClientForTests } = await import('@/lib/query/client');
+let env: TestQueryEnv;
 
 /** One block, drawing one plugin's value for one key. */
 function Block(props: { plugin: string; publicationKey: string }) {
@@ -45,17 +45,24 @@ function published(key: string, plugin: string, value: string) {
 
 beforeEach(() => {
   installFakeEventSource();
-  // A fresh cache per case: the entries of one case would otherwise answer the
-  // next one, and the counts below are about who asked the daemon.
-  setQueryClientForTests(createTestQueryClient());
   // In the app `src/index.tsx` names the route once, at start.
   installPluginEventRoute();
-  getPluginPublications.mockResolvedValue({});
+  asked.length = 0;
+  reply = () => ({});
+  // A fresh cache per case: the entries of one case would otherwise answer the
+  // next one, and the counts below are about who asked the daemon.
+  env = createTestQueryEnv({
+    'GET /api/plugins/publications': (request) => {
+      const key = new URL(request.url).searchParams.get('key') ?? '';
+      const plugin = request.headers.get(PLUGIN_CALLER_HEADER) ?? '';
+      asked.push({ key, plugin });
+      return { publications: reply(key, plugin) };
+    },
+  });
 });
 
 afterEach(() => {
-  resetSseForTests();
-  setQueryClientForTests(null);
+  env.restore();
   vi.clearAllMocks();
 });
 
@@ -81,7 +88,7 @@ describe('usePublication on the shared plugin stream', () => {
     const stop = pluginEvents().subscribe(other);
     render(() => <Block plugin="board" publicationKey="rows" />);
 
-    await waitFor(() => expect(getPluginPublications).toHaveBeenCalled());
+    await waitFor(() => expect(asked).toHaveLength(1));
     expect(FakeEventSource.instances).toHaveLength(1);
 
     FakeEventSource.instances[0]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
@@ -90,9 +97,7 @@ describe('usePublication on the shared plugin stream', () => {
   });
 
   it('re-reads the block the event names, and leaves the others alone', async () => {
-    getPluginPublications.mockImplementation(async (key, plugin) =>
-      published(key, plugin, 'first'),
-    );
+    reply = (key, plugin) => published(key, plugin, 'first');
     const { getByTestId } = render(() => (
       <>
         <Block plugin="board" publicationKey="rows" />
@@ -101,16 +106,14 @@ describe('usePublication on the shared plugin stream', () => {
     ));
     await waitFor(() => expect(getByTestId('board-rows').textContent).toBe('first'));
     await waitFor(() => expect(getByTestId('board-columns').textContent).toBe('first'));
-    getPluginPublications.mockImplementation(async (key, plugin) =>
-      published(key, plugin, 'second'),
-    );
-    getPluginPublications.mockClear();
+    reply = (key, plugin) => published(key, plugin, 'second');
+    asked.length = 0;
 
     FakeEventSource.instances[0]!.emit('publication_changed', { plugin: 'board', key: 'rows' });
 
     await waitFor(() => expect(getByTestId('board-rows').textContent).toBe('second'));
     expect(getByTestId('board-columns').textContent).toBe('first');
-    expect(getPluginPublications).toHaveBeenCalledTimes(1);
+    expect(asked).toHaveLength(1);
   });
 
   it('closes the source when the last block goes', async () => {

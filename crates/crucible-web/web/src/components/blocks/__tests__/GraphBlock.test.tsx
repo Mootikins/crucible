@@ -14,17 +14,18 @@ import { render, fireEvent, waitFor } from '@solidjs/testing-library';
  * top-level consts.
  */
 const mocks = vi.hoisted(() => ({
-  runPluginCommand: vi.fn(),
   activeFile: vi.fn<() => string | null>(),
   openFileInEditor: vi.fn(),
 }));
 
-// `listKilns` is NOT stubbed: the block reads the roster through `useKilns`,
-// which runs the real one against the mocked fetch below.
-vi.mock('@/lib/api', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  runPluginCommand: mocks.runPluginCommand,
-}));
+// `runPluginCommand` is NOT stubbed: the block issues it against the
+// `POST /api/plugins/command` route below, so the command name, the arguments
+// and the caller it travels under are read off the wire — which is the argument
+// path this file exists to pin.
+/** Every command call, as it went out. */
+const sent: { name: string; args: unknown; caller: string }[] = [];
+/** What the command route answers next. */
+let reply: unknown = {};
 
 vi.mock('@/lib/file-actions', () => ({
   openFileInEditor: mocks.openFileInEditor,
@@ -37,6 +38,7 @@ vi.mock('@/contexts/EditorContext', () => ({
 import { GraphBlock } from '../GraphBlock';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
+import { PLUGIN_CALLER_HEADER } from '@/lib/api';
 
 const KILNS = [{ path: '/vault', name: 'vault' }];
 
@@ -56,9 +58,17 @@ beforeEach(() => {
   // The roster paints on the first render, the way a reload does; the fetch
   // below runs and answers the same list.
   localStorage.setItem('crucible:cache:kilns', JSON.stringify(KILNS));
-  env = createTestQueryEnv({ 'GET /api/kilns': () => ({ kilns: KILNS }) });
+  sent.length = 0;
+  reply = NEIGHBOURHOOD;
   mocks.activeFile.mockReturnValue(null);
-  mocks.runPluginCommand.mockResolvedValue(NEIGHBOURHOOD);
+  env = createTestQueryEnv({
+    'GET /api/kilns': () => ({ kilns: KILNS }),
+    'POST /api/plugins/command': async (request) => {
+      const { name, args } = (await request.json()) as { name: string; args: unknown };
+      sent.push({ name, args, caller: request.headers.get(PLUGIN_CALLER_HEADER) ?? '' });
+      return reply;
+    },
+  });
 });
 
 afterEach(() => {
@@ -68,7 +78,7 @@ afterEach(() => {
 
 describe('GraphBlock', () => {
   it('reads the fence-named note and renders one section per hop', async () => {
-    mocks.runPluginCommand.mockResolvedValue({
+    reply = {
       root: 'Meta/Canvas.md',
       depth: 2,
       total: 3,
@@ -77,18 +87,19 @@ describe('GraphBlock', () => {
         { hops: 1, paths: ['Meta/Oil.md'] },
         { hops: 2, paths: ['Help/Wikilinks.md', 'Help/Tags.md'] },
       ],
-    });
+    };
 
     const { container } = render(() => (
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md', depth: 2 }} />
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Oil.md'));
-    expect(mocks.runPluginCommand).toHaveBeenCalledWith(
-      'graph_neighborhood',
-      { path: 'Meta/Canvas.md', depth: 2 },
-      'graph',
-    );
+    // Name, args and the caller it travels under, read off the wire.
+    expect(sent[0]).toEqual({
+      name: 'graph_neighborhood',
+      args: { path: 'Meta/Canvas.md', depth: 2 },
+      caller: 'graph',
+    });
     expect(container.textContent).toContain('1 hop (1)');
     expect(container.textContent).toContain('2 hops (2)');
   });
@@ -102,16 +113,16 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Oil.md'));
-    expect(mocks.runPluginCommand).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
 
     fireEvent.input(getByTestId('graph-depth'), { target: { value: '3' } });
 
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenLastCalledWith(
-        'graph_neighborhood',
-        { path: 'Meta/Canvas.md', depth: 3 },
-        'graph',
-      ),
+      expect(sent.at(-1)).toEqual({
+        name: 'graph_neighborhood',
+        args: { path: 'Meta/Canvas.md', depth: 3 },
+        caller: 'graph',
+      }),
     );
   });
 
@@ -136,11 +147,11 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenCalledWith(
-        'graph_neighborhood',
-        { path: 'Meta/Canvas.md', depth: 1 },
-        'graph',
-      ),
+      expect(sent[0]).toEqual({
+        name: 'graph_neighborhood',
+        args: { path: 'Meta/Canvas.md', depth: 1 },
+        caller: 'graph',
+      }),
     );
     expect(container.textContent).toContain('Canvas.md');
   });
@@ -151,20 +162,20 @@ describe('GraphBlock', () => {
     ));
 
     await waitFor(() => expect(container.textContent).toContain('Open a note'));
-    expect(mocks.runPluginCommand).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
   });
 
   // The plugin answers in one shape whether the read worked or not, so a
   // failure must reach the reader instead of rendering as an empty list.
   it('shows the error the plugin reported', async () => {
-    mocks.runPluginCommand.mockResolvedValue({
+    reply = {
       root: 'Meta/Canvas.md',
       depth: 1,
       total: 0,
       truncated: false,
       rings: [],
       error: 'no kiln is open',
-    });
+    };
 
     const { container } = render(() => (
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
@@ -178,12 +189,12 @@ describe('GraphBlock', () => {
   // Neighborhood must be refused, not cast: before the decode, the cast
   // rendered this fixture as a plausible empty neighbourhood.
   it('refuses a malformed reply instead of rendering it', async () => {
-    mocks.runPluginCommand.mockResolvedValue({
+    reply = {
       root: 'Meta/Canvas.md',
       depth: 1,
       total: 0,
       truncated: false,
-    });
+    };
 
     const { container } = render(() => (
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
@@ -194,13 +205,13 @@ describe('GraphBlock', () => {
   });
 
   it('says an isolated note has no neighbours rather than drawing nothing', async () => {
-    mocks.runPluginCommand.mockResolvedValue({
+    reply = {
       root: 'Meta/Canvas.md',
       depth: 1,
       total: 0,
       truncated: false,
       rings: [],
-    });
+    };
 
     const { container } = render(() => (
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
@@ -210,13 +221,13 @@ describe('GraphBlock', () => {
   });
 
   it('says when the answer was cut short', async () => {
-    mocks.runPluginCommand.mockResolvedValue({
+    reply = {
       root: 'Meta/Canvas.md',
       depth: 3,
       total: 2,
       truncated: true,
       rings: [{ hops: 1, paths: ['Meta/Oil.md', 'Help/Tags.md'] }],
-    });
+    };
 
     const { container } = render(() => (
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
@@ -237,11 +248,11 @@ describe('GraphBlock', () => {
       <GraphBlock plugin="graph" block="neighborhood" params={{ path: 'Meta/Canvas.md' }} />
     ));
 
-    await waitFor(() => expect(mocks.runPluginCommand).toHaveBeenCalled());
-    // The third positional argument is the caller. Read it off the call
-    // rather than matching the whole call, so a change to the argument
-    // object does not silently take this assertion with it.
-    expect(mocks.runPluginCommand.mock.calls[0][2]).toBe('graph');
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // The caller is read off the header rather than the whole call, so a
+    // change to the argument object does not silently take this assertion
+    // with it.
+    expect(sent[0]!.caller).toBe('graph');
     expect(container).toBeTruthy();
   });
 

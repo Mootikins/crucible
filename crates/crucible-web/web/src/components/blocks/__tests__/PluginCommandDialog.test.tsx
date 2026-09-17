@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
+import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { PLUGIN_CALLER_HEADER } from '@/lib/api';
 
 /**
  * The done-when of the plugin plan's step 3: **a dialog is generated for a
@@ -11,13 +13,15 @@ import { render, fireEvent, waitFor } from '@solidjs/testing-library';
  * generated. If it could only draw `graph_neighborhood`, that would be a
  * hand-written form with a schema-shaped comment.
  */
-const mocks = vi.hoisted(() => ({
-  runPluginCommand: vi.fn(),
-}));
 
-vi.mock('@/lib/api', () => ({
-  runPluginCommand: mocks.runPluginCommand,
-}));
+// No `vi.mock('@/lib/api')`: the dialog issues the real `runPluginCommand`
+// against the `POST /api/plugins/command` route below, so what the plugin is
+// told — command name, typed args, and who is calling on its behalf — is read
+// off the wire.
+/** Every run the dialog issued, as it went out. */
+const sent: { name: string; args: unknown; caller: string }[] = [];
+
+let env: TestQueryEnv;
 
 import { PluginCommandDialog } from '../PluginCommandDialog';
 
@@ -42,8 +46,18 @@ const INVENTED = {
 };
 
 beforeEach(() => {
-  mocks.runPluginCommand.mockReset();
-  mocks.runPluginCommand.mockResolvedValue({ ok: true });
+  sent.length = 0;
+  env = createTestQueryEnv({
+    'POST /api/plugins/command': async (request) => {
+      const { name, args } = (await request.json()) as { name: string; args: unknown };
+      sent.push({ name, args, caller: request.headers.get(PLUGIN_CALLER_HEADER) ?? '' });
+      return { ok: true };
+    },
+  });
+});
+
+afterEach(() => {
+  env.restore();
 });
 
 /** The control each field was drawn with, by tag and type attribute. */
@@ -88,19 +102,19 @@ describe('PluginCommandDialog', () => {
     fireEvent.input(field('bands'), { target: { value: 'red\ngreen' } });
     fireEvent.click(getByText('Run'));
 
-    // The third argument is the caller. This dialog names none, so it passes
-    // `undefined` and `runPluginCommand`'s default names the app.
+    // The dialog names no caller, so `runPluginCommand`'s default speaks for
+    // the app on the header the plugin is reached through.
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenCalledWith(
-        'spectrometer_calibrate',
-        {
+      expect(sent[0]).toEqual({
+        name: 'spectrometer_calibrate',
+        args: {
           sample: 'ref-12',
           passes: 3,
           dry_run: true,
           bands: ['red', 'green'],
         },
-        undefined,
-      ),
+        caller: 'app',
+      }),
     );
   });
 
@@ -122,7 +136,7 @@ describe('PluginCommandDialog', () => {
     await waitFor(() =>
       expect(container.querySelector('.text-error')?.textContent).toBe('required'),
     );
-    expect(mocks.runPluginCommand).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
   });
 
   /**
@@ -153,7 +167,7 @@ describe('PluginCommandDialog', () => {
     expect(controlsByName(container)).toEqual({});
     fireEvent.click(getByText('Run'));
     await waitFor(() =>
-      expect(mocks.runPluginCommand).toHaveBeenCalledWith('bare', {}, undefined),
+      expect(sent[0]).toEqual({ name: 'bare', args: {}, caller: 'app' }),
     );
   });
 });
