@@ -31,6 +31,7 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   }),
 }));
 
+import { resetTranscriptsForTests } from '../transcriptStore';
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
 
@@ -59,6 +60,9 @@ beforeEach(() => {
 
 afterEach(() => {
   setQueryClientForTests(null);
+  // The transcript store is a module singleton keyed by session; forget it
+  // so one case's session cannot answer the next one.
+  resetTranscriptsForTests();
 });
 
 describe('ChatContext.switchMode', () => {

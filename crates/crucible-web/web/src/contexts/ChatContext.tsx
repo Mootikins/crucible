@@ -2,23 +2,16 @@ import {
   createContext,
   useContext,
   ParentComponent,
-  createSignal,
   createEffect,
   on,
   onCleanup,
-  untrack,
+  type JSX,
 } from 'solid-js';
-import { createStore } from 'solid-js/store';
 import type {
   Message,
-  InteractionRequest,
   InteractionResponse,
-  ToolCallDisplay,
-  SubagentEvent,
-  ContextUsage,
   ChatMode,
   ModeDescriptor,
-  ConnectionStatus,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
 import type { DaemonHistoryEvent, SessionHistoryResponse } from '@/lib/api';
@@ -32,7 +25,6 @@ import {
   fetchPendingInteractionsOnce,
   useRespondToInteraction,
 } from '@/lib/query/interactions';
-import { sessionEvents } from '@/lib/query/sse';
 import { useCancelSession } from '@/lib/query/sessions';
 import {
   fetchSessionHistoryOnce,
@@ -45,15 +37,26 @@ import { getBus } from '@/lib/bus';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
 import { attentionActions } from '@/stores/attentionStore';
-import { tabHost } from '@/lib/tab-host';
-import { createChatEventReducer } from './chatEventReducer';
+import {
+  clearTranscript,
+  patchTranscript,
+  releaseTranscript,
+  retainTranscript,
+  retryTranscriptStream,
+  setTranscriptPendingInteraction,
+  setTranscriptStreaming,
+  transcriptMessages,
+  transcriptOf,
+  transcriptOpened,
+  updateTranscriptMessages,
+} from './transcriptStore';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
 
 
 interface ChatProviderProps {
   sessionId: string;
-  children: any;
+  children: JSX.Element;
 }
 
 const ChatContext = createContext<ChatContextValue>();
@@ -67,22 +70,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   // than an abort and a second read of the same transcript.
   const history = useSessionHistory(() => props.sessionId || null);
   const send = useSendChatMessage();
-  const [messages, setMessages] = createStore<Message[]>([]);
-  const [isLoading, setIsLoading] = createSignal(false);
-  const [isStreaming, setIsStreamingRaw] = createSignal(false);
-  const [pendingInteraction, setPendingInteractionRaw] = createSignal<InteractionRequest | null>(null);
+  // The session's LIVE transcript — messages, subagent events, streaming
+  // state — keyed by session id in `transcriptStore`, shared by every pane
+  // that shows this session and fed by that store's one stream subscription.
+  // This pane holds it open and draws it; it does not own it.
+  const transcript = () => transcriptOf(props.sessionId);
   // Answering a request takes it out of the shared pending list, so the read
   // below cannot hand back one this client already answered. That is what
   // retires the set of answered request ids this provider used to keep.
   const respond = useRespondToInteraction();
-  const [error, setError] = createSignal<string | null>(null);
-  // Transport health, held apart from `error`: the error line also carries
-  // daemon failures ("Failed to send: …"), and a "retry the connection"
-  // control under one of THOSE would offer a cure for the wrong illness.
-  const [connectionStatus, setConnectionStatus] = createSignal<ConnectionStatus>('connected');
-  const [subagentEvents, setSubagentEvents] = createStore<SubagentEvent[]>([]);
-  const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
-  const [chatMode, setChatMode] = createSignal<ChatMode>('ask');
   // Modes are declared in Lua, so the list is per session and comes from the
   // daemon. It is read through the one key `SessionStatusChips` reads, which
   // fetched a second copy of its own on every mount, and the id is an
@@ -113,7 +109,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    */
   createEffect(() => {
     const listed = modes.data;
-    if (listed && listed.modes.length > 0) setChatMode(listed.current_mode_id);
+    if (listed && listed.modes.length > 0) {
+      patchTranscript(props.sessionId, { chatMode: listed.current_mode_id });
+    }
   });
   /**
    * This pane has nothing to draw and is waiting for the transcript.
@@ -123,36 +121,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    * refetch of a document this pane has folded is not a load.
    */
   const isLoadingHistory = () => history.isLoading;
-  
-  // Mirror interaction/streaming state into the global attention store so
-  // the Inbox and header badge see every session with an open tab, not just
-  // the focused one. Entries are cleared when this provider unmounts.
-  const setIsStreaming = (value: boolean) => {
-    setIsStreamingRaw(value);
-    if (props.sessionId) {
-      attentionActions.report(props.sessionId, {
-        isStreaming: value,
-        title: untrack(sessionTitle),
-      });
-    }
-  };
-  const setPendingInteraction = (request: InteractionRequest | null) => {
-    setPendingInteractionRaw(request);
-    if (props.sessionId) {
-      attentionActions.report(props.sessionId, {
-        pendingInteraction: request,
-        title: untrack(sessionTitle),
-      });
-    }
-  };
 
-  /** Removes this pane from the shared stream. The stream itself belongs to
-   *  `sessionEvents(id)`, which closes the source when the last pane leaves. */
-  let streamUnsubscribe: (() => void) | null = null;
-  /** The session the live stream belongs to. `retryConnection` needs it, and
-   *  `props.sessionId` is not it: the stream is opened by an effect that also
-   *  handles the null case, so the two can disagree for a tick. */
-  let streamSessionId: string | null = null;
   /**
    * The mark that this bind is superseded, which a late answer checks.
    *
@@ -164,16 +133,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   let bindAbortController: AbortController | null = null;
   /** True once this bind folded the persisted transcript it binds to. */
   let boundHistoryFolded = false;
-  let currentStreamingMessageId: string | null = null;
   let previousSessionId: string | null = null;
-  const [sessionTitle, setSessionTitle] = createSignal<string | null>(null);
 
   const addMessage = (message: Message) => {
-    setMessages((prev) => [...prev, message]);
+    updateTranscriptMessages(props.sessionId, (prev) => [...prev, message]);
   };
 
   const updateMessage = (id: string, updates: Partial<Message>) => {
-    setMessages((prev) => {
+    updateTranscriptMessages(props.sessionId, (prev) => {
       const index = prev.findIndex((m) => m.id === id);
       if (index === -1) return prev;
       const updated = [...prev];
@@ -183,75 +150,19 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   const removeMessage = (id: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== id));
-  };
-
-  const appendToMessage = (id: string, content: string) => {
-    setMessages((prev) => {
-      const index = prev.findIndex((m) => m.id === id);
-      if (index === -1) return prev;
-      const updated = [...prev];
-      updated[index] = { ...updated[index], content: updated[index].content + content };
-      return updated;
-    });
-  };
-
-  /**
-   * Tool calls are transcript entries. A turn's tools run BEFORE its answer
-   * text, but sendMessage pre-creates the (empty) assistant message — so a
-   * new tool entry is inserted before that placeholder while it is still
-   * empty, keeping transcript order chronological: user → tools → answer.
-   */
-  const addToolMessage = (tool: ToolCallDisplay) => {
-    const toolMessage: Message = {
-      id: `tool-${tool.callId ?? tool.id}`,
-      role: 'tool',
-      content: '',
-      timestamp: Date.now(),
-      toolCall: tool,
-    };
-    setMessages((prev) => {
-      const streamingId = currentStreamingMessageId;
-      const index = streamingId ? prev.findIndex((m) => m.id === streamingId) : -1;
-      if (index !== -1 && prev[index].content === '') {
-        const next = [...prev];
-        next.splice(index, 0, toolMessage);
-        return next;
-      }
-      return [...prev, toolMessage];
-    });
-  };
-
-  // Fine-grained path update: mutating `toolCall` in place keeps the message
-  // object's identity stable, so <For> doesn't recreate the row and the
-  // ToolCard's expanded state survives streaming result deltas. Every
-  // producer sets callId, so that's the only match key.
-  const updateToolMessage = (
-    callId: string,
-    updater: (tool: ToolCallDisplay) => ToolCallDisplay,
-  ) => {
-    setMessages(
-      (m) => m.role === 'tool' && m.toolCall?.callId === callId,
-      'toolCall',
-      (tool) => updater(tool as ToolCallDisplay),
-    );
+    updateTranscriptMessages(props.sessionId, (prev) => prev.filter((m) => m.id !== id));
   };
 
    const clearMessages = () => {
-     setMessages([]);
-     setSubagentEvents([]);
-     setContextUsage(null);
-     setError(null);
-     setPendingInteraction(null);
-     currentStreamingMessageId = null;
+     clearTranscript(props.sessionId);
    };
 
    /** UI-optimistic mode switch that also persists daemon-side. The daemon
     * echoes a mode_changed SSE event; on failure the UI reverts and surfaces
     * the error (plan mode that isn't enforced server-side must not look on). */
    const switchMode = (mode: ChatMode) => {
-     const previous = chatMode();
-     setChatMode(mode);
+     const previous = transcript().chatMode;
+     patchTranscript(props.sessionId, { chatMode: mode });
      // The mutation moves the cached `current_mode_id` and puts it back on a
      // refusal, which is what the other readers of the list see. This pane
      // holds its own chip, because the chip must answer the click whether or
@@ -259,7 +170,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      // for the list again once it settles, so a mode the daemon rejects stops
      // being offered.
      void setMode.mutateAsync({ id: props.sessionId, mode }).catch((err) => {
-       setChatMode(previous);
+       patchTranscript(props.sessionId, { chatMode: previous });
        notificationActions.addNotification(
          'error',
          err instanceof Error ? err.message : 'Failed to set session mode'
@@ -267,49 +178,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
      });
    };
 
-   const addSystemMessage = (content: string) => {
-     addMessage({
-       id: generateMessageId(),
-       role: 'system',
-       content,
-       timestamp: Date.now(),
-     });
-   };
-
-  const handleEvent = createChatEventReducer({
-    // No `onUnknownMode`: the stream's own route invalidates this session's
-    // mode list on EVERY `mode_changed`, so the list is read again whether or
-    // not this pane knows the mode the event names.
-    messages: () => messages,
-    currentStreamingMessageId: () => currentStreamingMessageId,
-    setCurrentStreamingMessageId: (id) => {
-      currentStreamingMessageId = id;
-    },
-    onTitleChanged: (title: string) => {
-      setSessionTitle(title);
-      const host = tabHost();
-      const tab = host.find((t) => t.metadata?.sessionId === props.sessionId);
-      if (tab) host.update(tab.id, { title });
-      attentionActions.report(props.sessionId, { title });
-      // The session list (Home resume, Inbox) learns the new name from the
-      // stream's own route, which emits `sessionTitleChanged` on the bus once
-      // per event. Announcing it here as well would announce it once per open
-      // pane, and the panes of one session all carry the same title.
-    },
-    addMessage,
-    updateMessage,
-    appendToMessage,
-    addToolMessage,
-    updateToolMessage,
-    setSubagentEvents,
-    setContextUsage,
-    setChatMode,
-    setPendingInteraction,
-    setError,
-    setConnectionStatus,
-    setIsLoading,
-    setIsStreaming,
-  });
+  const addSystemMessage = (content: string) => {
+    addMessage({
+      id: generateMessageId(),
+      role: 'system',
+      content,
+      timestamp: Date.now(),
+    });
+  };
 
   /**
    * Folds one persisted transcript into this pane's messages.
@@ -466,13 +342,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         }
       }
     }
-    
+
     // MERGE, don't clobber: messages that arrived after the history
     // snapshot (optimistic sends, live SSE events during a slow load)
     // aren't in `loadedMessages`. Backend-canonical ids make the overlap
     // exact — anything already reconstructed is dropped from the live
     // set, everything newer is kept in order after it.
-    setMessages((prev) => {
+    updateTranscriptMessages(props.sessionId, (prev) => {
       const reconstructed = new Set(loadedMessages.map((m) => m.id));
       const newer = prev.filter((m) => !reconstructed.has(m.id));
       // Events stored before canonical message_ids existed reconstruct under
@@ -494,8 +370,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   /**
-   * Binds this pane to one session: the stream, the bootstrap, the history and
-   * the staged first message.
+   * Binds this pane to one session: the transcript it holds open, the
+   * bootstrap, the history and the staged first message.
    *
    * `on` names the ONE dependency, and it is not a tidiness: the body reports
    * to the attention store, which reads the title, and the bootstrap writes
@@ -505,30 +381,25 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    * deliberately untracked; only a new session id may bind again.
    */
   createEffect(on(() => props.sessionId, (newSessionId) => {
-    if (streamUnsubscribe) {
-      streamUnsubscribe();
-      streamUnsubscribe = null;
-      streamSessionId = null;
-    }
-    
     // Supersede the bind before it: its remaining reads must write nothing.
     if (bindAbortController) {
       bindAbortController.abort();
       bindAbortController = null;
     }
-    // The transcript on screen belongs to the bind that is ending, so the new
-    // one folds its own document even when it names the same session.
-    boundHistoryFolded = false;
-    
+    // The transcript this pane was drawing belongs to the session it leaves;
+    // the keyed store hands this bind the transcript of ITS session, so there
+    // is nothing to clear — only the hold to give back. The last pane out
+    // frees the state, the same refcount the SSE root keeps on the source.
     if (newSessionId !== previousSessionId && previousSessionId !== null) {
-      clearMessages();
+      releaseTranscript(previousSessionId);
       attentionActions.clear(previousSessionId);
     }
     previousSessionId = newSessionId;
-    
+
     if (!newSessionId) {
       return;
     }
+    retainTranscript(newSessionId);
 
     const abortController = new AbortController();
     bindAbortController = abortController;
@@ -536,8 +407,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const bootstrapPromise = bootstrapSessionWithFallback({
       sessionId: newSessionId,
       signal: abortController.signal,
-      setSessionTitle,
-      setChatMode,
+      setSessionTitle: (title) => patchTranscript(newSessionId, { sessionTitle: title }),
+      setChatMode: (mode) => patchTranscript(newSessionId, { chatMode: mode }),
       // The one request `useSessionHistory` is making for this session, under
       // the key it reads. The bind awaits the document, and the fold below
       // puts it on screen.
@@ -556,8 +427,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       .then((entries) => {
         if (abortController.signal.aborted || props.sessionId !== newSessionId) return;
         const held = entries.find((e) => e.session_id === newSessionId);
-        if (held && !pendingInteraction()) {
-          setPendingInteraction(held.request);
+        if (held && !transcript().pendingInteraction) {
+          setTranscriptPendingInteraction(newSessionId, held.request);
         }
       })
       .catch(() => {
@@ -566,16 +437,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
     // Resolves when the SSE stream is open (daemon subscribed). Sending
     // before that drops the response's first tokens — the turn then looks
-    // frozen until message_complete backfills the full text.
-    let resolveSseOpen: () => void = () => {};
-    const sseOpen = new Promise<void>((resolve) => {
-      resolveSseOpen = resolve;
-    });
-    streamSessionId = newSessionId;
-    // The shared root, not a source of our own: a second pane on this session
-    // joins the stream this one opened, and a pane that joins an open stream
-    // gets `resolveSseOpen` at once rather than waiting for an open it missed.
-    streamUnsubscribe = sessionEvents(newSessionId).subscribe(handleEvent, resolveSseOpen);
+    // frozen until message_complete backfills the full text. The stream
+    // belongs to the session's transcript, so the gate is the session's,
+    // shared with every pane that holds it.
+    const sseOpen = transcriptOpened(newSessionId);
 
     // Lazy creation handoff: the draft surface staged the user's first
     // message before opening this session. Send it only after (a) bootstrap
@@ -629,16 +494,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   });
 
   onCleanup(() => {
-    if (streamUnsubscribe) {
-      streamUnsubscribe();
-      streamUnsubscribe = null;
-      streamSessionId = null;
-    }
     if (bindAbortController) {
       bindAbortController.abort();
       bindAbortController = null;
     }
     if (props.sessionId) {
+      releaseTranscript(props.sessionId);
       attentionActions.clear(props.sessionId);
     }
   });
@@ -647,13 +508,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   // this session's behalf — the write announces it, and the pane holding the
   // card drops it. `on` removes the handler with this owner.
   getBus().on('interactionResolved', ({ sessionId, requestId }) => {
-    if (sessionId === props.sessionId && pendingInteraction()?.id === requestId) {
-      setPendingInteraction(null);
+    if (sessionId === props.sessionId && transcript().pendingInteraction?.id === requestId) {
+      setTranscriptPendingInteraction(props.sessionId, null);
     }
   });
 
   // Palette "Clear Chat" / Ctrl+K. Multiple chat providers can be mounted
-  // (split panes); only the one showing the active session clears its view.
+  // (split panes); only the one showing the active session clears — and the
+  // transcript it clears is the session's, so every pane of it clears.
   getBus().on('clearChat', () => {
     if (props.sessionId && statusBarStore.activeSessionId() === props.sessionId) {
       clearMessages();
@@ -667,14 +529,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   // never outlives the send, so convergence still rests on backend-canonical
   // ids only.
   const insertOptimisticTurn = (trimmed: string) => {
-    setError(null);
-    setIsLoading(true);
-    setIsStreaming(true);
+    patchTranscript(props.sessionId, { error: null, isLoading: true });
+    setTranscriptStreaming(props.sessionId, true);
     const tempUserId = generateMessageId();
     addMessage({ id: tempUserId, role: 'user', content: trimmed, timestamp: Date.now() });
     const tempResponseId = generateMessageId();
     addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now(), placeholder: true });
-    currentStreamingMessageId = tempResponseId;
+    patchTranscript(props.sessionId, { currentStreamingMessageId: tempResponseId });
     return { tempUserId, tempResponseId };
   };
 
@@ -691,9 +552,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (!props.sessionId) return;
     try {
       const messageId = await send.mutateAsync({ id: props.sessionId, message: trimmed });
+      const messages = () => transcriptMessages(props.sessionId);
 
       // Canonicalize the user entry — unless the SSE echo already added it.
-      if (messages.some((m) => m.id === messageId)) {
+      if (messages().some((m) => m.id === messageId)) {
         removeMessage(tempUserId);
       } else {
         updateMessage(tempUserId, { id: messageId });
@@ -704,20 +566,20 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       // message to a canonical id) — then the temp id is gone and there is
       // nothing to do.
       const responseId = turnResponseId(messageId);
-      if (messages.some((m) => m.id === tempResponseId)) {
-        if (messages.some((m) => m.id === responseId)) {
+      if (messages().some((m) => m.id === tempResponseId)) {
+        if (messages().some((m) => m.id === responseId)) {
           removeMessage(tempResponseId);
         } else {
           updateMessage(tempResponseId, { id: responseId });
         }
       }
-      if (currentStreamingMessageId === tempResponseId) {
-        currentStreamingMessageId = responseId;
+      if (transcript().currentStreamingMessageId === tempResponseId) {
+        patchTranscript(props.sessionId, { currentStreamingMessageId: responseId });
       }
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
-      setError(errorMsg);
+      patchTranscript(props.sessionId, { error: errorMsg });
       // Keep the user's text visible next to the failure notice, but drop the
       // empty assistant placeholder.
       removeMessage(tempResponseId);
@@ -727,23 +589,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         content: `Failed to send: ${errorMsg}`,
         timestamp: Date.now(),
       });
-      setIsStreaming(false);
-      setIsLoading(false);
-      currentStreamingMessageId = null;
+      setTranscriptStreaming(props.sessionId, false);
+      patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
     }
   };
 
   const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading() || !props.sessionId) return;
+    if (!content.trim() || transcript().isLoading || !props.sessionId) return;
     const trimmed = content.trim();
     await dispatchTurn(trimmed, insertOptimisticTurn(trimmed));
   };
 
    const respondToInteraction = async (response: InteractionResponse) => {
-    const request = pendingInteraction();
+    const request = transcript().pendingInteraction;
     if (!request || !props.sessionId) return;
 
-    setPendingInteraction(null);
+    setTranscriptPendingInteraction(props.sessionId, null);
 
     try {
       await respond.mutateAsync({
@@ -753,7 +614,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       });
     } catch (err) {
       console.error('Failed to send interaction response:', err);
-      setError(err instanceof Error ? err.message : 'Failed to respond');
+      patchTranscript(props.sessionId, {
+        error: err instanceof Error ? err.message : 'Failed to respond',
+      });
     }
   };
 
@@ -765,15 +628,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         console.error('Failed to cancel session:', err);
       }
     }
-    
-    if (currentStreamingMessageId) {
-      updateMessage(currentStreamingMessageId, {
-        content: messages.find((m) => m.id === currentStreamingMessageId)?.content + ' [cancelled]',
+
+    const streamingId = transcript().currentStreamingMessageId;
+    if (streamingId) {
+      updateMessage(streamingId, {
+        content: transcriptMessages(props.sessionId).find((m) => m.id === streamingId)?.content + ' [cancelled]',
       });
     }
-    setIsStreaming(false);
-    setIsLoading(false);
-    currentStreamingMessageId = null;
+    setTranscriptStreaming(props.sessionId, false);
+    patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
   };
 
   /**
@@ -788,26 +651,24 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    * what happened rather than what we hoped.
    */
   const retryConnection = () => {
-    const id = streamSessionId;
-    if (!id) return;
-    sessionEvents(id).reconnect();
+    if (props.sessionId) retryTranscriptStream(props.sessionId);
   };
 
   const value: ChatContextValue = {
     sessionId: () => props.sessionId,
-    messages: () => messages,
-    isLoading,
-    isStreaming,
-    pendingInteraction,
-    error,
-    connectionStatus,
+    messages: () => transcript().messages,
+    isLoading: () => transcript().isLoading,
+    isStreaming: () => transcript().isStreaming,
+    pendingInteraction: () => transcript().pendingInteraction,
+    error: () => transcript().error,
+    connectionStatus: () => transcript().connectionStatus,
     retryConnection,
-    subagentEvents: () => subagentEvents,
-    contextUsage,
-    chatMode,
+    subagentEvents: () => transcript().subagentEvents,
+    contextUsage: () => transcript().contextUsage,
+    chatMode: () => transcript().chatMode,
     availableModes,
     isLoadingHistory,
-    setChatMode,
+    setChatMode: (mode: ChatMode) => patchTranscript(props.sessionId, { chatMode: mode }),
     switchMode,
     sendMessage,
     respondToInteraction,

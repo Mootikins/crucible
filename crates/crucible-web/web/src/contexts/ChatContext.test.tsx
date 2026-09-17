@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@solidjs/testing-library';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEffect, createSignal } from 'solid-js';
+import { resetTranscriptsForTests } from './transcriptStore';
 import { ChatProvider, useChat, useChatSafe } from './ChatContext';
 import * as api from '@/lib/api';
 import { resetSseForTests } from '@/lib/query/sse';
@@ -70,6 +71,9 @@ beforeEach(() => {
 
 afterEach(() => {
   resetSseForTests();
+  // The transcript store is a module singleton keyed by session; forget it
+  // so one case's session cannot answer the next one.
+  resetTranscriptsForTests();
   setQueryClientForTests(null);
 });
 
