@@ -37,11 +37,6 @@ export interface ComposerCardProps {
   chips?: ComposerChip[];
   /** The commit button — send, or cancel mid-stream. */
   action: JSX.Element;
-  /**
-   * A card sits directly on top of the prompt (a pending permission or ask).
-   * The prompt drops its top corners so the two read as one surface.
-   */
-  docked?: boolean;
 }
 
 /**
@@ -165,13 +160,13 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
         ref={setCardRef}
         // ONE padding at every height. The RADIUS follows `data-lines`: a
         // full stadium while the prompt is one line, the card radius once it
-        // wraps, because a tall stadium reads wrong. `data-docked` squares
-        // the top edge under a docked card. All of the radii live in
+        // wraps, because a tall stadium reads wrong. It never follows what
+        // sits above the prompt — a docked permission keeps its own edges
+        // (see `refine-composer.css`). All of the radii live in
         // `refine-composer.css`, which is unlayered and therefore wins over
         // a Tailwind radius utility here.
         class="composer-surface flex items-end gap-x-2 px-3.5 py-2"
         data-lines={lines()}
-        data-docked={props.docked ? 'true' : undefined}
         style={cardStyle()}
       >
         <textarea

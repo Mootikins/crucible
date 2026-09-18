@@ -50,7 +50,7 @@ afterEach(() => {
   setValue('');
 });
 
-const renderCard = (props: { docked?: boolean } = {}) =>
+const renderCard = () =>
   render(() => (
     <ComposerCard
       value={value}
@@ -58,7 +58,6 @@ const renderCard = (props: { docked?: boolean } = {}) =>
       placeholder="Type a message..."
       testid="prompt"
       onSubmit={vi.fn()}
-      docked={props.docked}
       chips={[
         {
           key: 'model',
@@ -163,9 +162,11 @@ describe('ComposerCard — a pill at one line, a card at many', () => {
     const css = file.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(css).toMatch(/\.composer-surface\s*\{[^}]*border-radius:\s*var\(--radius-composer\)/);
     expect(css).toMatch(/\.composer-surface\[data-lines='one'\]\s*\{[^}]*border-radius:\s*9999px/);
-    // The docked rule comes AFTER the stadium rule at equal specificity, so
-    // a docked one-line prompt keeps its flat top edge.
-    expect(css.indexOf("[data-lines='one']")).toBeLessThan(css.indexOf("[data-docked='true']"));
+    // The docked interaction card is its OWN surface: every corner carries
+    // the card token, and no rule keys the prompt's radius off the dock —
+    // the field reads identically whether or not a request is open.
+    expect(css).toMatch(/\.composer-dock > \*\s*\{[^}]*border-radius:\s*var\(--radius-card\)/);
+    expect(css).not.toMatch(/data-docked/);
     // The placeholder must not wrap: a wrapped hint counts in scrollHeight
     // and would grow the EMPTY field past one line.
     expect(css).toMatch(/textarea::placeholder\s*\{[^}]*white-space:\s*nowrap/);
@@ -175,12 +176,3 @@ describe('ComposerCard — a pill at one line, a card at many', () => {
   });
 });
 
-describe('ComposerCard — docked', () => {
-  it('squares its top edge only while a card sits on it', () => {
-    renderCard({ docked: true });
-    expect(surface().getAttribute('data-docked')).toBe('true');
-    cleanup();
-    renderCard({ docked: false });
-    expect(surface().getAttribute('data-docked')).toBeNull();
-  });
-});

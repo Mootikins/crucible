@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { setupBasicMocks } from '../helpers/mock-api';
 import { createSSEStream } from '../helpers/mock-sse';
 import { createStory } from './_helpers/story';
+import { waitForFonts } from './_helpers/fonts';
 import { openSessionsList } from '../helpers/nav';
 
 /**
@@ -10,15 +11,16 @@ import { openSessionsList } from '../helpers/nav';
  * The daemon emits an `interaction_requested` SSE frame mid-turn; the frontend
  * (chatEventReducer → ChatContext.pendingInteraction) renders the real
  * PermissionInteraction inline. The user's choice POSTs /api/interaction/respond
- * and clears the modal. For write permissions a diff (old vs. new) renders,
- * with old content fetched from GET /api/kiln/file.
+ * and clears the modal. For write permissions the request itself carries the
+ * diff — the daemon's `FileDiff`s (path, old content, new content) — so the
+ * page fetches nothing to preview it.
  */
 
 const KILN = '/home/user/notes';
 const FILE = `${KILN}/Draft.md`;
 
 /** A write-permission interaction frame (drives the diff preview). */
-function permFrame(id: string, newContent: string) {
+function permFrame(id: string, newContent: string, oldContent = '# Draft\n\nold body\n') {
   return {
     type: 'interaction_requested',
     data: {
@@ -28,16 +30,13 @@ function permFrame(id: string, newContent: string) {
       action_type: 'write',
       tokens: [FILE],
       tool_args: { content: newContent },
+      diffs: [{ path: FILE, old_content: oldContent, new_content: newContent }],
     },
   };
 }
 
 async function openSessionWith(page: Page, sseEvents: Array<{ type: string; data: object }>) {
   await setupBasicMocks(page, { sseEvents });
-  // Old content for the diff.
-  await page.route('**/api/kiln/file**', (route) =>
-    route.fulfill({ json: { content: '# Draft\n\nold body\n' } }),
-  );
   let respondBody: unknown = null;
   await page.route('**/api/interaction/respond', (route) => {
     respondBody = route.request().postDataJSON();
@@ -161,5 +160,28 @@ test.describe('WS-104 permission from the browser', () => {
     await page.getByRole('button', { name: 'Deny' }).click();
 
     await expect.poll(() => responds.map((r) => r.request_id)).toEqual(['q-1', 'q-2']);
+  });
+
+  test('the docked card keeps its own edges (visual)', async ({ page }) => {
+    await openSessionWith(page, [permFrame('perm-vis', '# Draft\n\nnew body\n')]);
+    await expect(page.getByText('Permission Required')).toBeVisible({ timeout: 5000 });
+
+    // The mock stream ends once its frames are delivered, and the EventSource
+    // reconnects. From here on, hold every retry: a retry that re-fulfils
+    // would make the reconnect banner oscillate under the capture, while a
+    // held one freezes it in its visible state. The mask then pins the
+    // baseline to the two surfaces' edges, not the transport.
+    const { promise: never } = Promise.withResolvers<void>();
+    await page.route(/\/api\/chat\/events\/.*/, async () => {
+      await never;
+    });
+    await expect(page.getByTestId('chat-connection-banner')).toBeVisible();
+    await waitForFonts(page);
+
+    // The card and the prompt in one frame: the card's four corners carry the
+    // card radius and the prompt's shape is what it is with nothing pending.
+    await expect(page.getByTestId('chat-input-form')).toHaveScreenshot('permission-dock.png', {
+      mask: [page.getByTestId('chat-connection-banner')],
+    });
   });
 });

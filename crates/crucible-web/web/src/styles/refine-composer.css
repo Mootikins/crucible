@@ -38,27 +38,26 @@
   text-overflow: ellipsis;
 }
 
-/* ── The docked seam ───────────────────────────────────────────────────
+/* ── The docked card is its own surface ────────────────────────────────
    A pending permission is not a message and it is not a notification: it
-   is a question the prompt cannot serve until you answer it. So the card
-   sits ON the prompt — square bottom, no border between them, no gap —
-   and the prompt drops its top corners to meet it. The two read as one
-   surface with a rule across it, which is the shape that says "these
-   belong together" without a word of copy.
+   is a question the prompt cannot serve until you answer it, so it sits
+   directly above the prompt. It is not part of the prompt, though: the
+   card keeps all four corners at the card radius and its own full
+   border, with one fixed gap between it and the field. The prompt's
+   shape never depends on what sits above it — the one-line stadium and
+   the multi-line card look exactly as they do when nothing is pending,
+   which is the point: merging the two needed the field to square its
+   top edge, and a field whose corners moved whenever a request opened
+   read as a different control.
 
-   The wrapper restyles whatever interaction card lands in it rather than
-   each card restyling itself: every kind (permission, ask, edit …) docks
+   The wrapper restyles whatever interaction card lands in it rather
+   than each card restyling itself: every kind (permission, ask, edit …) docks
    the same way, and none of them should have to know where it is drawn. */
-.composer-dock > * {
-  margin-bottom: 0;
-  border-top-left-radius: var(--radius-card);
-  border-top-right-radius: var(--radius-card);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom-width: 0;
+.composer-dock {
+  margin-bottom: 8px;
 }
 
-.composer-surface[data-docked='true'] {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+.composer-dock > * {
+  margin-bottom: 0;
+  border-radius: var(--radius-card);
 }

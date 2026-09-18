@@ -292,9 +292,6 @@ describe('ChatInput — a pending request docks on the prompt', () => {
   it('draws no card while nothing is pending', () => {
     render(() => <ChatInput />);
     expect(screen.queryByTestId('composer-dock')).toBeNull();
-    expect(
-      (document.querySelector('.composer-surface') as HTMLElement).getAttribute('data-docked'),
-    ).toBeNull();
   });
 
   it('draws the full card directly above the prompt', () => {
@@ -310,13 +307,6 @@ describe('ChatInput — a pending request docks on the prompt', () => {
     // Immediately above, with nothing between the two.
     const surface = document.querySelector('.composer-surface') as HTMLElement;
     expect(dock.nextElementSibling?.contains(surface)).toBe(true);
-  });
-
-  it('squares the prompt\'s top edge while the card is docked', () => {
-    setPending(permission());
-    render(() => <ChatInput />);
-    const surface = document.querySelector('.composer-surface') as HTMLElement;
-    expect(surface.getAttribute('data-docked')).toBe('true');
   });
 });
 
