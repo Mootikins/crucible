@@ -75,8 +75,13 @@ export const CenterComposer: Component<{
   // The provider probe the session context runs, read through the same key:
   // the composer no longer pays for a second probe on mount.
   const providersQuery = useProviders();
-  const defaultModel = () =>
-    providersQuery.data?.find((p) => p.available)?.default_model ?? '';
+  // The chip names what an unnamed model resolves to: `llm.default`'s
+  // `default_model`. The daemon lists the config default FIRST regardless of
+  // availability (session creation uses `llm.default` unconditionally), so
+  // index [0] is the honest answer and the old `available` filter was the
+  // drift — when the default provider is down the chip must still name it,
+  // because that is the provider a new session will try.
+  const defaultModel = () => providersQuery.data?.[0]?.default_model ?? '';
   // The same roster the phone's sheet reads. It keeps the `swrLocal('agents')`
   // storage key, so the chip still paints its last-known names before the
   // daemon finishes probing each agent's binary.
