@@ -73,10 +73,7 @@ async function shellReady(page: Page): Promise<void> {
 
 /** Open a note in the real editor, through the product's own door. */
 async function openNote(page: Page, file: string, name: string): Promise<void> {
-  await page.evaluate(
-    (args) => busEmit(page, 'openFile', { path: args.p, name: args.n }),
-    { p: file, n: name },
-  );
+  await busEmit(page, 'openFile', { path: file, name });
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
 }
 
