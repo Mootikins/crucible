@@ -18,7 +18,7 @@ Welcome to Crucible! This guide will help you install, configure, and run your f
 Crucible is a knowledge-grounded agent runtime — agents that draw from a knowledge graph make better decisions. Your notes, conversations, and wikilinks form a living knowledge graph that grows over time. Agents draw from this graph automatically via [[Help/Concepts/Precognition|Precognition]], and everything beyond the knowledge core is extensible via Lua scripting and plugins.
 
 **Key Features:**
-- **Knowledge-grounded agents** — Precognition auto-injects relevant context before each LLM turn
+- **Knowledge-grounded agents** — Precognition auto-injects relevant context before the first LLM turn of a session
 - **Sessions are notes** — every conversation persists as searchable, linkable markdown
 - **Wikilink-based knowledge graph** with block-level semantic search
 - **Neovim-like architecture** — Luau plugins, TUI-first, headless daemon with RPC

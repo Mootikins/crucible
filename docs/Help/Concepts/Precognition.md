@@ -37,7 +37,7 @@ If Precognition finds nothing relevant, it stays quiet and your message goes thr
 
 ## What Gets Searched
 
-Precognition retrieves at the **note level**. During indexing, each block of a note is embedded and those block embeddings are averaged into one document vector per note; retrieval matches your message against those note vectors. What gets injected is the matching notes, so focused, single-topic notes surface more cleanly than sprawling ones.
+Precognition retrieves at the **block level**. During indexing, each block of a note is embedded with its own vector and its byte span, so retrieval matches your message against passages and injects the passage that matched — its kind and byte span travel with it, not just the note. A kiln that has no block rows yet (not re-indexed since block embeddings existed) falls back to whole-note vectors; block hits win over whole-note hits otherwise, even at a lower score.
 
 The search is semantic. If you ask about "staying productive while remote," Precognition can find notes about "work from home tips" or "focus strategies" even if those exact words don't appear in your message.
 

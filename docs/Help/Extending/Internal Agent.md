@@ -24,7 +24,7 @@ The internal agent provides:
 - **Session logging** - Conversations saved as markdown files
 - **Task tracking** - ACP-style task lists as working memory
 - **Explicit search** - Use `/search` to inject context when needed
-- **Precognition** - automatic kiln retrieval before each turn (tunable via the `precognition_select`/`precognition_format` hooks)
+- **Precognition** - automatic kiln retrieval before the FIRST turn of a session (tunable via the `precognition_select`/`precognition_format` hooks)
 - **Lua hooks** - the fourteen `cru.on()` events plus session lifecycle hooks — see [[Help/Extending/Event Hooks]]
 - **Compaction** - `/compact` summarizes and continues in a new file
 

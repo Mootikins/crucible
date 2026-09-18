@@ -51,6 +51,8 @@ Each provider lives under `llm.providers.NAME` where `NAME` is whatever label yo
 | `trust_level` | string | no | Override the backend's default trust level — see [[Help/Concepts/Trust and Classification]] |
 | `name` | string | no | Custom display name shown in model lists/UI |
 
+A `llm.default` naming a provider that does not exist in `[llm.providers.*]` is not an error: the session falls back to the built-in Ollama default. Check the spelling of the provider name if a new session comes up on a model you did not pick.
+
 ## Providers
 
 ### Ollama (Local)

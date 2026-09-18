@@ -6,7 +6,8 @@
 
 -- Precognition context formatter
 --
--- Customizes how relevant notes are injected before each LLM turn.
+-- Customizes how relevant notes are injected before the FIRST LLM turn of a
+-- session (precognition runs once, on the session's first user message).
 -- Receives: ctx, event — one flat table, payload fields at the top level
 -- (event.user_message, event.results, ...). Return a string to use as the
 -- context block, or nil to fall back.
