@@ -40,16 +40,19 @@ import { attentionActions } from '@/stores/attentionStore';
 import {
   clearTranscript,
   patchTranscript,
+  queueTurn,
   recordTranscriptHydration,
   releaseTranscript,
   retainTranscript,
   retryTranscriptStream,
   setTranscriptPendingInteraction,
   setTranscriptStreaming,
+  shiftQueuedTurn,
   transcriptMessages,
   transcriptOf,
   transcriptOpened,
   updateTranscriptMessages,
+  type QueuedTurn,
 } from './transcriptStore';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 import { finalizeDanglingTool } from './chatEventReducer';
@@ -609,6 +612,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       }
     } catch (err) {
       console.error('Failed to send message:', err);
+      // A refusal the daemon words "Concurrent request in progress" is a lost
+      // admission race, not a lost message: a foreign client's turn (or a
+      // cancel still winding down) held the one slot. Park the prompt back in
+      // the queue — its entry is already on screen — and the flusher retries
+      // when the stream goes idle. An error banner here would tell the user
+      // their message failed while the transcript right below shows it
+      // waiting its turn.
+      if (err instanceof Error && /concurrent request/i.test(err.message)) {
+        removeMessage(tempResponseId);
+        if (transcript().currentStreamingMessageId === tempResponseId) {
+          patchTranscript(props.sessionId, { currentStreamingMessageId: null });
+          setTranscriptStreaming(props.sessionId, false);
+        }
+        queueTurn(props.sessionId, trimmed, tempUserId);
+        return;
+      }
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
       patchTranscript(props.sessionId, { error: errorMsg });
       // Keep the user's text visible next to the failure notice, but drop the
@@ -626,10 +645,57 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   };
 
   const sendMessage = async (content: string) => {
-    if (!content.trim() || transcript().isLoading || !props.sessionId) return;
+    if (!content.trim() || !props.sessionId) return;
     const trimmed = content.trim();
+    // A turn in flight holds the daemon's one request slot — posting now
+    // would be refused as concurrent at best, and interleaved into the
+    // running turn at worst. Queue instead: the optimistic entry renders at
+    // the end of the streaming block immediately, and the flusher below
+    // dispatches it as its own turn once the stream goes idle.
+    if (transcript().isLoading || transcript().currentStreamingMessageId) {
+      queueTurn(props.sessionId, trimmed);
+      return;
+    }
     await dispatchTurn(trimmed, insertOptimisticTurn(trimmed));
   };
+
+  /**
+   * Turns the oldest queued prompt into a running turn.
+   *
+   * The queue entry's optimistic message is already on screen — queuing put
+   * it below the streaming block. This only opens the turn for it: the
+   * assistant placeholder the daemon's answer will stream into, and the
+   * dispatch that carries the POST.
+   */
+  const beginQueuedTurn = (entry: QueuedTurn) => {
+    if (!props.sessionId) return;
+    patchTranscript(props.sessionId, { error: null, isLoading: true });
+    setTranscriptStreaming(props.sessionId, true);
+    const tempResponseId = generateMessageId();
+    addMessage({
+      id: tempResponseId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      placeholder: true,
+    });
+    patchTranscript(props.sessionId, { currentStreamingMessageId: tempResponseId });
+    updateMessage(entry.tempId, { queued: false });
+    void dispatchTurn(entry.content, { tempUserId: entry.tempId, tempResponseId });
+  };
+
+  // The queue's drain pump. Every idle moment with a non-empty queue starts
+  // exactly one queued turn: `shiftQueuedTurn` is the claim, so two panes of
+  // one session — which both run this effect over the shared transcript —
+  // cannot dispatch the same prompt twice, and the daemon's one-slot
+  // admission never sees two concurrent POSTs from us.
+  createEffect(() => {
+    if (!props.sessionId) return;
+    const t = transcript();
+    if (t.isLoading || t.currentStreamingMessageId || t.queuedTurns.length === 0) return;
+    const entry = shiftQueuedTurn(props.sessionId);
+    if (entry) beginQueuedTurn(entry);
+  });
 
    const respondToInteraction = async (response: InteractionResponse) => {
     const request = transcript().pendingInteraction;
@@ -662,8 +728,22 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
 
     const streamingId = transcript().currentStreamingMessageId;
     if (streamingId) {
+      const streaming = transcriptMessages(props.sessionId).find((m) => m.id === streamingId);
+      // The daemon ends a cancelled turn silently — no message_complete ever
+      // arrives — so this is the only place the turn's thinking block gets
+      // closed. Left streaming, it renders "Thinking…" with the animated
+      // wave for the rest of the transcript.
+      if (streaming?.thinking?.isStreaming) {
+        updateMessage(streamingId, {
+          thinking: {
+            content: streaming.thinking.content,
+            isStreaming: false,
+            tokenCount: streaming.thinking.content.length,
+          },
+        });
+      }
       updateMessage(streamingId, {
-        content: transcriptMessages(props.sessionId).find((m) => m.id === streamingId)?.content + ' [cancelled]',
+        content: (streaming?.content ?? '') + ' [cancelled]',
       });
     }
     setTranscriptStreaming(props.sessionId, false);

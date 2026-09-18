@@ -118,6 +118,9 @@ function createHarness(): ReducerHarness {
     onTitleChanged: spies.onTitleChanged,
     onUnknownMode: spies.onUnknownMode,
     addMessage: spies.addMessage,
+    insertMessageAfter: (index, message) => {
+      state.messages.splice(index + 1, 0, message);
+    },
     updateMessage: spies.updateMessage,
     appendToMessage: spies.appendToMessage,
     // Mirrors ChatContext.addToolMessage: insert before the still-empty
@@ -876,6 +879,39 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const h = createHarness();
     h.reducer({ type: 'session_event', event: 'stream_gap', data: {} });
     expect(h.state.error).toMatch(/incomplete/i);
+  });
+
+  it('session_event stream_gap: finalizes a thinking block left streaming', () => {
+    // A gap means events are GONE — the turn may have ended in the lost
+    // span, so nothing later is guaranteed to sweep the bubble. A block left
+    // streaming here renders "Thinking…" with the animated wave forever.
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'thinking', content: 'mid-reasoning' });
+    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 3 } });
+    const thinking = h.state.messages.find((m) => m.thinking)?.thinking;
+    expect(thinking).toMatchObject({ isStreaming: false, tokenCount: 'mid-reasoning'.length });
+  });
+
+  it('session_event user_message: an echo landing mid-turn is placed after the streaming message', () => {
+    // The daemon admits one turn at a time, so an echo that arrives while a
+    // turn is still streaming belongs to a turn that QUEUED behind it (the
+    // cancel window). Blind end-append drops it INSIDE the open turn —
+    // after tool cards that stream later — instead of at the end of the
+    // streaming block.
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    // Our own mid-turn queue entry already sits below the streaming bubble.
+    h.state.messages.push({
+      id: 'msg_9_local', role: 'user', content: 'queued locally', timestamp: 0,
+    });
+    h.reducer({
+      type: 'session_event',
+      event: 'user_message',
+      data: { message_id: 'msg-foreign', content: 'sent from another client' },
+    });
+    const ids = h.state.messages.map((m) => m.id);
+    expect(ids).toEqual(['asst-1', 'msg-foreign', 'msg_9_local']);
   });
 
   it('session_event: no-op (acknowledged but not surfaced)', () => {

@@ -42,6 +42,17 @@ export interface TranscriptState {
   contextUsage: ContextUsage | null;
   chatMode: ChatMode;
   sessionTitle: string | null;
+  /** Messages typed while a turn streamed, awaiting dispatch. The optimistic
+   * entries render at the end of the streaming block; the queue turns each
+   * into its own turn when the stream goes idle, in join order. */
+  queuedTurns: QueuedTurn[];
+}
+
+/** One queued prompt and the optimistic entry that renders it. */
+export interface QueuedTurn {
+  /** The temp id of the queued user message (its transcript entry). */
+  tempId: string;
+  content: string;
 }
 
 function blankTranscript(): TranscriptState {
@@ -57,6 +68,7 @@ function blankTranscript(): TranscriptState {
     contextUsage: null,
     chatMode: 'ask',
     sessionTitle: null,
+    queuedTurns: [],
   };
 }
 
@@ -143,6 +155,12 @@ function ensureStream(sessionId: string): void {
     setCurrentStreamingMessageId: (id) => patch({ currentStreamingMessageId: id }),
     addMessage: (message) =>
       setTranscripts(sessionId, 'messages', (prev) => [...prev, message]),
+    insertMessageAfter: (index, message) =>
+      setTranscripts(sessionId, 'messages', (prev) => {
+        const next = [...prev];
+        next.splice(index + 1, 0, message);
+        return next;
+      }),
     updateMessage: (id, updates) =>
       setTranscripts(sessionId, 'messages', (prev) => {
         const index = prev.findIndex((m) => m.id === id);
@@ -354,6 +372,50 @@ export function updateTranscriptMessages(
 ): void {
   ensureState(sessionId);
   setTranscripts(sessionId, 'messages', (prev) => apply(prev));
+}
+
+/**
+ * Parks a mid-turn prompt: the optimistic entry renders at the end of the
+ * streaming block, the queue entry waits for the stream to go idle.
+ *
+ * `existingTempId` adopts the optimistic entry an ALREADY-FAILED dispatch
+ * left behind (a send the daemon refused as concurrent), so a requeue never
+ * renders the prompt twice. Synchronous, so the pane that parks the entry is
+ * the only pane that saw it — the flusher's shift below cannot double-park.
+ */
+export function queueTurn(sessionId: string, content: string, existingTempId?: string): void {
+  ensureState(sessionId);
+  const tempId = existingTempId ?? `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  setTranscripts(sessionId, 'queuedTurns', (prev) => [...prev, { tempId, content }]);
+  if (existingTempId === undefined) {
+    setTranscripts(sessionId, 'messages', (prev) => [
+      ...prev,
+      { id: tempId, role: 'user', content, timestamp: Date.now(), queued: true },
+    ]);
+  } else {
+    setTranscripts(
+      sessionId,
+      'messages',
+      (m) => m.id === existingTempId,
+      'queued',
+      true,
+    );
+  }
+}
+
+/**
+ * Takes the oldest queued turn, or nothing.
+ *
+ * The shift IS the claim: two panes of one session both run a flusher, and
+ * only the one whose shift returned an entry may dispatch it — the second
+ * reads the now-empty queue. Never dispatch off a peek.
+ */
+export function shiftQueuedTurn(sessionId: string): QueuedTurn | undefined {
+  const queue = stateOf(sessionId).queuedTurns;
+  if (queue.length === 0) return undefined;
+  const [head] = queue;
+  setTranscripts(sessionId, 'queuedTurns', (prev) => prev.slice(1));
+  return head;
 }
 
 /** The session's messages as they stand, read outside a computation. */

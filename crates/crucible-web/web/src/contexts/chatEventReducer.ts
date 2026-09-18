@@ -25,6 +25,9 @@ interface ChatEventReducerDeps {
   currentStreamingMessageId: () => string | null;
   setCurrentStreamingMessageId: (id: string | null) => void;
   addMessage: (message: Message) => void;
+  /** Insert a message at a known transcript position (mid-turn echoes that
+   * must land after the streaming block, not inside it). */
+  insertMessageAfter: (index: number, message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   appendToMessage: (id: string, content: string) => void;
   /** Insert a tool invocation as a transcript entry (role "tool"). */
@@ -556,6 +559,10 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
               ? 'Event stream fell behind and events were dropped — this conversation is incomplete. Reload to see it whole.'
               : `Event stream fell behind and ${dropped} events were dropped — this conversation is incomplete. Reload to see it whole.`,
           );
+          // The turn may have ENDED inside the lost span, so no later
+          // message_complete is guaranteed to sweep a bubble left thinking.
+          // This event never re-fires, so nothing after it would.
+          finalizeStreamingThinking();
           break;
         }
 
@@ -580,12 +587,26 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             if (temp) {
               deps.updateMessage(temp.id, { id: data.message_id });
             } else {
-              deps.addMessage({
+              // The daemon admits one turn at a time, so an echo landing
+              // while a turn still streams belongs to a turn QUEUED behind
+              // it (the cancel window). It goes at the end of the streaming
+              // BLOCK — directly after the streaming message — never inside
+              // the tool run that may stream below it.
+              const streamingId = deps.currentStreamingMessageId();
+              const streamIdx = streamingId
+                ? deps.messages().findIndex((m) => m.id === streamingId)
+                : -1;
+              const entry: Message = {
                 id: data.message_id,
                 role: 'user',
                 content: data.content,
                 timestamp: Date.now(),
-              });
+              };
+              if (streamIdx !== -1) {
+                deps.insertMessageAfter(streamIdx, entry);
+              } else {
+                deps.addMessage(entry);
+              }
             }
           }
         }

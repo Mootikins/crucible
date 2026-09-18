@@ -7,13 +7,18 @@ import { openSessionsList } from '../helpers/nav';
 
 /**
  * Story: WS-101 / WS-102 / WS-103 — send → stream → thinking + tool cards →
- * complete.
+ * complete; and the mid-turn queue (2026-09-18): a message typed while the
+ * turn streams renders below the block, marked queued, unsent.
  *
  * Uses the real chat pipeline (ChatContext + chatEventReducer + Message/
- * ThinkingBlock/ToolCard). Two pinned visual baselines:
+ * ThinkingBlock/ToolCard). Pinned visual baselines:
  *   - chat-mid-stream.png: turn in flight (working indicator), SSE held open.
+ *   - chat-thinking.png:   thinking streaming — the block is OPEN, the text
+ *                          visible with its caret (it used to sit collapsed
+ *                          behind the header while the model reasoned).
  *   - chat-complete.png:   finalized message with a collapsed thinking block
  *                          and a completed tool card.
+ *   - chat-queued.png:     a mid-turn prompt parked below the streaming turn.
  * Dynamic relative-time labels are masked.
  */
 
@@ -164,6 +169,128 @@ test.describe('WS-101/102/103 streaming chat', () => {
     await expect(page.getByTestId('message-list')).toHaveScreenshot('chat-complete.png', {
       mask: [maskDynamic(page)],
       // Headroom for cross-environment text antialiasing/advance drift.
+      maxDiffPixelRatio: 0.03,
+    });
+  });
+
+  test('thinking streams expanded and settles collapsed (visual)', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    await setupBasicMocks(page, { sseEvents: [] });
+    // First events delivery: thinking only, no answer yet — the block should
+    // be OPEN with the text and its growing-edge caret visible while the
+    // model reasons.
+    let markSent: (() => void) | null = null;
+    const sent = new Promise<void>((r) => (markSent = r));
+    await page.route('**/api/chat/send', (route) => {
+      markSent?.();
+      return route.fulfill({ json: { message_id: 'msg-1' } });
+    });
+
+    let hit = 0;
+    const THINKING_ONLY: Frame[] = [
+      { type: 'thinking', data: { type: 'thinking', content: 'The user asks about the answer. I should weigh the options before replying, starting with the kiln.' } },
+    ];
+    const REST: Frame[] = [
+      ...tokenFrames('Here is the answer.'),
+      {
+        type: 'message_complete',
+        data: {
+          type: 'message_complete',
+          id: 'msg-1',
+          content: 'Here is the answer.',
+          prompt_tokens: 900,
+          completion_tokens: 334,
+          total_tokens: 1234,
+        },
+      },
+    ];
+    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+      hit += 1;
+      if (hit === 1) {
+        await sent;
+        return route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          body: createSSEStream(THINKING_ONLY),
+        });
+      }
+      if (hit === 2) {
+        // The thinking stream ended; the client reconnects on its cursor and
+        // now gets the rest of the turn.
+        return route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          body: createSSEStream(REST),
+        });
+      }
+      await new Promise(() => {});
+    });
+
+    await selectSession(page);
+    await page.getByTestId('chat-input').fill('What is the answer?');
+    await page.getByTestId('send-button').click();
+
+    // Streaming: the reasoning text is visible WITHOUT a click, with the
+    // caret at its growing edge, under a "Thinking" header with the wave.
+    const thinking = page.getByText('The user asks about the answer.', { exact: false });
+    await expect(thinking).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('think-stream-caret')).toBeAttached();
+    await story.step(page, 'thinking streams open');
+
+    await pinCaptureBox(page);
+    await expect(page.getByTestId('message-list')).toHaveScreenshot('chat-thinking.png', {
+      mask: [maskDynamic(page)],
+      maxDiffPixelRatio: 0.03,
+    });
+
+    // Completion folds the block to the summary line: quiet, no caret.
+    await expect(page.getByText('Here is the answer.')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Thought for 99 tokens')).toBeVisible();
+    await expect(page.getByTestId('think-stream-caret')).toHaveCount(0);
+    // The fold is the grid row closing; chat-complete.png carries the visual
+    // proof that the reasoning text is gone from the settled view.
+    await expect
+      .poll(async () =>
+        page
+          .getByText('The user asks about the answer.')
+          .evaluate((el) => el.closest('div.grid')?.getBoundingClientRect().height ?? -1),
+      )
+      .toBe(0);
+  });
+
+  test('a mid-turn send queues below the streaming block (visual)', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    await setupBasicMocks(page, { sseEvents: [] });
+    // Hold the stream open: the first turn never completes.
+    await page.route(/\/api\/chat\/events\/.*/, async () => {
+      await new Promise(() => {});
+    });
+    // The send POST answers (the turn is admitted) but no events follow.
+    let sendCount = 0;
+    await page.route('**/api/chat/send', (route) => {
+      sendCount += 1;
+      return route.fulfill({ json: { message_id: 'msg-1' } });
+    });
+
+    await selectSession(page);
+    await page.getByTestId('chat-input').fill('What is the answer?');
+    await page.getByTestId('send-button').click();
+    await expect(page.getByTestId('cancel-button')).toBeVisible({ timeout: 5000 });
+
+    // Typing stays live mid-turn; Enter queues the prompt below the block.
+    await page.getByTestId('chat-input').fill('And then also check the kiln');
+    await page.getByTestId('chat-input').press('Enter');
+
+    const queued = page.locator('[data-testid="message-user"][data-queued="true"]');
+    await expect(queued).toContainText('And then also check the kiln');
+    await expect(page.getByTestId('message-queued')).toHaveText('queued');
+    // The send POST ran once — the queued prompt did not go out.
+    expect(sendCount).toBe(1);
+    await story.step(page, 'queued below the streaming turn');
+
+    await pinCaptureBox(page);
+    await expect(page.getByTestId('message-list')).toHaveScreenshot('chat-queued.png', {
+      mask: [maskDynamic(page)],
       maxDiffPixelRatio: 0.03,
     });
   });

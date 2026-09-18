@@ -80,6 +80,7 @@ export const Message: Component<MessageProps> = (props) => {
       class="group flex flex-col items-end gap-1"
       data-testid={`message-${props.message.role}`}
       data-role={props.message.role}
+      data-queued={props.message.queued ? 'true' : undefined}
     >
       <div
         class={
@@ -160,6 +161,14 @@ export const Message: Component<MessageProps> = (props) => {
               title={new Date(props.message.timestamp).toLocaleString()}
             >
               {formatMessageTime(props.message.timestamp)}
+            </span>
+          </Show>
+          <Show when={props.message.queued}>
+            {/* Typed while a turn streams: parked below the block until it
+                ends. The label is what makes "nothing is happening" read as
+                "next up" rather than "lost". */}
+            <span class="text-muted-dark italic" data-testid="message-queued">
+              queued
             </span>
           </Show>
           <div class="flex items-center gap-0.5">

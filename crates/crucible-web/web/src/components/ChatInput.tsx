@@ -36,12 +36,14 @@ export const ChatInput: Component = () => {
   // screen, so a command typed after a tab switch must reach the session the
   // user is looking at.
   const runCommand = useExecuteCommand(() => session()?.session_id ?? '');
-  // Sending is allowed whenever a session is selected and no turn is in flight.
-  // Lifecycle state (paused/ended) is NOT a gate: the daemon transparently
-  // revives an idle session on send, so an ended session is never a dead end.
+  // Sending is allowed whenever a session is selected. A turn in flight does
+  // not block it: the message queues below the streaming block and dispatches
+  // when the turn ends. Lifecycle state (paused/ended) is NOT a gate: the
+  // daemon transparently revives an idle session on send, so an ended session
+  // is never a dead end.
   const canSend = () => {
     const s = session();
-    return !!s && !isLoading() && input().trim().length > 0;
+    return !!s && input().trim().length > 0;
   };
 
   // Palette "Switch Model" opens the same picker as the chip below.
@@ -200,13 +202,15 @@ export const ChatInput: Component = () => {
           the full empty state above; repeating it in the input strip read
           as two stacked prompts. */}
 
-      {/* The gate, docked ON the prompt.
+      {/* The gate, docked above the prompt.
           A permission used to be drawn where the agent hit it, in the middle
           of the transcript — which scrolls. The one control the session is
           parked on could therefore be off-screen, and the composer below it
           looked ready to take a message it would not send. The card now sits
           against the prompt, which never scrolls away, and the transcript
-          keeps a one-line record at the point of the request instead. */}
+          keeps a one-line record at the point of the request instead.
+          It is its own card with its own edges (refine-composer.css): the
+          prompt's shape must not depend on whether a request is open. */}
       <Show when={pendingInteraction()}>
         {(request) => (
           <div class="composer-dock" data-testid="composer-dock">
@@ -216,7 +220,6 @@ export const ChatInput: Component = () => {
       </Show>
 
       <ComposerCard
-        docked={!!pendingInteraction()}
         value={input}
         setValue={setInput}
         // `[[note]]` completion needs the DIRECTORY; the session carries a
@@ -227,7 +230,9 @@ export const ChatInput: Component = () => {
           return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
         }}
         placeholder={session() ? 'Type a message...' : 'Select a session first...'}
-        disabled={!session() || isLoading()}
+        // Typing stays live mid-turn: a message sent while the agent works
+        // queues below the streaming block and dispatches when it ends.
+        disabled={!session()}
         testid="chat-input"
         onSubmit={() => void handleSubmit()}
         onKeyDown={handleKeyDown}

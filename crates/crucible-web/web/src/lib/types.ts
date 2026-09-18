@@ -53,6 +53,11 @@ export interface Message {
    * canonical response id at `message_complete`; a bubble from history that
    * happens to be empty is an answer, not a placeholder. */
   placeholder?: boolean;
+  /** True on a user message typed while a turn was streaming: it renders at
+   * the end of the streaming block but has NOT been sent yet. The queue
+   * dispatches it as its own turn when the stream goes idle; the flag drops
+   * at dispatch. Client-local — nothing about queuing reaches the wire. */
+  queued?: boolean;
   /**
    * Precognition (auto-RAG) enrichment metadata, attached to the user message
    * that triggered the daemon's first-turn note retrieval. Used by
