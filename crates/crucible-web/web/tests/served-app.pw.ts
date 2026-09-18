@@ -1,6 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { busEmit } from '../e2e/helpers/bus';
 import { readState } from '../e2e/live/_state';
 
 /**
@@ -83,14 +84,8 @@ async function readingViewOf(page: Page, name: string, body: string): Promise<Lo
   writeFileSync(notePath, body);
 
   await openApp(page);
-  await page.evaluate(
-    ({ filePath, fileName }) => {
-      window.dispatchEvent(
-        new CustomEvent('crucible:open-file', { detail: { path: filePath, name: fileName } }),
-      );
-    },
-    { filePath: notePath, fileName: `${name}.md` },
-  );
+  await busEmit(page, 'openFile', { path: notePath, name: `${name}.md` });
+  await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
   await page.getByTestId('preview-toggle').click();
   const preview = page.getByTestId('markdown-preview');
   await expect(preview).toBeVisible({ timeout: 10_000 });
