@@ -148,7 +148,7 @@ test.describe('Inline diff in editor', () => {
     await setupBasicMocks(page, {
       sessionHistory: {
         session_id: 'test-session-001',
-        total_events: 1,
+        total_events: 2,
         // Persisted daemon shape: {call_id, tool, args} (see ChatContext
         // history reconstruction) — replayed as a COMPLETE tool call.
         history: [
@@ -166,6 +166,13 @@ test.describe('Inline diff in editor', () => {
               },
             },
             seq: 1,
+          },
+          {
+            type: 'event',
+            session_id: 'test-session-001',
+            event: 'tool_result',
+            data: { call_id: 'tool-edit-1', result: 'ok' },
+            seq: 2,
           },
         ],
       },

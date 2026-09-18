@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { setupBasicMocks } from './helpers/mock-api';
-import { createSSEStream } from './helpers/mock-sse';
+import { createSSEStream, SSE_HEADERS } from './helpers/mock-sse';
 import { MOCK_SESSION } from './helpers/fixtures';
 import { openSessionsList } from './helpers/nav';
 
@@ -64,23 +64,15 @@ test.describe('Chat happy path', () => {
         await sseReady;
         await route.fulfill({
           status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
+          headers: SSE_HEADERS,
           body: sseBody,
         });
       } else {
         // Reconnects after delivery: empty stream (test is done by now)
         await route.fulfill({
           status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-          },
-          body: '',
+          headers: SSE_HEADERS,
+          body: createSSEStream([]),
         });
       }
     });
@@ -133,13 +125,13 @@ test.describe('Chat happy path', () => {
 
   test('cancel button stops streaming', async ({ page }) => {
     // Cancel test: the cancel button appears from sendMessage setting isStreaming(true),
-    // not from SSE event processing. SSE events with correct type tags are used but
-    // their processing timing doesn't affect cancel button visibility.
+    // not from SSE event processing. Hold the SSE stream until after send, as the
+    // first test does — delivering tokens on session open races the fold and leaves
+    // the composer in a streaming state with no user turn.
     const longContent = 'A'.repeat(200);
+    const sseBody = createSSEStream(buildChatEvents(longContent));
 
-    await setupBasicMocks(page, {
-      sseEvents: buildChatEvents(longContent),
-    });
+    await setupBasicMocks(page, { sseEvents: [] });
 
     // Mock cancel and title endpoints BEFORE goto
     await page.route('**/api/session/*/cancel', (route) =>
@@ -151,6 +143,22 @@ test.describe('Chat happy path', () => {
     await page.route('**/api/session/*/title', (route) =>
       route.fulfill({ status: 200, body: '{}' }),
     );
+
+    let resolveSSE: (() => void) | null = null;
+    const sseReady = new Promise<void>((resolve) => {
+      resolveSSE = resolve;
+    });
+    let delivered = false;
+
+    await page.route(/\/api\/chat\/events\/.*/, async (route) => {
+      if (!delivered) {
+        delivered = true;
+        await sseReady;
+        await route.fulfill({ status: 200, headers: SSE_HEADERS, body: sseBody });
+      } else {
+        await route.fulfill({ status: 200, headers: SSE_HEADERS, body: createSSEStream([]) });
+      }
+    });
 
     await page.goto('/');
     await openSessionsList(page);
@@ -167,7 +175,11 @@ test.describe('Chat happy path', () => {
 
     // Send a message
     await chatInput.fill('Tell me something long');
+    const sendPromise = page.waitForRequest(
+      (req) => req.url().includes('/api/chat/send') && req.method() === 'POST',
+    );
     await page.getByTestId('send-button').click();
+    await sendPromise;
 
     // Wait for cancel button to appear (streaming started)
     const cancelButton = page.getByTestId('cancel-button');
@@ -180,8 +192,9 @@ test.describe('Chat happy path', () => {
         req.method() === 'POST',
     );
 
-    // Click cancel
+    // Click cancel — still before SSE completes, so isStreaming stays true.
     await cancelButton.click();
+    resolveSSE!();
 
     // Assert: cancel API was called
     const cancelRequest = await cancelPromise;

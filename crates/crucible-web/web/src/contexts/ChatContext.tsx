@@ -133,8 +133,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    * the abort of the in-flight history load used to prevent.
    */
   let bindAbortController: AbortController | null = null;
-  /** True once this bind folded the persisted transcript it binds to. */
-  let boundHistoryFolded = false;
+  /** The history document this bind last folded, so a refetch with more events can fold again. */
+  let foldedHistoryFingerprint: string | null = null;
   let previousSessionId: string | null = null;
 
   const addMessage = (message: Message) => {
@@ -412,6 +412,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       bindAbortController.abort();
       bindAbortController = null;
     }
+    // The transcript on screen belongs to the bind that is ending, so the new
+    // one folds its own document even when it names the same session.
+    foldedHistoryFingerprint = null;
     // The transcript this pane was drawing belongs to the session it leaves;
     // the keyed store hands this bind the transcript of ITS session, so there
     // is nothing to clear — only the hold to give back. The last pane out
@@ -514,8 +517,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    */
   createEffect(() => {
     const document = history.data;
-    if (!document || boundHistoryFolded) return;
-    boundHistoryFolded = true;
+    if (!document) return;
+    const fingerprint = `${document.session_id}:${document.total_events}:${document.history.length}`;
+    if (foldedHistoryFingerprint === fingerprint) return;
+    foldedHistoryFingerprint = fingerprint;
     foldHistory(document);
   });
 

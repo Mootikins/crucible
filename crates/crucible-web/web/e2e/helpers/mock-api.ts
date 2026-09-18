@@ -74,6 +74,28 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   await mockSSERoute(page, /\/api\/chat\/events\/.*/, overrides.sseEvents ?? []);
 
+  await page.route('**/api/interactions/pending', (route) =>
+    route.fulfill({ json: { pending: [] } }),
+  );
+
+  await page.route('**/api/session/*/modes', (route) =>
+    route.fulfill({ json: { current_mode_id: 'ask', modes: [] } }),
+  );
+
+  await page.route('**/api/session/*/review/hunks**', (route) =>
+    route.fulfill({ json: { session_id: 'test-session-001', hunks: [], comments: [] } }),
+  );
+
+  await page.route('**/api/fs/list**', (route) =>
+    route.fulfill({ json: { entries: [] } }),
+  );
+
+  await mockSSERoute(page, /\/api\/fs\/events/, []);
+
+  await page.route('**/api/recents', (route) =>
+    route.fulfill({ json: { recents: [] } }),
+  );
+
   await page.route('**/api/providers', (route) =>
     route.fulfill({ json: overrides.providers ?? MOCK_PROVIDERS }),
   );
