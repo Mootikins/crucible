@@ -230,7 +230,17 @@ export const TerminalPanel: Component = () => {
         t.write(new Uint8Array(ev.data as ArrayBuffer));
       }
     };
-    ws.onclose = () => judgeHandshake();
+    ws.onclose = () => {
+      // A live PTY drop is not a handshake failure — the socket opened and
+      // carried bytes. `judgeHandshake` bails when `opened` is true, so a
+      // mid-session close must re-enter the backoff loop here or the banner
+      // never surfaces and the tab stays "open" over a dead socket.
+      if (opened) {
+        scheduleReconnect();
+        return;
+      }
+      judgeHandshake();
+    };
     ws.onerror = () => judgeHandshake();
 
     const dataSub = t.onData((d) => {
