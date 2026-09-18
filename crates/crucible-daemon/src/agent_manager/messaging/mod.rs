@@ -69,31 +69,57 @@ impl AgentManager {
             );
         }
 
-        if let Some((_, mut state)) = self.request_state.remove(session_id) {
-            if let Some(cancel_tx) = state.cancel_tx.take() {
-                let _ = cancel_tx.send(());
+        // Signal the turn and take its handle WITHOUT vacating the slot. The
+        // slot is the session's one-turn claim, and the turn task releases it
+        // itself on every exit path — after its last event was broadcast.
+        // Removing the entry here used to free the claim while the task was
+        // still winding down, so a send arriving in that window was admitted
+        // beside a live stream: two concurrent turns, and the new turn's
+        // user_message recorded while the old turn's tail was still emitting.
+        let task_handle = match self.request_state.get_mut(session_id) {
+            Some(mut state) => {
+                if let Some(cancel_tx) = state.cancel_tx.take() {
+                    let _ = cancel_tx.send(());
+                }
+                state.task_handle.take()
             }
+            None => {
+                if dropped_pending > 0 {
+                    // No active request, but we did clear stale prompts.
+                    info!(session_id = %session_id, "Request cancelled");
+                    return true;
+                }
+                warn!(session_id = %session_id, "No active request to cancel");
+                return false;
+            }
+        };
 
-            if let Some(handle) = state.task_handle.take() {
-                // Give task 500ms to respond to cancellation signal before force-aborting
-                match tokio::time::timeout(std::time::Duration::from_millis(500), handle).await {
-                    Ok(Ok(())) => debug!(session_id = %session_id, "Task completed gracefully"),
-                    Ok(Err(e)) => warn!(session_id = %session_id, error = %e, "Task panicked"),
-                    Err(_) => {
-                        debug!(session_id = %session_id, "Task did not respond to cancellation, was aborted");
-                    }
+        if let Some(handle) = task_handle {
+            // Give task 500ms to respond to cancellation signal before force-aborting
+            match tokio::time::timeout(std::time::Duration::from_millis(500), handle).await {
+                Ok(Ok(())) => debug!(session_id = %session_id, "Task completed gracefully"),
+                Ok(Err(e)) => warn!(session_id = %session_id, error = %e, "Task panicked"),
+                Err(_) => {
+                    debug!(session_id = %session_id, "Task did not respond to cancellation, was aborted");
                 }
             }
-
-            info!(session_id = %session_id, "Request cancelled");
-            true
-        } else if dropped_pending > 0 {
-            // No active request, but we did clear stale prompts.
-            true
-        } else {
-            warn!(session_id = %session_id, "No active request to cancel");
-            false
         }
+
+        // Release the slot only if the task has not already (its own tail
+        // removes it) and no newer send has claimed it (a fresh entry carries
+        // its own task_handle). This covers a task that panicked before its
+        // tail or outlived the grace — without it, one wedged turn would hold
+        // the session's slot forever.
+        let stale = self
+            .request_state
+            .get(session_id)
+            .is_some_and(|state| state.task_handle.is_none());
+        if stale {
+            self.request_state.remove(session_id);
+        }
+
+        info!(session_id = %session_id, "Request cancelled");
+        true
     }
 }
 

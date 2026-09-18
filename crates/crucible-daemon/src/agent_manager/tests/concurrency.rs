@@ -111,6 +111,85 @@ async fn cancel_during_streaming_emits_ended_event() {
     assert_eq!(ended.data["reason"], "cancelled");
 }
 
+/// A send must not slip into the window while cancel() is still winding a
+/// turn down.
+///
+/// The turn task keeps streaming until it is polled after the cancel signal,
+/// and it releases the request slot itself only at its very end. cancel()
+/// used to vacate the slot FIRST — so a send arriving inside that window was
+/// ADMITTED beside an still-alive stream: two concurrent turns on one
+/// session, the new turn's `user_message` recorded while the old turn's
+/// thinking and tokens were still being emitted (the wire order the web
+/// transcript rendered as a user message in the middle of an answer).
+///
+/// The task below holds the slot for a bounded 300ms and then removes it —
+/// the same shape as the real task's tail — so the window is deterministic:
+/// a send INSIDE it must be refused, and after cancel() returns it must be
+/// admitted again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn send_during_cancel_wind_down_is_rejected() {
+    let (_tmp, session_manager, session) = setup_session_manager().await;
+
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+    agent_manager.install_agent_for_test(
+        session.id.to_string(),
+        Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
+    );
+
+    // A turn task that mirrors the real tail: holds the slot, then releases
+    // it. The 300ms stay under cancel()'s 500ms grace.
+    let (cancel_tx, _cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    let slot_owner = agent_manager.clone();
+    let session_id = session.id.to_string();
+    let task_handle = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        slot_owner.request_state.remove(session_id.as_str());
+    });
+    agent_manager.request_state.insert(
+        session.id.to_string(),
+        super::RequestState {
+            cancel_tx: Some(cancel_tx),
+            task_handle: Some(task_handle),
+            _work: None,
+        },
+    );
+
+    // Start the cancel but do not await it: the window under test is the
+    // span between the signal and the task releasing the slot.
+    let canceller = agent_manager.clone();
+    let cancel_session = session.id.to_string();
+    let cancelling =
+        tokio::spawn(async move { canceller.cancel(cancel_session.as_str()).await });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    let result = agent_manager
+        .send_message(&session.id, "during cancel".to_string(), &event_tx, true, None)
+        .await;
+    assert!(
+        matches!(result, Err(AgentError::ConcurrentRequest(_))),
+        "A send while cancel() is winding the turn down must be refused, got: {:?}",
+        result,
+    );
+
+    // Once cancel() has returned, the winding-down task is done and the slot
+    // is free again — the refusal must not wedge the session.
+    assert!(cancelling.await.unwrap(), "cancel should report an active request");
+    let retry = agent_manager
+        .send_message(&session.id, "after cancel".to_string(), &event_tx, true, None)
+        .await;
+    assert!(
+        retry.is_ok(),
+        "A send after cancel() returned must be admitted, got: {:?}",
+        retry,
+    );
+}
+
 #[tokio::test]
 async fn empty_stream_without_done_cleans_up_request_state() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
