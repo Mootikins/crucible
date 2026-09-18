@@ -69,26 +69,45 @@ impl AgentManager {
         // setup path. Awaited one at a time, a user with three providers and
         // one dead endpoint waited up to thirty seconds for setup to finish.
         // Order is preserved because `join_all` resolves positionally.
-        futures::future::join_all(self.iter_chat_providers(classification).into_iter().map(
-            |(provider_key, provider_config, source_reason)| async move {
-                let backend = provider_config.provider_type;
+        let configured_default = self
+            .llm_config()
+            .as_deref()
+            .and_then(|llm| llm.default.clone());
+        // A copyable borrow: the per-provider futures are `async move`, and a
+        // moved String capture would make this FnMut closure one-shot.
+        let default_key = configured_default.as_deref();
+        let mut rows: Vec<(bool, ProviderInfo)> =
+            futures::future::join_all(self.iter_chat_providers(classification).into_iter().map(
+                |(provider_key, provider_config, source_reason)| async move {
+                    let backend = provider_config.provider_type;
 
-                let models = if include_models {
-                    self.discover_models(&provider_key, &provider_config).await
-                } else {
-                    Vec::new()
-                };
+                    let models = if include_models {
+                        self.discover_models(&provider_key, &provider_config).await
+                    } else {
+                        Vec::new()
+                    };
 
-                build_provider_info(
-                    backend,
-                    &provider_config,
-                    &source_reason,
-                    &provider_key,
-                    models,
-                )
-            },
-        ))
-        .await
+                    let is_default = default_key == Some(provider_key.as_str());
+                    (
+                        is_default,
+                        build_provider_info(
+                            backend,
+                            &provider_config,
+                            &source_reason,
+                            &provider_key,
+                            models,
+                        ),
+                    )
+                },
+            ))
+            .await;
+        // The config's `llm.default` provider leads the list. Clients name the
+        // first available entry's `default_model` as what an unnamed model
+        // resolves to, so the config default must not sit behind another
+        // provider. Stable: without a configured default the order is the
+        // config's own.
+        rows.sort_by_key(|(is_default, _)| !*is_default);
+        rows.into_iter().map(|(_, info)| info).collect()
     }
 
     /// Chat backends with a credential in the environment that no
@@ -229,6 +248,49 @@ mod tests {
         assert_eq!(providers[0].name, "OpenAI");
         assert!(providers[0].available);
         assert_eq!(providers[0].reason.as_deref(), Some("config"));
+    }
+
+    /// The config's `llm.default` provider leads the list, whatever order the
+    /// config map holds. Clients name the FIRST available entry's
+    /// `default_model` as what an unnamed model resolves to — with the
+    /// default second, the composer's new-session chip named the wrong
+    /// provider's model as the default.
+    #[tokio::test]
+    // SAFETY: This lock intentionally serializes process-wide env var mutation across async tests.
+    // It must be held for the entire test body (including await points) to prevent cross-test races.
+    #[allow(clippy::await_holding_lock)]
+    async fn config_default_provider_leads_the_list() {
+        let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _env_guards = clear_provider_env();
+        let provider = |backend: BackendType, model: &str| LlmProviderConfig {
+            provider_type: backend,
+            endpoint: None,
+            default_model: Some(model.to_string()),
+            api_key: Some("sk-test".to_string()),
+            available_models: Some(vec![model.to_string()]),
+            trust_level: None,
+            name: None,
+        };
+        // BTreeMap order is anthropic < openai; the config default is the
+        // LATER key, so only the sort can put it first.
+        let config = LlmConfig {
+            providers: std::collections::BTreeMap::from([
+                (
+                    "anthropic".to_string(),
+                    provider(BackendType::Anthropic, "claude-3-5-sonnet"),
+                ),
+                ("openai".to_string(), provider(BackendType::OpenAI, "gpt-4o")),
+            ]),
+            default: Some("openai".to_string()),
+            ..Default::default()
+        };
+        let manager = make_agent_manager_with_config(Some(config));
+
+        let providers = manager.list_providers(None).await;
+
+        assert_eq!(providers[0].provider_type, "openai");
+        assert_eq!(providers[0].default_model.as_deref(), Some("gpt-4o"));
+        assert_eq!(providers[1].provider_type, "anthropic");
     }
 
     /// The summary variant answers "do any providers exist?" without model
