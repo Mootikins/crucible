@@ -5,6 +5,7 @@ import {
   turnSegmentId,
   turnThinkingId,
   stripFrozenPrefix,
+  estimateThinkingTokens,
 } from '@/lib/turn';
 import type {
   Message,
@@ -12,7 +13,6 @@ import type {
   InteractionRequest,
   ToolCallDisplay,
   SubagentEvent,
-  ContextUsage,
   ChatMode,
   TokenUsage,
   ConnectionStatus,
@@ -35,7 +35,6 @@ interface ChatEventReducerDeps {
   /** Update a tool transcript entry by call id. */
   updateToolMessage: (callId: string, updater: (tool: ToolCallDisplay) => ToolCallDisplay) => void;
   setSubagentEvents: ArraySetter<SubagentEvent>;
-  setContextUsage: (usage: ContextUsage | null) => void;
   setChatMode: (mode: ChatMode) => void;
   /** Called when the daemon names a mode absent from our list — it was
    * declared after the mount-time fetch, so the list needs refreshing. */
@@ -133,11 +132,24 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           thinking: {
             content: m.thinking.content,
             isStreaming: false,
-            tokenCount: m.thinking.content.length,
+            tokenCount: estimateThinkingTokens(m.thinking.content),
           },
         });
       }
     }
+  };
+
+  // One turn, one closing rule: every way a turn ends — completion, error, a
+  // cancel from THIS client or a foreign one (the daemon records `ended` and
+  // every subscriber receives it) — sweeps the same state. No dangling tool
+  // left "running", no bubble left "Thinking…", no stale streaming id.
+  const closeTurn = () => {
+    finalizeDanglingTools();
+    finalizeStreamingThinking();
+    frozenSegments = [];
+    deps.setIsStreaming(false);
+    deps.setIsLoading(false);
+    deps.setCurrentStreamingMessageId(null);
   };
 
   return (event: ChatEvent) => {
@@ -172,7 +184,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
               thinking: {
                 content: current.thinking.content,
                 isStreaming: false,
-                tokenCount: current.thinking.content.length,
+                tokenCount: estimateThinkingTokens(current.thinking.content),
               },
             });
             deps.setCurrentStreamingMessageId(null);
@@ -189,12 +201,16 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           args: toolArgs,
           status: 'running',
           callId: event.id,
-          // Computed daemon-side; absent on replayed/older events, in which
-          // case ToolCard falls back to deriving it locally.
+          // Computed daemon-side. Absent on recordings that predate the
+          // field — the card then shows no summary line, and the expanded
+          // args still render in full.
           display: 'display' in event ? (event.display as ToolCallDisplay['display']) : undefined,
           // Decided before this event was emitted, so the marker renders with
           // the card instead of appearing a beat later.
           autoApproved: 'auto_approved' in event ? (event.auto_approved as string) : undefined,
+          // The call's proposed edits, decided by the daemon — not re-derived
+          // here from the tool name.
+          diffs: 'diffs' in event ? (event.diffs as ToolCallDisplay['diffs']) : undefined,
         });
         break;
       }
@@ -346,7 +362,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
               thinking: {
                 content: thinkingData.content,
                 isStreaming: false,
-                tokenCount: thinkingData.content.length,
+                tokenCount: estimateThinkingTokens(thinkingData.content),
               },
             } : {}),
           });
@@ -389,9 +405,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             timestamp: Date.now(),
           });
         }
-        deps.setIsStreaming(false);
-        deps.setIsLoading(false);
-        deps.setCurrentStreamingMessageId(null);
+        closeTurn();
         break;
       }
 
@@ -403,12 +417,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             content: `Error: ${event.message}`,
           });
         }
-        finalizeDanglingTools();
-        finalizeStreamingThinking();
-        frozenSegments = [];
-        deps.setIsStreaming(false);
-        deps.setIsLoading(false);
-        deps.setCurrentStreamingMessageId(null);
+        closeTurn();
         break;
       }
 
@@ -504,13 +513,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         ));
         break;
 
-      case 'context_usage': {
-        const usage = { used: event.used, total: event.total };
-        deps.setContextUsage(usage);
-        statusBarActions.setContextUsage(usage);
-        break;
-      }
-
       case 'precognition_result': {
         // Attach metadata to the most recent user message so PrecognitionBadge
         // can render on it. Daemon currently only fires precognition on the
@@ -544,6 +546,33 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'session_event': {
+        // The turn ENDED: the daemon records `ended` with its reason and
+        // broadcasts it to every subscriber — the canceller's client, other
+        // panes on the session, and future replays alike. Error-prefixed
+        // reasons arrive as typed `error` events instead, so anything here
+        // simply means "the turn is over": sweep the same state a completion
+        // would. This is what makes a cancel issued from ANOTHER client stop
+        // this pane's spinner — the old client-side patch could only ever
+        // close the turn that THIS client cancelled.
+        if (event.event === 'ended') {
+          closeTurn();
+          break;
+        }
+
+        // Late file-diff content for a call already announced by a prior
+        // `tool_call` (an ACP agent that announces without `rawInput`).
+        // Same merge rule as the TUI: the update carries the call's full
+        // diff set, so it replaces — and an empty/missing set is a no-op,
+        // not a wipe.
+        if (event.event === 'tool_call_diff_update') {
+          const data = event.data as { call_id?: unknown; diffs?: ToolCallDisplay['diffs'] } | null;
+          const callId = typeof data?.call_id === 'string' ? data.call_id : undefined;
+          if (callId && data && Array.isArray(data.diffs) && data.diffs.length > 0) {
+            deps.updateToolMessage(callId, (tool) => ({ ...tool, diffs: data.diffs }));
+          }
+          break;
+        }
+
         // The daemon's event forwarder writes this straight to our connection
         // when its broadcast cursor falls off the ring: N events are gone and
         // nothing later mentions them. It arrives as a passthrough because it is

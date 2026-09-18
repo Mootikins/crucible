@@ -221,7 +221,6 @@ export const SSE_EVENT_TYPES = [
   'delegation_spawned',
   'delegation_completed',
   'delegation_failed',
-  'context_usage',
   'precognition_result',
   'mode_changed',
   'title_changed',

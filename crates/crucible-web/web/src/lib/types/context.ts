@@ -8,7 +8,6 @@ import type {
   InteractionRequest,
   InteractionResponse,
   SubagentEvent,
-  ContextUsage,
   ChatMode,
   ModeDescriptor,
   Session,
@@ -40,7 +39,6 @@ export interface ChatContextValue {
    * session is bound — there is then nothing to re-subscribe to. */
   retryConnection: () => void;
   subagentEvents: Accessor<SubagentEvent[]>;
-  contextUsage: Accessor<ContextUsage | null>;
   chatMode: Accessor<ChatMode>;
   /** Modes this session may enter, from `session.list_modes`. */
   availableModes: Accessor<ModeDescriptor[]>;

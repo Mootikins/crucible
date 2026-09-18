@@ -116,16 +116,14 @@ function makeTerminateTool(overrides: Partial<ToolCallDisplay> = {}): ToolCallDi
   };
 }
 
-// Edit-tool fixture for the open-in-editor suite.
+// Edit-tool fixture for the open-in-editor suite. The diff comes from the
+// daemon's FileDiff projection — the card no longer derives one from args.
 const editTool = (): ToolCallDisplay => ({
   id: 'tc-1',
   name: 'Edit',
   status: 'complete',
-  args: JSON.stringify({
-    file_path: '/proj/app.ts',
-    old_string: 'let x = 1;',
-    new_string: 'let x = 42;',
-  }),
+  args: JSON.stringify({ file_path: '/proj/app.ts' }),
+  diffs: [{ path: '/proj/app.ts', old_content: 'let x = 1;', new_content: 'let x = 42;' }],
 });
 
 describe('ToolCard — collapsed header', () => {
@@ -256,8 +254,14 @@ describe('ToolCard — args formatting', () => {
 });
 
 describe('ToolCard — bash command rendering', () => {
+  // The daemon's display projection is what makes a call render as a shell
+  // line; a bare `command` argument no longer earns the Command block.
   const bash = (command: string, extra: Record<string, unknown> = {}) =>
-    makeTool({ name: 'bash', args: JSON.stringify({ command, ...extra }) });
+    makeTool({
+      name: 'bash',
+      args: JSON.stringify({ command, ...extra }),
+      display: { kind: 'command', primary: command },
+    });
 
   it('renders a bash command as a shell line, not JSON', () => {
     render(() => <ToolCard toolCall={bash('ls -la /tmp')} />);
@@ -353,12 +357,13 @@ describe('ToolCard — ID footer', () => {
 });
 
 describe('ToolCard — diff rendering', () => {
-  it('renders DiffViewer for completed Edit tool', () => {
+  it('renders DiffViewer from the recorded diff of a completed call', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
           name: 'Edit',
           args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
+          diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }],
           result: 'edited',
         })}
       />
@@ -369,12 +374,12 @@ describe('ToolCard — diff rendering', () => {
     expect(dv.getAttribute('data-file')).toBe('src/a.rs');
   });
 
-  it('renders DiffViewer for completed Write tool with empty oldContent', () => {
+  it('renders a whole-file write from a null old side', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
           name: 'Write',
-          args: JSON.stringify({ file_path: 'src/new.ts', content: 'hello' }),
+          diffs: [{ path: 'src/new.ts', old_content: null, new_content: 'hello' }],
           result: 'wrote',
         })}
       />
@@ -384,18 +389,15 @@ describe('ToolCard — diff rendering', () => {
     expect(dv.textContent).toContain('old:|new:hello');
   });
 
-  it('renders MultiEditDiff for completed MultiEdit tool', () => {
+  it('merges several edits to one file into MultiEditDiff', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
           name: 'MultiEdit',
-          args: JSON.stringify({
-            file_path: 'src/a.rs',
-            edits: [
-              { old_string: 'a', new_string: 'b' },
-              { old_string: 'c', new_string: 'd' },
-            ],
-          }),
+          diffs: [
+            { path: 'src/a.rs', old_content: 'a', new_content: 'b' },
+            { path: 'src/a.rs', old_content: 'c', new_content: 'd' },
+          ],
           result: 'multi-edited',
         })}
       />
@@ -405,21 +407,43 @@ describe('ToolCard — diff rendering', () => {
     expect(med.getAttribute('data-count')).toBe('2');
   });
 
-  it('does not render diff while tool is still running', () => {
+  it('renders one viewer per file when a call touches several', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={call({
+          name: 'some_acp_editor',
+          diffs: [
+            { path: 'src/a.rs', old_content: 'a', new_content: 'b' },
+            { path: 'src/b.rs', old_content: null, new_content: 'new file' },
+          ],
+        })}
+      />
+    ));
+    expandCard(container);
+    const viewers = screen.getAllByTestId('diff-viewer');
+    expect(viewers).toHaveLength(2);
+    expect(viewers[0].getAttribute('data-file')).toBe('src/a.rs');
+    expect(viewers[1].getAttribute('data-file')).toBe('src/b.rs');
+  });
+
+  it('renders the proposed diff while the tool is still running', () => {
+    // The daemon attaches the diff when the call is announced, so the change
+    // is visible while it executes — same as the TUI card, and the same
+    // content the permission prompt showed before approval.
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
           name: 'Edit',
           status: 'running',
-          args: JSON.stringify({ file_path: 'a', old_string: 'x', new_string: 'y' }),
+          diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }],
         })}
       />
     ));
     expandCard(container);
-    expect(screen.queryByTestId('diff-viewer')).toBeNull();
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
   });
 
-  it('falls back to plain <pre> result for unrecognized tool names', () => {
+  it('falls back to plain <pre> result for a call without diffs', () => {
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
@@ -441,7 +465,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           status: 'error',
-          args: JSON.stringify({ file_path: 'a', old_string: 'x', new_string: 'y' }),
+          diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }],
           result: 'string not found',
         })}
       />
@@ -465,6 +489,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
+          diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }],
           result: 'edited',
         })}
       />
@@ -479,9 +504,8 @@ describe('ToolCard — diff rendering', () => {
   });
 
   it('still shows the input for non-diff tools (e.g. Bash)', () => {
-    // Bash renders no diff and its input is a command line, so it gets the
-    // Command block rather than the JSON Arguments block. What matters here
-    // is that a non-diff tool's input is visible at all.
+    // A non-diff tool's input must be visible. Its Command block comes from
+    // the daemon's display projection; without one, the raw args render.
     const { container } = render(() => (
       <ToolCard
         toolCall={call({
@@ -493,7 +517,7 @@ describe('ToolCard — diff rendering', () => {
     ));
     expandCard(container);
     expect(screen.queryByTestId('diff-viewer')).toBeNull();
-    expect(screen.getByTestId('bash-command').textContent).toContain('ls');
+    expect(screen.getByTestId('tool-args').textContent).toContain('ls');
   });
 
   it('falls back to plain <pre> when args JSON is malformed', () => {
@@ -558,10 +582,10 @@ describe('ToolCard — Open in editor', () => {
     expect(screen.queryByTestId('tool-open-in-editor')).not.toBeInTheDocument();
   });
 
-  it('has no Open-in-editor button while the tool is still running', () => {
+  it('offers Open-in-editor while the tool is still running (the diff is already known)', () => {
     render(() => <ToolCard toolCall={{ ...editTool(), status: 'running' }} />);
     fireEvent.click(screen.getByText('Edit'));
-    expect(screen.queryByTestId('tool-open-in-editor')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tool-open-in-editor')).toBeInTheDocument();
   });
 
   // An unreadable path with an Edit means we have no baseline; applying the
@@ -584,8 +608,9 @@ describe('ToolCard — Open in editor', () => {
     const writeTool: ToolCallDisplay = {
       id: 'tc-2',
       name: 'Write',
+      args: '',
       status: 'complete',
-      args: JSON.stringify({ file_path: '/proj/new.ts', content: 'fresh\n' }),
+      diffs: [{ path: '/proj/new.ts', old_content: null, new_content: 'fresh\n' }],
     };
     render(() => <ToolCard toolCall={writeTool} />);
     fireEvent.click(screen.getByText('Write'));
@@ -630,16 +655,6 @@ describe('ToolCard — daemon-provided display projection', () => {
     ));
     fireEvent.click(screen.getByText('run_task'));
     expect(screen.getByTestId('bash-command').textContent).toContain('make build');
-  });
-
-  it('falls back to the local heuristic when the event carries no projection', () => {
-    // Replayed transcripts and older daemons predate the field; a card that
-    // rendered nothing for them would be a regression.
-    render(() => (
-      <ToolCard toolCall={makeTool({ name: 'bash', args: JSON.stringify({ command: 'ls -la' }) })} />
-    ));
-    fireEvent.click(screen.getByText('bash'));
-    expect(screen.getByTestId('bash-command').textContent).toContain('ls -la');
   });
 
   it('uses the projection for the collapsed one-line summary too', () => {

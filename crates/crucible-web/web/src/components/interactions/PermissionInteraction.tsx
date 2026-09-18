@@ -1,6 +1,5 @@
-import { Component, Show, createSignal } from 'solid-js';
+import { Component, For, Show, createSignal } from 'solid-js';
 import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
-import { useGetFileContent } from '@/lib/query/fs';
 import { DiffViewer } from '@/components/DiffViewer';
 import { btnConsent, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
@@ -21,13 +20,6 @@ const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
   // Neutral: a tool name is a category, and precog means precognition only.
   tool: { label: 'Tool', chip: 'bg-surface-elevated text-muted border border-hairline-strong' },
 };
-
-/** Extract file path from a write permission request's tokens */
-function extractFilePath(request: InteractionOf<'permission'>): string | null {
-  if (request.action_type !== 'write') return null;
-  // tokens[0] is typically the file path for write operations
-  return request.tokens[0] ?? null;
-}
 
 /**
  * Full tool arguments as display pairs. A user must be able to see everything
@@ -56,17 +48,6 @@ function prettyPrintMaybeJson(raw: unknown): string {
   return typeof decoded === 'string' ? decoded : JSON.stringify(decoded, null, 2);
 }
 
-/** Extract new content from tool_args if available */
-function extractNewContent(request: InteractionOf<'permission'>): string | null {
-  if (!request.tool_args || typeof request.tool_args !== 'object') return null;
-  const args = request.tool_args as Record<string, unknown>;
-  // Common field names for file content in tool args
-  if (typeof args.content === 'string') return args.content;
-  if (typeof args.new_content === 'string') return args.new_content;
-  if (typeof args.text === 'string') return args.text;
-  return null;
-}
-
 export const PermissionInteraction: Component<Props> = (props) => {
   const [scope, setScope] = createSignal<PermissionScope>('once');
   const [showScopes, setShowScopes] = createSignal(false);
@@ -93,26 +74,12 @@ export const PermissionInteraction: Component<Props> = (props) => {
   const commandPattern = () => props.request.tokens.join(' ');
   const commandDisplay = () => prettyPrintMaybeJson(commandPattern());
 
-  const filePath = () => extractFilePath(props.request);
-  const newContent = () => extractNewContent(props.request);
-
-  // The file as it is on disk, for the diff beside the proposed write. It is
-  // the same cache entry the editor and the tool card read, so a prompt about
-  // a file already on screen costs no second fetch.
-  const diffPath = () => {
-    const path = filePath();
-    return path && newContent() !== null ? path : null;
-  };
-  const onDisk = useGetFileContent(diffPath);
-
-  // A file that does not exist yet is a new file, so an unreadable path is an
-  // empty baseline rather than a refusal to show the write at all.
-  const oldContent = () => (onDisk.isError ? '' : onDisk.data);
-  const loadingOldContent = () => onDisk.isPending && onDisk.fetchStatus !== 'idle';
-
-  const hasDiff = () => {
-    return props.request.action_type === 'write' && newContent() !== null && oldContent() !== undefined;
-  };
+  // The proposed edits as the daemon attached them to the request — the
+  // authoritative change, with its true baseline. This page used to guess a
+  // path out of `tokens[0]`, guess the new content out of `tool_args` field
+  // names, and fetch the old content itself; all three guesses are gone.
+  const requestDiffs = () => props.request.diffs ?? [];
+  const hasDiff = () => requestDiffs().length > 0;
 
   const handleAllow = () => {
     props.onRespond({
@@ -163,15 +130,9 @@ export const PermissionInteraction: Component<Props> = (props) => {
         </div>
       </Show>
 
-      {/* File path display for write actions */}
-      <Show when={props.request.action_type === 'write' && filePath()}>
-        <p class="text-shell-body mb-2 text-xs">
-          File: <span class="text-shell-ink font-mono">{filePath()}</span>
-        </p>
-      </Show>
-
-      {/* Diff preview for file write permissions */}
-      <Show when={hasDiff() && !loadingOldContent()}>
+      {/* Diff preview — the daemon's FileDiff projection, one viewer per
+          file. No fetching: the request carries the change's true baseline. */}
+      <Show when={hasDiff()}>
         <div class="mb-4">
           <button
             onClick={() => setShowDiff(!showDiff())}
@@ -191,21 +152,17 @@ export const PermissionInteraction: Component<Props> = (props) => {
                 Allow/Deny row off the bottom of the screen, so the preview
                 scrolls and the decision stays where the user can reach it. */}
             <div class="max-h-64 overflow-y-auto">
-              <DiffViewer
-                oldContent={oldContent() ?? ''}
-                newContent={newContent()!}
-                fileName={filePath() ?? undefined}
-              />
+              <For each={requestDiffs()}>
+                {(d) => (
+                  <DiffViewer
+                    oldContent={d.old_content ?? ''}
+                    newContent={d.new_content}
+                    fileName={d.path}
+                  />
+                )}
+              </For>
             </div>
           </Show>
-        </div>
-      </Show>
-
-      {/* Loading state while fetching old content */}
-      <Show when={hasDiff() && loadingOldContent()}>
-        <div class="mb-4 text-xs text-muted-dark flex items-center gap-2">
-          <span class="inline-block w-3 h-3 border border-muted-dark border-t-transparent rounded-full animate-spin" />
-          Loading file for diff...
         </div>
       </Show>
 

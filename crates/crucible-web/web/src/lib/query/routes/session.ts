@@ -173,7 +173,7 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
 
     // The rest are the stream itself (`token`, `thinking`, the tool events,
     // `segment_complete`), the transport (`connection`) or per-pane state (the
-    // subagent and delegation events, `context_usage`, `precognition_result`).
+    // subagent and delegation events, `precognition_result`).
     // One pane's reducer owns each of them.
     default:
       break;

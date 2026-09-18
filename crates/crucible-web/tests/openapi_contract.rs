@@ -205,6 +205,9 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             id: String::new(),
             title: String::new(),
             arguments: None,
+            display: None,
+            auto_approved: None,
+            diffs: None,
         },
         ChatEvent::ToolResult {
             id: String::new(),
@@ -272,7 +275,6 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             id: String::new(),
             error: String::new(),
         },
-        ChatEvent::ContextUsage { used: 0, total: 0 },
         ChatEvent::PrecognitionResult {
             notes_count: 0,
             notes: Vec::new(),
@@ -410,8 +412,8 @@ fn every_versioned_stream_documents_the_protocol_header() {
         "/api/plugins/events",
         "/api/surfaces/events",
     ] {
-        let headers = &spec["paths"][path]["get"]["responses"]["200"]["headers"]
-            ["X-Crucible-Stream-Version"];
+        let headers =
+            &spec["paths"][path]["get"]["responses"]["200"]["headers"]["X-Crucible-Stream-Version"];
         assert!(
             !headers.is_null(),
             "{path} does not document `X-Crucible-Stream-Version`"

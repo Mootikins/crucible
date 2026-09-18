@@ -26,6 +26,9 @@ fn chat_event_tool_call_event_name() {
         id: "1".to_string(),
         title: "search".to_string(),
         arguments: None,
+        display: None,
+        auto_approved: None,
+        diffs: None,
     };
     assert_eq!(event.event_name(), "tool_call");
 }
@@ -438,22 +441,34 @@ async fn chat_events_skips_live_events_the_replay_already_covered() {
     // Below the tail (long covered) and at the tail (the tail itself).
     state
         .events
-        .publish_for_tests(stamped(2, "message_complete", json!({
-            "message_id": "msg-001", "full_response": "First answer",
-        })))
+        .publish_for_tests(stamped(
+            2,
+            "message_complete",
+            json!({
+                "message_id": "msg-001", "full_response": "First answer",
+            }),
+        ))
         .await;
     state
         .events
-        .publish_for_tests(stamped(4, "user_message", json!({
-            "message_id": "msg-002", "content": "Second turn",
-        })))
+        .publish_for_tests(stamped(
+            4,
+            "user_message",
+            json!({
+                "message_id": "msg-002", "content": "Second turn",
+            }),
+        ))
         .await;
     // Above the tail: forwarded, stamped.
     state
         .events
-        .publish_for_tests(stamped(5, "message_complete", json!({
-            "message_id": "msg-003", "full_response": "Third answer",
-        })))
+        .publish_for_tests(stamped(
+            5,
+            "message_complete",
+            json!({
+                "message_id": "msg-003", "full_response": "Third answer",
+            }),
+        ))
         .await;
 
     // The SAME connection: the live frames land in the receiver the route

@@ -40,7 +40,7 @@ describe('ThinkingBlock — streaming', () => {
       <ThinkingBlock content="done reasoning" isStreaming={false} tokenCount={42} />
     ));
     expect(container.querySelectorAll('.cru-think-dot')).toHaveLength(0);
-    expect(screen.getByText('Thought for 42 tokens')).toBeInTheDocument();
+    expect(screen.getByText('Thought for ~42 tokens')).toBeInTheDocument();
   });
 });
 
@@ -54,7 +54,7 @@ describe('ThinkingBlock — completion', () => {
 
     setStreaming(false);
     expect(foldOf(container)).toBe('0fr');
-    expect(screen.getByText('Thought for 9 tokens')).toBeInTheDocument();
+    expect(screen.getByText('Thought for ~9 tokens')).toBeInTheDocument();
     expect(container.querySelector('[data-testid="think-stream-caret"]')).toBeNull();
   });
 });

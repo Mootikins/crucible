@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { ChatMode, ContextUsage } from '@/lib/types';
+import type { ChatMode } from '@/lib/types';
 
 // ── Global status bar state ──────────────────────────────────────────────
 // StatusBar lives outside ChatProvider/SessionProvider, so it can't use
@@ -13,7 +13,6 @@ import type { ChatMode, ContextUsage } from '@/lib/types';
 // every pane had to remember to write.
 
 const [chatMode, setChatMode] = createSignal<ChatMode>('ask');
-const [contextUsage, setContextUsage] = createSignal<ContextUsage | null>(null);
 const [notificationCount, setNotificationCount] = createSignal(0);
 const [showThinking, setShowThinking] = createSignal(true);  // Toggle visibility of thinking blocks
 const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null);
@@ -32,7 +31,6 @@ export function pathBasename(path: string | null): string | null {
 
 export const statusBarStore = {
   chatMode,
-  contextUsage,
   notificationCount,
   showThinking,
   activeSessionId,
@@ -42,7 +40,6 @@ export const statusBarStore = {
 
 export const statusBarActions = {
   setChatMode,
-  setContextUsage,
   setNotificationCount,
   setShowThinking,
   setActiveSessionId,

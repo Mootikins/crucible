@@ -4,67 +4,43 @@ export type ToolDiff =
   | { kind: 'single'; fileName: string; oldContent: string; newContent: string }
   | { kind: 'multi'; fileName: string; edits: { oldContent: string; newContent: string }[] };
 
-type ToolKind = 'edit' | 'write' | 'multiedit';
-
-function classifyTool(name: string): ToolKind | null {
-  const n = name.toLowerCase();
-  if (n === 'multiedit') return 'multiedit';
-  if (n === 'edit') return 'edit';
-  if (n === 'write') return 'write';
-  return null;
-}
-
-function parseArgs(args: string): Record<string, unknown> | null {
-  if (!args) return null;
-  try {
-    const parsed = JSON.parse(args);
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
+/**
+ * Convert the daemon's `FileDiff` projection into the per-file diffs the card
+ * renders. The daemon already decided what the diff IS — synth for the
+ * built-in mutators, ACP forwarding otherwise — so this only reshapes it:
+ * several edits to one file become one `multi` diff, each distinct file its
+ * own entry. `old_content: null` is a whole-file write (empty old side),
+ * matching the shape `DiffViewer` renders for "no previous content".
+ *
+ * `diffs` arrives `undefined` when the event carries none (or the transcript
+ * entry predates the field).
+ */
+export function toolDiffsFromWire(diffs?: ToolCallDisplay['diffs']): ToolDiff[] {
+  const raw = diffs ?? [];
+  const out: ToolDiff[] = [];
+  for (const d of raw) {
+    if (typeof d?.path !== 'string' || typeof d?.new_content !== 'string') continue;
+    const edit = {
+      oldContent: typeof d.old_content === 'string' ? d.old_content : '',
+      newContent: d.new_content,
+    };
+    const same = out.find((diff) => diff.fileName === d.path);
+    if (!same) {
+      out.push({ kind: 'single', fileName: d.path, ...edit });
+    } else if (same.kind === 'single') {
+      out[out.indexOf(same)] = {
+        kind: 'multi',
+        fileName: d.path,
+        edits: [
+          { oldContent: same.oldContent, newContent: same.newContent },
+          edit,
+        ],
+      };
+    } else {
+      same.edits.push(edit);
+    }
   }
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
-}
-
-export function extractDiffFromToolCall(call: ToolCallDisplay): ToolDiff | null {
-  if (call.status === 'running') return null;
-
-  const kind = classifyTool(call.name);
-  if (!kind) return null;
-
-  const args = parseArgs(call.args);
-  if (!args) return null;
-
-  const fileName = asString(args.file_path);
-  if (!fileName) return null;
-
-  if (kind === 'edit') {
-    const oldContent = asString(args.old_string);
-    const newContent = asString(args.new_string);
-    if (oldContent === null || newContent === null) return null;
-    return { kind: 'single', fileName, oldContent, newContent };
-  }
-
-  if (kind === 'write') {
-    const newContent = asString(args.content);
-    if (newContent === null) return null;
-    return { kind: 'single', fileName, oldContent: '', newContent };
-  }
-
-  // multiedit
-  const rawEdits = args.edits;
-  if (!Array.isArray(rawEdits) || rawEdits.length === 0) return null;
-  const edits: { oldContent: string; newContent: string }[] = [];
-  for (const e of rawEdits) {
-    if (typeof e !== 'object' || e === null) return null;
-    const oldContent = asString((e as Record<string, unknown>).old_string);
-    const newContent = asString((e as Record<string, unknown>).new_string);
-    if (oldContent === null || newContent === null) return null;
-    edits.push({ oldContent, newContent });
-  }
-  return { kind: 'multi', fileName, edits };
+  return out;
 }
 
 /**

@@ -4305,6 +4305,19 @@
                 "type": "string"
               },
               "arguments": {},
+              "display": {
+                "description": "The daemon's \"which argument matters\" projection, shared with the\nTUI. `Value` because `ToolDisplay` lives in `crucible-core`, which\ntakes no utoipa dependency (same deal as `stop_reason` below)."
+              },
+              "auto_approved": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Which layer granted permission without asking, if any."
+              },
+              "diffs": {
+                "description": "Proposed file edits as `FileDiff` objects (`{path, old_content,\nnew_content}`); `old_content: null` means a whole-file write. The\nbrowser renders the card's diff from this instead of re-deriving\none from the tool name and arguments."
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -4719,32 +4732,6 @@
           {
             "type": "object",
             "required": [
-              "used",
-              "total",
-              "type"
-            ],
-            "properties": {
-              "used": {
-                "type": "integer",
-                "format": "int64",
-                "minimum": 0
-              },
-              "total": {
-                "type": "integer",
-                "format": "int64",
-                "minimum": 0
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "context_usage"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
               "notes_count",
               "type"
             ],
@@ -4824,7 +4811,7 @@
             }
           }
         ],
-        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
+        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 21 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
       "CloneRequest": {
         "type": "object",

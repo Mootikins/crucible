@@ -3,7 +3,7 @@ import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
-import { extractDiffFromToolCall, applyToolDiff } from '@/lib/tool-diffs';
+import { toolDiffsFromWire, applyToolDiff, type ToolDiff } from '@/lib/tool-diffs';
 import { openFileWithDiff } from '@/lib/file-actions';
 import { fetchFileContentOnce } from '@/lib/query/fs';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
@@ -36,10 +36,6 @@ import {
 interface ToolCardProps {
   toolCall: ToolCallDisplay;
 }
-
-/** Mirrors `SHELL_TOOLS` in `crucible_core::types::tool_display`. Only used by
- *  the fallback path, for events that predate the daemon-side projection. */
-const SHELL_TOOLS = ['bash', 'shell', 'sh', 'zsh', 'exec', 'run_command', 'terminal'];
 
 export const ToolCard: Component<ToolCardProps> = (props) => {
   // Error state auto-expands so users can see what went wrong
@@ -93,43 +89,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   };
 
   // What this call is about comes from the daemon (`toolCall.display`) — one
-  // projection shared with the TUI and with the daemon's own deny messages,
-  // instead of this component keeping its own key-priority list.
-  //
-  // The local fallback is not redundancy for its own sake: replayed
-  // transcripts and older daemons carry no `display`, and a card that renders
-  // nothing for them would be a regression. It mirrors the Rust rule and is
-  // the ONLY place this heuristic still lives in the web.
-  const display = createMemo(() => {
-    if (props.toolCall.display) return props.toolCall.display;
-
-    const name = props.toolCall.name.toLowerCase();
-    const isShell = SHELL_TOOLS.some((t) => name === t || name.endsWith(`__${t}`));
-    const args = props.toolCall.args;
-    if (!args) return undefined;
-    try {
-      const parsed: unknown = JSON.parse(args);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
-      const record = parsed as Record<string, unknown>;
-      if (isShell && typeof record.command === 'string' && record.command) {
-        return { kind: 'command' as const, primary: record.command };
-      }
-      for (const key of ['file_path', 'path', 'file', 'note', 'name']) {
-        if (typeof record[key] === 'string' && record[key]) {
-          return { kind: 'path' as const, primary: record[key] as string };
-        }
-      }
-      for (const key of ['pattern', 'query', 'url']) {
-        if (typeof record[key] === 'string' && record[key]) {
-          return { kind: 'query' as const, primary: record[key] as string };
-        }
-      }
-      const first = Object.values(record).find((v) => typeof v === 'string' && v);
-      return first ? { kind: 'other' as const, primary: first as string } : undefined;
-    } catch {
-      return undefined;
-    }
-  });
+  // projection shared with the TUI and with the daemon's own deny messages.
+  // No local fallback: this page used to keep its own key-priority list, and
+  // the two answers could disagree. A recording that predates the field shows
+  // no summary line; the expanded card still renders the full args.
+  const display = createMemo(() => props.toolCall.display);
 
   const bashCommand = createMemo(() =>
     display()?.kind === 'command' ? (display()!.primary ?? null) : null,
@@ -159,7 +123,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // about which argument matters.
   const argSummary = createMemo(() => display()?.primary?.split('\n')[0] ?? null);
 
-  const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
+  const diffs = createMemo(() => toolDiffsFromWire(props.toolCall?.diffs));
 
   // ===== Review attribution ===================================================
   //
@@ -199,7 +163,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
    * survives in the composed diff — a later edit overwrote it.
    *
    * Gated on `loaded` so an unanswered (or failed) list never claims work was
-   * thrown away, on `diff()` so a call that never proposed an edit is not
+   * thrown away, on `diffs()` so a call that never proposed an edit is not
    * described as superseded for having produced no hunks, and on the session
    * scope: under the turn scope the store holds only the current turn's
    * hunks, so an earlier call's absence says nothing about its edit.
@@ -207,7 +171,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   const superseded = createMemo(
     () =>
       !!callId() &&
-      !!diff() &&
+      diffs().length > 0 &&
       reviewStore.session(sessionId()).loaded &&
       reviewStore.scope(sessionId()) === 'session' &&
       liveHunks().length === 0,
@@ -223,9 +187,8 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // proposed content, and hand both to openFileWithDiff (opens or focuses the
   // tab).
   const [opening, setOpening] = createSignal(false);
-  const openInEditor = async () => {
-    const d = diff();
-    if (!d || opening()) return;
+  const openInEditor = async (d: ToolDiff) => {
+    if (opening()) return;
     setOpening(true);
     try {
       // A Write proposes the whole file, so an unreadable path just means a
@@ -363,7 +326,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
           {/* Args section — suppressed when a diff renders, since the diff header
               shows the file path and the diff body shows the old/new content. */}
-          <Show when={formattedArgs() && !diff()}>
+          <Show when={formattedArgs() && diffs().length === 0}>
             <div class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}>
               <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
               <pre
@@ -380,7 +343,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               formattedResult() so JSON-bearing error payloads get the same
               pretty-printing as successful results. */}
           <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
-            <div class={`px-3 py-2 ${formattedArgs() && !diff() ? 'border-t border-hairline' : ''} bg-surface-base`}>
+            <div class={`px-3 py-2 ${formattedArgs() && diffs().length === 0 ? 'border-t border-hairline' : ''} bg-surface-base`}>
               <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
@@ -390,16 +353,15 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             </div>
           </Show>
 
-          {/* Diff rendering for Edit/Write/MultiEdit when args parse cleanly */}
-          <Show when={diff()}>
-            {(d) => (
-              <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
-                {/* Review this change in the real editor (inline diff overlay). */}
-                <div class="flex items-center justify-end gap-1.5 mb-1.5 flex-wrap">
-                  {/* One control pair per composed hunk this call still owns.
-                      External hunks cannot appear here by construction (they
-                      have no tool call), so there is no reject to suppress. */}
-                  <div class="flex items-center gap-1.5 flex-wrap mr-auto">
+          {/* Diff rendering — the daemon's FileDiff projection, one block per
+              file (an ACP call may touch several). */}
+          <Show when={diffs().length > 0}>
+            <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
+              {/* One control pair per composed hunk this call still owns.
+                  External hunks cannot appear here by construction (they
+                  have no tool call), so there is no reject to suppress. */}
+              <div class="flex items-center justify-end gap-1.5 mb-1.5 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap mr-auto">
                   <For each={liveHunks().filter((h) => !isExternal(h))}>
                     {(hunk) => (
                       <span
@@ -447,39 +409,40 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                       </span>
                     )}
                   </For>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={openInEditor}
-                    disabled={opening()}
-                    data-testid="tool-open-in-editor"
-                    class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
-                    title="Open the file in the editor with this change shown as an inline diff"
-                  >
-                    <FileOutput class="w-3.5 h-3.5" /> Open in editor
-                  </button>
                 </div>
-                <Show
-                  when={d().kind === 'single'}
-                  fallback={
-                    <MultiEditDiff
-                      fileName={(d() as { kind: 'multi'; fileName: string; edits: { oldContent: string; newContent: string }[] }).fileName}
-                      edits={(d() as { kind: 'multi'; fileName: string; edits: { oldContent: string; newContent: string }[] }).edits}
-                    />
-                  }
-                >
-                  <DiffViewer
-                    fileName={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).fileName}
-                    oldContent={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).oldContent}
-                    newContent={(d() as { kind: 'single'; fileName: string; oldContent: string; newContent: string }).newContent}
-                  />
-                </Show>
               </div>
-            )}
+              {diffs().map((d) => (
+                <div class="mb-1.5 last:mb-0">
+                  {/* Review this change in the real editor (inline diff
+                      overlay) — one control per file. */}
+                  <div class="flex items-center justify-end mb-1">
+                    <button
+                      type="button"
+                      onClick={() => void openInEditor(d)}
+                      disabled={opening()}
+                      data-testid="tool-open-in-editor"
+                      class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+                      title="Open the file in the editor with this change shown as an inline diff"
+                    >
+                      <FileOutput class="w-3.5 h-3.5" /> Open in editor
+                    </button>
+                  </div>
+                  {d.kind === 'single'
+                    ? (
+                      <DiffViewer
+                        fileName={d.fileName}
+                        oldContent={d.oldContent}
+                        newContent={d.newContent}
+                      />
+                    )
+                    : <MultiEditDiff fileName={d.fileName} edits={d.edits} />}
+                </div>
+              ))}
+            </div>
           </Show>
 
           {/* Plain-text result section (kept for non-diff tools on success). */}
-          <Show when={props.toolCall.result && !diff() && props.toolCall.status !== 'error'}>
+          <Show when={props.toolCall.result && diffs().length === 0 && props.toolCall.status !== 'error'}>
             <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-hairline' : ''} bg-surface-base`}>
               <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Result

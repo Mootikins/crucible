@@ -289,19 +289,22 @@ describe('PermissionInteraction', () => {
   // The prompt shows what the write would REPLACE, so it reads the file on
   // disk. It reads it through the same cache entry the editor and the tool
   // card hold, so a prompt about an open file costs no second read.
-  it('reads the file on disk for a write it is about to approve', async () => {
+  it('renders the diff the daemon attached to the write, reading no file', async () => {
+    // The request carries the change's authoritative form (daemon FileDiffs,
+    // forwarded whole by the web server): the prompt no longer guesses a path
+    // out of tokens or fetches a baseline itself.
     const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-write-1',
       action_type: 'write',
       tokens: ['/kiln/notes/a.md'],
-      tool_args: { content: 'typed\n' },
+      diffs: [{ path: '/kiln/notes/a.md', old_content: 'on disk\n', new_content: 'typed\n' }],
     };
 
     render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
 
     await waitFor(() => expect(screen.getByTestId('diff-viewer')).toBeInTheDocument());
-    expect(reads).toEqual(['/kiln/notes/a.md']);
+    expect(reads).toEqual([]);
   });
 
   it('keeps the (no arguments) fallback for tool permissions without args', () => {

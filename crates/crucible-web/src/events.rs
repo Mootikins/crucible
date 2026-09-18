@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// The browser's view of a session event, streamed by `GET
 /// /api/chat/events/{session_id}`.
 ///
-/// `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
+/// `ToSchema` publishes the 21 tag values to the OpenAPI document, so the
 /// browser reads the union from the enum instead of repeating it.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -20,6 +20,20 @@ pub enum ChatEvent {
         title: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         arguments: Option<serde_json::Value>,
+        /// The daemon's "which argument matters" projection, shared with the
+        /// TUI. `Value` because `ToolDisplay` lives in `crucible-core`, which
+        /// takes no utoipa dependency (same deal as `stop_reason` below).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<serde_json::Value>,
+        /// Which layer granted permission without asking, if any.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        auto_approved: Option<String>,
+        /// Proposed file edits as `FileDiff` objects (`{path, old_content,
+        /// new_content}`); `old_content: null` means a whole-file write. The
+        /// browser renders the card's diff from this instead of re-deriving
+        /// one from the tool name and arguments.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        diffs: Option<serde_json::Value>,
     },
 
     ToolResult {
@@ -140,11 +154,6 @@ pub enum ChatEvent {
         error: String,
     },
 
-    ContextUsage {
-        used: u64,
-        total: u64,
-    },
-
     PrecognitionResult {
         notes_count: usize,
         #[serde(default)]
@@ -192,7 +201,6 @@ impl ChatEvent {
             ChatEvent::DelegationSpawned { .. } => "delegation_spawned",
             ChatEvent::DelegationCompleted { .. } => "delegation_completed",
             ChatEvent::DelegationFailed { .. } => "delegation_failed",
-            ChatEvent::ContextUsage { .. } => "context_usage",
             ChatEvent::PrecognitionResult { .. } => "precognition_result",
             ChatEvent::ModeChanged { .. } => "mode_changed",
             ChatEvent::TitleChanged { .. } => "title_changed",
@@ -266,11 +274,20 @@ impl ChatEvent {
                     call_id,
                     tool,
                     args,
+                    display,
+                    auto_approved,
+                    diffs,
                     ..
                 } => ChatEvent::ToolCall {
                     id: call_id,
                     title: tool,
                     arguments: Some(args).filter(|a| !a.is_null()),
+                    display: display.map(|d| serde_json::to_value(d).unwrap_or_default()),
+                    auto_approved,
+                    // An empty Vec serializes as `[]`, which the browser would
+                    // read as "diffs exist but none" — absent means none.
+                    diffs: (!diffs.is_empty())
+                        .then(|| serde_json::to_value(&diffs).unwrap_or_default()),
                 },
 
                 TurnPayload::ToolResult {
@@ -541,10 +558,64 @@ mod tests {
                 id,
                 title,
                 arguments,
+                display,
+                auto_approved,
+                diffs,
             } => {
                 assert_eq!(id, "call-1");
                 assert_eq!(title, "read_file");
                 assert_eq!(arguments, Some(serde_json::json!({ "path": "foo.rs" })));
+                // `SessionEventMessage::tool_call` computes the display
+                // projection itself; it grants no permission and proposes no
+                // diffs.
+                assert_eq!(
+                    display,
+                    Some(serde_json::json!({ "kind": "path", "primary": "foo.rs" }))
+                );
+                assert_eq!(auto_approved, None);
+                assert_eq!(diffs, None);
+            }
+            other => panic!("expected ToolCall, got {other:?}"),
+        }
+    }
+
+    /// A tool call recorded with the daemon's projection, grant layer, and
+    /// proposed file diffs carries all three to the browser — the card must
+    /// render the same live and replayed.
+    #[test]
+    fn tool_call_event_forwards_display_grant_and_diffs() {
+        let mut event = SessionEventMessage::tool_call(
+            "s1",
+            "call-2",
+            "Edit",
+            serde_json::json!({ "file_path": "a.rs", "old_string": "x", "new_string": "y" }),
+        );
+        event.data["display"] = serde_json::json!({ "kind": "path", "primary": "a.rs" });
+        event.data["auto_approved"] = serde_json::json!("auto mode");
+        event.data["diffs"] = serde_json::json!([
+            { "path": "a.rs", "old_content": "x", "new_content": "y" }
+        ]);
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolCall {
+                id,
+                display,
+                auto_approved,
+                diffs,
+                ..
+            } => {
+                assert_eq!(id, "call-2");
+                assert_eq!(
+                    display,
+                    Some(serde_json::json!({ "kind": "path", "primary": "a.rs" }))
+                );
+                assert_eq!(auto_approved, Some("auto mode".to_string()));
+                assert_eq!(
+                    diffs,
+                    Some(serde_json::json!([
+                        { "path": "a.rs", "old_content": "x", "new_content": "y" }
+                    ]))
+                );
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }

@@ -234,6 +234,13 @@ export interface ToolCallDisplay {
    * permission — in auto mode, that difference is the whole audit trail.
    */
   autoApproved?: string;
+  /**
+   * The call's proposed file edits, straight from the daemon's `FileDiff`
+   * projection (`old_content: null` = whole-file write). The card renders its
+   * diff from this; it no longer re-derives one from the tool name and
+   * arguments. Absent on events that carry no diffs.
+   */
+  diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
 }
 
 /** What a tool call is about, for display. Mirrors `crucible_core::types::ToolDisplay`. */
@@ -291,12 +298,6 @@ export type SessionKnobSupport = Schemas['SessionKnobsResponse'];
 export type AgentConfigOption = Schemas['AgentOptionRow'];
 
 export type AgentConfigOptions = Schemas['AgentOptionsResponse'];
-
-/** Context window usage. Client-local: held as a signal, never sent. */
-export interface ContextUsage {
-  used: number;
-  total: number;
-}
 
 /** Notification type. Client-local: the toast store's own vocabulary. */
 export type NotificationType = 'info' | 'warning' | 'error' | 'success';
@@ -467,6 +468,14 @@ interface PermRequest {
   tokens: string[];
   tool_name?: string;
   tool_args?: unknown;
+  /**
+   * The proposed file edits the permission gate attached (daemon `FileDiff`s;
+   * `old_content: null` = whole-file write). Forwarded whole by the web
+   * server's interaction normalization; absent on requests that propose no
+   * edit. This is the change's authoritative form — the page does not
+   * re-derive a diff from `tool_args` field names.
+   */
+  diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
 }
 
 /** The seven request bodies, exactly as the Rust enum serializes them. */

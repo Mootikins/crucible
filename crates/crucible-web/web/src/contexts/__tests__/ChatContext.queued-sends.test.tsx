@@ -188,7 +188,7 @@ describe('ChatContext queues mid-turn sends', () => {
 });
 
 describe('ChatContext closes a cancelled turn cleanly', () => {
-  it('finalizes the thinking block and frees the turn for the next send', async () => {
+  it('closes the turn when the daemon broadcasts ended, freeing the next send', async () => {
     const ctx = mountProvider();
 
     void ctx.sendMessage('first');
@@ -200,17 +200,47 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
     expect(ctx.messages().find((m) => m.thinking)?.thinking?.isStreaming).toBe(true);
 
     await ctx.cancelStream();
+    // The daemon records `ended` BEFORE the cancel call resolves and every
+    // subscriber receives it — the reducer's `ended` case closes the turn,
+    // not this client's cancel button. Emit the frame the daemon sends.
+    stream().emit('session_event', {
+      type: 'session_event',
+      event: 'ended',
+      data: { reason: 'cancelled' },
+    });
 
-    // The turn ended without a message_complete (the daemon cancels silently),
-    // so the thinking block must not be left streaming — it would render
-    // "Thinking…" with the animated wave for the rest of the transcript.
+    // No message_complete arrives for a cancelled turn, so the thinking
+    // block must still not be left streaming — it would render "Thinking…"
+    // with the animated wave for the rest of the transcript.
     const thought = ctx.messages().find((m) => m.thinking);
     expect(thought?.thinking?.isStreaming).toBe(false);
-    expect(thought?.thinking?.tokenCount).toBe('deep in thought'.length);
+    expect(thought?.thinking?.tokenCount).toBe(4); // ~4 tokens at chars/4 for 15 chars
 
     // The turn slot is free: the next send dispatches immediately.
     await ctx.sendMessage('second');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'second']));
+  });
+
+  it('a foreign cancel (ended without a local cancel call) closes the turn too', async () => {
+    // T1's bug: a cancel issued from another client left THIS pane streaming
+    // forever, because the old client-side patch only ever ran for a cancel
+    // this pane issued itself. The recorded `ended` reaches every subscriber.
+    const ctx = mountProvider();
+
+    void ctx.sendMessage('foreign');
+    await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['foreign']));
+    stream().emit('token', { type: 'token', content: 'partial' });
+    stream().emit('session_event', {
+      type: 'session_event',
+      event: 'ended',
+      data: { reason: 'cancelled' },
+    });
+
+    await waitFor(() => expect(ctx.isStreaming()).toBe(false));
+    await waitFor(() => expect(ctx.isLoading()).toBe(false));
+    // The turn slot is free here as well.
+    await ctx.sendMessage('next');
+    await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['foreign', 'next']));
   });
 });
 

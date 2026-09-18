@@ -69,7 +69,7 @@ it('the generated chat event union carries every tag the document declares', () 
   // Read the names from the document rather than repeating them here. A list in
   // TypeScript is the duplicate the Rust enum exists to remove.
   const members = spec.components.schemas.ChatEvent.oneOf ?? [];
-  expect(members).toHaveLength(22);
+  expect(members).toHaveLength(21);
 
   const generated = readFileSync(resolvePath(process.cwd(), 'src/lib/api-schema.d.ts'), 'utf8');
   const emitted = new Set(Array.from(generated.matchAll(/type: "([a-z_]+)"/g), (m) => m[1]));

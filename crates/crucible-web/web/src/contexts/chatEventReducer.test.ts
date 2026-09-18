@@ -7,7 +7,6 @@ import type {
   Message,
   ToolCallDisplay,
   SubagentEvent,
-  ContextUsage,
   ChatMode,
   InteractionRequest,
   ConnectionStatus,
@@ -15,7 +14,6 @@ import type {
 
 vi.mock('@/stores/statusBarStore', () => ({
   statusBarActions: {
-    setContextUsage: vi.fn(),
     setChatMode: vi.fn(),
   },
 }));
@@ -38,7 +36,6 @@ import { statusBarActions } from '@/stores/statusBarStore';
 import { SSE_EVENT_TYPES } from '@/lib/api';
 
 const mockedStatusBar = statusBarActions as unknown as {
-  setContextUsage: ReturnType<typeof vi.fn>;
   setChatMode: ReturnType<typeof vi.fn>;
 };
 
@@ -54,7 +51,6 @@ interface ReducerHarness {
     messages: Message[];
     currentStreamingMessageId: string | null;
     subagentEvents: SubagentEvent[];
-    contextUsage: ContextUsage | null;
     chatMode: ChatMode;
     pendingInteraction: InteractionRequest | null;
     error: string | null;
@@ -80,7 +76,6 @@ function createHarness(): ReducerHarness {
     messages: [],
     currentStreamingMessageId: null,
     subagentEvents: [],
-    contextUsage: null,
     chatMode: 'ask',
     pendingInteraction: null,
     error: null,
@@ -153,9 +148,6 @@ function createHarness(): ReducerHarness {
       state.subagentEvents = typeof value === 'function'
         ? value([...state.subagentEvents])
         : value;
-    },
-    setContextUsage: (usage) => {
-      state.contextUsage = usage;
     },
     setChatMode: (mode) => {
       state.chatMode = mode;
@@ -457,7 +449,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const frozen = h.state.messages.find((m) => m.role === 'assistant' && m.thinking);
     expect(frozen?.thinking).toMatchObject({
       isStreaming: false,
-      tokenCount: 'Considering the options.'.length,
+      tokenCount: 6,
     });
   });
 
@@ -705,7 +697,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
         cacheReadTokens: 10,
         cacheCreationTokens: 20,
       },
-      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 9 },
+      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 3 },
     });
     expect(h.state.isStreaming).toBe(false);
     expect(h.state.isLoading).toBe(false);
@@ -812,16 +804,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
     });
   });
 
-  it('context_usage: updates local state AND statusBar', () => {
-    const h = createHarness();
-    h.reducer({ type: 'context_usage', used: 1234, total: 8000 });
-    expect(h.state.contextUsage).toEqual({ used: 1234, total: 8000 });
-    expect(mockedStatusBar.setContextUsage).toHaveBeenCalledWith({
-      used: 1234,
-      total: 8000,
-    });
-  });
-
   it('precognition_result: attaches metadata to the most recent user message', () => {
     const h = createHarness();
     h.state.messages.push({
@@ -881,6 +863,76 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.error).toMatch(/incomplete/i);
   });
 
+  it('tool_call: carries the daemon display, auto-approval and diffs onto the card', () => {
+    const h = createHarness();
+    h.reducer({
+      type: 'tool_call',
+      id: 'call-1',
+      title: 'Edit',
+      arguments: { file_path: 'a.rs' },
+      display: { kind: 'path', primary: 'a.rs' },
+      auto_approved: 'auto mode',
+      diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
+    });
+    const tool = h.tools()[0];
+    expect(tool.display).toEqual({ kind: 'path', primary: 'a.rs' });
+    expect(tool.autoApproved).toBe('auto mode');
+    expect(tool.diffs).toEqual([{ path: 'a.rs', old_content: 'x', new_content: 'y' }]);
+  });
+
+  it('session_event tool_call_diff_update: replaces the call diff set', () => {
+    // ACP agents can announce a call without rawInput and supply the diffs
+    // later; the update carries the call's FULL diff set.
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'call-7', title: 'acp_edit' });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_diff_update',
+      data: { call_id: 'call-7', diffs: [{ path: 'b.rs', old_content: null, new_content: 'new' }] },
+    });
+    expect(h.tools()[0].diffs).toEqual([
+      { path: 'b.rs', old_content: null, new_content: 'new' },
+    ]);
+  });
+
+  it('session_event tool_call_diff_update: empty or missing diffs is a no-op, not a wipe', () => {
+    const h = createHarness();
+    h.reducer({
+      type: 'tool_call',
+      id: 'call-7',
+      title: 'acp_edit',
+      diffs: [{ path: 'b.rs', old_content: 'keep', new_content: 'me' }],
+    });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_diff_update',
+      data: { call_id: 'call-7', diffs: [] },
+    });
+    h.reducer({ type: 'session_event', event: 'tool_call_diff_update', data: { call_id: 'call-7' } });
+    expect(h.tools()[0].diffs).toEqual([{ path: 'b.rs', old_content: 'keep', new_content: 'me' }]);
+  });
+
+  it('session_event ended: sweeps thinking, dangling tools, and stream flags', () => {
+    // A cancelled turn never sees message_complete. The recorded `ended`
+    // carries no content — it is purely the turn-over signal — and must
+    // leave the same clean state a completion would: no bubble streaming
+    // "Thinking…", no tool stuck "running", no stale streaming id.
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'thinking', content: 'mid-reasoning' });
+    h.reducer({ type: 'tool_call', id: 'call-9', title: 'bash' });
+    h.reducer({ type: 'session_event', event: 'ended', data: { reason: 'cancelled' } });
+
+    expect(h.state.messages.find((m) => m.thinking)?.thinking).toMatchObject({
+      isStreaming: false,
+      tokenCount: 4,
+    });
+    expect(h.tools()[0].status).not.toBe('running');
+    expect(h.state.isStreaming).toBe(false);
+    expect(h.state.isLoading).toBe(false);
+    expect(h.state.currentStreamingMessageId).toBeNull();
+  });
+
   it('session_event stream_gap: finalizes a thinking block left streaming', () => {
     // A gap means events are GONE — the turn may have ended in the lost
     // span, so nothing later is guaranteed to sweep the bubble. A block left
@@ -890,7 +942,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.reducer({ type: 'thinking', content: 'mid-reasoning' });
     h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 3 } });
     const thinking = h.state.messages.find((m) => m.thinking)?.thinking;
-    expect(thinking).toMatchObject({ isStreaming: false, tokenCount: 'mid-reasoning'.length });
+    expect(thinking).toMatchObject({ isStreaming: false, tokenCount: 4 });
   });
 
   it('session_event user_message: an echo landing mid-turn is placed after the streaming message', () => {
@@ -982,7 +1034,6 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
   evt('delegation_spawned', { id: strId, prompt: fc.string() }),
   evt('delegation_completed', { id: strId, summary: fc.string() }),
   evt('delegation_failed', { id: strId, error: fc.string() }),
-  evt('context_usage', { used: fc.nat({ max: 1_000_000 }), total: fc.nat({ max: 1_000_000 }) }),
   evt('precognition_result', {
     notes_count: fc.nat({ max: 20 }),
     notes: fc.array(
@@ -1174,7 +1225,6 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'delegation_spawned',
     'delegation_completed',
     'delegation_failed',
-    'context_usage',
     'precognition_result',
     'mode_changed',
     'title_changed',
@@ -1211,13 +1261,12 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       const h = createHarness();
       // Build a minimal placeholder event — most variants need at least an id.
       const minimal: Record<string, unknown> = { type: t };
-      if (t !== 'token' && t !== 'thinking' && t !== 'context_usage' &&
+      if (t !== 'token' && t !== 'thinking' &&
           t !== 'precognition_result' && t !== 'mode_changed' &&
           t !== 'title_changed' && t !== 'session_event' && t !== 'error') {
         minimal.id = 'placeholder';
       }
       if (t === 'token' || t === 'thinking') minimal.content = '';
-      if (t === 'context_usage') { minimal.used = 0; minimal.total = 0; }
       if (t === 'precognition_result') { minimal.notes_count = 0; minimal.notes = []; }
       if (t === 'mode_changed') minimal.mode = 'ask';
       if (t === 'title_changed') minimal.title = 'A generated title';
@@ -1403,7 +1452,7 @@ describe('the canonical response id follows the answer, not the placeholder', ()
       content: '',
       timestamp: 0,
       placeholder: true,
-      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 9 },
+      thinking: { content: 'reasoning', isStreaming: false, tokenCount: 3 },
     });
     h.reducer({ type: 'message_complete', id: 'msg-turn-5', content: 'The answer.' });
 

@@ -31,7 +31,7 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
       return 'Thinking';
     }
     if (props.tokenCount != null && props.tokenCount > 0) {
-      return `Thought for ${props.tokenCount} tokens`;
+      return `Thought for ~${props.tokenCount} tokens`;
     }
     return 'Thought';
   };

@@ -53,7 +53,7 @@ const {
   useReviewSession,
 } = await import('@/lib/review-store');
 
-/** An Edit call, so `extractDiffFromToolCall` produces a diff and the card is
+/** An Edit call whose daemon-recorded diff proposes `a` → `b`, so the card is
  *  eligible to carry review affordances at all. */
 function editCall(over: Partial<ToolCallDisplay> = {}): ToolCallDisplay {
   return {
@@ -61,6 +61,7 @@ function editCall(over: Partial<ToolCallDisplay> = {}): ToolCallDisplay {
     callId: 'call-1',
     name: 'Edit',
     args: JSON.stringify({ file_path: '/repo/src/a.rs', old_string: 'a', new_string: 'b' }),
+    diffs: [{ path: '/repo/src/a.rs', old_content: 'a', new_content: 'b' }],
     status: 'complete',
     result: 'ok',
     ...over,
@@ -197,7 +198,7 @@ describe('ToolCard — superseded', () => {
 
   it('a call that proposed no edit is never called superseded', async () => {
     await seed([]);
-    render(() => <ToolCard toolCall={editCall({ name: 'read_file', args: '{}' })} />);
+    render(() => <ToolCard toolCall={editCall({ name: 'read_file', args: '{}', diffs: [] })} />);
     // It produced no hunks because it wrote nothing, not because it was
     // overwritten.
     expect(screen.queryByTestId('tool-superseded')).toBeNull();

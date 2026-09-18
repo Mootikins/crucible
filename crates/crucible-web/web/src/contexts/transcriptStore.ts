@@ -3,7 +3,6 @@ import type {
   ChatMode,
   ChatEvent,
   ConnectionStatus,
-  ContextUsage,
   InteractionRequest,
   Message,
   SubagentEvent,
@@ -39,7 +38,6 @@ export interface TranscriptState {
   error: string | null;
   connectionStatus: ConnectionStatus;
   pendingInteraction: InteractionRequest | null;
-  contextUsage: ContextUsage | null;
   chatMode: ChatMode;
   sessionTitle: string | null;
   /** Messages typed while a turn streamed, awaiting dispatch. The optimistic
@@ -65,7 +63,6 @@ function blankTranscript(): TranscriptState {
     error: null,
     connectionStatus: 'connected',
     pendingInteraction: null,
-    contextUsage: null,
     chatMode: 'ask',
     sessionTitle: null,
     queuedTurns: [],
@@ -210,7 +207,6 @@ function ensureStream(sessionId: string): void {
         'subagentEvents',
         typeof value === 'function' ? (value as (prev: SubagentEvent[]) => SubagentEvent[])(stateOf(sessionId).subagentEvents) : value,
       ),
-    setContextUsage: (usage) => patch({ contextUsage: usage }),
     setChatMode: (mode) => patch({ chatMode: mode }),
     setPendingInteraction,
     setError: (value) => patch({ error: value }),

@@ -2066,7 +2066,7 @@ export interface components {
          * @description The browser's view of a session event, streamed by `GET
          *     /api/chat/events/{session_id}`.
          *
-         *     `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
+         *     `ToSchema` publishes the 21 tag values to the OpenAPI document, so the
          *     browser reads the union from the enum instead of repeating it.
          */
         ChatEvent: {
@@ -2075,6 +2075,21 @@ export interface components {
             type: "token";
         } | {
             arguments?: unknown;
+            /** @description Which layer granted permission without asking, if any. */
+            auto_approved?: string | null;
+            /**
+             * @description Proposed file edits as `FileDiff` objects (`{path, old_content,
+             *     new_content}`); `old_content: null` means a whole-file write. The
+             *     browser renders the card's diff from this instead of re-deriving
+             *     one from the tool name and arguments.
+             */
+            diffs?: unknown;
+            /**
+             * @description The daemon's "which argument matters" projection, shared with the
+             *     TUI. `Value` because `ToolDisplay` lives in `crucible-core`, which
+             *     takes no utoipa dependency (same deal as `stop_reason` below).
+             */
+            display?: unknown;
             id: string;
             title: string;
             /** @enum {string} */
@@ -2193,13 +2208,6 @@ export interface components {
             id: string;
             /** @enum {string} */
             type: "delegation_failed";
-        } | {
-            /** Format: int64 */
-            total: number;
-            /** @enum {string} */
-            type: "context_usage";
-            /** Format: int64 */
-            used: number;
         } | {
             notes?: components["schemas"]["PrecognitionNote"][];
             notes_count: number;

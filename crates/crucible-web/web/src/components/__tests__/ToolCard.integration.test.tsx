@@ -6,7 +6,7 @@ import type { ToolCallDisplay } from '@/lib/types';
 
 // Integration test: render the REAL ToolCard with the REAL DiffViewer and
 // MultiEditDiff (no vi.mock anywhere). This exercises the production path
-// from a tool-call payload through arg parsing, diff extraction, and Shiki
+// from the daemon's FileDiff projection through the wire converter and Shiki
 // tokenization to the rendered DOM. ToolCard.test.tsx mocks the diff
 // components, so without this file no test asserts that a real Edit/Write/
 // MultiEdit call from an agent actually produces highlighted token spans.
@@ -50,6 +50,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
             old_string: 'fn old() { 0 }',
             new_string: 'fn new() { 1 }',
           }),
+          diffs: [{ path: 'foo.rs', old_content: 'fn old() { 0 }', new_content: 'fn new() { 1 }' }],
           result: 'edited',
         })}
       />
@@ -83,6 +84,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
             file_path: 'new.py',
             content: 'def hello():\n    return 42',
           }),
+          diffs: [{ path: 'new.py', old_content: null, new_content: 'def hello():\n    return 42' }],
           result: 'wrote',
         })}
       />
@@ -114,6 +116,10 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
               { old_string: 'const b = 3', new_string: 'const b = 4' },
             ],
           }),
+          diffs: [
+            { path: 'mod.ts', old_content: 'const a = 1', new_content: 'const a = 2' },
+            { path: 'mod.ts', old_content: 'const b = 3', new_content: 'const b = 4' },
+          ],
           result: 'multi-edited',
         })}
       />
@@ -142,6 +148,8 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
         toolCall={makeTool({
           name: 'Bash',
           args: JSON.stringify({ command: 'ls' }),
+          // The daemon's projection is what earns the Command block.
+          display: { kind: 'command', primary: 'ls' },
           result: 'foo\nbar',
         })}
       />

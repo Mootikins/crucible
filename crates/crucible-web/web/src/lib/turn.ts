@@ -50,6 +50,18 @@ export function turnThinkingId(messageId: string): string {
 }
 
 /**
+ * Estimated token count for a thinking block's summary line. The unit is
+ * TOKENS — what people expect from a reasoning summary — at the standard
+ * ~4 chars/token heuristic: no provider reports per-thinking-block usage on
+ * any wire this page consumes (usage arrives once per completion, covering
+ * the whole turn), so an estimate is the honest ceiling. The `~` in the
+ * rendered label carries the approximation.
+ */
+export function estimateThinkingTokens(content: string): number {
+  return Math.ceil([...content].length / 4);
+}
+
+/**
  * Strip the frozen-segment prefix off a turn's accumulated text so the final
  * bubble carries only the trailing (post-last-tool) narration. The daemon's
  * `message_complete` deliberately carries the WHOLE turn's text; segments

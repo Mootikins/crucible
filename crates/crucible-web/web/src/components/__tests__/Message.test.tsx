@@ -29,7 +29,6 @@ vi.mock('@/contexts/ChatContext', () => ({
     error: () => null,
     activeTools: () => [],
     subagentEvents: () => [],
-    contextUsage: () => null,
     chatMode: () => 'ask',
     isLoadingHistory: () => false,
     setChatMode: () => {},

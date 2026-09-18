@@ -12,6 +12,7 @@ import type {
   InteractionResponse,
   ChatMode,
   ModeDescriptor,
+  ToolCallDisplay,
 } from '@/lib/types';
 import type { ChatContextValue } from '@/lib/types/context';
 import type { DaemonHistoryEvent, SessionHistoryResponse } from '@/lib/types';
@@ -20,6 +21,7 @@ import {
   turnResponseId,
   turnSegmentId,
   stripFrozenPrefix,
+  estimateThinkingTokens,
 } from '@/lib/turn';
 import {
   fetchPendingInteractionsOnce,
@@ -214,6 +216,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // each new turn (user_message) so segments never leak across turns.
     let pendingSegments: string[] = [];
 
+    // The turn's reasoning, accumulated the same way: `thinking` events carry
+    // deltas, and the final assistant bubble carries the whole block — the
+    // same place AssistantTurn renders it live. Reset at each new turn.
+    let pendingThinking = '';
+
     // Attach a result to the newest matching tool entry.
     const findToolMessage = (callId: string): Message | undefined =>
       [...loadedMessages].reverse().find((m) => {
@@ -247,6 +254,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         turnStart = eventTime(evt);
         // New turn: drop any segments a prior turn left uncollected.
         pendingSegments = [];
+        pendingThinking = '';
         loadedMessages.push({
           id: (data.message_id as string) || `user-${loadedMessages.length}`,
           role: 'user',
@@ -280,13 +288,21 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           id: `tool-${callId}`,
           role: 'tool',
           content: '',
-          timestamp: Date.now() - (response.history.length - loadedMessages.length) * 1000,
+          timestamp: eventTime(evt) ?? synthetic(),
           toolCall: {
             id: callId,
             callId,
             name,
             args: args === undefined ? '' : JSON.stringify(args),
             status: 'running',
+            // The same daemon-computed fields the live reducer forwards, as
+            // recorded on the event — the reloaded card renders identically
+            // to the one that streamed.
+            ...(data.display !== undefined
+              ? { display: data.display as ToolCallDisplay['display'] }
+              : {}),
+            ...(typeof data.auto_approved === 'string' ? { autoApproved: data.auto_approved } : {}),
+            ...(Array.isArray(data.diffs) ? { diffs: data.diffs as ToolCallDisplay['diffs'] } : {}),
           },
         });
       } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
@@ -324,6 +340,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             notes,
           };
         }
+      } else if (evt.event === 'thinking' && typeof data.content === 'string') {
+        // Deltas, exactly as the live reducer accumulates them; attached to
+        // the turn's final bubble at message_complete below.
+        pendingThinking += data.content;
       } else if (evt.event === 'message_complete' && typeof data.full_response === 'string') {
         // The persisted full_response is the WHOLE turn; strip the prefix
         // already rendered as segment bubbles (same helper the live reducer
@@ -335,6 +355,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           pendingSegments,
         );
         pendingSegments = [];
+        // The turn's reasoning rides the answer bubble, the same place the
+        // live reducer renders it; a turn whose segments covered everything
+        // (no trailing bubble) pins it to the turn's last assistant bubble,
+        // the same fallback the live reducer uses for token usage.
+        const thinking = pendingThinking === '' ? undefined : {
+          content: pendingThinking,
+          isStreaming: false,
+          tokenCount: estimateThinkingTokens(pendingThinking),
+        };
+        pendingThinking = '';
         if (finalContent !== '' || !hadSegments) {
           loadedMessages.push({
             // Same derivation the live reducer uses, so a reloaded transcript
@@ -346,7 +376,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             content: finalContent,
             timestamp: turnStart ?? synthetic(),
             completedAt: eventTime(evt),
+            ...(thinking ? { thinking } : {}),
           });
+        } else if (thinking) {
+          const lastAssistant = [...loadedMessages].reverse().find((m) => m.role === 'assistant');
+          if (lastAssistant) lastAssistant.thinking = thinking;
         }
       }
     }
@@ -723,31 +757,15 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         await cancel.mutateAsync(props.sessionId);
       } catch (err) {
         console.error('Failed to cancel session:', err);
+        // The daemon is unreachable, so no `ended` event will arrive to
+        // close the turn — drop the streaming flags here or the spinner
+        // spins forever. Any other path leaves the closing to the reducer's
+        // `ended` case, which every subscribed pane receives, including
+        // foreign cancellations this client never issued.
+        setTranscriptStreaming(props.sessionId, false);
+        patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
       }
     }
-
-    const streamingId = transcript().currentStreamingMessageId;
-    if (streamingId) {
-      const streaming = transcriptMessages(props.sessionId).find((m) => m.id === streamingId);
-      // The daemon ends a cancelled turn silently — no message_complete ever
-      // arrives — so this is the only place the turn's thinking block gets
-      // closed. Left streaming, it renders "Thinking…" with the animated
-      // wave for the rest of the transcript.
-      if (streaming?.thinking?.isStreaming) {
-        updateMessage(streamingId, {
-          thinking: {
-            content: streaming.thinking.content,
-            isStreaming: false,
-            tokenCount: streaming.thinking.content.length,
-          },
-        });
-      }
-      updateMessage(streamingId, {
-        content: (streaming?.content ?? '') + ' [cancelled]',
-      });
-    }
-    setTranscriptStreaming(props.sessionId, false);
-    patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
   };
 
   /**
@@ -775,7 +793,6 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     connectionStatus: () => transcript().connectionStatus,
     retryConnection,
     subagentEvents: () => transcript().subagentEvents,
-    contextUsage: () => transcript().contextUsage,
     chatMode: () => transcript().chatMode,
     availableModes,
     isLoadingHistory,
@@ -815,7 +832,6 @@ const fallbackChatContext: ChatContextValue = {
   connectionStatus: () => 'connected',
   retryConnection: () => {},
   subagentEvents: () => [],
-  contextUsage: () => null,
   chatMode: () => 'ask',
   availableModes: () => FALLBACK_MODES,
   isLoadingHistory: () => false,
