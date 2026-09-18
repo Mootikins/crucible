@@ -30,9 +30,12 @@ impl ThinkingComponent {
         self.content.push_str(delta);
     }
 
-    /// Word count across all content.
-    pub fn word_count(&self) -> usize {
-        self.content.split_whitespace().count()
+    /// Estimated token count across all content: the standard ~4
+    /// chars/token heuristic. The unit is what a reasoning summary is
+    /// expected to show; no provider reports per-thinking-block usage, so
+    /// the estimate is the honest ceiling and the label carries the `~`.
+    pub fn estimated_tokens(&self) -> usize {
+        self.content.chars().count().div_ceil(4)
     }
 
     /// Render this thinking block.
@@ -41,7 +44,7 @@ impl ThinkingComponent {
     /// that decides the collapsed or expanded form:
     ///
     /// - show_thinking: full expanded content, headed "Thinking…" or "Thought"
-    /// - !show_thinking: collapsed "Thought (N words)" summary
+    /// - !show_thinking: collapsed "Thought (~N tokens)" summary
     pub fn render(&self, state: &RenderState, is_complete: bool) -> Node {
         if state.show_thinking {
             self.render_expanded(state, is_complete)
@@ -60,26 +63,26 @@ impl ThinkingComponent {
         (dim, muted)
     }
 
-    /// Graduated or complete: "◇ Thought (N words)"
+    /// Graduated or complete: "◇ Thought (~N tokens)"
     fn render_collapsed_complete(&self) -> Node {
         let (dim, muted) = Self::thinking_styles();
-        let words = self.word_count();
+        let tokens = self.estimated_tokens();
         row([
             styled(" \u{25C7} ", dim),
             styled("Thought", dim),
-            styled(format!(" ({} words)", words), muted),
+            styled(format!(" (~{} tokens)", tokens), muted),
         ])
     }
 
     /// Full thinking content with header (show_thinking=true, not graduated).
     fn render_expanded(&self, state: &RenderState, is_complete: bool) -> Node {
         let t = crate::tui::oil::theme::active();
-        let words = self.word_count();
+        let tokens = self.estimated_tokens();
 
         let label = if is_complete {
             format!(
-                "  \u{250C}{} Thought ({} words)",
-                t.decorations.divider_char, words
+                "  \u{250C}{} Thought (~{} tokens)",
+                t.decorations.divider_char, tokens
             )
         } else {
             format!("  \u{250C}{} Thinking\u{2026}", t.decorations.divider_char)
@@ -131,16 +134,16 @@ impl ThinkingComponent {
     /// covers all spinner display.
     fn render_collapsed(&self, _state: &RenderState, is_complete: bool) -> Node {
         let (_, muted) = Self::thinking_styles();
-        let words = self.word_count();
+        let tokens = self.estimated_tokens();
 
-        if !is_complete && words == 0 {
-            // Just started thinking, no words yet — show label only
+        if !is_complete && tokens == 0 {
+            // Just started thinking, nothing accumulated yet — label only
             styled(" Thinking\u{2026}", muted)
         } else if is_complete {
             self.render_collapsed_complete()
         } else {
-            // Still thinking, accumulating words
-            styled(format!(" Thinking\u{2026} ({} words)", words), muted)
+            // Still thinking, accumulating tokens
+            styled(format!(" Thinking\u{2026} (~{} tokens)", tokens), muted)
         }
     }
 }
@@ -164,30 +167,30 @@ mod tests {
         let mut tc = ThinkingComponent::new("hello".into());
         tc.append(" world");
         assert_eq!(tc.content, "hello world");
-        assert_eq!(tc.word_count(), 2);
+        assert_eq!(tc.estimated_tokens(), 3); // 11 chars, ~4 chars/token
     }
 
     #[test]
-    fn live_collapsed_no_words_shows_spinner_without_count() {
+    fn live_collapsed_no_tokens_shows_label_without_count() {
         let tc = ThinkingComponent::new(String::new());
         let state = default_state();
         let node = tc.render(&state, false);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("Thinking"));
         assert!(
-            !plain.contains("words"),
-            "Zero-word spinner should not show word count, got: {plain}"
+            !plain.contains("tokens"),
+            "Empty block should not show a token count, got: {plain}"
         );
     }
 
     #[test]
-    fn live_collapsed_with_words_shows_count() {
+    fn live_collapsed_with_tokens_shows_count() {
         let tc = ThinkingComponent::new("one two three".into());
         let state = default_state();
         let node = tc.render(&state, false);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("Thinking"));
-        assert!(plain.contains("3 words"));
+        assert!(plain.contains("~4 tokens")); // 13 chars / 4, ceil
     }
 
     #[test]
@@ -207,7 +210,7 @@ mod tests {
         let node = tc.render(&state, true);
         let plain = render_to_plain_text(&node, 80);
         assert!(plain.contains("Thought"));
-        assert!(plain.contains("words)"));
+        assert!(plain.contains("tokens)"));
     }
 
     // --- UTF-8 boundary tests (moved from message_list.rs) ---

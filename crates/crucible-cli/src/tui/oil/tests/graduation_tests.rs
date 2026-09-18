@@ -119,16 +119,16 @@ fn graduated_thinking_is_collapsed() {
     let full = vt.full_history();
     let stripped_full = crucible_oil::ansi::strip_ansi(&full);
 
-    // Graduated thinking should show collapsed form ("Thought" + word count)
-    // not the full thinking content
+    // Graduated thinking should show collapsed form ("Thought" + token
+    // estimate), not the full thinking content
     assert!(
         stripped_full.contains("Thought"),
         "Graduated thinking should show 'Thought' label.\nFull:\n{}",
         stripped_full
     );
     assert!(
-        stripped_full.contains("words)"),
-        "Graduated thinking should show word count.\nFull:\n{}",
+        stripped_full.contains("tokens)"),
+        "Graduated thinking should show token estimate.\nFull:\n{}",
         stripped_full
     );
 
