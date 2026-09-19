@@ -575,7 +575,12 @@ impl ToolExecutor for WorkspaceTools {
                             })
                             .collect::<Vec<_>>()
                             .join("\n");
-                        Ok(serde_json::json!({ "result": text }))
+                        // The text IS the result. Wrapping it in a
+                        // `{"result": …}` envelope here used to reach the
+                        // model as one JSON-escaped line — every display
+                        // layer carried a compensating unwrapper, and the
+                        // context paid for the escaping.
+                        Ok(serde_json::Value::String(text))
                     }
                     Err(e) => Err(ToolError::ExecutionFailed(e.message.to_string())),
                 }

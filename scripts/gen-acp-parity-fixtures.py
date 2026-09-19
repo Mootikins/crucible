@@ -23,8 +23,8 @@ internal arm (against the real `WorkspaceTools` dispatcher and the real
 permission gate) and `OwnsToolsMockAgent` with `agent_name: "claude"` for the
 delegated arm. The mocks supply the `TurnEvent`s a real handle would; every
 field downstream of them — the `display` object, the `Core`/`Acp:claude`
-source, the doubly-wrapped internal result envelope, `terminate: false` — is
-the daemon's own work, not this script's invention.
+source, the plain one-wrap result shape both arms share, `terminate: false` —
+is the daemon's own work, not this script's invention.
 
 That capture is not a one-off. `agent_manager::tests::parity_capture` reruns
 it on every test run and fails when the daemon stops emitting these bytes, so
@@ -63,17 +63,6 @@ PREAMBLE = "I'll fix the greeting."
 CODA = " Done."
 FULL = PREAMBLE + CODA
 MSG_ID = "msg-parity-0001"
-
-
-def compact(value):
-    """Serialize as the daemon does.
-
-    A dispatched tool's result reaches the event as
-    `serde_json::Value::to_string()`, which is compact. Python's default
-    `json.dumps` puts a space after `:` and would pin a shape the daemon never
-    emits.
-    """
-    return json.dumps(value, separators=(",", ":"))
 
 
 def lines(session_id, events):
@@ -154,11 +143,11 @@ internal = common_head + [
         {
             "call_id": "call-edit-1",
             "tool": "edit_file",
-            # Doubly wrapped on purpose: `WorkspaceTools` answers
-            # `{"result": text}` and `tool_call.rs` wraps that value's
-            # `to_string()` again. `unwrap_json_result` unwraps it back to the
-            # same text the delegated arm carries plain.
-            "result": {"result": compact({"result": "Replaced 1 occurrence(s)"})},
+            # Flat, and identical to the delegated arm: text results reach
+            # the event as the tool's own output (the old
+            # `{"result": {"result": …}}` double wrap is gone — executors hand
+            # plain text and `tool_call.rs` serializes only structured values).
+            "result": {"result": "Replaced 1 occurrence(s)"},
             "terminate": False,
         },
     ),
@@ -259,7 +248,8 @@ read_internal = (
             {
                 "call_id": "call-read-1",
                 "tool": "read_file",
-                "result": {"result": compact({"result": READ_OUTPUT})},
+                # Flat, identical to the delegated arm (see the edit pair).
+                "result": {"result": READ_OUTPUT},
                 "terminate": False,
             },
         ),

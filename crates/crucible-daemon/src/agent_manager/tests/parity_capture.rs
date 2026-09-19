@@ -354,8 +354,9 @@ async fn the_delegated_read_output_is_what_read_file_actually_returns() {
         .expect("read_file dispatches");
 
     assert_eq!(
-        value.get("result").and_then(Value::as_str),
-        Some(READ_OUTPUT),
-        "the delegated read fixture quotes an output `read_file` no longer produces"
+        value,
+        serde_json::Value::String(READ_OUTPUT.to_string()),
+        "read_file must hand the model the file's own text; a JSON envelope \
+         here is what display layers re-derive around"
     );
 }

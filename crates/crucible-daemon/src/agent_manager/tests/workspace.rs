@@ -54,10 +54,7 @@ async fn session_workspace_used_for_workspace_tools() {
         .await
         .unwrap();
 
-    let pwd = result
-        .get("result")
-        .and_then(serde_json::Value::as_str)
-        .unwrap();
+    let pwd = result.as_str().unwrap();
 
     let workspace_path = workspace_dir.path().to_string_lossy().to_string();
     let kiln_path = kiln_dir.path().to_string_lossy().to_string();
@@ -163,10 +160,7 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
-    let pwd = pwd_result
-        .get("result")
-        .and_then(serde_json::Value::as_str)
-        .unwrap();
+    let pwd = pwd_result.as_str().unwrap();
     let shared_path = shared_dir.path().to_string_lossy().to_string();
     assert!(
         pwd.contains(&shared_path),
@@ -235,11 +229,7 @@ async fn a_workspace_less_session_still_gets_a_contained_dispatcher() {
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
-    let pwd = pwd
-        .get("result")
-        .and_then(serde_json::Value::as_str)
-        .unwrap()
-        .to_string();
+    let pwd = pwd.as_str().unwrap().to_string();
     assert!(
         pwd.contains(&session_dir.to_string_lossy().to_string()),
         "a workspace-less session anchors at its own storage dir, not a daemon-wide root: {pwd}"

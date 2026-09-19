@@ -696,6 +696,11 @@ impl AgentManager {
         )
         .await;
         let (mut result_str, mut error_str) = match tool_result {
+            // A text result IS the text. `to_string()` on a wrapped value
+            // would hand the model a JSON envelope (and on a bare string a
+            // quoted, newline-escaped literal); only genuinely structured
+            // results — plugin tables, daemon note tools — serialize.
+            Ok(Ok(serde_json::Value::String(text))) => (text, None),
             Ok(Ok(val)) => (val.to_string(), None),
             Ok(Err(e)) => (String::new(), Some(e)),
             Err(_elapsed) => (
@@ -744,17 +749,9 @@ impl AgentManager {
             .await
             {
                 Ok((path, filename)) => {
-                    // Count lines in the actual content, not the JSON-serialized string
-                    let line_count = serde_json::from_str::<serde_json::Value>(&result_str)
-                        .ok()
-                        .and_then(|v| {
-                            v.as_str().map(|s| s.lines().count()).or_else(|| {
-                                v.get("result")
-                                    .and_then(|r| r.as_str())
-                                    .map(|s| s.lines().count())
-                            })
-                        })
-                        .unwrap_or_else(|| result_str.lines().count());
+                    // result_str is what the model will see, so its own line
+                    // count is the honest number.
+                    let line_count = result_str.lines().count();
                     let byte_kb = result_str.len() / 1024;
                     result_str = format!(
                         "[{line_count} lines, {byte_kb}KB — full output in $CRU_SESSION_DIR/tools/{filename}]"
