@@ -164,6 +164,15 @@ test.describe('Inline diff in editor', () => {
                 old_string: 'return "hello";',
                 new_string: 'return "hello, world";',
               },
+              // Recorded tool truth (web/src/events.rs): the card shows the
+              // diff the daemon recorded, it does not re-derive one from args.
+              diffs: [
+                {
+                  path: FILE,
+                  old_content: ON_DISK,
+                  new_content: 'export function greet() {\n  return "hello, world";\n}\n',
+                },
+              ],
             },
             seq: 1,
           },

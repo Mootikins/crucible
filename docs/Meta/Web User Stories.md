@@ -94,9 +94,9 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** W2 (partial; `title-generation.spec.ts` — `title_changed` SSE renames tab+list, untitled fallback label, no client calls to the title endpoints — realigned 2026-07-12 after the daemon took ownership of titling), W4 (resume against real persistence — GAP).
 
 ### WS-108: Cancel a turn
-**As a user**, a stop control cancels the in-flight turn, preserving partial output.
-**Acceptance:** cancel POSTs `/api/session/:id/cancel`; stream closes cleanly; partial message retained with a cancelled marker.
-**Tests:** W2 (`cancel.story.spec.ts` — stop control → `/cancel` POST → `[cancelled]` marker).
+**As a user**, a stop control cancels the in-flight turn.
+**Acceptance:** cancel POSTs `/api/session/:id/cancel`; the turn closes on the daemon's `ended` frame — the same event a second client's cancel produces, so a cancel from anywhere closes the web turn too. The web synthesizes nothing: the transcript keeps what streamed, spinner stops, dangling tools finalize.
+**Tests:** W2 (`cancel.story.spec.ts` — stop control → `/cancel` POST → the daemon's `ended` frame closes the turn, composer restored, no synthesized marker).
 
 ### WS-109: Export a session
 **As a user**, I export the conversation as markdown from the browser.

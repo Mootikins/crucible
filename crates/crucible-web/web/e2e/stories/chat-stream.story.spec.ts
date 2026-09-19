@@ -154,8 +154,8 @@ test.describe('WS-101/102/103 streaming chat', () => {
     // Answer text streamed in.
     const assistant = page.getByTestId('message-assistant').first();
     await expect(assistant).toContainText('Here is the answer.', { timeout: 10000 });
-    // Thinking block (WS-102): collapsed, shows a token count.
-    await expect(page.getByText(/Thought for \d+ tokens/)).toBeVisible();
+    // Thinking block (WS-102): collapsed, shows a token estimate.
+    await expect(page.getByText(/Thought for ~\d+ tokens/)).toBeVisible();
     // Tool card (WS-103): read_file rendered with a completed status.
     await expect(page.getByText('read_file')).toBeVisible();
     // Completion shows token usage (WS-101). Rendered as `.text-[11px]` — not
@@ -243,9 +243,10 @@ test.describe('WS-101/102/103 streaming chat', () => {
       maxDiffPixelRatio: 0.03,
     });
 
-    // Completion folds the block to the summary line: quiet, no caret.
+    // Completion folds the block to the summary line: quiet, no caret. The
+    // label is the honest unit — a token ESTIMATE (chars/4) — hence the `~`.
     await expect(page.getByText('Here is the answer.')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Thought for 99 tokens')).toBeVisible();
+    await expect(page.getByText(/Thought for ~\d+ tokens/)).toBeVisible();
     await expect(page.getByTestId('think-stream-caret')).toHaveCount(0);
     // The fold is the grid row closing; chat-complete.png carries the visual
     // proof that the reasoning text is gone from the settled view.
