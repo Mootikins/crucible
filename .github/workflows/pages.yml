@@ -44,7 +44,7 @@ jobs:
         run: bun run check:links
         working-directory: docs-site
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs-site/dist
 
