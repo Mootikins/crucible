@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 
@@ -19,11 +19,49 @@ const foldOf = (root: HTMLElement): string => {
 
 describe('ThinkingBlock — streaming', () => {
   it('is expanded while the model is reasoning, with no click', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(() => (
+        <ThinkingBlock content="working through the options" isStreaming={true} />
+      ));
+      expect(foldOf(container)).toBe('1fr');
+      // The reveal buffer starts empty and drips the words out on its own
+      // cadence — a burst must not paste itself in whole.
+      expect(container.textContent).not.toContain('options');
+      vi.advanceTimersByTime(500);
+      expect(container.textContent).toContain('working through the options');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reveals words as individually fading spans while streaming', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(() => (
+        <ThinkingBlock content="alpha beta gamma delta" isStreaming={true} />
+      ));
+      expect(container.textContent).not.toContain('alpha');
+      vi.advanceTimersByTime(60);
+      const mid = container.textContent ?? '';
+      // Partway through the reveal some words are visible but not all.
+      expect(mid).not.toContain('delta');
+      vi.advanceTimersByTime(2000);
+      // Fully revealed, and the fade tail still renders as animated spans.
+      expect(container.textContent).toContain('alpha beta gamma delta');
+      expect(container.querySelectorAll('.thinking-word-in').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reveals the whole content at once when the block is not streaming', () => {
     const { container } = render(() => (
-      <ThinkingBlock content="working through the options" isStreaming={true} />
+      <ThinkingBlock content="a finished reasoning block" isStreaming={false} tokenCount={6} />
     ));
-    expect(foldOf(container)).toBe('1fr');
-    expect(screen.getByText('working through the options')).toBeInTheDocument();
+    // No reveal delay for history: the full text is there on first paint.
+    expect(container.textContent).toContain('a finished reasoning block');
+    expect(container.querySelectorAll('.thinking-word-in')).toHaveLength(0);
   });
 
   it('shows a stream caret after the reasoning text while streaming', () => {

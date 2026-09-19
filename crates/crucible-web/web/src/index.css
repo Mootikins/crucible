@@ -956,6 +956,20 @@
   animation: cru-caret 1060ms steps(1, end) infinite;
 }
 
+/* A streaming thinking block reveals its text word by word: the newest words
+ * sit in their own spans and fade in over their whole (short) stay at the
+ * growing edge, while the words before them are already settled plain text.
+ * The reveal cadence lives in ThinkingBlock's ticker; prefers-reduced-motion
+ * zeroes the duration globally, leaving an instant per-word appear. */
+@keyframes cru-think-word {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.thinking-word-in {
+  animation: cru-think-word 420ms ease-out both;
+}
+
 /* Rendered [[wikilinks]] live in styles/refine-states.css — the pill and the
    decoration are ONE rule set, and they used to be two files. */
 

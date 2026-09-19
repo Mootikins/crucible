@@ -326,8 +326,10 @@ describe('AssistantTurn — thinking block', () => {
         thinking: { content: 'reasoning steps here', isStreaming: false, tokenCount: 42 },
       }),
     ];
-    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
+    // The block renders settled text plus a fading tail of word spans, so
+    // the whole reasoning lives in the container's text, not one element.
+    const { container } = render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    expect(container.textContent).toContain('reasoning steps here');
   });
 
   it('hides the thinking block when show-thinking is toggled off', () => {
@@ -336,14 +338,14 @@ describe('AssistantTurn — thinking block', () => {
         thinking: { content: 'reasoning steps here', isStreaming: false, tokenCount: 42 },
       }),
     ];
-    render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
-    expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
+    const { container } = render(() => <AssistantTurn parts={[textPart('a1')]} isLast={false} />);
+    expect(container.textContent).toContain('reasoning steps here');
 
     statusBarActions.setShowThinking(false);
-    expect(screen.queryByText(/reasoning steps here/)).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain('reasoning steps here');
 
     statusBarActions.setShowThinking(true);
-    expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
+    expect(container.textContent).toContain('reasoning steps here');
   });
 });
 

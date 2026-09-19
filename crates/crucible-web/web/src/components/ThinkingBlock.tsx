@@ -1,10 +1,23 @@
-import { Component, Show, createEffect, createSignal, on } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { ChevronRight } from 'lucide-solid';
 
 interface ThinkingBlockProps {
   content: string;
   isStreaming: boolean;
   tokenCount?: number;
+}
+
+/** Reveal cadence, in ms per tick. Providers deliver thinking in large
+ *  bursts; rendering them whole reads as chunky jumps, so the block drips
+ *  the words out on its own clock. */
+const TICK_MS = 50;
+/** How many trailing words render as individually fading spans. */
+const FADE_TAIL = 12;
+
+/** Word tokens with their trailing whitespace attached, so joining them
+ *  reproduces the content byte for byte. */
+function wordsOf(content: string): string[] {
+  return content.match(/\S+\s*/g) ?? [];
 }
 
 export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
@@ -35,6 +48,44 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
     }
     return 'Thought';
   };
+
+  // The reveal buffer: `content` is the target (network bursts land whole);
+  // `revealed` is how many words the reader has been shown. The ticker
+  // advances at a steady cadence with catch-up, so a 40-word burst still
+  // drains in a blink instead of pasting itself in — and a completed or
+  // historical block reveals everything at once.
+  const [revealed, setRevealed] = createSignal(0);
+  createEffect(() => {
+    if (!props.isStreaming) {
+      setRevealed(wordsOf(props.content).length);
+      return;
+    }
+    const id = setInterval(() => {
+      const total = wordsOf(props.content).length;
+      setRevealed((shown) => {
+        if (shown >= total) return shown;
+        // One word per tick while close; proportional catch-up when a big
+        // burst lands, so the reveal never falls seconds behind the model.
+        const backlog = total - shown;
+        return Math.min(total, shown + Math.max(1, Math.ceil(backlog / 10)));
+      });
+    }, TICK_MS);
+    onCleanup(() => clearInterval(id));
+  });
+
+  const words = createMemo(() => wordsOf(props.content));
+  // Everything older than the fade tail is one plain text node — a long
+  // reasoning block must not become two thousand permanent spans.
+  const settled = createMemo(() => {
+    const w = words();
+    const shown = Math.min(revealed(), w.length);
+    return w.slice(0, Math.max(0, shown - FADE_TAIL)).join('');
+  });
+  const fading = createMemo(() => {
+    const w = words();
+    const shown = Math.min(revealed(), w.length);
+    return w.slice(Math.max(0, shown - FADE_TAIL), shown);
+  });
 
   return (
     <div class="mb-2">
@@ -84,7 +135,15 @@ export const ThinkingBlock: Component<ThinkingBlockProps> = (props) => {
         <div class="overflow-hidden">
           <div class="mt-2 pl-5 border-l-2 border-hairline">
             <p class="text-xs text-muted-dark italic whitespace-pre-wrap leading-relaxed">
-              {props.content}
+              {settled()}
+              {/* The newest words each sit in their own span and fade in over
+                  their stay at the growing edge; they graduate into the plain
+                  prefix as the reveal advances past them. */}
+              <For each={fading()}>
+                {(word) => (
+                  <span class={props.isStreaming ? 'thinking-word-in' : undefined}>{word}</span>
+                )}
+              </For>
               {/* The text stream's caret, on the same steps() cadence: the
                   reasoning visibly grows token by token, and the caret is
                   what marks the growing edge. */}
