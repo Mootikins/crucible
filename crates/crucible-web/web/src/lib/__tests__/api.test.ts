@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, vi, type Mock, beforeEach } from 'vitest';
 import { createMockFetch } from '@/test-utils';
 import {
   sendChatMessage,
@@ -55,8 +55,13 @@ import {
   saveLayout,
   loadLayout,
   resetLayout,
+  subscribeToSurfaceEvents,
+  subscribeToFsEvents,
+  subscribeToPluginEvents,
+  fetchRawFile,
 } from '../api';
 import { generateMessageId } from '../turn';
+import { STREAM_VERSION, StreamVersionError } from '../stream-version';
 
 // Preserve original fetch so we can restore it after each test
 const originalFetch = global.fetch;
@@ -1384,8 +1389,10 @@ describe('subscribeToEvents', () => {
       this.listeners.set(type, arr);
     }
 
-    /** Test helper: dispatch an event by type. */
+    /** Test helper: dispatch an event by type. A real EventSource is silent
+     * once closed; the mock honours that too. */
     dispatch(type: string, data: unknown) {
+      if (this.closed) return;
       const arr = this.listeners.get(type) ?? [];
       const evt = { data: JSON.stringify(data) } as MessageEvent;
       for (const l of arr) l(evt);
@@ -1393,6 +1400,7 @@ describe('subscribeToEvents', () => {
 
     /** Test helper: dispatch raw (unparseable) data. */
     dispatchRaw(type: string, raw: string) {
+      if (this.closed) return;
       const arr = this.listeners.get(type) ?? [];
       const evt = { data: raw } as MessageEvent;
       for (const l of arr) l(evt);
@@ -1524,6 +1532,125 @@ describe('subscribeToEvents', () => {
     // Advancing timers must NOT create a new instance because cleanup cancelled.
     vi.advanceTimersByTime(5000);
     expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // The stream_version handshake. Every SSE stream names the protocol it
+  // speaks in its first frame; a version this build cannot read must close
+  // the stream and render nothing it carries — a half-read transcript looks
+  // like the truth, so the refusal is the honest answer.
+  // ---------------------------------------------------------------------------
+
+  describe('stream_version handshake', () => {
+    let errorSpy: Mock;
+
+    beforeEach(() => {
+      errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      errorSpy.mockRestore();
+    });
+
+    it('chat stream fails closed on a version this build cannot read', () => {
+      const events: unknown[] = [];
+      subscribeToEvents('ses-1', (e) => events.push(e));
+      const source = MockEventSource.instances[0];
+
+      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
+
+      // The raised error is the user-visible half; the close is fail-closed.
+      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
+      expect(source.closed).toBe(true);
+
+      // Nothing the stream carries after the refusal is rendered.
+      source.dispatch('token', { type: 'token', content: 'hi' });
+      expect(events).toEqual([]);
+
+      // And the dead stream must not resurrect itself.
+      source.triggerError();
+      vi.advanceTimersByTime(30000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it('surface stream fails closed on a version this build cannot read', () => {
+      subscribeToSurfaceEvents(() => {});
+      const source = MockEventSource.instances[0];
+
+      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
+
+      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
+      expect(source.closed).toBe(true);
+      source.triggerError();
+      vi.advanceTimersByTime(30000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it('file-system stream fails closed on a version this build cannot read', () => {
+      subscribeToFsEvents(() => {});
+      const source = MockEventSource.instances[0];
+
+      source.dispatch('stream_version', { version: STREAM_VERSION + 1 });
+
+      expect(errorSpy.mock.calls[0][0]).toBeInstanceOf(StreamVersionError);
+      expect(source.closed).toBe(true);
+      source.triggerError();
+      vi.advanceTimersByTime(30000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it('refuses a well-formed frame that is not a shape the document declares', () => {
+      const events: unknown[] = [];
+      subscribeToEvents('ses-1', (e) => events.push(e));
+
+      // Valid JSON, tagged like nothing the document declares: decodeEvent
+      // refuses it and the stream lives on.
+      MockEventSource.instances[0].dispatch('token', { hello: 1 });
+
+      expect(events).toEqual([]);
+      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse SSE event');
+    });
+
+    it('plugin stream keeps reading after a malformed publication frame', () => {
+      const events: Array<{ plugin: string; key: string }> = [];
+      const cleanup = subscribeToPluginEvents((e) => events.push(e), () => {});
+      const source = MockEventSource.instances[0];
+
+      source.dispatchRaw('publication_changed', 'not json {');
+      expect(warnSpy.mock.calls[0][0]).toContain('Failed to parse plugin SSE event');
+
+      // The one stream that does not reconnect: a malformed frame must not
+      // tear it down, or publications go stale until a reload.
+      source.dispatch('publication_changed', { plugin: 'kanban', key: 'board' });
+      expect(events).toEqual([{ plugin: 'kanban', key: 'board' }]);
+
+      cleanup();
+      expect(source.closed).toBe(true);
+    });
+  });
+});
+
+
+// =============================================================================
+// fetchRawFile — the one raw-body read (a Blob, not a decoded document).
+// =============================================================================
+
+describe('fetchRawFile', () => {
+  it('throws the attachment error when the raw fetch fails', async () => {
+    global.fetch = vi.fn(async () => ({ ok: false, status: 404 }) as Response);
+
+    await expect(fetchRawFile('notes/a.md')).rejects.toThrow(
+      'attachment notes/a.md: 404',
+    );
+  });
+
+  it('returns the body bytes when the raw fetch succeeds', async () => {
+    const blob = new Blob(['bytes']);
+    global.fetch = vi.fn(
+      async () => ({ ok: true, blob: async () => blob }) as unknown as Response,
+    );
+
+    await expect(fetchRawFile('notes/a.md')).resolves.toBe(blob);
   });
 });
 
