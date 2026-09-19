@@ -310,7 +310,10 @@ impl AdaptiveColor {
     /// Resolve the color based on terminal background detection.
     /// Returns Color::Reset if NO_COLOR environment variable is set.
     pub fn resolve(self, is_dark: bool) -> Color {
-        let no_color = std::env::var("NO_COLOR").is_ok();
+        // no-color.org: the variable disables colour when present AND
+        // non-empty — the rule crossterm renders with, so a value that
+        // enables colour for crossterm must not disable it here.
+        let no_color = std::env::var("NO_COLOR").is_ok_and(|value| !value.is_empty());
         self.resolve_inner(is_dark, no_color)
     }
 
@@ -579,6 +582,9 @@ mod tests {
     fn named_colors_render_to_the_palette_slot_they_name() {
         use crossterm::style::Colored;
 
+        // Crossterm honours NO_COLOR and would emit nothing at all, so the
+        // ambient shell value decides whether this assertion sees escapes.
+        let _colors = crucible_core::test_support::EnvVarGuard::remove("NO_COLOR");
         let named = [
             Color::Black,
             Color::Red,
@@ -886,5 +892,23 @@ mod tests {
         };
         assert_eq!(ac.resolve_inner(true, true), Color::Reset);
         assert_eq!(ac.resolve_inner(false, true), Color::Reset);
+    }
+
+    /// no-color.org disables colour only for a present, NON-empty value — the
+    /// same rule crossterm renders with. An ambient `NO_COLOR=""` must not
+    /// drain this crate's colours while crossterm keeps its own.
+    #[test]
+    fn an_empty_no_color_value_keeps_colour() {
+        let guard = crucible_core::test_support::EnvVarGuard::set("NO_COLOR", String::new());
+        let ac = AdaptiveColor {
+            dark: Color::Red,
+            light: Color::Blue,
+        };
+        assert_eq!(ac.resolve(true), Color::Red);
+        drop(guard);
+
+        let guard = crucible_core::test_support::EnvVarGuard::set("NO_COLOR", "1".to_string());
+        assert_eq!(ac.resolve(true), Color::Reset);
+        drop(guard);
     }
 }

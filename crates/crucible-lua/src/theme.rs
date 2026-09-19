@@ -1000,6 +1000,15 @@ impl StatusBarPosition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::test_support::EnvVarGuard;
+
+    /// The assertions resolve colours through `AdaptiveColor::resolve`, which
+    /// honours NO_COLOR — an ambient value from the developer's shell would
+    /// drain every colour to Reset before the theme logic under test ever
+    /// sees it.
+    fn force_colors() -> EnvVarGuard {
+        EnvVarGuard::remove("NO_COLOR")
+    }
 
     #[test]
     fn test_default_theme_loads() {
@@ -1174,6 +1183,7 @@ mod tests {
 
     #[test]
     fn test_resolve_color_respects_is_dark() {
+        let _colors = force_colors();
         let mut config = ThemeConfig::default_dark();
         let test_color = AdaptiveColor {
             dark: Color::Red,
@@ -1277,6 +1287,7 @@ mod tests {
 
     #[test]
     fn test_default_theme_loads_all_tokens() {
+        let _colors = force_colors();
         let lua_src = include_str!("../../../runtime/themes/default.luau");
         let config = load_theme_from_lua(lua_src).expect("default theme should load");
         let dark = ThemeConfig::default_dark();
@@ -1338,6 +1349,7 @@ mod tests {
 
     #[test]
     fn test_opencode_theme_loads() {
+        let _colors = force_colors();
         let lua_src = include_str!("../../../runtime/themes/opencode.luau");
         let theme = load_theme_from_lua(lua_src).expect("opencode theme should load");
         assert_eq!(theme.name, "opencode");

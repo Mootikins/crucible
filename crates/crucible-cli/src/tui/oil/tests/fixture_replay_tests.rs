@@ -169,8 +169,18 @@ fn replay_demo_60x20() {
 
 // ─── Tests: Color-aware styled snapshots ───────────────────────────────────
 
+/// The styled snapshots pin ANSI colours, and every colour in the theme
+/// resolves through `AdaptiveColor::resolve` — which honours NO_COLOR. An
+/// ambient NO_COLOR from the developer's shell would drain the frames to
+/// Reset and fail the snapshots for an environment reason, not a rendering
+/// one, so each styled test removes it for its own process.
+fn force_colors() -> crucible_core::test_support::EnvVarGuard {
+    crucible_core::test_support::EnvVarGuard::remove("NO_COLOR")
+}
+
 #[test]
 fn styled_snapshot_basic_conversation() {
+    let _colors = force_colors();
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -202,6 +212,7 @@ fn styled_snapshot_basic_conversation() {
 /// uses a tool the table deliberately does not summarize.
 #[test]
 fn styled_snapshot_tool_call() {
+    let _colors = force_colors();
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -245,6 +256,7 @@ fn styled_snapshot_tool_call() {
 /// snapshot that covers them.
 #[test]
 fn styled_snapshot_tool_call_with_body() {
+    let _colors = force_colors();
     let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -282,6 +294,7 @@ fn styled_snapshot_tool_call_with_body() {
 
 #[test]
 fn styled_snapshot_thinking_collapsed() {
+    let _colors = force_colors();
     // show_thinking=off: graduated thinking collapses to "◇ Thought (~N tokens)".
     let mut app = OilChatApp::default();
     app.set_show_thinking(false);
@@ -305,6 +318,7 @@ fn styled_snapshot_thinking_collapsed() {
 
 #[test]
 fn styled_snapshot_thinking_expanded_after_graduation() {
+    let _colors = force_colors();
     // show_thinking=on: graduated thinking keeps the expanded content.
     let mut app = OilChatApp::default();
     app.set_show_thinking(true);

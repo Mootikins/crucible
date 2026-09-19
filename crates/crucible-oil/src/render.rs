@@ -139,7 +139,15 @@ mod tests {
     use super::*;
     use crate::node::*;
     use crate::style::{Border, Color, Gap, Padding, Style};
+    use crucible_core::test_support::EnvVarGuard;
     use insta::assert_snapshot;
+
+    /// The styled snapshots pin ANSI colours, and crossterm honours NO_COLOR —
+    /// an ambient shell value would drain the frames to Reset and fail the
+    /// snapshots for an environment reason, not a rendering one.
+    fn force_colors() -> EnvVarGuard {
+        EnvVarGuard::remove("NO_COLOR")
+    }
 
     #[test]
     fn test_render_empty_node() {
@@ -427,6 +435,7 @@ mod tests {
 
     #[test]
     fn snapshot_core_styled_text_ansi() {
+        let _colors = force_colors();
         let node = styled(
             "Styled",
             Style::new()
@@ -452,6 +461,7 @@ mod tests {
 
     #[test]
     fn snapshot_core_popup_truncation() {
+        let _colors = force_colors();
         let node = popup(
             vec![
                 popup_item("Open file")

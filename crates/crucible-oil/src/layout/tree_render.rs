@@ -783,6 +783,9 @@ mod tests {
     fn borderless_box_with_bg_fills_rect() {
         use crate::style::Color;
 
+        // Crossterm honours NO_COLOR and silently drops every escape, so the
+        // ambient shell value decides whether this assertion sees the bg.
+        let _colors = crucible_core::test_support::EnvVarGuard::remove("NO_COLOR");
         let panel_bg = Color::Rgb(40, 44, 52);
         let tree = LayoutTree::new(LayoutBox::new(
             Rect::new(0, 0, 10, 2),
@@ -813,6 +816,9 @@ mod tests {
     fn box_bg_persists_through_overwriting_text_child() {
         use crate::style::Color;
 
+        // Crossterm honours NO_COLOR and silently drops every escape, so the
+        // ambient shell value decides whether this assertion sees the bg.
+        let _colors = crucible_core::test_support::EnvVarGuard::remove("NO_COLOR");
         let panel_bg = Color::Rgb(40, 44, 52);
         let parent = LayoutBox::new(
             Rect::new(0, 0, 10, 1),

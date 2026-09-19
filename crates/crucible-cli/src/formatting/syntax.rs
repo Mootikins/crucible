@@ -220,6 +220,7 @@ fn syntect_to_ink_style(syntect_style: SyntectStyle) -> Style {
 mod tests {
     use super::*;
     use crate::tui::oil::Color;
+    use crucible_core::test_support::EnvVarGuard;
 
     #[test]
     fn highlight_rust_code_produces_colored_spans() {
@@ -243,6 +244,10 @@ mod tests {
     /// so a code block does not clash with the chat view around it.
     #[test]
     fn the_derived_theme_takes_its_colors_from_the_colorscheme() {
+        // The derived theme resolves through `AdaptiveColor::resolve`, which
+        // honours NO_COLOR — an ambient value from the developer's shell must
+        // not decide whether this test sees colours.
+        let _no_color = EnvVarGuard::remove("NO_COLOR");
         let h = SyntaxHighlighter::new().with_theme(DERIVED_THEME);
         let lines = h.highlight("fn main() {}", "rust");
         let colors: Vec<_> = lines
@@ -268,6 +273,10 @@ mod tests {
     /// fixed RGB by syntect's RGB-only colour type.
     #[test]
     fn a_palette_colorscheme_yields_palette_colored_code() {
+        // NO_COLOR turns every `AdaptiveColor::resolve` into Reset, which
+        // would read as a round-trip failure. The ambient shell's value must
+        // not reach the assertion.
+        let _no_color = EnvVarGuard::remove("NO_COLOR");
         let mut ui = crucible_lua::theme::ThemeConfig::default_dark();
         ui.colors.primary = crucible_oil::style::AdaptiveColor::from_single(Color::Indexed(5));
         crate::tui::oil::theme::set(ui);

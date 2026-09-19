@@ -1489,6 +1489,7 @@ name = "crucible-oil"
 version = "0.30.0"
 dependencies = [
  "crossterm 0.29.0",
+ "crucible-core",
  "crucible-oil",
  "html_parser",
  "insta",

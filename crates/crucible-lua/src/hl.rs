@@ -208,6 +208,7 @@ fn palette_lookup(theme: &ThemeConfig, name: &str) -> Option<AdaptiveColor> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::test_support::EnvVarGuard;
 
     fn reg(pairs: Vec<(&str, HlGroup)>) -> HlRegistry {
         pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
@@ -218,6 +219,14 @@ mod tests {
             fg: Some(HlColor::parse(c)),
             ..Default::default()
         }
+    }
+
+    /// The assertions resolve literal colours through `AdaptiveColor::resolve`,
+    /// which honours NO_COLOR — an ambient value from the developer's shell
+    /// would drain every colour to Reset before the registry logic under test
+    /// ever sees it.
+    fn force_colors() -> EnvVarGuard {
+        EnvVarGuard::remove("NO_COLOR")
     }
 
     #[test]
@@ -256,6 +265,7 @@ mod tests {
     /// references it follows without being rewritten.
     #[test]
     fn changing_the_palette_changes_every_group_that_references_it() {
+        let _colors = force_colors();
         let registry = reg(vec![("Popup", group_fg("popup_bg"))]);
 
         let mut theme = ThemeConfig::default_dark();
@@ -269,6 +279,7 @@ mod tests {
 
     #[test]
     fn an_unknown_palette_name_drops_only_that_attribute() {
+        let _colors = force_colors();
         let theme = ThemeConfig::default_dark();
         let registry = reg(vec![(
             "Broken",
@@ -288,6 +299,7 @@ mod tests {
 
     #[test]
     fn a_link_inherits_the_targets_attributes() {
+        let _colors = force_colors();
         let theme = ThemeConfig::default_dark();
         let registry = reg(vec![
             ("Visual", {
@@ -313,6 +325,7 @@ mod tests {
     /// say "like Visual, but red".
     #[test]
     fn attributes_on_the_linking_group_beat_the_target() {
+        let _colors = force_colors();
         let theme = ThemeConfig::default_dark();
         let registry = reg(vec![
             ("Visual", group_fg("cyan")),
@@ -332,6 +345,7 @@ mod tests {
     /// A typo must degrade, never hang the renderer.
     #[test]
     fn a_link_cycle_terminates_instead_of_hanging() {
+        let _colors = force_colors();
         let theme = ThemeConfig::default_dark();
         let registry = reg(vec![
             ("A", {
@@ -354,6 +368,7 @@ mod tests {
 
     #[test]
     fn a_link_to_a_missing_group_keeps_what_resolved() {
+        let _colors = force_colors();
         let theme = ThemeConfig::default_dark();
         let registry = reg(vec![("A", {
             let mut g = group_fg("cyan");
@@ -375,6 +390,7 @@ mod tests {
 
     #[test]
     fn adaptive_colours_follow_the_themes_background() {
+        let _colors = force_colors();
         let registry = reg(vec![(
             "Text",
             HlGroup {

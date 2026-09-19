@@ -27,6 +27,9 @@ tracing = { workspace = true }
 # Every test run covers serde and the property-test harness, independently
 # of which other workspace crates happen to be selected.
 crucible-oil = { path = ".", features = ["serde", "test-utils"] }
+# `EnvVarGuard` for the render tests: crossterm honours NO_COLOR, so an
+# ambient shell value decides whether the colour assertions see escapes.
+crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 insta = { version = "1.47", features = ["filters"] }
 serde_json = { workspace = true }
 test-case = "3.3"

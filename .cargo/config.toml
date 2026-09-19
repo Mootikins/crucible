@@ -23,8 +23,18 @@
 # Explicitly use dynamic C runtime (MD) to match ONNX Runtime (ort_sys)
 rustflags = ["-C", "target-feature=-crt-static"]
 
-# Note: If you need static runtime instead (not recommended with ort_sys):
+# Note: If you need static runtime instead (not recommended for ort_sys):
 # 1. Comment out the rustflags lines above
 # 2. Ensure native dependencies use "/MT" consistently
 # 3. This will likely cause linker errors with ort_sys (ONNX Runtime)
 # 4. You may need to patch or rebuild ort_sys with static runtime
+
+# Crucible's colour tests assert actual ANSI escapes and resolved colours, and
+# both crossterm and `AdaptiveColor::resolve` honour NO_COLOR — so an ambient
+# NO_COLOR from the developer's shell silently drains every colour to Reset and
+# fails them for an environment reason, not a code one. The workspace strips
+# the variable (empty string = colours on, per no-color.org); individual tests
+# that need the disabled path set it themselves with `EnvVarGuard`. `force` is
+# what makes this win over an inherited value.
+[env]
+NO_COLOR = { value = "", force = true }

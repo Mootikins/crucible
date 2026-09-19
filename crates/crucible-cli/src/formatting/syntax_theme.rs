@@ -140,6 +140,7 @@ pub fn build_theme(colors: &SyntaxColors, background: OilColor, name: &str) -> T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::test_support::EnvVarGuard;
     use crucible_lua::theme::ThemeConfig;
 
     /// The property that makes terminal colours reach code blocks at all.
@@ -180,6 +181,9 @@ mod tests {
 
     #[test]
     fn derivation_follows_the_palette() {
+        // `resolve_color` honours NO_COLOR, which would collapse the palette
+        // slot under test to Reset before the derivation ever sees it.
+        let _no_color = EnvVarGuard::remove("NO_COLOR");
         let mut theme = ThemeConfig::default_dark();
         theme.colors.primary =
             crucible_oil::style::AdaptiveColor::from_single(OilColor::Indexed(5));
