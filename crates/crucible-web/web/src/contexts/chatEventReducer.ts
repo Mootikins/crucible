@@ -573,6 +573,24 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           break;
         }
 
+        // Late arguments for a call already announced by a prior `tool_call`
+        // (claude-agent-acp announces without `rawInput` and supplies them in
+        // a follow-up frame). Same merge rule as the TUI: an empty object or
+        // null carries nothing worth disturbing the existing card for.
+        if (event.event === 'tool_call_args_update') {
+          const data = event.data as { call_id?: unknown; args?: unknown } | null;
+          const callId = typeof data?.call_id === 'string' ? data.call_id : undefined;
+          const args = data?.args;
+          const hasArgs =
+            args !== undefined
+            && args !== null
+            && !(typeof args === 'object' && Object.keys(args).length === 0);
+          if (callId && data && hasArgs) {
+            deps.updateToolMessage(callId, (tool) => ({ ...tool, args: JSON.stringify(args) }));
+          }
+          break;
+        }
+
         // The daemon's event forwarder writes this straight to our connection
         // when its broadcast cursor falls off the ring: N events are gone and
         // nothing later mentions them. It arrives as a passthrough because it is

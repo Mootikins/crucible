@@ -357,7 +357,9 @@ fn every_recorded_event_decodes_into_a_typed_payload() {
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Pins the persist set against the list `should_persist` matched by hand
-/// before it became a typed match. Same nine names, same answers.
+/// before it became a typed match. The original nine names, plus the two ACP
+/// late-merge events (`tool_call_args_update`, `tool_call_diff_update`) whose
+/// absence erased claude-agent-acp's arguments from every replay.
 #[test]
 fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
     let persisted = [
@@ -370,6 +372,8 @@ fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
         "model_switched",
         "ended",
         "precognition_complete",
+        "tool_call_args_update",
+        "tool_call_diff_update",
     ];
     for name in persisted {
         let payload = SessionEventPayload::from_wire(name, &serde_json::json!({}))

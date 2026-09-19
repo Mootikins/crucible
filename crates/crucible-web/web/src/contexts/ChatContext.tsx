@@ -305,6 +305,27 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             ...(Array.isArray(data.diffs) ? { diffs: data.diffs as ToolCallDisplay['diffs'] } : {}),
           },
         });
+      } else if (evt.event === 'tool_call_args_update' || evt.event === 'tool_call_diff_update') {
+        // Late ACP merges, now persisted: claude-agent-acp announces the call
+        // without args/diffs and supplies them in a follow-up frame. Merge
+        // into the existing entry exactly as the live reducer does, so a
+        // reloaded card carries the arguments the agent actually ran with.
+        const callId = String(data.call_id ?? '');
+        const target = findToolMessage(callId);
+        if (target?.toolCall) {
+          if (evt.event === 'tool_call_args_update') {
+            const args = data.args;
+            const hasArgs =
+              args !== undefined
+              && args !== null
+              && !(typeof args === 'object' && Object.keys(args).length === 0);
+            if (hasArgs) {
+              target.toolCall = { ...target.toolCall, args: JSON.stringify(args) };
+            }
+          } else if (Array.isArray(data.diffs) && data.diffs.length > 0) {
+            target.toolCall = { ...target.toolCall, diffs: data.diffs as ToolCallDisplay['diffs'] };
+          }
+        }
       } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
         const callId = String(data.call_id ?? '');
         const target = findToolMessage(callId);

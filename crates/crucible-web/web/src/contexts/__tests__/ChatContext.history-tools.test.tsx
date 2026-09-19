@@ -33,6 +33,17 @@ const TURN_WITH_ANSWERED_TOOL = [
   { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: 'note saved' }, timestamp: new Date(T0 + 2000).toISOString(), seq: 3 },
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 4 },
 ];
+// An ACP turn whose agent announced the tool WITHOUT arguments and supplied
+// them in a follow-up frame. The update is part of the record now; a reload
+// must show the arguments the agent actually ran with, not the `{}` the
+// announcement carried.
+const TURN_WITH_LATE_ARGS = [
+  TURN_WITH_DANGLING_TOOL[0],
+  TURN_WITH_DANGLING_TOOL[1],
+  { type: 'event', session_id: 's1', event: 'tool_call_args_update', data: { call_id: 'call-1', args: { command: 'ls crates' } }, timestamp: new Date(T0 + 1500).toISOString(), seq: 3 },
+  { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: 'out' }, timestamp: new Date(T0 + 2000).toISOString(), seq: 4 },
+  { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 5 },
+];
 
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
@@ -81,5 +92,13 @@ describe('ChatContext reloads the state a tool was left in', () => {
     const tool = ctx.messages().find((m) => m.role === 'tool');
     expect(tool?.toolCall?.status).toBe('complete');
     expect(tool?.toolCall?.result).toBe('note saved');
+  });
+
+  it('replays the late args an ACP agent supplied after announcing the call', async () => {
+    held = TURN_WITH_LATE_ARGS;
+    const ctx = mountProvider();
+    await waitFor(() => expect(ctx.messages().length).toBe(3));
+    const tool = ctx.messages().find((m) => m.role === 'tool');
+    expect(tool?.toolCall?.args).toBe(JSON.stringify({ command: 'ls crates' }));
   });
 });

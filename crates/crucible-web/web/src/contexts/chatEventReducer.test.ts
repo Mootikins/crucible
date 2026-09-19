@@ -912,6 +912,37 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0].diffs).toEqual([{ path: 'b.rs', old_content: 'keep', new_content: 'me' }]);
   });
 
+  it('session_event tool_call_args_update: merges the late ACP arguments into the card', () => {
+    // claude-agent-acp announces the call without rawInput and supplies the
+    // arguments in a follow-up frame; without this merge the card shows no
+    // arguments at all.
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Terminal' });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_args_update',
+      data: { call_id: 'call-8', args: { command: 'ls crates' } },
+    });
+    expect(h.tools()[0].args).toBe(JSON.stringify({ command: 'ls crates' }));
+  });
+
+  it('session_event tool_call_args_update: empty or missing args leave the card alone', () => {
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Terminal' });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_args_update',
+      data: { call_id: 'call-8', args: {} },
+    });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_args_update',
+      data: { call_id: 'call-8', args: null },
+    });
+    h.reducer({ type: 'session_event', event: 'tool_call_args_update', data: { call_id: 'call-8' } });
+    expect(h.tools()[0].args).toBe('');
+  });
+
   it('session_event ended: sweeps thinking, dangling tools, and stream flags', () => {
     // A cancelled turn never sees message_complete. The recorded `ended`
     // carries no content — it is purely the turn-over signal — and must

@@ -311,6 +311,13 @@ impl TurnPayload {
             | Self::ToolCall { .. }
             | Self::ToolResult { .. }
             | Self::Ended { .. }
+            // Late ACP merges are part of the tool's record. claude-agent-acp
+            // announces the call without `rawInput`/diffs and supplies them in
+            // a follow-up frame; dropping the update left every replayed
+            // transcript — web and TUI alike — with a card whose args read
+            // `{}` forever.
+            | Self::ToolCallArgsUpdate { .. }
+            | Self::ToolCallDiffUpdate { .. }
             // What context was injected is part of the turn's record, not just
             // a live notification: without it a resumed transcript cannot say
             // which notes the answer was grounded in, and re-deriving it later
@@ -323,8 +330,6 @@ impl TurnPayload {
             // content and persisting both would duplicate it. Flagged, not
             // changed: see the plan's open question 4.
             Self::TextDelta { .. }
-            | Self::ToolCallArgsUpdate { .. }
-            | Self::ToolCallDiffUpdate { .. }
             | Self::InteractionRequested { .. }
             | Self::InteractionCompleted { .. }
             | Self::InjectionPending { .. }
