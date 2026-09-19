@@ -243,15 +243,41 @@ mod stored_session_tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn list_models_answers_for_a_session_held_in_storage_only() {
+        use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
+
+        // Both the injected provider table and the cleared environment are
+        // load-bearing. `AgentManager::list_models` enumerates the configured
+        // providers AND the ones the process environment holds a credential
+        // for; with neither, it falls back to `get_session_with_agent`, which
+        // reads the live map only and answers "Session not found" for the
+        // session this test seeded in storage. A developer's `GLM_AUTH_TOKEN`
+        // supplied the ambient provider that hid it.
+        let _env_lock = crate::agent_manager::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _env_guards = crate::agent_manager::clear_provider_env();
+
         let tmp = tempfile::tempdir().unwrap();
         let (id, sm) = stored_only(&tmp).await;
         let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        // Static models, so the offer is answered without dialling anything.
+        let llm_config = LlmConfig {
+            default: Some("ollama".to_string()),
+            providers: std::collections::BTreeMap::from([(
+                "ollama".to_string(),
+                LlmProviderConfig::builder(BackendType::Ollama)
+                    .available_models(vec!["llama3.2".to_string()])
+                    .build(),
+            )]),
+            models: Default::default(),
+        };
         let am = crate::test_fixtures::test_agent_manager(
             Arc::new(crate::kiln_manager::KilnManager::new()),
             sm,
             event_tx,
-            None,
+            Some(llm_config),
         );
         let resp = super::super::models::handle_session_list_models(
             request("session.list_models", &id),
@@ -259,7 +285,11 @@ mod stored_session_tests {
         )
         .await;
         assert!(resp.error.is_none(), "{resp:?}");
-        assert!(resp.result.unwrap()["models"].is_array());
+        assert_eq!(
+            resp.result.unwrap()["models"],
+            serde_json::json!(["ollama/llama3.2"]),
+            "the stored session's models are answered from the injected table"
+        );
     }
 
     #[tokio::test]

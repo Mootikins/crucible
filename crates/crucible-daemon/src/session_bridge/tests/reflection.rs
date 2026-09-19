@@ -7,14 +7,35 @@ use crate::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_core::session::SessionState;
 use crucible_lua::{manifest::PluginSource, DaemonSessionApi};
 use serde_json::json;
-use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
     let _ = rustls::crypto::ring::default_provider().install_default();
+    // The provider table is the one this test injects: the daemon's own
+    // enumeration also reads the process environment's credentials, so a
+    // developer's `GLM_AUTH_TOKEN` (or `OPENAI_API_KEY`, …) would put a real
+    // endpoint on the setup path. nextest runs each test in its own process,
+    // so the guard races with nothing.
+    let _env_lock = crate::agent_manager::ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _env_guards = crate::agent_manager::clear_provider_env();
+
     let provider = MockServer::start().await;
     let note = "# Remember\n\nUse the daemon as the only storage owner.\n";
-    Mock::given(method("POST"))
+    // The reviewer's chat route, and only it. The daemon also POSTs
+    // `/api/show` to probe the model's context window when it creates the
+    // pass's session (the session-create setup task), and whether that probe
+    // lands before the test tears the mock down is a race: an endpoint that
+    // answered it made the "one tool call and one continuation" count below
+    // three on a fresh runner. A chat request is the one that reaches the chat
+    // route.
+    let is_chat_request = |request: &wiremock::Request| {
+        request.method.as_str() == "POST" && request.url.path().ends_with("/api/chat")
+    };
+    Mock::given(is_chat_request)
         .respond_with(move |request: &wiremock::Request| {
             let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
             let has_result = body["messages"].as_array().unwrap().iter().any(|m| m["role"] == "tool");
@@ -156,7 +177,7 @@ async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
         .await
         .unwrap()
         .into_iter()
-        .filter(|request| request.method.as_str() == "POST")
+        .filter(is_chat_request)
         .map(|request| serde_json::from_slice(&request.body).unwrap())
         .collect();
     let mut seen = Vec::new();

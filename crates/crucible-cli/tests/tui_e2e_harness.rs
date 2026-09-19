@@ -112,27 +112,23 @@ impl TuiTestConfig {
         self
     }
 
-    /// Find the cru binary in target directory
+    /// The `cru` binary this test run must exercise.
+    ///
+    /// An explicit `binary_path` wins. Otherwise it is `CARGO_BIN_EXE_cru` —
+    /// the binary cargo built for *this* test run, which is the only one that
+    /// is guaranteed to match the sources under test.
+    ///
+    /// It deliberately does NOT prefer a `target/release/cru` that happens to
+    /// exist. A stale release binary silently tests the wrong code: the same
+    /// failure `.config/nextest.toml`'s setup script was added to fix, where
+    /// `cru` e2e tests ran against whatever binary was last built and passed
+    /// for as long as the change under test was newer than it. `binary_path`
+    /// is how a run against an optimized build is asked for, explicitly.
     fn find_binary(&self) -> PathBuf {
         if let Some(path) = &self.binary_path {
             return path.clone();
         }
 
-        // Try release first, then debug
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let manifest_path = PathBuf::from(manifest_dir);
-        let workspace_root = manifest_path
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("Could not find workspace root");
-
-        let release_path = workspace_root.join("target/release/cru");
-        if release_path.exists() {
-            return release_path;
-        }
-
-        // CARGO_BIN_EXE_cru honors custom target-dirs (e.g. shared worktree
-        // targets), where workspace_root/target does not exist.
         PathBuf::from(env!("CARGO_BIN_EXE_cru"))
     }
 }
@@ -150,9 +146,20 @@ pub struct TuiTestSession {
     recording: bool,
     /// vt100 terminal emulator — accumulates all PTY output into a queryable screen buffer.
     vt_parser: Vt100Parser,
+    /// The last [`RAW_TAIL_BYTES`] of raw PTY output.
+    ///
+    /// A failure message that shows only the vt100 screen shows the last 24
+    /// rows, which is where a startup panic's *backtrace* ends up while the
+    /// panic message itself has scrolled off. This keeps the bytes, so the
+    /// message the child printed is still readable when a test times out.
+    raw_tail: Vec<u8>,
     /// Hermetic HOME for the PTY child — kept alive for the session's lifetime.
     _home: tempfile::TempDir,
 }
+
+/// How much raw PTY output a failure message keeps. A startup panic's message
+/// plus its backtrace is a few kilobytes; this is several times that.
+const RAW_TAIL_BYTES: usize = 32 * 1024;
 
 /// A timestamped chunk of output for granular analysis and replay
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -271,6 +278,7 @@ impl TuiTestSession {
             start_time: Instant::now(),
             recording: false,
             vt_parser,
+            raw_tail: Vec::new(),
             _home: home,
         })
     }
@@ -435,6 +443,11 @@ impl TuiTestSession {
                 Ok(0) => break,
                 Ok(n) => {
                     self.vt_parser.process(&buffer[..n]);
+                    self.raw_tail.extend_from_slice(&buffer[..n]);
+                    if self.raw_tail.len() > RAW_TAIL_BYTES {
+                        let excess = self.raw_tail.len() - RAW_TAIL_BYTES;
+                        self.raw_tail.drain(..excess);
+                    }
                     if self.recording {
                         self.output_log.push(OutputChunk {
                             timestamp_ms: self.start_time.elapsed().as_millis() as u64,
@@ -460,6 +473,33 @@ impl TuiTestSession {
         self.vt_parser.screen().contents()
     }
 
+    /// What the child is doing, for a failure message.
+    ///
+    /// The screen alone cannot answer the question a timeout raises: a child
+    /// that panicked at startup prints its message and backtrace, and the
+    /// 24 visible rows then hold the *end* of the backtrace — the reason is
+    /// above them. So this reports liveness and the tail of the raw output.
+    fn diagnosis(&self) -> String {
+        use expectrl::process::Healthcheck;
+
+        let liveness = match self.session.get_status() {
+            Ok(status) => format!("child status: {status:?}"),
+            Err(_) => match self.session.is_alive() {
+                Ok(true) => "child is still running".to_string(),
+                Ok(false) => "child has exited".to_string(),
+                Err(e) => format!("child status unavailable: {e}"),
+            },
+        };
+
+        let raw = String::from_utf8_lossy(&self.raw_tail);
+        let stripped = crucible_oil::ansi::strip_ansi(&raw);
+        format!(
+            "{liveness}\n--- last {}KB of output (ANSI stripped) ---\n{}",
+            RAW_TAIL_BYTES / 1024,
+            stripped.trim_end()
+        )
+    }
+
     /// Poll until a predicate on the screen becomes true, or timeout.
     ///
     /// Drains PTY output every `poll_interval` and checks the predicate.
@@ -477,8 +517,9 @@ impl TuiTestSession {
             }
             if start.elapsed() >= timeout {
                 return Err(format!(
-                    "wait_until timed out after {:?}.\nScreen contents:\n{}",
+                    "wait_until timed out after {:?}.\n{}\nScreen contents:\n{}",
                     timeout,
+                    self.diagnosis(),
                     self.screen_contents()
                 ));
             }

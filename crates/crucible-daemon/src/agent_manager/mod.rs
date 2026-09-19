@@ -1745,3 +1745,10 @@ pub(crate) use vm_pass::PluginHandlers;
 
 #[cfg(test)]
 mod tests;
+/// The process environment decides which providers exist — `discover_credentials`
+/// reads `OPENAI_API_KEY`, `GLM_AUTH_TOKEN` and friends — so any test that asserts
+/// on the provider table must clear those vars and serialize on the lock. Lives in
+/// `tests` with the tests that first needed it; re-exported because the daemon's
+/// RPC and bridge tests enumerate providers too.
+#[cfg(test)]
+pub(crate) use tests::{clear_provider_env, ENV_LOCK};

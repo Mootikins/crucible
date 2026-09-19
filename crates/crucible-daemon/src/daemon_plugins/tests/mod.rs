@@ -1,5 +1,5 @@
-//! Tests for the daemon plugin loader — split from `mod.rs` for the
-//! file-size gate; same module path (`daemon_plugins::tests`) as before.
+//! Tests for the daemon plugin loader — split from `mod.rs`; same module path
+//! (`daemon_plugins::tests`) as before.
 //!
 //! `shipped` holds everything asserted about the BUNDLED plugin set —
 //! discovery, execution, manifest shape, the config kill switch. Kept
@@ -578,13 +578,34 @@ fn a_kiln_entry_offers_the_plugin_loader_nothing() {
     );
 }
 
+/// The default path offers the user's own config-dir plugins.
+///
+/// The config home is `dirs::config_dir()`, which reads `XDG_CONFIG_HOME` — a
+/// genuine env read, so `EnvVarGuard` is the right tool, and nextest's
+/// process-per-test isolation means the guard races with nothing. Without the
+/// injection this asserted on whatever the developer's real `~/.config` held:
+/// green here, empty on a fresh runner.
 #[test]
 fn default_paths_includes_config_dir() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let config_home = tmp.path().join("config");
+    let plugins = config_home.join("crucible").join("plugins");
+    std::fs::create_dir_all(&plugins).unwrap();
+    let _guard = crucible_core::test_support::EnvVarGuard::set(
+        "XDG_CONFIG_HOME",
+        config_home.to_string_lossy().to_string(),
+    );
+
     let paths = default_daemon_plugin_paths();
-    let has_plugins = paths
-        .iter()
-        .any(|(p, _)| p.to_string_lossy().contains("plugins"));
-    assert!(has_plugins, "Expected plugins path in {:?}", paths);
+
+    assert!(
+        paths
+            .iter()
+            .any(|(p, src)| p == &plugins && *src == PluginSource::User),
+        "the default path must offer the config dir's plugins as User: {paths:?}"
+    );
 }
 
 #[test]
@@ -687,21 +708,42 @@ fn an_empty_runtimepath_still_finds_the_shipped_runtime() {
     );
 }
 
+/// With no `CRUCIBLE_RUNTIME`, the runtime roots are the ones
+/// [`crucible_core::runtime_roots::for_current_exe`] resolves from the running
+/// binary — the user's `cru setup` copy, the installed layout, the dev tree,
+/// the tree extracted from the binary — not a root named by the environment.
+///
+/// The bundled root is injected through `XDG_DATA_HOME` (a genuine env read:
+/// the root is `dirs::data_dir()/crucible/runtime-<version>`), so it exists on
+/// a fresh runner. The developer's real `~/.config/crucible/plugins` is what
+/// made this pass locally and find nothing on CI.
 #[test]
 fn test_runtime_path_resolved_from_exe() {
+    use tempfile::TempDir;
+
     // Ensure CRUCIBLE_RUNTIME is not set
     let _guard = crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_RUNTIME");
 
+    let tmp = TempDir::new().unwrap();
+    let _data_guard = crucible_core::test_support::EnvVarGuard::set(
+        "XDG_DATA_HOME",
+        tmp.path().to_string_lossy().to_string(),
+    );
+    // Asked for, not spelled out: the resolver stamps the directory with the
+    // build's version, and a second copy of that name here would drift.
+    let bundled = crucible_core::runtime_roots::bundled_runtime_dir()
+        .expect("a data dir under the injected XDG_DATA_HOME");
+    std::fs::create_dir_all(bundled.join("plugins")).unwrap();
+
     let paths = default_daemon_plugin_paths();
 
-    // Should have at least one path (config dir or exe-relative)
-    assert!(!paths.is_empty(), "Expected at least one path");
-
-    // At least one path should contain "plugins"
-    let has_plugins = paths
-        .iter()
-        .any(|(p, _)| p.to_string_lossy().contains("plugins"));
-    assert!(has_plugins, "Expected plugins path in {:?}", paths);
+    assert!(
+        paths
+            .iter()
+            .any(|(p, src)| p == &bundled.join("plugins") && *src == PluginSource::Runtime),
+        "an auto-resolved runtime root must be searched when CRUCIBLE_RUNTIME is \
+         unset: {paths:?}"
+    );
 }
 
 #[tokio::test]
