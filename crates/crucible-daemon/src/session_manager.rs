@@ -14,7 +14,7 @@ use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::info;
 
 /// How a listing constrains the session's kiln set.
 ///
@@ -936,14 +936,14 @@ impl SessionManager {
     /// Remove an ended session from memory.
     ///
     /// Returns the session if it was found and ended.
-    #[allow(dead_code)] // session lifecycle API, exercised by tests
+    #[cfg(test)] // the eviction verb the in-process tests use
     pub fn remove_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = self.sessions.get(session_id).map(|r| r.clone());
 
         match session {
             Some(s) if s.state == SessionState::Ended => {
                 self.sessions.remove(session_id);
-                debug!(session_id = %session_id, "Session removed from memory");
+                tracing::debug!(session_id = %session_id, "Session removed from memory");
                 Ok(s)
             }
             Some(s) => Err(SessionError::InvalidState {

@@ -16,7 +16,6 @@ pub mod active_tools;
 pub mod autolink;
 pub mod containment;
 pub mod diff_synth;
-pub mod error_utils;
 pub mod extended_mcp_server;
 pub(crate) mod fs_scope;
 pub mod gateway_executor;
@@ -71,7 +70,6 @@ pub(crate) mod workspace_defs;
 
 // ===== PUBLIC API EXPORTS =====
 
-pub use error_utils::strip_tool_error_prefix;
 pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
 pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, RmcpExecutor};

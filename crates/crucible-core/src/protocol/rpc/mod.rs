@@ -15,6 +15,9 @@ pub enum RequestId {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
+    /// The protocol's envelope marker. `serde` requires it on every request and
+    /// nothing reads the value: being present at all is the check, so a body
+    /// that is not a JSON-RPC request is refused at the parse site.
     #[allow(dead_code)]
     pub jsonrpc: String,
     pub id: Option<RequestId>,

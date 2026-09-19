@@ -147,6 +147,11 @@ crucible-cli = { path = ".", features = ["test-utils"] }
 # `#[cfg_attr(test, ...)]`.
 strum = { version = "0.28", features = ["derive"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
+# The CLI's integration tests bind an in-process daemon through
+# `Server::bind_with_data_home*`, which is `#[cfg(any(test, feature =
+# "test-utils"))]` in crucible-daemon. Without this entry `cargo test -p
+# crucible-cli` builds the daemon without it and the tests do not compile.
+crucible-daemon = { path = "../crucible-daemon", features = ["test-utils"] }
 # MCP client for testing examples
 rmcp = { version = "2.2", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }

@@ -639,7 +639,7 @@ impl Server {
     /// Get a clone of the event broadcast sender.
     ///
     /// Used to send session events to all subscribed clients.
-    #[allow(dead_code)] // used in integration tests for event verification
+    #[cfg(test)] // only the in-process server tests subscribe through it
     pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
         self.rpc_context.event_tx.clone()
     }

@@ -16,7 +16,9 @@ pub mod mock_agent;
 
 // Public exports
 pub use client::CrucibleAcpClient;
-pub use discovery::{discover_agent, is_agent_available, reset_agent_cache, AgentInfo};
+#[cfg(any(test, feature = "test-utils"))]
+pub use discovery::reset_agent_cache;
+pub use discovery::{discover_agent, is_agent_available, AgentInfo};
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamingCallback, StreamingChunk, TurnSummary,

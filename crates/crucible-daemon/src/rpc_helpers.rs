@@ -111,9 +111,8 @@ pub fn session_id_field(
     })
 }
 
-// Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
-// These are preemptive exports - not all are used yet but will be as handlers grow
-#[allow(unused_imports)]
+// Re-exported so sibling modules reach the macros through one path,
+// `use crate::rpc_helpers::{optional_param, require_param}`.
 pub use crate::{optional_param, require_param};
 
 #[cfg(test)]

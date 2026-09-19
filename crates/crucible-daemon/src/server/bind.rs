@@ -7,7 +7,11 @@
 //! wiring it performs.
 
 use super::Server;
+// Used only by the fixture-only constructors at the bottom of this file, which
+// are themselves `cfg(any(test, feature = "test-utils"))`.
+#[cfg(any(test, feature = "test-utils"))]
 use anyhow::Result;
+#[cfg(any(test, feature = "test-utils"))]
 use std::path::Path;
 
 /// Parameters for binding the server to a Unix socket with plugin configuration.
@@ -182,7 +186,7 @@ impl Server {
     /// `{data_home}/sessions` with no process-global read on the path, so a
     /// test's sessions land under the injected root in exactly the layout
     /// production uses.
-    #[allow(dead_code)] // used by in-process integration-test fixtures
+    #[cfg(any(test, feature = "test-utils"))] // a fixture-only constructor
     pub async fn bind_with_data_home(path: &Path, data_home: std::path::PathBuf) -> Result<Self> {
         Self::bind_with_data_home_and_kilns(path, data_home, &[]).await
     }
@@ -195,7 +199,7 @@ impl Server {
     /// no kilns at all and every scoped request it makes is refused. This is
     /// how a test says "the daemon knows about this directory", through exactly
     /// the config path production uses.
-    #[allow(dead_code)] // used by in-process integration-test fixtures
+    #[cfg(any(test, feature = "test-utils"))] // a fixture-only constructor
     pub async fn bind_with_data_home_and_kilns(
         path: &Path,
         data_home: std::path::PathBuf,
@@ -215,6 +219,7 @@ impl Server {
     /// proves "nothing opened this kiln" has to register one that boot leaves
     /// alone, or the daemon's own startup supplies the side effect the test is
     /// looking for.
+    #[cfg(any(test, feature = "test-utils"))] // a fixture-only constructor
     pub async fn bind_with_data_home_and_kiln_entries(
         path: &Path,
         data_home: std::path::PathBuf,

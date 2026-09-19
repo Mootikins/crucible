@@ -306,8 +306,7 @@ fn install_lines(keep: impl Fn(&BuiltinAgent) -> bool) -> String {
 
 /// Clear the agent cache to prevent state bleeding across tests.
 /// Call this in test teardown to reset the global AGENT_CACHE.
-/// This function is only intended for use in tests.
-#[allow(dead_code)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn reset_agent_cache() {
     *AGENT_CACHE
         .lock()
