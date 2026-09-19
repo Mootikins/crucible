@@ -50,12 +50,11 @@ export function turnThinkingId(messageId: string): string {
 }
 
 /**
- * Estimated token count for a thinking block's summary line. The unit is
- * TOKENS — what people expect from a reasoning summary — at the standard
- * ~4 chars/token heuristic: no provider reports per-thinking-block usage on
- * any wire this page consumes (usage arrives once per completion, covering
- * the whole turn), so an estimate is the honest ceiling. The `~` in the
- * rendered label carries the approximation.
+ * Estimated token count for a thinking block's summary line — the same unit
+ * the TUI's reasoning summary uses. The `~` in the rendered label carries the
+ * approximation: no provider reports per-thinking-block usage on any wire
+ * this page consumes (usage arrives once per completion, covering the whole
+ * turn), so the estimate is the honest ceiling.
  */
 export function estimateThinkingTokens(content: string): number {
   return Math.ceil([...content].length / 4);
