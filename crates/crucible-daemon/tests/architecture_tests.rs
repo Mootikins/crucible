@@ -909,7 +909,8 @@ fn external_tier_test_names_are_unambiguous() {
 
 // ===========================================================================
 // A6 — the wire-request-type table lives in `architecture_tests/wire_types.rs`.
-// Moved there when this file hit its size ceiling; see that module's header.
+// It is a wire contract, while this file is about module shape; see that
+// module's header.
 // ===========================================================================
 
 // `#[path]` because this file is the test binary's crate root, so a bare `mod`

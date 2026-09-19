@@ -1,7 +1,7 @@
 //! Workspace tool JSON-schema definitions.
 //!
-//! Split out of `tools/workspace.rs` for the module-size budget; pure
-//! schema data, no behavior.
+//! Split out of `tools/workspace.rs`; pure schema data, no behavior, so it
+//! reads apart from the implementations it describes.
 
 use rmcp::model::Tool;
 use std::sync::Arc;

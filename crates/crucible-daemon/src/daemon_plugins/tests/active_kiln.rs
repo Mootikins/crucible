@@ -1,8 +1,8 @@
 //! `cru.kiln.active` — the one thing a plugin is told about the kiln it is
 //! running against.
 //!
-//! Split out of `tests/mod.rs` to stay under the 1000-line module budget
-//! that a size gate enforced until 2026-08-24.
+//! Split out of `tests/mod.rs`: what a plugin learns about its kiln is a
+//! subject of its own, apart from the bundled-set tests that stay behind.
 
 use super::*;
 use crate::storage::sqlite::{SqliteConfig, SqliteNoteStore, SqlitePool};

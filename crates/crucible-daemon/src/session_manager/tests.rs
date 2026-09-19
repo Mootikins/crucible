@@ -1,7 +1,7 @@
 //! Tests for the session manager.
 //!
-//! Split out of session_manager.rs: the tests were 811 of its 1569 lines,
-//! putting the file over the 1500-line ceiling CI enforces.
+//! Split out of `session_manager.rs`: the tests were 811 of its 1569 lines, so
+//! the manager and its cases read better apart.
 use crate::test_support::{kiln_name, temp_session_manager};
 
 use super::*;

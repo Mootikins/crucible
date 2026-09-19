@@ -162,8 +162,9 @@ lint what="all":
         *) echo "Valid lint targets: all fmt clippy docs license types dead" >&2; exit 1 ;;
     esac
 
-# Reports only: the index cannot see dynamic Lua, serde or RPC uses.
-# Inspect a rust-analyzer SCIP index: unread (default) | index | symbol | check | orphans
+# Reports only: the index cannot see dynamic Lua, serde or RPC uses, and
+# neither report gates a build. unread (default) | index | symbol | check |
+# orphans | settings
 refs what="unread" *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -173,9 +174,11 @@ refs what="unread" *args:
         symbol) python3 scripts/scip-refs.py --symbol {{args}} ;;
         check)  python3 scripts/scip-refs.py --self-test ;;
         orphans) python3 scripts/orphan-types.py {{args}} ;;
+        # Deserialize fields nothing reads and no doc admits are inert.
+        settings) python3 scripts/inert-settings.py {{args}} ;;
         *)
             echo "Unknown refs target: {{what}}"
-            echo "Valid targets: index unread symbol check orphans"
+            echo "Valid targets: unread index symbol check orphans settings"
             exit 1
             ;;
     esac

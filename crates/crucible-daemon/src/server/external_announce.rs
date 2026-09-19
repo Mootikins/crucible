@@ -1,8 +1,7 @@
 //! Push notification for worktree writes no capture bracket owned.
 //!
-//! Split from [`super`] for the 1000-line module budget: the daemon's run
-//! loop starts and cancels this task, but nothing about it belongs to the
-//! server's wiring.
+//! Split from [`super`]: the daemon's run loop starts and cancels this task,
+//! but nothing about it belongs to the server's wiring.
 
 use std::time::Duration;
 

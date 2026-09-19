@@ -1,7 +1,7 @@
-//! Tests for the `cru.kiln` Lua module — split from `mod.rs` for the
-//! file-size gate. Three groups: `stub_tests` (the storage-free registration
-//! `DaemonPluginLoader::new` performs), `store_tests` (`list`/`get` over a
-//! `NoteStore`), and `graph_tests` (`outlinks`/`backlinks`/`neighbors`).
+//! Tests for the `cru.kiln` Lua module — split from `mod.rs`. Three groups:
+//! `stub_tests` (the storage-free registration `DaemonPluginLoader::new`
+//! performs), `store_tests` (`list`/`get` over a `NoteStore`), and
+//! `graph_tests` (`outlinks`/`backlinks`/`neighbors`).
 
 mod stub_tests {
     use crate::test_support::TestLuaBuilder;

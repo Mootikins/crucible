@@ -1,7 +1,7 @@
 //! Tests for [`super`]: agent construction from a session config.
 //!
-//! A sibling file rather than an inline `mod tests`, for the file-size
-//! gate — same shape as `kiln_manager/tests.rs`.
+//! A sibling file rather than an inline `mod tests`, as in
+//! `kiln_manager/tests.rs`.
 
 use super::*;
 use crucible_core::traits::chat::SessionKnobs;

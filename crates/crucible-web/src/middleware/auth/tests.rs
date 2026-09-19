@@ -1,6 +1,7 @@
 //! Tests for the auth middleware: the Host check, the loopback bypass, the
 //! session token, and the forwarded-scheme reading behind the `Secure`
-//! cookie attribute. Split out of `mod.rs` to keep it under the size budget.
+//! cookie attribute. Split out of `mod.rs`; the cases read apart from the
+//! middleware they pin.
 
 use super::*;
 use axum::http::HeaderValue;

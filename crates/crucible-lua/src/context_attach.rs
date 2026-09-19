@@ -9,7 +9,9 @@
 //! way to diverge from it. An attachment shapes one turn's context and then it
 //! is gone.
 //!
-//! Split from `context.rs` to stay under the module line budget.
+//! Split from `context.rs`: the attachment store and its per-session character
+//! budget are a subject of their own, apart from the context assembly that
+//! reads them.
 
 use crate::error::LuaError;
 use mlua::{Lua, Table};

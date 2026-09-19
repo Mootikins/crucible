@@ -1,7 +1,7 @@
 //! Tests for [`super`]: the note search tools.
 //!
-//! A sibling file rather than an inline `mod tests`, for the file-size gate —
-//! same shape as `agent_factory/tests.rs`.
+//! A sibling file rather than an inline `mod tests`, as in
+//! `agent_factory/tests.rs`.
 
 use super::*;
 use std::fs;

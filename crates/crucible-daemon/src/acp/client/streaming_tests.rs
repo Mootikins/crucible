@@ -1,6 +1,6 @@
 //! Boundary tests for the ACP streaming client.
 //!
-//! Split out of `streaming.rs` for the 1000-line file-size gate, and attached
+//! Split out of `streaming.rs`, and attached
 //! with `#[path]` rather than moved into `tests/` because `describe_rpc_error`
 //! and `apply_session_update_with_callback` are crate-private.
 

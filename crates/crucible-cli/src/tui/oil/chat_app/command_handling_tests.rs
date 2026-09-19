@@ -1,6 +1,6 @@
 //! Slash- and REPL-command dispatch tests.
 //!
-//! Split out of `command_handling.rs` for the 1500-line file-size gate, and
+//! Split out of `command_handling.rs`, and
 //! attached with `#[path]` rather than moved into `tui/oil/tests/` because the
 //! handlers under test are `pub(super)` — reachable from a descendant of
 //! `chat_app`, not from the sibling test tree.

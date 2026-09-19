@@ -1,5 +1,7 @@
 //! The per-turn gate deciding whether Precognition runs at all.
-//! Split from `precognition.rs` for the 1000-line module budget.
+//! Split from `precognition.rs`: this is the pure decision — whether the turn
+//! runs Precognition — with no imports beyond std, while that file owns the
+//! search itself.
 
 // Pure gate — no imports needed beyond std.
 

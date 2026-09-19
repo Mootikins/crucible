@@ -1,7 +1,7 @@
 //! When an `accept()` error may be retried immediately, and what to do when it
 //! may not.
 //!
-//! Split from `server/mod.rs` for the 1000-line module budget.
+//! Split from `server/mod.rs` along the accept loop's own seam.
 
 /// How long the accept loop waits after an accept error it cannot retry
 /// immediately. Long enough to turn a spin into ten log lines a second, short

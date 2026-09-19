@@ -1,7 +1,7 @@
 //! Unit tests for the workflow parser.
 //!
-//! Split out from `workflow.rs` to keep the impl file under the 1500-line
-//! decomposition ceiling. All helpers are intentionally scoped to this
+//! Split out from `workflow.rs`: the impl file holds the parser, this file the
+//! cases it must answer. All helpers are intentionally scoped to this
 //! module (via `super::*`).
 
 use super::*;

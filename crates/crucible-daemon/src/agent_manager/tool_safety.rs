@@ -1,9 +1,9 @@
 //! Which tools bypass the permission gate.
 //!
-//! Split from `mod.rs` for the file-size ceiling, but the pair belongs
-//! together on its own: this is the one decision that can skip the session
-//! mode stance, its rules, every Lua `on_request` hook, the saved patterns
-//! and the prompt. Read `is_safe`'s doc comment before widening either.
+//! Split from `mod.rs` because this decision belongs on its own: it is the one
+//! that can skip the session mode stance, its rules, every Lua `on_request`
+//! hook, the saved patterns and the prompt. Read `is_safe`'s doc comment before
+//! widening either.
 
 use std::collections::HashSet;
 

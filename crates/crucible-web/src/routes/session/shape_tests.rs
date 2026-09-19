@@ -6,8 +6,9 @@
 //! them. Each test decodes the body into the handler's own reply struct, which
 //! fails on a missing or retyped field, and then reads one field back.
 //!
-//! Split from `tests.rs` for the reason `search_scope_tests.rs` was: that file
-//! is at its size budget.
+//! Split from `tests.rs`; a test per handler's declared reply shape is a
+//! subject of its own, apart from the route and endpoint tests that stay
+//! behind.
 //!
 //! The two round-trip tests at the end are the stronger claim. They take the
 //! daemon object the mock answers, push it through the reply struct, and

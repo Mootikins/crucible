@@ -1,8 +1,8 @@
 //! The four app-config RPCs `/api/config` forwards to.
 //!
-//! Split from `daemon.rs` for the same reason as `daemon_plugins` and
-//! `daemon_review`: that file sits against its size gate, and these three
-//! belong to one surface.
+//! Split from `daemon.rs` alongside `daemon_plugins` and `daemon_review`: each
+//! holds the RPCs the web forwards to one daemon surface, and this one is the
+//! app config.
 //!
 //! **Every read redacts credentials here, at the crate boundary, rather than
 //! in the route.** The effective config carries `web.api_key` and every

@@ -1,6 +1,6 @@
 //! `plugin.*` RPCs, forwarded to the daemon.
 //!
-//! Split from `daemon.rs` for the 1500-line file budget, along a real seam:
+//! Split from `daemon.rs` along a real seam:
 //! these are the calls that serve the plugin panel and its settings pane, and
 //! none of them interpret what a plugin's data means — that is the whole point
 //! of the publications and options channels.

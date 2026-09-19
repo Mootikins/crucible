@@ -1,7 +1,8 @@
 //! Tests for tool-call dispatch — gate ordering and argument handling.
 //!
-//! Split out of `tool_call.rs` to keep that file under the 1000-line budget;
-//! the module name is unchanged so no test path moved.
+//! Split out of `tool_call.rs`; the dispatch logic reads apart from the cases
+//! that pin its gate order, and the module name is unchanged so no test path
+//! moved.
 
 use super::AgentManager;
 use crucible_core::traits::chat::ChatToolCall;

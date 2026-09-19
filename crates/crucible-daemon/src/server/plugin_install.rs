@@ -1,8 +1,9 @@
 //! `plugin.install` / `plugin.remove` — the runtime install/remove handlers.
 //!
-//! Split from `plugins.rs` (which keeps reload/list/options and the shared
-//! `spawn_plugin_services`) purely for module size; the two files share the
-//! same `super::*` scope.
+//! Split from `plugins.rs` along the install seam: that file keeps
+//! reload/list/options and the shared `spawn_plugin_services`, while this one
+//! is the two handlers that bring a plugin in and out at runtime. The two
+//! files share the same `super::*` scope.
 
 use super::plugins::spawn_plugin_services;
 use super::*;

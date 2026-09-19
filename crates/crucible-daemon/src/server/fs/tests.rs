@@ -1,7 +1,7 @@
 //! Tests for the filesystem RPC surface.
 //!
-//! Split from `mod.rs` for the 1000-line module budget; the plain-text kind
-//! pushed the combined file over it.
+//! Split from `mod.rs`: the listing logic reads apart from the cases that pin
+//! it, and the plain-text kind is a subject of its own.
 
 use super::*;
 use std::fs;

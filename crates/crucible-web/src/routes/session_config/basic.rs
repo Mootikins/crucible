@@ -1,8 +1,9 @@
 //! The session config knobs the web has always had: precognition and
 //! precognition results.
 //!
-//! Moved here verbatim when `session_config.rs` became a directory — nine more
-//! knob pairs would have taken one file past the 1000-line module budget.
+//! Moved here when `session_config.rs` became a directory: the two knobs the
+//! web has always had keep their own module, beside the handler each answers
+//! on.
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};

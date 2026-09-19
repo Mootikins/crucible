@@ -1,8 +1,8 @@
 //! Tests for the precognition path: the context block, the
 //! `precognition_format` seam, and the `precognition_select` seam.
 //!
-//! Split out of `mod.rs` to stay under the 1000-line module budget
-//! that a size gate enforced until 2026-08-24.
+//! Split out of `mod.rs`; the format and select seams each get their own cases
+//! here, away from the search that calls them.
 
 use super::*;
 

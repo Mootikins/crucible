@@ -1,5 +1,6 @@
 //! `/api/session/{id}/status` — the status slots plugins published for a
-//! session. Split from `session.rs` (file-size ceiling).
+//! session. Split from `session.rs`; the status shape is a surface of its own,
+//! apart from the session router.
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};

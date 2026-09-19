@@ -1,7 +1,7 @@
 //! Tests for the typed session-event payloads.
 //!
-//! Split out of the payload modules to keep each inside the 1000-line module
-//! budget that a size gate enforced until 2026-08-24.
+//! Split out of the payload modules: each `*Payload` group is declared there,
+//! and the cases that pin its serde shape read apart from the declaration.
 
 use super::*;
 use crate::events::session_event::{FileChangeKind, InternalSessionEvent, ScriptingEvent};

@@ -1,6 +1,6 @@
 //! Turning a `SessionAgent` into the process to launch.
 //!
-//! Split from `acp_handle.rs` for the 1000-line budget, along a real seam:
+//! Split from `acp_handle.rs` along a real seam:
 //! everything here answers "what command, with what arguments, where" — and
 //! nothing here knows about the ACP protocol, the handle, or a live session.
 //!

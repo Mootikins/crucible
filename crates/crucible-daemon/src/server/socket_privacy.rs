@@ -1,7 +1,8 @@
 //! Making the daemon's front door reachable only by the user who owns it.
 //!
-//! Three separate guards, split out of `server/mod.rs` for the module-size
-//! budget (same reason as `socket_lock`), behavior unchanged:
+//! Three separate guards, split out of `server/mod.rs` alongside `socket_lock`:
+//! every one of them constrains who can reach the socket, and none belongs to
+//! the server's request handling.
 //!
 //! - the directory the socket lives in is verified before anything opens a file
 //!   in it ([`prepare_socket_dir`]);

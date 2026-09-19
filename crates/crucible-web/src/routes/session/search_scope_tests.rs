@@ -1,7 +1,7 @@
 //! `GET /api/sessions/search` kiln-scope parsing.
 //!
-//! Split out of `tests.rs` to stay under the 1000-line module budget enforced
-//! by a size gate removed on 2026-08-24.
+//! Split out of `tests.rs`; kiln-scope parsing is a subject of its own, apart
+//! from the route and endpoint tests that stay behind.
 
 /// A `kiln` the registry could never have issued is refused, not dropped.
 ///

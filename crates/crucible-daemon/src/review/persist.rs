@@ -2,9 +2,9 @@
 //! `review.jsonl`, appending to it, rebasing off it, and keeping the git trees
 //! it names alive.
 //!
-//! Split from [`super`] for the 1000-line module budget, along the seam that
-//! was already there — everything here either reads or writes durable state,
-//! and nothing in it decides what a hunk means.
+//! Split from [`super`] along the seam that was already there — everything
+//! here either reads or writes durable state, and nothing in it decides what a
+//! hunk means.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -1,5 +1,5 @@
 //! Screen-level tests driven through [`Vt100TestRuntime`], split from
-//! `vt100_runtime.rs` (harness) to stay under the module size ceilings.
+//! `vt100_runtime.rs`, which keeps the harness itself.
 
 mod spacing;
 mod spinner_leak;

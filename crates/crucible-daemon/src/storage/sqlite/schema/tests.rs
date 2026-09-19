@@ -1,7 +1,8 @@
 //! Migration-ladder tests.
 //!
-//! Split out of `schema/mod.rs` to keep that file inside the 1000-line
-//! module budget as the ladder grows.
+//! Split out of `schema/mod.rs`: the ladder's own cases — apply cleanly, climb
+//! version by version — are a subject of their own, apart from the DDL the
+//! module owns.
 
 use super::*;
 

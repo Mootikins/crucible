@@ -1,9 +1,7 @@
 //! Tests for [`CrucibleMcpServer`].
 //!
-//! Split out of `mcp_server.rs` when the parent crossed the 1500-line ceiling
-//! that `scripts/check-file-sizes.sh` enforces. Same arrangement as
-//! `tools/surface.rs` and `tools/workspace.rs`: the tests are a sibling module,
-//! not a whitelist entry.
+//! A sibling module rather than an inline `mod tests`, as in
+//! `tools/surface.rs` and `tools/workspace.rs`.
 
 use super::*;
 

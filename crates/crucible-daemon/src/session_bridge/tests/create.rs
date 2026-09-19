@@ -2,8 +2,7 @@
 //! create path, so everything the RPC handler does — scope refusal, trust
 //! validation, agent-card resolution, the setup task — happens here too.
 //!
-//! Split out of `tests/mod.rs` because that file reached the 1000-line module
-//! budget; the fixtures it shares still live there.
+//! Split out of `tests/mod.rs`; the fixtures it shares still live there.
 
 use super::*;
 

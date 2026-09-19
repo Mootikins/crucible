@@ -1,5 +1,6 @@
 //! `/api/session/{id}/command` — web slash-command execution.
-//! Split from `session.rs` (file-size ceiling).
+//! Split from `session.rs`; command listing and execution are a surface of
+//! their own, apart from the session router.
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};

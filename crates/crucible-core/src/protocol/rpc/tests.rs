@@ -1,7 +1,7 @@
 //! Tests for the RPC envelope and its typed event constructors.
 //!
-//! Split out of `mod.rs` to keep both inside the 1000-line module budget
-//! that a size gate enforced until 2026-08-24.
+//! Split out of `mod.rs`: the envelope and its constructors are declared
+//! there, and the cases that pin their wire shape read apart from them.
 
 use super::*;
 use chrono::Utc;

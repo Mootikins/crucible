@@ -1,5 +1,5 @@
-//! Tests for [`super`] — split out to keep the parent under the
-//! 1000-line module budget a size gate enforced until 2026-08-24.
+//! Tests for [`super`] — split out of the parent so the migration cases read
+//! apart from the pass that runs them.
 
 use super::*;
 use crate::session_storage::{FileSessionStorage, SessionStorage};

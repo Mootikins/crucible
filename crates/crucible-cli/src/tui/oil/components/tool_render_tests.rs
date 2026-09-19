@@ -1,6 +1,6 @@
 //! Tool-card rendering and result-summary tests.
 //!
-//! Split out of `tool_render.rs` for the 1500-line file-size gate, and
+//! Split out of `tool_render.rs`, and
 //! attached with `#[path]` rather than moved into `tui/oil/tests/` because
 //! `summary_key` and `collapse_result` are private to the module under test.
 

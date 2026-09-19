@@ -1,7 +1,7 @@
 //! Tests for [`super::super`]: the workspace tool set.
 //!
-//! A sibling directory rather than an inline `mod tests`, for the file-size
-//! gate — same shape as `agent_factory/tests.rs`. Containment lives next door
+//! A sibling directory rather than an inline `mod tests`, as in
+//! `agent_factory/tests.rs`. Containment lives next door
 //! in [`containment`]: it is the half a reviewer reads on its own, and it is
 //! the half that grows every time an escape is found.
 

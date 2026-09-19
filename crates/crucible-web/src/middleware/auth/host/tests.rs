@@ -1,7 +1,7 @@
 //! Tests for the DNS-rebinding defence: what `Host` values the policy
 //! accepts, which `allowed_hosts` entries refuse to start, and the local
-//! names a reachable bind answers to. Split out of `host.rs` to keep it
-//! under the size budget.
+//! names a reachable bind answers to. Split out of `host.rs`; the accept and
+//! refuse tables read apart from the policy they pin.
 
 use super::*;
 

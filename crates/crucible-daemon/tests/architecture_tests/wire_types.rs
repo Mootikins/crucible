@@ -2,11 +2,9 @@
 //! deserializes.
 //!
 //! Split out of `architecture_tests.rs` on 2026-08-19: the S2 conversion added
-//! 26 `WIRE_REQUEST_TYPES` rows and pushed that file to 1501 lines against a
-//! 1500 ceiling. The ledger only shrinks and the size whitelist only shrinks,
-//! so the answer is a real seam rather than either kind of exemption — and the
-//! seam is honest, because this table is a *wire contract*, while the rest of
-//! `architecture_tests.rs` is about module shape.
+//! 26 `WIRE_REQUEST_TYPES` rows, and this table is a *wire contract* while the
+//! rest of `architecture_tests.rs` is about module shape, so it is a real seam
+//! rather than an exemption.
 //!
 //! `mod` of the parent test binary, so it shares `workspace_root`, `read` and
 //! `captures` rather than growing a second copy.

@@ -1,7 +1,8 @@
 //! Advisory single-daemon socket lock.
 //!
-//! Split out of `server/mod.rs` for the module-size budget; behavior is
-//! unchanged.
+//! Split out of `server/mod.rs`: the lock is self-contained — it touches only
+//! the socket path and the filesystem — so it reads apart from the server's
+//! wiring.
 
 use anyhow::Result;
 #[cfg(unix)]

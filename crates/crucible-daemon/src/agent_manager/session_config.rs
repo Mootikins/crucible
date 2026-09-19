@@ -1,6 +1,6 @@
 //! What a session's config starts as, and who decides it.
 //!
-//! Split from `agent_manager/mod.rs` for the 1500-line file budget, along a
+//! Split from `agent_manager/mod.rs` along a
 //! real seam: everything here is about the values a session begins with and
 //! the one place they are written down.
 //!

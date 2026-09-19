@@ -1,9 +1,8 @@
 //! Web routes for the daemon's `session.{set,get}_*` config knobs.
 //!
-//! One module per concern rather than one file: nine knob pairs plus their
-//! request/response structs is roughly +450 lines, and `session_config.rs` was
-//! already 206 — one file would have breached the 1000-line module budget (gate
-//! A4). Split by what the knobs mean, not by line count.
+//! One module per concern rather than one file, split by what the knobs mean:
+//! each group keeps its handler, its request/response shape, its route and its
+//! round-trip test together.
 //!
 //! Every knob the daemon advertises in `METHODS` must be reachable from here;
 //! gate **A2e** (`crucible-cli/tests/architecture_tests.rs`) fails when one is
@@ -44,10 +43,10 @@ pub(super) use prompt::{
 /// Every `/api/session/{id}/config/...` route, as a standalone router the session
 /// group merges in.
 ///
-/// Registered here rather than spelled out in `routes/session/mod.rs`: fifteen
-/// route pairs is 60 lines of chain that pushed that file past the 1000-line
-/// budget (gate A4 caught it), and it made the file import 28 handler names it
-/// otherwise has no interest in. The knobs now live entirely in this directory —
+/// Registered here rather than spelled out in `routes/session/mod.rs`: the
+/// group belongs with the knobs it serves, and spelling it out there would
+/// make that file import 28 handler names it otherwise has no interest in. The
+/// knobs now live entirely in this directory —
 /// handler, request/response shape, route, and round-trip test.
 ///
 /// Merged into the session router rather than nested as its own group, so it

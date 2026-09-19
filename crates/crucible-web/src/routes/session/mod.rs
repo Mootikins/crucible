@@ -406,8 +406,8 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         .routes(routes!(auto_title))
         .routes(routes!(list_providers))
         // Config knobs register themselves in `session_config`, next to their
-        // handlers: fifteen route pairs is 60 lines that pushed this file past the
-        // 1000-line budget, and the group has no reason to be spelled out here.
+        // handlers: the group belongs with the knobs it serves, and has no
+        // reason to be spelled out here.
         .merge(super::session_config::config_routes())
         // Review lives inside this group, not beside it: bearer auth, the host
         // guard, the CORS allowlist, the body limit and the security headers

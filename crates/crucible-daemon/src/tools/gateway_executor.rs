@@ -1,8 +1,8 @@
 //! The `ToolExecutor` for user-configured MCP gateway servers.
 //!
 //! Lives next to [`crate::tools::mcp_gateway`] rather than in `tool_dispatch`
-//! because it is a provider like any other, and `tool_dispatch.rs` is against
-//! the module size budget.
+//! because it is a provider like any other: it reaches its upstream servers
+//! through `McpGatewayManager` and shares nothing with the built-in dispatch.
 
 use async_trait::async_trait;
 use crucible_core::traits::tools::{

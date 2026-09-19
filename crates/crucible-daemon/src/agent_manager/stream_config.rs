@@ -1,6 +1,6 @@
 //! The per-turn snapshot of everything the agent stream loop reads.
 //!
-//! Split from `agent_manager/mod.rs` for the file-size gate. The two types
+//! Split from `agent_manager/mod.rs`. The two types
 //! here are a pair: `TurnEnvironment` is what the daemon knows at turn start,
 //! `AgentStreamConfig` is that plus the session's own config, frozen.
 
