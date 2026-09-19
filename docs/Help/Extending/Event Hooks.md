@@ -393,6 +393,13 @@ and Handle are ignored here; a handler that must be able to veto belongs in
 `pre_tool_call`. Use for redaction and summarisation of what the model sees;
 `tool:display_complete` is the equivalent for what the *user* sees.
 
+The shipped defaults use this hook once: a bash-only handler that echoes
+`$ <command>` above the output, so the model, the TUI, the web card and the
+recording all read a bash result as a terminal transcript (and output that
+happens to be JSON stays text instead of rendering as a `{...}` object). It
+runs first — a bash handler of yours sees its output and can strip or rework
+it.
+
 ### `tool:display_start` / `tool:display_complete`
 
 Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent).

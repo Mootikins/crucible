@@ -44,6 +44,40 @@ cru.on("precognition_format", function(ctx, event)
   return table.concat(lines, "\n")
 end)
 
+-- Bash results render as a terminal transcript
+--
+-- The `tool_result` hook patches the ONE result string everyone consumes:
+-- the model's context, the TUI card, the web card and the recording all read
+-- it, which is why redaction lives here too — a secret stripped here is
+-- stripped everywhere. The daemon hands this hook the command's output:
+-- stdout on success, an "Exit code: N / Stdout: / Stderr:" block on a
+-- non-zero exit. That is what a terminal shows, minus the prompt — except
+-- that output which happens to be JSON surfaces (most visibly in the web
+-- tool card) as a pretty-printed {...} object instead of the text the
+-- terminal printed. Echoing "$ <command>" in front fixes that at the source:
+-- the result stops being bare JSON, so every surface renders it as text, and
+-- the transcript reads like a shell session.
+--
+-- This runs FIRST: your init.lua and plugins register after this file, so a
+-- handler of yours for the same event sees (and can strip or rework) this
+-- formatting rather than racing it.
+cru.on("tool_result", { pattern = "bash" }, function(ctx, event)
+  local args = event.args
+  local command = type(args) == "table" and args.command
+  if type(command) ~= "string" or command == "" then
+    return nil
+  end
+  if type(event.result) ~= "string" then
+    return nil
+  end
+
+  local output = event.result
+  if output == "" then
+    output = "(no output)"
+  end
+  return { result = "$ " .. command .. "\n" .. output }
+end)
+
 -- The built-in modes
 --
 -- A mode is two things: which tools it exposes, and what it does when one of

@@ -436,6 +436,53 @@ async fn plugin_pre_tool_call_transform_rewrites_arguments() {
     );
 }
 
+/// The shipped defaults format bash results as a terminal transcript — but
+/// the formatter can only format what the dispatcher hands it. Prove the
+/// whole crossing: real dispatch → `tool_result` seam → emitted string. The
+/// model-visible text must be the command echo over the command's OWN output;
+/// a `{"result": …}` envelope here means the formatter formatted the wrapper
+/// and every surface renders escaped JSON.
+#[tokio::test]
+async fn shipped_bash_formatter_formats_the_commands_own_output() {
+    let mut h = ReactorTestHarness::new().await;
+
+    // The shipped defaults (for the formatter) plus a hook that answers the
+    // gate bash would otherwise prompt: this test is about the result string,
+    // not the permission flow.
+    let script = format!(
+        "{}\n{}",
+        crucible_lua::BUILTIN_INIT_LUA,
+        r#"cru.permissions.on_request(function(_request) return { allow = true } end)"#
+    );
+    let _loader = h.load_daemon_lua(&script);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-bash", "bash", serde_json::json!({ "command": "pwd" })),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    let result = tool_result.data["result"]["result"]
+        .as_str()
+        .unwrap_or_default();
+    let output = result.strip_prefix("$ pwd\n").unwrap_or_else(|| {
+        panic!("bash result must echo the command over plain output; got {result:?}")
+    });
+    assert!(
+        !output.starts_with('{') && !output.contains("\\n"),
+        "the formatter must format the command's own output, not a JSON \
+         envelope of it; got {output:?}"
+    );
+    assert!(
+        output.ends_with('\n'),
+        "the command's stdout verbatim keeps its trailing newline; got {output:?}"
+    );
+}
+
 /// The `tool_result` seam patches what the model receives — including a
 /// result another plugin handler produced via `handled = true` (oci's bash
 /// output must be redactable like any dispatched output).

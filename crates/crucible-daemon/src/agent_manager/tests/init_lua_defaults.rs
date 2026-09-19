@@ -841,3 +841,155 @@ async fn a_start_hook_runs_once_per_session() {
         "the hook must fire once per session, not once per site"
     );
 }
+
+/// Run the daemon VM's `tool_result` handlers exactly as the seam does over a
+/// finished outcome: every handler registered for the tool, in registration
+/// order, each seeing the previous handlers' patches. Error results never
+/// reach the seam (`tool_call.rs` runs it only when `error.is_none()`), so
+/// this helper models the success arm only.
+async fn run_tool_result_handlers(
+    loader: &crate::daemon_plugins::DaemonPluginLoader,
+    tool: &str,
+    args: serde_json::Value,
+    result: &str,
+) -> String {
+    let handlers = loader.plugin_handlers();
+    let lua = loader.plugin_lua();
+    let event = crucible_core::events::SessionEvent::Custom {
+        name: "tool_result".to_string(),
+        payload: serde_json::json!({
+            "tool": tool,
+            "args": args,
+            "result": result,
+            "error": Option::<String>::None,
+        }),
+    };
+    let mut patched = result.to_string();
+    for handler in handlers.runtime_handlers_for(
+        crucible_lua::StageId::ToolResult.as_str(),
+        Some(tool),
+        crucible_lua::Firing::InSession("test-session"),
+    ) {
+        let crucible_lua::ScriptHandlerResult::Transform(val) = handlers
+            .execute_runtime_handler(&lua, handler.id, &event, Some("test-session"))
+            .await
+            .expect("every registered tool_result handler must run")
+        else {
+            continue;
+        };
+        if let Some(new_result) = val.get("result").and_then(|v| v.as_str()) {
+            patched = new_result.to_string();
+        }
+    }
+    patched
+}
+
+/// The shipped formatter is scoped to the bash tool. `pattern = "bash"` is
+/// the whole scoping mechanism — no Lua-side guard could rescue a pattern
+/// that never matches.
+#[tokio::test]
+async fn the_bash_result_formatter_is_registered_for_bash_only() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let handlers = vm.plugin_handlers();
+    assert!(
+        !handlers
+            .runtime_handlers_for(
+                crucible_lua::StageId::ToolResult.as_str(),
+                Some("bash"),
+                crucible_lua::Firing::InSession("test-session"),
+            )
+            .is_empty(),
+        "defaults/init.lua must register a tool_result handler for bash"
+    );
+    assert!(
+        handlers
+            .runtime_handlers_for(
+                crucible_lua::StageId::ToolResult.as_str(),
+                Some("read_file"),
+                crucible_lua::Firing::InSession("test-session"),
+            )
+            .is_empty(),
+        "the formatter must stay scoped to bash; read_file results are not terminal output"
+    );
+}
+
+/// The formatter renders the result the way a terminal would: the command
+/// echoed, the output verbatim beneath it. The echo is also what stops the
+/// web card from pretty-printing JSON-bearing output as a {...} object — the
+/// prefixed string no longer parses as bare JSON.
+#[tokio::test]
+async fn the_shipped_bash_formatter_echoes_the_command_over_the_output() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let result = run_tool_result_handlers(
+        &vm,
+        "bash",
+        serde_json::json!({ "command": "ls src" }),
+        "total 42\nmain.rs\n",
+    )
+    .await;
+
+    assert_eq!(result, "$ ls src\ntotal 42\nmain.rs\n");
+}
+
+/// Output that happens to be JSON stays text under the command line, exactly
+/// as the terminal printed it.
+#[tokio::test]
+async fn the_shipped_bash_formatter_keeps_json_output_as_text() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let result = run_tool_result_handlers(
+        &vm,
+        "bash",
+        serde_json::json!({ "command": "cru models" }),
+        r#"{"models":["glm-5.3-flash"]}"#,
+    )
+    .await;
+
+    assert_eq!(result, "$ cru models\n{\"models\":[\"glm-5.3-flash\"]}");
+}
+
+/// A non-zero exit is NOT a tool error — the daemon returns it as success
+/// text ("Exit code: N / Stdout: / Stderr:"), and the formatter keeps that
+/// block verbatim beneath the command line.
+#[tokio::test]
+async fn the_shipped_bash_formatter_keeps_the_failure_block_verbatim() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let result = run_tool_result_handlers(
+        &vm,
+        "bash",
+        serde_json::json!({ "command": "cargo build" }),
+        "Exit code: 101\nStdout:\n\nStderr:\nerror: build failed\n",
+    )
+    .await;
+
+    assert_eq!(
+        result,
+        "$ cargo build\nExit code: 101\nStdout:\n\nStderr:\nerror: build failed\n"
+    );
+}
+
+/// A command that printed nothing would leave the command line alone to read
+/// as a truncated result, so silence is stated.
+#[tokio::test]
+async fn the_shipped_bash_formatter_marks_silent_success() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let result =
+        run_tool_result_handlers(&vm, "bash", serde_json::json!({ "command": "true" }), "").await;
+
+    assert_eq!(result, "$ true\n(no output)");
+}
+
+/// No `command` in the args — a foreign tool wearing the bash name — gets no
+/// formatting: the handler declines and the result passes through untouched.
+#[tokio::test]
+async fn the_shipped_bash_formatter_declines_without_a_command_argument() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+
+    let result = run_tool_result_handlers(&vm, "bash", serde_json::json!({}), "raw").await;
+
+    assert_eq!(result, "raw");
+}
