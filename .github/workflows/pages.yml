@@ -6,6 +6,10 @@ on:
     paths:
       - 'docs/Help/**'
       - 'docs/Guides/**'
+      # Canvases are published wherever they sit under `docs/` except `Meta/`
+      # (see `docs-site/src/lib/canvas-pages.mjs`), so the two note directories
+      # above do not cover them — `docs/Canvas Tour.canvas` sits at the root.
+      - 'docs/**.canvas'
       - 'docs-site/**'
       - 'assets/**'
       - '.github/workflows/pages.yml'
@@ -32,6 +36,13 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+        working-directory: docs-site
+
+      # Starlight fails the build on the FIRST stale slug, so a deleted note
+      # costs a red deploy and names one line. This names every one at once,
+      # before the build.
+      - name: Check sidebar slugs
+        run: bun run check:sidebar
         working-directory: docs-site
 
       - name: Build site

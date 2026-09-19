@@ -7,6 +7,7 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "check:sidebar": "node scripts/check-sidebar.mjs",
     "check:links": "node scripts/check-links.mjs",
     "preview": "astro preview",
     "astro": "astro"

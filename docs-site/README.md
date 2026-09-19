@@ -1,49 +1,46 @@
-# Starlight Starter Kit: Basics
+# Crucible documentation site
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+The published documentation at <https://mootikins.github.io/crucible/>: Astro +
+Starlight, deployed to GitHub Pages by `.github/workflows/pages.yml`.
 
-```
-bun create astro@latest -- --template starlight
-```
+## Where the content comes from
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+**The repository is the source.** `src/lib/kiln-loader.mjs` reads the kiln
+directly, so the pages are `docs/Help/**` and `docs/Guides/**` plus this site's
+own MDX under `src/content/docs/`. There is no committed copy to hand-edit and
+no conversion step: a note edited under `docs/Help/` is the page that ships.
 
-## 🚀 Project Structure
+`docs/Meta/**` is deliberately unpublished — architecture notes and contributor
+material. Canvases are the exception to the directory rule:
+`src/lib/canvas-pages.mjs` publishes every `.canvas` under `docs/` except
+`Meta/`, so `docs/Canvas Tour.canvas` has a page.
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+Two remark plugins adapt kiln conventions rather than rewriting 80 files:
+`remark-kiln-wikilinks` turns `[[Note Name]]` into a site-absolute link, and
+`remark-strip-title-heading` drops each note's leading H1 because Starlight
+renders the frontmatter title as the page heading.
 
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
+## Commands
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+Run from this directory; the package manager is **bun**.
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+| Command | Action |
+| --- | --- |
+| `bun install` | Install dependencies |
+| `bun run dev` | Development server on `localhost:4321` |
+| `bun run check:sidebar` | Check every sidebar slug against the content — run before `build` |
+| `bun run build` | Build the site into `dist/` |
+| `bun run check:links` | Check every internal link against `dist/` — run it after a build |
+| `bun run preview` | Serve a built site locally |
 
-Static assets, like favicons, can be placed in the `public/` directory.
+Both checks are blocking in CI, and both exist because a green build proves
+nothing: Starlight fails on the *first* stale sidebar slug (so `check:sidebar`
+runs first and names them all), and 240 of 257 in-content cross-references once
+404'd through a build that succeeded (which is `check:links`).
 
-## 🧞 Commands
+## Sidebar
 
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `bun install`             | Installs dependencies                            |
-| `bun dev`             | Starts local dev server at `localhost:4321`      |
-| `bun build`           | Build your production site to `./dist/`          |
-| `bun preview`         | Preview your build locally, before deploying     |
-| `bun astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `bun astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+`astro.config.mjs` addresses pages by slug, so **a new note under `docs/Help/`
+or `docs/Guides/` needs a sidebar entry there or it is reachable only by search.**
+Slugs come from `generateId` in `kiln-loader.mjs` (lower-case, spaces to
+hyphens, `index` dropped).

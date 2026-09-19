@@ -150,7 +150,6 @@ export default defineConfig({
 					items: [
 						{ slug: 'help/concepts/scripting-languages' },
 						{ slug: 'help/extending/creating-plugins' },
-						{ slug: 'help/extending/plugin-manifest' },
 						{ slug: 'help/extending/custom-tools' },
 						{ slug: 'help/extending/event-hooks' },
 						{ slug: 'help/extending/custom-handlers' },
