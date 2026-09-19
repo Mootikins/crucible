@@ -458,6 +458,21 @@ impl MockStdioAgent {
         if env_flag("CRU_MOCK_RESUME_REJECT") {
             return self.error_response(request, -32602, "no such session");
         }
+        // What claude-agent-acp and codex-acp answer a resume for a session
+        // that never persisted (no turn yet) or was reaped: the method
+        // exists, the session is gone.
+        if env_flag("CRU_MOCK_RESUME_UNKNOWN") {
+            let session_id = request
+                .get("params")
+                .and_then(|p| p.get("sessionId"))
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            return self.error_response(
+                request,
+                -32002,
+                &format!("Resource not found: {session_id}"),
+            );
+        }
         let session_id = request
             .get("params")
             .and_then(|p| p.get("sessionId"))

@@ -174,11 +174,13 @@ When you run `cru chat -a claude`, Crucible:
 7. **Routes** all tool calls through Crucible's MCP server, enforcing permissions
 
 After a daemon restart, Crucible sends `session/resume` to continue the agent session.
-A `-32601` reply means the agent does not have the method: Crucible opens a new session
-instead and announces the fallback, because the agent kept none of the conversation. Any
-other error reply means the agent has the method and refuses this call — a stored session
-id that the agent no longer knows, most often — and the connect fails rather than starting
-a session that silently forgets. To switch the model, Crucible sends
+A `-32601` reply means the agent does not have the method, and a `-32002` reply means the
+agent no longer knows the stored session (claude-agent-acp and codex-acp answer this for
+a session that never completed a turn, and reaped sessions answer it too): Crucible opens
+a new session instead and announces the fallback, because the agent kept none of the
+conversation. Any other error reply means the agent has the method and refuses this call
+— an agent-side breakage, most often — and the connect fails rather than starting a
+session that silently forgets. To switch the model, Crucible sends
 `session/set_config_option` with the agent's `model_config` option. At shutdown, Crucible
 sends `session/close` when the agent advertises the capability. A `-32601` reply to
 `session/close` is not an error.

@@ -257,16 +257,15 @@ async fn a_resumed_session_adopts_the_modes_the_agent_reports_on_resume() {
 
 /// `-32601` and a normal error mean different things, and the client must
 /// not conflate them. `-32601` says "I do not have this method" and falls
-/// back to `session/new`. Any other error says "I have the method and I am
-/// refusing this call" — a stale id, most often, because the agent itself
-/// restarted and no longer knows the session.
-///
-/// Today that second case fails the connect outright. This test pins that,
-/// deliberately: the behaviour is defensible (a silent fallback would hide
-/// that the agent lost the conversation) but it is a real user-facing
-/// outcome — a session whose stored id has gone stale cannot start until
-/// the id is cleared — and it must not change without someone deciding to
-/// change it.
+/// back to `session/new` — and so does `-32002` "Resource not found"
+/// (claude-agent-acp and codex-acp answer it for a session that never
+/// persisted a turn, and reaped sessions answer it too; a stored id that
+/// can never resume would otherwise brick the session on every restart).
+/// Any OTHER error says "I have the method and I am refusing this call" —
+/// an agent-side breakage, most often — and still fails the connect
+/// outright. This test pins that third case, deliberately: a silent
+/// fallback would hide that the agent lost the conversation, and it must
+/// not widen without someone deciding to widen it.
 #[tokio::test]
 async fn a_resume_refused_with_a_normal_error_fails_the_connect() {
     let workspace = TempDir::new().expect("temp workspace");
@@ -325,6 +324,44 @@ async fn a_resume_refused_with_method_not_found_still_falls_back_to_a_new_sessio
         .expect("the fallback session still has an id");
     assert_ne!(
         id, "a-session-this-agent-never-had",
+        "the fallback must open a NEW session, not pretend the old one resumed"
+    );
+}
+
+/// `-32002` "Resource not found" is what claude-agent-acp and codex-acp
+/// answer for a stored session that never persisted a turn — and crucible
+/// stores the ACP id at connect, BEFORE the first turn. Without the
+/// fallback, a session opened and daemon-restarted before its first chat
+/// bricks on every reconnect. The id is unrestoreable, so the connect
+/// opens a fresh session instead, the same way `-32601` does.
+#[tokio::test]
+async fn a_resume_answered_resource_not_found_falls_back_to_a_new_session() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_RESUME_UNKNOWN".into(), "1".into());
+
+    let handle = timeout(
+        TURN_TIMEOUT,
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            resume_acp_session_id: Some("a-session-the-agent-forgot".into()),
+            ..mock_handle_params(&agent_config, workspace.path())
+        }),
+    )
+    .await
+    .expect("the handshake finished inside the timeout")
+    .expect("a -32002 reply to session/resume falls back to session/new");
+
+    let id = handle
+        .acp_session_id()
+        .expect("the fallback session still has an id");
+    assert_ne!(
+        id, "a-session-the-agent-forgot",
         "the fallback must open a NEW session, not pretend the old one resumed"
     );
 }

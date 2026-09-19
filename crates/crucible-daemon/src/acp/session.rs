@@ -109,8 +109,9 @@ pub enum ResumeDisposition {
     NotAttempted,
     /// The agent answered `session/resume` and kept its history.
     Resumed,
-    /// The agent answered `session/resume` with `-32601`, so the connect
-    /// flow opened a fresh session. The agent-side history is gone.
+    /// The agent answered `session/resume` with `-32601` (no such method)
+    /// or `-32002` (no such session), so the connect flow opened a fresh
+    /// session. The agent-side history is gone.
     FellBackToNew,
 }
 

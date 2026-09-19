@@ -14,6 +14,17 @@ fn is_method_not_found(response: &serde_json::Value) -> bool {
         == Some(-32601)
 }
 
+/// `-32002`: the JSON-RPC application error for "the referenced resource
+/// does not exist". Agents answer a `session/resume` whose stored session
+/// they no longer hold with this code.
+fn is_resource_not_found(response: &serde_json::Value) -> bool {
+    response
+        .get("error")
+        .and_then(|error| error.get("code"))
+        .and_then(serde_json::Value::as_i64)
+        == Some(-32002)
+}
+
 impl CrucibleAcpClient {
     /// Send InitializeRequest to agent
     ///
@@ -200,9 +211,13 @@ impl CrucibleAcpClient {
 
     /// Send `session/resume` to continue an existing agent session.
     ///
-    /// Returns `Ok(None)` when the agent answers `-32601`: the agent does
-    /// not speak the method, and the caller falls back to `session/new`.
-    /// Any other error reply is reported to the caller.
+    /// Returns `Ok(None)` when the caller should fall back to `session/new`:
+    /// `-32601` (the agent does not speak the method), or `-32002` (the
+    /// agent knows the method but not the session — claude-agent-acp and
+    /// codex-acp answer this for a session that never persisted a turn, and
+    /// reaped sessions answer it too). Any other error reply is reported:
+    /// the agent has the method and refuses for a reason the fallback would
+    /// hide, and a retry with the SAME stored id would only repeat it.
     pub async fn resume_session(
         &mut self,
         request: agent_client_protocol::schema::v1::ResumeSessionRequest,
@@ -217,6 +232,14 @@ impl CrucibleAcpClient {
             tracing::info!(
                 agent = %self.agent_name,
                 "agent has no session/resume; the caller falls back to session/new"
+            );
+            return Ok(None);
+        }
+
+        if is_resource_not_found(&response) {
+            tracing::warn!(
+                agent = %self.agent_name,
+                "agent no longer knows the stored session; the caller falls back to session/new"
             );
             return Ok(None);
         }
