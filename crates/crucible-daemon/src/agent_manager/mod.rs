@@ -1144,6 +1144,58 @@ impl AgentManager {
             .collect()
     }
 
+    /// [`Self::session_modes`] after bringing the session's agent up (see
+    /// [`Self::ensure_agent_handle`]). A front end's mode dropdown must not
+    /// answer from the Lua stand-in while the agent's own modes wait on a
+    /// handshake. Read failures fail open to the plain answer.
+    pub async fn live_session_modes(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> crucible_core::types::acp::schema::SessionModeState {
+        if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                "ACP agent did not come up for the mode list"
+            );
+        }
+        self.session_modes(session_id)
+    }
+
+    /// [`Self::session_knobs`] after bringing the session's agent up — the
+    /// model knob's answer depends on a selector only the handshake knows.
+    pub async fn live_session_knobs(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Vec<(SessionKnob, bool)> {
+        if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                "ACP agent did not come up for the knob list"
+            );
+        }
+        self.session_knobs(session_id)
+    }
+
+    /// [`Self::agent_config_options`] after bringing the session's agent up.
+    pub async fn live_agent_config_options(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Vec<crucible_core::types::AgentConfigOption> {
+        if let Err(e) = self.ensure_agent_handle(session_id, event_tx).await {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                "ACP agent did not come up for the agent options list"
+            );
+        }
+        self.agent_config_options(session_id)
+    }
+
     /// Set one of those settings on the live agent.
     ///
     /// Unlike Crucible's own knobs this is not persisted: the value belongs
@@ -1155,10 +1207,15 @@ impl AgentManager {
         session_id: &str,
         option_id: &str,
         value: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
+        // The value belongs to the agent's session; the handle that carries
+        // it comes up here (the handshake is the resume) rather than the
+        // write refusing until the user sends a message.
+        self.ensure_agent_handle(session_id, event_tx).await?;
         let handle = self.slot(session_id).cached_agent().ok_or_else(|| {
             AgentError::NotSupported(
-                "the session has no running agent yet; send a message first".to_string(),
+                "the ACP agent came up without a handle; cannot set the option".to_string(),
             )
         })?;
 

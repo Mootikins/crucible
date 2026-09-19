@@ -22,7 +22,11 @@ use crate::rpc_helpers::typed_params;
 /// same way — `enforceable_by` treats anything but `"internal"` as
 /// post-turn — because promising enforcement we cannot yet vouch for is the
 /// failure that matters.
-pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManager>) -> Response {
+pub(crate) async fn handle_session_list_modes(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -31,15 +35,18 @@ pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManage
 
     // A read, so a session in storage only answers too; see
     // `AgentManager::read_session_with_agent`.
-    let (agent_type, persisted) = match am.read_session_with_agent(session_id).await {
-        Ok((_, agent)) => (agent.agent_type, agent.mode),
+    let agent_type = match am.read_session_with_agent(session_id).await {
+        Ok((_, agent)) => agent.agent_type,
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             return session_not_found(req.id, &id);
         }
-        Err(_) => (String::new(), None),
+        Err(_) => String::new(),
     };
 
-    let state = am.session_modes_with(session_id, persisted);
+    // The read brings the agent up (the handshake is the resume), so a
+    // resumed session's dropdown answers the agent's own modes instead of
+    // the Lua stand-in.
+    let state = am.live_session_modes(session_id, Some(event_tx)).await;
     let modes: Vec<crucible_core::types::mode::ModeDescriptor> = state
         .available_modes
         .iter()
@@ -68,7 +75,11 @@ pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManage
 /// `supported` is the session's answer, not the agent type's: a model switch
 /// depends on whether that particular agent advertised a selector at the
 /// handshake, so two ACP sessions can answer differently.
-pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManager>) -> Response {
+pub(crate) async fn handle_session_list_knobs(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
@@ -81,9 +92,12 @@ pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManage
         return session_not_found(req.id, &id);
     }
 
+    // The model knob's answer depends on a selector only the handshake
+    // knows — bring the agent up for the read.
     let support = crucible_core::types::SessionKnobSupport {
         knobs: am
-            .session_knobs(session_id)
+            .live_session_knobs(session_id, Some(event_tx))
+            .await
             .into_iter()
             .map(|(knob, supported)| crucible_core::types::KnobDescriptor {
                 id: knob.id().to_string(),
@@ -105,11 +119,12 @@ pub(crate) async fn handle_session_list_knobs(req: Request, am: &Arc<AgentManage
 /// daemon does not interpret them beyond dropping the model selector, which
 /// already has a control of its own. A client renders what it is given.
 ///
-/// Empty until the first message, because an agent says nothing until the
-/// daemon connects to it, and empty for an internal agent always.
+/// Empty for an internal agent always: Crucible defines its settings rather
+/// than discovering them.
 pub(crate) async fn handle_session_list_agent_options(
     req: Request,
     am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
@@ -123,7 +138,10 @@ pub(crate) async fn handle_session_list_agent_options(
         return session_not_found(req.id, &id);
     }
 
-    match serde_json::to_value(am.agent_config_options(session_id)) {
+    match serde_json::to_value(
+        am.live_agent_config_options(session_id, Some(event_tx))
+            .await,
+    ) {
         Ok(options) => Response::success(
             req.id,
             serde_json::json!({ "session_id": session_id, "options": options }),
@@ -136,6 +154,7 @@ pub(crate) async fn handle_session_list_agent_options(
 pub(crate) async fn handle_session_set_agent_option(
     req: Request,
     am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     #[derive(serde::Deserialize)]
     struct SetAgentOptionRequest {
@@ -150,7 +169,12 @@ pub(crate) async fn handle_session_set_agent_option(
     };
 
     match am
-        .set_agent_config_option(&params.session_id, &params.option_id, &params.value)
+        .set_agent_config_option(
+            &params.session_id,
+            &params.option_id,
+            &params.value,
+            Some(event_tx),
+        )
         .await
     {
         Ok(()) => Response::success(req.id, serde_json::json!({ "ok": true })),
@@ -207,10 +231,11 @@ mod stored_session_tests {
         let am = crate::test_fixtures::test_agent_manager(
             Arc::new(crate::kiln_manager::KilnManager::new()),
             sm,
-            event_tx,
+            event_tx.clone(),
             None,
         );
-        let resp = handle_session_list_modes(request("session.list_modes", &id), &am).await;
+        let resp =
+            handle_session_list_modes(request("session.list_modes", &id), &am, &event_tx).await;
         assert!(resp.error.is_none(), "{resp:?}");
         let result = resp.result.unwrap();
         assert!(!result["modes"].as_array().unwrap().is_empty());

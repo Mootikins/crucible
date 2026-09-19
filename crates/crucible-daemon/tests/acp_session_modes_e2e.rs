@@ -9,10 +9,10 @@
 //!
 //! The modes belong to the agent, and they exist only after the handshake,
 //! so the handle build caches them on the session's slot and `session_modes`
-//! prefers them. That timing is the whole difficulty: a front end that
-//! fetched the list before the first message holds the wrong one, which is
-//! why the build also emits `mode_changed`. Both front ends already re-fetch
-//! on a mode id they do not recognise.
+//! prefers them. A list fetched before the handshake finishes holds the
+//! wrong one, which is why the build also emits `mode_changed` — knob reads
+//! bring the handshake up themselves, but a front end that raced it still
+//! re-fetches on a mode id it does not recognise.
 //!
 //! These tests drive `AgentManager` against a real `mock-acp-agent` process,
 //! so the mode ids under assertion are ones that crossed the ACP wire.
@@ -286,10 +286,11 @@ async fn set_mode_accepts_a_mode_that_only_the_agent_declares() {
     );
 }
 
-/// A front end that fetched the mode list before the first message is holding
-/// the wrong one. `mode_changed` is what tells it: both front ends re-fetch
-/// the list on a mode id they do not recognise, so without this event the
-/// mode chip offers three modes the agent rejects until the page is reloaded.
+/// A front end that fetched the mode list before the handshake finished is
+/// holding the wrong one. `mode_changed` is what tells it: both front ends
+/// re-fetch the list on a mode id they do not recognise, so without this
+/// event the mode chip offers three modes the agent rejects until the page
+/// is reloaded.
 #[tokio::test]
 async fn the_agents_mode_set_is_announced_so_a_front_end_can_refetch() {
     let mut h = setup("acp", Some(AGENT_CURRENT_MODE)).await;

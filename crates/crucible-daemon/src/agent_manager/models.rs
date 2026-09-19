@@ -153,10 +153,13 @@ impl AgentManager {
         // restart the external agent and lose its history, so route ACP
         // through the live handle instead.
         if agent_config.agent_type == "acp" {
+            // The live handle owns the selector; ensure brings it up (the
+            // handshake is the resume) so a fresh session can switch without
+            // a send first.
+            self.ensure_agent_handle(session_id, event_tx).await?;
             let handle = self.slot(session_id).cached_agent().ok_or_else(|| {
                 AgentError::NotSupported(
-                    "start the ACP session before switching models (send a message first)"
-                        .to_string(),
+                    "the ACP agent came up without a handle; cannot switch models".to_string(),
                 )
             })?;
 
@@ -271,11 +274,20 @@ impl AgentManager {
         classification: Option<DataClassification>,
     ) -> Result<Vec<String>, AgentError> {
         // ACP agents expose their own model list (advertised at connect), not
-        // the daemon's configured providers. Return that when the session has a
-        // live ACP handle.
+        // the daemon's configured providers. Bring the handle up for the read
+        // — the handshake is the resume, and the selector exists only after
+        // it — then answer from the live handle. (Announcements from this
+        // build go nowhere: a model-list read has no event stake of its own.)
         if let Ok((_, agent_config)) = self.get_session_with_agent(session_id) {
             if agent_config.agent_type == "acp" {
-                if let Some(handle) = self.slot(session_id).cached_agent() {
+                if let Err(e) = self.ensure_agent_handle(session_id, None).await {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "ACP agent did not come up for the model list; \
+                         answering the configured providers"
+                    );
+                } else if let Some(handle) = self.slot(session_id).cached_agent() {
                     let models = handle.lock().await.fetch_available_models().await;
                     if !models.is_empty() {
                         return Ok(models);

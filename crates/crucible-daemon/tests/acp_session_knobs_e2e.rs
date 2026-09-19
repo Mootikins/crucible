@@ -327,8 +327,9 @@ async fn a_session_reports_which_settings_it_supports() {
 async fn the_agents_own_settings_reach_a_client() {
     let h = setup().await;
 
-    // Nothing before the handshake: an agent says what it has when the daemon
-    // connects to it, which does not happen until the first message.
+    // Nothing before a handshake: an agent says what it has when the daemon
+    // connects to it. This accessor is the sync read — a read through
+    // `live_agent_config_options` brings the connection up first.
     assert!(
         h.agent_manager
             .agent_config_options(h.session_id.as_str())
@@ -379,7 +380,7 @@ async fn setting_an_agent_option_reaches_the_agent() {
     run_a_turn(&h).await;
 
     h.agent_manager
-        .set_agent_config_option(h.session_id.as_str(), "thought_level", "high")
+        .set_agent_config_option(h.session_id.as_str(), "thought_level", "high", None)
         .await
         .expect("the agent advertised this option");
 
@@ -393,7 +394,7 @@ async fn setting_an_agent_option_reaches_the_agent() {
 
     let error = h
         .agent_manager
-        .set_agent_config_option(h.session_id.as_str(), "invented", "1")
+        .set_agent_config_option(h.session_id.as_str(), "invented", "1", None)
         .await
         .expect_err("an option the agent never advertised must be refused");
     assert!(

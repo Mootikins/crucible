@@ -661,12 +661,13 @@ impl AgentManager {
         };
         let agent_modes = surface.modes.clone();
 
-        // Tell the clients when the agent's own mode set replaces the one they
-        // are showing. An ACP agent's modes arrive with the handshake, so a
-        // front end that fetched `session.list_modes` before the first message
-        // is holding Crucible's Lua-declared set and a current mode this agent
-        // never had. `mode_changed` is the signal both front ends already act
-        // on: an id they do not recognise makes them re-fetch the list.
+        // Tell the clients when the agent's own mode set replaces the one
+        // they are showing. Knob reads bring the handle up themselves, so a
+        // front end's dropdown usually answers from this surface directly —
+        // but a list fetched before the handle existed (or from an older
+        // daemon) is corrected the same way: `mode_changed` is the signal
+        // both front ends already act on, and an id they do not recognise
+        // makes them re-fetch the list.
         if let Some(current) = agent_modes.as_ref().map(|m| m.current_mode_id.0.as_ref()) {
             if agent_config.mode.as_deref() != Some(current) {
                 emit_event(
@@ -690,6 +691,51 @@ impl AgentManager {
         }
 
         Ok(agent)
+    }
+
+    /// Bring the session's agent handle up without sending a message.
+    ///
+    /// Everything a front end draws about an ACP session — its modes, its
+    /// model selector, its knob support — is answered from the surface the
+    /// handshake fills, and the handshake is also the resume: the connect
+    /// flow sends `session/resume` with the id a previous handle persisted.
+    /// The handle used to come up only with the first message, so a resumed
+    /// session's dropdowns answered from Crucible's fallbacks (the Lua mode
+    /// set, the configured providers) until the user sent something. Knob
+    /// reads and writes ensure instead; a cached handle makes it a no-op.
+    ///
+    /// A session with no agent configured answers `Ok` — there is nothing to
+    /// bring up, and the caller's own read produces the accurate error. Only
+    /// a failed BUILD is an error.
+    pub(crate) async fn ensure_agent_handle(
+        &self,
+        session_id: &str,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if self.slot(session_id).cached_agent().is_some() {
+            return Ok(());
+        }
+        let Ok((session, agent_config)) = self.get_session_with_agent(session_id) else {
+            return Ok(());
+        };
+        if agent_config.agent_type != "acp" {
+            // Internal surfaces (the Lua mode registry, the provider model
+            // catalogue) are live without a handle.
+            return Ok(());
+        }
+
+        // Announcements ride the caller's channel when it has one; a caller
+        // without one drops them rather than inventing a bus.
+        let (detached_tx, _rx) = broadcast::channel(16);
+        let event_tx = event_tx.unwrap_or(&detached_tx);
+
+        let tool_root = crate::agent_manager::scope::session_tool_root(
+            &session,
+            self.session_manager.sessions_root(),
+        );
+        self.get_or_create_agent(session_id, &agent_config, &tool_root, event_tx, true, None)
+            .await
+            .map(|_| ())
     }
 
     /// Create the appropriate agent handle from session configuration.

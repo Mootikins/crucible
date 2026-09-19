@@ -806,24 +806,34 @@ impl RpcDispatcher {
             ),
             RpcMethod::SessionListModes => forward!(
                 id,
-                crate::server::session::handle_session_list_modes(req.clone(), &self.ctx.agents)
+                crate::server::session::handle_session_list_modes(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
             ),
             RpcMethod::SessionListKnobs => forward!(
                 id,
-                crate::server::session::handle_session_list_knobs(req.clone(), &self.ctx.agents)
+                crate::server::session::handle_session_list_knobs(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
             ),
             RpcMethod::SessionListAgentOptions => forward!(
                 id,
                 crate::server::session::handle_session_list_agent_options(
                     req.clone(),
-                    &self.ctx.agents
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
                 )
             ),
             RpcMethod::SessionSetAgentOption => forward!(
                 id,
                 crate::server::session::handle_session_set_agent_option(
                     req.clone(),
-                    &self.ctx.agents
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
                 )
             ),
             RpcMethod::SessionAddNotification => {

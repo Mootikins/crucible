@@ -257,12 +257,13 @@ impl OilChatRunner {
         &self,
         msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
         background_tasks: &mut Vec<JoinHandle<()>>,
+        session_models_source: Option<String>,
     ) {
         if msg_tx.send(ChatAppMsg::FetchModels).is_err() {
             tracing::warn!("UI channel closed, initial FetchModels dropped");
             return;
         }
-        Self::spawn_model_fetch(msg_tx, background_tasks);
+        Self::spawn_model_fetch(msg_tx, background_tasks, session_models_source);
         // The mode list rides the same prefetch. It is resolved through the
         // agent handle inside the event loop, so there is nothing to spawn
         // here — only the message to queue.

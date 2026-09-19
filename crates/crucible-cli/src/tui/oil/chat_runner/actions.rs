@@ -6,6 +6,7 @@ use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use std::io;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use super::{DrainMessagesOutcome, OilChatRunner, ProcessActionParams};
 
@@ -146,29 +147,41 @@ impl OilChatRunner {
     /// to avoid blocking the event loop.
     pub(super) fn spawn_model_fetch(
         msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-        background_tasks: &mut Vec<tokio::task::JoinHandle<()>>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+        session_models_source: Option<String>,
     ) {
         let tx = msg_tx.clone();
         background_tasks.push(tokio::spawn(async move {
             tracing::debug!(target: "crucible_cli::tui::oil::model_flow", "background: FetchModels starting");
             match crucible_daemon::DaemonClient::connect().await {
-                Ok(client) => match client.list_all_models(None).await {
-                    Ok(models) if models.is_empty() => {
-                        let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
-                            "No models available".to_string(),
-                        ));
+                Ok(client) => {
+                    // An ACP agent's models are its own advertisement,
+                    // answered per session (`session.list_models`); the
+                    // all-providers catalogue would offer models the agent
+                    // would reject. Internal agents have no session list —
+                    // the catalogue is their answer.
+                    let fetched = match session_models_source.as_deref() {
+                        Some(session_id) => client.session_list_models(session_id).await,
+                        None => client.list_all_models(None).await,
+                    };
+                    match fetched {
+                        Ok(models) if models.is_empty() => {
+                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(
+                                "No models available".to_string(),
+                            ));
+                        }
+                        Ok(models) => {
+                            tracing::info!(count = models.len(), "Models fetched successfully");
+                            let _ = tx.send(ChatAppMsg::ModelsLoaded(models));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(ChatAppMsg::ModelsFetchFailed(format!(
+                                "Failed to list models: {}",
+                                e
+                            )));
+                        }
                     }
-                    Ok(models) => {
-                        tracing::info!(count = models.len(), "Models fetched successfully");
-                        let _ = tx.send(ChatAppMsg::ModelsLoaded(models));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(ChatAppMsg::ModelsFetchFailed(format!(
-                            "Failed to list models: {}",
-                            e
-                        )));
-                    }
-                },
+                }
                 Err(e) => {
                     let _ = tx.send(ChatAppMsg::ModelsFetchFailed(format!(
                         "Failed to connect to daemon: {}",
@@ -371,10 +384,15 @@ impl OilChatRunner {
                         // (no daemon RPC calls). Replay never populates the model
                         // picker — `:model` is moot when there's no live session.
                         //
-                        // For ACP agents the fetched list is the daemon's configured
-                        // internal providers, not the ACP agent's own model — trying
-                        // to switch will surface a NotSupported error at that point.
-                        Self::spawn_model_fetch(params.msg_tx, params.background_tasks);
+                        // Session-scoped: an ACP agent's list is its own
+                        // advertisement (`session.list_models` brings the agent up
+                        // if it is not yet connected); an internal session answers
+                        // the catalogue narrowed by its classification.
+                        Self::spawn_model_fetch(
+                            params.msg_tx,
+                            params.background_tasks,
+                            params.agent.session_id().map(str::to_string),
+                        );
                     }
                     ChatAppMsg::FetchModes if !self.is_replay => {
                         // Goes through the agent handle rather than a fresh

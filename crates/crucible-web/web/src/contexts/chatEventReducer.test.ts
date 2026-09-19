@@ -1318,9 +1318,10 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
 });
 
 // An ACP session's modes belong to the external agent, and the daemon does
-// not learn them until it connects — which is the first message. A front end
-// that fetched `session.list_modes` before then is offering Crucible's own
-// three, all of which the agent rejects.
+// not learn them until it connects. A connection comes up on the first knob
+// read (mode/model lists fetch it themselves) or the first message; a list
+// fetched even earlier, or one raced against the handshake, can be offering
+// Crucible's own three, all of which the agent rejects.
 //
 // `mode_changed` is the only thing that says otherwise, so the reducer has to
 // hand every one of them to `onUnknownMode`. ChatContext refetches the list

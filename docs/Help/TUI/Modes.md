@@ -162,11 +162,13 @@ declared in Lua. The agent owns them: claude-agent-acp offers five
 (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), codex-acp
 offers its own three, and an agent rejects a mode it never declared.
 
-The agent reports its modes when Crucible connects to it, which does not
-happen until you send the first message. Until then the session offers
-Crucible's own modes, because nothing has asked the agent yet. The list
-changes once at the first message; the TUI and the web UI both refresh
-themselves when it does.
+The agent reports its modes when Crucible connects to it. Connecting used to
+wait for the first message, which left the session offering Crucible's own
+modes until then; today a mode or model list fetch connects the agent itself,
+so the list you see is the agent's from the moment you ask for it. If a list
+was fetched before the connection came up, the daemon's `mode_changed` event
+still corrects it — the TUI and the web UI both refresh themselves when it
+arrives.
 
 An external agent that declares no modes leaves the session on Crucible's
 set.

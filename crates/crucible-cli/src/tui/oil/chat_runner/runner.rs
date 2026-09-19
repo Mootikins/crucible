@@ -205,6 +205,12 @@ impl OilChatRunner {
 
         let selection = self.discover_agent().await;
         let (mut agent, live_event_rx) = create_agent(selection).await?;
+        // The model list is session-scoped: `session.list_models` answers an
+        // ACP agent's own selector and the provider catalogue (narrowed by
+        // the session's classification) for an internal one. The
+        // all-providers catalogue would offer an ACP agent models it would
+        // reject.
+        let session_models_source = agent.session_id().map(str::to_string);
         self.is_replay = false;
         self.replay_remaining_completes = 0;
 
@@ -247,7 +253,7 @@ impl OilChatRunner {
 
         // Prefetch available models in background — daemon cache should be warm,
         // so this returns near-instantly. Ensures :model popup has data immediately.
-        self.queue_model_prefetch(&msg_tx, &mut background_tasks);
+        self.queue_model_prefetch(&msg_tx, &mut background_tasks, session_models_source);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(

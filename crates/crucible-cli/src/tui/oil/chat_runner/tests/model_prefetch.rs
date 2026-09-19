@@ -20,7 +20,7 @@ async fn startup_prefetch_spawns_fetch_task_with_loading_transition() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mut background_tasks = Vec::new();
 
-    runner.queue_model_prefetch(&tx, &mut background_tasks);
+    runner.queue_model_prefetch(&tx, &mut background_tasks, None);
 
     assert!(
         matches!(rx.try_recv(), Ok(ChatAppMsg::FetchModels)),
