@@ -150,6 +150,11 @@ export const Pane: Component<{ paneId: string }> = (props) => {
       data-pane-collapsed={collapsed() ? 'true' : undefined}
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all data-drop-over:ring-1 data-drop-over:ring-primary/60': true,
+        // The shell root keeps `select-none` so tab drags don't sweep up text
+        // selections. A pane hosts the actual content — transcript, code,
+        // notes — which exists to be copied, so it re-enables selection; the
+        // TabBar below re-asserts `select-none` for the strip itself.
+        'select-text': true,
         // Focus reads through the active tab chip (Obsidian's language) —
         // no colored ring around the pane itself.
         'bg-primary/5': centerDroppable.isActiveDroppable,

@@ -519,7 +519,9 @@ const CenterTabBar: Component<{
       ref={attachNativeMenuGuard}
       {...(edgePos() ? { 'data-testid': `edge-tabbar-${edgePos()}` } : {})}
       classList={{
-        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative': true,
+        // Re-asserts the shell's select-none: the strip is drag chrome, and a
+        // pane body re-enabled selection beneath this bar.
+        'flex-shrink-0 flex items-center h-9 bg-shell-bg border-b border-hairline relative select-none': true,
         'bg-primary/5': droppable.isActiveDroppable,
       }}
     >
