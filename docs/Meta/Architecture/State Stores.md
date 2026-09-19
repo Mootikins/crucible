@@ -89,5 +89,5 @@ Removing a declared plugin is a refusal that names the `cru.plugin.setup`
 entry to edit. A leftover `plugins.toml` is imported into the manifest idempotently and
 warned about each boot (`sweep_legacy_plugins_toml`); the file is inert.
 
-See also [[Config Boot]] for how the config side is produced, and
-Storage Schema for the session and note storage this note does not cover.
+See also [[Config Boot]] for how the config side is produced. Session and note
+storage fall outside this note.

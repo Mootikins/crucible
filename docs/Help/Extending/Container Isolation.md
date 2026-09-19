@@ -495,4 +495,5 @@ sandboxed is worse than one that admits it is not.
 - [[Help/Extending/Event Hooks]] — the hook API `oci` is built on
 - [[Help/Extending/Creating Plugins]] — plugin structure and `setup()`
 - [[Worktree Sessions]] — the workspace axis, which composes with this one
-- Workspace and Runtime Targets — how a plugin contributes a run target
+- The design for how a plugin contributes a run target is recorded in a working
+  note outside this kiln

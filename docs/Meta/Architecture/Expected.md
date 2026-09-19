@@ -40,8 +40,8 @@ derived every closed set from features alone. Section 8 shows the cost. The
 drafts sized `ToolSurface`, `StageId` and `EventName` for the features, and
 the code sizes them for the attacks: an unclassified tool, an isolated
 session, a deleted file. A clean room needs the threat model as an input.
-Filesystem Containment is that input now. Section 7a restates its
-invariants and names the closed-set members each one requires.
+A filesystem-containment threat model is that input now. Section 7a restates
+its invariants and names the closed-set members each one requires.
 
 ## 2. Feature inventory
 
@@ -1424,8 +1424,7 @@ plugin is.
 
 ## 7a. Security invariants
 
-Filesystem Containment and [[Actual]] section 3.1 state the invariants the
-code enforces. The clean room did not derive them, because no product document
+[[Actual]] section 3.1 states the invariants the code enforces. The clean room did not derive them, because no product document
 states them. Each invariant below names the closed-set members it requires. A
 closed set that lacks the member cannot carry the invariant, so the member is
 not optional.

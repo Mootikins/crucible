@@ -27,7 +27,7 @@ treating their line numbers or "no callers" claims as current is unsafe.
   confirmed defects or a maintained backlog.
 - September removed the unused block-extraction subsystem and redundant typed
   block lists. This did not retire the live note/block retrieval stores.
-  2026-09-14 Code Reduction Review records the later sweep.
+  A review note dated 2026-09-14 records the later sweep.
 
 ## Decisions to preserve
 
@@ -40,8 +40,9 @@ treating their line numbers or "no callers" claims as current is unsafe.
 - Wire compatibility is not determined by Rust call counts. Serialized fields,
   migration readers, feature-specific integrations and drop guards need their
   own evidence before deletion.
-- Bash permission layers have distinct scopes and overrides; see
-  Bash Permission Layers. Do not merge them from similar names.
+- Bash permission layers have distinct scopes and overrides; the order is
+  documented in a working note outside this kiln. Do not merge them from
+  similar names.
 - Required trait methods expose incomplete adapters at compilation. Test
   doubles and dependency firewalls are legitimate traits; zero-call wrappers
   and test-only alternative implementations are not.

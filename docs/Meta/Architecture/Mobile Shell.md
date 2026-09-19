@@ -1086,9 +1086,8 @@ prevent.
 **This section changed twice: the decision was made, and then it shipped.** An
 earlier draft argued Oil against a native component and left the choice open.
 The choice is settled and **the work is on master** — `web/src/components/oil/`
-is gone and `web/src/components/blocks/` is in its place. Read
-`docs/Meta/Analysis/The Plugin Contract.md` for the design and
-Plugin API Plan for the settled API decisions.
+is gone and `web/src/components/blocks/` is in its place. The design and the settled API
+decisions are recorded in working notes outside this kiln.
 
 The rule is one sentence: **a plugin owns data, and each frontend draws it
 natively.** A plugin publishes opaque JSON through `cru.plugin.publish`; the
@@ -1196,7 +1195,7 @@ place independently. Both are about the same missing boundary.
 - This draft: `server.rs:241` sets `script-src 'self' 'wasm-unsafe-eval'`, so a
   plugin bundle the daemon serves IS `'self'`. The policy admits it and protects
   nothing. The service worker's root scope leans on that same control.
-- Plugin API Plan: until blocks are isolated, a header is
+- The plugin API design: until blocks are isolated, a header is
   forgeable by same-origin script. Attribution is not a security boundary.
 - The old plugin `Capability` enum is gone. Operator-installed Lua is trusted
   code; the remaining plugin tool-interception declaration does not isolate
@@ -1204,7 +1203,7 @@ place independently. Both are about the same missing boundary.
 
 The three describe one gap. **Nothing separates plugin code from app code on
 this origin**, and every proposed control assumes an isolation that does not
-exist yet. Plugin Web Delivery selects an opaque-origin
+exist yet. The plugin web delivery design selects an opaque-origin
 sandboxed iframe and MessageChannel bridge; implementation waits for a
 third-party web-asset consumer. The existing exemplars are not the same strength:
 
@@ -1509,7 +1508,7 @@ has made a legal move that the plugin observes.
 > files.** A plugin whose state is not recoverable that way desynchronises
 > silently the first time a user edits the file in an editor.
 
-**This invariant is not in `The Plugin Contract.md` today.** It was agreed in
+**This invariant is not in the plugin design today.** It was agreed in
 correspondence and may land there; until it does, treat it as this draft's
 assumption about another design, not as a citation.
 
@@ -1522,9 +1521,8 @@ whether it survives its own user's text editor.
 
 **Asked for in correspondence with the plugin work, not in its published docs.**
 Those ask for the more general thing: a scoped read/write of any shape
-(`The Plugin Contract.md:227-231`) and "a refusal a UI can act on"
-(`:225-226`). This design is one answer to both, and it is not yet written into
-either document. Do not read it as a settled cross-branch dependency.
+and "a refusal a UI can act on". This design is one answer to both, and it is
+not yet written into either document. Do not read it as a settled cross-branch dependency.
 
 **Half of this gap closed on master, and the half that matters did not.**
 
@@ -1876,7 +1874,7 @@ means duplicating it, or extracting it first.
    note write triggers no republish, and no file-change-to-republish trigger
    exists in either design — so a board stays stale until something re-invokes
    the plugin. Offline makes it worse: the edit lands with the plugin not
-   running at all. Owner: `The Plugin Contract`, but this draft is where it
+   running at all. Owner: the plugin design, but this draft is where it
    bites.
 9. **Who owns a saved query — and it is one question with scoped publications.**
    Section 13 gives the client a query over the index, and a user will want to
@@ -1885,7 +1883,7 @@ means duplicating it, or extracting it first.
    review index wants a *session* scope and tree expansion wants a *viewer*
    scope. A saved query is a third case. **Design the scope vocabulary once,
    jointly, rather than growing one on each side.** Owner: this draft and
-   Plugin API Plan together.
+   the plugin API design together.
    **One constraint is already agreed and is not open: the binding resolves
    server-side.** A scope a caller asserts is a caller reading another caller's
    state. So `data/session/<id>/…` takes `<id>` from the request's resolved

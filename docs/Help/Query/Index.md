@@ -73,7 +73,5 @@ Everything the examples above described is already served, without a DSL:
 
 - [[Search & Discovery]] - All search methods
 - [[Help/Tags]] - Tag syntax
-- `docs/Meta/Plans/2026-08-11-dead-code-and-schema-migrations.md` - the deletion,
-  its evidence, and the commit to revert if this is ever wanted back. A path
-  rather than a wikilink: `docs/Meta/Plans/` is gitignored, and the docs-kiln
-  gate resolves links only against files a commit would contain
+- A working note outside this kiln records the deletion, its evidence, and the
+  commit to revert if this is ever wanted back.
