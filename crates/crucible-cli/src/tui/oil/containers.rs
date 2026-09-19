@@ -198,8 +198,8 @@ impl ChatNode {
         let mut items: Vec<Node> = Vec::new();
 
         // Thinking renders inline as it streams. The component itself picks
-        // the right view (expanded when `show_thinking`, collapsed
-        // "Thinking… (N words)" otherwise) and handles the complete vs
+        // the right view (expanded while streaming, collapsed
+        // "◇ Thought (~N tokens)" once complete) and handles the complete vs
         // in-progress distinction via the `is_complete` flag below.
         let thinking_complete = !content.is_empty() || is_complete;
         for tc in thinking {
@@ -710,9 +710,9 @@ mod tests {
     }
 
     #[test]
-    fn streaming_thinking_collapsed_shows_word_count_live() {
-        // With show_thinking=false, the live render should at least show a
-        // "Thinking… (N words)" placeholder so users see progress.
+    fn streaming_thinking_collapsed_shows_progress() {
+        // The live collapsed header reads "Thinking…" — no count until the
+        // block graduates, where it becomes "◇ Thought (~N tokens)".
         let mut list = ContainerList::new();
         list.add_user_message("hi".into());
         list.mark_turn_active();
@@ -720,7 +720,7 @@ mod tests {
         list.append_thinking("alpha beta gamma");
         let plain = render_list(&list, false);
         assert!(
-            plain.contains("3 words") || plain.contains("Thinking"),
+            plain.contains("Thinking"),
             "collapsed live thinking must indicate progress: {:?}",
             plain
         );

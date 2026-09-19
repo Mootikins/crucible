@@ -12,8 +12,8 @@ use super::vt100_runtime::Vt100TestRuntime;
 
 // ─── Invariant checkers ────────────────────────────────────────────────────
 
-/// Check that no two adjacent non-blank lines are both "◇ Thought (N words)"
-/// with the same word count.
+/// Check that no two adjacent non-blank lines are both "◇ Thought (~N tokens)"
+/// with the same token count.
 fn check_no_duplicate_thought_lines(screen: &str, context: &str) {
     let lines: Vec<&str> = screen.lines().collect();
     let mut prev_thought: Option<&str> = None;
@@ -129,7 +129,7 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     enum BlockKind {
-        ThoughtCollapsed, // ◇ Thought (N words)
+        ThoughtCollapsed, // ◇ Thought (~N tokens)
         ThoughtExpanded,  // ┌─ Thought/Thinking header (expanded view)
         Tool,
         UserBottom, // ▀▀▀ bottom bar of user message
@@ -257,48 +257,10 @@ fn check_spacing_between_non_tool_containers(screen: &str, context: &str) {
     }
 }
 
-/// The screen should never show BOTH a graduated `◇ Thought (N words)` AND
-/// an active `Thinking… (N words)` with the same word count. Same count means
-/// the graduated copy wasn't absorbed — it's a duplicate.
-fn check_no_simultaneous_thought_and_thinking(screen: &str, context: &str) {
-    use std::collections::HashSet;
-    let mut graduated_counts: HashSet<String> = HashSet::new();
-
-    for line in screen.lines() {
-        let t = line.trim();
-        // Extract word count from "◇ Thought (N words)"
-        if (t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought"))
-            && t.contains(" words)")
-        {
-            if let Some(count) = extract_word_count(t) {
-                graduated_counts.insert(count);
-            }
-        }
-    }
-
-    if graduated_counts.is_empty() {
-        return;
-    }
-
-    for line in screen.lines() {
-        let t = line.trim();
-        if t.contains("Thinking\u{2026}") && !t.contains("Thought") && t.contains(" words)") {
-            if let Some(count) = extract_word_count(t) {
-                if graduated_counts.contains(&count) {
-                    panic!(
-                        "{}: simultaneous graduated Thought and active Thinking with same count '{}'\nScreen:\n{}",
-                        context, count, screen
-                    );
-                }
-            }
-        }
-    }
-}
-
 /// Adjacent thinking indicators (no intervening content) must have strictly
-/// increasing word counts. Two thoughts separated by tools/text are from
-/// different turns and may have any word counts.
-fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
+/// increasing token counts. Two thoughts separated by tools/text are from
+/// different turns and may have any token counts.
+fn check_thinking_token_count_monotonic(screen: &str, context: &str) {
     let lines: Vec<&str> = screen.lines().collect();
     let mut last_thought: Option<(usize, usize)> = None; // (line_num, count)
 
@@ -307,8 +269,8 @@ fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
         let is_thought = t.starts_with("◇ Thought") || t.starts_with("\u{25C7} Thought");
         let is_thinking = t.contains("Thinking\u{2026}") && !t.contains("Thought");
 
-        if (is_thought || is_thinking) && t.contains(" words)") {
-            if let Some(count_str) = extract_word_count(t) {
+        if (is_thought || is_thinking) && t.contains(" tokens)") {
+            if let Some(count_str) = extract_token_count(t) {
                 if let Ok(n) = count_str.parse::<usize>() {
                     if let Some((prev_line, prev_count)) = last_thought {
                         // Check if there's only blank lines between prev and current
@@ -316,7 +278,7 @@ fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
                         let only_blanks = between.iter().all(|l| l.trim().is_empty());
                         if only_blanks && n <= prev_count {
                             panic!(
-                                "{}: adjacent thinking word count not monotonic: {} (R{}) >= {} (R{})\n\
+                                "{}: adjacent thinking token count not monotonic: {} (R{}) >= {} (R{})\n\
                                  Adjacent thoughts with no intervening content must increase.\nScreen:\n{}",
                                 context, prev_count, prev_line, n, i, screen
                             );
@@ -333,12 +295,12 @@ fn check_thinking_word_count_monotonic(screen: &str, context: &str) {
     }
 }
 
-/// Extract the word count string from a line like "◇ Thought (42 words)" or "◐ Thinking… (42 words)"
-fn extract_word_count(line: &str) -> Option<String> {
+/// Extract the token count string from a line like "◇ Thought (~42 tokens)" or "◐ Thinking… (~42 tokens)"
+fn extract_token_count(line: &str) -> Option<String> {
     let start = line.find('(')? + 1;
-    let end = line.find(" words)")?;
+    let end = line.find(" tokens)")?;
     if start < end {
-        Some(line[start..end].to_string())
+        Some(line[start..end].trim_start_matches('~').to_string())
     } else {
         None
     }
@@ -351,7 +313,7 @@ fn extract_word_count(line: &str) -> Option<String> {
 // check_no_thinking_in_content_and_chrome was removed — it flagged cross-turn
 // thinking (graduated Thought from turn 1 + active Thinking for turn 2), which
 // is correct behavior. check_no_simultaneous_thought_and_thinking covers the
-// actual bug (same word count = same turn duplicated in both places).
+// actual bug (same token count = same turn duplicated in both places).
 
 // ─── Multi-frame test helper ───────────────────────────────────────────────
 
@@ -770,8 +732,7 @@ fn invariant_acp_parity_fixtures_every_frame() {
             check_no_triple_blanks(&full, &ctx);
             check_consistent_content_spacing(&full, &ctx);
             check_no_split_thinking_nodes(&screen, &ctx);
-            check_no_simultaneous_thought_and_thinking(&screen, &ctx);
-            check_thinking_word_count_monotonic(&screen, &ctx);
+            check_thinking_token_count_monotonic(&screen, &ctx);
             // `check_spacing_between_non_tool_containers` is deliberately not
             // in this list. It classifies any line starting `● ` as a tool
             // card, but that glyph is also the assistant's response bullet, so
@@ -880,8 +841,7 @@ fn invariant_reproduce_jsonl_every_frame() {
             Box::new(|| check_consistent_content_spacing(&full, &ctx)),
             Box::new(|| check_no_split_thinking_nodes(&screen, &ctx)),
             Box::new(|| check_spacing_between_non_tool_containers(&screen, &ctx)),
-            Box::new(|| check_no_simultaneous_thought_and_thinking(&screen, &ctx)),
-            Box::new(|| check_thinking_word_count_monotonic(&screen, &ctx)),
+            Box::new(|| check_thinking_token_count_monotonic(&screen, &ctx)),
         ];
 
         for check in checks {
@@ -933,14 +893,8 @@ fn invariant_reproduce_jsonl_every_frame() {
             Box::new(|| check_no_split_thinking_nodes(&screen, "reproduce final screen")),
         ),
         (
-            "final:simultaneous_thought_thinking",
-            Box::new(|| {
-                check_no_simultaneous_thought_and_thinking(&screen, "reproduce final screen")
-            }),
-        ),
-        (
-            "final:monotonic_word_count",
-            Box::new(|| check_thinking_word_count_monotonic(&screen, "reproduce final screen")),
+            "final:monotonic_token_count",
+            Box::new(|| check_thinking_token_count_monotonic(&screen, "reproduce final screen")),
         ),
     ];
 

@@ -282,7 +282,7 @@ fn styled_snapshot_tool_call_with_body() {
 
 #[test]
 fn styled_snapshot_thinking_collapsed() {
-    // show_thinking=off: graduated thinking collapses to "◇ Thought (N words)".
+    // show_thinking=off: graduated thinking collapses to "◇ Thought (~N tokens)".
     let mut app = OilChatApp::default();
     app.set_show_thinking(false);
     let mut vt = Vt100TestRuntime::new(80, 24);

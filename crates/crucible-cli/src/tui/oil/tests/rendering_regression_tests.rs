@@ -115,7 +115,7 @@ fn thinking_transitions_to_collapsed_on_text_start() {
     // After text starts, thinking should show as collapsed summary (Thought),
     // not the full "Thinking..." label
     assert!(
-        output.contains("Thought") || output.contains("words)"),
+        output.contains("Thought") || output.contains("tokens)"),
         "After text starts, thinking should show collapsed summary.\n{}",
         output
     );
@@ -362,7 +362,7 @@ fn thinking_only_no_text_renders_cleanly() {
     );
     // Should show collapsed thinking in scrollback
     assert!(
-        stripped.contains("Thought") || stripped.contains("words)"),
+        stripped.contains("Thought") || stripped.contains("tokens)"),
         "Graduated thinking should show collapsed summary.\n{}",
         stripped
     );

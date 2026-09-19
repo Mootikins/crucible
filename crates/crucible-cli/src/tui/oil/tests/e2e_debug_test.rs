@@ -1068,7 +1068,7 @@ fn e2e_stress_many_containers() {
 }
 
 /// Thinking during streaming should NOT show "◇ Thought" in content —
-/// only the turn indicator in chrome shows "Thinking… (N words)".
+/// only the expanded block heads itself "Thinking…" while streaming.
 /// The collapsed summary "◇ Thought" appears only after text starts.
 #[test]
 fn thinking_not_duplicated_in_content_and_chrome() {
