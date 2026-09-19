@@ -17,8 +17,6 @@ mod daemon_errors;
 mod errors;
 #[path = "route_contract_tests/fs.rs"]
 mod fs;
-#[path = "route_contract_tests/stream_version.rs"]
-mod stream_version;
 #[path = "route_contract_tests/health.rs"]
 mod health;
 #[path = "route_contract_tests/kilns.rs"]
@@ -37,3 +35,5 @@ mod session_config;
 mod sessions;
 #[path = "route_contract_tests/skills.rs"]
 mod skills;
+#[path = "route_contract_tests/stream_version.rs"]
+mod stream_version;

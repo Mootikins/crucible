@@ -111,7 +111,10 @@ async fn event_stream(
     Query(query): Query<EventStreamQuery>,
     headers: HeaderMap,
 ) -> Result<
-    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    (
+        [(axum::http::HeaderName, String); 1],
+        Sse<impl Stream<Item = Result<Event, Infallible>>>,
+    ),
     WebError,
 > {
     // The cursor, either way a client can state it. A non-numeric
@@ -184,9 +187,7 @@ async fn event_stream(
                 crucible_daemon::SessionEvent::new(session_id.clone(), event_type, data)
             }
         })
-        .filter(move |event| {
-            futures::future::ready(event.seq.map_or(true, |seq| seq > max_replayed))
-        })
+        .filter(move |event| futures::future::ready(event.seq.is_none_or(|seq| seq > max_replayed)))
         .map(|event| to_sse(&event));
     let stream = iter([Ok(stream_version_frame())])
         .chain(iter(replayed).map(|event| to_sse(&event)))
@@ -194,9 +195,9 @@ async fn event_stream(
 
     // Keep-alive comments stop idle proxies/load balancers from dropping the
     // stream, which the client would otherwise treat as a reconnect.
-    Ok(versioned(Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::default(),
-    )))
+    Ok(versioned(
+        Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()),
+    ))
 }
 
 /// One daemon event as one SSE frame, its seq (when stamped) as the `id:`.

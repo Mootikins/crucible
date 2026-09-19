@@ -600,7 +600,10 @@ impl PublicationChangedEvent {
 async fn publication_event_stream(
     State(state): State<AppState>,
 ) -> Result<
-    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    (
+        [(axum::http::HeaderName, String); 1],
+        Sse<impl Stream<Item = Result<Event, Infallible>>>,
+    ),
     WebError,
 > {
     let rx = state.events.subscribe("system").await;

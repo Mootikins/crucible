@@ -45,10 +45,13 @@ pub(crate) fn versioned<S>(
     [(axum::http::HeaderName, String); 1],
     axum::response::sse::Sse<S>,
 ) {
-    ([(
-        axum::http::HeaderName::from_static("x-crucible-stream-version"),
-        STREAM_VERSION.to_string(),
-    )], stream)
+    (
+        [(
+            axum::http::HeaderName::from_static("x-crucible-stream-version"),
+            STREAM_VERSION.to_string(),
+        )],
+        stream,
+    )
 }
 
 // =========================================================================

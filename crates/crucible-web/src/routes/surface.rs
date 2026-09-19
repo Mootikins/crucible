@@ -207,7 +207,10 @@ async fn list_surfaces(
 async fn surface_event_stream(
     State(state): State<AppState>,
 ) -> Result<
-    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    (
+        [(axum::http::HeaderName, String); 1],
+        Sse<impl Stream<Item = Result<Event, Infallible>>>,
+    ),
     WebError,
 > {
     // ORDERING IS LOAD-BEARING, same as `fs_event_stream`: open the LOCAL broker

@@ -233,7 +233,10 @@ async fn trash_path(
 async fn fs_event_stream(
     State(state): State<AppState>,
 ) -> Result<
-    ([(axum::http::HeaderName, String); 1], Sse<impl Stream<Item = Result<Event, Infallible>>>),
+    (
+        [(axum::http::HeaderName, String); 1],
+        Sse<impl Stream<Item = Result<Event, Infallible>>>,
+    ),
     WebError,
 > {
     // ORDERING IS LOAD-BEARING: open the LOCAL broker channel BEFORE telling the

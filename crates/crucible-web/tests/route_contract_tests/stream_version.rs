@@ -15,21 +15,26 @@ use super::shared::{build_mock_state, build_test_app, start_mock_daemon};
 
 /// Opens one stream endpoint and answers its headers plus the first body
 /// bytes, under a short deadline (an SSE body never ends).
-async fn open(
-    uri: &str,
-) -> (
-    Option<String>,
-    String,
-) {
+async fn open(uri: &str) -> (Option<String>, String) {
     let (_mock, client) = start_mock_daemon().await;
     let state = build_mock_state(client);
     let app = build_test_app(state);
 
     let response = app
-        .oneshot(Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::OK, "{uri} did not answer 200");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "{uri} did not answer 200"
+    );
 
     let header = response
         .headers()

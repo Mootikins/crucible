@@ -374,7 +374,6 @@ impl ReconnectingDaemon {
         -> Vec<SessionEvent> = session_events_after(&session_id, after);
     }
 
-
     forward_rpc! {
         Once SessionPause =>
         session_pause(session_id: &str)
