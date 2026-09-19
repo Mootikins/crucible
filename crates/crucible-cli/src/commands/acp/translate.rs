@@ -65,6 +65,25 @@ fn update(u: SessionUpdate) -> TurnStep {
     TurnStep::Update(Box::new(u))
 }
 
+/// One step of a `session/load` replay, derived from a recorded daemon event.
+///
+/// Same mapping as [`classify_event`], plus the user's prompt. The live pump
+/// never forwards the prompt — the host renders the text it just sent — but a
+/// host keeps no transcript across restarts, so the recorded `user_message`
+/// frames are the only copy of the user's side of the conversation and replay
+/// forwards them as `UserMessageChunk`. Terminal steps and interactions still
+/// classify as themselves so the replay caller can skip them: a finished turn
+/// answers nothing, and an answered permission request must not be re-asked.
+pub fn replay_step(event: &SessionEvent) -> TurnStep {
+    if event.event == "user_message" {
+        return match text(event) {
+            Some(content) => update(SessionUpdate::UserMessageChunk(chunk(content))),
+            None => TurnStep::Ignore,
+        };
+    }
+    classify_event(event)
+}
+
 fn text(event: &SessionEvent) -> Option<String> {
     event
         .data
@@ -397,6 +416,53 @@ mod tests {
             classify_event(&event("mystery", json!({}))),
             TurnStep::Ignore
         ));
+    }
+
+    #[test]
+    fn replay_user_message_becomes_user_chunk() {
+        let step = replay_step(&event(
+            "user_message",
+            json!({"message_id": "m1", "content": "Fix the parser"}),
+        ));
+        match step {
+            TurnStep::Update(u) => match *u {
+                SessionUpdate::UserMessageChunk(c) => match c.content {
+                    ContentBlock::Text(t) => assert_eq!(t.text, "Fix the parser"),
+                    other => panic!("expected text block, got {other:?}"),
+                },
+                other => panic!("expected user message chunk, got {other:?}"),
+            },
+            other => panic!("expected update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_user_message_without_text_is_ignored() {
+        assert!(matches!(
+            replay_step(&event("user_message", json!({"message_id": "m1"}))),
+            TurnStep::Ignore
+        ));
+    }
+
+    /// A recorded permission request is history, not a live question: the
+    /// replay caller must see an Interaction (to skip), not an update that
+    /// re-asks the host to approve something already answered.
+    #[test]
+    fn replay_keeps_interactions_classified_so_the_caller_skips_them() {
+        let req = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
+        let step = replay_step(&event(
+            "interaction_requested",
+            json!({"request_id": "r1", "request": serde_json::to_value(&req).unwrap()}),
+        ));
+        assert!(matches!(step, TurnStep::Interaction { .. }));
+    }
+
+    /// Terminal steps classify as themselves: the replay loop skips them
+    /// instead of ending the replay early or answering a prompt nobody sent.
+    #[test]
+    fn replay_maps_message_complete_to_finished_not_an_update() {
+        let step = replay_step(&event("message_complete", json!({"total_tokens": 5})));
+        assert!(matches!(step, TurnStep::Finished(StopReason::EndTurn)));
     }
 
     #[test]

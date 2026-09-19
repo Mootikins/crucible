@@ -36,7 +36,7 @@ use tracing::{debug, info, warn};
 
 use super::translate::{
     classify_event, interaction_tool_call, outcome_to_interaction_response, permission_options,
-    TurnStep,
+    replay_step, TurnStep,
 };
 
 /// Shared event stream for one ACP session's daemon connection.
@@ -131,8 +131,9 @@ impl CrucibleAcpAgent {
                                 responder: Responder<LoadSessionResponse>,
                                 cx: HostConnection| {
                         let agent = agent.clone();
+                        let conn = cx.clone();
                         cx.spawn(async move {
-                            match agent.load_session(req).await {
+                            match agent.load_session(req, &conn).await {
                                 Ok(response) => responder.respond(response),
                                 Err(error) => responder.respond_with_error(error),
                             }
@@ -452,10 +453,12 @@ impl CrucibleAcpAgent {
         Ok(())
     }
 
-    async fn load_session(&self, args: LoadSessionRequest) -> AcpResult<LoadSessionResponse> {
-        // Resume an existing daemon session and re-attach an event stream. We do
-        // not replay history as session/update in v1 (the host keeps its own
-        // transcript); the session becomes live for new prompts.
+    async fn load_session(
+        &self,
+        args: LoadSessionRequest,
+        conn: &HostConnection,
+    ) -> AcpResult<LoadSessionResponse> {
+        // Resume an existing daemon session and re-attach an event stream.
         let daemon_session_id = args.session_id.0.as_ref().to_string();
         info!(session = %daemon_session_id, "acp load_session");
 
@@ -475,6 +478,35 @@ impl CrucibleAcpAgent {
                 warn!(error = %e, "session.resume failed");
                 Error::internal_error()
             })?;
+
+        // Replay the recorded conversation as `session/update` notifications,
+        // BEFORE the response. A host keeps no transcript of its own across
+        // restarts — this replay is the only copy of the conversation it will
+        // ever draw, which is why the user's prompt goes out too (the live
+        // path never sends it because the host renders the text it just sent).
+        // Only transcript content is forwarded: terminal steps answer nothing
+        // and answered permission requests are not re-asked. A replay read
+        // failure must not orphan the live session, so it degrades to a
+        // resumption without history — the same clean-empty contract
+        // `session.events_after` answers an unknown id with.
+        match client.session_events_after(&daemon_session_id, 0).await {
+            Ok(envelopes) => {
+                for event in &envelopes {
+                    if let TurnStep::Update(update) = replay_step(event) {
+                        let notif = SessionNotification::new(args.session_id.clone(), *update);
+                        if let Err(e) = conn.send_notification(notif) {
+                            warn!(error = ?e, "failed to send replayed session/update; truncating replay");
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => warn!(
+                error = %e,
+                session = %daemon_session_id,
+                "history replay failed; session loads without a transcript"
+            ),
+        }
 
         self.insert_session(daemon_session_id, client, event_rx);
         Ok(LoadSessionResponse::default())
