@@ -107,6 +107,18 @@ impl ReconnectingDaemon {
         self.session_subscribe(&[session_id]).await.map(|_| ())
     }
 
+    /// The daemon's cheapest RPC, for the readiness probe.
+    ///
+    /// `Safe` replay: `ping` changes nothing, so reconnecting and retrying once
+    /// after a dropped connection is what a probe wants to do — and it means the
+    /// probe repairs the link it found broken instead of only reporting it.
+    pub async fn ping(&self) -> anyhow::Result<String> {
+        self.forward_rpc(ReplayPolicy::Safe, RpcMethod::Ping, |client| {
+            Box::pin(client.ping())
+        })
+        .await
+    }
+
     /// Every forwarder declares replay safety. A lost response to a write is
     /// ambiguous, so only replay-safe calls reconnect and submit again.
     pub(super) async fn forward_rpc<T>(

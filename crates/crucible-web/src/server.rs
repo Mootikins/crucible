@@ -231,6 +231,7 @@ pub fn build_router(
     // returns it. Here it is dropped, because the server serves the router.
     let (api_routes, _spec) =
         api_router(web_config, shell_gate, allowed_origins.clone()).split_for_parts();
+    let health = health_routes(state.clone());
     let api_routes = api_routes
         .with_state(state)
         .layer(middleware::from_fn_with_state(
@@ -240,8 +241,10 @@ pub fn build_router(
 
     // Health, static, and the login bootstrap are public (no Bearer auth) —
     // login validates the key itself and mints the HttpOnly session cookie.
+    // `/ready` still needs the state: it asks the daemon, and that answer is
+    // the whole point of the route, so its router is built above the move.
     let app = api_routes
-        .merge(health_routes())
+        .merge(health)
         .merge(auth_routes(api_key_state.clone()))
         .merge(static_routes(web_config.static_dir.as_deref()));
 
