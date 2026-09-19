@@ -48,15 +48,9 @@ tracing-subscriber = "0.3"
 async-trait = "0.1"
 futures = "0.3"
 
-# Database dependencies
-
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "charset", "http2", "system-proxy"] }
 urlencoding = "2.1"
-
-# Vector operations
-
-# Binary serialization
 
 # JSON Schema validation
 schemars = "1.2"
@@ -85,8 +79,6 @@ futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 
-# Metrics and monitoring
-
 # Web framework for health checks
 axum = "0.8"
 tower = "0.5"
@@ -111,8 +103,6 @@ predicates = "3.1"
 wiremock = "0.6"
 mockall = "0.15"
 test-case = "3.3"
-
-# Database
 
 comfy-table = "7"
 

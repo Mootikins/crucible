@@ -13,10 +13,9 @@
 //! the state by construction; guessing a config key would be right for `oci`
 //! and wrong for the first plugin whose tree does not mirror its TOML.
 //!
-//! Deliberately a separate file from the user's `crucible.toml`: writing that
-//! back would have to preserve comments and formatting to be acceptable, and
-//! losing someone's config comments to a settings toggle is not a trade worth
-//! making.
+//! Deliberately a separate file from the user's `init.lua`: writing an option
+//! back would have to preserve that file's comments and layout, and losing them
+//! to a settings toggle is not a trade worth making.
 
 use crucible_lua::OptionsRegistry;
 use std::path::{Path, PathBuf};

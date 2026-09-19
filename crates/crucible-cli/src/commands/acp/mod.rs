@@ -23,11 +23,15 @@
 //!   | cru acp --kiln ~/my-kiln
 //! ```
 //!
-//! Dogfood (Crucible hosting Crucible) — add to `crucible.toml`:
-//! ```toml
-//! [acp.agents.crucible]
-//! command = "cru"
-//! args = ["acp"]
+//! Dogfood (Crucible hosting Crucible) — add to `~/.config/crucible/init.lua`:
+//! ```lua
+//! cru.config.set({
+//!     acp = {
+//!         agents = {
+//!             crucible = { command = "cru", args = { "acp" } },
+//!         },
+//!     },
+//! })
 //! ```
 //! then `cru chat -a crucible` drives a full round trip through both roles.
 

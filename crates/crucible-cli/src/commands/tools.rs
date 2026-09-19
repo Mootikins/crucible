@@ -72,7 +72,24 @@ fn list_normal(format: OutputFormat) -> Result<()> {
 }
 
 fn list_permissions() -> Result<()> {
-    println!("# Add these to [permissions].allow in crucible.toml");
+    // `crucible.toml` was the pre-Lua config file and NOTHING has read it since
+    // the switch to `init.lua` — `cru doctor` reports one as retired. The
+    // listing sent users to that dead file, so it names the file that is
+    // really loaded, resolved the way `cru doctor` resolves it.
+    let config_path = CliConfig::default_config_path();
+    let config_dir = config_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let init_lua = crucible_lua::source_files::init_file(config_dir)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| config_dir.join("init.lua"));
+
+    println!(
+        "# Add these to `permissions.allow` in {}",
+        init_lua.display()
+    );
+    println!("#   cru.config.set({{ permissions = {{ allow = {{ ... }} }} }})");
     println!();
 
     println!("# Built-in Tools");

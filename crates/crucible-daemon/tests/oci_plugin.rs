@@ -699,7 +699,7 @@ async fn a_devcontainer_alone_does_not_containerize_a_project_that_never_asked()
 }
 
 /// The opt-in for a project whose environment is entirely its devcontainer:
-/// no image to name in `crucible.toml`, just `devcontainer = true`.
+/// no image in `[plugins.oci]`, just `devcontainer = true`.
 #[tokio::test]
 async fn devcontainer_true_opts_a_project_in_with_no_image_configured() {
     let tmp = tempfile::tempdir().unwrap();
