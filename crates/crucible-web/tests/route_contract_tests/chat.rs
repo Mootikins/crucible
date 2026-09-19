@@ -347,7 +347,7 @@ async fn read_stream(
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    let mut body = app
+    let body = app
         .oneshot(request.body(Body::empty()).unwrap())
         .await
         .unwrap()
