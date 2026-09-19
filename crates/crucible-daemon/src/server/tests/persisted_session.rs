@@ -139,7 +139,11 @@ fn answered_seqs(resp: &Response) -> Vec<u64> {
         .map(|events| {
             events
                 .iter()
-                .map(|e| e["seq"].as_u64().expect("a replayed envelope carries its seq"))
+                .map(|e| {
+                    e["seq"]
+                        .as_u64()
+                        .expect("a replayed envelope carries its seq")
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -151,13 +155,19 @@ async fn session_events_after_filters_by_the_wire_seq() {
     let (sessions_root, session_id) = seed_wire_session(&tmp);
 
     // Cursor 0: the whole wire tail.
-    let req = make_request("session.events_after", json!({ "session_id": session_id, "after": 0 }));
+    let req = make_request(
+        "session.events_after",
+        json!({ "session_id": session_id, "after": 0 }),
+    );
     let resp = handle_session_events_after(req, &sessions_root).await;
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     assert_eq!(answered_seqs(&resp), vec![1, 2, 3, 4]);
 
     // Cursor between events: everything strictly after it.
-    let req = make_request("session.events_after", json!({ "session_id": session_id, "after": 2 }));
+    let req = make_request(
+        "session.events_after",
+        json!({ "session_id": session_id, "after": 2 }),
+    );
     let resp = handle_session_events_after(req, &sessions_root).await;
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     assert_eq!(answered_seqs(&resp), vec![3, 4]);

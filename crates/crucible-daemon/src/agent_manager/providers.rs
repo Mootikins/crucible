@@ -279,7 +279,10 @@ mod tests {
                     "anthropic".to_string(),
                     provider(BackendType::Anthropic, "claude-3-5-sonnet"),
                 ),
-                ("openai".to_string(), provider(BackendType::OpenAI, "gpt-4o")),
+                (
+                    "openai".to_string(),
+                    provider(BackendType::OpenAI, "gpt-4o"),
+                ),
             ]),
             default: Some("openai".to_string()),
             ..Default::default()

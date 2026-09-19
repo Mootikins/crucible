@@ -162,14 +162,19 @@ async fn send_during_cancel_wind_down_is_rejected() {
     // span between the signal and the task releasing the slot.
     let canceller = agent_manager.clone();
     let cancel_session = session.id.to_string();
-    let cancelling =
-        tokio::spawn(async move { canceller.cancel(cancel_session.as_str()).await });
+    let cancelling = tokio::spawn(async move { canceller.cancel(cancel_session.as_str()).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(64);
     let result = agent_manager
-        .send_message(&session.id, "during cancel".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "during cancel".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await;
     assert!(
         matches!(result, Err(AgentError::ConcurrentRequest(_))),
@@ -179,9 +184,18 @@ async fn send_during_cancel_wind_down_is_rejected() {
 
     // Once cancel() has returned, the winding-down task is done and the slot
     // is free again — the refusal must not wedge the session.
-    assert!(cancelling.await.unwrap(), "cancel should report an active request");
+    assert!(
+        cancelling.await.unwrap(),
+        "cancel should report an active request"
+    );
     let retry = agent_manager
-        .send_message(&session.id, "after cancel".to_string(), &event_tx, true, None)
+        .send_message(
+            &session.id,
+            "after cancel".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
         .await;
     assert!(
         retry.is_ok(),
