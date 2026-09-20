@@ -12,6 +12,8 @@ is a Keep a Changelog category.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-20
+
 ### Added
 
 - **The review is the one diff surface.** An expanded hunk in the Changes

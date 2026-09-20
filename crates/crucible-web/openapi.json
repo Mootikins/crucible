@@ -3,7 +3,7 @@
   "info": {
     "title": "Crucible web API",
     "description": "The HTTP API that `cru web` serves. This document is generated from the axum router; do not edit it by hand.",
-    "version": "0.30.0"
+    "version": "0.31.0"
   },
   "paths": {
     "/api/agents": {
