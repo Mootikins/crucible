@@ -226,6 +226,25 @@ impl TuiTestSession {
         )
         .expect("write hermetic provider config");
 
+        // A kiln the child owns, inside its own HOME, and the directory it runs
+        // from.
+        //
+        // Without one, `cru chat` walks up from its cwd looking for `.crucible/`
+        // and takes whatever it finds: a developer's dogfood kiln where there is
+        // one, and otherwise the checkout root — where the name it derives is
+        // not the name of any registered kiln, so the session it asks the daemon
+        // for is refused with `Unknown kiln`. The tier then passes on the
+        // machine of whoever happens to have a kiln in that directory, and fails
+        // on every fresh checkout. These tests are about the TUI, so they run
+        // inside one kiln whose path and name are the test's own.
+        let kiln_dir = home.path().join("kiln");
+        std::fs::create_dir_all(kiln_dir.join(".crucible")).expect("create hermetic kiln");
+        std::fs::write(
+            kiln_dir.join(".crucible/init.lua"),
+            "-- hermetic kiln for the PTY tests; nothing to configure\n",
+        )
+        .expect("write hermetic kiln config");
+
         let mut pairs = crucible_core::test_support::hermetic_env_pairs(home.path());
         // A TUI child needs a terminal type; parents under CI may not have one.
         if !pairs.iter().any(|(k, _)| k == "TERM") {
@@ -233,10 +252,12 @@ impl TuiTestSession {
         }
 
         let mut cmd = String::from("/usr/bin/env -i");
-        if let Some(dir) = &config.working_dir {
-            // `env -C DIR` is a GNU coreutils extension (fine on the Linux CI
-            // these PTY tests run on; not portable to BSD/macOS env).
-            let dir = dir.display().to_string();
+        // `env -C DIR` is a GNU coreutils extension (fine on the Linux CI
+        // these PTY tests run on; not portable to BSD/macOS env). The kiln is
+        // the default cwd; a test that names its own still wins.
+        let working_dir = config.working_dir.clone().unwrap_or(kiln_dir);
+        {
+            let dir = working_dir.display().to_string();
             assert!(
                 !dir.contains(char::is_whitespace),
                 "working_dir {dir} contains whitespace; expectrl string spawn cannot pass it"
