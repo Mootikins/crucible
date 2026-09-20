@@ -2,7 +2,7 @@
 title: Web User Stories
 description: User stories for the web UI's chat and kiln-editing flows, with acceptance criteria and test-tier mapping
 tags: [meta, ux, web, user-stories, testing]
-updated: 2026-09-16
+updated: 2026-09-19
 ---
 
 # Web User Stories
@@ -79,9 +79,9 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** W1 (`ChatInput.test.tsx` — `draws the full card directly above the prompt`, `draws no card while nothing is pending`; `composer/__tests__/ComposerCard.test.tsx` — the dock rounds every corner to the card token and no rule keys the prompt's radius off the dock; `MessageList.empty-state.test.tsx` `MessageList interaction record` — the write record, the ask record, and nothing while no request is open; `contexts/__tests__/ChatContext.pending-restore.test.tsx` — the aggregate seeds the card on bind, and a request for another session is ignored). W2 full flow (`permission.story.spec.ts` — allow-once/scope/deny payloads + write-diff + queued sequence; visual baseline `permission-dock.png` — card and prompt with their own edges). W4 live is excluded for the same reason as WS-101 (mock-acp-agent unreachable from the web session route).
 
 ### WS-105: Answer agent questions (Ask)
-**As a user**, single-select, multi-select, and free-text questions render as modals I can answer or cancel.
-**Acceptance:** all Ask variants render; cancel sends a cancelled response; answer resumes the turn.
-**Tests:** W1 (exists), W2 (`ask.story.spec.ts` — single/multi-select + free-text). GAP documented: `AskInteraction` has no cancel affordance, so "cancel sends a cancelled response" is unimplemented.
+**As a user**, single-select, multi-select, and free-text questions render as modals I can answer.
+**Acceptance:** all Ask variants render; answer resumes the turn.
+**Tests:** W1 (exists), W2 (`ask.story.spec.ts` — single/multi-select + free-text). Open defect: `AskInteraction` has no cancel affordance — "cancel sends a cancelled response" is unimplemented and unclaimed until it ships.
 
 ### WS-106: Switch model mid-conversation
 **As a user**, a model picker below the input lets me switch models without losing history.
@@ -91,7 +91,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-107: Sessions: create, switch, resume, auto-title
 **As a user**, I create sessions, switch between them, resume old ones with full history, and see auto-generated titles I can override.
 **Acceptance:** the daemon auto-titles a session on its first completed turn and broadcasts `title_changed`; the web renders the pushed title everywhere (tab, session list, inbox) and never generates titles client-side (never overwrites manual titles); switching loads `/history` correctly; end/archive states visible.
-**Tests:** W2 (partial; `title-generation.spec.ts` — `title_changed` SSE renames tab+list, untitled fallback label, no client calls to the title endpoints — realigned 2026-07-12 after the daemon took ownership of titling), W4 (resume against real persistence — GAP).
+**Tests:** W2 (partial; `title-generation.spec.ts` — `title_changed` SSE renames tab+list, untitled fallback label, no client calls to the title endpoints — realigned 2026-07-12 after the daemon took ownership of titling), W4 (`session-path.live.spec.ts` — a session read after a daemon restart carries its modes and model; cross-surface resume is WS-HERO).
 
 ### WS-108: Cancel a turn
 **As a user**, a stop control cancels the in-flight turn.
@@ -112,7 +112,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ## 2. Kiln & Note Editing
 
 ### WS-201: Browse workspace files and kiln notes
-**As a user**, the file tree shows a real hierarchical folder tree for the selected root; clicking opens the file. (Superseded/expanded by **WS-217** — the unified explorer. The Files panel is no longer a standalone left tab: it is embedded in the **Navigator** panel, which absorbed Files/Sessions/Search.)
+**As a user**, the file tree shows a real hierarchical folder tree for the selected root; clicking opens the file. (Superseded/expanded by **WS-217** — the unified explorer. The Files panel is the Files tab of the right rail; see WS-216's roster note.)
 **Acceptance:** kiln roots build the whole tree from `list_notes` (folders split from kiln-relative paths); project roots lazy-load one level via `fs.list_dir`; folders expand/collapse with type icons; click opens via `openFileInEditor`.
 **Tests:** W1 SHIPPED 2026-07-18 — the tree *UI* GAP is now covered: `FileTreeView.test.tsx` (real zag machine — `role=tree`, `aria-level`, folders-first order, click→open-leaf-exactly-once routing-seam guard, branch-click-does-not-open, `aria-current="page"`), `kiln-builder`/`collection`/`reconcile`/`tree-root`/`treeRootStore` suites. **Remaining GAP:** W2 Playwright (context-menu interactive open, drag) and W4 live (`fs.list_dir` project walk against a real daemon) still deferred; the daemon `fs.list_dir` security properties are Rust-unit-covered (`server::fs::tests`).
 
@@ -185,7 +185,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### WS-214: Saving without a save bar
 **As a user**, buffers save the way I configure — not via a toolbar bolted onto every editor: Mod-S or Mod-Enter from the keyboard, an idle autosave interval, and an optional status-bar affordance showing the active buffer's dirty state.
-**Acceptance:** FileViewerPanel has no save toolbar; Mod-Enter saves except when the cursor is ON a wikilink (follow wins; insertBlankLine is deliberately shadowed); `editor.autosaveSeconds` (Settings → Editor, 0 = off) saves a dirty buffer after that many idle seconds, each keystroke resetting the countdown; `editor.showSaveButton` toggles a status-bar dirty-dot + Save for the active file that disappears once clean.
+**Acceptance:** FileViewerPanel has no save toolbar; Mod-Enter saves except when the cursor is ON a wikilink (follow wins; insertBlankLine is deliberately shadowed); `editor.autosaveSeconds` (Settings → Editor, default 2, 0 = off) saves a dirty buffer after that many idle seconds, each keystroke resetting the countdown; `editor.showSaveButton` toggles a status-bar dirty-dot + Save for the active file that disappears once clean.
 **Tests:** W1 (`FileViewerPanel.save.test.tsx` — no toolbar, autosave fires/holds at 0; `EditorWithPreview.test.tsx` — Mod-Enter saves off-link), W2 (`editor-shipped-app.story.spec.ts` — dirty surfaces in the status bar, status-save PUTs and clears, Mod-S path; `hero.live.spec.ts` realigned).
 
 ### WS-215: One design system — tokens, one collapse control, motion
@@ -196,11 +196,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### WS-216: A real terminal, a clean panel roster, one background hierarchy
 **As a user**, the Terminal tab is a real shell (xterm.js over a PTY), every tab in the default layout is an implemented panel, and panel chrome shares one background hierarchy.
-**Acceptance:** the terminal panel runs the user's `$SHELL` in a PTY over `/api/terminal/ws` (localhost-only, same gate as `/api/shell`) with ANSI colors from the ember palette, resize sync, scrollback, and a reconnect affordance when the session ends; the placeholder panels (Explorer/Search/Source Control/Outline/Problems/Output "Coming Soon" stubs) are DELETED — components, registrations, and default-layout tabs. The default roster (updated since: the **Navigator absorbed the separate Files/Sessions/Search tabs** into one left panel with a scope swapper) is: left **Navigator** (single tab), right **Backlinks + Activity**, bottom **Terminal + Chat**; persisted layouts with the retired tabs are pruned by the always-on `pruneRestored` (`stores/layoutMigrations.ts`); backgrounds follow one rule — app canvas `shell-bg` (header, ribbons, tab bars, status bar), panel content `shell-panel` (editor, terminal, panels; the active tab carries `shell-panel` so it fuses with its content, Obsidian-style), `surface-elevated` for raised rows, `surface-overlay` only for popups/floating windows.
+**Acceptance:** the terminal panel runs the user's `$SHELL` in a PTY over `/api/terminal/ws` (localhost-only, same gate as `/api/shell`) with ANSI colors from the ember palette, resize sync, scrollback, and a reconnect affordance when the session ends; the placeholder panels (Explorer/Search/Source Control/Outline/Problems/Output "Coming Soon" stubs) are DELETED — components, registrations, and default-layout tabs. The default roster (updated since: the Navigator split into the fixed rails — see WS-220) is: left **sessions rail**, right rail **column** — Files/Backlinks/Activity above, a **Terminal** pane under it that ships collapsed; there is no bottom dock; persisted layouts with the retired tabs are pruned by the always-on `pruneRestored` (`stores/layoutMigrations.ts`); backgrounds follow one rule — app canvas `shell-bg` (header, ribbons, tab bars, status bar), panel content `shell-panel` (editor, terminal, panels; the active tab carries `shell-panel` so it fuses with its content, Obsidian-style), `surface-elevated` for raised rows, `surface-overlay` only for popups/floating windows.
 **Tests:** W2 (`terminal.story.spec.ts` — mocked PTY WebSocket: prompt renders in xterm, input echoes, drop → reconnect), W1 (windowing/store suites updated to the implemented-only roster; `panel-placeholders.spec.ts` deleted with its subject).
 
 ### WS-217: Unified file-tree explorer — pick any kiln or project root
-**As a user**, a top-right dropdown lets me browse any registered **project** or **kiln** as a real hierarchical file tree, and the tree stays live as files change. (The explorer now lives inside the **Navigator** left panel — see WS-216's roster note.)
+**As a user**, a top-right dropdown lets me browse any registered **project** or **kiln** as a real hierarchical file tree, and the tree stays live as files change. (The explorer is the Files tab of the right rail — see WS-216's roster note.)
 **Acceptance:** the dropdown groups roots as Projects / Kilns (from `project.list` + `kiln.list`, deduped), selection persists across reload (localStorage); selecting a kiln builds the whole tree from `list_notes`, selecting a project lazy-walks one folder level per expand via the new daemon `fs.list_dir` RPC; keyboard/ARIA tree (`role=tree`, roving focus, arrows in/out of folders, Enter=open, F2 reserved for Phase-2 rename), sort (name/modified asc/desc), collapse-all, reveal-active, read-only right-click menu (Open/Copy path/Reveal-in-tree); kiln trees patch in place on live `GET /api/fs/events` SSE (non-`.md` leaves ignored), project roots refresh-on-interaction (manual refresh + window-focus refetch of expanded folders). **Security (daemon-side):** `fs.list_dir` is allowlisted fail-closed to registered projects and to the workspace folder the daemon made for a project-less session (`<session_scratch_dir>/<id>`, matched by shape and by the session's record; a stranger folder under the base is refused — `server::fs::tests::only_a_real_sessions_folder_is_admitted_under_the_scratch_base`), rejects `rel_path` traversal before disk, canonicalize-and-contains, drops per-entry symlinks escaping the root, and hides dotfiles + gitignored entries by default (`show_ignored` reveals).
 **Tests:** W1 (`FileTreeView`/`RootDropdown`/`kiln-builder`/`collection`/`reconcile`/`tree-root`/`treeRootStore` — 173 assertions incl. path-splitting, roster grouping/persistence/dedup, reconciler idempotence + `moved`==delete+create convergence), Rust (`server::fs::tests` — nested walk, gitignore/dotfile hiding, symlink-escape exclusion, traversal rejection, dirs-first sort; `web::fs_events::tests` — daemon→SSE event mapping). **GAP:** W2 Playwright interactive (context-menu open, keyboard journey) and W4 live (`fs.list_dir` + live SSE against a real daemon) deferred; project live-watching (`ProjectManager` watcher) deferred to a follow-up.
 **Scope:** Phase 1 of a 3-phase plan. **Phase 2** = drag-to-move, rename, mkdir, delete-to-trash, DnD drop-lines; **Phase 3** = deterministic resolved-link index + wikilink auto-rewrite on move. Seams laid: node `status` field (future git/diff decoration), daemon-as-single-write-authority. (Phase-2 DnD SHIPPED as WS-218; the `FileDragSource` seam types were superseded by `lib/file-dnd`.)
@@ -274,11 +274,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ## 3. Shell surfaces (Crucible Shell design)
 
-The four-surface shell from the "Crucible Shell Options" design (turn 5): Home → Inbox → Session ↔ Edit, one connected app. All state stays daemon-side; the surfaces are views over tabs in the window manager.
-
-### WS-301: Land on Home and pick up where I left off — NOT IMPLEMENTED
-**As a user**, opening the web UI with an empty workspace lands me on Home: a greeting, kiln stats, resume-a-session, recent notes, and a needs-you strip when something waits on me.
-**Status:** not implemented in the current shell. No `home` content type is registered (`register-panels.tsx`), so the auto-open-on-empty-layout behavior does not exist; the `HomePanel` component and its W1 suite are gone from the tree. Resume/recent/needs-you affordances live in the Navigator (sessions scope) and Inbox instead. Revive or retire this story before building on it.
+The shell surfaces (from the "Crucible Shell Options" design): Inbox → Session ↔ Edit, one connected app — the sessions rail and the file rail frame the centre, and there is no Home surface. All state stays daemon-side; the surfaces are views over tabs in the window manager.
 
 ### WS-302: See and answer everything waiting on me in the Inbox
 **As a user**, the Inbox shows every pending interaction at the top — answerable in place without switching tabs — and every session with live status below.
@@ -286,10 +282,10 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 **Tests:** W1 (`InboxPanel.test.tsx` — all-clear, in-place permission with broadcast + badge drop; `attentionStore.test.ts` — polled-aggregate merge, local-shadows-remote). Rust: `agent_manager::tests::permissions::list_all_pending_permissions_aggregates_across_sessions`, `web::events` wire-parity tests.
 **Resolved GAP (2026-07-11):** sessions without an open tab now surface via `session.pending_interactions` (daemon RPC) → `GET /api/interactions/pending` → attention-store polling (10s, visible-tab only); open-tab state shadows the poll. The same change fixed live interaction rendering: the SSE `interaction_requested` payload is now normalized server-side from the daemon wire shape (`{request_id, request:{kind, action:{type,…}}}`) to the flat shape the frontend renders — previously only the e2e mocks' hand-built flat frames ever rendered.
 
-### WS-303: The header is the shell — Home, Edit ↔ Session, Inbox badge
-**As a user**, the global header gives me the whole app: logo → Home, an Edit ↔ Session mode pill on the same content, a context line for where I am, and an Inbox button with an attention badge.
-**Acceptance:** the active surface is derived from the focused center tab (chat → session, file → edit, home/inbox → themselves; neutral tabs don't change it); goSession focuses the active session's tab or starts a new session; goEdit focuses a file tab or opens the notes tree + empty editor; the badge equals the number of sessions with a pending interaction.
-**Tests:** W1 (`shellStore.test.ts` surface mapping/sync, `attentionStore.test.ts` badge counting). W2 GAP: header click-through journey (Home → Inbox → Session ↔ Edit) — promote when it breaks once.
+### WS-303: The header is the shell — Inbox badge and context
+**As a user**, the global header gives me the whole app: a context line for where I am, and an Inbox button with an attention badge. (The Home button and the Edit ↔ Session mode pill are gone — there is no center "mode" to toggle; see WS-220. goSession/goEdit remain as command-palette commands.)
+**Acceptance:** the active surface is derived from the focused center tab (chat → session, file → edit, inbox → itself; neutral tabs don't change it); goSession focuses the active session's tab or starts a new session; goEdit focuses a file tab or opens the file tree + empty editor; the badge equals the number of sessions with a pending interaction.
+**Tests:** W1 (`shellStore.test.ts` surface mapping/sync, `attentionStore.test.ts` badge counting). W2 GAP: header click-through journey — promote when it breaks once.
 
 ### WS-304: Go anywhere from the omnibox
 **As a user**, Ctrl+P opens one omnibox that reaches every surface, note, session, and command, with `>` scoping to commands and `[[` scoping to notes.
@@ -338,17 +334,17 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 
 ### WS-306: The status bar knows where I am
 **As a user**, the status bar's left side shows the active surface (⌂/▤/✎/◆ + name) and the session's workspace · knows-kiln context.
-**Acceptance:** surface indicator follows the header pill; context segment renders only when a workspace/kiln is known; static filler (Ready/UTF-8/TypeScript) is gone.
+**Acceptance:** the surface indicator derives from the focused centre tab (same rule as WS-303); context segment renders only when a workspace/kiln is known; static filler (Ready/UTF-8/TypeScript) is gone.
 **Tests:** covered indirectly by W1 store tests; W3 baselines pin the rendered bar.
 
 ### WS-307: Sessions name themselves after their topic
-**As a user**, once a session's first turn completes, it gets a short topic-based title everywhere (tab, Home resume, Inbox) — I never see a wall of "Session chat-202…" again.
-**Acceptance:** the daemon generates the title with the session's own LLM provider on the first `message_complete` of an untitled session (truncation of the first user message as fallback) and broadcasts `title_changed`; the open tab, Home resume card, and Inbox lists update without a refresh; untitled sessions fall back to "Untitled · <date>" instead of colliding id slices.
+**As a user**, once a session's first turn completes, it gets a short topic-based title everywhere (tab, sessions list, Inbox) — I never see a wall of "Session chat-202…" again.
+**Acceptance:** the daemon generates the title with the session's own LLM provider on the first `message_complete` of an untitled session (truncation of the first user message as fallback) and broadcasts `title_changed`; the open tab, the sessions list and the Inbox update without a refresh; untitled sessions fall back to "Untitled · <date>" instead of colliding id slices.
 **Tests:** daemon `agent_manager::title` unit tests (sanitize/truncate); web route `auto_title_delegates_to_daemon_generate_title`; reducer `title_changed` matrix + SSE parity tests.
 
 ### WS-308: Old sessions archive themselves out of my way
-**As a user**, sessions idle for 3 days disappear from Home and the Inbox into a collapsed ARCHIVED section, where I can restore, delete one, or clear the whole history.
-**Acceptance:** the daemon sweep archives idle sessions in storage (not just in-memory ones) after `auto_archive_hours` (default 72); Home resume and Inbox RECENT list only non-archived sessions sorted by last activity (Inbox capped at 30 with a count); the ARCHIVED section lazy-loads on expand and offers RESTORE, two-click DELETE, and a two-click CLEAR HISTORY bulk delete.
+**As a user**, sessions idle for 3 days disappear from the sessions list and the Inbox into a collapsed ARCHIVED section, where I can restore, delete one, or clear the whole history.
+**Acceptance:** the daemon sweep archives idle sessions in storage (not just in-memory ones) after `auto_archive_hours` (default 72); the sessions list and Inbox RECENT list only non-archived sessions sorted by last activity (Inbox capped at 30 with a count); the ARCHIVED section lazy-loads on expand and offers RESTORE, two-click DELETE, and a two-click CLEAR HISTORY bulk delete.
 **Tests:** daemon `test_sweep_archives_stale_persisted_sessions_not_in_memory` pins the storage-sweep gap; sort/fallback helpers in `lib/session-display.ts`. GAP: no component test drives the ARCHIVED section UI yet (manual + live verification only).
 
 ### WS-314: Every session setting the daemon has is settable from the web
@@ -425,8 +421,8 @@ settings pane appears with no restart.
 unchanged, the declared options render).
 
 ### WS-229: Search the kiln — text and semantic
-**As a user**, the Navigator's search scope gives me one debounced box that searches notes as literal text (ripgrep) or by vector similarity, with hits that open in the editor.
-**Acceptance (stub):** `SearchPanel` is embedded in the Navigator (no standalone tab); backed by `POST /api/search/grep`, `POST /api/search/semantic`, and `POST /api/search/vectors`.
+**As a user**, one search surface gives me a debounced box that searches notes as literal text (ripgrep) or by vector similarity, with hits that open in the editor.
+**Acceptance (stub):** `SearchPanel` is registered for the centre and opened on demand (Ctrl+Shift+F / palette) — it belongs to neither rail; backed by `POST /api/search/grep`, `POST /api/search/semantic`, and `POST /api/search/vectors`.
 **Tests:** W1 (`SearchPanel.test.tsx`). GAP: no W2 journey.
 
 ### WS-230: Clone a repo and start working in it
