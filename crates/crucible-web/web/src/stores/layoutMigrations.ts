@@ -205,9 +205,8 @@ function migrateV5toV6(v5: SerializedLayout): SerializedLayout {
   if (!present.has('files')) {
     const right = v5.edgePanels?.right;
     // First RESOLVABLE leaf, not leaf[0]. With a split right panel, leaf[0]
-    // may name a group that is gone -- the same case the WS-220 chat docking
-    // below already handles. Taking it blindly yields `undefined`, and the
-    // optional-chained push then drops Files with no error at all.
+    // may name a group that is gone. Taking it blindly yields `undefined`,
+    // and the optional-chained push then drops Files with no error at all.
     const rightGroupId = right
       ? edgePanelGroupIds(right).find((id) => tabGroups[id])
       : undefined;
@@ -215,8 +214,8 @@ function migrateV5toV6(v5: SerializedLayout): SerializedLayout {
     // APPENDED, never prepended, and it never claims `activeTabId`. As
     // `tabs[0]` it becomes what the downstream prune falls back to when the
     // stored active tab is dropped; claiming an empty group's active slot
-    // starves the session-docking pass below, which shows a docked session
-    // only while the right panel has no active tab of its own.
+    // starves the Files seeding pass below, which seeds the file tree only
+    // while the right panel has no active tab of its own.
     group?.tabs.push({ id: V6_FILES_TAB_ID, title: 'Files', contentType: 'files' });
   }
 
@@ -592,83 +591,6 @@ function pruneRestored(restored: RestoredLayout<TabContentType>): void {
     };
   }
 
-  // Chat tabs dock in the right edge panel (WS-220). Layouts persisted in
-  // the center-split era hold session chat tabs in center-tiling groups —
-  // restoring them boots with a stale second chat surface next to the
-  // editor. Migrate them into the right panel group and collapse any pane
-  // this empties out of the tree.
-  let layoutTree = restored.layout;
-  // First RESOLVABLE leaf group of the right panel: with a split right
-  // panel, leaf [0] may be empty/missing from tabGroups, and skipping the
-  // chat migration would resurrect the stale center chat surface WS-220
-  // exists to prevent.
-  const rightGroupId = restored.edgePanels.right
-    ? edgePanelGroupIds(restored.edgePanels.right).find((id) => tabGroups[id])
-    : undefined;
-  if (rightGroupId && tabGroups[rightGroupId]) {
-    const centerGroupIds = new Set<string>();
-    const collect = (n: LayoutNode): void => {
-      if (n.type === 'pane') {
-        if (n.tabGroupId) centerGroupIds.add(n.tabGroupId);
-      } else {
-        collect(n.first);
-        collect(n.second);
-      }
-    };
-    collect(layoutTree);
-
-    const right = tabGroups[rightGroupId];
-    const emptied = new Set<string>();
-    for (const gid of centerGroupIds) {
-      if (gid === rightGroupId) continue;
-      const g = tabGroups[gid];
-      if (!g) continue;
-      const moving = g.tabs.filter((t) => t.contentType === 'chat');
-      if (moving.length === 0) continue;
-      g.tabs = g.tabs.filter((t) => t.contentType !== 'chat');
-      if (g.activeTabId && !g.tabs.some((t) => t.id === g.activeTabId)) {
-        g.activeTabId = g.tabs[0]?.id ?? null;
-      }
-      right.tabs = [...right.tabs, ...moving];
-      if (!right.activeTabId) right.activeTabId = moving[0].id;
-      if (g.tabs.length === 0) emptied.add(gid);
-    }
-
-    if (emptied.size > 0) {
-      const collapse = (n: LayoutNode): LayoutNode | null => {
-        if (n.type === 'pane') {
-          return n.tabGroupId && emptied.has(n.tabGroupId) ? null : n;
-        }
-        const first = collapse(n.first);
-        const second = collapse(n.second);
-        if (first && second) return { ...n, first, second };
-        return first ?? second;
-      };
-      // A root pane that emptied stays (renders the EmptyState) — only
-      // split branches collapse away.
-      layoutTree = collapse(layoutTree) ?? layoutTree;
-      // Groups the collapse orphaned entirely can go.
-      const stillReferenced = new Set<string>();
-      const collectInto = (n: LayoutNode): void => {
-        if (n.type === 'pane') {
-          if (n.tabGroupId) stillReferenced.add(n.tabGroupId);
-        } else {
-          collectInto(n.first);
-          collectInto(n.second);
-        }
-      };
-      collectInto(layoutTree);
-      for (const panel of Object.values(restored.edgePanels)) {
-        for (const id of edgePanelGroupIds(panel)) stillReferenced.add(id);
-      }
-      for (const w of restored.floatingWindows) stillReferenced.add((w as { tabGroupId: string }).tabGroupId);
-      for (const gid of emptied) {
-        if (!stillReferenced.has(gid)) delete tabGroups[gid];
-      }
-    }
-  }
-
-  restored.layout = layoutTree;
   restored.tabGroups = tabGroups;
 }
 

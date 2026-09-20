@@ -174,10 +174,10 @@ types that only existed at the time.
   last the `iconFor` function. A version outside 1–10 throws; an upgrade that does
   not return a v9 payload throws.
 - `stores/layoutMigrations.ts`: the v1-to-v9 migration chain, the always-on
-  prune of unregistered content types (`pruneRestored` — this is what drops a
-  persisted tab for a panel the registry no longer has, such as the retired
-  Explorer/Search/Source-Control placeholders), the WS-220 chat-docking move,
-  and `appLayoutHooks`, the `LayoutCodecHooks` implementation
+  prune of unregistered content types and legacy session-less chat tabs
+  (`pruneRestored` — this is what drops a persisted tab for a panel the
+  registry no longer has, such as the retired Explorer/Search/Source-Control
+  placeholders), and `appLayoutHooks`, the `LayoutCodecHooks` implementation
   (`upgradeLegacy`, `prune`) that the app hands the core through
   `WindowPolicy.layoutHooks`.
 

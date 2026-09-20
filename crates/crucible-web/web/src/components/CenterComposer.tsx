@@ -50,8 +50,9 @@ const iconForProvider = (plugin: string) => PROVIDER_ICONS[plugin] ?? FlaskConic
  * shared composer: a prompt capsule with the context chips (kiln / project /
  * workspace / runtime / agent / model) on the chip row under it, the same
  * row the live session draws. Nothing touches the daemon until the first message is sent
- * (lazy creation); the created chat docks right per WS-220 and this tab
- * closes behind it, leaving the center as the editing surface.
+ * (lazy creation); the created chat opens in the centre pane beside the
+ * sessions rail (WS-220) and this tab closes behind it, leaving the center
+ * as the editing surface.
  *
  * This used to double as the empty-pane splash. An empty pane no longer falls
  * back into it — starting a session is a deliberate act (the ribbon's New

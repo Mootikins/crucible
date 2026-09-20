@@ -17,9 +17,8 @@ import type { WindowState } from '@/stores/windowStore';
 // Arbitraries for building random WindowState
 
 // 'chat' is deliberately absent: deserializeLayout normalizes chat tabs
-// (prunes session-less ones, migrates the rest out of center groups into
-// the right edge panel), so round-trip identity does not hold for layouts
-// carrying chat tabs — those paths are pinned by unit tests instead.
+// (prunes session-less ones), so round-trip identity does not hold for
+// layouts carrying chat tabs — those paths are pinned by unit tests instead.
 const arbTabContentType = fc.constantFrom('file', 'terminal', 'settings', 'sessions', 'files', 'skills', 'plugins', 'activity', 'backlinks', 'surfaces');
 
 const arbTab = fc.record({

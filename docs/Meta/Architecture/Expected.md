@@ -227,7 +227,7 @@ entry but no shipped proof.
 | # | Feature | Source |
 |---|---------|--------|
 | F143 | Chat: stream, thinking, tool cards, permission and ask modals, model picker, cancel, export | P, W |
-| F144 | Sessions: create, switch, resume, auto-title, archive, delete, settings; sessions dock in the right panel | W |
+| F144 | Sessions: create, switch, resume, auto-title, archive, delete, settings; sessions open in the centre pane beside the sessions rail | W |
 | F145 | Unified explorer over projects and kilns; `fs.list_dir`; live SSE patching | P, W |
 | F146 | Editor: CodeMirror, tabs, dirty state, save, autosave, vim keys, live preview, reading view | P, W |
 | F147 | Kiln-safe writes: traversal and oversize rejected | W |

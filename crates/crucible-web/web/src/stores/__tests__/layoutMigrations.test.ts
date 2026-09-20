@@ -327,8 +327,8 @@ describe('layout history and restore', () => {
     const tabs = restored.tabGroups['group-1'].tabs;
     expect(tabs[0].icon).toBe(iconForContentType('sessions'));
     expect(tabs[0].icon).toBeTypeOf('function');
-    // The chat tab migrates from the center group to the right panel group
-    // on restore — icon must still rehydrate wherever it lands.
+    // The chat tab stays in the group it was persisted in — restore must
+    // rehydrate the icon wherever the tab actually lives.
     const chatTab = Object.values(restored.tabGroups)
       .flatMap((g) => g.tabs)
       .find((t) => t.id === 'tab-chat-x');
@@ -483,9 +483,9 @@ describe('legacy generic chat tabs are pruned on every restore', () => {
   it('drops session-less chat tabs and fixes activeTabId', () => {
     const restored = deserializeLayout(v3() as never);
     const ids = restored.tabGroups['center'].tabs.map((t) => t.id);
-    // The session-bound tab is then MIGRATED to the right panel group
-    // (which here is 'center' itself for left/right/bottom — see the
-    // dedicated migration suite below for the real shape).
+    // The session-bound tab stays in its group (which here is 'center'
+    // itself for left/right/bottom — see the migration suite below for the
+    // real shape).
     expect(ids).toContain('tab-home');
     expect(ids).not.toContain('tab-chat');
     expect(restored.tabGroups['center'].activeTabId).toBe('tab-home');
@@ -504,7 +504,7 @@ describe('legacy generic chat tabs are pruned on every restore', () => {
   });
 });
 
-describe('center chat tabs migrate to the right edge panel on restore', () => {
+describe('center session chat tabs stay in the centre on restore', () => {
   const v3Split = () => ({
     version: 3 as const,
     layout: {
@@ -520,7 +520,7 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
         tabs: [{ id: 'tab-file-a', title: 'a.md', contentType: 'file' }],
         activeTabId: 'tab-file-a',
       },
-      // The center-split era chat pane: sessions used to open here.
+      // The centre chat pane beside the sessions rail: where sessions live.
       'g-chat': {
         id: 'g-chat',
         tabs: [
@@ -539,52 +539,27 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
     floatingWindows: [],
   });
 
-  it('moves the chat tab right and collapses the emptied center pane', () => {
+  it('a session chat tab restores into its centre pane, never the right rail', () => {
     const restored = deserializeLayout(v3Split() as never);
-    // Chat tab landed in the right panel group and became its active tab.
-    // `files-tab` trails it: v5→v6 seeds the file tree into the right panel.
-    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
-      'files-tab',
-      'tab-chat-s1',
-    ]);
-    expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s1');
-    // The emptied chat pane collapsed: the layout is the editor pane alone.
-    expect(restored.layout.type).toBe('pane');
-    expect((restored.layout as { tabGroupId?: string }).tabGroupId).toBe('g-editor');
-    // The orphaned group is gone.
-    expect(restored.tabGroups['g-chat']).toBeUndefined();
-  });
-
-  it('leaves non-chat tabs in place and keeps mixed panes alive', () => {
-    const json = v3Split();
-    json.tabGroups['g-chat'].tabs.push({
-      id: 'tab-file-b',
-      title: 'b.md',
-      contentType: 'file',
-    } as never);
-    const restored = deserializeLayout(json as never);
+    expect(restored.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    expect(restored.tabGroups['g-chat'].activeTabId).toBe('tab-chat-s1');
+    // The split survives: sessions | editor.
     expect(restored.layout.type).toBe('split');
-    expect(restored.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-file-b']);
-    expect(restored.tabGroups['g-chat'].activeTabId).toBe('tab-file-b');
-    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
-      'files-tab',
-      'tab-chat-s1',
-    ]);
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual(['files-tab']);
   });
 
-  it('chat tabs already in the right panel group stay put', () => {
+  it('a chat tab docked in the right rail stays where the user put it', () => {
     const json = v3Split();
-    json.tabGroups['g-right'].tabs = [
+    // v3 fixture predates the v5 edge-panel tree; shape it as such.
+    const right = json.tabGroups['g-right'] as { tabs: unknown[]; activeTabId: string | null };
+    right.tabs = [
       { id: 'tab-chat-s9', title: 'Nine', contentType: 'chat', metadata: { sessionId: 's9' } },
-    ] as never;
-    (json.tabGroups['g-right'] as { activeTabId: string | null }).activeTabId = 'tab-chat-s9';
+    ];
+    right.activeTabId = 'tab-chat-s9';
     const restored = deserializeLayout(json as never);
-    // v5→v6 seeds `files-tab` before the chat docking runs, so the newly
-    // docked session lands after it.
     expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
       'tab-chat-s9',
       'files-tab',
-      'tab-chat-s1',
     ]);
     expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s9');
   });
@@ -620,22 +595,6 @@ describe('v5 edge panels with split layout trees', () => {
     expect(right.second).toMatchObject({ type: 'pane', tabGroupId: 'edge-right-b' });
     expect(restored.tabGroups['edge-right-group']).toBeDefined();
     expect(restored.tabGroups['edge-right-b']).toBeDefined();
-  });
-
-  it('chat docking targets the first RESOLVABLE right-panel leaf when leaf[0] is missing', () => {
-    const state = splitEdgeState();
-    // First leaf references a group that no longer exists; the session-bound
-    // chat tab in center must still migrate right (into the second leaf).
-    delete state.tabGroups['edge-right-group'];
-    state.tabGroups['group-1'].tabs.push({
-      id: 'tab-chat-z',
-      title: 'Z',
-      contentType: 'chat',
-      metadata: { sessionId: 'z' },
-    });
-    const restored = deserializeLayout(serializeLayout(state));
-    expect(restored.tabGroups['edge-right-b'].tabs.map((t) => t.id)).toContain('tab-chat-z');
-    expect(restored.tabGroups['group-1'].tabs.some((t) => t.id === 'tab-chat-z')).toBe(false);
   });
 
   it('a v5 layout with a null edge tree degrades to an empty pane instead of crashing', () => {
