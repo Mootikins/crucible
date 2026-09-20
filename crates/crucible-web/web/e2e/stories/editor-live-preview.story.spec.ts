@@ -17,6 +17,8 @@ import { HARNESS_KILN, setupEditorHarness } from './_helpers/editor-harness';
  *  5. The Properties card is ONE card: live preview and the reading view draw
  *     the same markup for a nested map, and the same raw card for frontmatter
  *     the parser cannot represent.
+ *  6. Open and closed are ONE shape: the same hairline row in both states,
+ *     clear of the mode toggles, with no box of the card's own.
  */
 
 const NOTE = {
@@ -344,6 +346,59 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(page.getByTestId('fm-card')).toContainText('tools.semantic_search');
     expect(await cardMarkup(page)).toBe(live);
     await story.step(page, 'the same card in the reading view');
+  });
+
+  /**
+   * Pressing the card must reveal its rows, not redraw the block. The open
+   * card used to become a bordered box: the hairline row turned into a tall
+   * frame whose left border ran parallel to the pane separator a few pixels
+   * away, and its `padding: 8px 12px` overrode the `padding-right` that
+   * reserves the editor's toggle gutter, so the frame ran under the mode
+   * buttons. Closed and open were two different shapes.
+   */
+  test('the Properties card keeps one shape open and closed', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    const SHAPE_NOTE = {
+      name: 'Shape Note',
+      path: `${HARNESS_KILN}/Shape Note.md`,
+      content: ['---', 'title: Shape', 'status: draft', '---', '', '# Shape', '', 'Body.', ''].join('\n'),
+    };
+    const harness = await setupEditorHarness(page, [SHAPE_NOTE]);
+    await harness.open(SHAPE_NOTE);
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+
+    const summary = page.getByTestId('fm-summary');
+    const card = page.getByTestId('fm-card');
+    const shapeOf = async () => ({
+      row: await summary.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return { left: Math.round(r.left), right: Math.round(r.right), border: cs.borderTopWidth };
+      }),
+      // The card itself draws no frame in either state.
+      cardBorder: await card.evaluate((el) => getComputedStyle(el).borderTopWidth),
+    });
+
+    const closed = await shapeOf();
+    await summary.click();
+    await expect(card).toHaveJSProperty('open', true);
+    const open = await shapeOf();
+
+    // Same row, same edges, same hairline — only the caret and the rows move.
+    expect(open.row).toEqual(closed.row);
+    expect(closed.row.border).toBe('1px');
+    expect(open.cardBorder).toBe('0px');
+    expect(closed.cardBorder).toBe('0px');
+
+    // And the row still clears the mode toggles in the open state, which is
+    // what the reserved right gutter is for.
+    const toggle = await page.getByTestId('mode-toggle').evaluate((el) =>
+      Math.round(el.getBoundingClientRect().left),
+    );
+    expect(open.row.right).toBeLessThanOrEqual(toggle);
+    await story.step(page, 'one shape, open and closed');
   });
 
   test('frontmatter beyond the parser gets the same raw card on both surfaces', async ({ page }, testInfo) => {

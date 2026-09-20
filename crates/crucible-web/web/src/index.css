@@ -1331,12 +1331,22 @@ details.callout[open] > summary.callout-title::after {
   margin: 0 0 4px;
   padding-right: 3.5rem;
 }
+/* Open is the SAME control with its rows revealed under it — not a second
+   shape. The open card used to become a bordered block, which changed three
+   things at once: the hairline row turned into a tall box whose left border
+   ran parallel to the pane separator a few pixels away, `padding: 8px 12px`
+   overrode the `padding-right` above so the box ran under the editor's mode
+   toggles, and the summary lost the border it carries when closed. The card
+   holds no box of its own now; the summary keeps its row, and the rows below
+   line up with the summary's text. */
 .fm-card[open] {
   margin: 0 0 1rem;
-  padding: 8px 12px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
+}
+/* The revealed body, indented to the summary's own text inset (12px border
+   box + 8px gap + the 8px caret) so a key starts under the count above it. */
+.fm-rows,
+.fm-raw {
+  padding: 6px 12px 0;
 }
 /* The default disclosure triangle is suppressed on both engines — WebKit needs
    the vendor pseudo-element, everything else honours `list-style`. */

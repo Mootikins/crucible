@@ -73,27 +73,22 @@
   gap: 8px;
 }
 
-.fm-card:not([open]) > .fm-summary {
+/* The row is a control in BOTH states: closed it names what is hidden, open
+   it is the header of what it revealed. It used to drop its box when open,
+   while the card grew one — the same block changed shape as you pressed it. */
+.fm-card > .fm-summary {
   padding: 0 12px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-control);
 }
 
-.fm-card:not([open]) > .fm-summary:hover {
+.fm-card > .fm-summary:hover {
   border-color: var(--color-hairline-strong);
 }
 
 .fm-card .fm-count {
   font-family: inherit;
   font-size: inherit;
-}
-
-/* The open card keeps the bordered block from index.css; its summary is the
-   first row inside that block, so it carries no box of its own. */
-.fm-card[open] > .fm-summary {
-  min-height: auto;
-  padding: 0;
-  border: 0;
 }
 
 /* Thumb height on the phone, where the card header is a tap target. The phone
