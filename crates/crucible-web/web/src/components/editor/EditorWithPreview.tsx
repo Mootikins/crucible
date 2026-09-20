@@ -59,6 +59,7 @@ export const EditorWithPreview: Component<{
   renderDiagrams?: boolean;
   /** Hide the blank lines between frontmatter and the first content line. */
   hideFrontmatterGap?: boolean;
+  reflowParagraphs?: boolean;
   /** Proposed-edit review: `content` is the proposed text shown as an inline
    * diff against this original. Forces the source editor (not the reading view). */
   diffOriginal?: string;
@@ -195,6 +196,7 @@ export const EditorWithPreview: Component<{
           renderMath={props.renderMath}
           renderDiagrams={props.renderDiagrams}
           hideFrontmatterGap={props.hideFrontmatterGap}
+          reflowParagraphs={props.reflowParagraphs}
           onTogglePreview={isMarkdown() ? () => setMode('reading') : undefined}
           scrollToNote={props.scrollToNote}
           scrollToLine={props.scrollToLine}

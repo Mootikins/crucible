@@ -33,6 +33,7 @@ import {
   StateField,
   type Extension,
   type Range,
+  type Transaction,
 } from '@codemirror/state';
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
@@ -120,6 +121,11 @@ const renderDiagramsFacet = Facet.define<boolean, boolean>({
 
 /** Whether to hide the blank lines between frontmatter and the first content. */
 const hideFrontmatterGapFacet = Facet.define<boolean, boolean>({
+  combine: (values) => values[0] ?? true,
+});
+
+/** Whether to draw a hard-wrapped paragraph as one flowing line. */
+const reflowParagraphsFacet = Facet.define<boolean, boolean>({
   combine: (values) => values[0] ?? true,
 });
 
@@ -337,6 +343,123 @@ function blankLinesAfterFrontmatter(state: EditorState): number[] {
     out.push(line.from);
   }
   return out;
+}
+
+/**
+ * What a soft line break inside a paragraph draws as.
+ *
+ * Usually one real text space, not a styled gap: the browser must be able to
+ * wrap the joined paragraph here like at any other word boundary. When the
+ * source line already ends with a space, the widget draws nothing instead —
+ * that space is the word boundary, and a second one would show as a gap.
+ */
+class SoftBreakWidget extends WidgetType {
+  constructor(readonly space: boolean) {
+    super();
+  }
+
+  override eq(other: SoftBreakWidget): boolean {
+    return other.space === this.space;
+  }
+
+  override toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-lp-softbreak';
+    span.textContent = this.space ? ' ' : '';
+    return span;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+const SOFT_BREAK = Decoration.replace({ widget: new SoftBreakWidget(true) });
+const SOFT_BREAK_BARE = Decoration.replace({ widget: new SoftBreakWidget(false) });
+
+/** True when the node sits inside a blockquote. */
+function inBlockquote(node: SyntaxNode): boolean {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.name === 'Blockquote') return true;
+  }
+  return false;
+}
+
+/**
+ * Replace each soft line break inside one paragraph with a single space, so a
+ * hard-wrapped paragraph draws as one flowing line and the prose column sets
+ * the paragraph width. This is what the reading view, Obsidian and GitHub all
+ * show; the source keeps its line breaks.
+ *
+ * Unlike the other constructs here, the cursor does NOT reveal the breaks: the
+ * text would jump back to the source lines under the person who types in it.
+ *
+ * Two constructs survive. A markdown hard break — two trailing spaces, or a
+ * trailing backslash — is a real line break in the output, so it stays a line.
+ * The indent of a continuation line is structure, not prose, so the space
+ * swallows it.
+ *
+ * The range starts AT the line break and never reaches back over the line's
+ * own text, not even over a single trailing space. A range that grew backwards
+ * swallowed the space a person had just typed at the end of the line, which
+ * put the caret inside the replaced range: every further character went in at
+ * one offset, and " indeed" came out as "deedni" across the break. A line that
+ * already ends with a space gets the bare widget instead.
+ */
+function pushParagraphJoins(
+  state: EditorState,
+  node: SyntaxNode,
+  out: Range<Decoration>[],
+): void {
+  const doc = state.doc;
+  const first = doc.lineAt(node.from).number;
+  const endLine = doc.lineAt(node.to);
+  // The node can end AT the next line's start; that line is not part of it.
+  const last =
+    endLine.from === node.to && endLine.number > first ? endLine.number - 1 : endLine.number;
+
+  for (let n = first; n < last; n++) {
+    const line = doc.line(n);
+    const next = doc.line(n + 1);
+    const trimmed = line.text.trimEnd();
+    const trailing = line.text.length - trimmed.length;
+    if (trailing >= 2 || trimmed.endsWith('\\')) continue;
+    if (next.text.trim() === '') continue;
+    const indent = next.text.length - next.text.trimStart().length;
+    const join = trailing === 0 ? SOFT_BREAK : SOFT_BREAK_BARE;
+    out.push(join.range(line.to, next.from + indent));
+  }
+}
+
+/**
+ * Every paragraph join in the document, as one decoration set.
+ *
+ * TOML frontmatter and `$$` display math have no lezer node of their own, so
+ * lezer reports them as paragraphs. They are line-exact blocks, not prose —
+ * joining their lines would destroy the source the cursor reveals. Skip any
+ * paragraph that touches one.
+ */
+function buildParagraphJoins(state: EditorState): DecorationSet {
+  if (!state.facet(reflowParagraphsFacet)) return Decoration.none;
+
+  const keepLines: { from: number; to: number }[] = [];
+  const toml = tomlFrontmatterRange(state);
+  if (toml) keepLines.push(toml);
+  if (state.facet(renderMathFacet)) keepLines.push(...displayMathRanges(state));
+
+  const decorations: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter: (nodeRef) => {
+      if (nodeRef.name !== 'Paragraph') return;
+      // Blockquote continuation lines carry their own `> ` marks; those belong
+      // to the callout/quote treatment, not to this join.
+      if (inBlockquote(nodeRef.node)) return false;
+      if (keepLines.some((r) => r.from < nodeRef.to && r.to > nodeRef.from)) return false;
+      pushParagraphJoins(state, nodeRef.node, decorations);
+      return false;
+    },
+  });
+  return Decoration.set(decorations, true);
 }
 
 function buildDecorations(view: EditorView): DecorationSet {
@@ -962,27 +1085,46 @@ const blockWidgetCursorEntry = EditorState.transactionFilter.of((tr) => {
   ];
 });
 
-/** Dispatched after a scroll so blockWidgetField recomputes — a StateField
- * can't observe the viewport itself, and scrolling isn't a transaction. */
+/** Dispatched after a scroll so blockWidgetField and paragraphJoinField
+ * recompute — a StateField can't observe the viewport itself, and scrolling
+ * isn't a transaction. */
 const syncBlockWidgets = StateEffect.define<null>();
+
+/** True when the transaction can change what the two document-wide decoration
+ * fields produce: an edit, a cursor move, a post-scroll sync, or the
+ * background parser advancing the syntax tree (a progress transaction has no
+ * docChanged/selection). Without the last one, constructs below the initial
+ * parse boundary never render. */
+function rebuildsStateDecorations(tr: Transaction): boolean {
+  return (
+    tr.docChanged ||
+    tr.selection !== undefined ||
+    tr.effects.some((e) => e.is(syncBlockWidgets)) ||
+    syntaxTree(tr.startState) !== syntaxTree(tr.state)
+  );
+}
+
+/**
+ * The paragraph joins. A decoration that replaces a line break is illegal from
+ * a ViewPlugin (CM6 measures plugin decorations after line breaking), so the
+ * joins live in a StateField like the block widgets do.
+ */
+const paragraphJoinField = StateField.define<DecorationSet>({
+  create: buildParagraphJoins,
+  update(deco, tr) {
+    if (rebuildsStateDecorations(tr)) return buildParagraphJoins(tr.state);
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 
 // Tables/callouts replace whole line blocks, and CM6 forbids block
 // decorations from ViewPlugins — they live in a StateField instead.
 const blockWidgetField = StateField.define<DecorationSet>({
   create: buildBlockWidgets,
   update(deco, tr) {
-    // Rebuild on the obvious triggers, on a post-scroll sync (see
-    // blockWidgetViewportSync), AND when the background parser advanced the
-    // syntax tree (a progress transaction has no docChanged/selection) —
-    // otherwise blocks below the initial parse boundary never widget-render.
-    if (
-      tr.docChanged ||
-      tr.selection ||
-      tr.effects.some((e) => e.is(syncBlockWidgets)) ||
-      syntaxTree(tr.startState) !== syntaxTree(tr.state)
-    ) {
-      return buildBlockWidgets(tr.state);
-    }
+    if (rebuildsStateDecorations(tr)) return buildBlockWidgets(tr.state);
     return deco.map(tr.changes);
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -1071,6 +1213,10 @@ const livePreviewTheme = EditorView.baseTheme({
     padding: '0.5px 4px',
   },
   '.cm-lp-link': { color: 'var(--color-primary)' },
+  // The space that joins two source lines of one paragraph. `pre-wrap` keeps
+  // the space AND lets the browser wrap the joined paragraph there, which is
+  // the whole point: the prose column sets the paragraph width.
+  '.cm-lp-softbreak': { whiteSpace: 'pre-wrap' },
   '.cm-lp-codeblock': {
     fontFamily: 'var(--font-mono)',
     fontSize: 'var(--cru-font-reading)',
@@ -1211,6 +1357,7 @@ export function livePreview(opts?: {
   renderMath?: boolean;
   renderDiagrams?: boolean;
   hideFrontmatterGap?: boolean;
+  reflowParagraphs?: boolean;
 }): Extension {
   const width = opts?.maxLineWidth ?? 0;
   return [
@@ -1221,6 +1368,7 @@ export function livePreview(opts?: {
     renderMathFacet.of(opts?.renderMath ?? true),
     renderDiagramsFacet.of(opts?.renderDiagrams ?? true),
     hideFrontmatterGapFacet.of(opts?.hideFrontmatterGap ?? true),
+    reflowParagraphsFacet.of(opts?.reflowParagraphs ?? true),
     // Prose wraps; horizontal scrolling is a source-mode behavior.
     EditorView.lineWrapping,
     // Readable line length (Obsidian-style): center a prose column instead
@@ -1236,6 +1384,7 @@ export function livePreview(opts?: {
         ]
       : []),
     livePreviewPlugin,
+    paragraphJoinField,
     blockWidgetField,
     blockWidgetViewportSync,
     blockWidgetCursorEntry,

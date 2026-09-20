@@ -12,6 +12,8 @@ import { HARNESS_KILN, setupEditorHarness } from './_helpers/editor-harness';
  *  2. Clicking into a construct reveals ONLY that construct's raw source;
  *     everything else stays styled (visual baseline).
  *  3. The mode toggle switches to the raw mono source flow and back.
+ *  4. A hard-wrapped paragraph draws as one flowing paragraph that fills the
+ *     prose column, and the source lines come back in source mode.
  */
 
 const NOTE = {
@@ -156,5 +158,122 @@ test.describe('Editor live preview (markdown default)', () => {
     await expect(content).toContainText('> [!warning] Mind the gap');
     await expect(callouts).toHaveCount(2);
     await story.step(page, 'callout revealed for editing');
+  });
+
+  test('a hard-wrapped paragraph reflows to fill the prose column', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    // Six short source lines that are ONE markdown paragraph, plus a
+    // two-space hard break, which is a real line break and must survive.
+    const WRAPPED_NOTE = {
+      name: 'Wrapped Note',
+      path: `${HARNESS_KILN}/Wrapped Note.md`,
+      content: [
+        'The quick brown fox jumps over',
+        'the lazy dog while the sleepy',
+        'cat watches from the warm sill',
+        'and the kettle begins to sing',
+        'somewhere behind the half shut',
+        'kitchen door on a winter night.',
+        '',
+        'Broken here on purpose.  ',
+        'Second visual line.',
+        '',
+      ].join('\n'),
+    };
+    const harness = await setupEditorHarness(page, [WRAPPED_NOTE]);
+    await harness.open(WRAPPED_NOTE);
+    const content = page.locator('.cm-content');
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
+    await content.click();
+    await page.keyboard.press('Control+End');
+
+    // 1. The six source lines are one paragraph, joined by single spaces.
+    await expect(content).toContainText('jumps over the lazy dog');
+    await expect(content).toContainText('warm sill and the kettle');
+
+    // 2. It fills the column: the browser wraps it into far fewer visual rows
+    // than the source has lines, and each full row reaches most of the width.
+    // This is the whole point — the column, not the source, sets the width.
+    const flow = await page.evaluate(() => {
+      const line = Array.from(document.querySelectorAll('.cm-line')).find((el) =>
+        (el.textContent ?? '').startsWith('The quick brown fox'),
+      );
+      if (!line) return null;
+      const range = document.createRange();
+      range.selectNodeContents(line);
+      const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+      // One visual row per distinct top edge; its width spans its rects.
+      const rows = new Map<number, { left: number; right: number }>();
+      for (const r of rects) {
+        const top = Math.round(r.top);
+        const row = rows.get(top);
+        if (row) {
+          row.left = Math.min(row.left, r.left);
+          row.right = Math.max(row.right, r.right);
+        } else {
+          rows.set(top, { left: r.left, right: r.right });
+        }
+      }
+      const tops = Array.from(rows.keys()).sort((a, b) => a - b);
+      const first = rows.get(tops[0]);
+      return {
+        rowCount: tops.length,
+        firstRowWidth: first ? first.right - first.left : 0,
+        lineWidth: (line as HTMLElement).getBoundingClientRect().width,
+      };
+    });
+    expect(flow).not.toBeNull();
+    expect(flow!.rowCount).toBeGreaterThan(1);
+    expect(flow!.rowCount).toBeLessThan(5);
+    expect(flow!.firstRowWidth).toBeGreaterThan(flow!.lineWidth * 0.8);
+
+    // 3. A two-space hard break is a real line break: it stays its own line.
+    const brokenLines = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).filter((el) =>
+        (el.textContent ?? '').includes('Broken here on purpose'),
+      ).map((el) => el.textContent ?? ''),
+    );
+    expect(brokenLines).toHaveLength(1);
+    expect(brokenLines[0]).not.toContain('Second visual line');
+    await story.step(page, 'paragraph reflowed to the column');
+    await expect(page.locator('.cm-editor')).toHaveScreenshot('editor-live-reflow.png');
+
+    // 4. Typing at a join lands in the source line the caret sits on, in
+    // order. A join range that reached back over the line's last character
+    // swallowed each space as it was typed, which left the caret inside the
+    // replaced range and wrote " indeed" as "deedni" across the break.
+    const joinPoint = await page.evaluate(() => {
+      const line = Array.from(document.querySelectorAll('.cm-line')).find((el) =>
+        (el.textContent ?? '').startsWith('The quick brown fox'),
+      );
+      if (!line) return null;
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        // The first join: the widget that stands in for the first line break.
+        const parent = node.parentElement;
+        if (!parent?.classList.contains('cm-lp-softbreak')) continue;
+        const range = document.createRange();
+        range.setStart(line, 0);
+        range.setEndBefore(parent);
+        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+        const last = rects[rects.length - 1];
+        return last ? { x: last.right, y: last.top + last.height / 2 } : null;
+      }
+      return null;
+    });
+    expect(joinPoint).not.toBeNull();
+    await page.mouse.click(joinPoint!.x, joinPoint!.y);
+    await page.keyboard.type(' indeed');
+    await expect(content).toContainText('jumps over indeed the lazy dog');
+
+    // 5. Source mode gives the source lines back, one rendered line each.
+    await page.getByTestId('mode-toggle').click();
+    const sourceLines = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.cm-line')).map((el) => el.textContent ?? ''),
+    );
+    expect(sourceLines).toContain('The quick brown fox jumps over indeed');
+    expect(sourceLines).toContain('the lazy dog while the sleepy');
+    await story.step(page, 'source mode keeps the source lines');
   });
 });

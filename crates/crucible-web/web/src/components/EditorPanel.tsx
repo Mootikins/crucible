@@ -161,6 +161,7 @@ export const EditorPanel: Component = () => {
                 renderMath={settings.editor.renderMath}
                 renderDiagrams={settings.editor.renderDiagrams}
                 hideFrontmatterGap={settings.editor.hideFrontmatterGap}
+                reflowParagraphs={settings.editor.reflowParagraphs}
               />
             )}
           </Show>

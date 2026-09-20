@@ -15,7 +15,7 @@ const DOC = [
 
 function makeView(
   doc = DOC,
-  opts?: { baseDir?: string; hideFrontmatterGap?: boolean },
+  opts?: { baseDir?: string; hideFrontmatterGap?: boolean; reflowParagraphs?: boolean },
 ): EditorView {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
@@ -701,5 +701,107 @@ describe('the frontmatter gap', () => {
   it('does nothing to a document with no frontmatter', () => {
     const view = track(makeView(['', '', 'Just prose.'].join('\n')));
     expect(gapLines(view)).toBe(0);
+  });
+});
+
+// A hard-wrapped paragraph is ONE paragraph in markdown. Live preview draws it
+// as one flowing line, so the prose column decides the paragraph width — the
+// way the reading view, Obsidian and GitHub all show it.
+describe('paragraph reflow', () => {
+  /** The rendered lines, as the editor draws them. */
+  const lines = (view: EditorView) =>
+    Array.from(view.contentDOM.querySelectorAll('.cm-line')).map(
+      (el) => el.textContent ?? '',
+    );
+
+  it('joins the source lines of one paragraph into one rendered line', () => {
+    const doc = ['Alpha beta', 'gamma delta', 'epsilon.'].join('\n');
+    const view = track(makeView(doc));
+    expect(lines(view)).toEqual(['Alpha beta gamma delta epsilon.']);
+  });
+
+  it('leaves the lines alone when the setting is off', () => {
+    const doc = ['Alpha beta', 'gamma delta'].join('\n');
+    const view = track(makeView(doc, { reflowParagraphs: false }));
+    expect(lines(view)).toEqual(['Alpha beta', 'gamma delta']);
+  });
+
+  it('keeps two paragraphs apart', () => {
+    const doc = ['One a', 'one b', '', 'Two a', 'two b'].join('\n');
+    const view = track(makeView(doc));
+    expect(lines(view)).toEqual(['One a one b', '', 'Two a two b']);
+  });
+
+  it('never joins a heading to the paragraph under it', () => {
+    const doc = ['# Title', 'Body a', 'body b'].join('\n');
+    const view = track(makeView(doc));
+    cursorAt(view, doc.length); // off the heading line, so the `#` stays hidden
+    expect(lines(view)).toEqual(['Title', 'Body a body b']);
+  });
+
+  // Two trailing spaces are a markdown hard break: a real <br> in the output.
+  it('keeps a two-space hard break as a break', () => {
+    const doc = ['Alpha  ', 'beta'].join('\n');
+    const view = track(makeView(doc));
+    expect(lines(view).length).toBe(2);
+  });
+
+  it('keeps a backslash hard break as a break', () => {
+    const doc = ['Alpha\\', 'beta'].join('\n');
+    const view = track(makeView(doc));
+    expect(lines(view).length).toBe(2);
+  });
+
+  // One trailing space is not a break; it must not become a double space.
+  it('collapses a single trailing space into the join', () => {
+    const view = track(makeView(['Alpha ', 'beta'].join('\n')));
+    expect(lines(view)).toEqual(['Alpha beta']);
+  });
+
+  it('collapses the indent of a continuation line', () => {
+    const view = track(makeView(['- Item a', '  item b'].join('\n')));
+    expect(lines(view)).toEqual(['- Item a item b']);
+  });
+
+  it('marks the join so the browser can wrap there', () => {
+    const view = track(makeView(['Alpha beta', 'gamma delta'].join('\n')));
+    const joins = view.contentDOM.querySelectorAll('.cm-lp-softbreak');
+    expect(joins.length).toBe(1);
+    expect(joins[0].textContent).toBe(' ');
+  });
+
+  it('keeps two list items apart', () => {
+    const view = track(makeView(['- One', '- Two'].join('\n')));
+    expect(lines(view).length).toBe(2);
+  });
+
+  it('never joins the lines of a fenced code block', () => {
+    const doc = ['```', 'let a = 1', 'let b = 2', '```'].join('\n');
+    const view = track(makeView(doc));
+    expect(lines(view).length).toBe(4);
+  });
+
+  // TOML frontmatter and `$$` display math have no lezer node — lezer calls
+  // them paragraphs. Their revealed source is line-exact and must stay so.
+  it('never joins the lines of TOML frontmatter', () => {
+    const doc = ['+++', 'title = "T"', 'tags = ["a"]', '+++', '', 'Body.'].join('\n');
+    const view = track(makeView(doc));
+    cursorAt(view, 5);
+    expect(view.dom.querySelectorAll('.cm-lp-frontmatter').length).toBe(4);
+  });
+
+  it('never joins the lines of revealed display math', () => {
+    const doc = ['$$', 'a = 1', 'b = 2', '$$'].join('\n');
+    const view = track(makeView(doc));
+    cursorAt(view, doc.indexOf('a = 1'));
+    expect(lines(view).length).toBe(4);
+  });
+
+  // The join hides a newline. A person typing must still see the paragraph
+  // reflow, not jump back to the source lines, so the cursor changes nothing.
+  it('stays joined while the cursor sits in the paragraph', () => {
+    const view = track(makeView(['Alpha beta', 'gamma delta'].join('\n')));
+    cursorAt(view, 3);
+    expect(lines(view)).toEqual(['Alpha beta gamma delta']);
   });
 });

@@ -105,6 +105,8 @@ export const CodeMirrorEditor: Component<{
   renderDiagrams?: boolean;
   /** Hide the blank lines between frontmatter and the first content line. */
   hideFrontmatterGap?: boolean;
+  /** Draw a hard-wrapped paragraph as one flowing line (default true). */
+  reflowParagraphs?: boolean;
   /** When set, `content` is a PROPOSED edit shown as an inline unified-merge
    * diff against this original (on-disk) content — per-chunk accept/reject. */
   diffOriginal?: string;
@@ -259,6 +261,7 @@ export const CodeMirrorEditor: Component<{
           renderMath: props.renderMath ?? true,
           renderDiagrams: props.renderDiagrams ?? true,
           hideFrontmatterGap: props.hideFrontmatterGap ?? true,
+          reflowParagraphs: props.reflowParagraphs ?? true,
         }),
       );
     }
@@ -376,6 +379,8 @@ export const CodeMirrorEditor: Component<{
     props.lineWidth;
     props.renderMath;
     props.renderDiagrams;
+    props.hideFrontmatterGap;
+    props.reflowParagraphs;
     props.diffOriginal;
     // A syntax theme is a compiled StyleModule, not CSS custom properties, so
     // it cannot follow the light/dark attribute — rebuild on a theme switch.

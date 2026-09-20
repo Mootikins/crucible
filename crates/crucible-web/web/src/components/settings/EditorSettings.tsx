@@ -153,6 +153,20 @@ export const EditorSettingsSection: Component = () => {
           data-testid="settings-editor-hide-frontmatter-gap"
         />
       </SettingRow>
+      <SettingRow
+        label="Rewrap paragraphs in editor"
+        description="Draw a hard-wrapped paragraph as one flowing line in live preview, so the column sets the paragraph width. Off keeps one line per source line. (Reading view always rewraps.)"
+      >
+        <input
+          type="checkbox"
+          checked={settings.editor.reflowParagraphs}
+          onChange={(e) =>
+            updateSetting('editor', 'reflowParagraphs', e.currentTarget.checked)
+          }
+          class="h-4 w-4 cursor-pointer"
+          data-testid="settings-editor-reflow-paragraphs"
+        />
+      </SettingRow>
     </>
   );
 };

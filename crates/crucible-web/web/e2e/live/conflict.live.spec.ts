@@ -77,12 +77,45 @@ async function openNote(page: Page, file: string, name: string): Promise<void> {
   await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 10_000 });
 }
 
-/** Put `suffix` at the end of the one line that holds `text`. */
+/**
+ * Put `suffix` at the end of the SOURCE line that holds `text`.
+ *
+ * BASE is three consecutive lines, so it is ONE markdown paragraph, and live
+ * preview draws a paragraph as one flowing line (`editor.reflowParagraphs`).
+ * `End` therefore reaches the end of the paragraph, not the end of this line.
+ *
+ * The join marks the boundary this leg needs: the source line ends where the
+ * next join space begins. With no join after it — the paragraph's last line —
+ * the rendered line ends there too, so `End` is right.
+ */
 async function appendToLine(page: Page, text: string, suffix: string): Promise<void> {
   const line = page.locator('.cm-line').filter({ hasText: text }).first();
   await expect(line).toBeVisible();
-  await line.click();
-  await page.keyboard.press('End');
+
+  const lineEnd = await line.evaluate((el, needle) => {
+    // The join after `needle`, in document order.
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    let found = false;
+    while ((node = walker.nextNode())) {
+      if (!found && (node.textContent ?? '').includes(needle)) found = true;
+      else if (found && (node.parentElement as HTMLElement | null)?.classList.contains('cm-lp-softbreak')) {
+        const range = document.createRange();
+        range.setStart(el, 0);
+        range.setEndBefore(node.parentElement!);
+        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+        const last = rects[rects.length - 1];
+        return last ? { x: last.right, y: last.top + last.height / 2 } : null;
+      }
+    }
+    return null;
+  }, text);
+
+  if (lineEnd) await page.mouse.click(lineEnd.x, lineEnd.y);
+  else {
+    await line.click();
+    await page.keyboard.press('End');
+  }
   await page.keyboard.type(suffix);
 }
 

@@ -268,6 +268,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     void settings.editor.renderMath;
     void settings.editor.renderDiagrams;
     void settings.editor.hideFrontmatterGap;
+    void settings.editor.reflowParagraphs;
     void pendingDiff()?.original;
     const view = editorView();
     if (!view) return;
@@ -530,6 +531,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   renderMath={settings.editor.renderMath}
                   renderDiagrams={settings.editor.renderDiagrams}
                 hideFrontmatterGap={settings.editor.hideFrontmatterGap}
+                reflowParagraphs={settings.editor.reflowParagraphs}
                   editorApiRef={(view) => setEditorView(() => view)}
                   // The compact shell owns the mode: its app bar carries the
                   // Read/Write control, and the editor's own buttons are too

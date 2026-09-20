@@ -47,6 +47,14 @@ interface EditorSettings {
    * leading blank lines already, so there is nothing there to hide.
    */
   hideFrontmatterGap: boolean;
+  /**
+   * Draw a hard-wrapped paragraph as one flowing line in live preview, so the
+   * prose column sets the paragraph width.
+   *
+   * Only live preview: the reading view renders markdown, which joins the
+   * lines of a paragraph already. Off keeps one rendered line per source line.
+   */
+  reflowParagraphs: boolean;
 }
 
 /** Appearance / typography settings */
@@ -108,6 +116,7 @@ export const defaultSettings: AppSettings = {
     renderMath: true,
     renderDiagrams: true,
     hideFrontmatterGap: true,
+    reflowParagraphs: true,
   },
   // Empty = use the built-in @theme defaults (Geist) from index.css.
   appearance: {
