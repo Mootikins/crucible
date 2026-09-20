@@ -1406,6 +1406,21 @@ details.callout[open] > summary.callout-title::after {
 }
 .fm-text {
   overflow-wrap: anywhere;
+  /* A `|` block scalar keeps its own line breaks, and they are the value.
+     `pre-wrap`, not `pre`: the value still wraps to the column. */
+  white-space: pre-wrap;
+}
+/* The body of the RAW card — frontmatter the parser cannot represent. Mono at
+   the key size, wrapped to the column, and never a horizontal scroller: this
+   is a fallback a reader glances at, not a code block they work in. */
+.fm-raw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--cru-font-floor);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-shell-body);
 }
 .fm-pill {
   border: 1px solid var(--color-hairline-strong);

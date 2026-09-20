@@ -646,6 +646,72 @@ describe('live preview: styled everywhere except the construct at the cursor', (
     expect(view.dom.querySelectorAll('.cm-lp-frontmatter').length).toBe(4);
   });
 
+  /**
+   * Parity with the reading view. A nested map (every agent card carries a
+   * `tools:` one) used to defeat the flat parser, so live preview left eleven
+   * mono YAML lines on screen while the reading view showed nothing at all.
+   */
+  it('gives a nested-map frontmatter the Properties card', () => {
+    const DOC = [
+      '---',
+      'type: agent-card',
+      'tools:',
+      '  read_note: true',
+      '  create_note: ask',
+      '---',
+      '',
+      '# Body',
+      '',
+    ].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, DOC.length);
+    const card = view.dom.querySelector('.cm-lp-fm [data-testid="fm-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain('tools.read_note');
+    expect(text(view)).not.toContain('---');
+  });
+
+  /** Frontmatter beyond the parser still gets a card — the same raw card the
+   * reading view draws — rather than a page of mono source. */
+  it('gives unparseable frontmatter the raw card', () => {
+    const DOC = ['+++', 'point = { x = 1 }', '+++', '', '# Body', ''].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, DOC.length);
+    const raw = view.dom.querySelector('.cm-lp-fm [data-testid="fm-raw"]');
+    expect(raw).not.toBeNull();
+    expect(raw!.textContent).toContain('point = { x = 1 }');
+    // Click-to-source still works: the cursor inside reveals the real lines.
+    cursorAt(view, 5);
+    expect(view.dom.querySelector('[data-testid="fm-card"]')).toBeNull();
+    expect(text(view)).toContain('point = { x = 1 }');
+  });
+
   it('without the extension nothing is hidden (source mode)', () => {
     const parent = document.createElement('div');
     document.body.appendChild(parent);

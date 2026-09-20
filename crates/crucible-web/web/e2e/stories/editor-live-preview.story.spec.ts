@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { createStory } from './_helpers/story';
 import { HARNESS_KILN, setupEditorHarness } from './_helpers/editor-harness';
 
@@ -14,6 +14,9 @@ import { HARNESS_KILN, setupEditorHarness } from './_helpers/editor-harness';
  *  3. The mode toggle switches to the raw mono source flow and back.
  *  4. A hard-wrapped paragraph draws as one flowing paragraph that fills the
  *     prose column, and the source lines come back in source mode.
+ *  5. The Properties card is ONE card: live preview and the reading view draw
+ *     the same markup for a nested map, and the same raw card for frontmatter
+ *     the parser cannot represent.
  */
 
 const NOTE = {
@@ -275,5 +278,109 @@ test.describe('Editor live preview (markdown default)', () => {
     expect(sourceLines).toContain('The quick brown fox jumps over indeed');
     expect(sourceLines).toContain('the lazy dog while the sleepy');
     await story.step(page, 'source mode keeps the source lines');
+  });
+  /**
+   * The Properties card crosses two renderers — a CodeMirror block widget and
+   * the reading view's markdown pipeline — and they used to disagree. A note
+   * whose frontmatter defeated the flat parser showed eleven mono YAML lines
+   * in the editor and NOTHING in the reading view. Every agent card carries a
+   * nested `tools:` map, so this was not an edge case.
+   *
+   * The gate compares the two surfaces' own markup, not a screenshot of each:
+   * a difference in the card is a difference in the string, and a baseline
+   * would only catch the ones that also move a pixel.
+   */
+  const cardMarkup = (page: Page) =>
+    page.getByTestId('fm-card').evaluate((el) => el.outerHTML);
+
+  test('the Properties card reads the same in live preview and the reading view', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    const PROPS_NOTE = {
+      name: 'Props Note',
+      path: `${HARNESS_KILN}/Props Note.md`,
+      content: [
+        '---',
+        'title: Coder',
+        'description: >-',
+        '  A folded scalar written over',
+        '  two source lines.',
+        'tags:',
+        '  - agent',
+        '  - coding',
+        'tools:',
+        '  semantic_search: true',
+        '  grep_notes: true',
+        '---',
+        '',
+        '# Coder Agent',
+        '',
+        'Body under the card.',
+        '',
+      ].join('\n'),
+    };
+    const harness = await setupEditorHarness(page, [PROPS_NOTE]);
+    await harness.open(PROPS_NOTE);
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+
+    // Live preview: the nested map becomes dotted rows, the folded scalar one
+    // line, and no raw YAML reaches the screen.
+    const card = page.getByTestId('fm-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('5 properties');
+    await page.getByTestId('fm-summary').click();
+    await expect(card).toContainText('tools.semantic_search');
+    await expect(card).toContainText('A folded scalar written over two source lines.');
+    await expect(page.locator('.cm-content')).not.toContainText('---');
+    const live = await cardMarkup(page);
+    await story.step(page, 'properties card in live preview');
+    await expect(card).toHaveScreenshot('editor-live-properties.png');
+
+    // Reading view: the same card, character for character.
+    await page.getByTestId('preview-toggle').click();
+    await expect(page.getByTestId('fm-card')).toBeVisible();
+    await page.getByTestId('fm-summary').click();
+    await expect(page.getByTestId('fm-card')).toContainText('tools.semantic_search');
+    expect(await cardMarkup(page)).toBe(live);
+    await story.step(page, 'the same card in the reading view');
+  });
+
+  test('frontmatter beyond the parser gets the same raw card on both surfaces', async ({ page }, testInfo) => {
+    const story = createStory(testInfo);
+    const ODD_NOTE = {
+      name: 'Odd Note',
+      path: `${HARNESS_KILN}/Odd Note.md`,
+      // A TOML inline table: beyond the flat parser on purpose.
+      content: ['+++', 'point = { x = 1, y = 2 }', 'name = "odd"', '+++', '', '# Odd Body', ''].join('\n'),
+    };
+    const harness = await setupEditorHarness(page, [ODD_NOTE]);
+    await harness.open(ODD_NOTE);
+    await expect(page.locator('.cm-editor')).toBeVisible({ timeout: 5000 });
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+
+    await expect(page.getByTestId('fm-card')).toContainText('raw properties');
+    await page.getByTestId('fm-summary').click();
+    await expect(page.getByTestId('fm-raw')).toContainText('point = { x = 1, y = 2 }');
+    const live = await cardMarkup(page);
+    await story.step(page, 'raw card in live preview');
+
+    await page.getByTestId('preview-toggle').click();
+    await expect(page.getByTestId('fm-card')).toBeVisible();
+    await page.getByTestId('fm-summary').click();
+    await expect(page.getByTestId('fm-raw')).toContainText('point = { x = 1, y = 2 }');
+    expect(await cardMarkup(page)).toBe(live);
+    await story.step(page, 'the same raw card in the reading view');
+
+    // Live preview still edits: clicking the card drops the cursor into the
+    // real source lines, which a card must never hide for good. The editor
+    // remounts on the way back, so the card starts collapsed again.
+    await page.getByTestId('preview-toggle').click();
+    await expect(page.getByTestId('fm-card')).toBeVisible();
+    await page.getByTestId('fm-summary').click();
+    await page.getByTestId('fm-raw').click();
+    await expect(page.locator('.cm-content')).toContainText('point = { x = 1, y = 2 }');
+    await story.step(page, 'the raw card drops into its source');
   });
 });

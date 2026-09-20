@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   extractFrontmatterBlock,
   parseFrontmatterEntries,
+  renderFrontmatterCard,
   renderFrontmatterCardHtml,
 } from '@/lib/frontmatter';
 
@@ -60,10 +61,69 @@ describe('parseFrontmatterEntries', () => {
     expect(entries).toEqual([{ key: 'title', value: 'x' }]);
   });
 
-  it('bails to null on nested structures (fallback to raw source)', () => {
-    expect(parseFrontmatterEntries('meta:\n  nested: true', 'yaml')).toBeNull();
+  it('bails to null on structures it cannot represent (fallback to a raw card)', () => {
     expect(parseFrontmatterEntries('[table]\nx = 1', 'toml')).toBeNull();
     expect(parseFrontmatterEntries('point = { x = 1 }', 'toml')).toBeNull();
+    // A bare key with nothing under it names no value.
+    expect(parseFrontmatterEntries('meta:\ntitle: x', 'yaml')).toBeNull();
+  });
+
+  /**
+   * A nested map and a block scalar are the two shapes REAL notes use that the
+   * first flat parser rejected — every agent card carries a `tools:` map, and
+   * a long `description:` is written as a folded scalar. Both surfaces fell
+   * back, and their fallbacks did not agree.
+   */
+  it('flattens a nested map to dotted keys (yaml)', () => {
+    const entries = parseFrontmatterEntries(
+      'type: agent-card\ntools:\n  semantic_search: true\n  create_note: ask\n',
+      'yaml',
+    )!;
+    expect(entries).toEqual([
+      { key: 'type', value: 'agent-card' },
+      { key: 'tools.semantic_search', value: 'true' },
+      { key: 'tools.create_note', value: 'ask' },
+    ]);
+  });
+
+  it('flattens a map nested more than one level deep', () => {
+    const entries = parseFrontmatterEntries('a:\n  b:\n    c: 1\n', 'yaml')!;
+    expect(entries).toEqual([{ key: 'a.b.c', value: '1' }]);
+  });
+
+  it('keeps a dash list under a nested key', () => {
+    const entries = parseFrontmatterEntries('meta:\n  tags:\n    - one\n    - two\n', 'yaml')!;
+    expect(entries).toEqual([{ key: 'meta.tags', value: ['one', 'two'] }]);
+  });
+
+  it('folds a `>-` block scalar into one line', () => {
+    const entries = parseFrontmatterEntries(
+      'description: >-\n  one line\n  and the next\nstatus: done\n',
+      'yaml',
+    )!;
+    expect(entries).toEqual([
+      { key: 'description', value: 'one line and the next' },
+      { key: 'status', value: 'done' },
+    ]);
+  });
+
+  it('breaks a folded scalar at a blank line', () => {
+    const entries = parseFrontmatterEntries('d: >\n  one\n\n  two\n', 'yaml')!;
+    expect(entries).toEqual([{ key: 'd', value: 'one\ntwo' }]);
+  });
+
+  it('keeps every line break of a `|` block scalar', () => {
+    const entries = parseFrontmatterEntries('d: |\n  one\n  two\n', 'yaml')!;
+    expect(entries).toEqual([{ key: 'd', value: 'one\ntwo' }]);
+  });
+
+  it('reads a block scalar that keeps its own deeper indent', () => {
+    const entries = parseFrontmatterEntries('d: |\n  one\n    two\n', 'yaml')!;
+    expect(entries).toEqual([{ key: 'd', value: 'one\n  two' }]);
+  });
+
+  it('bails on a block-scalar header with no block under it', () => {
+    expect(parseFrontmatterEntries('d: |\ntitle: x', 'yaml')).toBeNull();
   });
 });
 
@@ -184,5 +244,46 @@ describe('properties: expanded', () => {
     const html = renderFrontmatterCardHtml([{ key: 'properties', value: 'expanded' }]);
     expect(html).toContain('properties');
     expect(html).toContain('expanded');
+  });
+});
+
+/**
+ * The ONE card both surfaces render. The reading view used to drop a block the
+ * flat parser rejected, while live preview kept its raw source on screen — the
+ * same note showed a mono YAML dump in the editor and nothing at all in the
+ * reading view. Every fallback lives here now, so neither caller can invent
+ * its own.
+ */
+describe('renderFrontmatterCard', () => {
+  const block = (content: string) => extractFrontmatterBlock(content)!;
+
+  it('renders the rows card for a block the parser understands', () => {
+    const html = renderFrontmatterCard(block('---\ntitle: x\n---\nbody\n'))!;
+    expect(html).toContain('data-testid="fm-card"');
+    expect(html).toContain('1 property');
+    expect(html).not.toContain('fm-raw');
+  });
+
+  it('renders a raw card, not nothing, for a block the parser rejects', () => {
+    const card = block('---\npoint = { x = 1 }\n---\nbody\n');
+    // TOML inline table: beyond the flat parser on purpose.
+    expect(card.entries).toBeNull();
+    const html = renderFrontmatterCard(card)!;
+    expect(html).toContain('data-testid="fm-card"');
+    expect(html).toContain('data-testid="fm-raw"');
+    expect(html).toContain('point = { x = 1 }');
+    // The source is escaped, never markup.
+    expect(html).not.toContain('<x');
+  });
+
+  it('escapes the raw source', () => {
+    const card = block('---\nx = { a = "<script>" }\n---\n');
+    const html = renderFrontmatterCard(card)!;
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<script>');
+  });
+
+  it('returns null for a block with no properties at all', () => {
+    expect(renderFrontmatterCard(block('---\n---\nbody\n'))).toBeNull();
   });
 });

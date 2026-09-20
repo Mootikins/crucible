@@ -8,10 +8,10 @@
  * — the daemon parser accepts both, and the web must not render TOML
  * frontmatter as body text.
  *
- * The value parser is deliberately FLAT and conservative: scalar keys,
- * inline arrays, and YAML dash-lists. Anything it doesn't understand
- * (nested tables/maps, multiline strings) yields `entries: null`, and
- * callers fall back to the raw source instead of showing a wrong card.
+ * The value parser is deliberately conservative: scalar keys, inline arrays,
+ * YAML dash-lists, YAML nested maps (flattened to dotted keys) and YAML block
+ * scalars. Anything it doesn't understand yields `entries: null`, and the card
+ * then shows the raw source instead of a wrong table.
  */
 
 export type FrontmatterFormat = 'yaml' | 'toml';
@@ -89,9 +89,57 @@ function parseInlineArray(s: string): string[] | null {
   return inner.split(',').map(unquote).filter((x) => x !== '');
 }
 
+/** `|`, `|-`, `>+`, … → the style character; anything else → null. */
+function blockScalarStyle(valueText: string): '|' | '>' | null {
+  if (!/^[|>][+-]?\d*$/.test(valueText)) return null;
+  return valueText[0] as '|' | '>';
+}
+
 /**
- * Flat key/value parse. Returns null when any line falls outside the
- * supported shapes — callers then show raw source rather than lie.
+ * The run of indented lines under `start`, with the common indent removed.
+ *
+ * `next` points at the first line that ends the run — a line with content in
+ * column 0 — so the caller continues from there. Trailing blank lines belong
+ * to the document, not to the value, so they are dropped from the block but
+ * still consumed.
+ */
+function takeIndentedBlock(
+  lines: string[],
+  start: number,
+): { block: string[]; next: number } {
+  let next = start;
+  while (next < lines.length && (lines[next].trim() === '' || /^\s/.test(lines[next]))) next++;
+  let end = next;
+  while (end > start && lines[end - 1].trim() === '') end--;
+  const block = lines.slice(start, end);
+  const indents = block
+    .filter((l) => l.trim() !== '')
+    .map((l) => l.length - l.trimStart().length);
+  const pad = indents.length > 0 ? Math.min(...indents) : 0;
+  return { block: block.map((l) => l.slice(pad)), next };
+}
+
+/**
+ * A block scalar's text. `|` keeps every line break. `>` folds each paragraph
+ * into one line and keeps the break between paragraphs, which is what a long
+ * `description: >-` asks for.
+ *
+ * The chomping indicator (`-`, `+`) only governs trailing newlines, and the
+ * card trims those anyway, so the parser reads the style character alone.
+ */
+function foldBlockScalar(block: string[], style: '|' | '>'): string {
+  const text = block.join('\n');
+  if (style === '|') return text;
+  return text
+    .split(/\n\s*\n/)
+    .map((para) => para.split('\n').map((l) => l.trim()).join(' ').trim())
+    .filter((para) => para !== '')
+    .join('\n');
+}
+
+/**
+ * Key/value parse. Returns null when any line falls outside the supported
+ * shapes — the card then shows raw source rather than lie.
  */
 export function parseFrontmatterEntries(
   source: string,
@@ -118,6 +166,18 @@ export function parseFrontmatterEntries(
     let valueText = line.slice(sepIdx + 1).trim();
     if (!/^[A-Za-z0-9_.-]+$/.test(key)) return null;
 
+    // YAML block scalar: `key: |`, `key: >-`, … The header names the style;
+    // the value is the indented block under it.
+    const style = format === 'yaml' ? blockScalarStyle(valueText) : null;
+    if (style) {
+      const { block, next } = takeIndentedBlock(lines, i + 1);
+      // A header with no block under it names no value → bail.
+      if (block.length === 0) return null;
+      entries.push({ key, value: foldBlockScalar(block, style) });
+      i = next;
+      continue;
+    }
+
     // YAML dash-list under a bare key.
     if (format === 'yaml' && valueText === '') {
       const items: string[] = [];
@@ -126,10 +186,25 @@ export function parseFrontmatterEntries(
         items.push(unquote(lines[j].replace(/^\s+-\s+/, '')));
         j++;
       }
-      // A bare key with no list under it (multiline block etc.) → bail.
-      if (items.length === 0) return null;
-      entries.push({ key, value: items });
-      i = j;
+      if (items.length > 0) {
+        entries.push({ key, value: items });
+        i = j;
+        continue;
+      }
+
+      // A nested map under the bare key. Its rows join the flat table with
+      // dotted keys — `tools.semantic_search` rather than a second table
+      // inside the first. Every agent card carries a `tools:` map, and the
+      // whole card used to fall back to raw source because of it.
+      //
+      // Recursion, not a second loop: a map two levels deep, and a dash-list
+      // under a nested key, then parse by the rules above instead of by a
+      // copy of them.
+      const { block, next } = takeIndentedBlock(lines, i + 1);
+      const nested = block.length > 0 ? parseFrontmatterEntries(block.join('\n'), 'yaml') : null;
+      if (!nested || nested.length === 0) return null;
+      for (const entry of nested) entries.push({ key: `${key}.${entry.key}`, value: entry.value });
+      i = next;
       continue;
     }
 
@@ -200,6 +275,52 @@ function requestedOpenState(entries: FrontmatterEntry[]): 'expanded' | 'collapse
   return null;
 }
 
+/**
+ * The card for one extracted block — the ONE entry point both surfaces call.
+ *
+ * Null means the block holds no properties, so neither surface draws a card.
+ * A block the parser cannot represent still gets a card, with its raw source
+ * as the body: the reading view used to drop such a block silently while live
+ * preview kept the YAML on screen, so one note looked like two different
+ * notes. The fallback lives here, where it cannot differ per caller.
+ */
+export function renderFrontmatterCard(block: FrontmatterBlock): string | null {
+  if (block.entries === null) return renderRawCardHtml(block.source);
+  if (block.entries.length === 0) return null;
+  return renderFrontmatterCardHtml(block.entries);
+}
+
+/** `<details>` shell shared by the rows card and the raw card, so the summary
+ * row cannot drift between them. */
+function cardHtml(label: string, body: string, open: boolean): string {
+  return (
+    `<details class="fm-card" data-testid="fm-card"${open ? ' open' : ''}>` +
+    `<summary class="fm-summary" data-testid="fm-summary">` +
+    `<span class="fm-caret" aria-hidden="true"></span>` +
+    `<span class="fm-count">${escapeHtml(label)}</span>` +
+    `</summary>` +
+    body +
+    `</details>`
+  );
+}
+
+/**
+ * The card for frontmatter the parser cannot represent: the source itself,
+ * escaped, in mono. A table built from a half-understood parse would be a
+ * lie; the source is always true.
+ *
+ * A `div`, not a `pre`. The reading view styles `.prose pre` and CodeMirror
+ * styles its own, so a `pre` would pick up a different box on each surface —
+ * the very split this card exists to close. `.fm-raw` sets `pre-wrap` itself.
+ */
+function renderRawCardHtml(source: string): string {
+  return cardHtml(
+    'raw properties',
+    `<div class="fm-raw" data-testid="fm-raw">${escapeHtml(source)}</div>`,
+    false,
+  );
+}
+
 export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
   const rows = entries
     .map(({ key, value }) => {
@@ -221,14 +342,6 @@ export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
   //
   // The label is visible text now, so `title`/`aria-label` are gone with it —
   // as a tooltip and an accessible-name override they only duplicated it.
-  const open = requestedOpenState(entries) === 'expanded' ? ' open' : '';
-  return (
-    `<details class="fm-card" data-testid="fm-card"${open}>` +
-    `<summary class="fm-summary" data-testid="fm-summary">` +
-    `<span class="fm-caret" aria-hidden="true"></span>` +
-    `<span class="fm-count">${escapeHtml(label)}</span>` +
-    `</summary>` +
-    `<div class="fm-rows">${rows}</div>` +
-    `</details>`
-  );
+  const open = requestedOpenState(entries) === 'expanded';
+  return cardHtml(label, `<div class="fm-rows">${rows}</div>`, open);
 }

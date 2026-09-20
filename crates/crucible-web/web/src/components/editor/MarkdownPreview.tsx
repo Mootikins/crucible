@@ -8,7 +8,7 @@ import { Component, createEffect, createResource, onCleanup } from 'solid-js';
 import { hydrateOfflineImages, revokeOfflineImages } from '@/lib/offline/images';
 import { mountPluginBlocks } from '@/components/blocks/mount';
 import { renderMarkdownDocAsync, proseClass } from '@/lib/markdown';
-import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
+import { extractFrontmatterBlock, renderFrontmatterCard } from '@/lib/frontmatter';
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { wikilinkTargetMatches } from '@/lib/backlink-context';
 
@@ -44,11 +44,12 @@ export const MarkdownPreview: Component<{
     () => [props.content, props.path] as const,
     async ([content, path]) => {
       // Frontmatter renders as the Properties card (YAML and TOML), never as
-      // body text. Unparseable frontmatter is simply omitted, matching the
-      // old strip behavior.
+      // body text. A block the parser cannot represent gets the raw card, the
+      // same one live preview draws — this view used to omit it, so the note
+      // lost its properties on the way from the editor to the reading view.
       const fm = extractFrontmatterBlock(content);
       const body = fm ? content.slice(fm.bodyStart) : content;
-      const card = fm?.entries?.length ? renderFrontmatterCardHtml(fm.entries) : '';
+      const card = fm ? (renderFrontmatterCard(fm) ?? '') : '';
       return card + (await renderMarkdownDocAsync(body, dirOf(path)));
     },
   );

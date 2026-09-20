@@ -70,16 +70,37 @@ describe('MarkdownPreview — frontmatter Properties card', () => {
     expect(preview.textContent).not.toContain('title = ');
   });
 
-  it('omits the card (old strip behavior) when frontmatter is unparseable', async () => {
+  it('renders a nested map as dotted rows, like live preview', async () => {
     const { getByTestId } = render(() => (
-      <MarkdownPreview content={'---\nmeta:\n  nested: true\n---\n# Body\n'} />
+      <MarkdownPreview content={'---\ntools:\n  read_note: true\n---\n# Body\n'} />
+    ));
+    const preview = getByTestId('markdown-preview');
+    await waitFor(() => {
+      expect(preview.querySelector('[data-testid="fm-card"]')).not.toBeNull();
+    });
+    expect(preview.querySelector('[data-testid="fm-card"]')!.textContent).toContain(
+      'tools.read_note',
+    );
+  });
+
+  /**
+   * The reading view used to DROP a block the parser rejected, while live
+   * preview kept its raw YAML on screen — the same note read as two different
+   * notes. Both surfaces now show the raw card.
+   */
+  it('shows the raw card, not nothing, when frontmatter is unparseable', async () => {
+    const { getByTestId } = render(() => (
+      <MarkdownPreview content={'+++\npoint = { x = 1 }\n+++\n# Body\n'} />
     ));
     const preview = getByTestId('markdown-preview');
     await waitFor(() => {
       expect(preview.querySelector('h1')).not.toBeNull();
     });
-    expect(preview.querySelector('[data-testid="fm-card"]')).toBeNull();
-    expect(preview.textContent).not.toContain('nested');
+    const card = preview.querySelector('[data-testid="fm-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('[data-testid="fm-raw"]')!.textContent).toContain(
+      'point = { x = 1 }',
+    );
   });
 
   /**

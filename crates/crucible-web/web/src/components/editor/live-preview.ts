@@ -45,7 +45,7 @@ import {
   renderMermaidDiagram,
 } from '@/lib/markdown';
 import { renderMath as renderKatex } from '@/lib/math';
-import { extractFrontmatterBlock, renderFrontmatterCardHtml } from '@/lib/frontmatter';
+import { extractFrontmatterBlock, renderFrontmatterCard } from '@/lib/frontmatter';
 import { resolveCalloutKind } from '@/lib/callouts';
 import { formatTableLines } from '@/lib/table-format';
 import { inCodeOrTableContext } from './md-context';
@@ -722,11 +722,13 @@ function buildDecorations(view: EditorView): DecorationSet {
 type BlockKind = 'table' | 'callout' | 'html' | 'frontmatter';
 
 /** Card HTML for a frontmatter block's raw source (delimiters included);
- * null when the flat parser can't represent it (callers keep raw source). */
+ * null only when the block holds no properties at all, which is the one case
+ * the reading view draws nothing for either. Frontmatter the parser cannot
+ * represent gets the shared RAW card, not eleven lines of mono YAML. */
 function frontmatterCardHtml(raw: string): string | null {
   const block = extractFrontmatterBlock(raw.endsWith('\n') ? raw : `${raw}\n`);
-  if (!block?.entries?.length) return null;
-  return renderFrontmatterCardHtml(block.entries);
+  if (!block) return null;
+  return renderFrontmatterCard(block);
 }
 
 /** TOML (`+++`) frontmatter has NO lezer node (yamlFrontmatter only wraps
@@ -871,8 +873,8 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
     // block at once — no nested widgets inside revealed source).
     if (selectionTouches(state, from, realTo)) return;
     const source = state.doc.sliceString(from, realTo);
-    // Frontmatter the flat parser can't represent stays raw — a wrong card
-    // is worse than mono source.
+    // A frontmatter block with no properties in it gets no card, and the
+    // delimiters stay as editable text. Every other shape has a card.
     if (kind === 'frontmatter' && frontmatterCardHtml(source) === null) return;
     decorations.push(
       Decoration.replace({
