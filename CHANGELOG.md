@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+Three headings go beyond that format's six, and mean what they say: **Breaking**
+for a change an upgrading user must act on, **Testing** for a test-only change
+worth recording, and **Documentation** for a docs-only one. Every other heading
+is a Keep a Changelog category.
+
 ## [Unreleased]
 
 ### Added
@@ -343,6 +348,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   write cannot spell: `config.set` adds a provider and changes it, but cannot
   say the provider is gone. No TUI or web spelling yet; it is reachable over
   the socket.
+
+### Changed
+
+- **`/ready` answers for the daemon, not for the process.** It returned
+  `{"status":"ready"}` unconditionally, so a caller routing traffic on it kept
+  sending requests to a web server whose daemon was gone. It now makes one
+  `ping` round trip — the same call the reconnect path already trusts — and
+  answers `503 {"status":"not_ready","reason":"daemon unreachable"}` when that
+  fails. The reason is fixed text and the daemon error goes to the log: the
+  route sits outside bearer auth by design, and a daemon error names the socket
+  path. `/health` stays a static liveness answer, because a web process that is
+  up should say so.
+
+- **`cru tools list --permissions` names the file the daemon loads.** It
+  printed `# Add these to [permissions].allow in crucible.toml` — a file
+  nothing has read since the move to Lua config, and one `cru doctor` reports
+  as retired. It prints the resolved `~/.config/crucible/init.lua` and the
+  `cru.config.set({ permissions = { allow = { … } } })` shape. The `cru acp`
+  dogfood snippet moved to the same file and syntax, and the unread root
+  `crucible.toml`, `Cross.toml` and `tarpaulin.toml` are gone.
+
+### Documentation
+
+- **`Help/Config/Workspaces.md` gains a `.crucible/` Directory section and now
+  follows the glossary's names.** The page said a *workspace* keeps its policy
+  in `project.toml`; a workspace is a running project directory with no config
+  file — the **project** owns `project.toml`, and the file is renamed to match
+  the kiln's Title-Case neighbours. The new section documents what the marker
+  holds, the upward discovery walk, and its two quiet consequences.
 
 ## [0.30.0] - 2026-09-05
 
@@ -2450,7 +2484,7 @@ behind 0.17.0.
 - Backlinks panel no longer retargets while hovering wikilink previews (hover buffers open in the background).
 - xterm's accessibility layer no longer swallows clicks on the reconnect button.
 
-### Docs
+### Documentation
 - The docs kiln was pruned to product documentation (~290 internal analysis/research/planning notes and session recordings removed).
 
 ## [0.12.0] - 2026-07-21

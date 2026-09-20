@@ -267,7 +267,7 @@ To keep servers out of the main config, put the `cru.config.set` call in its own
 beside `init.lua` and load it with `cru.include("mcp.lua")`, or under
 `~/.config/crucible/lua/` and load it with `require`. The included file writes the same
 `mcp` table this page documents. See
-[[Help/Config/workspaces#Splitting Configuration Across Files]].
+[[Help/Config/Workspaces#Splitting Configuration Across Files]].
 
 ## How Tools Appear
 
@@ -328,6 +328,6 @@ Each upstream must have a unique prefix. Check for duplicates in your config.
 
 ## See Also
 
-- [[Help/Config/workspaces]] - Workspace configuration
+- [[Help/Config/Workspaces]] - Project and kiln configuration
 - [[Help/Extending/Creating Plugins]] - Plugin development
 - [MCP Specification](https://modelcontextprotocol.io/)

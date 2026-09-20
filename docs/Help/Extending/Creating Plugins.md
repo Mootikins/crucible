@@ -552,7 +552,7 @@ whitelist = ["aws", "terraform"]  # Allow these commands
 blacklist = ["docker run"]         # Block these (prefix match)
 ```
 
-See [[Help/Config/workspaces]] for full security configuration.
+See [[Help/Config/Workspaces]] for full security configuration.
 
 ### Shell Options
 
@@ -998,5 +998,5 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 - [[Help/Extending/Event Hooks]] - Hook system
 - [[Help/Extending/Custom Tools]] - Tool deep dive
 - [[Help/Extending/Scripted UI]] - cru.oil UI building
-- [[Help/Config/workspaces]] - Workspace and security configuration
+- [[Help/Config/Workspaces]] - Project and kiln security configuration
 - [[Extending Crucible]] - All extension points

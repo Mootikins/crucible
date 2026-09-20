@@ -1,13 +1,14 @@
 ---
-title: "Workspace Configuration"
-description: Documentation note for workspaces.
+title: "Project and Kiln Configuration"
+description: Documentation note for projects and kilns.
 tags:
   - config
   - security
-  - workspaces
+  - projects
+  - kilns
 ---
 
-# Workspace Configuration
+# Project and Kiln Configuration
 
 Crucible uses a three-tier configuration system that separates security policies from content preferences.
 
@@ -15,10 +16,10 @@ Crucible uses a three-tier configuration system that separates security policies
 
 ### Global (`~/.config/crucible/`)
 
-User-wide settings that apply across all workspaces:
+User-wide settings that apply across all projects:
 - Provider credentials (API keys)
 - Default security policies
-- Registered workspaces
+- Registered projects
 
 ### Project (`.crucible/project.toml`) and Kiln (`.crucible/kiln.toml`)
 
@@ -26,7 +27,6 @@ Project-level settings:
 - Shell command whitelist/blacklist
 - Resource access permissions
 - Attached kilns
-- Provider restrictions
 
 ### Kiln (`.crucible/kiln.toml`)
 
@@ -35,19 +35,56 @@ Kiln identity and metadata:
 - Data classification
 
 > **Backward compatibility:** Crucible still reads `.crucible/workspace.toml` as a read-only fallback if neither `project.toml` nor `kiln.toml` exists. New setups should use the split config files.
-## Workspaces vs Kilns
 
-A **workspace** is where work happens—a project directory, repository, or development environment. It owns security policies.
+## The `.crucible/` Directory
 
-A **kiln** is a knowledge system—your notes, documentation, or team knowledge base. It owns content preferences but has no security control.
+One marker covers both roles. `.crucible/` is where a **project** keeps its policy
+(`project.toml`) and where a **kiln** keeps its identity (`kiln.toml`) and the index
+Crucible builds from its notes (`crucible-sqlite.db`). [[Help/Config/storage]] says what
+is in the database. A workspace — one running instance of a project directory — owns no
+config file of its own.
 
-A kiln is *attached to* a workspace. The same kiln can be attached to multiple workspaces with different security contexts.
+Discovery is an *upward walk*. `cru` takes the nearest ancestor holding a `.crucible/`
+as the kiln, and the daemon matches a session's directory against registered projects
+by walking ancestors the same way. The marker belongs at the root of the tree it
+governs — a repository's root for a project, a notes directory for a kiln, which need
+not be a git repository at all — so that everything beneath it resolves to one kiln.
 
-## Setting Up a Workspace
+**You do not make `.crucible/` by hand.** `cru init` creates it for a new kiln, and the
+first `cru chat` in a kiln whose `.crucible/` holds no `init.lua` scaffolds one. (The
+daemon's own data root is also a `.crucible/`, under `$HOME`, and is created on first
+run; the walk deliberately skips it, because a kiln that resolved to the home directory
+would put your whole home tree in the indexing and file scope.)
+
+Two consequences of the upward walk are worth knowing, because both are quiet:
+
+- A `.crucible/` *below* the tree root — inside a subdirectory of a repository, say —
+  wins the walk for everything run beneath it, so one repository becomes two kilns with
+  two indexes. A project's `.crucible/` belongs at the repository root only, so one
+  found deeper is an accident: delete it and keep the root's.
+- A directory with no `.crucible/` anywhere above it gives the walk nothing. Crucible
+  does not invent one and does not fall back to the home directory: run `cru init` in
+  the directory you mean, or register a kiln with `cru kiln register` for the daemon to
+  fall back on.
+
+## Projects, Workspaces and Kilns
+
+A **project** is where work output goes — a repository or directory you register. It owns the security policies (the `[security]` tables of `.crucible/project.toml`).
+
+A **workspace** is one running instance of a project directory — the root or a worktree. It is a runtime concept and owns no config file.
+
+A **kiln** is where knowledge lives — your notes and documentation. It carries its identity and `data_classification`, not access policy.
+
+A project *binds* kilns through `.crucible/project.toml`, and a session attaches a flat set of kilns. The same kiln can serve several projects, with a different `data_classification` per attachment.
+
+## Setting Up a Project
 
 ### Implicit Discovery
 
-Any directory with `.crucible/project.toml` or `.crucible/kiln.toml` is automatically recognized as a workspace:
+A directory becomes the kiln for everything run beneath it the moment it holds a
+`.crucible/` — the upward walk above needs no registration. `cru init` creates that
+directory and writes the files; for a directory that is both a project and a kiln,
+they are:
 
 ```bash
 mkdir -p myproject/.crucible
@@ -223,6 +260,7 @@ cru.config.set({
 
 ## See Also
 
+- [[Help/Concepts/Kilns]] - What a kiln is, and the fields in `.crucible/kiln.toml`
 - [[Help/Config/llm]] - LLM provider configuration
 - [[Help/Config/embedding]] - Embedding configuration
 - [[Help/Extending/Creating Plugins]] - Writing plugins with shell access

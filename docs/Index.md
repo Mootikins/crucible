@@ -110,7 +110,7 @@ Navigate by topic:
 - **[[Help/Config/mcp]]** — Upstream MCP server gateway
 - **[[Help/Config/permissions]]** — Tool allow/deny rules
 - **[[Help/Config/web]]** — Web UI server options
-- **[[Help/Config/workspaces]]** — Multi-workspace setup
+- **[[Help/Config/Workspaces]]** — Projects, workspaces and kilns
 
 ### Terminal UI
 - **[[Help/TUI/Index]]** — TUI overview and shortcuts

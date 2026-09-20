@@ -685,6 +685,6 @@ Migrating from the ancient `kiln_path` form is the same move spelled small:
 - [[Help/Config/mcp|MCP Configuration]] - Upstream MCP server setup
 - [[Help/Config/llm|LLM Configuration]] - Language model providers
 - [[Help/Config/embedding|Embedding Configuration]] - Text embeddings
-- [[Help/Config/workspaces|Workspace Configuration]] - Multi-workspace setup
+- [[Help/Config/Workspaces|Project and Kiln Configuration]] - Projects, workspaces and kilns
 - [[Rules Files]] - Project-specific agent instructions
 - [[Help/Extending/Internal Agent]] - Built-in agent configuration
