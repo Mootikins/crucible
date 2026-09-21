@@ -49,6 +49,7 @@ impl CrucibleAcpClient {
             session_close_supported: false,
             recorder: None,
             last_usage: None,
+            pending_line: Vec::new(),
             model_update: None,
         }
     }

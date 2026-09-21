@@ -52,6 +52,13 @@ pub enum AcpHandleError {
     Config(String),
 }
 
+/// How long a new turn waits for the agent to end a dropped turn.
+///
+/// The agent ends a dropped turn when it answers `session/cancel`. A working
+/// agent answers in well under a second. An agent that does not answer in
+/// this time makes the new turn fail, not wait for the whole stream timeout.
+const CANCELLED_TURN_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Daemon-side handle to an ACP agent process.
 ///
 /// Wraps the low-level ACP protocol client and implements `AgentHandle` so the
@@ -437,9 +444,9 @@ impl SessionKnobs for AcpAgentHandle {
 
         let response = {
             let mut guard = self.client.lock().await;
-            let client = guard.as_mut().ok_or_else(|| {
-                ChatError::AgentUnavailable("ACP client unavailable (busy streaming)".into())
-            })?;
+            let client = guard
+                .as_mut()
+                .ok_or_else(|| ChatError::AgentUnavailable("ACP client is shut down".into()))?;
             client
                 .set_config_option(&session_id, id, value)
                 .await
@@ -478,9 +485,9 @@ impl SessionKnobs for AcpAgentHandle {
 
         let response = {
             let mut guard = self.client.lock().await;
-            let client = guard.as_mut().ok_or_else(|| {
-                ChatError::AgentUnavailable("ACP client unavailable (busy streaming)".into())
-            })?;
+            let client = guard
+                .as_mut()
+                .ok_or_else(|| ChatError::AgentUnavailable("ACP client is shut down".into()))?;
             client
                 .set_config_option(&session_id, &config_id, model_id)
                 .await
@@ -586,34 +593,40 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             return Ok(Box::pin(body));
         };
 
-        let client_arc = Arc::clone(&self.client);
-        let client_opt = {
-            // &mut self prevents concurrent calls at compile time,
-            // so this lock is never contended during normal operation.
-            let mut guard = match client_arc.try_lock() {
-                Ok(g) => g,
-                Err(_) => {
+        // The turn task holds the client lock for the whole turn. A dropped
+        // turn keeps the lock until the agent ends it after `session/cancel`,
+        // so the next turn waits here for that end. It does not fail as busy.
+        let guard =
+            match tokio::time::timeout(CANCELLED_TURN_GRACE, Arc::clone(&self.client).lock_owned())
+                .await
+            {
+                Ok(guard) if guard.is_some() => guard,
+                Ok(_) => {
                     let body = stream! {
                         yield TurnEvent::Error(TurnError::AgentUnavailable(
-                            "ACP client lock contention (concurrent turn)".to_string(),
+                            "ACP client is shut down".to_string(),
                         ));
                     };
                     return Ok(Box::pin(body));
                 }
+                Err(_) => {
+                    let body = stream! {
+                        yield TurnEvent::Error(TurnError::AgentUnavailable(format!(
+                            "the ACP agent did not end the cancelled turn within {}s",
+                            CANCELLED_TURN_GRACE.as_secs()
+                        )));
+                    };
+                    return Ok(Box::pin(body));
+                }
             };
-            guard.take()
-        };
-
-        let Some(client) = client_opt else {
-            let body = stream! {
-                yield TurnEvent::Error(TurnError::AgentUnavailable(
-                    "ACP client is busy (already streaming)".to_string(),
-                ));
-            };
-            return Ok(Box::pin(body));
-        };
 
         let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
+        // The stream owns the receiver, so a closed channel means that the
+        // daemon dropped the turn.
+        let dropped = {
+            let chunk_tx = chunk_tx.clone();
+            async move { chunk_tx.closed().await }
+        };
         let callback = channel_callback(chunk_tx);
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
@@ -625,21 +638,20 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 vec![ContentBlock::from(message)],
             );
 
-            let mut owned_client = client;
-            let result = owned_client
-                .send_prompt_with_callback(prompt_request, callback)
+            let mut guard = guard;
+            let client = guard
+                .as_mut()
+                .expect("the lock was taken with a client in it");
+            let result = client
+                .send_prompt_until_cancelled(prompt_request, callback, dropped)
                 .await;
-            // Capture usage now while we still own the client; stream code
+            // Capture usage now while we still hold the client; stream code
             // parsed it from the ACP PromptResponse and stashed it there.
-            let usage = owned_client.take_last_usage();
+            let usage = client.take_last_usage();
             // Capture the model choice a mid-turn `config_option_update`
             // parked on the client, so `current_model` reports the switch.
-            let model_update = owned_client.take_model_update();
-
-            {
-                let mut guard = client_arc.lock().await;
-                *guard = Some(owned_client);
-            }
+            let model_update = client.take_model_update();
+            drop(guard);
 
             let _ = result_tx
                 .send(result.map(|(summary, response)| (summary, response, usage, model_update)));

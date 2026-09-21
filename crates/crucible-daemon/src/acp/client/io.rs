@@ -96,6 +96,9 @@ impl CrucibleAcpClient {
 
     /// Read a single line response from the agent's stdout
     ///
+    /// The read is safe to cancel: the bytes of an unfinished line stay in
+    /// the client, and the next read continues the line.
+    ///
     /// # Returns
     ///
     /// The line read from stdout (without trailing newline)
@@ -104,7 +107,7 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if reading fails, stdout is not available, or timeout occurs
     pub async fn read_response_line(&mut self) -> Result<String> {
-        let mut line = String::new();
+        let line = &mut self.pending_line;
 
         // Read with a generous per-read timeout.
         // Agents may pause for extended periods during tool execution or deep reasoning.
@@ -119,12 +122,12 @@ impl CrucibleAcpClient {
 
         // Try boxed reader first (for in-process transports), then fall back to agent_stdout
         let read_result = if let Some(ref mut reader) = self.boxed_reader {
-            match tokio::time::timeout(duration, reader.read_line(&mut line)).await {
+            match tokio::time::timeout(duration, reader.read_until(b'\n', line)).await {
                 Ok(result) => result,
                 Err(_) => return Err(ClientError::Timeout("Read operation timed out".to_string())),
             }
         } else if let Some(ref mut stdout) = self.agent_stdout {
-            match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
+            match tokio::time::timeout(duration, stdout.read_until(b'\n', line)).await {
                 Ok(result) => result,
                 Err(_) => return Err(ClientError::Timeout("Read operation timed out".to_string())),
             }
@@ -140,6 +143,9 @@ impl CrucibleAcpClient {
                 "Agent closed connection".to_string(),
             )),
             Ok(_bytes_read) => {
+                let line = String::from_utf8(std::mem::take(line)).map_err(|e| {
+                    ClientError::Connection(format!("Agent sent a line that is not UTF-8: {e}"))
+                })?;
                 let trimmed = line.trim_end().to_string();
                 if let Some(rec) = self.recorder.as_mut() {
                     rec.record_line(Direction::In, &trimmed);

@@ -162,3 +162,32 @@ async fn a_silent_transport_times_out_without_becoming_eof() {
         );
     }
 }
+
+/// The streaming loop races each read against a cancel. A read that loses
+/// the race must not lose the bytes that it already took from the pipe.
+/// The next read continues the same line.
+#[tokio::test]
+async fn a_cancelled_read_keeps_the_partial_line_for_the_next_read() {
+    use std::time::Duration;
+    use tokio::io::{AsyncWriteExt, BufReader};
+
+    let (reader, mut peer) = tokio::io::duplex(64);
+    let mut client = CrucibleAcpClient::with_transport(
+        ClientConfig::default(),
+        Box::pin(tokio::io::sink()),
+        Box::pin(BufReader::new(reader)),
+    );
+
+    peer.write_all(br#"{"jsonrpc":"2.0","#).await.unwrap();
+    let first = tokio::time::timeout(Duration::from_millis(50), client.read_response_line()).await;
+    assert!(first.is_err(), "the half line must not complete a read");
+
+    peer.write_all(br#""id":1}"#).await.unwrap();
+    peer.write_all(b"\n").await.unwrap();
+    let line = client
+        .read_response_line()
+        .await
+        .expect("the line completes");
+
+    assert_eq!(line, r#"{"jsonrpc":"2.0","id":1}"#);
+}

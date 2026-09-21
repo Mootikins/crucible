@@ -174,7 +174,28 @@ impl CrucibleAcpClient {
     pub async fn send_prompt_with_callback(
         &mut self,
         request: agent_client_protocol::schema::v1::PromptRequest,
+        callback: StreamingCallback,
+    ) -> Result<(
+        TurnSummary,
+        agent_client_protocol::schema::v1::PromptResponse,
+    )> {
+        self.send_prompt_until_cancelled(request, callback, std::future::pending())
+            .await
+    }
+
+    /// Send a prompt like [`Self::send_prompt_with_callback`], and cancel
+    /// the turn when `cancelled` completes.
+    ///
+    /// A callback that returns `false` finds a cancel only when the agent
+    /// sends a chunk. An agent in a long tool call sends nothing, so the
+    /// caller also gives a future that completes at the cancel. The client
+    /// then sends `session/cancel` at once. It keeps the read until the
+    /// agent ends the turn, so the connection is clean for the next turn.
+    pub async fn send_prompt_until_cancelled(
+        &mut self,
+        request: agent_client_protocol::schema::v1::PromptRequest,
         mut callback: StreamingCallback,
+        cancelled: impl std::future::Future<Output = ()>,
     ) -> Result<(
         TurnSummary,
         agent_client_protocol::schema::v1::PromptResponse,
@@ -208,9 +229,27 @@ impl CrucibleAcpClient {
         let streaming_future = async {
             let mut state = StreamingState::default();
             let mut cancel_sent = false;
+            let mut cancelled = std::pin::pin!(cancelled);
 
             loop {
-                let response_line = self.read_response_line().await?;
+                // Until the cancel goes out, a cancel races the next frame.
+                // The read is safe to cancel, so a lost race loses no bytes.
+                let next_line = if cancel_sent {
+                    Some(self.read_response_line().await?)
+                } else {
+                    tokio::select! {
+                        biased;
+                        line = self.read_response_line() => Some(line?),
+                        () = &mut cancelled => None,
+                    }
+                };
+                let Some(response_line) = next_line else {
+                    state.cancelled = true;
+                    tracing::debug!(session_id = %session_id, "Turn cancelled while the agent was quiet; sending session/cancel to ACP agent");
+                    self.send_session_cancel(&session_id).await?;
+                    cancel_sent = true;
+                    continue;
+                };
                 let response: serde_json::Value = serde_json::from_str(&response_line)?;
 
                 tracing::trace!("Received line: {}", response_line);

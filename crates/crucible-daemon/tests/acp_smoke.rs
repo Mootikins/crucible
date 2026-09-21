@@ -729,44 +729,30 @@ async fn wait_for_capture(path: &Path, what: &str) -> String {
     }
 }
 
-/// Start the next turn on `handle`, retrying while the handle still reports
-/// the previous turn's client as busy. Returns the finished turn's events.
-async fn collect_next_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEvent> {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let events = timeout(Duration::from_secs(30), async {
-            let stream = handle
-                .turn(TurnContext::new(message))
-                .await
-                .expect("Agent::turn failed");
-            stream.collect::<Vec<_>>().await
-        })
-        .await
-        .expect("the turn timed out");
-        let busy = matches!(
-            events.as_slice(),
-            [TurnEvent::Error(TurnError::AgentUnavailable(message))] if message.contains("busy")
-        );
-        if !busy {
-            return events;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the ACP client never came back after the dropped turn"
-        );
-        tokio::task::yield_now().await;
-    }
+/// Run one turn on `handle` to its end, and return its events.
+async fn collect_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEvent> {
+    timeout(Duration::from_secs(30), async {
+        let stream = handle
+            .turn(TurnContext::new(message))
+            .await
+            .expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
+    })
+    .await
+    .expect("the turn timed out")
 }
 
-/// Dropping a turn stream is how the daemon cancels an ACP turn. The client
-/// must send `session/cancel` for the session the turn ran in, and the
-/// handle must be usable for the next turn once the agent has answered the
-/// cancel with `stopReason: cancelled`.
+/// Start a held turn, drop its stream, and start the next turn at once.
 ///
-/// The held turn streams a chunk every 20 ms: the client notices the drop
-/// when its next chunk finds no receiver.
-#[tokio::test]
-async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
+/// Dropping a turn stream is how the daemon cancels an ACP turn. The client
+/// must send `session/cancel` for the session the turn ran in. The next
+/// turn must wait for the agent to end the dropped turn, and then run. It
+/// must not fail because the client is still busy.
+///
+/// `tick_ms` makes the held turn stream a chunk per tick. Without it the
+/// agent is quiet, as in a long tool call, and the client must notice the
+/// drop without a chunk.
+async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
     const ANSWER: &str = "first words";
     let workspace = TempDir::new().expect("temp workspace");
     let cancel_capture = workspace.path().join("cancel.txt");
@@ -775,13 +761,17 @@ async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
     for (key, value) in [
         ("CRU_MOCK_STREAM_CHUNKS", ANSWER.to_string()),
         ("CRU_MOCK_HOLD_UNTIL_CANCEL", "1".to_string()),
-        ("CRU_MOCK_HOLD_TICK_MS", "20".to_string()),
         (
             "CRU_MOCK_CANCEL_CAPTURE",
             cancel_capture.to_string_lossy().into_owned(),
         ),
     ] {
         agent_config.env_overrides.insert(key.to_string(), value);
+    }
+    if let Some(tick_ms) = tick_ms {
+        agent_config
+            .env_overrides
+            .insert("CRU_MOCK_HOLD_TICK_MS".to_string(), tick_ms.to_string());
     }
 
     let mut handle = timeout(
@@ -810,6 +800,8 @@ async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
         // The daemon cancels a turn by dropping its stream.
     }
 
+    let events = collect_turn(&mut handle, "and now a normal turn").await;
+
     let cancelled = wait_for_capture(
         &cancel_capture,
         "the agent never received session/cancel after the turn was dropped",
@@ -819,8 +811,6 @@ async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
         cancelled, session_id,
         "session/cancel must name the session the dropped turn ran in"
     );
-
-    let events = collect_next_turn(&mut handle, "and now a normal turn").await;
     let text: String = events
         .iter()
         .filter_map(|event| match event {
@@ -841,6 +831,20 @@ async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
         ),
         "the next turn must end normally; events: {events:?}"
     );
+}
+
+/// The held turn streams a chunk every 20 ms, so a chunk finds the dropped
+/// receiver.
+#[tokio::test]
+async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
+    drop_a_held_turn_then_run_the_next(Some("20")).await;
+}
+
+/// The held turn sends nothing after its first chunk. No chunk finds the
+/// dropped receiver, so the client must watch the receiver itself.
+#[tokio::test]
+async fn dropping_a_turn_of_a_quiet_agent_sends_session_cancel_and_the_next_turn_runs() {
+    drop_a_held_turn_then_run_the_next(None).await;
 }
 
 /// An agent process that dies mid-turn ends the turn with a connection

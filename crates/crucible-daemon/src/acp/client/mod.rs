@@ -99,6 +99,11 @@ pub struct CrucibleAcpClient {
     /// notification. The agent sends one when the model changes mid-turn.
     /// Consumed via `take_model_update()`.
     pub(super) model_update: Option<crate::acp::session::ModelChoice>,
+    /// The bytes of a line that a cancelled read did not finish. The next
+    /// read continues this line, so `read_response_line` is safe to cancel.
+    /// Tokio's `read_line` drops these bytes with its future, and
+    /// `read_until` does not, so the buffer holds bytes, not a `String`.
+    pub(super) pending_line: Vec<u8>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -163,6 +168,7 @@ impl CrucibleAcpClient {
             session_close_supported: false,
             recorder,
             last_usage: None,
+            pending_line: Vec::new(),
             model_update: None,
         }
     }
