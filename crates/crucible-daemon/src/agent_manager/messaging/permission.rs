@@ -200,6 +200,42 @@ fn outcome_kind(
     }
 }
 
+/// The agent option that carries the gate decision `desired`.
+///
+/// An agent does not have to offer all four kinds. When the exact kind is
+/// absent, a narrower kind of the same decision stands in: `allow_always`
+/// falls back to `allow_once`, and one reject kind to the other. A one-time
+/// allow never takes `allow_always`, because that grant is wider than the
+/// user chose. `Cancelled` remains only for no usable option, because the
+/// agent then stops the whole turn.
+fn select_option(
+    options: &[agent_client_protocol::schema::v1::PermissionOption],
+    desired: agent_client_protocol::schema::v1::PermissionOptionKind,
+) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
+    use agent_client_protocol::schema::v1::{
+        PermissionOptionKind as Kind, RequestPermissionOutcome, SelectedPermissionOutcome,
+    };
+
+    let acceptable: &[Kind] = match desired {
+        Kind::AllowAlways => &[Kind::AllowAlways, Kind::AllowOnce],
+        Kind::AllowOnce => &[Kind::AllowOnce],
+        Kind::RejectOnce => &[Kind::RejectOnce, Kind::RejectAlways],
+        Kind::RejectAlways => &[Kind::RejectAlways, Kind::RejectOnce],
+        // `outcome_kind` produces only the four kinds above.
+        _ => &[],
+    };
+
+    acceptable
+        .iter()
+        .find_map(|kind| options.iter().find(|opt| opt.kind == *kind))
+        .map(|opt| {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                opt.option_id.clone(),
+            ))
+        })
+        .unwrap_or(RequestPermissionOutcome::Cancelled)
+}
+
 impl AgentManager {
     pub(super) fn build_acp_permission_handler(
         &self,
@@ -297,9 +333,7 @@ impl AgentManager {
                 let tool_policy = tool_policy.clone();
 
                 Box::pin(async move {
-                    use agent_client_protocol::schema::v1::{
-                        PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
-                    };
+                    use agent_client_protocol::schema::v1::PermissionOptionKind;
                     use crucible_core::agent::ToolPolicy;
 
                     let tool_name = acp_tool_name(&request.tool_call.fields);
@@ -333,16 +367,7 @@ impl AgentManager {
                         }
                     };
 
-                    request
-                        .options
-                        .iter()
-                        .find(|opt| opt.kind == desired_kind)
-                        .map(|opt| {
-                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                                opt.option_id.clone(),
-                            ))
-                        })
-                        .unwrap_or(RequestPermissionOutcome::Cancelled)
+                    select_option(&request.options, desired_kind)
                 })
             },
         )
@@ -1379,7 +1404,10 @@ mod permission_serializer_tests {
 #[cfg(test)]
 mod acp_tool_name_tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{ToolCallUpdateFields, ToolKind};
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, PermissionOptionKind, RequestPermissionOutcome, ToolCallUpdateFields,
+        ToolKind,
+    };
     use crucible_core::interaction::PermRequest;
 
     fn fields(kind: Option<ToolKind>, title: &str) -> ToolCallUpdateFields {
@@ -1466,5 +1494,85 @@ mod acp_tool_name_tests {
             !response.allowed,
             "an agent-supplied kind must not widen the gate"
         );
+    }
+
+    fn option(id: &str, kind: PermissionOptionKind) -> PermissionOption {
+        PermissionOption::new(id.to_string(), id.to_string(), kind)
+    }
+
+    fn selected(outcome: RequestPermissionOutcome) -> Option<String> {
+        match outcome {
+            RequestPermissionOutcome::Selected(selected) => Some(selected.option_id.to_string()),
+            _ => None,
+        }
+    }
+
+    /// The exact kind wins when the agent offers it.
+    #[test]
+    fn the_option_of_the_exact_kind_is_selected() {
+        let options = [
+            option("once", PermissionOptionKind::AllowOnce),
+            option("always", PermissionOptionKind::AllowAlways),
+            option("no", PermissionOptionKind::RejectOnce),
+        ];
+        assert_eq!(
+            selected(select_option(&options, PermissionOptionKind::AllowAlways)).as_deref(),
+            Some("always")
+        );
+        assert_eq!(
+            selected(select_option(&options, PermissionOptionKind::AllowOnce)).as_deref(),
+            Some("once")
+        );
+    }
+
+    /// The user allowed the call for the session, and the agent offers only
+    /// `allow_once`. The call must run. `Cancelled` stopped the turn.
+    #[test]
+    fn an_allow_always_decision_takes_allow_once_when_the_agent_offers_only_that() {
+        let options = [
+            option("once", PermissionOptionKind::AllowOnce),
+            option("no", PermissionOptionKind::RejectOnce),
+        ];
+        assert_eq!(
+            selected(select_option(&options, PermissionOptionKind::AllowAlways)).as_deref(),
+            Some("once")
+        );
+    }
+
+    /// A one-time allow never takes `allow_always`. That option gives the
+    /// agent a wider grant than the user chose.
+    #[test]
+    fn an_allow_once_decision_never_takes_allow_always() {
+        let options = [
+            option("always", PermissionOptionKind::AllowAlways),
+            option("no", PermissionOptionKind::RejectOnce),
+        ];
+        assert!(matches!(
+            select_option(&options, PermissionOptionKind::AllowOnce),
+            RequestPermissionOutcome::Cancelled
+        ));
+    }
+
+    /// A denial takes `reject_always` when the agent offers no
+    /// `reject_once`. `Cancelled` stopped the whole turn instead of one call.
+    #[test]
+    fn a_reject_once_decision_takes_reject_always_when_the_agent_offers_only_that() {
+        let options = [
+            option("once", PermissionOptionKind::AllowOnce),
+            option("never", PermissionOptionKind::RejectAlways),
+        ];
+        assert_eq!(
+            selected(select_option(&options, PermissionOptionKind::RejectOnce)).as_deref(),
+            Some("never")
+        );
+    }
+
+    /// With no option of a usable kind, the outcome is `Cancelled`.
+    #[test]
+    fn no_usable_option_is_cancelled() {
+        assert!(matches!(
+            select_option(&[], PermissionOptionKind::RejectOnce),
+            RequestPermissionOutcome::Cancelled
+        ));
     }
 }
