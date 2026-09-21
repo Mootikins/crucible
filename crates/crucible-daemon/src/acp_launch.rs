@@ -516,4 +516,88 @@ mod tests {
         assert_eq!(config.agent_path, PathBuf::from("opencode"));
         assert_eq!(config.agent_args, Some(vec!["acp".to_string()]));
     }
+
+    /// `streaming_timeout_minutes` is the deadline of a whole turn, and the
+    /// default is fifteen minutes. `timeout_ms` alone does not show that: the
+    /// client multiplies it by ten in `send_prompt_with_callback`. So this
+    /// runs a turn to its deadline with the config `build_client_config` made.
+    ///
+    /// The agent sends a chunk every 50 seconds, under the 300-second read
+    /// timeout, so only the whole-turn deadline can end the turn.
+    #[tokio::test(start_paused = true)]
+    async fn the_streaming_timeout_is_the_deadline_of_a_whole_turn() {
+        use crate::acp::client::CrucibleAcpClient;
+        use crate::acp::ClientError;
+        use agent_client_protocol::schema::v1::{ContentBlock, PromptRequest, SessionId};
+        use std::time::Duration;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        for (acp_config, deadline) in [
+            (None, Duration::from_secs(15 * 60)),
+            (
+                Some(AcpConfig {
+                    streaming_timeout_minutes: 2,
+                    ..Default::default()
+                }),
+                Duration::from_secs(2 * 60),
+            ),
+        ] {
+            let config = build_client_config(
+                &test_session_agent("opencode"),
+                Path::new("/tmp"),
+                acp_config.as_ref(),
+                None,
+            )
+            .unwrap();
+
+            let (client_end, agent_end) = tokio::io::duplex(64 * 1024);
+            let (client_read, client_write) = tokio::io::split(client_end);
+            let (agent_read, mut agent_write) = tokio::io::split(agent_end);
+            let mut client = CrucibleAcpClient::with_transport(
+                config,
+                Box::pin(client_write),
+                Box::pin(BufReader::new(client_read)),
+            );
+            let agent = tokio::spawn(async move {
+                let mut lines = BufReader::new(agent_read).lines();
+                let _prompt = lines.next_line().await;
+                let chunk = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": "s1",
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {"type": "text", "text": "."}
+                        }
+                    }
+                });
+                loop {
+                    tokio::time::sleep(Duration::from_secs(50)).await;
+                    if agent_write
+                        .write_all(format!("{chunk}\n").as_bytes())
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+
+            let start = tokio::time::Instant::now();
+            let result = client
+                .send_prompt_with_callback(
+                    PromptRequest::new(SessionId::from("s1"), vec![ContentBlock::from("hi")]),
+                    Box::new(|_| true),
+                )
+                .await;
+            agent.abort();
+
+            assert!(
+                matches!(result, Err(ClientError::Timeout(_))),
+                "expected the turn deadline, got {result:?}"
+            );
+            assert_eq!(start.elapsed(), deadline);
+        }
+    }
 }

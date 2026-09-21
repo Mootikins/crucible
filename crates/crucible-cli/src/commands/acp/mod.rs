@@ -10,12 +10,15 @@
 //! [`agent::CrucibleAcpAgent`] for the translation layer and [`translate`] for
 //! the (unit-tested) event/permission mapping.
 //!
-//! # Manual verification
+//! # Verification
 //!
-//! The protocol translation is covered by unit tests and an in-process
-//! initialize round-trip (`tests::initialize_round_trip_over_stdio_framing`).
-//! A full prompt turn needs a live LLM backend, so it is verified manually
-//! rather than in an automated (flaky) test:
+//! Unit tests cover the protocol translation. An in-process test
+//! (`tests::initialize_round_trip_over_stdio_framing`) covers the
+//! `initialize` round trip. `tests/acp_wire_tests.rs` drives the real
+//! `cru acp` process against a mock OpenAI-compatible provider. It covers a
+//! prompt turn, an unknown session, a cancel and a permission round trip.
+//!
+//! To check an installed binary by hand, use the steps that follow.
 //!
 //! Raw handshake — pipe a framed `initialize` in and see a valid response:
 //! ```text

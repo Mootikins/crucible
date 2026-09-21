@@ -566,4 +566,70 @@ mod tests {
         let tc = interaction_tool_call("r1", &req);
         assert_eq!(tc.fields.title.as_deref(), Some("search notes"));
     }
+
+    fn selected(option_id: &str) -> RequestPermissionOutcome {
+        RequestPermissionOutcome::Selected(
+            agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(
+                PermissionOptionId::new(option_id),
+            ),
+        )
+    }
+
+    /// The host sees the four options in this order, and each id matches the
+    /// constant `outcome_to_interaction_response` reads back.
+    #[test]
+    fn permission_options_offer_the_four_ids_in_order() {
+        let offered: Vec<(String, PermissionOptionKind)> = permission_options()
+            .into_iter()
+            .map(|o| (o.option_id.0.to_string(), o.kind))
+            .collect();
+        assert_eq!(
+            offered,
+            vec![
+                (OPT_ALLOW_ONCE.to_string(), PermissionOptionKind::AllowOnce),
+                (
+                    OPT_ALLOW_ALWAYS.to_string(),
+                    PermissionOptionKind::AllowAlways
+                ),
+                (
+                    OPT_REJECT_ONCE.to_string(),
+                    PermissionOptionKind::RejectOnce
+                ),
+                (
+                    OPT_REJECT_ALWAYS.to_string(),
+                    PermissionOptionKind::RejectAlways
+                ),
+            ]
+        );
+    }
+
+    /// Allow once grants this call only: no pattern, no reason.
+    #[test]
+    fn allow_once_is_exactly_a_one_time_allow() {
+        let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        let resp = outcome_to_interaction_response(&selected(OPT_ALLOW_ONCE), &req);
+        assert!(matches!(resp, InteractionResponse::Permission(p) if p == PermResponse::allow()));
+    }
+
+    /// Reject once denies this call only, with no scope that outlives it.
+    #[test]
+    fn reject_once_is_exactly_a_one_time_deny() {
+        let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        let resp = outcome_to_interaction_response(&selected(OPT_REJECT_ONCE), &req);
+        assert!(matches!(resp, InteractionResponse::Permission(p) if p == PermResponse::deny()));
+    }
+
+    /// An id the adapter never offered fails closed: a one-time deny, never
+    /// an allow.
+    #[test]
+    fn an_unknown_option_id_is_a_one_time_deny() {
+        let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        for id in ["", "allow", "ALLOW_ONCE", "allow_once "] {
+            let resp = outcome_to_interaction_response(&selected(id), &req);
+            assert!(
+                matches!(&resp, InteractionResponse::Permission(p) if *p == PermResponse::deny()),
+                "option id {id:?} gave {resp:?}"
+            );
+        }
+    }
 }

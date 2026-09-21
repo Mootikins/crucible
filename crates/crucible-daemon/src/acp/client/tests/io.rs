@@ -3,84 +3,87 @@ use std::path::PathBuf;
 use super::{get_cat_command, get_simple_command};
 use crate::acp::client::types::ClientConfig;
 use crate::acp::client::CrucibleAcpClient;
+use crate::acp::ClientError;
 
+/// A client with no agent has nothing to write to. The error names the
+/// missing writer rather than failing later on a read.
 #[tokio::test]
-async fn test_message_sending() {
-    let config = ClientConfig {
-        agent_path: PathBuf::from("/test/agent"),
-        agent_args: None,
-        timeout_ms: Some(5000),
+async fn send_message_without_a_transport_is_a_connection_error() {
+    let mut client = CrucibleAcpClient::new(ClientConfig {
+        agent_path: PathBuf::from("/nonexistent/agent"),
         ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
-
-    // Connect first
-    let _session = client.connect().await;
-
-    // Send a message
-    let message = serde_json::json!({
-        "method": "ping",
-        "params": {}
     });
 
-    let result = client.send_message(message).await;
+    let result = client
+        .send_message(serde_json::json!({"method": "ping", "params": {}}))
+        .await;
 
-    // Should eventually send successfully
-    assert!(result.is_err(), "Will fail until implementation");
+    match result {
+        Err(ClientError::Connection(msg)) => assert!(
+            msg.contains("No writer available"),
+            "unexpected connection error: {msg}"
+        ),
+        other => panic!("expected a connection error, got {other:?}"),
+    }
 }
 
+/// `send_request` over a real process pipe returns the reply that carries
+/// the request's id. The agent is a shell that reads one frame and answers
+/// it, so the outcome does not depend on how an echo is parsed.
+#[cfg(unix)]
 #[tokio::test]
-async fn test_stdio_message_exchange() {
+async fn send_request_over_a_process_pipe_returns_the_correlated_reply() {
     use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest};
 
-    // Use 'cat' equivalent as a simple echo agent for testing
-    let (cmd, args) = get_cat_command();
-    let config = ClientConfig {
-        agent_path: cmd,
-        agent_args: args,
-        timeout_ms: Some(1000),
+    let answer_one_frame = r#"read line
+id=$(printf '%s' "$line" | grep -o '"id":[0-9]*' | head -n1 | cut -d: -f2)
+printf '{"jsonrpc":"2.0","id":%s,"result":{"answered":"initialize"}}\n' "$id""#;
+    let mut client = CrucibleAcpClient::new(ClientConfig {
+        agent_path: PathBuf::from("sh"),
+        agent_args: Some(vec!["-c".to_string(), answer_one_frame.to_string()]),
+        timeout_ms: Some(5000),
         ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
+    });
+    client.spawn_agent().await.expect("sh spawns");
 
-    // Spawn the agent
-    let process = client.spawn_agent().await;
-    assert!(process.is_ok(), "Should spawn cat process");
+    let reply = client
+        .send_request(ClientRequest::InitializeRequest(InitializeRequest::new(
+            1u16.into(),
+        )))
+        .await
+        .expect("the agent answers");
 
-    // Create a simple initialize request
-    let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
-
-    // Send the request - cat will echo it back
-    // This will succeed in sending/receiving but may fail on parsing
-    // since cat just echoes, not a real ACP agent
-    let result = client.send_request(request).await;
-
-    // Either succeeds (cat echoed valid JSON) or fails on parsing
-    // Both are acceptable - we're testing that the methods work
-    let _ = result; // Accept either outcome
+    assert_eq!(
+        reply["result"],
+        serde_json::json!({"answered": "initialize"})
+    );
+    assert!(reply["id"].is_u64(), "the reply keeps its id: {reply}");
 }
 
+/// A line the agent wrote comes back without its newline; the next read
+/// after the agent exits reports the closed pipe, not an empty line.
 #[tokio::test]
-async fn test_read_agent_response() {
+async fn read_response_line_returns_a_line_then_reports_the_closed_pipe() {
     let (cmd, args) = get_simple_command();
-    let config = ClientConfig {
+    let mut client = CrucibleAcpClient::new(ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        timeout_ms: Some(500), // Short timeout
+        timeout_ms: Some(500),
         ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
+    });
+    client.spawn_agent().await.expect("echo spawns");
 
-    // Spawn agent
-    client.spawn_agent().await.unwrap();
-
-    // Try to read a line from stdout
-    // Echo may send empty line or close stdout immediately
-    let result = client.read_response_line().await;
-
-    // Either succeeds with empty line or fails with EOF/timeout
-    // Both outcomes verify that reading mechanism works
-    let _ = result; // Accept either outcome
+    assert_eq!(
+        client
+            .read_response_line()
+            .await
+            .expect("echo writes a line"),
+        "ok"
+    );
+    match client.read_response_line().await {
+        Err(ClientError::Connection(msg)) => assert_eq!(msg, "Agent closed connection"),
+        other => panic!("expected the closed pipe, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -111,70 +114,30 @@ async fn test_write_agent_request() {
     assert!(result.is_ok(), "Should successfully write to cat's stdin");
 }
 
+/// `send_message` writes one line and returns the next line parsed as JSON.
+/// `cat` echoes the line, so the reply is the message itself.
 #[tokio::test]
-async fn test_full_request_response_cycle() {
-    use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest};
-
+async fn send_message_returns_the_next_line_as_json() {
     let (cmd, args) = get_cat_command();
-    let config = ClientConfig {
-        agent_path: cmd,
-        agent_args: args,
-        timeout_ms: Some(2000),
-        ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
-
-    // Spawn and mark connected
-    client.spawn_agent().await.unwrap();
-    client.mark_connected();
-
-    // Verify connected
-    assert!(client.is_connected(), "Should be marked as connected");
-
-    // Create initialize request
-    let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
-
-    // Send request - cat will echo it back
-    // May succeed or fail depending on JSON parsing
-    let _result = client.send_request(request).await;
-
-    // Test that state management works
-    client.mark_disconnected();
-    assert!(!client.is_connected(), "Should be marked as disconnected");
-}
-
-// RED: Test expects send_message() to work with simple JSON
-#[tokio::test]
-async fn test_send_message_with_json() {
-    let (cmd, args) = get_cat_command();
-    let config = ClientConfig {
+    let mut client = CrucibleAcpClient::new(ClientConfig {
         agent_path: cmd,
         agent_args: args,
         timeout_ms: Some(1000),
         ..Default::default()
-    };
-    let mut client = CrucibleAcpClient::new(config);
-
-    // Spawn and connect
-    client.spawn_agent().await.unwrap();
-    client.mark_connected();
-
-    // Send a simple JSON message
-    let message = serde_json::json!({
-        "test": "message",
-        "value": 42
     });
+    client.spawn_agent().await.expect("cat spawns");
 
-    let result = client.send_message(message).await;
+    let message = serde_json::json!({"test": "message", "value": 42});
+    let reply = client
+        .send_message(message.clone())
+        .await
+        .expect("cat echoes the line");
 
-    // Should succeed (cat echoes back)
-    // Result may succeed or fail based on JSON parsing, both acceptable
-    let _ = result; // Accept either outcome for now
+    assert_eq!(reply, message);
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_silent_transport_times_out_without_becoming_eof() {
-    use crate::acp::ClientError;
     use std::time::Duration;
     use tokio::io::BufReader;
 

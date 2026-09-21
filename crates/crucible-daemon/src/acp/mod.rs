@@ -10,10 +10,6 @@ pub mod discovery;
 pub mod session;
 pub mod streaming;
 
-// Mock agent for testing (only included in test builds)
-#[cfg(any(test, feature = "test-utils"))]
-pub mod mock_agent;
-
 // Public exports
 pub use client::CrucibleAcpClient;
 #[cfg(any(test, feature = "test-utils"))]
@@ -23,10 +19,6 @@ pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamingCallback, StreamingChunk, TurnSummary,
 };
-
-// Re-export test utilities when feature is enabled
-#[cfg(feature = "test-utils")]
-pub use mock_agent::MockAgent;
 
 // Error types
 mod error;

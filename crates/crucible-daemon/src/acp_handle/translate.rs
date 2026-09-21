@@ -55,6 +55,46 @@ pub(super) fn turn_stop_reason(
     }
 }
 
+/// Map a client failure onto the `TurnError` a turn stream reports.
+///
+/// The match is exhaustive, so a new `ClientError` variant fails to compile
+/// here rather than falling into a default.
+pub(super) fn turn_error(error: crate::acp::ClientError) -> crucible_core::turn::TurnError {
+    use crate::acp::ClientError;
+    use crucible_core::turn::TurnError;
+
+    match error {
+        ClientError::Connection(msg) => {
+            TurnError::Connection(format!("ACP agent connection lost: {msg}"))
+        }
+        ClientError::Timeout(msg) => {
+            TurnError::Communication(format!("ACP agent timed out: {msg}"))
+        }
+        ClientError::Session(msg) => {
+            TurnError::AgentUnavailable(format!("ACP session error: {msg}"))
+        }
+        ClientError::Protocol(err) => {
+            TurnError::Communication(format!("ACP protocol error: {err}"))
+        }
+        ClientError::PermissionDenied(msg) => {
+            TurnError::Communication(format!("ACP permission denied: {msg}"))
+        }
+        ClientError::InvalidConfig(msg) => {
+            TurnError::InvalidInput(format!("ACP configuration error: {msg}"))
+        }
+        ClientError::Validation(msg) => {
+            TurnError::InvalidInput(format!("ACP validation error: {msg}"))
+        }
+        ClientError::NotFound(msg) => {
+            TurnError::AgentUnavailable(format!("ACP resource not found: {msg}"))
+        }
+        ClientError::Io(err) => TurnError::Internal(format!("ACP error: {err}")),
+        ClientError::Serialization(err) => TurnError::Internal(format!("ACP error: {err}")),
+        ClientError::FileSystem(msg) => TurnError::Internal(format!("ACP error: {msg}")),
+        ClientError::Other(err) => TurnError::Internal(format!("ACP error: {err}")),
+    }
+}
+
 /// Map one client chunk onto one `TurnEvent`.
 ///
 /// The client decides everything before a chunk reaches the handle: every
@@ -420,5 +460,113 @@ mod tests {
             };
             assert_eq!(actual_shape, expected_shape);
         }
+    }
+
+    // -- Client failures: which `TurnError` a turn stream reports -------------
+    //
+    // The variant decides how the session reacts (a lost connection versus an
+    // agent that refused), so each `ClientError` is pinned to its variant and
+    // its message.
+
+    /// A `TurnError` as its variant name and message; the type has no
+    /// `PartialEq`.
+    fn parts(error: crucible_core::turn::TurnError) -> (&'static str, String) {
+        use crucible_core::turn::TurnError;
+        match error {
+            TurnError::Connection(m) => ("Connection", m),
+            TurnError::Communication(m) => ("Communication", m),
+            TurnError::AgentUnavailable(m) => ("AgentUnavailable", m),
+            TurnError::Internal(m) => ("Internal", m),
+            TurnError::InvalidInput(m) => ("InvalidInput", m),
+        }
+    }
+
+    #[test]
+    fn string_client_errors_map_to_their_turn_error() {
+        use crate::acp::ClientError;
+
+        let cases = [
+            (
+                ClientError::Connection("pipe closed".into()),
+                (
+                    "Connection",
+                    "ACP agent connection lost: pipe closed".to_string(),
+                ),
+            ),
+            (
+                ClientError::Timeout("5s".into()),
+                ("Communication", "ACP agent timed out: 5s".to_string()),
+            ),
+            (
+                ClientError::Session("no result".into()),
+                (
+                    "AgentUnavailable",
+                    "ACP session error: no result".to_string(),
+                ),
+            ),
+            (
+                ClientError::PermissionDenied("fs".into()),
+                ("Communication", "ACP permission denied: fs".to_string()),
+            ),
+            (
+                ClientError::InvalidConfig("no command".into()),
+                (
+                    "InvalidInput",
+                    "ACP configuration error: no command".to_string(),
+                ),
+            ),
+            (
+                ClientError::Validation("bad prompt".into()),
+                (
+                    "InvalidInput",
+                    "ACP validation error: bad prompt".to_string(),
+                ),
+            ),
+            (
+                ClientError::NotFound("sess-1".into()),
+                (
+                    "AgentUnavailable",
+                    "ACP resource not found: sess-1".to_string(),
+                ),
+            ),
+            (
+                ClientError::FileSystem("denied".into()),
+                ("Internal", "ACP error: denied".to_string()),
+            ),
+        ];
+        for (client, expected) in cases {
+            let label = format!("{client:?}");
+            assert_eq!(parts(turn_error(client)), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn wrapped_client_errors_map_to_their_turn_error() {
+        use crate::acp::ClientError;
+
+        let protocol = agent_client_protocol::Error::internal_error();
+        let expected = format!("ACP protocol error: {protocol}");
+        assert_eq!(
+            parts(turn_error(ClientError::Protocol(protocol))),
+            ("Communication", expected)
+        );
+
+        let io = std::io::Error::other("disk gone");
+        assert_eq!(
+            parts(turn_error(ClientError::Io(io))),
+            ("Internal", "ACP error: disk gone".to_string())
+        );
+
+        let json = serde_json::from_str::<u8>("x").expect_err("not a number");
+        let expected = format!("ACP error: {json}");
+        assert_eq!(
+            parts(turn_error(ClientError::Serialization(json))),
+            ("Internal", expected)
+        );
+
+        assert_eq!(
+            parts(turn_error(ClientError::Other(anyhow::anyhow!("odd")))),
+            ("Internal", "ACP error: odd".to_string())
+        );
     }
 }

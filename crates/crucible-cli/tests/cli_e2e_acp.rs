@@ -19,6 +19,31 @@ fn mock_agent_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cru")).with_file_name("mock-acp-agent")
 }
 
+/// Send one message and assert the mock agent's reply reached stdout.
+///
+/// `session send` exits 0 on `ended: error` and on a closed event channel
+/// (see `rpc::send`), so a zero exit proves nothing about the turn. The
+/// reply text on stdout and the `[complete]` marker on stderr do.
+fn send_and_expect_reply(daemon: &TestDaemon, session_id: &str, prompt: &str, reply: &str) {
+    let output = daemon
+        .command()
+        .args(["session", "send", session_id, prompt])
+        .output()
+        .expect("run cru session send");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "session send failed: {stderr}");
+    assert_eq!(
+        stdout.trim(),
+        reply,
+        "the mock agent's reply must reach stdout; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("[complete]") && !stderr.contains("[ended]"),
+        "the turn must complete, not end early: {stderr}"
+    );
+}
+
 /// `--agent` is the card and `--acp` is the subprocess, and the help has to say
 /// which is which: they were one flag until agent cards became selectable, and
 /// `--agent` named the ACP profile then.
@@ -35,7 +60,6 @@ fn session_create_help_distinguishes_the_card_and_acp_flags() {
 }
 
 #[test]
-#[ignore = "requires: cru binary"]
 fn session_create_rejects_unknown_agent_profile() {
     let daemon = TestDaemon::start();
 
@@ -50,7 +74,6 @@ fn session_create_rejects_unknown_agent_profile() {
 }
 
 #[test]
-#[ignore = "requires: cru binary"]
 fn session_create_rejects_empty_agent_profile() {
     let daemon = TestDaemon::start();
 
@@ -66,7 +89,6 @@ fn session_create_rejects_empty_agent_profile() {
 }
 
 #[test]
-#[ignore = "requires: cru binary"]
 fn session_create_accepts_builtin_acp_profiles() {
     let daemon = TestDaemon::start();
 
@@ -83,7 +105,7 @@ fn session_create_accepts_builtin_acp_profiles() {
 }
 
 #[test]
-#[ignore = "requires: cru binary, mock-acp-agent"]
+#[ignore = "requires: mock-acp-agent — built by `just build fixtures`, which the nextest setup script runs"]
 fn session_acp_lifecycle_with_mock_agent_profile() {
     let mock_path = mock_agent_path();
     assert!(
@@ -93,7 +115,7 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ mock = {{ command = \"{}\", description = \"Mock ACP agent for CLI E2E tests\" }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ mock = {{ command = \"{}\", description = \"Mock ACP agent for CLI E2E tests\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply over stdio\" }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 
@@ -109,16 +131,12 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
 
     let session_id = extract_session_id(&create_output);
 
-    daemon
-        .command()
-        .args([
-            "session",
-            "send",
-            &session_id,
-            "hello from cli e2e acp test",
-        ])
-        .assert()
-        .success();
+    send_and_expect_reply(
+        &daemon,
+        &session_id,
+        "hello from cli e2e acp test",
+        "mock reply over stdio",
+    );
 
     daemon
         .command()
@@ -136,7 +154,7 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
 /// Validates that an HTTP-capable mock agent can go through the full
 /// create → send → end lifecycle when using capability-aware transport.
 #[test]
-#[ignore = "requires: cru binary, mock-acp-agent"]
+#[ignore = "requires: mock-acp-agent — built by `just build fixtures`, which the nextest setup script runs"]
 fn session_acp_lifecycle_with_http_capable_mock() {
     let mock_path = mock_agent_path();
     assert!(
@@ -146,7 +164,7 @@ fn session_acp_lifecycle_with_http_capable_mock() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ [\"mock-http\"] = {{ command = \"{}\", args = {{ \"--mcp-http\" }}, description = \"Mock ACP agent with HTTP MCP support\" }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-http\"] = {{ command = \"{}\", args = {{ \"--mcp-http\" }}, description = \"Mock ACP agent with HTTP MCP support\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply with http mcp\" }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 
@@ -169,16 +187,12 @@ fn session_acp_lifecycle_with_http_capable_mock() {
 
     let session_id = extract_session_id(&create_output);
 
-    daemon
-        .command()
-        .args([
-            "session",
-            "send",
-            &session_id,
-            "hello from http-capable mock",
-        ])
-        .assert()
-        .success();
+    send_and_expect_reply(
+        &daemon,
+        &session_id,
+        "hello from http-capable mock",
+        "mock reply with http mcp",
+    );
 
     daemon
         .command()
@@ -196,7 +210,7 @@ fn session_acp_lifecycle_with_http_capable_mock() {
 /// Validates that a stdio-only mock agent can go through the full lifecycle
 /// even when the daemon has an in-process MCP host running.
 #[test]
-#[ignore = "requires: cru binary, mock-acp-agent"]
+#[ignore = "requires: mock-acp-agent — built by `just build fixtures`, which the nextest setup script runs"]
 fn session_acp_lifecycle_with_stdio_only_mock() {
     let mock_path = mock_agent_path();
     assert!(
@@ -207,7 +221,7 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
 
     // No --mcp-http flag: agent reports mcp_http=false
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ [\"mock-stdio\"] = {{ command = \"{}\", description = \"Mock ACP agent (stdio only)\" }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-stdio\"] = {{ command = \"{}\", description = \"Mock ACP agent (stdio only)\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply over stdio only\" }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 
@@ -230,11 +244,12 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
 
     let session_id = extract_session_id(&create_output);
 
-    daemon
-        .command()
-        .args(["session", "send", &session_id, "hello from stdio-only mock"])
-        .assert()
-        .success();
+    send_and_expect_reply(
+        &daemon,
+        &session_id,
+        "hello from stdio-only mock",
+        "mock reply over stdio only",
+    );
 
     daemon
         .command()
