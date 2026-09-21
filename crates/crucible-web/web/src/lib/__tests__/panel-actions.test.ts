@@ -4,7 +4,8 @@ import { windowStore, setStore, windowActions } from '@/stores/windowStore';
 import { statusBarStore, statusBarActions } from '@/stores/statusBarStore';
 import type { EdgeMode, EdgePanelPosition, LayoutNode, Tab, TabGroup } from '@/types/windowTypes';
 import { getGlobalRegistry, resetGlobalRegistry } from '../panel-registry';
-import { openPanelTab, findTabByContentType } from '../panel-actions';
+import { openPanelTab, openDiff, findTabByContentType } from '../panel-actions';
+import type { DiffsetSource } from '../diffset';
 
 const StubComponent = () => null;
 
@@ -56,6 +57,7 @@ beforeEach(() => {
   registry.register('skills', 'Skills', StubComponent, 'left');
   registry.register('plugins', 'Plugins', StubComponent, 'left');
   registry.register('files', 'Files', StubComponent, 'left');
+  registry.register('diff', 'Diff', StubComponent, 'center');
 
   resetToState({
     tabGroups: {
@@ -135,6 +137,38 @@ describe('openPanelTab', () => {
     expect(() => openPanelTab('graph')).not.toThrow();
     const allTabs = Object.values(windowStore.tabGroups).flatMap((g) => g.tabs);
     expect(allTabs.find((t) => t.contentType === 'graph')).toBeUndefined();
+  });
+});
+
+describe('openDiff', () => {
+  const branch = (root: string, base = ''): DiffsetSource => ({ kind: 'branch', root, base, head: null });
+  const diffTabs = () =>
+    Object.values(windowStore.tabGroups)
+      .flatMap((g) => g.tabs)
+      .filter((t) => t.contentType === 'diff');
+
+  // A diff tab names one diffset. A second diffset is a second tab, not a
+  // retarget of the first one.
+  it('opens one tab for each diffset', () => {
+    openDiff(branch('/repo/a'));
+    openDiff(branch('/repo/b'));
+
+    const tabs = diffTabs();
+    expect(tabs).toHaveLength(2);
+    expect(new Set(tabs.map((t) => t.id)).size).toBe(2);
+    expect(tabs.map((t) => (t.metadata?.source as DiffsetSource).kind)).toEqual(['branch', 'branch']);
+    expect(tabs.map((t) => t.title)).toEqual(['Diff: a', 'Diff: b']);
+  });
+
+  it('a second request for one diffset focuses its tab', () => {
+    openDiff(branch('/repo/a'));
+    const [first] = diffTabs();
+    setStore(produce((s) => { s.tabGroups['center-group'].activeTabId = 'tab-chat-x'; }));
+
+    openDiff(branch('/repo/a'));
+
+    expect(diffTabs()).toHaveLength(1);
+    expect(windowStore.tabGroups['center-group'].activeTabId).toBe(first.id);
   });
 });
 

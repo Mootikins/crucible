@@ -43,6 +43,7 @@ const TAB_ICONS: Partial<Record<TabContentType, Component<{ class?: string }>>> 
   plugins: Package,
   skills: Target,
   surfaces: Layers,
+  diff: FileDiff,
 };
 
 /**

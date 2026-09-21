@@ -6,6 +6,7 @@ import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
 import { terminalAllowed } from './terminal-availability';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
+import { diffsetKey, diffsetTitle, type DiffsetSource } from './diffset';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
 export function findFirstCenterPaneGroupId(): string | null {
@@ -112,7 +113,7 @@ export function editorGroupId(): string | null {
  * registered because something else (the tree, the session list) opens them
  * with an argument.
  */
-const NOT_REOPENABLE = new Set<string>(['file', 'chat', 'chat-draft']);
+const NOT_REOPENABLE = new Set<string>(['file', 'chat', 'chat-draft', 'diff']);
 
 /**
  * Registered panels with no tab open anywhere — what "Re-add pane" offers.
@@ -141,16 +142,34 @@ export function findTabByContentType(
 }
 
 /**
+ * The target of a panel that opens one tab for each target, such as one tab
+ * for each diffset. The metadata reaches the panel as its props.
+ */
+export interface PanelTarget {
+  /** The tab id is `tab-${contentType}-${key}`. */
+  key: string;
+  /** Absent: the registered title of the panel. */
+  title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Open a registered panel as a tab (command-palette / gear entry point).
  *
  * Focuses the existing tab when one is already open (singleton panels —
  * there is no reason for two Settings tabs), otherwise creates the tab in
  * the panel's registered default zone. Collapsed edge panels are expanded
  * so the result is always visible.
+ *
+ * With a target, the panel has one tab for each target key, and the existing
+ * tab is the tab of that key.
  */
-export function openPanelTab(contentType: TabContentType): void {
+export function openPanelTab(contentType: TabContentType, target?: PanelTarget): void {
   const host = tabHost();
-  const existing = host.find((t) => t.contentType === contentType);
+  const id = target ? `tab-${contentType}-${target.key}` : `tab-${contentType}`;
+  const existing = target
+    ? host.find((t) => t.id === id)
+    : host.find((t) => t.contentType === contentType);
   if (existing) {
     host.activate(existing.id);
     return;
@@ -163,13 +182,23 @@ export function openPanelTab(contentType: TabContentType): void {
   }
 
   const tab: Tab = {
-    id: `tab-${contentType}`,
-    title: def.title,
+    id,
+    title: target?.title ?? def.title,
     contentType,
     icon: iconForPanelId(contentType),
+    ...(target?.metadata ? { metadata: target.metadata } : {}),
   };
 
   if (!host.open(tab, { placement: 'zone' })) {
     console.error(`openPanelTab: nowhere to open '${contentType}' (zone '${def.defaultZone}')`);
   }
+}
+
+/** Open the diff pane of one diffset, or focus its tab when it is open. */
+export function openDiff(source: DiffsetSource): void {
+  openPanelTab('diff', {
+    key: diffsetKey(source),
+    title: diffsetTitle(source),
+    metadata: { source },
+  });
 }

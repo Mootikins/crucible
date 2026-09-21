@@ -17,6 +17,7 @@ import { GraphPanel } from '@/components/graph/GraphPanel';
 import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 import { PluginBlockPanel } from '@/components/blocks/PluginBlockPanel';
 import { SurfacesPanel } from '@/components/SurfacesPanel';
+import { DiffPanel } from '@/components/DiffPanel';
 
 // Tab/ribbon icons are NOT registered here — they resolve per content type
 // through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
@@ -55,6 +56,9 @@ export function registerPanels(): void {
   // is reading and choosing inside the note, which is editor work, and the
   // phone opens it as a content tab from the same registry.
   registry.register('conflicts', 'Conflicts', ConflictsPanel, 'center');
+  // One diffset, in the centre: a diff is read like code. `openDiff` opens one
+  // tab for each diffset, so the panel is never opened by name.
+  registry.register('diff', 'Diff', DiffPanel, 'center');
   registry.register('graph', 'Graph', GraphPanel, 'center');
   registry.register('canvas', 'Canvas', CanvasPanel, 'center');
   // A plugin block, docked rather than embedded in a note. Until this existed

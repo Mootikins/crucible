@@ -21,7 +21,9 @@ export type TabContentType =
   | 'backlinks'
   | 'graph'
   | 'canvas'
-  | 'surfaces';
+  | 'surfaces'
+  // One tab for each diffset. The tab metadata holds the `DiffsetSource`.
+  | 'diff';
 
 export type {
   EdgeCue,

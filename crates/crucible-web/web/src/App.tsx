@@ -41,7 +41,7 @@ function focusChatInput(): void {
  * session) — they get no generic "Open …" palette command. */
 // Settings is absent because it is not a panel at all: the registry never
 // holds it, and the explicit "Settings" command below opens the dialog.
-const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft']);
+const PANEL_COMMAND_EXCLUDED = new Set<string>(['file', 'chat', 'chat-draft', 'diff']);
 
 /** Panel-specific palette descriptions; anything unlisted gets a generic one. */
 const PANEL_COMMAND_DESCRIPTIONS: Record<string, string> = {

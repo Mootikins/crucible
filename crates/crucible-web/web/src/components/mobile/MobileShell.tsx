@@ -39,6 +39,8 @@ const NOT_IN_MENU = new Set([
   'file',
   'chat',
   'chat-draft',
+  // A diff opens with its diffset, from the Files panel or the palette.
+  'diff',
   // Conflicts has its own row above the list, with its count. A second,
   // countless door to the same tab would read as a different surface.
   'conflicts',
