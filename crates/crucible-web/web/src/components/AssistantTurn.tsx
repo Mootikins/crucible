@@ -12,7 +12,7 @@
 import { Component, For, Show, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
 import { sessionDefaultKiln } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
-import { Copy, Check, RefreshCw } from 'lucide-solid';
+import { Copy, Check, RefreshCw } from '@/lib/icons';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
 import { TurnMeta, AuthorHeading } from './TurnMeta';

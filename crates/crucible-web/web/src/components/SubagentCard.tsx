@@ -1,5 +1,5 @@
 import { Component, Show, createSignal, createEffect } from 'solid-js';
-import { Bot, Check, ChevronRight, X } from 'lucide-solid';
+import { Bot, Check, ChevronRight, X } from '@/lib/icons';
 import type { SubagentEvent } from '@/lib/types';
 
 interface SubagentCardProps {

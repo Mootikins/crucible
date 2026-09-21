@@ -5,7 +5,7 @@
  */
 import { makeMarkdownClickHandler } from '@/lib/markdown-click';
 import { Component, Show, createSignal } from 'solid-js';
-import { Copy, Check, Pencil } from 'lucide-solid';
+import { Copy, Check, Pencil } from '@/lib/icons';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { TurnMeta, AuthorHeading } from './TurnMeta';
 import { IconButton } from './ui/IconButton';

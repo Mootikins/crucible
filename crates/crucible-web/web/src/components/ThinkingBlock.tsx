@@ -1,5 +1,5 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
-import { ChevronRight } from 'lucide-solid';
+import { ChevronRight } from '@/lib/icons';
 
 interface ThinkingBlockProps {
   content: string;

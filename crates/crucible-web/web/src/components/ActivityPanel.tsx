@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal } from 'solid-js';
-import { Bot, ArrowRightLeft, Check, X, Activity } from 'lucide-solid';
+import { Bot, ArrowRightLeft, Check, X, Activity } from '@/lib/icons';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
