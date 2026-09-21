@@ -15,58 +15,8 @@
 //! `build_stdio_mcp_server` derives the path from `current_exe` and nothing
 //! else checks what it produced.
 
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use crate::scripted_agent::{client_with_custom_transport, read_frame, write_json_line};
 use serde_json::json;
-use std::path::PathBuf;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
-
-type AgentReader = BufReader<ReadHalf<DuplexStream>>;
-type AgentWriter = WriteHalf<DuplexStream>;
-
-const FRAME_WAIT: Duration = Duration::from_secs(2);
-
-fn client_with_custom_transport() -> (CrucibleAcpClient, AgentReader, AgentWriter) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_unused_a, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _unused_b) = tokio::io::split(client_to_agent_agent);
-    let (_unused_c, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _unused_d) = tokio::io::split(agent_to_client_client);
-
-    let config = ClientConfig {
-        agent_path: PathBuf::from("mock-mcp-frame-agent"),
-        agent_args: None,
-        timeout_ms: Some(5_000),
-        ..Default::default()
-    };
-
-    let client = CrucibleAcpClient::with_transport(
-        config,
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-async fn read_frame(reader: &mut AgentReader) -> serde_json::Value {
-    let mut line = String::new();
-    tokio::time::timeout(FRAME_WAIT, reader.read_line(&mut line))
-        .await
-        .expect("client wrote no frame before the deadline")
-        .expect("read the client's frame");
-    serde_json::from_str(&line).expect("the client's frame is JSON")
-}
-
-async fn write_frame(writer: &mut AgentWriter, frame: serde_json::Value) {
-    writer
-        .write_all(format!("{frame}\n").as_bytes())
-        .await
-        .expect("write a frame to the client");
-    writer.flush().await.expect("flush the frame");
-}
 
 /// Run the handshake against a scripted agent and hand back the `mcpServers`
 /// array the client sent on `session/new`.
@@ -74,12 +24,12 @@ async fn write_frame(writer: &mut AgentWriter, frame: serde_json::Value) {
 /// `http_mcp` is what the agent advertises in `initialize`; `mcp_url` is what
 /// the daemon would pass when it has an in-process MCP host running.
 async fn mcp_servers_sent(http_mcp: bool, mcp_url: Option<&str>) -> Vec<serde_json::Value> {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport();
+    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
 
     let agent = tokio::spawn(async move {
         let init = read_frame(&mut agent_read).await;
         assert_eq!(init["method"], "initialize");
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({
                 "jsonrpc": "2.0",
@@ -98,7 +48,7 @@ async fn mcp_servers_sent(http_mcp: bool, mcp_url: Option<&str>) -> Vec<serde_js
 
         let new_session = read_frame(&mut agent_read).await;
         assert_eq!(new_session["method"], "session/new");
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({
                 "jsonrpc": "2.0",

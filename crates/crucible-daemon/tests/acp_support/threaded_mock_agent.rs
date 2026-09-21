@@ -238,11 +238,16 @@ impl ThreadedMockAgent {
         reader: &mut BufReader<tokio::io::ReadHalf<DuplexStream>>,
         writer: &mut tokio::io::WriteHalf<DuplexStream>,
     ) -> Result<(), ()> {
+        agent.record_request(request);
         let method = request.get("method").and_then(|m| m.as_str());
 
         // `session/cancel` is a notification: record it, send nothing.
         if method == Some("session/cancel") {
             agent.note_cancel(request);
+            return Ok(());
+        }
+        // Any other notification: JSON-RPC forbids a reply.
+        if request.get("id").is_none() {
             return Ok(());
         }
 
@@ -279,9 +284,13 @@ impl ThreadedMockAgent {
                     let Ok(inner) = serde_json::from_str::<Value>(trimmed) else {
                         continue;
                     };
+                    agent.record_request(&inner);
                     if inner.get("method").and_then(|m| m.as_str()) == Some("session/cancel") {
                         agent.note_cancel(&inner);
                         return Self::write_line(writer, &turn.cancelled).await;
+                    }
+                    if inner.get("id").is_none() {
+                        continue;
                     }
                     let response = agent.handle_request(&inner);
                     Self::write_line(writer, &response).await?;

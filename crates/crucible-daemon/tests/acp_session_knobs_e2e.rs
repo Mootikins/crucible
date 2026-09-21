@@ -18,30 +18,36 @@
 //! a second `initialize` in that file is a second agent process. That is the
 //! assertion: one process across the whole session.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{SessionAgent, SessionType};
+use crucible_core::config::AgentProfile;
+use crucible_core::session::SessionType;
+use crucible_core::types::SessionKnob;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::{AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager};
+use crucible_daemon::AgentManager;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
-use tokio::time::timeout;
 
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::mock_agent_path;
+use mock_agent_bin::{
+    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
+};
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// What the mock agent streams on every turn.
+const ANSWER: &str = "acknowledged";
 
 /// A profile that runs the mock agent and appends every method it receives to
 /// `log_path`. Resume is OFF: an agent that cannot resume is the one a killed
 /// process costs the most, so the test fails loudly rather than recovering.
-fn logging_profile(log_path: &Path) -> AgentProfile {
+/// `extra_env` adds hooks on top, for an agent that advertises more.
+fn logging_profile(log_path: &Path, extra_env: &[(&str, &str)]) -> AgentProfile {
     let mut env = BTreeMap::new();
     // The agent advertises settings of its own, which Crucible has no knob
     // for and passes through untouched.
@@ -56,46 +62,17 @@ fn logging_profile(log_path: &Path) -> AgentProfile {
             .to_string_lossy()
             .into_owned(),
     );
-    env.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "acknowledged".to_string(),
-    );
+    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
     env.insert(
         "CRU_MOCK_METHOD_LOG".to_string(),
         log_path.to_string_lossy().into_owned(),
     );
-    AgentProfile {
-        extends: None,
-        command: Some(mock_agent_path().to_string_lossy().into_owned()),
-        args: Some(Vec::new()),
-        env,
-        description: Some("mock ACP agent for knob tests".to_string()),
-        delegation: None,
-        permissions: None,
-    }
-}
-
-fn acp_agent() -> SessionAgent {
-    SessionAgent {
-        agent_type: "acp".to_string(),
-        agent_name: Some("mock-acp".to_string()),
-        provider_key: None,
-        provider: BackendType::Custom,
-        model: "mock-acp".to_string(),
-        system_prompt: String::new(),
-        max_context_tokens: None,
-        endpoint: None,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: false,
-        context_budget: None,
-        context_strategy: Default::default(),
-        tool_policy: None,
-        mode: None,
-    }
+    env.extend(
+        extra_env
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string())),
+    );
+    mock_profile(env)
 }
 
 struct Harness {
@@ -107,6 +84,11 @@ struct Harness {
 }
 
 async fn setup() -> Harness {
+    setup_with(&[]).await
+}
+
+/// `setup` with extra mock hooks on the agent profile.
+async fn setup_with(extra_env: &[(&str, &str)]) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
@@ -115,30 +97,21 @@ async fn setup() -> Harness {
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _events) = broadcast::channel(256);
 
-    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: session_manager.clone(),
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: Some(AcpConfig {
-            default_agent: None,
-            streaming_timeout_minutes: 1,
-            agents: BTreeMap::from([("mock-acp".to_string(), logging_profile(&log_path))]),
-        }),
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    }));
+    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
+        session_manager.clone(),
+        BTreeMap::from([(
+            MOCK_PROFILE.to_string(),
+            logging_profile(&log_path, extra_env),
+        )]),
+        &event_tx,
+    )));
 
     let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .expect("session");
     agent_manager
-        .configure_agent(&session.id, acp_agent())
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
         .await
         .expect("configure the agent");
 
@@ -157,9 +130,8 @@ async fn run_a_turn(h: &Harness) {
         .send_message_notified(&h.session_id, "hello".to_string(), &h.event_tx, true, None)
         .await
         .expect("the turn is accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("the turn finished");
+    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 }
 
 /// One `initialize` per agent process, so counting them counts processes.
@@ -192,19 +164,68 @@ async fn changing_a_knob_does_not_restart_the_agent_process() {
     );
 }
 
-/// The same for every other knob that routes through the shared config
-/// mutator. One of them escaping the rule is as bad as all of them, and they
-/// are added often enough that naming them here is worth the repetition.
+/// The same for every knob. One of them escaping the rule is as bad as all
+/// of them, and they are added often enough that naming them here is worth
+/// the repetition: the match below is exhaustive, so a new knob does not
+/// compile until this test says what it does.
+///
+/// The agent advertises a model selector and a mode set, so the `Model` and
+/// `Mode` knobs reach the wire instead of stopping at "not supported".
+/// `ContextStrategy` has no ACP field and is refused (see
+/// `a_setting_the_protocol_has_no_field_for_is_refused`); a refusal must not
+/// cost the agent either.
 #[tokio::test]
 async fn no_knob_restarts_the_agent_process() {
-    let h = setup().await;
+    let h = setup_with(&[
+        ("CRU_MOCK_ADVERTISE_MODELS", "1"),
+        ("CRU_MOCK_ADVERTISE_MODES", "default"),
+    ])
+    .await;
     run_a_turn(&h).await;
 
     let id = h.session_id.as_str();
-    h.agent_manager
-        .set_precognition(id, true, None)
-        .await
-        .expect("precognition");
+    for knob in SessionKnob::ALL {
+        match knob {
+            SessionKnob::ContextStrategy => {
+                h.agent_manager
+                    .set_context_strategy(
+                        id,
+                        crucible_core::session::ContextStrategy::Truncate,
+                        None,
+                    )
+                    .await
+                    .expect_err("ACP has no context strategy; the setter refuses it");
+            }
+            SessionKnob::Precognition => h
+                .agent_manager
+                .set_precognition(id, true, None)
+                .await
+                .expect("precognition"),
+            SessionKnob::Model => {
+                h.agent_manager
+                    .switch_model(id, "mock-opus", None)
+                    .await
+                    .expect("the agent advertised mock-opus");
+                assert_eq!(
+                    std::fs::read_to_string(h.log_path.with_extension("option"))
+                        .expect("the switch reached the agent")
+                        .trim(),
+                    "model=mock-opus"
+                );
+            }
+            SessionKnob::Mode => h
+                .agent_manager
+                .set_mode(id, "plan", None)
+                .await
+                .expect("the agent declared `plan`"),
+        }
+        assert_eq!(
+            handshakes(&h),
+            1,
+            "setting `{}` cost the session its agent process",
+            knob.id()
+        );
+    }
 
     run_a_turn(&h).await;
 
@@ -212,19 +233,6 @@ async fn no_knob_restarts_the_agent_process() {
         handshakes(&h),
         1,
         "no setting may cost the session its agent process"
-    );
-}
-
-/// Fails fast and explains, rather than letting the tests above die on a
-/// spawn error that names nothing.
-#[test]
-fn the_mock_agent_binary_is_available() {
-    let path = mock_agent_path();
-    assert!(
-        path.exists(),
-        "mock-acp-agent is missing at {}; build it with \
-         `cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent`",
-        path.display()
     );
 }
 

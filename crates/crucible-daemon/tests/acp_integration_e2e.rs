@@ -2,7 +2,6 @@
 //!
 //! Verifies that ACP plumbing remains intact after crate absorptions:
 //! - Tool dispatch routing via DaemonToolDispatcher
-//! - Delegation context construction
 //! - MCP host initialization
 //! - DaemonToolsBridge wiring to DaemonToolsApi
 
@@ -95,159 +94,36 @@ async fn test_tool_dispatch_executes_read_file() {
 }
 
 // ============================================================================
-// Test 3: Delegation context construction
-// ============================================================================
-
-#[test]
-fn test_delegation_context_construction() {
-    use crucible_core::background::{
-        BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
-    };
-    use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
-    use std::path::PathBuf as StdPathBuf;
-    use std::time::Duration;
-
-    // Minimal BackgroundSpawner mock using async_trait
-    struct MockSpawner;
-
-    #[async_trait::async_trait]
-    impl BackgroundSpawner for MockSpawner {
-        async fn spawn_bash(
-            &self,
-            _session_id: &str,
-            _command: String,
-            _workdir: Option<StdPathBuf>,
-            _timeout: Option<Duration>,
-        ) -> Result<JobId, JobError> {
-            Ok("mock-bash-job".to_string())
-        }
-
-        fn list_jobs(&self, _session_id: &str) -> Vec<JobInfo> {
-            vec![]
-        }
-
-        fn get_job_result(&self, _job_id: &JobId) -> Option<JobResult> {
-            None
-        }
-
-        async fn cancel_job(&self, _job_id: &JobId) -> bool {
-            false
-        }
-    }
-
-    struct MockDelegationSpawner;
-
-    #[async_trait::async_trait]
-    impl DelegationSpawner for MockDelegationSpawner {
-        async fn spawn_delegation(
-            &self,
-            _req: DelegationRequest,
-        ) -> Result<DelegationSpawned, JobError> {
-            Ok(DelegationSpawned {
-                delegation_id: "agent-child-test".to_string(),
-                child_session_id: "agent-child-test".to_string(),
-                message_id: "msg-test".to_string(),
-            })
-        }
-
-        async fn await_delegation(
-            &self,
-            delegation_id: &str,
-            _timeout: Duration,
-        ) -> Result<JobResult, JobError> {
-            let mut info = JobInfo::new(
-                "test-session-123".to_string(),
-                JobKind::Subagent {
-                    prompt: "test".to_string(),
-                    context: None,
-                },
-            );
-            info.id = delegation_id.to_string();
-            info.mark_completed();
-            Ok(JobResult::success(info, "done".to_string()))
-        }
-
-        fn list_delegations(&self, _parent_session_id: &str) -> Vec<JobInfo> {
-            Vec::new()
-        }
-
-        fn get_delegation_result(&self, _delegation_id: &str) -> Option<JobResult> {
-            None
-        }
-
-        async fn cancel_delegation(&self, _delegation_id: &str) -> bool {
-            false
-        }
-    }
-
-    let spawner = Arc::new(MockSpawner) as Arc<dyn BackgroundSpawner>;
-    let targets = vec!["claude".to_string(), "opencode".to_string()];
-
-    let ctx = DelegationContext {
-        background_spawner: spawner,
-        delegation_spawner: Arc::new(MockDelegationSpawner),
-        session_id: "test-session-123".to_string(),
-        targets: targets.clone(),
-        enabled: true,
-        result_max_bytes: 51200,
-        timeout_secs: 300,
-        card_roots: Default::default(),
-    };
-
-    // Verify all fields are constructed correctly
-    assert_eq!(ctx.session_id, "test-session-123");
-    assert!(ctx.enabled);
-    assert_eq!(ctx.targets.len(), 2);
-    assert!(ctx.targets.contains(&"claude".to_string()));
-    assert!(ctx.targets.contains(&"opencode".to_string()));
-
-    // Verify disabled delegation context
-    let disabled_ctx = DelegationContext {
-        background_spawner: Arc::new(MockSpawner),
-        delegation_spawner: Arc::new(MockDelegationSpawner),
-        session_id: "disabled-session".to_string(),
-        targets: vec![],
-        enabled: false,
-        result_max_bytes: 51200,
-        timeout_secs: 300,
-        card_roots: Default::default(),
-    };
-
-    assert!(!disabled_ctx.enabled);
-    assert!(disabled_ctx.targets.is_empty());
-}
-
-// ============================================================================
 // Test 4: MCP host initializes without errors
 // ============================================================================
+
+/// Start the in-process MCP host, or panic.
+///
+/// A sandbox that forbids the localhost bind fails here with "Operation not
+/// permitted". That is a missing prerequisite, and a test that returns early
+/// on it reports a pass for a check that never ran.
+async fn start_host(temp: &TempDir, delegation: Option<DelegationContext>) -> InProcessMcpHost {
+    InProcessMcpHost::start(
+        temp.path().to_path_buf(),
+        temp.path().to_path_buf(),
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
+        delegation,
+        crucible_daemon::tools::containment::RootSet::Ambient,
+    )
+    .await
+    .unwrap_or_else(|err| {
+        panic!(
+            "InProcessMcpHost::start failed; the in-process MCP HTTP server needs a \
+             localhost bind, which a sandbox may deny: {err:?}"
+        )
+    })
+}
 
 #[tokio::test]
 async fn test_mcp_host_initializes() {
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
-
-    let host = match InProcessMcpHost::start(
-        temp.path().to_path_buf(),
-        temp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-        None, // no delegation context
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    {
-        Ok(host) => host,
-        Err(err) => {
-            // Permission denied can happen in CI containers
-            let err_str = format!("{err:?}");
-            if err_str.contains("Operation not permitted") {
-                eprintln!("Skipping MCP host test (permission denied in environment): {err}");
-                return;
-            }
-            panic!("InProcessMcpHost::start should succeed: {err:?}");
-        }
-    };
+    let host = start_host(&temp, None).await;
 
     // Verify server is bound to localhost
     let url = host.mcp_url();
@@ -349,10 +225,6 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         }
     }
 
-    let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
-
     let delegation_ctx = DelegationContext {
         background_spawner: Arc::new(MockSpawner),
         delegation_spawner: Arc::new(MockDelegationSpawner),
@@ -364,26 +236,8 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         card_roots: Default::default(),
     };
 
-    let host = match InProcessMcpHost::start(
-        temp.path().to_path_buf(),
-        temp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-        Some(delegation_ctx),
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    {
-        Ok(host) => host,
-        Err(err) => {
-            let err_str = format!("{err:?}");
-            if err_str.contains("Operation not permitted") {
-                eprintln!("Skipping MCP host with delegation test: {err}");
-                return;
-            }
-            panic!("InProcessMcpHost::start with delegation should succeed: {err:?}");
-        }
-    };
+    let temp = TempDir::new().expect("temp dir");
+    let host = start_host(&temp, Some(delegation_ctx)).await;
 
     // Verify server binds even with delegation context
     assert!(host.address().port() > 0);

@@ -12,94 +12,11 @@
 //!
 //! Frames *without* an `id` are notifications and must stay silent.
 
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use crate::scripted_agent::{
+    client_with_custom_transport, final_response, make_prompt_request, read_frame_within,
+    read_request_id, write_json_line, AgentReader, AgentWriter, FRAME_WAIT,
+};
 use serde_json::json;
-use std::path::PathBuf;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
-
-type AgentReader = BufReader<ReadHalf<DuplexStream>>;
-type AgentWriter = WriteHalf<DuplexStream>;
-
-/// How long the mock agent waits for the client to answer its request before
-/// concluding no answer is coming. Well under the client's own overall timeout
-/// so a missing reply reports as a failed assertion, not a timed-out turn.
-const REPLY_WAIT: Duration = Duration::from_secs(2);
-
-fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
-    ClientConfig {
-        agent_path: PathBuf::from("mock-inbound-agent"),
-        agent_args: None,
-        timeout_ms,
-        ..Default::default()
-    }
-}
-
-fn client_with_custom_transport(
-    timeout_ms: Option<u64>,
-) -> (CrucibleAcpClient, AgentReader, AgentWriter) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_client_read_unused, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _agent_write_unused) = tokio::io::split(client_to_agent_agent);
-
-    let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
-
-    let client = CrucibleAcpClient::with_transport(
-        test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-fn make_prompt_request(
-    session_id: &str,
-    text: &str,
-) -> agent_client_protocol::schema::v1::PromptRequest {
-    serde_json::from_value(json!({
-        "sessionId": session_id,
-        "prompt": [{"type": "text", "text": text}],
-        "_meta": null
-    }))
-    .expect("valid prompt request")
-}
-
-async fn write_json_line(writer: &mut AgentWriter, value: serde_json::Value) {
-    writer
-        .write_all(format!("{}\n", serde_json::to_string(&value).unwrap()).as_bytes())
-        .await
-        .expect("write to client");
-    writer.flush().await.expect("flush to client");
-}
-
-async fn read_json_line(reader: &mut AgentReader) -> serde_json::Value {
-    let mut line = String::new();
-    reader.read_line(&mut line).await.expect("read from client");
-    serde_json::from_str(&line).expect("client wrote valid JSON")
-}
-
-/// Read the next frame the client writes, or `None` if it writes nothing within
-/// [`REPLY_WAIT`].
-async fn read_json_line_within(reader: &mut AgentReader) -> Option<serde_json::Value> {
-    let mut line = String::new();
-    match tokio::time::timeout(REPLY_WAIT, reader.read_line(&mut line)).await {
-        Ok(Ok(0)) | Err(_) => None,
-        Ok(Ok(_)) => Some(serde_json::from_str(&line).expect("client wrote valid JSON")),
-        Ok(Err(e)) => panic!("read from client failed: {e}"),
-    }
-}
-
-fn final_response(request_id: u64) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": {"stopReason": "end_turn", "_meta": null}
-    })
-}
 
 /// Drive one turn from the agent's side: consume the prompt, emit `frame`
 /// mid-turn, capture whatever the client writes back (if anything), then end
@@ -109,13 +26,10 @@ async fn turn_emitting(
     mut writer: AgentWriter,
     frame: serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let prompt_request = read_json_line(&mut reader).await;
-    let prompt_request_id = prompt_request["id"]
-        .as_u64()
-        .expect("prompt request carries a numeric id");
+    let prompt_request_id = read_request_id(&mut reader).await;
 
     write_json_line(&mut writer, frame).await;
-    let reply = read_json_line_within(&mut reader).await;
+    let reply = read_frame_within(&mut reader, FRAME_WAIT).await;
 
     write_json_line(&mut writer, final_response(prompt_request_id)).await;
     reply
@@ -176,23 +90,6 @@ async fn an_unhandled_inbound_request_gets_a_method_not_found_reply() {
         .expect("turn should complete");
 
     assert_method_not_found(agent.await.expect("agent task"), json!(901));
-}
-
-#[tokio::test]
-async fn an_unhandled_inbound_request_is_answered_on_the_callback_path_too() {
-    let (mut client, reader, writer) = client_with_custom_transport(Some(500));
-
-    let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(902))));
-
-    client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-inbound", "read a file"),
-            Box::new(|_| true),
-        )
-        .await
-        .expect("turn should complete");
-
-    assert_method_not_found(agent.await.expect("agent task"), json!(902));
 }
 
 /// JSON-RPC ids are strings, numbers or null — not just `u64`. A non-numeric

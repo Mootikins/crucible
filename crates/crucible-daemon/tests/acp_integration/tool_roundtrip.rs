@@ -2,138 +2,14 @@
 //! flow correctly through the ACP streaming pipeline and that tool results
 //! are captured in the accumulated output.
 
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use crate::scripted_agent::{
+    client_with_custom_transport, final_response, make_prompt_request, mcp_http_open_session,
+    mcp_http_request, read_frame, read_request_id, text_chunk, tool_call_notification,
+    tool_call_update_completed, write_json_line,
+};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
-
-fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
-    ClientConfig {
-        agent_path: PathBuf::from("mock-tool-roundtrip"),
-        agent_args: None,
-        timeout_ms,
-        ..Default::default()
-    }
-}
-
-fn client_with_custom_transport(
-    timeout_ms: Option<u64>,
-) -> (
-    CrucibleAcpClient,
-    BufReader<tokio::io::ReadHalf<DuplexStream>>,
-    tokio::io::WriteHalf<DuplexStream>,
-) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_client_read_unused, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _agent_write_unused) = tokio::io::split(client_to_agent_agent);
-
-    let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
-
-    let client = CrucibleAcpClient::with_transport(
-        test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-fn make_prompt_request(
-    session_id: &str,
-    text: &str,
-) -> agent_client_protocol::schema::v1::PromptRequest {
-    serde_json::from_value(json!({
-        "sessionId": session_id,
-        "prompt": [{"type": "text", "text": text}],
-        "_meta": null
-    }))
-    .expect("valid prompt request")
-}
-
-async fn write_json_line(
-    writer: &mut tokio::io::WriteHalf<DuplexStream>,
-    value: serde_json::Value,
-) -> std::io::Result<()> {
-    writer
-        .write_all(format!("{}\n", serde_json::to_string(&value).unwrap()).as_bytes())
-        .await?;
-    writer.flush().await
-}
-
-fn tool_call_notification(
-    session_id: &str,
-    tool_call_id: &str,
-    title: &str,
-    raw_input: Option<serde_json::Value>,
-) -> serde_json::Value {
-    let mut update = json!({
-        "sessionUpdate": "tool_call",
-        "toolCallId": tool_call_id,
-        "title": title,
-        "status": "in_progress"
-    });
-    if let Some(input) = raw_input {
-        update["rawInput"] = input;
-    }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update
-        }
-    })
-}
-
-fn tool_call_update_completed(
-    session_id: &str,
-    tool_call_id: &str,
-    raw_output: Option<serde_json::Value>,
-) -> serde_json::Value {
-    let mut update = json!({
-        "sessionUpdate": "tool_call_update",
-        "toolCallId": tool_call_id,
-        "status": "completed"
-    });
-    if let Some(output) = raw_output {
-        update["rawOutput"] = output;
-    }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update
-        }
-    })
-}
-
-fn text_chunk(session_id: &str, text: &str) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": text}
-            }
-        }
-    })
-}
-
-fn final_response(request_id: u64) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": {"stopReason": "end_turn", "_meta": null}
-    })
-}
 
 /// Verifies the full tool round-trip: agent calls read_file, the client receives
 /// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
@@ -148,18 +24,14 @@ async fn test_acp_tool_roundtrip_read_file() {
 
     tokio::spawn(async move {
         // Agent reads the prompt request
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         // Agent emits initial text
         write_json_line(
             &mut agent_writer,
             text_chunk(session_id, "Let me read that file for you. "),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Agent calls read_file tool
         write_json_line(
@@ -171,8 +43,7 @@ async fn test_acp_tool_roundtrip_read_file() {
                 Some(json!({"path": "/tmp/test.md"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Tool completes with file content
         write_json_line(
@@ -183,21 +54,17 @@ async fn test_acp_tool_roundtrip_read_file() {
                 Some(json!("# Test File\n\nThis is the content of the file.")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Agent emits post-tool text
         write_json_line(
             &mut agent_writer,
             text_chunk(session_id, "The file contains a heading and a paragraph."),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Final response
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
@@ -307,10 +174,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     let session_id = "ses-roundtrip-multi";
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         // First tool call: semantic_search
         write_json_line(
@@ -322,8 +186,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
                 Some(json!({"query": "async patterns", "limit": 3})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -333,16 +196,14 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
                 Some(json!("Found 3 notes about async patterns.")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Text between tools
         write_json_line(
             &mut agent_writer,
             text_chunk(session_id, "Let me also check the config. "),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Second tool call: read_file
         write_json_line(
@@ -354,8 +215,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
                 Some(json!({"path": "/home/user/config.toml"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -365,20 +225,16 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
                 Some(json!("[settings]\ntheme = \"dark\"")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Final text
         write_json_line(
             &mut agent_writer,
             text_chunk(session_id, "Done reviewing both sources."),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request(session_id, "search and read config");
@@ -425,26 +281,22 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     assert!(content.contains("Done reviewing"));
 }
 
-/// Verifies tool round-trip with an in-process MCP host: the agent calls a tool,
-/// the MCP server has real tools available, and the client receives correctly
-/// structured ToolStart/ToolEnd chunks.
-///
-/// This uses the custom transport pattern (not a real agent process) combined
-/// with a real MCP host to verify the tool listing works end-to-end.
+/// The scripted agent takes the MCP url from the `session/new` frame the
+/// client sent, calls `list_notes` on the real in-process MCP host, and
+/// relays the host's answer as the tool call's raw output. The `ToolEnd`
+/// chunk must carry exactly that answer, so the whole path is real except
+/// the agent's own decision to call the tool.
 #[tokio::test]
-async fn test_acp_tool_roundtrip_with_mcp_server() {
+async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::traits::KnowledgeRepository;
     use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use crucible_daemon::InProcessMcpHost;
-    use std::sync::Arc;
     use tempfile::TempDir;
 
-    // Set up a temp kiln with a test note
     let temp = TempDir::new().unwrap();
-    let note_path = temp.path().join("test-note.md");
     std::fs::write(
-        &note_path,
+        temp.path().join("test-note.md"),
         "---\ntitle: Test Note\ntags: [rust, async]\n---\n\n# Test Note\n\nThis is a test note for tool roundtrip.",
     )
     .unwrap();
@@ -452,7 +304,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
-    let host = match InProcessMcpHost::start(
+    let host = InProcessMcpHost::start(
         temp.path().to_path_buf(),
         temp.path().to_path_buf(),
         knowledge_repo,
@@ -461,210 +313,122 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
         crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
-    {
-        Ok(host) => host,
-        Err(e) => {
-            let err_str = format!("{}", e);
-            if err_str.contains("Operation not permitted") {
-                eprintln!("SKIP: MCP host cannot bind in sandbox: {}", e);
-                return;
-            }
-            panic!("Failed to start MCP host: {:?}", e);
-        }
-    };
+    .expect("the in-process MCP host binds to localhost");
 
-    let mcp_url = host.mcp_url();
-
-    // Verify the MCP server is running and has tools
-    let http_client = reqwest::Client::new();
-
-    // Initialize MCP session
-    let init_resp = http_client
-        .post(&mcp_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test-roundtrip","version":"0.1.0"}}}"#)
-        .send()
-        .await
-        .expect("MCP initialize should succeed");
-
-    assert!(
-        init_resp.status().is_success(),
-        "MCP init failed: {}",
-        init_resp.status()
-    );
-
-    let session_id_header = init_resp
-        .headers()
-        .get("mcp-session-id")
-        .expect("should have session id")
-        .to_str()
-        .unwrap()
-        .to_string();
-
-    // Send initialized notification
-    let _notif = http_client
-        .post(&mcp_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", &session_id_header)
-        .body(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-        .send()
-        .await
-        .expect("initialized notification should succeed");
-
-    // List tools to verify they exist
-    let tools_resp = http_client
-        .post(&mcp_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", &session_id_header)
-        .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
-        .send()
-        .await
-        .expect("tools/list should succeed");
-
-    let body = tools_resp.text().await.unwrap();
-
-    // Parse SSE format
-    let json_str = body
-        .lines()
-        .find(|line| line.starts_with("data: {"))
-        .and_then(|line| line.strip_prefix("data: "))
-        .expect("should find data line with JSON");
-
-    let parsed: serde_json::Value = serde_json::from_str(json_str).expect("should be valid JSON");
-    let tools = parsed["result"]["tools"]
-        .as_array()
-        .expect("should have tools array");
-
-    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-
-    // Verify list_notes is among the available tools
-    assert!(
-        tool_names.contains(&"list_notes"),
-        "MCP server should expose list_notes tool, got: {:?}",
-        tool_names
-    );
-
-    // Now test the ACP client side: create a custom transport client and simulate
-    // an agent that calls a tool. The tool call here is simulated (the agent side
-    // sends tool_call notifications), but the MCP server is real and verified above.
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
-
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
-
     let acp_session_id = "ses-mcp-roundtrip";
 
-    tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+    let agent = tokio::spawn(async move {
+        let init = read_frame(&mut agent_reader).await;
+        assert_eq!(init["method"], "initialize");
+        write_json_line(
+            &mut agent_writer,
+            json!({
+                "jsonrpc": "2.0",
+                "id": init["id"],
+                "result": {
+                    "protocolVersion": 1,
+                    "agentCapabilities": {"mcpCapabilities": {"http": true, "sse": false}},
+                    "authMethods": []
+                }
+            }),
+        )
+        .await;
 
-        // Agent calls list_notes via MCP
+        let new_session = read_frame(&mut agent_reader).await;
+        assert_eq!(new_session["method"], "session/new");
+        let mcp_url = new_session["params"]["mcpServers"][0]["url"]
+            .as_str()
+            .unwrap_or_else(|| panic!("session/new offers no HTTP MCP url: {new_session}"))
+            .to_string();
+        write_json_line(
+            &mut agent_writer,
+            json!({
+                "jsonrpc": "2.0",
+                "id": new_session["id"],
+                "result": {"sessionId": acp_session_id}
+            }),
+        )
+        .await;
+
+        let prompt_request_id = read_request_id(&mut agent_reader).await;
         write_json_line(
             &mut agent_writer,
             tool_call_notification(
                 acp_session_id,
                 "tc-list-1",
                 "mcp__crucible__list_notes",
-                Some(json!({"limit": 10})),
+                Some(json!({})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        // Simulate tool result (in a real scenario the MCP server would execute this)
+        let http = reqwest::Client::new();
+        let mcp_session = mcp_http_open_session(&http, &mcp_url).await;
+        let reply = mcp_http_request(
+            &http,
+            &mcp_url,
+            &mcp_session,
+            2,
+            "tools/call",
+            json!({"name": "list_notes", "arguments": {}}),
+        )
+        .await;
+        let tool_output = reply["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_else(|| panic!("list_notes answered with no text: {reply}"))
+            .to_string();
+
         write_json_line(
             &mut agent_writer,
-            tool_call_update_completed(
-                acp_session_id,
-                "tc-list-1",
-                Some(json!("Notes found:\n- test-note.md")),
-            ),
+            tool_call_update_completed(acp_session_id, "tc-list-1", Some(json!(tool_output))),
         )
-        .await
-        .unwrap();
-
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(acp_session_id, "I found the test note in your kiln."),
-        )
-        .await
-        .unwrap();
-
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        .await;
+        write_json_line(&mut agent_writer, final_response(prompt_request_id)).await;
+        tool_output
     });
 
-    let request = make_prompt_request(acp_session_id, "list my notes");
-    let (summary, _response) = client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
+    client
+        .connect_with_best_mcp(Some(&host.mcp_url()))
         .await
-        .expect("MCP tool roundtrip should complete");
-    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
+        .expect("the scripted agent completes the handshake");
 
-    {
-        let captured = chunks.lock().unwrap();
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let turn = client
+        .send_prompt_with_callback(
+            make_prompt_request(acp_session_id, "list my notes"),
+            callback,
+        )
+        .await;
+    let tool_output = agent.await.expect("the scripted agent finished its turn");
+    let (summary, _response) = turn.expect("MCP tool roundtrip should complete");
 
-        // Verify ToolStart arrived with correct MCP-prefixed tool name
-        let tool_start = captured
-            .iter()
-            .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-            .expect("should have ToolStart chunk");
+    assert!(
+        tool_output.contains("test-note"),
+        "the real MCP host lists the kiln's note, got: {tool_output}"
+    );
 
-        match tool_start {
-            StreamingChunk::ToolStart {
-                name,
-                id,
-                arguments,
-                ..
-            } => {
-                // MCP-prefixed names get humanized
-                assert_eq!(name, "List Notes", "MCP tool name should be humanized");
-                assert_eq!(id, "tc-list-1");
-                let args = arguments.as_ref().expect("arguments should be present");
-                assert_eq!(args["limit"], 10);
-            }
-            _ => unreachable!(),
-        }
-
-        // Verify ToolEnd has the simulated result
-        let tool_end = captured
-            .iter()
-            .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-            .expect("should have ToolEnd chunk");
-
-        match tool_end {
+    let captured = chunks.lock().unwrap().clone();
+    let tool_end = captured
+        .iter()
+        .find_map(|c| match c {
             StreamingChunk::ToolEnd {
                 id, result, error, ..
-            } => {
-                assert_eq!(id, "tc-list-1");
-                let result_text = result.as_ref().expect("should have result");
-                assert!(
-                    result_text.contains("test-note"),
-                    "result should mention the test note"
-                );
-                assert!(error.is_none());
-            }
-            _ => unreachable!(),
-        }
-    }
+            } => Some((id, result, error)),
+            _ => None,
+        })
+        .expect("should have ToolEnd chunk");
+    assert_eq!(tool_end.0, "tc-list-1");
+    assert_eq!(
+        tool_end.1.as_deref(),
+        Some(tool_output.as_str()),
+        "ToolEnd must carry the MCP host's answer unchanged"
+    );
+    assert!(tool_end.2.is_none());
 
-    // Verify accumulated state
-    assert!(content.contains("found the test note"));
     assert!(summary.announced_any);
     assert_eq!(
-        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        crate::support::parity::tool_names_of(&captured),
         vec!["List Notes"]
     );
 
@@ -681,10 +445,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
     let session_id = "ses-roundtrip-after";
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         // Tool call with no preceding text
         write_json_line(
@@ -696,8 +457,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
                 Some(json!({"pattern": "fn main", "path": "/src"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -707,8 +467,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
                 Some(json!("src/main.rs:1:fn main() {")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // Text referencing the tool result
         write_json_line(
@@ -718,12 +477,9 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
                 "The main function is defined at line 1 of src/main.rs.",
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request(session_id, "find main function");

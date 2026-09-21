@@ -27,20 +27,24 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType, EmbeddingProviderConfig};
+use crucible_core::config::{AgentProfile, EmbeddingProviderConfig};
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::{AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager};
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use crucible_lua::PluginSource;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
-use tokio::time::timeout;
 
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::mock_agent_path;
+use mock_agent_bin::{
+    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
+};
+
+/// What the mock agent streams on every turn.
+const ANSWER: &str = "acknowledged";
 
 /// A cold spawn, a handshake, a retrieval pass and a turn.
 const TURN_TIMEOUT: Duration = Duration::from_secs(90);
@@ -66,41 +70,14 @@ fn capturing_profile(capture: &Path) -> AgentProfile {
         "CRU_MOCK_PROMPT_CAPTURE".to_string(),
         capture.to_string_lossy().into_owned(),
     );
-    env.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "acknowledged".to_string(),
-    );
-    AgentProfile {
-        extends: None,
-        command: Some(mock_agent_path().to_string_lossy().into_owned()),
-        args: Some(Vec::new()),
-        env,
-        description: Some("mock ACP agent for injection tests".to_string()),
-        delegation: None,
-        permissions: None,
-    }
+    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
+    mock_profile(env)
 }
 
 fn acp_agent(precognition_enabled: bool) -> SessionAgent {
     SessionAgent {
-        agent_type: "acp".to_string(),
-        agent_name: Some("mock-acp".to_string()),
-        provider_key: None,
-        provider: BackendType::Custom,
-        model: "mock-acp".to_string(),
-        system_prompt: String::new(),
-        max_context_tokens: None,
-        endpoint: None,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        agent_description: None,
-        delegation_config: None,
         precognition_enabled,
-        context_budget: None,
-        context_strategy: Default::default(),
-        tool_policy: None,
-        mode: None,
+        ..profile_session_agent(MOCK_PROFILE)
     }
 }
 
@@ -164,20 +141,12 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
 
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: kiln_manager.clone(),
-        session_manager: session_manager.clone(),
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: Some(AcpConfig {
-            default_agent: None,
-            streaming_timeout_minutes: 1,
-            agents: BTreeMap::from([("mock-acp".to_string(), capturing_profile(&capture_path))]),
-        }),
-        context_config: None,
-        permission_config: None,
         plugin_loader: Some(plugin_loader),
-        card_roots: Default::default(),
-        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
+        ..acp_manager_params(
+            session_manager.clone(),
+            BTreeMap::from([(MOCK_PROFILE.to_string(), capturing_profile(&capture_path))]),
+            &event_tx,
+        )
     }));
 
     if let Some((registry, lua)) = plugin_handlers {
@@ -242,9 +211,8 @@ async fn prompt_seen_by_the_agent(h: &Harness) -> String {
         )
         .await
         .expect("the turn is accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("the turn finished");
+    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
     std::fs::read_to_string(&h.capture_path)
         .expect("the agent process must have captured the prompt it received")

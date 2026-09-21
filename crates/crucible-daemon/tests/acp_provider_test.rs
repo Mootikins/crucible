@@ -5,8 +5,11 @@ use crucible_daemon::InProcessMcpHost;
 use std::sync::Arc;
 use tempfile::TempDir;
 
+/// The in-process MCP host that an ACP agent reaches answers
+/// `semantic_search` over HTTP when its knowledge and embedding providers
+/// are wired. No ACP agent runs here; the providers are the test doubles.
 #[tokio::test]
-async fn test_acp_agent_with_real_providers_semantic_search_succeeds() {
+async fn in_process_mcp_host_answers_semantic_search_when_providers_are_wired() {
     let temp = TempDir::new().expect("temp dir");
     let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;

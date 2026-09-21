@@ -1,97 +1,16 @@
+use crate::scripted_agent::{client_with_custom_transport, make_prompt_request, read_frame};
 use crate::support::ThreadedMockAgent;
-use agent_client_protocol::schema::v1::{InitializeRequest, PromptRequest};
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use agent_client_protocol::schema::v1::InitializeRequest;
 use crucible_daemon::acp::ClientError;
-use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
-
-fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
-    ClientConfig {
-        agent_path: PathBuf::from("mock-threaded-agent"),
-        agent_args: None,
-        timeout_ms,
-        ..Default::default()
-    }
-}
-
-fn make_prompt_request(session_id: &str) -> PromptRequest {
-    serde_json::from_value(serde_json::json!({
-        "sessionId": session_id,
-        "prompt": [{"type": "text", "text": "trigger streaming"}],
-        "_meta": null
-    }))
-    .expect("valid prompt request")
-}
-
-fn client_with_custom_transport(
-    timeout_ms: Option<u64>,
-) -> (
-    CrucibleAcpClient,
-    BufReader<tokio::io::ReadHalf<DuplexStream>>,
-    tokio::io::WriteHalf<DuplexStream>,
-) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(8192);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(8192);
-
-    let (_client_read_unused, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _agent_write_unused) = tokio::io::split(client_to_agent_agent);
-
-    let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
-
-    let client = CrucibleAcpClient::with_transport(
-        test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-#[test]
-fn test_error_client_error_variants_are_constructible() {
-    let variants = vec![
-        ClientError::Protocol(agent_client_protocol::Error::internal_error()),
-        ClientError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "io")),
-        ClientError::Serialization(serde_json::Error::io(std::io::Error::other("serde"))),
-        ClientError::Session("session".to_string()),
-        ClientError::Connection("connection".to_string()),
-        ClientError::Timeout("timeout".to_string()),
-        ClientError::InvalidConfig("invalid config".to_string()),
-        ClientError::FileSystem("filesystem".to_string()),
-        ClientError::PermissionDenied("denied".to_string()),
-        ClientError::NotFound("missing".to_string()),
-        ClientError::Validation("validation".to_string()),
-        ClientError::Other(anyhow::anyhow!("other")),
-    ];
-
-    assert_eq!(variants.len(), 12);
-
-    for variant in variants {
-        match variant {
-            ClientError::Protocol(_)
-            | ClientError::Io(_)
-            | ClientError::Serialization(_)
-            | ClientError::Session(_)
-            | ClientError::Connection(_)
-            | ClientError::Timeout(_)
-            | ClientError::InvalidConfig(_)
-            | ClientError::FileSystem(_)
-            | ClientError::PermissionDenied(_)
-            | ClientError::NotFound(_)
-            | ClientError::Validation(_)
-            | ClientError::Other(_) => {}
-        }
-    }
-}
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 #[tokio::test]
 async fn test_error_malformed_json_response_returns_serialization_error() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(100));
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        let _ = agent_reader.read_line(&mut request_line).await;
+        read_frame(&mut agent_reader).await;
         let _ = agent_writer
             .write_all(b"{ this is not valid json }\n")
             .await;
@@ -112,16 +31,15 @@ async fn test_error_invalid_json_rpc_shape_returns_session_error() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(100));
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        let _ = agent_reader.read_line(&mut request_line).await;
+        let request = read_frame(&mut agent_reader).await;
         // Echo the id the client actually minted. Request ids come from one
         // process-wide counter, so a literal `1` is only this exchange's id
         // when this happens to be the first call in the binary — and the
         // reader now correlates on it, so a wrong id reads as a straggler
         // from another call rather than as the malformed answer to this one.
-        let id = serde_json::from_str::<serde_json::Value>(&request_line)
-            .ok()
-            .and_then(|frame| frame.get("id").cloned())
+        let id = request
+            .get("id")
+            .cloned()
             .expect("the client's request carries an id");
         let reply = format!(r#"{{"jsonrpc":"2.0","id":{id}}}"#);
         let _ = agent_writer.write_all(reply.as_bytes()).await;
@@ -196,7 +114,10 @@ async fn test_error_streaming_timeout_when_agent_stalls_after_first_chunk() {
 
     let stream_task = tokio::spawn(async move {
         client
-            .send_prompt_with_callback(make_prompt_request("ses-timeout"), Box::new(|_| true))
+            .send_prompt_with_callback(
+                make_prompt_request("ses-timeout", "trigger streaming"),
+                Box::new(|_| true),
+            )
             .await
     });
 
@@ -240,7 +161,10 @@ async fn test_error_agent_crash_mid_stream_returns_connection_error() {
     });
 
     let result = client
-        .send_prompt_with_callback(make_prompt_request("ses-crash"), Box::new(|_| true))
+        .send_prompt_with_callback(
+            make_prompt_request("ses-crash", "trigger streaming"),
+            Box::new(|_| true),
+        )
         .await;
 
     assert!(
@@ -250,8 +174,11 @@ async fn test_error_agent_crash_mid_stream_returns_connection_error() {
     );
 }
 
+/// An agent that dies after the handshake must surface as a lost connection,
+/// and promptly: a turn that waits out its timeout instead reports the wrong
+/// cause and holds the session for the whole timeout.
 #[tokio::test]
-async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
+async fn test_error_stream_abort_from_threaded_mock_agent_is_a_connection_error() {
     let config = crate::support::MockStdioAgentConfig::opencode();
     let (mut client, handle) = ThreadedMockAgent::spawn_with_client(config);
 
@@ -262,12 +189,18 @@ async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
 
     handle.abort();
 
-    let result = client
-        .send_prompt_with_callback(make_prompt_request("ses-abort"), Box::new(|_| true))
-        .await;
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.send_prompt_with_callback(
+            make_prompt_request("ses-abort", "trigger streaming"),
+            Box::new(|_| true),
+        ),
+    )
+    .await
+    .expect("a dead agent must fail the turn, not stall it");
 
     assert!(
-        result.is_err(),
-        "aborted agent should return an error, not panic"
+        matches!(result, Err(ClientError::Connection(_))),
+        "an aborted agent must read as a lost connection, got: {result:?}"
     );
 }

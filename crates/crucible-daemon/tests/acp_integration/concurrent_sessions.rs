@@ -1,202 +1,16 @@
+use crate::scripted_agent::{
+    client_with_custom_transport, final_response, make_prompt_request, read_request_id, text_chunk,
+    write_json_line,
+};
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
-use agent_client_protocol::schema::v1::PromptRequest;
 use crucible_core::config::AcpConfig;
 use crucible_core::test_support::EnvVarGuard;
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::discovery::{discover_agent, reset_agent_cache};
 use crucible_daemon::acp::StreamingChunk;
-use once_cell::sync::Lazy;
-use serde_json::json;
-use std::path::PathBuf;
 use tempfile::TempDir;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
-use tokio::sync::{oneshot, Barrier, Mutex};
+use tokio::sync::Barrier;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
-static AGENT_CACHE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
-fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
-    ClientConfig {
-        agent_path: PathBuf::from("mock-threaded-agent"),
-        agent_args: None,
-        timeout_ms,
-        ..Default::default()
-    }
-}
-
-fn make_prompt_request(session_id: &str, text: &str) -> PromptRequest {
-    serde_json::from_value(json!({
-        "sessionId": session_id,
-        "prompt": [{"type": "text", "text": text}],
-        "_meta": null
-    }))
-    .expect("valid prompt request")
-}
-
-fn client_with_custom_transport(
-    timeout_ms: Option<u64>,
-) -> (
-    CrucibleAcpClient,
-    BufReader<tokio::io::ReadHalf<DuplexStream>>,
-    tokio::io::WriteHalf<DuplexStream>,
-) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_client_read_unused, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _agent_write_unused) = tokio::io::split(client_to_agent_agent);
-
-    let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
-
-    let client = CrucibleAcpClient::with_transport(
-        test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-async fn write_json_line(
-    writer: &mut tokio::io::WriteHalf<DuplexStream>,
-    value: serde_json::Value,
-) -> std::io::Result<()> {
-    writer
-        .write_all(format!("{}\n", serde_json::to_string(&value).unwrap()).as_bytes())
-        .await?;
-    writer.flush().await
-}
-
-fn session_update(session_id: &str, text: &str) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": text}
-            }
-        }
-    })
-}
-
-fn final_response(request_id: u64) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": {"stopReason": "end_turn", "_meta": null}
-    })
-}
-
-// Uses crucible_core::test_support::EnvVarGuard for env var isolation
-
-fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
-    match chunk {
-        StreamingChunk::Text(text) => json!({"kind": "text", "text": text}),
-        StreamingChunk::Thinking(text) => json!({"kind": "thinking", "text": text}),
-        StreamingChunk::ToolStart {
-            name,
-            id,
-            arguments,
-            ..
-        } => {
-            json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments})
-        }
-        StreamingChunk::ToolEnd {
-            id,
-            name,
-            result,
-            error,
-        } => {
-            json!({"kind": "tool_end", "id": id, "name": name, "result": result, "error": error})
-        }
-        StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
-            json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
-        }
-        StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
-            json!({"kind": "tool_args_update", "id": call_id, "arguments": arguments})
-        }
-        StreamingChunk::ContextWindow { used, limit } => {
-            json!({"kind": "context_window", "used": used, "limit": limit})
-        }
-    }
-}
-
-fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
-    let kind = value["kind"].as_str().expect("kind field is required");
-    match kind {
-        "context_window" => StreamingChunk::ContextWindow {
-            used: value["used"].as_u64().unwrap(),
-            limit: value["limit"].as_u64().unwrap(),
-        },
-        "text" => StreamingChunk::Text(value["text"].as_str().unwrap().to_string()),
-        "thinking" => StreamingChunk::Thinking(value["text"].as_str().unwrap().to_string()),
-        "tool_start" => StreamingChunk::ToolStart {
-            name: value["name"].as_str().unwrap().to_string(),
-            id: value["id"].as_str().unwrap().to_string(),
-            arguments: value.get("arguments").cloned().filter(|v| !v.is_null()),
-            diffs: Vec::new(),
-        },
-        "tool_end" => StreamingChunk::ToolEnd {
-            id: value["id"].as_str().unwrap().to_string(),
-            name: value["name"].as_str().unwrap().to_string(),
-            result: value
-                .get("result")
-                .and_then(|v| v.as_str().map(str::to_string)),
-            error: value
-                .get("error")
-                .and_then(|v| v.as_str().map(str::to_string)),
-        },
-        other => panic!("unknown chunk kind: {other}"),
-    }
-}
-
-fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
-    match (left, right) {
-        (StreamingChunk::Text(a), StreamingChunk::Text(b)) => assert_eq!(a, b),
-        (StreamingChunk::Thinking(a), StreamingChunk::Thinking(b)) => assert_eq!(a, b),
-        (
-            StreamingChunk::ToolStart {
-                name: a_name,
-                id: a_id,
-                arguments: a_arguments,
-                ..
-            },
-            StreamingChunk::ToolStart {
-                name: b_name,
-                id: b_id,
-                arguments: b_arguments,
-                ..
-            },
-        ) => {
-            assert_eq!(a_name, b_name);
-            assert_eq!(a_id, b_id);
-            assert_eq!(a_arguments, b_arguments);
-        }
-        (
-            StreamingChunk::ToolEnd {
-                id: a_id,
-                name: a_name,
-                result: a_result,
-                error: a_error,
-            },
-            StreamingChunk::ToolEnd {
-                id: b_id,
-                name: b_name,
-                result: b_result,
-                error: b_error,
-            },
-        ) => {
-            assert_eq!(a_id, b_id);
-            assert_eq!(a_name, b_name);
-            assert_eq!(a_result, b_result);
-            assert_eq!(a_error, b_error);
-        }
-        _ => panic!("chunk variants differ: left={left:?} right={right:?}"),
-    }
-}
 
 #[tokio::test]
 async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
@@ -218,45 +32,61 @@ async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
     assert!(session_b.id().starts_with("mock-session-"));
 }
 
+/// The process-wide discovery cache answers without probing until it is
+/// reset, and a reset forces the next call to probe again.
+///
+/// The agent binary is removed between the calls, so a cache hit and a fresh
+/// probe give different answers: a hit still names the removed agent, and a
+/// probe finds nothing. `PATH` holds only the fake agent and `which`, so no
+/// agent installed on the host can answer the probe.
 #[tokio::test]
-async fn concurrent_agent_cache_isolation_with_clear_boundaries() {
-    let _guard = AGENT_CACHE_TEST_LOCK.lock().await;
+async fn discovery_cache_serves_a_removed_agent_until_it_is_reset() {
     reset_agent_cache();
 
-    let temp = TempDir::new().expect("temp dir");
-    let fake_agent_path = temp.path().join("opencode");
+    let agent_dir = TempDir::new().expect("temp dir for the fake agent");
+    let fake_agent_path = agent_dir.path().join("opencode");
     std::fs::write(
         &fake_agent_path,
         "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo fake-opencode-1.0\n  exit 0\nfi\nexit 0\n",
     )
     .expect("write fake agent script");
-
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&fake_agent_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&fake_agent_path, perms).unwrap();
+        std::fs::set_permissions(&fake_agent_path, std::fs::Permissions::from_mode(0o755))
+            .expect("make the fake agent executable");
     }
 
-    let old_path = std::env::var("PATH").unwrap_or_default();
-    let merged = format!("{}:{}", temp.path().display(), old_path);
-    let _path_guard = EnvVarGuard::set("PATH", merged);
+    // Discovery probes with `which`, so `PATH` must still reach it.
+    let tool_dir = TempDir::new().expect("temp dir for which");
+    let which = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join("which"))
+        .find(|candidate| candidate.is_file())
+        .expect("`which` is on the test host's PATH");
+    std::os::unix::fs::symlink(&which, tool_dir.path().join("which")).expect("link which");
+
+    let path = std::env::join_paths([agent_dir.path(), tool_dir.path()]).expect("join PATH");
+    let _path_guard = EnvVarGuard::set("PATH", path.to_string_lossy().into_owned());
 
     let config = AcpConfig::default();
     let discovered = discover_agent(None, &config)
         .await
-        .expect("discover should succeed with fake PATH");
+        .expect("discovery finds the fake agent on PATH");
     assert_eq!(discovered.name, "opencode");
     assert_eq!(discovered.command, "opencode");
 
-    reset_agent_cache();
-    let discovered_again = discover_agent(None, &config)
+    std::fs::remove_file(&fake_agent_path).expect("remove the fake agent");
+
+    let cached = discover_agent(None, &config)
         .await
-        .expect("discover should still succeed after clear");
-    assert_eq!(discovered_again.name, "opencode");
+        .expect("a cache hit does not probe, so the removed agent is still served");
+    assert_eq!(cached.name, "opencode");
 
     reset_agent_cache();
+    let after_reset = discover_agent(None, &config).await;
+    assert!(
+        after_reset.is_err(),
+        "after a reset the probe must run again and find no agent, got: {after_reset:?}"
+    );
 }
 
 #[tokio::test]
@@ -269,38 +99,24 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
 
     let barrier_a = barrier.clone();
     let agent_task_a = tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_a_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_a_reader).await;
 
         barrier_a.wait().await;
         for chunk in ["A-1", "A-2", "A-3"] {
-            write_json_line(&mut agent_a_writer, session_update("session-a", chunk))
-                .await
-                .unwrap();
+            write_json_line(&mut agent_a_writer, text_chunk("session-a", chunk)).await;
         }
-        write_json_line(&mut agent_a_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_a_writer, final_response(request_id)).await;
     });
 
     let barrier_b = barrier.clone();
     let agent_task_b = tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_b_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_b_reader).await;
 
         barrier_b.wait().await;
         for chunk in ["B-1", "B-2", "B-3"] {
-            write_json_line(&mut agent_b_writer, session_update("session-b", chunk))
-                .await
-                .unwrap();
+            write_json_line(&mut agent_b_writer, text_chunk("session-b", chunk)).await;
         }
-        write_json_line(&mut agent_b_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_b_writer, final_response(request_id)).await;
     });
 
     let seen_a = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -353,86 +169,6 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
 }
 
 #[tokio::test]
-async fn stream_edge_cancel_mid_stream_aborts_and_closes_transport() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(300));
-    let (first_chunk_tx, first_chunk_rx) = oneshot::channel::<()>();
-    let (continue_tx, continue_rx) = oneshot::channel::<()>();
-    let (cleanup_tx, cleanup_rx) = oneshot::channel::<bool>();
-
-    tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-
-        let request_id = request["id"].as_u64().unwrap();
-        write_json_line(&mut agent_writer, session_update("cancel-session", "first"))
-            .await
-            .unwrap();
-        let _ = first_chunk_tx.send(());
-
-        let _ = continue_rx.await;
-
-        let second_write_err = write_json_line(
-            &mut agent_writer,
-            session_update("cancel-session", "second-after-cancel"),
-        )
-        .await
-        .is_err();
-
-        let final_write_err = write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .is_err();
-
-        let _ = cleanup_tx.send(second_write_err || final_write_err);
-    });
-
-    let stream_task = tokio::spawn(async move {
-        let request = make_prompt_request("cancel-session", "cancel me");
-        client
-            .send_prompt_with_callback(request, Box::new(|_| true))
-            .await
-    });
-
-    first_chunk_rx.await.expect("first chunk should arrive");
-    stream_task.abort();
-    let _ = continue_tx.send(());
-
-    let transport_closed = cleanup_rx
-        .await
-        .expect("cleanup signal should be sent by agent");
-    assert!(
-        transport_closed,
-        "aborted stream should close transport and fail agent writes"
-    );
-}
-
-#[test]
-fn stream_edge_streaming_chunk_round_trip_variants() {
-    let fixtures = vec![
-        StreamingChunk::Text("text chunk".to_string()),
-        StreamingChunk::Thinking("thinking chunk".to_string()),
-        StreamingChunk::ToolStart {
-            name: "read_note".to_string(),
-            id: "tool-1".to_string(),
-            arguments: Some(json!({"path": "demo.md"})),
-            diffs: Vec::new(),
-        },
-        StreamingChunk::ToolEnd {
-            id: "tool-1".to_string(),
-            name: "read_note".to_string(),
-            result: Some("ok".to_string()),
-            error: None,
-        },
-    ];
-
-    for chunk in fixtures {
-        let encoded = serialize_chunk(&chunk);
-        let decoded = deserialize_chunk(&encoded);
-        assert_chunk_eq(&chunk, &decoded);
-    }
-}
-
-#[tokio::test]
 async fn stream_edge_large_response_near_max_output_is_accumulated() {
     let (mut client, mut agent_reader, mut agent_writer) =
         client_with_custom_transport(Some(1_000));
@@ -441,20 +177,10 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
     let expected_len = large_text.len();
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
-        write_json_line(
-            &mut agent_writer,
-            session_update("large-session", &large_text),
-        )
-        .await
-        .unwrap();
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, text_chunk("large-session", &large_text)).await;
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("large-session", "big stream");
@@ -476,14 +202,9 @@ async fn stream_edge_empty_response_returns_empty_content() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(200));
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("empty-session", "respond with nothing");

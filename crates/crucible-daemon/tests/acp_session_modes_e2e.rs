@@ -17,25 +17,29 @@
 //! These tests drive `AgentManager` against a real `mock-acp-agent` process,
 //! so the mode ids under assertion are ones that crossed the ACP wire.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{SessionAgent, SessionType};
+use crucible_core::config::AgentProfile;
+use crucible_core::session::SessionType;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::{AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager};
+use crucible_daemon::AgentManager;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
-use tokio::time::timeout;
 
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::mock_agent_path;
+use mock_agent_bin::{
+    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
+};
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// What the mock agent streams on every turn.
+const ANSWER: &str = "acknowledged";
 
 /// The ids the mock declares when told to advertise modes. None of them is a
 /// Crucible mode, which is the point: an assertion on them cannot pass by
@@ -50,10 +54,7 @@ const AGENT_CURRENT_MODE: &str = "acceptEdits";
 /// writes any mode it is switched into to `mode_capture`.
 fn profile(modes: Option<&str>, mode_capture: &Path) -> AgentProfile {
     let mut env = BTreeMap::new();
-    env.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "acknowledged".to_string(),
-    );
+    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
     env.insert(
         "CRU_MOCK_MODE_CAPTURE".to_string(),
         mode_capture.to_string_lossy().into_owned(),
@@ -61,38 +62,7 @@ fn profile(modes: Option<&str>, mode_capture: &Path) -> AgentProfile {
     if let Some(current) = modes {
         env.insert("CRU_MOCK_ADVERTISE_MODES".to_string(), current.to_string());
     }
-    AgentProfile {
-        extends: None,
-        command: Some(mock_agent_path().to_string_lossy().into_owned()),
-        args: Some(Vec::new()),
-        env,
-        description: Some("mock ACP agent for mode tests".to_string()),
-        delegation: None,
-        permissions: None,
-    }
-}
-
-fn session_agent(agent_type: &str) -> SessionAgent {
-    SessionAgent {
-        agent_type: agent_type.to_string(),
-        agent_name: Some("mock-acp".to_string()),
-        provider_key: None,
-        provider: BackendType::Custom,
-        model: "mock-acp".to_string(),
-        system_prompt: String::new(),
-        max_context_tokens: None,
-        endpoint: None,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: false,
-        context_budget: None,
-        context_strategy: Default::default(),
-        tool_policy: None,
-        mode: None,
-    }
+    mock_profile(env)
 }
 
 struct Harness {
@@ -105,7 +75,12 @@ struct Harness {
     events: broadcast::Receiver<SessionEventMessage>,
 }
 
-async fn setup(agent_type: &str, modes: Option<&str>) -> Harness {
+async fn setup(modes: Option<&str>) -> Harness {
+    setup_with_profile(|mode_capture| profile(modes, mode_capture)).await
+}
+
+/// `setup` for a profile the caller builds around the mode capture path.
+async fn setup_with_profile(make_profile: impl FnOnce(&Path) -> AgentProfile) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
@@ -113,30 +88,18 @@ async fn setup(agent_type: &str, modes: Option<&str>) -> Harness {
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, events) = broadcast::channel(256);
 
-    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: session_manager.clone(),
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: Some(AcpConfig {
-            default_agent: None,
-            streaming_timeout_minutes: 1,
-            agents: BTreeMap::from([("mock-acp".to_string(), profile(modes, &mode_capture))]),
-        }),
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    }));
+    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
+        session_manager.clone(),
+        BTreeMap::from([(MOCK_PROFILE.to_string(), make_profile(&mode_capture))]),
+        &event_tx,
+    )));
 
     let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .expect("session");
     agent_manager
-        .configure_agent(&session.id, session_agent(agent_type))
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
         .await
         .expect("configure the agent");
 
@@ -158,9 +121,8 @@ async fn run_a_turn(h: &Harness) {
         .send_message_notified(&h.session_id, "hello".to_string(), &h.event_tx, true, None)
         .await
         .expect("the turn is accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("the turn finished");
+    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 }
 
 fn mode_ids(state: &crucible_core::types::acp::schema::SessionModeState) -> Vec<String> {
@@ -176,7 +138,7 @@ fn mode_ids(state: &crucible_core::types::acp::schema::SessionModeState) -> Vec<
 /// reports being in.
 #[tokio::test]
 async fn an_acp_sessions_modes_become_the_agents_once_the_handle_exists() {
-    let h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
+    let h = setup(Some(AGENT_CURRENT_MODE)).await;
 
     // Before any turn there is no agent process and so no agent mode set.
     // Crucible's own modes stand in, which is the honest answer: nothing has
@@ -208,7 +170,7 @@ async fn an_acp_sessions_modes_become_the_agents_once_the_handle_exists() {
 /// than "ACP sessions have the agent's modes when it has any".
 #[tokio::test]
 async fn an_acp_agent_that_declares_no_modes_leaves_the_session_set_alone() {
-    let h = setup("acp", None).await;
+    let h = setup(None).await;
     let before = mode_ids(&h.agent_manager.session_modes(h.session_id.as_str()));
 
     run_a_turn(&h).await;
@@ -230,7 +192,7 @@ async fn an_acp_agent_that_declares_no_modes_leaves_the_session_set_alone() {
 /// forwarded to the agent as `session/set_mode`.
 #[tokio::test]
 async fn set_mode_accepts_a_mode_that_only_the_agent_declares() {
-    let h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
+    let h = setup(Some(AGENT_CURRENT_MODE)).await;
 
     // `acceptEdits` is in no Crucible set, so it is the id that separates the
     // two. (`plan` appears in both and would prove nothing.)
@@ -293,7 +255,7 @@ async fn set_mode_accepts_a_mode_that_only_the_agent_declares() {
 /// is reloaded.
 #[tokio::test]
 async fn the_agents_mode_set_is_announced_so_a_front_end_can_refetch() {
-    let mut h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
+    let mut h = setup(Some(AGENT_CURRENT_MODE)).await;
 
     run_a_turn(&h).await;
 
@@ -315,20 +277,6 @@ async fn the_agents_mode_set_is_announced_so_a_front_end_can_refetch() {
     );
 }
 
-/// Fails fast and explains, rather than letting every test above die on a
-/// spawn error that names nothing.
-#[test]
-fn the_mock_agent_binary_is_available() {
-    let path = mock_agent_path();
-    assert!(
-        path.exists(),
-        "mock-acp-agent is missing at {}; build it with \
-         `cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent`",
-        path.display()
-    );
-    assert!(Path::new(&path).is_file());
-}
-
 /// The mode set survives an eviction of the handle.
 ///
 /// A model switch and a scope change both invalidate the cached handle, and
@@ -342,7 +290,7 @@ fn the_mock_agent_binary_is_available() {
 /// kill the agent process). The claim under test is about eviction itself.
 #[tokio::test]
 async fn an_eviction_does_not_take_the_agents_modes_away() {
-    let h = setup("acp", Some(AGENT_CURRENT_MODE)).await;
+    let h = setup(Some(AGENT_CURRENT_MODE)).await;
     run_a_turn(&h).await;
 
     h.agent_manager
@@ -368,7 +316,7 @@ async fn an_eviction_does_not_take_the_agents_modes_away() {
 async fn a_current_mode_the_agent_does_not_offer_falls_back_to_one_it_does() {
     // `CRU_MOCK_ADVERTISE_MODES` names the current mode without adding it to
     // the declared list, which is exactly the malformed shape.
-    let h = setup("acp", Some("a-mode-not-in-the-list")).await;
+    let h = setup(Some("a-mode-not-in-the-list")).await;
     run_a_turn(&h).await;
 
     let state = h.agent_manager.session_modes(h.session_id.as_str());
@@ -386,61 +334,23 @@ async fn a_current_mode_the_agent_does_not_offer_falls_back_to_one_it_does() {
 /// means its own, and the session offers exactly what the agent declared.
 #[tokio::test]
 async fn an_agents_own_id_beats_a_crucible_rename_alias() {
-    let temp = TempDir::new().expect("temp dir");
-    let kiln = temp.path().join("kiln");
-    std::fs::create_dir_all(&kiln).expect("kiln dir");
-    let mode_capture = temp.path().join("set_mode.txt");
+    let h = setup_with_profile(|mode_capture| {
+        let mut agent_profile = profile(Some("normal"), mode_capture);
+        agent_profile
+            .env
+            .insert("CRU_MOCK_MODE_IDS".to_string(), "normal,strict".to_string());
+        agent_profile
+    })
+    .await;
+    run_a_turn(&h).await;
 
-    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _events) = broadcast::channel(256);
-
-    let mut agent_profile = profile(Some("normal"), &mode_capture);
-    agent_profile
-        .env
-        .insert("CRU_MOCK_MODE_IDS".to_string(), "normal,strict".to_string());
-
-    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: session_manager.clone(),
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: Some(AcpConfig {
-            default_agent: None,
-            streaming_timeout_minutes: 1,
-            agents: BTreeMap::from([("mock-acp".to_string(), agent_profile)]),
-        }),
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    }));
-
-    let session = session_manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .expect("session");
-    agent_manager
-        .configure_agent(&session.id, session_agent("acp"))
-        .await
-        .expect("configure the agent");
-
-    let (_id, done) = agent_manager
-        .send_message_notified(&session.id, "hello".to_string(), &event_tx, true, None)
-        .await
-        .expect("the turn is accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("the turn finished");
-
-    agent_manager
-        .set_mode(session.id.as_str(), "normal", None)
+    h.agent_manager
+        .set_mode(h.session_id.as_str(), "normal", None)
         .await
         .expect("the agent's own `normal` must be selectable");
 
     assert_eq!(
-        std::fs::read_to_string(&mode_capture)
+        std::fs::read_to_string(&h.mode_capture)
             .expect("the agent received a session/set_mode")
             .trim(),
         "normal",

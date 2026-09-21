@@ -24,26 +24,23 @@
 //! profile-name arm.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::background::JobStatus;
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType, DelegationConfig};
+use crucible_core::config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, FileSessionStorage, SessionManager};
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::mock_agent_path;
+use mock_agent_bin::{acp_manager_params, mock_profile, profile_session_agent};
 
 /// A spawn, a handshake and a turn against a second process. Generous, so a
 /// loaded CI box does not turn a pass into a flake.
@@ -58,17 +55,10 @@ const SECOND_CHILD_ANSWER: &str = "answered by the second acp profile";
 
 /// An ACP profile that runs the mock agent binary and streams `answer`.
 fn mock_acp_profile(answer: &str) -> AgentProfile {
-    let mut env = BTreeMap::new();
-    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), answer.to_string());
-    AgentProfile {
-        extends: None,
-        command: Some(mock_agent_path().to_string_lossy().into_owned()),
-        args: Some(Vec::new()),
-        env,
-        description: Some("mock ACP agent for delegation tests".to_string()),
-        delegation: None,
-        permissions: None,
-    }
+    mock_profile(BTreeMap::from([(
+        "CRU_MOCK_STREAM_CHUNKS".to_string(),
+        answer.to_string(),
+    )]))
 }
 
 fn delegation_config(max_depth: u32) -> DelegationConfig {
@@ -109,13 +99,10 @@ fn internal_parent(delegation: DelegationConfig) -> SessionAgent {
 /// An ACP parent that names one of the configured profiles. Delegation is
 /// on, so this session can hand work to the *other* profile.
 fn acp_parent(profile_name: &str, delegation: DelegationConfig) -> SessionAgent {
-    let mut agent = internal_parent(delegation);
-    agent.agent_type = "acp".to_string();
-    agent.agent_name = Some(profile_name.to_string());
-    agent.provider = BackendType::Custom;
-    agent.provider_key = None;
-    agent.model = profile_name.to_string();
-    agent
+    SessionAgent {
+        delegation_config: Some(delegation),
+        ..profile_session_agent(profile_name)
+    }
 }
 
 struct Harness {
@@ -140,34 +127,18 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, event_rx) = broadcast::channel(256);
 
-    let mut agents = BTreeMap::new();
-    for (name, answer) in profiles {
-        agents.insert((*name).to_string(), mock_acp_profile(answer));
-    }
-    let acp_config = AcpConfig {
-        default_agent: None,
-        streaming_timeout_minutes: 1,
-        agents,
-    };
+    let agents: BTreeMap<String, AgentProfile> = profiles
+        .iter()
+        .map(|(name, answer)| ((*name).to_string(), mock_acp_profile(answer)))
+        .collect();
 
     let plugin_loader = Arc::new(tokio::sync::Mutex::new(None));
     let lifecycle = SessionLifecycle::new(session_manager.clone(), plugin_loader.clone());
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
         AgentManagerParams {
-            kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: session_manager.clone(),
-            background_manager: Arc::new(crucible_daemon::BackgroundJobManager::new(
-                event_tx.clone(),
-            )),
-            mcp_gateway: None,
-            llm_config: None,
-            acp_config: Some(acp_config),
-            context_config: None,
-            permission_config: None,
             plugin_loader: Some(plugin_loader),
-            card_roots: Default::default(),
-            review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
+            ..acp_manager_params(session_manager.clone(), agents, &event_tx)
         },
         service.clone(),
     ));
@@ -370,33 +341,21 @@ async fn an_unknown_target_lists_the_configured_acp_profiles() {
     )
     .await;
 
+    // The asked-for name shares no text with the profile name, so the
+    // listing assertion below can only pass on the listing itself.
     let error = h
         .service
-        .spawn_delegation(request(&h, Some("mock-acp-typo"), "task"))
+        .spawn_delegation(request(&h, Some("nope"), "task"))
         .await
         .expect_err("an unknown target must be rejected");
 
     let message = error.to_string();
     assert!(
-        message.contains("mock-acp-typo"),
+        message.contains("nope"),
         "the rejection must name what was asked for, got: {message}"
     );
     assert!(
         message.contains("mock-acp"),
         "the rejection must list the configured profile, got: {message}"
     );
-}
-
-/// A path the mock agent binary must exist at, or every test above fails
-/// with a spawn error that says nothing useful. Fails fast and explains.
-#[test]
-fn the_mock_agent_binary_is_available() {
-    let path = mock_agent_path();
-    assert!(
-        path.exists(),
-        "mock-acp-agent is missing at {}; build it with \
-         `cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent`",
-        path.display()
-    );
-    assert!(Path::new(&path).is_file());
 }

@@ -99,6 +99,29 @@ fn delegation_context(enabled: bool) -> DelegationContext {
     }
 }
 
+/// Start the in-process MCP host, or panic.
+///
+/// A sandbox that forbids the localhost bind fails here with "Operation not
+/// permitted". That is a missing prerequisite, and a test that returns early
+/// on it reports a pass for a check that never ran.
+async fn start_host(temp: &TempDir, delegation: Option<DelegationContext>) -> InProcessMcpHost {
+    InProcessMcpHost::start(
+        temp.path().to_path_buf(),
+        temp.path().to_path_buf(),
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
+        delegation,
+        crucible_daemon::tools::containment::RootSet::Ambient,
+    )
+    .await
+    .unwrap_or_else(|err| {
+        panic!(
+            "InProcessMcpHost::start failed; the in-process MCP HTTP server needs a \
+             localhost bind, which a sandbox may deny: {err:?}"
+        )
+    })
+}
+
 fn parse_jsonrpc_payload(body: &str) -> serde_json::Value {
     let payload = body
         .lines()
@@ -193,32 +216,14 @@ async fn call_semantic_search(
     parse_jsonrpc_payload(&body)
 }
 
+/// The MCP server an ACP agent reaches answers `semantic_search` through
+/// its providers, and lists `delegate_session` only when the session's
+/// delegation context is present and enabled. No ACP agent runs here: this
+/// is the tool surface such an agent would see.
 #[tokio::test]
-async fn test_acp_delegation_pipeline_all_fixes_work() {
+async fn mcp_server_serves_search_and_gates_delegate_session_on_delegation() {
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
-
-    let host = match InProcessMcpHost::start(
-        temp.path().to_path_buf(),
-        temp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-        None,
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    {
-        Ok(host) => host,
-        Err(err) => {
-            let err_str = format!("{err:?}");
-            if err_str.contains("Operation not permitted") {
-                eprintln!("Skipping test (permission denied in environment)");
-                return;
-            }
-            panic!("InProcessMcpHost::start should succeed: {err:?}");
-        }
-    };
+    let host = start_host(&temp, None).await;
 
     let client = reqwest::Client::new();
     let url = host.mcp_url();
@@ -310,29 +315,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
     );
 
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
-
-    let host = match InProcessMcpHost::start(
-        temp.path().to_path_buf(),
-        temp.path().to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-        Some(delegation_context(true)),
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    {
-        Ok(host) => host,
-        Err(err) => {
-            let err_str = format!("{err:?}");
-            if err_str.contains("Operation not permitted") {
-                eprintln!("Skipping test (permission denied in environment)");
-                return;
-            }
-            panic!("InProcessMcpHost::start with delegation should succeed: {err:?}");
-        }
-    };
+    let host = start_host(&temp, Some(delegation_context(true))).await;
 
     let client = reqwest::Client::new();
     let url = host.mcp_url();

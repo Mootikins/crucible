@@ -7,6 +7,7 @@
 //! modules while sharing one assertion body per behavior.
 
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
+use crucible_daemon::acp::ClientError;
 use test_case::test_case;
 
 /// Build a fresh config for the given agent kind. Used as a `test-case`
@@ -89,8 +90,21 @@ async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConf
     config.inject_errors = true;
     let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
-    let result = client.connect_with_best_mcp(None).await;
-    assert!(result.is_err(), "Should fail when errors are injected");
+    // The mock answers every request with a JSON-RPC error. The handshake
+    // must fail on that answer, promptly, and not by waiting out a timeout.
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.connect_with_best_mcp(None),
+    )
+    .await
+    .expect("an error reply must fail the handshake, not stall it");
+    // The agent's own error message is not asserted: the client maps an
+    // error reply to "Missing result field ...", so the text never arrives.
+    assert!(
+        matches!(result, Err(ClientError::Session(_))),
+        "an injected error must fail the handshake as a session error, got: {:?}",
+        result.err()
+    );
 }
 
 // -- session/close (plan W7, decision d) ------------------------------------
@@ -201,7 +215,9 @@ async fn resume_falls_back_to_session_new_on_method_not_found() {
 }
 
 /// A handle built with a stored agent session id resumes that session, and
-/// reports the same id back for the daemon to persist again.
+/// reports the same id back for the daemon to persist again. The agent's
+/// method log proves the carried id crossed the wire on `session/resume`,
+/// and that no `session/new` opened a second session.
 #[tokio::test]
 async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
     use crucible_core::traits::chat::AgentHandle;
@@ -215,6 +231,11 @@ async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
     agent_config
         .env_overrides
         .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
+    let method_log = workspace.path().join("method-log");
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_METHOD_LOG".into(),
+        method_log.to_string_lossy().into_owned(),
+    );
 
     let handle = AcpAgentHandle::new(AcpAgentHandleParams {
         resume_acp_session_id: Some("mock-session-carried".into()),
@@ -227,6 +248,19 @@ async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
         handle.acp_session_id().as_deref(),
         Some("mock-session-carried"),
         "the handle keeps the resumed agent session id"
+    );
+
+    // The agent logs each request as it arrives, before it answers, so the
+    // log is complete once the handshake returns.
+    let log = std::fs::read_to_string(&method_log).expect("the agent wrote its method log");
+    let lines: Vec<&str> = log.lines().collect();
+    assert!(
+        lines.contains(&"session/resume mock-session-carried"),
+        "the carried id must reach the agent on session/resume, log: {lines:?}"
+    );
+    assert!(
+        !lines.iter().any(|line| line.starts_with("session/new ")),
+        "a resumed session must not also open a new one, log: {lines:?}"
     );
 }
 
@@ -270,6 +304,7 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
 /// the agent process. The spawned mock binary records the closed session id.
 #[tokio::test]
 async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
+    use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::acp_handle::AcpAgentHandle;
 
     let workspace = tempfile::TempDir::new().expect("temp workspace");
@@ -292,22 +327,24 @@ async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
     ))
     .await
     .expect("ACP handshake succeeds");
+    let expected = handle
+        .acp_session_id()
+        .expect("the handshake opened an agent session");
     drop(handle);
 
-    // The drop spawns the goodbye as a task; poll for the capture file.
+    // The drop spawns the goodbye as a task; poll for the capture file. The
+    // agent may create the file before it writes the id, so an empty or
+    // partial read means "not yet", not an answer.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    let session_id = loop {
-        if let Ok(content) = std::fs::read_to_string(&capture) {
-            break content;
+    loop {
+        let content = std::fs::read_to_string(&capture).unwrap_or_default();
+        if content == expected {
+            break;
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "the agent never received session/close"
+            "session/close never named the agent session {expected:?}; capture holds {content:?}"
         );
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    };
-    assert!(
-        session_id.starts_with("mock-session-"),
-        "session/close names the agent session, got: {session_id}"
-    );
+    }
 }

@@ -3,8 +3,10 @@
 //! Loads a JSONL fixture produced by [`super::recording::Recorder`] and serves
 //! the recorded incoming frames back to a [`super::CrucibleAcpClient`] in
 //! response to its outgoing requests. Outgoing requests are validated against
-//! the recorded outgoing sequence (by method) so a divergence in client
-//! behavior surfaces as a test failure rather than silent drift.
+//! the recorded outgoing sequence so a divergence in client behavior surfaces
+//! as a test failure rather than silent drift: by method, and by the params
+//! that do not change from one recording run to the next (see
+//! [`stable_params`]).
 //!
 //! Usage:
 //!
@@ -41,6 +43,14 @@ pub enum DivergenceKind {
     WrongDirection,
     /// Outgoing method didn't match. Compares JSON-RPC `method` field.
     MethodMismatch { expected: String, actual: String },
+    /// The method matched but a stable param did not. `field` names the
+    /// param as a path, such as `params.sessionId`.
+    ParamMismatch {
+        method: String,
+        field: &'static str,
+        expected: serde_json::Value,
+        actual: serde_json::Value,
+    },
     /// Client closed the writer with frames remaining in the fixture.
     EarlyClose { remaining_outgoing: usize },
     /// Outgoing line wasn't valid JSON.
@@ -60,6 +70,15 @@ impl std::fmt::Display for DivergenceKind {
             Self::MethodMismatch { expected, actual } => {
                 write!(f, "method mismatch: expected {expected:?}, got {actual:?}")
             }
+            Self::ParamMismatch {
+                method,
+                field,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "{method} {field} mismatch: expected {expected}, got {actual}"
+            ),
             Self::EarlyClose { remaining_outgoing } => write!(
                 f,
                 "client closed writer with {remaining_outgoing} outgoing frames remaining"
@@ -260,6 +279,19 @@ async fn run_driver(
                 expected: expected_method,
                 actual: actual_method,
             });
+        } else {
+            let expected_params = stable_params(&expected_method, &expected_record.frame);
+            let actual_params = stable_params(&actual_method, &parsed);
+            for ((field, expected), (_, actual)) in expected_params.into_iter().zip(actual_params) {
+                if expected != actual {
+                    outcome.divergences.push(DivergenceKind::ParamMismatch {
+                        method: actual_method.clone(),
+                        field,
+                        expected,
+                        actual,
+                    });
+                }
+            }
         }
 
         // Record the id remap so subsequent "in" responses can be rewritten.
@@ -302,6 +334,75 @@ async fn emit_incoming(
     out.write_all(&bytes).await?;
     out.flush().await?;
     Ok(())
+}
+
+/// The params of an outgoing frame that a replay can compare exactly.
+///
+/// A replay serves the recorded agent's replies, so the client sees the
+/// session id the agent minted in the recording and must send it back
+/// unchanged. The prompt text and the `cwd` come from the test. The MCP
+/// servers keep their names and transports across runs, but not their URL
+/// ports or command paths, so only the name and the transport are compared.
+/// Every other param (ids, client capabilities) is free to differ.
+///
+/// Each method yields the same fields in the same order for both frames, so
+/// the caller can compare the two lists pairwise.
+fn stable_params(
+    method: &str,
+    frame: &serde_json::Value,
+) -> Vec<(&'static str, serde_json::Value)> {
+    use serde_json::Value;
+    let params = frame.get("params").unwrap_or(&Value::Null);
+    let field = |key: &str| params.get(key).cloned().unwrap_or(Value::Null);
+    match method {
+        "session/prompt" => {
+            let texts: Vec<Value> = params
+                .get("prompt")
+                .and_then(Value::as_array)
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter_map(|block| block.get("text").cloned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![
+                ("params.sessionId", field("sessionId")),
+                ("params.prompt[].text", Value::Array(texts)),
+            ]
+        }
+        "session/cancel" => vec![("params.sessionId", field("sessionId"))],
+        "session/new" => {
+            let servers: Vec<Value> = params
+                .get("mcpServers")
+                .and_then(Value::as_array)
+                .map(|servers| {
+                    servers
+                        .iter()
+                        .map(|server| {
+                            // A stdio server carries no `type` tag on the wire.
+                            let transport = server
+                                .get("type")
+                                .cloned()
+                                .unwrap_or_else(|| "stdio".into());
+                            serde_json::json!({
+                                "name": server.get("name").cloned().unwrap_or(Value::Null),
+                                "transport": transport,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![
+                ("params.cwd", field("cwd")),
+                (
+                    "params.mcpServers[].{name,transport}",
+                    Value::Array(servers),
+                ),
+            ]
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn parse_method(line: &str) -> Option<String> {
@@ -357,6 +458,74 @@ mod tests {
         let outcome = driver_handle.await.unwrap();
         assert!(outcome.is_clean(), "divergences: {:?}", outcome.divergences);
         assert_eq!(outcome.frames_consumed, 2);
+    }
+
+    /// The prompt carries the session id the recorded agent minted. A client
+    /// that addressed the prompt to any other session is flagged, even
+    /// though the method matches.
+    #[tokio::test]
+    async fn driver_flags_a_prompt_sent_to_another_session() {
+        let body = r#"{"t_ms":0,"dir":"out","frame":{"jsonrpc":"2.0","id":1,"method":"session/prompt","params":{"sessionId":"recorded","prompt":[{"type":"text","text":"hi"}]}}}
+{"t_ms":1,"dir":"in","frame":{"jsonrpc":"2.0","id":1,"result":{"stopReason":"end_turn"}}}"#;
+        let fixture = ReplayFixture::parse(&build_fixture(body)).unwrap();
+        let (mut writer, _reader, driver) = fixture.into_transport();
+        let driver_handle = tokio::spawn(driver);
+
+        writer
+            .write_all(
+                b"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"other\",\"prompt\":[{\"type\":\"text\",\"text\":\"bye\"}]}}\n",
+            )
+            .await
+            .unwrap();
+        writer.flush().await.unwrap();
+        drop(writer);
+
+        let outcome = driver_handle.await.unwrap();
+        let fields: Vec<&str> = outcome
+            .divergences
+            .iter()
+            .map(|divergence| match divergence {
+                DivergenceKind::ParamMismatch { field, .. } => *field,
+                other => panic!("wrong divergence: {other:?}"),
+            })
+            .collect();
+        assert_eq!(fields, ["params.sessionId", "params.prompt[].text"]);
+    }
+
+    /// The MCP servers compare by name and transport, not by URL: the port
+    /// of a recorded HTTP server is whatever the recording run bound.
+    #[tokio::test]
+    async fn driver_compares_mcp_servers_by_name_and_transport() {
+        let body = r#"{"t_ms":0,"dir":"out","frame":{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/w","mcpServers":[{"type":"http","name":"crucible","url":"http://127.0.0.1:1/mcp","headers":[]}]}}}
+{"t_ms":1,"dir":"in","frame":{"jsonrpc":"2.0","id":1,"result":{"sessionId":"s"}}}"#;
+        for (sent, clean) in [
+            (
+                r#"[{"type":"http","name":"crucible","url":"http://127.0.0.1:2/mcp","headers":[]}]"#,
+                true,
+            ),
+            (
+                r#"[{"name":"crucible","command":"cru","args":[],"env":[]}]"#,
+                false,
+            ),
+            ("[]", false),
+        ] {
+            let fixture = ReplayFixture::parse(&build_fixture(body)).unwrap();
+            let (mut writer, _reader, driver) = fixture.into_transport();
+            let driver_handle = tokio::spawn(driver);
+            let frame = format!(
+                "{{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"session/new\",\"params\":{{\"cwd\":\"/w\",\"mcpServers\":{sent}}}}}\n"
+            );
+            writer.write_all(frame.as_bytes()).await.unwrap();
+            writer.flush().await.unwrap();
+            drop(writer);
+            let outcome = driver_handle.await.unwrap();
+            assert_eq!(
+                outcome.is_clean(),
+                clean,
+                "mcpServers {sent}: {:?}",
+                outcome.divergences
+            );
+        }
     }
 
     #[tokio::test]

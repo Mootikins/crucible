@@ -9,6 +9,11 @@
 #[path = "../acp_support/mod.rs"]
 mod support;
 
+// The hand-scripted agent lives beside the other ACP support code, but only
+// this binary drives it, so only this binary compiles it.
+#[path = "../acp_support/scripted_agent.rs"]
+mod scripted_agent;
+
 // Test modules
 mod agent_handshake_tests;
 mod concurrent_sessions;
@@ -18,7 +23,6 @@ mod error_propagation;
 mod inbound_requests;
 mod interleaved_frames;
 mod mcp_server_frame;
-mod mock_agent_framework;
 mod permission_flow;
 mod session_modes;
 mod streaming_chat;

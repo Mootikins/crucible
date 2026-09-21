@@ -23,62 +23,8 @@
 //! These tests script the agent side by hand rather than using a mock
 //! profile, because the point is the frame ordering no mock produces.
 
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use crate::scripted_agent::{client_with_custom_transport, read_frame, write_json_line};
 use serde_json::json;
-use std::path::PathBuf;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
-
-type AgentReader = BufReader<ReadHalf<DuplexStream>>;
-type AgentWriter = WriteHalf<DuplexStream>;
-
-/// How long the scripted agent waits for a client frame before giving up.
-/// Short, so a client that never writes fails as an assertion rather than as
-/// the suite's own timeout.
-const FRAME_WAIT: Duration = Duration::from_secs(2);
-
-fn client_with_custom_transport() -> (CrucibleAcpClient, AgentReader, AgentWriter) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_unused_a, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _unused_b) = tokio::io::split(client_to_agent_agent);
-    let (_unused_c, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _unused_d) = tokio::io::split(agent_to_client_client);
-
-    let config = ClientConfig {
-        agent_path: PathBuf::from("mock-interleaving-agent"),
-        agent_args: None,
-        timeout_ms: Some(5_000),
-        ..Default::default()
-    };
-
-    let client = CrucibleAcpClient::with_transport(
-        config,
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-async fn read_frame(reader: &mut AgentReader) -> serde_json::Value {
-    let mut line = String::new();
-    tokio::time::timeout(FRAME_WAIT, reader.read_line(&mut line))
-        .await
-        .expect("client wrote no frame before the deadline")
-        .expect("read the client's frame");
-    serde_json::from_str(&line).expect("the client's frame is JSON")
-}
-
-async fn write_frame(writer: &mut AgentWriter, frame: serde_json::Value) {
-    let line = format!("{frame}\n");
-    writer
-        .write_all(line.as_bytes())
-        .await
-        .expect("write a frame to the client");
-    writer.flush().await.expect("flush the frame");
-}
 
 /// The notification codex-acp sends while starting an MCP server.
 fn mcp_startup_notification() -> serde_json::Value {
@@ -121,7 +67,7 @@ fn initialize_result() -> serde_json::Value {
 
 #[tokio::test]
 async fn session_new_skips_a_notification_that_precedes_its_response() {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport();
+    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
 
     let agent = tokio::spawn(async move {
         let request = read_frame(&mut agent_read).await;
@@ -129,8 +75,8 @@ async fn session_new_skips_a_notification_that_precedes_its_response() {
         let id = request["id"].clone();
 
         // The frame that breaks a one-line read: a notification first.
-        write_frame(&mut agent_write, mcp_startup_notification()).await;
-        write_frame(
+        write_json_line(&mut agent_write, mcp_startup_notification()).await;
+        write_json_line(
             &mut agent_write,
             json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": "sess-interleaved"}}),
         )
@@ -155,15 +101,15 @@ async fn session_new_skips_a_notification_that_precedes_its_response() {
 
 #[tokio::test]
 async fn initialize_skips_a_notification_that_precedes_its_response() {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport();
+    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
 
     let agent = tokio::spawn(async move {
         let request = read_frame(&mut agent_read).await;
         assert_eq!(request["method"], "initialize");
         let id = request["id"].clone();
 
-        write_frame(&mut agent_write, mcp_startup_notification()).await;
-        write_frame(
+        write_json_line(&mut agent_write, mcp_startup_notification()).await;
+        write_json_line(
             &mut agent_write,
             json!({"jsonrpc": "2.0", "id": id, "result": initialize_result()}),
         )
@@ -184,7 +130,7 @@ async fn initialize_skips_a_notification_that_precedes_its_response() {
 
 #[tokio::test]
 async fn a_response_for_another_id_does_not_satisfy_the_pending_request() {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport();
+    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
 
     let agent = tokio::spawn(async move {
         let request = read_frame(&mut agent_read).await;
@@ -192,12 +138,12 @@ async fn a_response_for_another_id_does_not_satisfy_the_pending_request() {
 
         // A straggler from an earlier exchange. Answering the pending call
         // with it would hand the caller another request's payload.
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({"jsonrpc": "2.0", "id": id + 4_096, "result": {"sessionId": "wrong-session"}}),
         )
         .await;
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": "right-session"}}),
         )
@@ -222,7 +168,7 @@ async fn a_response_for_another_id_does_not_satisfy_the_pending_request() {
 
 #[tokio::test]
 async fn an_inbound_request_during_a_call_is_answered_and_the_response_still_lands() {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport();
+    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
 
     let agent = tokio::spawn(async move {
         let request = read_frame(&mut agent_read).await;
@@ -232,7 +178,7 @@ async fn an_inbound_request_during_a_call_is_answered_and_the_response_still_lan
         // Crucible advertises no filesystem capability, but an agent may ask
         // anyway. Skipping this frame silently leaves the agent waiting on a
         // reply that never comes.
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({
                 "jsonrpc": "2.0",
@@ -242,7 +188,7 @@ async fn an_inbound_request_during_a_call_is_answered_and_the_response_still_lan
             }),
         )
         .await;
-        write_frame(
+        write_json_line(
             &mut agent_write,
             json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": "sess-interleaved"}}),
         )

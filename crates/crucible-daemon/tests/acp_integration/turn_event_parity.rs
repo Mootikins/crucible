@@ -636,14 +636,12 @@ async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
 /// opencode: {"sessionUpdate":"usage_update","used":28224,"size":200000,…}
 /// ```
 ///
-/// Crucible threw it away, and not in the "unmatched arm" way: `usage_update`
-/// is gated behind the upstream `unstable_session_usage` feature, which this
-/// build does not enable, so the variant is absent from the `SessionUpdate`
-/// enum and the whole `SessionNotification` fails to deserialize. The frame
-/// died at `tracing::warn!("Failed to parse SessionNotification: …")` in
-/// `acp/client/streaming.rs` — before any `match` on the update ran. So the
-/// user saw `— ctx` (or at best a bare `22k tok`) where the internal agent
-/// shows a percentage.
+/// Crucible used to throw it away: with the upstream `usage_update` variant
+/// unavailable, the whole `SessionNotification` failed to deserialize and the
+/// frame died in `acp/client/streaming.rs` before any `match` on the update
+/// ran. The user saw `— ctx` (or at best a bare `22k tok`) where the internal
+/// agent shows a percentage. `streaming.rs` now matches
+/// `SessionUpdate::UsageUpdate`; this test keeps that arm reachable.
 #[tokio::test]
 async fn acp_usage_update_reaches_the_turn_stream() {
     let shapes = acp_shapes_for_usage_update(Some("22700/1000000")).await;

@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, Write};
+use std::sync::mpsc;
 
 // Import ACP protocol types for proper response construction
 use agent_client_protocol::schema::v1::{
@@ -26,7 +27,7 @@ use agent_client_protocol::schema::v1::{
 pub enum AgentBehavior {
     /// OpenCode-compatible agent
     OpenCode,
-    /// Claude-ACP-compatible agent (requires auth)
+    /// Claude-ACP-compatible agent
     ClaudeAcp,
     /// Gemini-compatible agent
     Gemini,
@@ -44,15 +45,14 @@ pub struct MockStdioAgentConfig {
     pub behavior: AgentBehavior,
     /// Protocol version to advertise
     pub protocol_version: u16,
-    /// Whether to require authentication
+    /// Advertise an `api_key` auth method and refuse `session/new` and
+    /// `session/resume` with the ACP auth-required error (`-32000`) until
+    /// the client sends `authenticate`.
     pub requires_auth: bool,
     /// Delay in milliseconds before responding
     pub response_delay_ms: Option<u64>,
     /// Whether to inject errors
     pub inject_errors: bool,
-    /// Custom capabilities to advertise (legacy, kept for backward compat)
-    #[allow(dead_code)]
-    pub capabilities: Vec<String>,
     /// Whether agent advertises HTTP MCP support (ACP spec: McpCapabilities.http)
     pub mcp_http: bool,
     /// Whether agent advertises SSE MCP support (ACP spec: McpCapabilities.sse)
@@ -70,7 +70,8 @@ pub struct MockStdioAgentConfig {
     /// `session/cancel` notification arrives, then finish with
     /// `stopReason: cancelled` (per ACP, cancel MUST end the turn that way).
     /// Models a long-running turn so cancellation propagation is testable.
-    /// Honored by `ThreadedMockAgent`; the stdio binary ignores it.
+    /// Honored by both run loops. The spawned binary cannot reach this
+    /// field, so it also honors the `CRU_MOCK_HOLD_UNTIL_CANCEL` env hook.
     #[allow(dead_code)]
     pub hold_turn_until_cancel: bool,
     /// Advertise `sessionCapabilities.close` and answer `session/close`.
@@ -88,6 +89,12 @@ pub struct MockStdioAgentConfig {
     /// and `session/cancel` take other paths and are not recorded.
     #[allow(dead_code)]
     pub method_log: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
+    /// Record every inbound frame in full, in arrival order, including
+    /// `session/prompt` and `session/cancel`. A test asserts on what the
+    /// client put on the wire (for example the `mcpServers` of
+    /// `session/new`), not on what the mock advertised.
+    #[allow(dead_code)]
+    pub request_log: Option<std::sync::Arc<std::sync::Mutex<Vec<Value>>>>,
 }
 
 impl Default for MockStdioAgentConfig {
@@ -98,11 +105,6 @@ impl Default for MockStdioAgentConfig {
             requires_auth: false,
             response_delay_ms: None,
             inject_errors: false,
-            capabilities: vec![
-                "fs.readTextFile".to_string(),
-                "fs.writeTextFile".to_string(),
-                "terminal".to_string(),
-            ],
             mcp_http: false,
             mcp_sse: false,
             stream_chunks: Vec::new(),
@@ -111,6 +113,7 @@ impl Default for MockStdioAgentConfig {
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
+            request_log: None,
         }
     }
 }
@@ -124,11 +127,6 @@ impl MockStdioAgentConfig {
             requires_auth: false,
             response_delay_ms: None,
             inject_errors: false,
-            capabilities: vec![
-                "fs.readTextFile".to_string(),
-                "fs.writeTextFile".to_string(),
-                "terminal".to_string(),
-            ],
             mcp_http: true,
             mcp_sse: false,
             stream_chunks: Vec::new(),
@@ -137,6 +135,7 @@ impl MockStdioAgentConfig {
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
+            request_log: None,
         }
     }
 
@@ -146,15 +145,11 @@ impl MockStdioAgentConfig {
         Self {
             behavior: AgentBehavior::ClaudeAcp,
             protocol_version: 1,
-            requires_auth: true,
+            // claude-agent-acp advertises no auth method and opens a session
+            // without `authenticate` (see the recorded claude fixture).
+            requires_auth: false,
             response_delay_ms: None,
             inject_errors: false,
-            capabilities: vec![
-                "fs.readTextFile".to_string(),
-                "fs.writeTextFile".to_string(),
-                "terminal".to_string(),
-                "loadSession".to_string(),
-            ],
             mcp_http: true,
             mcp_sse: true,
             stream_chunks: Vec::new(),
@@ -163,6 +158,7 @@ impl MockStdioAgentConfig {
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
+            request_log: None,
         }
     }
 
@@ -175,10 +171,6 @@ impl MockStdioAgentConfig {
             requires_auth: false,
             response_delay_ms: None,
             inject_errors: false,
-            capabilities: vec![
-                "fs.readTextFile".to_string(),
-                "fs.writeTextFile".to_string(),
-            ],
             mcp_http: false,
             mcp_sse: false,
             stream_chunks: Vec::new(),
@@ -187,6 +179,7 @@ impl MockStdioAgentConfig {
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
+            request_log: None,
         }
     }
 
@@ -199,11 +192,6 @@ impl MockStdioAgentConfig {
             requires_auth: false,
             response_delay_ms: None,
             inject_errors: false,
-            capabilities: vec![
-                "fs.readTextFile".to_string(),
-                "fs.writeTextFile".to_string(),
-                "terminal".to_string(),
-            ],
             mcp_http: true,
             mcp_sse: false,
             stream_chunks: Vec::new(),
@@ -212,6 +200,7 @@ impl MockStdioAgentConfig {
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
+            request_log: None,
         }
     }
 }
@@ -249,6 +238,51 @@ fn env_flag(name: &str) -> bool {
         .is_ok_and(|value| !matches!(value, "" | "0" | "false"))
 }
 
+/// Parse one inbound line as a JSON-RPC frame. Blank and unparseable lines
+/// yield `None`; the second is reported on stderr.
+fn parse_frame(line: &str) -> Option<Value> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(line)
+        .map_err(|e| eprintln!("Failed to parse request: {e}"))
+        .ok()
+}
+
+/// Write one frame as a line on stdout and flush it.
+fn write_frame(stdout: &mut io::Stdout, message: &Value) -> io::Result<()> {
+    writeln!(stdout, "{}", serde_json::to_string(message)?)?;
+    stdout.flush()
+}
+
+/// An `agent_message_chunk` `session/update` notification.
+fn text_update(session_id: &str, text: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId": session_id,
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": text }
+            }
+        }
+    })
+}
+
+/// Replace the capture file at `path` with `contents` in one step.
+///
+/// A test polls these files from another process. `fs::write` truncates and
+/// then writes, so a poll between the two reads an empty file. The rename
+/// makes the new contents appear whole or not at all.
+fn write_capture(path: &str, contents: &str) {
+    let mut temp = std::ffi::OsString::from(path);
+    temp.push(format!(".tmp-{}", std::process::id()));
+    if fs::write(&temp, contents).is_ok() {
+        let _ = fs::rename(&temp, path);
+    }
+}
+
 /// Mock stdio-based ACP agent
 ///
 /// This agent reads JSON-RPC messages from stdin and writes responses to stdout,
@@ -259,6 +293,9 @@ pub struct MockStdioAgent {
     pub session_id: Option<String>,
     /// Whether a `session/cancel` notification has been received.
     pub cancel_received: bool,
+    /// Whether the client sent `authenticate`. Read only when the config
+    /// has `requires_auth`.
+    pub authenticated: bool,
 }
 
 /// The ordered wire messages for one `session/prompt` turn.
@@ -278,30 +315,31 @@ impl MockStdioAgent {
             config,
             session_id: None,
             cancel_received: false,
+            authenticated: false,
         }
     }
 
     /// Run the mock agent, reading from stdin and writing to stdout
     ///
-    /// This is the main entry point for the mock agent process.
+    /// This is the main entry point for the mock agent process. A reader
+    /// thread feeds stdin lines to this loop through a channel, so a held
+    /// turn can wait for `session/cancel` and stream at the same time.
     #[allow(dead_code)]
     pub fn run(&mut self) -> io::Result<()> {
-        let stdin = io::stdin();
+        let (line_tx, line_rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in io::stdin().lock().lines() {
+                let Ok(line) = line else { break };
+                if line_tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
         let mut stdout = io::stdout();
 
-        for line in stdin.lock().lines() {
-            let line = line?;
-            if line.trim().is_empty() {
+        while let Ok(line) = line_rx.recv() {
+            let Some(request) = parse_frame(&line) else {
                 continue;
-            }
-
-            // Parse the JSON-RPC request
-            let request: Value = match serde_json::from_str(&line) {
-                Ok(req) => req,
-                Err(e) => {
-                    eprintln!("Failed to parse request: {}", e);
-                    continue;
-                }
             };
 
             // Simulate delay if configured
@@ -309,6 +347,7 @@ impl MockStdioAgent {
                 std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             }
 
+            self.record_request(&request);
             let method = request.get("method").and_then(|m| m.as_str());
 
             // `session/cancel` is a notification: record it, send nothing.
@@ -316,34 +355,119 @@ impl MockStdioAgent {
                 self.note_cancel(&request);
                 continue;
             }
-
-            // A streaming prompt turn emits notifications before the final
-            // response. (`hold_turn_until_cancel` needs interleaved IO and is
-            // only honored by ThreadedMockAgent.)
-            if method == Some("session/prompt") && !self.config.inject_errors {
-                let turn = self.handle_prompt_turn(&request);
-                let final_message = if scripted_stop_reason_is_cancelled() {
-                    &turn.cancelled
-                } else {
-                    &turn.end_turn
-                };
-                for message in turn.notifications.iter().chain([final_message]) {
-                    writeln!(stdout, "{}", serde_json::to_string(message)?)?;
-                }
-                stdout.flush()?;
+            // Any other notification: JSON-RPC forbids a reply.
+            if request.get("id").is_none() {
                 continue;
             }
 
-            // Handle the request and generate response
-            let response = self.handle_request(&request);
+            if method == Some("session/prompt") && !self.config.inject_errors {
+                self.run_prompt_turn(&request, &line_rx, &mut stdout)?;
+                continue;
+            }
 
-            // Write response to stdout
-            let response_json = serde_json::to_string(&response)?;
-            writeln!(stdout, "{}", response_json)?;
-            stdout.flush()?;
+            let response = self.handle_request(&request);
+            write_frame(&mut stdout, &response)?;
         }
 
         Ok(())
+    }
+
+    /// Serve one `session/prompt` turn on the stdio transport: the
+    /// notifications, then the final response, unless a test hook says to
+    /// exit mid-turn or to hold the turn open until `session/cancel`.
+    fn run_prompt_turn(
+        &mut self,
+        request: &Value,
+        line_rx: &mpsc::Receiver<String>,
+        stdout: &mut io::Stdout,
+    ) -> io::Result<()> {
+        let turn = self.handle_prompt_turn(request);
+
+        // Test hook: the agent process dies after its first streamed frame,
+        // the way a crashed agent leaves a turn half done.
+        if env_flag("CRU_MOCK_EXIT_MID_TURN") {
+            if let Some(first) = turn.notifications.first() {
+                write_frame(stdout, first)?;
+            }
+            std::process::exit(0);
+        }
+
+        for notification in &turn.notifications {
+            write_frame(stdout, notification)?;
+        }
+
+        // Only the turns before the first cancel are held, so a test can
+        // cancel one turn and then run the next one to its normal end.
+        let hold = self.config.hold_turn_until_cancel || env_flag("CRU_MOCK_HOLD_UNTIL_CANCEL");
+        if hold && !self.cancel_received {
+            return self.hold_until_cancel(request, &turn, line_rx, stdout);
+        }
+
+        let final_message = if scripted_stop_reason_is_cancelled() {
+            &turn.cancelled
+        } else {
+            &turn.end_turn
+        };
+        write_frame(stdout, final_message)
+    }
+
+    /// Keep a turn open until `session/cancel` arrives, then end it with
+    /// `stopReason: cancelled` (ACP requires that ending after a cancel).
+    /// The binary holds no turn after it has seen one cancel.
+    ///
+    /// `CRU_MOCK_HOLD_TICK_MS` makes the held turn stream one text chunk per
+    /// tick, the way a working agent keeps talking. Without it the agent is
+    /// quiet while it holds, the way an agent in a long tool call is.
+    /// Requests that arrive during the hold are answered.
+    fn hold_until_cancel(
+        &mut self,
+        request: &Value,
+        turn: &PromptTurn,
+        line_rx: &mpsc::Receiver<String>,
+        stdout: &mut io::Stdout,
+    ) -> io::Result<()> {
+        let tick = env::var("CRU_MOCK_HOLD_TICK_MS")
+            .ok()
+            .and_then(|ms| ms.trim().parse::<u64>().ok())
+            .filter(|ms| *ms > 0)
+            .map(std::time::Duration::from_millis);
+        let session_id = self.prompt_session_id(request);
+
+        loop {
+            let next = match tick {
+                Some(tick) => line_rx.recv_timeout(tick),
+                None => line_rx
+                    .recv()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+            };
+            let line = match next {
+                Ok(line) => line,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    write_frame(stdout, &text_update(&session_id, "."))?;
+                    continue;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+            };
+            let Some(inner) = parse_frame(&line) else {
+                continue;
+            };
+            self.record_request(&inner);
+            if inner.get("method").and_then(|m| m.as_str()) == Some("session/cancel") {
+                self.note_cancel(&inner);
+                return write_frame(stdout, &turn.cancelled);
+            }
+            if inner.get("id").is_some() {
+                let response = self.handle_request(&inner);
+                write_frame(stdout, &response)?;
+            }
+        }
+    }
+
+    /// Push one inbound frame onto `request_log`, when a test asked for it.
+    pub fn record_request(&self, request: &Value) {
+        if let Some(log) = &self.config.request_log {
+            log.lock().unwrap().push(request.clone());
+        }
     }
 
     /// Record receipt of a `session/cancel` notification. Also writes the
@@ -351,13 +475,14 @@ impl MockStdioAgent {
     /// (when set) so subprocess-based tests can assert propagation.
     pub fn note_cancel(&mut self, request: &Value) {
         self.cancel_received = true;
+        Self::append_method_log_file("session/cancel", request);
         if let Ok(path) = env::var("CRU_MOCK_CANCEL_CAPTURE") {
             let session_id = request
                 .get("params")
                 .and_then(|p| p.get("sessionId"))
                 .and_then(|s| s.as_str())
                 .unwrap_or_default();
-            let _ = fs::write(path, session_id);
+            write_capture(&path, session_id);
         }
     }
 
@@ -410,7 +535,7 @@ impl MockStdioAgent {
             .and_then(|s| s.as_str())
             .unwrap_or_default();
         if let Ok(path) = env::var("CRU_MOCK_CLOSE_CAPTURE") {
-            let _ = fs::write(path, session_id);
+            write_capture(&path, session_id);
         }
         self.session_id = None;
         json!({
@@ -421,7 +546,9 @@ impl MockStdioAgent {
     }
 
     /// Append one line per received method to the file named by
-    /// `CRU_MOCK_METHOD_LOG`, as `<method> <sessionId>`.
+    /// `CRU_MOCK_METHOD_LOG`, as `<method> <sessionId>`. `session/prompt`
+    /// and `session/cancel` are logged too, so a test can see which session
+    /// a turn went to.
     ///
     /// The in-process `method_log` field cannot serve a spawned binary, and
     /// resume spans two agent PROCESSES: the first opens the session, the
@@ -437,8 +564,10 @@ impl MockStdioAgent {
             .and_then(|p| p.get("sessionId"))
             .and_then(|s| s.as_str())
             .unwrap_or("-");
+        // One `write_all` of the whole line on an append-mode file, so a
+        // reader never sees half a line.
         if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(file, "{method} {session_id}");
+            let _ = file.write_all(format!("{method} {session_id}\n").as_bytes());
         }
     }
 
@@ -455,6 +584,9 @@ impl MockStdioAgent {
     /// `CRU_MOCK_ADVERTISE_MODES` names one: an agent that resumes reports
     /// its modes again, and the resumed session must adopt them.
     fn handle_resume_session(&mut self, request: &Value) -> Value {
+        if let Some(refusal) = self.refuse_unauthenticated(request) {
+            return refusal;
+        }
         if env_flag("CRU_MOCK_RESUME_REJECT") {
             return self.error_response(request, -32602, "no such session");
         }
@@ -505,7 +637,7 @@ impl MockStdioAgent {
             .and_then(|m| m.as_str())
             .unwrap_or_default();
         if let Ok(path) = env::var("CRU_MOCK_MODE_CAPTURE") {
-            let _ = fs::write(path, mode_id);
+            write_capture(&path, mode_id);
         }
         json!({
             "jsonrpc": "2.0",
@@ -529,7 +661,7 @@ impl MockStdioAgent {
             .and_then(|m| m.as_str())
             .unwrap_or_default();
         if let Ok(path) = env::var("CRU_MOCK_MODEL_CAPTURE") {
-            let _ = fs::write(path, format!("{config_id}={value}"));
+            write_capture(&path, &format!("{config_id}={value}"));
         }
         json!({
             "jsonrpc": "2.0",
@@ -691,6 +823,9 @@ impl MockStdioAgent {
         if self.config.inject_errors {
             return self.error_response(request, -32000, "Simulated session creation error");
         }
+        if let Some(refusal) = self.refuse_unauthenticated(request) {
+            return refusal;
+        }
 
         // Generate a session ID
         let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
@@ -779,16 +914,11 @@ impl MockStdioAgent {
                         .join("")
                 })
                 .unwrap_or_default();
-            let _ = fs::write(path, text);
+            write_capture(&path, &text);
         }
 
-        let session_id = request
-            .get("params")
-            .and_then(|p| p.get("sessionId"))
-            .and_then(|s| s.as_str())
-            .map(str::to_string)
-            .or_else(|| self.session_id.clone())
-            .unwrap_or_else(|| "mock-session".to_string());
+        Self::append_method_log_file("session/prompt", request);
+        let session_id = self.prompt_session_id(request);
 
         let update = |update: Value| {
             json!({
@@ -1009,11 +1139,30 @@ impl MockStdioAgent {
         }
     }
 
+    /// The session a `session/prompt` names, or the one this agent opened.
+    fn prompt_session_id(&self, request: &Value) -> String {
+        request
+            .get("params")
+            .and_then(|p| p.get("sessionId"))
+            .and_then(|s| s.as_str())
+            .map(str::to_string)
+            .or_else(|| self.session_id.clone())
+            .unwrap_or_else(|| "mock-session".to_string())
+    }
+
+    /// The ACP auth-required error for a session request that arrives before
+    /// `authenticate`, when the config requires auth.
+    fn refuse_unauthenticated(&self, request: &Value) -> Option<Value> {
+        (self.config.requires_auth && !self.authenticated)
+            .then(|| self.error_response(request, -32000, "Authentication required"))
+    }
+
     /// Handle authentication request
-    fn handle_authenticate(&self, request: &Value) -> Value {
+    fn handle_authenticate(&mut self, request: &Value) -> Value {
         if self.config.inject_errors {
             return self.error_response(request, -32000, "Simulated authentication error");
         }
+        self.authenticated = true;
 
         // Mock authentication success
         json!({
@@ -1055,7 +1204,6 @@ mod tests {
         assert_eq!(config.behavior, AgentBehavior::OpenCode);
         assert_eq!(config.protocol_version, 1);
         assert!(!config.requires_auth);
-        assert!(config.capabilities.contains(&"terminal".to_string()));
     }
 
     #[test]
@@ -1063,8 +1211,41 @@ mod tests {
         let config = MockStdioAgentConfig::claude_acp();
         assert_eq!(config.behavior, AgentBehavior::ClaudeAcp);
         assert_eq!(config.protocol_version, 1);
-        assert!(config.requires_auth);
-        assert!(config.capabilities.contains(&"loadSession".to_string()));
+        assert!(!config.requires_auth);
+    }
+
+    /// An agent that requires auth refuses `session/new` with the ACP
+    /// auth-required error until the client authenticates, then accepts it.
+    #[test]
+    fn requires_auth_refuses_a_session_until_authenticate() {
+        let mut agent = MockStdioAgent::new(MockStdioAgentConfig {
+            requires_auth: true,
+            ..MockStdioAgentConfig::opencode()
+        });
+        let new_session = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session/new",
+            "params": {"cwd": "/test", "mcpServers": []}
+        });
+
+        let refused = agent.handle_request(&new_session);
+        assert_eq!(refused["error"]["code"], -32000, "{refused}");
+        assert_eq!(refused["error"]["message"], "Authentication required");
+
+        let init = agent.handle_request(&json!({
+            "jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}
+        }));
+        assert_eq!(init["result"]["authMethods"][0]["id"], "api_key", "{init}");
+
+        let auth = agent.handle_request(&json!({
+            "jsonrpc": "2.0", "id": 3, "method": "authenticate",
+            "params": {"methodId": "api_key"}
+        }));
+        assert!(auth.get("error").is_none(), "{auth}");
+
+        let accepted = agent.handle_request(&new_session);
+        assert!(accepted["result"]["sessionId"].is_string(), "{accepted}");
     }
 
     #[test]

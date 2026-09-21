@@ -196,10 +196,12 @@ async fn a_delegated_turn_reports_both_context_operands() {
         )
     });
 
-    assert!(used > 0 && limit > 0, "used={used} limit={limit}");
-    assert!(
-        used <= limit,
-        "occupancy {used} exceeds the window {limit}, which would render >100%"
+    // The mock's `PromptResponse` carries no `usage`, so `used` can only be
+    // the `usage_update` frame's own count, passed through unchanged.
+    assert_eq!(
+        (used, limit),
+        (22_700, 1_000_000),
+        "both operands must be the agent's own numbers, in their own slots"
     );
 }
 

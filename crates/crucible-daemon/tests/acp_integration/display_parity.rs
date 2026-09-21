@@ -19,160 +19,20 @@
 //! The name is kept because `Systems.md` and the branch plan both cite it by
 //! path as the example of a test whose name overclaims its layer.
 
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use crate::scripted_agent::{
+    client_with_custom_transport, final_response, make_prompt_request, read_request_id, text_chunk,
+    tool_call_notification, tool_call_update, tool_call_update_completed, write_json_line,
+};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
-
-fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
-    ClientConfig {
-        agent_path: PathBuf::from("mock-display-parity"),
-        agent_args: None,
-        timeout_ms,
-        ..Default::default()
-    }
-}
-
-fn client_with_custom_transport(
-    timeout_ms: Option<u64>,
-) -> (
-    CrucibleAcpClient,
-    BufReader<tokio::io::ReadHalf<DuplexStream>>,
-    tokio::io::WriteHalf<DuplexStream>,
-) {
-    let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(65_536);
-    let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(65_536);
-
-    let (_client_read_unused, client_write) = tokio::io::split(client_to_agent_client);
-    let (agent_read, _agent_write_unused) = tokio::io::split(client_to_agent_agent);
-
-    let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
-    let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
-
-    let client = CrucibleAcpClient::with_transport(
-        test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
-
-    (client, BufReader::new(agent_read), agent_write)
-}
-
-fn make_prompt_request(
-    session_id: &str,
-    text: &str,
-) -> agent_client_protocol::schema::v1::PromptRequest {
-    serde_json::from_value(json!({
-        "sessionId": session_id,
-        "prompt": [{"type": "text", "text": text}],
-        "_meta": null
-    }))
-    .expect("valid prompt request")
-}
-
-async fn write_json_line(
-    writer: &mut tokio::io::WriteHalf<DuplexStream>,
-    value: serde_json::Value,
-) -> std::io::Result<()> {
-    writer
-        .write_all(format!("{}\n", serde_json::to_string(&value).unwrap()).as_bytes())
-        .await?;
-    writer.flush().await
-}
-
-fn tool_call_notification(
-    session_id: &str,
-    tool_call_id: &str,
-    title: &str,
-    raw_input: Option<serde_json::Value>,
-) -> serde_json::Value {
-    let mut update = json!({
-        "sessionUpdate": "tool_call",
-        "toolCallId": tool_call_id,
-        "title": title,
-        "status": "in_progress"
-    });
-    if let Some(input) = raw_input {
-        update["rawInput"] = input;
-    }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update
-        }
-    })
-}
-
-fn tool_call_update_completed(
-    session_id: &str,
-    tool_call_id: &str,
-    raw_output: Option<serde_json::Value>,
-) -> serde_json::Value {
-    let mut update = json!({
-        "sessionUpdate": "tool_call_update",
-        "toolCallId": tool_call_id,
-        "status": "completed"
-    });
-    if let Some(output) = raw_output {
-        update["rawOutput"] = output;
-    }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update
-        }
-    })
-}
 
 fn tool_call_update_failed(
     session_id: &str,
     tool_call_id: &str,
     raw_output: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    let mut update = json!({
-        "sessionUpdate": "tool_call_update",
-        "toolCallId": tool_call_id,
-        "status": "failed"
-    });
-    if let Some(output) = raw_output {
-        update["rawOutput"] = output;
-    }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update
-        }
-    })
-}
-
-fn text_chunk(session_id: &str, text: &str) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": text}
-            }
-        }
-    })
-}
-
-fn final_response(request_id: u64) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": {"stopReason": "end_turn", "_meta": null}
-    })
+    tool_call_update(session_id, tool_call_id, "failed", raw_output)
 }
 
 /// Build a `tool_call` notification whose `content` array carries one
@@ -250,10 +110,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
@@ -264,12 +121,9 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
                 Some(json!({"query": "rust async patterns", "limit": 5})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-tool-args", "search something");
@@ -317,21 +171,15 @@ async fn tool_start_without_arguments_has_none() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
             tool_call_notification("ses-no-args", "tool-99", "list_models", None),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-no-args", "list models");
@@ -383,21 +231,15 @@ async fn tool_start_complex_arguments_preserved() {
     let expected_args = complex_args.clone();
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
             tool_call_notification("ses-complex", "tool-c1", "read_file", Some(complex_args)),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-complex", "read file");
@@ -444,10 +286,7 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
@@ -465,12 +304,9 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
                 "fn new() {}\n",
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-diff", "edit file");
@@ -518,10 +354,7 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         // 1. Initial tool_call frame: NO diffs yet (mimics Claude Code).
         write_json_line(
@@ -537,8 +370,7 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
                 })),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         // 2. Later tool_call_update frame carries the diff content.
         write_json_line(
@@ -551,12 +383,9 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
                 "fn new() {}\n",
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-late-diff", "edit late");
@@ -618,10 +447,7 @@ async fn tool_end_with_result_emits_chunk() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
@@ -632,8 +458,7 @@ async fn tool_end_with_result_emits_chunk() {
                 Some(json!({"path": "README.md"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -643,12 +468,9 @@ async fn tool_end_with_result_emits_chunk() {
                 Some(json!("# README\n\nThis is the readme content.")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-result", "read readme");
@@ -699,10 +521,7 @@ async fn tool_end_with_error_emits_error_field() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
@@ -713,8 +532,7 @@ async fn tool_end_with_error_emits_error_field() {
                 Some(json!({"path": "/protected/file.txt", "content": "test"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -724,12 +542,9 @@ async fn tool_end_with_error_emits_error_field() {
                 Some(json!({"error": "permission denied: /protected/file.txt"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-error", "write file");
@@ -771,28 +586,21 @@ async fn tool_end_failed_without_output_has_generic_error() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
             tool_call_notification("ses-fail-no-out", "tool-f1", "broken_tool", None),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
             tool_call_update_failed("ses-fail-no-out", "tool-f1", None),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-fail-no-out", "try broken");
@@ -834,21 +642,15 @@ async fn stream_without_usage_data_completes_gracefully() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
             text_chunk("ses-no-usage", "Hello from agent"),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-no-usage", "say hello");
@@ -875,14 +677,9 @@ async fn empty_stream_no_usage_no_chunks_completes() {
     let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-empty", "nothing");
@@ -905,17 +702,13 @@ async fn full_flow_text_tool_result_text_via_callback() {
     let chunks_cb = Arc::clone(&chunks);
 
     tokio::spawn(async move {
-        let mut request_line = String::new();
-        agent_reader.read_line(&mut request_line).await.unwrap();
-        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
-        let request_id = request["id"].as_u64().unwrap();
+        let request_id = read_request_id(&mut agent_reader).await;
 
         write_json_line(
             &mut agent_writer,
             text_chunk("ses-full", "Let me search for that. "),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -926,8 +719,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
                 Some(json!({"query": "async patterns"})),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
@@ -937,19 +729,15 @@ async fn full_flow_text_tool_result_text_via_callback() {
                 Some(json!("Found 3 relevant notes about async patterns.")),
             ),
         )
-        .await
-        .unwrap();
+        .await;
 
         write_json_line(
             &mut agent_writer,
             text_chunk("ses-full", "Based on the results, here is your answer."),
         )
-        .await
-        .unwrap();
+        .await;
 
-        write_json_line(&mut agent_writer, final_response(request_id))
-            .await
-            .unwrap();
+        write_json_line(&mut agent_writer, final_response(request_id)).await;
     });
 
     let request = make_prompt_request("ses-full", "search async patterns");
@@ -983,189 +771,4 @@ async fn full_flow_text_tool_result_text_via_callback() {
 
     assert!(summary.announced_any);
     assert!(summary.produced_content);
-}
-
-#[test]
-fn streaming_chunk_variants_roundtrip_via_json() {
-    fn roundtrip(chunk: &StreamingChunk) -> StreamingChunk {
-        let serialized = match chunk {
-            StreamingChunk::Text(text) => json!({"kind": "text", "text": text}),
-            StreamingChunk::Thinking(text) => json!({"kind": "thinking", "text": text}),
-            StreamingChunk::ToolStart {
-                name,
-                id,
-                arguments,
-                ..
-            } => json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments}),
-            StreamingChunk::ToolEnd {
-                id,
-                name,
-                result,
-                error,
-            } => {
-                json!({"kind": "tool_end", "id": id, "name": name, "result": result, "error": error})
-            }
-            StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
-                json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
-            }
-            StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
-                json!({"kind": "tool_args_update", "id": call_id, "arguments": arguments})
-            }
-            StreamingChunk::ContextWindow { used, limit } => {
-                json!({"kind": "context_window", "used": used, "limit": limit})
-            }
-        };
-
-        let kind = serialized["kind"].as_str().unwrap();
-        match kind {
-            "text" => StreamingChunk::Text(serialized["text"].as_str().unwrap().to_string()),
-            "thinking" => {
-                StreamingChunk::Thinking(serialized["text"].as_str().unwrap().to_string())
-            }
-            "tool_start" => StreamingChunk::ToolStart {
-                name: serialized["name"].as_str().unwrap().to_string(),
-                id: serialized["id"].as_str().unwrap().to_string(),
-                arguments: serialized
-                    .get("arguments")
-                    .cloned()
-                    .filter(|v| !v.is_null()),
-                diffs: Vec::new(),
-            },
-            "tool_end" => StreamingChunk::ToolEnd {
-                id: serialized["id"].as_str().unwrap().to_string(),
-                name: serialized["name"].as_str().unwrap().to_string(),
-                result: serialized
-                    .get("result")
-                    .and_then(|v| v.as_str().map(str::to_string)),
-                error: serialized
-                    .get("error")
-                    .and_then(|v| v.as_str().map(str::to_string)),
-            },
-            "tool_diff_update" => StreamingChunk::ToolDiffUpdate {
-                call_id: serialized["id"].as_str().unwrap().to_string(),
-                diffs: serde_json::from_value(serialized["diffs"].clone()).unwrap_or_default(),
-            },
-            "tool_args_update" => StreamingChunk::ToolArgsUpdate {
-                call_id: serialized["id"].as_str().unwrap().to_string(),
-                arguments: serialized["arguments"].clone(),
-            },
-            "context_window" => StreamingChunk::ContextWindow {
-                used: serialized["used"].as_u64().unwrap(),
-                limit: serialized["limit"].as_u64().unwrap(),
-            },
-            _ => panic!("unknown kind"),
-        }
-    }
-
-    let fixtures = vec![
-        StreamingChunk::Text("hello world".to_string()),
-        StreamingChunk::Thinking("let me reason about this".to_string()),
-        StreamingChunk::ToolStart {
-            name: "semantic_search".to_string(),
-            id: "tool-1".to_string(),
-            arguments: Some(json!({"query": "rust", "limit": 10})),
-            diffs: Vec::new(),
-        },
-        StreamingChunk::ToolStart {
-            name: "list_models".to_string(),
-            id: "tool-2".to_string(),
-            arguments: None,
-            diffs: Vec::new(),
-        },
-        StreamingChunk::ToolEnd {
-            id: "tool-1".to_string(),
-            name: "Semantic Search".to_string(),
-            result: Some("found 5 results".to_string()),
-            error: None,
-        },
-        StreamingChunk::ToolEnd {
-            id: "tool-3".to_string(),
-            name: "Slow Tool".to_string(),
-            result: None,
-            error: Some("timeout".to_string()),
-        },
-        StreamingChunk::ToolArgsUpdate {
-            call_id: "tool-1".to_string(),
-            arguments: json!({"path": "Concepts/Target.md"}),
-        },
-        StreamingChunk::ContextWindow {
-            used: 22_700,
-            limit: 1_000_000,
-        },
-    ];
-
-    for chunk in &fixtures {
-        let rt = roundtrip(chunk);
-        match (chunk, &rt) {
-            (StreamingChunk::Text(a), StreamingChunk::Text(b)) => assert_eq!(a, b),
-            (StreamingChunk::Thinking(a), StreamingChunk::Thinking(b)) => assert_eq!(a, b),
-            (
-                StreamingChunk::ToolStart {
-                    name: a_n,
-                    id: a_i,
-                    arguments: a_a,
-                    ..
-                },
-                StreamingChunk::ToolStart {
-                    name: b_n,
-                    id: b_i,
-                    arguments: b_a,
-                    ..
-                },
-            ) => {
-                assert_eq!(a_n, b_n);
-                assert_eq!(a_i, b_i);
-                assert_eq!(a_a, b_a);
-            }
-            (
-                StreamingChunk::ToolEnd {
-                    id: a_i,
-                    name: a_n,
-                    result: a_r,
-                    error: a_e,
-                },
-                StreamingChunk::ToolEnd {
-                    id: b_i,
-                    name: b_n,
-                    result: b_r,
-                    error: b_e,
-                },
-            ) => {
-                assert_eq!(a_i, b_i);
-                assert_eq!(a_n, b_n);
-                assert_eq!(a_r, b_r);
-                assert_eq!(a_e, b_e);
-            }
-            (
-                StreamingChunk::ToolArgsUpdate {
-                    call_id: a_i,
-                    arguments: a_a,
-                },
-                StreamingChunk::ToolArgsUpdate {
-                    call_id: b_i,
-                    arguments: b_a,
-                },
-            ) => {
-                assert_eq!(a_i, b_i);
-                assert_eq!(a_a, b_a);
-            }
-            (
-                StreamingChunk::ContextWindow {
-                    used: a_u,
-                    limit: a_l,
-                },
-                StreamingChunk::ContextWindow {
-                    used: b_u,
-                    limit: b_l,
-                },
-            ) => {
-                // Both operands, and in the right slots: a serializer that
-                // swapped them would still roundtrip to a ContextWindow.
-                assert_eq!(a_u, b_u);
-                assert_eq!(a_l, b_l);
-                assert_ne!(b_u, b_l, "fixture must not use equal numbers");
-            }
-            _ => panic!("variant mismatch after roundtrip"),
-        }
-    }
 }

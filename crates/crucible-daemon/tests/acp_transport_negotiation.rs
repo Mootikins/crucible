@@ -5,12 +5,80 @@
 //!
 //! - `McpServer::Stdio` — All agents MUST support this transport
 //! - `McpServer::Http` — Only when agent reports `mcp_capabilities.http == true`
-//! - `McpServer::Sse` — Only when agent reports `mcp_capabilities.sse == true`
+//!   and the daemon has a URL to give
+//! - `McpServer::Sse` — Never: the daemon serves Streamable HTTP, not legacy SSE
+//!
+//! The selection tests read the `session/new` frame the mock agent received,
+//! so they fail when the client sends the wrong server, not only when the
+//! mock advertises the wrong capability.
 
 #[path = "acp_support/mod.rs"]
 mod support;
 
+use std::sync::{Arc, Mutex};
+
+use serde_json::Value;
 use support::{MockStdioAgentConfig, ThreadedMockAgent};
+
+const MCP_URL: &str = "http://127.0.0.1:9999/mcp";
+
+/// The MCP transport the client offered the agent in `session/new`.
+#[derive(Debug, PartialEq, Eq)]
+enum Offered {
+    /// `McpServer::Http` with this URL.
+    Http(String),
+    /// `McpServer::Sse` with this URL.
+    Sse(String),
+    /// `McpServer::Stdio` (no `type` tag on the wire) with this command.
+    Stdio(String),
+}
+
+/// Connect a client to a mock agent with `config` and return the one MCP
+/// server the client put in the `session/new` it sent. The value comes from
+/// the frame that crossed the transport, not from any client accessor.
+async fn offered_transport(config: MockStdioAgentConfig, mcp_url: Option<&str>) -> Offered {
+    let log = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let config = MockStdioAgentConfig {
+        request_log: Some(log.clone()),
+        ..config
+    };
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let session = client
+        .connect_with_best_mcp(mcp_url)
+        .await
+        .expect("connect_with_best_mcp should succeed");
+    assert!(!session.id().is_empty(), "Session ID should be non-empty");
+
+    let frames = log.lock().unwrap().clone();
+    let session_new = frames
+        .iter()
+        .find(|frame| frame["method"] == "session/new")
+        .unwrap_or_else(|| panic!("the client sent no session/new; frames: {frames:?}"));
+    let servers = session_new["params"]["mcpServers"]
+        .as_array()
+        .unwrap_or_else(|| panic!("session/new carried no mcpServers: {session_new}"));
+    assert_eq!(servers.len(), 1, "one crucible MCP server: {servers:?}");
+    let server = &servers[0];
+    assert_eq!(server["name"], "crucible", "server name: {server}");
+    let text = |key: &str| server[key].as_str().unwrap_or_default().to_string();
+    match server.get("type").and_then(Value::as_str) {
+        Some("http") => Offered::Http(text("url")),
+        Some("sse") => Offered::Sse(text("url")),
+        None => Offered::Stdio(text("command")),
+        Some(other) => panic!("unknown MCP transport {other:?}: {server}"),
+    }
+}
+
+/// Assert `offered` is the stdio server that runs `cru mcp --stdio`.
+fn assert_stdio(offered: &Offered, name: &str) {
+    match offered {
+        Offered::Stdio(command) => assert!(
+            command.ends_with("cru"),
+            "{name}: the stdio server must run cru, got {command:?}"
+        ),
+        other => panic!("{name}: expected the stdio transport, got {other:?}"),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Phase A: Capability storage tests
@@ -76,229 +144,66 @@ async fn capabilities_default_false_when_not_initialized() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase A: Transport selection tests via connect_with_best_mcp
+// Transport selection, asserted on the `session/new` the agent received
 // ---------------------------------------------------------------------------
 
-/// Test 1: Agent reporting HTTP support gets HTTP transport.
-///
-/// We verify by inspecting the session/new request that the mock agent receives.
-/// If the agent supports HTTP and a URL is provided, it should get McpServer::Http.
+/// An agent that reports HTTP support and a URL: the agent gets that URL
+/// over Streamable HTTP.
 #[tokio::test]
 async fn agent_reporting_http_support_gets_http_transport() {
     let config = MockStdioAgentConfig {
         mcp_http: true,
         ..MockStdioAgentConfig::opencode()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-    let session = client
-        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
-        .await
-        .expect("connect_with_best_mcp should succeed");
-
-    // Verify session was created
-    assert!(!session.id().is_empty(), "Session ID should be non-empty");
-
-    // Verify the client reports HTTP support after initialization
-    assert!(
-        client.agent_supports_http_mcp(),
-        "Client should report HTTP MCP support"
+    assert_eq!(
+        offered_transport(config, Some(MCP_URL)).await,
+        Offered::Http(MCP_URL.to_string())
     );
 }
 
-/// Test 2: Agent without HTTP support falls back to stdio.
+/// An agent without HTTP support gets stdio even when a URL exists.
 #[tokio::test]
 async fn agent_without_http_support_falls_back_to_stdio() {
     let config = MockStdioAgentConfig {
         mcp_http: false,
         ..MockStdioAgentConfig::gemini()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-    let session = client
-        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
-        .await
-        .expect("connect_with_best_mcp should succeed even with stdio fallback");
-
-    assert!(!session.id().is_empty(), "Session ID should be non-empty");
-
-    // Verify the client does NOT report HTTP support
-    assert!(
-        !client.agent_supports_http_mcp(),
-        "Client should not report HTTP MCP support"
-    );
+    assert_stdio(&offered_transport(config, Some(MCP_URL)).await, "gemini");
 }
 
-/// Test 3: No MCP URL always gets stdio regardless of agent capabilities.
+/// No MCP URL: stdio, even for an agent that supports HTTP.
 #[tokio::test]
 async fn agent_with_no_mcp_url_always_gets_stdio() {
     let config = MockStdioAgentConfig {
         mcp_http: true,
         ..MockStdioAgentConfig::opencode()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-    let session = client
-        .connect_with_best_mcp(None)
-        .await
-        .expect("connect_with_best_mcp(None) should succeed");
-
-    assert!(!session.id().is_empty(), "Session ID should be non-empty");
-
-    // Agent does support HTTP, but since we provided no URL, stdio is used
-    assert!(
-        client.agent_supports_http_mcp(),
-        "Agent should still report HTTP support even though stdio was used"
-    );
+    assert_stdio(&offered_transport(config, None).await, "opencode");
 }
 
-// ---------------------------------------------------------------------------
-// Phase B: Mock agent reports capabilities correctly
-// ---------------------------------------------------------------------------
-
-/// Test 6: Mock agent with opencode profile reports HTTP MCP capability
-#[test]
-fn mock_agent_reports_http_mcp_capability() {
-    use serde_json::json;
-    use support::MockStdioAgent;
-
-    let config = MockStdioAgentConfig::opencode(); // mcp_http: true
-    let mut agent = MockStdioAgent::new(config);
-
-    let request = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": 1,
-            "clientInfo": null,
-            "clientCapabilities": {},
-            "meta": null
-        }
-    });
-
-    let response = agent.handle_request(&request);
-    let result = &response["result"];
-    let mcp_caps = &result["agentCapabilities"]["mcpCapabilities"];
-
-    assert_eq!(
-        mcp_caps["http"], true,
-        "OpenCode mock should report http=true"
-    );
-    assert_eq!(
-        mcp_caps["sse"], false,
-        "OpenCode mock should report sse=false"
-    );
-}
-
-/// Test 7: Default mock agent reports no HTTP by default
-#[test]
-fn mock_agent_reports_no_http_by_default() {
-    use serde_json::json;
-    use support::MockStdioAgent;
-
-    let config = MockStdioAgentConfig::default(); // mcp_http: false
-    let mut agent = MockStdioAgent::new(config);
-
-    let request = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": 1,
-            "clientInfo": null,
-            "clientCapabilities": {},
-            "meta": null
-        }
-    });
-
-    let response = agent.handle_request(&request);
-    let result = &response["result"];
-    let mcp_caps = &result["agentCapabilities"]["mcpCapabilities"];
-
-    assert_eq!(
-        mcp_caps["http"], false,
-        "Default mock should report http=false"
-    );
-    assert_eq!(
-        mcp_caps["sse"], false,
-        "Default mock should report sse=false"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Phase C: Invariant tests — each agent profile gets valid transport
-// ---------------------------------------------------------------------------
-
-/// Test 8: Each built-in profile gets appropriate transport when MCP URL is provided.
-/// With SSE priority, agents supporting SSE should report SSE support.
+/// Each built-in profile gets the transport its advertisement earns when a
+/// URL is available: HTTP where the profile reports HTTP, stdio otherwise.
+/// No profile ever gets legacy SSE, because the daemon does not serve it.
 #[tokio::test]
 async fn each_builtin_profile_gets_valid_mcp_transport() {
-    struct TestCase {
-        name: &'static str,
-        config: MockStdioAgentConfig,
-        expects_sse: bool,
-        expects_http: bool,
-    }
-
-    let cases = vec![
-        TestCase {
-            name: "opencode",
-            config: MockStdioAgentConfig::opencode(),
-            expects_sse: false,
-            expects_http: true,
-        },
-        TestCase {
-            name: "claude_acp",
-            config: MockStdioAgentConfig::claude_acp(),
-            expects_sse: true,
-            expects_http: true,
-        },
-        TestCase {
-            name: "gemini",
-            config: MockStdioAgentConfig::gemini(),
-            expects_sse: false,
-            expects_http: false,
-        },
-        TestCase {
-            name: "codex",
-            config: MockStdioAgentConfig::codex(),
-            expects_sse: false,
-            expects_http: true,
-        },
+    let cases: [(&str, MockStdioAgentConfig, bool); 4] = [
+        ("opencode", MockStdioAgentConfig::opencode(), true),
+        ("claude_acp", MockStdioAgentConfig::claude_acp(), true),
+        ("gemini", MockStdioAgentConfig::gemini(), false),
+        ("codex", MockStdioAgentConfig::codex(), true),
     ];
 
-    for case in cases {
-        let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(case.config);
-
-        let session = client
-            .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
-            .await
-            .unwrap_or_else(|e| panic!("connect_with_best_mcp failed for {}: {}", case.name, e));
-
-        assert!(
-            !session.id().is_empty(),
-            "{}: Session ID should be non-empty",
-            case.name
-        );
-
-        assert_eq!(
-            client.agent_supports_sse_mcp(),
-            case.expects_sse,
-            "{}: SSE MCP support mismatch",
-            case.name
-        );
-
-        assert_eq!(
-            client.agent_supports_http_mcp(),
-            case.expects_http,
-            "{}: HTTP MCP support mismatch",
-            case.name
-        );
+    for (name, config, expects_http) in cases {
+        let offered = offered_transport(config, Some(MCP_URL)).await;
+        if expects_http {
+            assert_eq!(offered, Offered::Http(MCP_URL.to_string()), "{name}");
+        } else {
+            assert_stdio(&offered, name);
+        }
     }
 }
 
-/// Test 10: Agent with SSE-only support gets stdio fallback (we don't serve legacy SSE)
+/// An agent with SSE only gets stdio: the daemon does not serve legacy SSE.
 #[tokio::test]
 async fn agent_with_sse_only_gets_stdio_fallback() {
     let config = MockStdioAgentConfig {
@@ -306,21 +211,10 @@ async fn agent_with_sse_only_gets_stdio_fallback() {
         mcp_sse: true,
         ..MockStdioAgentConfig::opencode()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-    // Agent supports SSE but NOT HTTP.
-    // We don't serve legacy SSE, so should fall back to stdio.
-    let session = client
-        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
-        .await
-        .expect("should succeed with stdio fallback");
-
-    assert!(!session.id().is_empty());
-    assert!(!client.agent_supports_http_mcp(), "should NOT report HTTP");
-    assert!(client.agent_supports_sse_mcp(), "should report SSE");
+    assert_stdio(&offered_transport(config, Some(MCP_URL)).await, "sse-only");
 }
 
-/// Test 11: Agent with both HTTP and SSE gets HTTP (Streamable HTTP), not SSE (legacy)
+/// An agent with both gets Streamable HTTP, not legacy SSE.
 #[tokio::test]
 async fn agent_with_both_http_and_sse_gets_http_not_sse() {
     let config = MockStdioAgentConfig {
@@ -328,23 +222,16 @@ async fn agent_with_both_http_and_sse_gets_http_not_sse() {
         mcp_sse: true,
         ..MockStdioAgentConfig::opencode()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-    let session = client
-        .connect_with_best_mcp(Some("http://127.0.0.1:9999/mcp"))
-        .await
-        .expect("should succeed with HTTP transport");
-
-    assert!(!session.id().is_empty());
-    assert!(client.agent_supports_http_mcp());
-    assert!(client.agent_supports_sse_mcp());
-    // Key: HTTP was chosen (not SSE) because we serve Streamable HTTP
+    assert_eq!(
+        offered_transport(config, Some(MCP_URL)).await,
+        Offered::Http(MCP_URL.to_string())
+    );
 }
 
-/// Test 9: Stdio fallback always creates valid session for all profiles.
+/// Without a URL every profile completes the handshake on stdio.
 #[tokio::test]
 async fn stdio_fallback_always_creates_valid_session() {
-    let profiles: Vec<(&str, MockStdioAgentConfig)> = vec![
+    let profiles: [(&str, MockStdioAgentConfig); 4] = [
         ("opencode", MockStdioAgentConfig::opencode()),
         ("claude_acp", MockStdioAgentConfig::claude_acp()),
         ("gemini", MockStdioAgentConfig::gemini()),
@@ -352,17 +239,6 @@ async fn stdio_fallback_always_creates_valid_session() {
     ];
 
     for (name, config) in profiles {
-        let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
-
-        let session = client
-            .connect_with_best_mcp(None) // no in-process host → always stdio
-            .await
-            .unwrap_or_else(|e| panic!("stdio fallback failed for {}: {}", name, e));
-
-        assert!(
-            !session.id().is_empty(),
-            "{}: Session ID should be non-empty",
-            name
-        );
+        assert_stdio(&offered_transport(config, None).await, name);
     }
 }

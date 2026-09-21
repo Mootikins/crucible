@@ -44,7 +44,8 @@
 use std::path::{Path, PathBuf};
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, StopReason, TextContent,
+    ContentBlock, InitializeRequest, McpServer, NewSessionRequest, PromptRequest, StopReason,
+    TextContent,
 };
 use crucible_daemon::acp::client::replay::{ReplayFixture, ReplayOutcome};
 use crucible_daemon::acp::{CrucibleAcpClient, StreamingChunk};
@@ -405,6 +406,16 @@ fn fixture_path(rel: &str) -> PathBuf {
         .join(rel)
 }
 
+/// The params of the first outgoing `method` frame in the fixture.
+fn recorded_params<'a>(fixture: &'a ReplayFixture, method: &str) -> &'a serde_json::Value {
+    fixture
+        .records
+        .iter()
+        .find(|record| record.frame.get("method").and_then(|m| m.as_str()) == Some(method))
+        .and_then(|record| record.frame.get("params"))
+        .unwrap_or_else(|| panic!("the fixture records no {method} request"))
+}
+
 async fn run_case(case: &FixtureCase) {
     let agent = case.agent;
     let path = fixture_path(&format!("{agent}/{}.jsonl", case.scenario));
@@ -416,6 +427,26 @@ async fn run_case(case: &FixtureCase) {
         "[{agent}] fixture header agent"
     );
     let recorded_frames = fixture.records.len();
+
+    // The replay compares what the client sends against what was recorded,
+    // so the test sends what the daemon sent then: the same MCP servers and
+    // the same prompt text. The daemon put retrieved context in front of the
+    // user's words, so the recorded text ends with `case.prompt` rather than
+    // equalling it.
+    let mcp_servers: Vec<McpServer> =
+        serde_json::from_value(recorded_params(&fixture, "session/new")["mcpServers"].clone())
+            .unwrap_or_else(|e| panic!("[{agent}] recorded mcpServers parse: {e}"));
+    let prompt_text: String = recorded_params(&fixture, "session/prompt")["prompt"]
+        .as_array()
+        .unwrap_or_else(|| panic!("[{agent}] the recorded prompt has no blocks"))
+        .iter()
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+    assert!(
+        prompt_text.ends_with(case.prompt),
+        "[{agent}] the recorded prompt must end with the user's words {:?}",
+        case.prompt
+    );
 
     let (writer, reader, driver) = fixture.into_transport();
     let driver_handle = tokio::spawn(driver);
@@ -455,7 +486,9 @@ async fn run_case(case: &FixtureCase) {
 
     // --- session/new --------------------------------------------------------
     let session = client
-        .create_new_session(NewSessionRequest::new(PathBuf::from(case.cwd)))
+        .create_new_session(
+            NewSessionRequest::new(PathBuf::from(case.cwd)).mcp_servers(mcp_servers),
+        )
         .await
         .unwrap_or_else(|e| panic!("[{agent}] create session: {e}"));
     assert_eq!(
@@ -468,7 +501,7 @@ async fn run_case(case: &FixtureCase) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let request = PromptRequest::new(
         session.session_id.clone(),
-        vec![ContentBlock::Text(TextContent::new(case.prompt))],
+        vec![ContentBlock::Text(TextContent::new(prompt_text))],
     );
     let result = client
         .send_prompt_with_callback(request, crucible_daemon::acp::channel_callback(tx))

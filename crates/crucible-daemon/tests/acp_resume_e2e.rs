@@ -21,27 +21,28 @@
 //! (`CRU_MOCK_METHOD_LOG`). Both agent processes append to it, so the file is
 //! the complete record of what crossed both handshakes.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::{AcpConfig, AgentProfile, BackendType};
-use crucible_core::session::{SessionAgent, SessionType};
+use crucible_core::config::AgentProfile;
+use crucible_core::session::SessionType;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, BackgroundJobManager, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, SessionManager};
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::{mock_agent_path, mock_handle_params, mock_session_agent};
+use mock_agent_bin::{
+    acp_manager_params, completed_turn, mock_agent_path, mock_handle_params, mock_profile,
+    mock_session_agent, profile_session_agent, MOCK_PROFILE,
+};
 
 /// A cold spawn plus a handshake plus a turn, against a second process.
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
@@ -59,61 +60,21 @@ fn resuming_profile(log_path: &Path) -> AgentProfile {
         "CRU_MOCK_METHOD_LOG".to_string(),
         log_path.to_string_lossy().into_owned(),
     );
-    AgentProfile {
-        extends: None,
-        command: Some(mock_agent_path().to_string_lossy().into_owned()),
-        args: Some(Vec::new()),
-        env,
-        description: Some("mock ACP agent for resume tests".to_string()),
-        delegation: None,
-        permissions: None,
-    }
-}
-
-/// A session agent that names the `mock-acp` profile.
-fn acp_agent() -> SessionAgent {
-    SessionAgent {
-        agent_type: "acp".to_string(),
-        agent_name: Some("mock-acp".to_string()),
-        provider_key: None,
-        provider: BackendType::Custom,
-        model: "mock-acp".to_string(),
-        system_prompt: String::new(),
-        max_context_tokens: None,
-        endpoint: None,
-        env_overrides: HashMap::new(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: false,
-        context_budget: None,
-        context_strategy: Default::default(),
-        tool_policy: None,
-        mode: None,
-    }
+    mock_profile(env)
 }
 
 /// One `AgentManager` over an existing `SessionManager`. Called twice with
 /// the same session manager to model a daemon restart.
 fn manager(
     session_manager: Arc<SessionManager>,
-    acp_config: AcpConfig,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    profile: AgentProfile,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Arc<AgentManager> {
-    Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
+    Arc::new(AgentManager::new(acp_manager_params(
         session_manager,
-        background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: Some(acp_config),
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    }))
+        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
+        event_tx,
+    )))
 }
 
 /// Every method line the agent processes recorded, in order.
@@ -136,11 +97,6 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _event_rx) = broadcast::channel(256);
-    let acp_config = AcpConfig {
-        default_agent: None,
-        streaming_timeout_minutes: 1,
-        agents: BTreeMap::from([("mock-acp".to_string(), resuming_profile(&log_path))]),
-    };
 
     let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
@@ -150,20 +106,19 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
     // Turn one, on the first manager.
     let first = manager(
         session_manager.clone(),
-        acp_config.clone(),
-        event_tx.clone(),
+        resuming_profile(&log_path),
+        &event_tx,
     );
     first
-        .configure_agent(&session.id, acp_agent())
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
         .await
         .expect("configure the ACP agent");
     let (_id, done) = first
         .send_message_notified(&session.id, "first".to_string(), &event_tx, true, None)
         .await
         .expect("turn one accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("turn one finished");
+    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    assert_eq!(outcome.final_text.trim(), ANSWER, "turn one's answer");
 
     let agent_session_id = session_manager
         .get_session(&session.id)
@@ -171,20 +126,41 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
         .expect("turn one must persist the agent's session id");
 
     // Turn two, on a second manager: a cold handle cache, like a restart.
-    let second = manager(session_manager.clone(), acp_config, event_tx.clone());
+    let second = manager(
+        session_manager.clone(),
+        resuming_profile(&log_path),
+        &event_tx,
+    );
     let (_id, done) = second
         .send_message_notified(&session.id, "second".to_string(), &event_tx, true, None)
         .await
         .expect("turn two accepted");
-    let _ = timeout(TURN_TIMEOUT, done)
-        .await
-        .expect("turn two finished");
+    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    assert_eq!(outcome.final_text.trim(), ANSWER, "turn two's answer");
 
     let log = method_log(&log_path);
     let resume_line = format!("session/resume {agent_session_id}");
     assert!(
         log.contains(&resume_line),
         "the rebuilt handle must resume the persisted id; wanted {resume_line:?} in {log:?}"
+    );
+    // The resumed id is only worth something if the turn runs in it: a
+    // prompt addressed to any other session would reach an agent that has
+    // no history for it.
+    let prompt_line = format!("session/prompt {agent_session_id}");
+    let resume_at = log.iter().position(|l| *l == resume_line);
+    let prompts_after_resume = resume_at
+        .map(|at| {
+            log[at..]
+                .iter()
+                .filter(|l| l.starts_with("session/prompt"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        prompts_after_resume,
+        [&prompt_line],
+        "turn two's session/prompt must go to the resumed session; log: {log:?}"
     );
     assert_eq!(
         log.iter().filter(|l| l.starts_with("session/new")).count(),

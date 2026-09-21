@@ -16,8 +16,8 @@ use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
 use crucible_core::session::RecordingMode;
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
-use crucible_core::turn::{Agent, TurnContext, TurnEvent};
-use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+use crucible_core::turn::{Agent, StopReason, TurnContext, TurnError, TurnEvent};
+use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams, AcpHandleError};
 use crucible_daemon::agent_manager::AgentFactoryOverride;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
@@ -29,6 +29,7 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 use tempfile::TempDir;
 use tokio::sync::{broadcast, oneshot};
 use tokio::time::{timeout, Duration};
@@ -199,17 +200,27 @@ async fn mock_acp_handshake_succeeds() {
     .expect("ACP handshake timed out")
     .expect("ACP handshake failed");
 
-    // If the handshake above returned Ok(handle), the ACP client is connected
-    // by construction; no further assertion needed.
-    let _ = handle;
+    // The session id is the one the agent minted in its `session/new` reply,
+    // so it proves the handshake reached the agent and came back.
+    let session_id = handle
+        .acp_session_id()
+        .expect("a connected handle has an agent session");
+    assert!(
+        session_id.starts_with("mock-session-"),
+        "the handle must adopt the id the agent issued, got {session_id:?}"
+    );
 }
 
 #[tokio::test]
 async fn mock_acp_agent_returns_message_response() {
+    const ANSWER: &str = "hello from the mock agent";
     let workspace = TempDir::new().expect("Failed to create temp workspace");
     let agent_path = mock_agent_path();
     let agent_path = agent_path.to_string_lossy().into_owned();
-    let agent_config = mock_session_agent(&agent_path);
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
 
     let mut handle = timeout(
         Duration::from_secs(30),
@@ -229,10 +240,22 @@ async fn mock_acp_agent_returns_message_response() {
     .await
     .expect("Streaming response timed out");
 
-    assert!(!events.is_empty(), "Expected at least one TurnEvent");
+    let text: String = events
+        .iter()
+        .filter_map(|event| match event {
+            TurnEvent::TextDelta(delta) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, ANSWER, "the streamed text; events: {events:?}");
     assert!(
-        events.iter().any(|e| matches!(e, TurnEvent::Done { .. })),
-        "Expected at least one Done event"
+        matches!(
+            events.last(),
+            Some(TurnEvent::Done {
+                stop_reason: StopReason::EndTurn
+            })
+        ),
+        "the turn must end with Done(EndTurn); events: {events:?}"
     );
 }
 
@@ -407,9 +430,13 @@ async fn missing_binary_returns_connection_error() {
     .await
     .expect("missing binary should fail quickly");
 
+    let error = result
+        .err()
+        .expect("AcpAgentHandle::new should return Err for missing binary");
     assert!(
-        result.is_err(),
-        "AcpAgentHandle::new should return Err for missing binary"
+        matches!(&error, AcpHandleError::Connection(message)
+            if message.contains("Failed to spawn agent")),
+        "a missing binary is a spawn failure, got {error:?}"
     );
 }
 
@@ -436,9 +463,16 @@ async fn inject_errors_causes_handshake_failure() {
     .await
     .expect("ACP handshake with injected errors timed out unexpectedly");
 
+    let error = result
+        .err()
+        .expect("AcpAgentHandle::new should fail when mock agent injects protocol errors");
+    // The agent's own message ("Simulated initialization error") does not
+    // survive: the client reports the error reply as a missing result. So the
+    // assertion names the failed step instead.
     assert!(
-        result.is_err(),
-        "AcpAgentHandle::new should fail when mock agent injects protocol errors"
+        matches!(&error, AcpHandleError::Connection(message)
+            if message.contains("initialize")),
+        "the failure must be the refused initialize, got {error:?}"
     );
 }
 
@@ -584,19 +618,40 @@ async fn mock_acp_delegation_captured_in_recording() {
     let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
     let mut bridge_rx = event_tx.subscribe();
     let bridge_handle = tokio::spawn(async move {
+        // `biased` polls the receiver first, so a stop never wins over an
+        // event that is already buffered.
         loop {
             tokio::select! {
-                _ = &mut stop_rx => break,
-                maybe_event = bridge_rx.recv() => {
-                    match maybe_event {
-                        Ok(event) => {
-                            if recording_tx.send(event).await.is_err() {
-                                break;
-                            }
+                biased;
+                maybe_event = bridge_rx.recv() => match maybe_event {
+                    Ok(event) => {
+                        if recording_tx.send(event).await.is_err() {
+                            return;
                         }
-                        Err(_) => break,
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        panic!("the recording bridge lagged and dropped {n} events")
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return,
+                },
+                _ = &mut stop_rx => break,
+            }
+        }
+        // The stop comes after the test saw the events it waits for. Forward
+        // whatever is still buffered, so none of them misses the recording.
+        loop {
+            match bridge_rx.try_recv() {
+                Ok(event) => {
+                    if recording_tx.send(event).await.is_err() {
+                        return;
                     }
                 }
+                Err(broadcast::error::TryRecvError::Lagged(n)) => {
+                    panic!("the recording bridge lagged and dropped {n} events")
+                }
+                Err(
+                    broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed,
+                ) => return,
             }
         }
     });
@@ -651,5 +706,186 @@ async fn mock_acp_delegation_captured_in_recording() {
     assert!(
         recording.contains("delegation_completed"),
         "recording should contain delegation_completed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A turn that ends early: dropped by the daemon, or cut by the agent
+// ---------------------------------------------------------------------------
+
+/// Wait until the capture file at `path` holds a value, and return it. The
+/// mock replaces capture files in one rename, so a read never sees a half
+/// written value.
+async fn wait_for_capture(path: &Path, what: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if !content.is_empty() {
+                return content;
+            }
+        }
+        assert!(Instant::now() < deadline, "{what}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Start the next turn on `handle`, retrying while the handle still reports
+/// the previous turn's client as busy. Returns the finished turn's events.
+async fn collect_next_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEvent> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let events = timeout(Duration::from_secs(30), async {
+            let stream = handle
+                .turn(TurnContext::new(message))
+                .await
+                .expect("Agent::turn failed");
+            stream.collect::<Vec<_>>().await
+        })
+        .await
+        .expect("the turn timed out");
+        let busy = matches!(
+            events.as_slice(),
+            [TurnEvent::Error(TurnError::AgentUnavailable(message))] if message.contains("busy")
+        );
+        if !busy {
+            return events;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the ACP client never came back after the dropped turn"
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
+/// Dropping a turn stream is how the daemon cancels an ACP turn. The client
+/// must send `session/cancel` for the session the turn ran in, and the
+/// handle must be usable for the next turn once the agent has answered the
+/// cancel with `stopReason: cancelled`.
+///
+/// The held turn streams a chunk every 20 ms: the client notices the drop
+/// when its next chunk finds no receiver.
+#[tokio::test]
+async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
+    const ANSWER: &str = "first words";
+    let workspace = TempDir::new().expect("temp workspace");
+    let cancel_capture = workspace.path().join("cancel.txt");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    for (key, value) in [
+        ("CRU_MOCK_STREAM_CHUNKS", ANSWER.to_string()),
+        ("CRU_MOCK_HOLD_UNTIL_CANCEL", "1".to_string()),
+        ("CRU_MOCK_HOLD_TICK_MS", "20".to_string()),
+        (
+            "CRU_MOCK_CANCEL_CAPTURE",
+            cancel_capture.to_string_lossy().into_owned(),
+        ),
+    ] {
+        agent_config.env_overrides.insert(key.to_string(), value);
+    }
+
+    let mut handle = timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed");
+    let session_id = handle
+        .acp_session_id()
+        .expect("a connected handle has an agent session");
+
+    {
+        let mut stream = handle
+            .turn(TurnContext::new("start a long turn"))
+            .await
+            .expect("Agent::turn failed");
+        let first = timeout(Duration::from_secs(30), stream.next())
+            .await
+            .expect("the held turn streamed nothing");
+        assert!(
+            matches!(&first, Some(TurnEvent::TextDelta(text)) if text == ANSWER),
+            "the held turn's first event, got {first:?}"
+        );
+        // The daemon cancels a turn by dropping its stream.
+    }
+
+    let cancelled = wait_for_capture(
+        &cancel_capture,
+        "the agent never received session/cancel after the turn was dropped",
+    )
+    .await;
+    assert_eq!(
+        cancelled, session_id,
+        "session/cancel must name the session the dropped turn ran in"
+    );
+
+    let events = collect_next_turn(&mut handle, "and now a normal turn").await;
+    let text: String = events
+        .iter()
+        .filter_map(|event| match event {
+            TurnEvent::TextDelta(delta) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        text, ANSWER,
+        "the next turn must run in full; events: {events:?}"
+    );
+    assert!(
+        matches!(
+            events.last(),
+            Some(TurnEvent::Done {
+                stop_reason: StopReason::EndTurn
+            })
+        ),
+        "the next turn must end normally; events: {events:?}"
+    );
+}
+
+/// An agent process that dies mid-turn ends the turn with a connection
+/// error. The stream must end, not wait for a response that cannot come.
+#[tokio::test]
+async fn an_agent_that_exits_mid_turn_ends_the_turn_with_a_connection_error() {
+    const PARTIAL: &str = "partial answer";
+    let workspace = TempDir::new().expect("temp workspace");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), PARTIAL.to_string());
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_EXIT_MID_TURN".to_string(), "1".to_string());
+
+    let mut handle = timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed");
+
+    let events = timeout(Duration::from_secs(30), async {
+        let stream = handle
+            .turn(TurnContext::new("start a turn the agent will not finish"))
+            .await
+            .expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
+    })
+    .await
+    .expect("a turn whose agent exited must end, not hang");
+
+    assert!(
+        matches!(events.first(), Some(TurnEvent::TextDelta(text)) if text == PARTIAL),
+        "the chunk sent before the exit still reaches the turn; events: {events:?}"
+    );
+    assert!(
+        matches!(
+            events.last(),
+            Some(TurnEvent::Error(TurnError::Connection(message)))
+                if message.contains("ACP agent connection lost")
+        ),
+        "an agent exit is a connection error; events: {events:?}"
     );
 }
