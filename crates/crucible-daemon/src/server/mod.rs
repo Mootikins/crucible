@@ -48,6 +48,7 @@ use tracing::{debug, error, info, warn};
 mod accept;
 mod bind;
 mod core;
+pub mod diff;
 mod external_announce;
 mod file_event_hooks;
 pub mod fs;

@@ -209,6 +209,8 @@ rpc_methods! {
     ProjectRegistryList = "project.registry_list",
     ScmClone = "scm.clone",
     FsListDir = "fs.list_dir",
+    DiffGet = "diff.get",
+    DiffFile = "diff.file",
     FsWrite = "fs.write",
     FsMove = "fs.move",
     FsMkdir = "fs.mkdir",
@@ -1114,6 +1116,14 @@ impl RpcDispatcher {
                     &self.ctx.sessions
                 )
             ),
+            RpcMethod::DiffGet => forward!(
+                id,
+                crate::server::diff::handle_diff_get(req.clone(), self.diff_admission())
+            ),
+            RpcMethod::DiffFile => forward!(
+                id,
+                crate::server::diff::handle_diff_file(req.clone(), self.diff_admission())
+            ),
             RpcMethod::FsWrite => forward!(
                 id,
                 crate::file_write::handle(
@@ -1241,6 +1251,15 @@ impl RpcDispatcher {
                 id,
                 crate::rpc::workflow_handlers::handle_workflow_cancel(&self.ctx, &req).await,
             ),
+        }
+    }
+
+    /// The daemon state that admits the root of a diffset.
+    fn diff_admission(&self) -> crate::server::diff::Admission<'_> {
+        crate::server::diff::Admission {
+            projects: &self.ctx.project_manager,
+            kilns: &self.ctx.kiln,
+            sessions: &self.ctx.sessions,
         }
     }
 

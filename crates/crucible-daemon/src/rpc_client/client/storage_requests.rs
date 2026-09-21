@@ -314,6 +314,26 @@ pub struct FsListDirRequest {
     pub show_hidden: bool,
 }
 
+/// Request for `diff.get`.
+///
+/// For a branch source, an empty `base` asks the daemon for the default
+/// branch. The reply then names the branch that the daemon used.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DiffGetRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+}
+
+/// Request for `diff.file`: one file of the diffset of `source`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DiffFileRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+    /// The path relative to the root, on the current side.
+    pub path: String,
+    /// The old path of a renamed file. The base text comes from this path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+}
+
 /// Request for `fs.move`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FsMoveRequest {

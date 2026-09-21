@@ -773,6 +773,43 @@ impl DaemonClient {
         Ok(v)
     }
 
+    /// `diff.get`: the files of one diffset, with counts and no text.
+    ///
+    /// A read, so the client retries it.
+    pub async fn diff_get(
+        &self,
+        source: &crucible_core::diff::DiffsetSource,
+    ) -> Result<crucible_core::diff::Diffset> {
+        self.typed_call_with_retry(
+            "diff.get",
+            DiffGetRequest {
+                source: source.clone(),
+            },
+        )
+        .await
+    }
+
+    /// `diff.file`: the two texts of one file of a diffset.
+    ///
+    /// `from` is the old path of a renamed file. A read, so the client
+    /// retries it.
+    pub async fn diff_file(
+        &self,
+        source: &crucible_core::diff::DiffsetSource,
+        path: &str,
+        from: Option<&str>,
+    ) -> Result<crucible_core::diff::DiffFileText> {
+        self.typed_call_with_retry(
+            "diff.file",
+            DiffFileRequest {
+                source: source.clone(),
+                path: path.to_string(),
+                from: from.map(str::to_string),
+            },
+        )
+        .await
+    }
+
     /// Move/rename a file or directory within a registered project or open
     /// kiln. All containment checks are daemon-side; overwrites are rejected.
     pub async fn fs_move(

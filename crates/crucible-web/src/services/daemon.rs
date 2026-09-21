@@ -636,6 +636,22 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Safe DiffGet =>
+        diff_get(source: &crucible_core::diff::DiffsetSource)
+        -> crucible_core::diff::Diffset = diff_get(&source);
+    }
+
+    forward_rpc! {
+        Safe DiffFile =>
+        diff_file(
+            source: &crucible_core::diff::DiffsetSource,
+            path: &str,
+            from: Option<&str> => from.map(str::to_owned),
+        )
+        -> crucible_core::diff::DiffFileText = diff_file(&source, &path, from.as_deref());
+    }
+
+    forward_rpc! {
         Once FsWrite =>
         fs_write(request: &crucible_core::file_write::FileWriteRequest)
         -> serde_json::Value = fs_write(&request);

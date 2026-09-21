@@ -522,6 +522,47 @@ pub fn mock_scm_clone() -> crucible_daemon::ScmCloneResponse {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// The diffset `diff.get` answers for `source`: one renamed file.
+///
+/// The mock echoes the source, so a route test sees the source that the
+/// route sent.
+pub fn mock_diffset_for(
+    source: crucible_core::diff::DiffsetSource,
+) -> crucible_core::diff::Diffset {
+    use crucible_core::diff::{DiffFileEntry, Diffset, FileStatus};
+    use crucible_core::session::PhysicalRoot;
+    Diffset {
+        id: source.id(),
+        source,
+        files: vec![DiffFileEntry {
+            root: PhysicalRoot::from_top_level("/tmp/test-project"),
+            path: "new.md".to_string(),
+            status: FileStatus::Renamed {
+                from: "old.md".to_string(),
+            },
+            added: 2,
+            removed: 1,
+            binary: false,
+            too_large: false,
+        }],
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The texts `diff.file` answers for `request`.
+///
+/// The base text is the old path and the current text is the path, so a
+/// route test sees the paths that the route sent.
+pub fn mock_diff_file_text_for(
+    request: &crucible_daemon::rpc_client::DiffFileRequest,
+) -> crucible_core::diff::DiffFileText {
+    crucible_core::diff::DiffFileText {
+        base_text: request.from.clone(),
+        current_text: Some(request.path.clone()),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// A fixture as the mock daemon puts it on the wire.
 fn as_rpc_result<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).expect("a mock reply serialises")
@@ -902,6 +943,16 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             }
         }
         "project.list" => as_rpc_result(vec![mock_project()]),
+        "diff.get" => {
+            let request: crucible_daemon::rpc_client::DiffGetRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.get params");
+            as_rpc_result(mock_diffset_for(request.source))
+        }
+        "diff.file" => {
+            let request: crucible_daemon::rpc_client::DiffFileRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.file params");
+            as_rpc_result(mock_diff_file_text_for(&request))
+        }
         "fs.list_dir" => as_rpc_result(mock_fs_listing()),
         "fs.move" => as_rpc_result(mock_fs_move_reply()),
         "fs.mkdir" => json!({"created": true}),

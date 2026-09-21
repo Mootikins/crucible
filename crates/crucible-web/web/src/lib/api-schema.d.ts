@@ -174,6 +174,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/diff` — the files of the branch diff of one root.
+         * @description The reply has the counts of each file and no text. Its `source` names the
+         *     base branch that the daemon used.
+         */
+        get: operations["get_diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diff/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/diff/file` — the two texts of one file of a branch diff.
+         * @description A side is `null` when the file is absent on it, binary or too large.
+         */
+        get: operations["get_diff_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/file/raw": {
         parameters: {
             query?: never;
@@ -2434,6 +2475,65 @@ export interface components {
         DeleteResponse: {
             deleted: boolean;
         };
+        /** @description One file of a diffset, with its counts and no text. */
+        DiffFileEntry: {
+            /** Format: int32 */
+            added: number;
+            /** @description The file is binary. It has no text. */
+            binary: boolean;
+            /** @description The path relative to `root`, as a `Comment` names it. */
+            path: string;
+            /** Format: int32 */
+            removed: number;
+            root: string;
+            status: components["schemas"]["FileStatus"];
+            /**
+             * @description One side is larger than [`crate::types::acp::MAX_DIFF_BYTES`]. The
+             *     file has no text.
+             */
+            too_large: boolean;
+        };
+        /** @description The two texts of one file of a diffset. */
+        DiffFileText: {
+            /** @description `None` when the file is added. */
+            base_text?: string | null;
+            /** @description `None` when the file is deleted. */
+            current_text?: string | null;
+        };
+        /** @description A set of file changes, without the text of the files. */
+        Diffset: {
+            files: components["schemas"]["DiffFileEntry"][];
+            id: components["schemas"]["DiffsetId"];
+            source: components["schemas"]["DiffsetSource"];
+        };
+        /**
+         * @description The identity of one diffset.
+         *
+         *     The id derives from the source. Two requests for one source thus get one
+         *     id, and a client can use the id as the key of a tab.
+         */
+        DiffsetId: string;
+        /**
+         * @description Where the two sides of a diffset come from.
+         *
+         *     This set is closed. The daemon has one exhaustive match on it, and the web
+         *     client has one.
+         */
+        DiffsetSource: {
+            base: string;
+            head?: string | null;
+            /** @enum {string} */
+            kind: "branch";
+            root: string;
+        } | {
+            /** @enum {string} */
+            kind: "session_record";
+            session: string;
+        } | {
+            id: components["schemas"]["ProposalId"];
+            /** @enum {string} */
+            kind: "proposal";
+        };
         /** @description Why one edit could not be applied. The index is the caller's edit index. */
         EditRefusal: {
             index: number;
@@ -2475,6 +2575,21 @@ export interface components {
             name: string;
             /** @description RELATIVE to the kiln root. */
             path: string;
+        };
+        /** @description How a file changed between the two sides. */
+        FileStatus: {
+            /** @enum {string} */
+            kind: "added";
+        } | {
+            /** @enum {string} */
+            kind: "modified";
+        } | {
+            /** @enum {string} */
+            kind: "deleted";
+        } | {
+            from: string;
+            /** @enum {string} */
+            kind: "renamed";
         };
         /**
          * @description What a write answers when it refuses with 409.
@@ -3449,6 +3564,14 @@ export interface components {
             /** @description Always true. A refusal is an error status, not a `false`. */
             ok: boolean;
         };
+        /**
+         * @description The identity of one proposal.
+         *
+         *     The daemon stores each proposal as a file under `<data_root>/proposals/`
+         *     and uses the id as the file name. A UUID has no path separator and no
+         *     leading dot, so an id can never name a path outside that directory.
+         */
+        ProposalId: string;
         /**
          * @description One LLM provider the daemon found.
          *
@@ -4453,9 +4576,15 @@ export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
+export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
+export type SchemaDiffFileText = components['schemas']['DiffFileText'];
+export type SchemaDiffset = components['schemas']['Diffset'];
+export type SchemaDiffsetId = components['schemas']['DiffsetId'];
+export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
 export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
+export type SchemaFileStatus = components['schemas']['FileStatus'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
 export type SchemaFileWriteResponse = components['schemas']['FileWriteResponse'];
 export type SchemaFocusedNoteRow = components['schemas']['FocusedNoteRow'];
@@ -4522,6 +4651,7 @@ export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
 export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
+export type SchemaProposalId = components['schemas']['ProposalId'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
@@ -4917,6 +5047,90 @@ export interface operations {
                 };
             };
             /** @description The daemon could not save the values */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_diff: {
+        parameters: {
+            query: {
+                /** @description The branch to compare against. Absent takes the default branch. */
+                base?: string;
+                /** @description The other side. Absent takes the working tree. */
+                head?: string;
+                /** @description Absolute path of the top level of a git repository. */
+                root: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Diffset"];
+                };
+            };
+            /** @description The daemon refuses the root or the branch, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description git failed, or the daemon could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_diff_file: {
+        parameters: {
+            query: {
+                /** @description The branch to compare against. Absent takes the default branch. */
+                base?: string;
+                /** @description The old path of a renamed file. */
+                from?: string;
+                /** @description The other side. Absent takes the working tree. */
+                head?: string;
+                /** @description The path of the file relative to `root`, on the current side. */
+                path: string;
+                /** @description Absolute path of the top level of a git repository. */
+                root: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffFileText"];
+                };
+            };
+            /** @description The daemon refuses the root, the branch or the path, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description git failed, or the daemon could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;
