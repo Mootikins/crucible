@@ -49,10 +49,9 @@ impl StreamingState {
         }
     }
 
+    /// Add a text chunk to the answer so far. A whitespace-only chunk is
+    /// part of the answer too: the resend guard compares the whole answer.
     pub(super) fn append_text(&mut self, text: &str) {
-        if text.trim().is_empty() {
-            return;
-        }
         self.accumulated_text.push_str(text);
     }
 
@@ -60,8 +59,12 @@ impl StreamingState {
     /// Some ACP agents (e.g. cursor-acp) emit the complete response as a final
     /// `session/update` notification. We detect this by checking if the incoming
     /// text equals the accumulated text so far.
+    ///
+    /// An answer of only whitespace so far is not an answer, so a second
+    /// `"\n"` chunk after a first one is not a resend.
     pub(super) fn is_duplicate_resend(&self, text: &str) -> bool {
-        !self.accumulated_text.is_empty() && text.trim() == self.accumulated_text.trim()
+        let answer = self.accumulated_text.trim();
+        !answer.is_empty() && text.trim() == answer
     }
 }
 
@@ -74,7 +77,7 @@ mod streaming_state_proptests {
     /// see. Mixes whitespace-only, plain text, multiline, and unicode.
     fn arb_chunk() -> impl Strategy<Value = String> {
         prop_oneof![
-            // Whitespace-only (gets dropped by append_text)
+            // Whitespace-only
             "[ \t\n]{0,8}",
             // Plain ASCII content
             "[a-zA-Z0-9 ]{1,32}",
@@ -93,28 +96,24 @@ mod streaming_state_proptests {
         })]
 
         /// After replaying any sequence of chunks, accumulated_text equals
-        /// the in-order concatenation of the non-whitespace-only inputs.
+        /// the in-order concatenation of every input, whitespace included.
         /// This is the core "no chunk lost, none reordered" invariant.
         #[test]
-        fn append_text_concatenates_non_whitespace_chunks(
+        fn append_text_concatenates_every_chunk(
             chunks in proptest::collection::vec(arb_chunk(), 0..32)
         ) {
             let mut state = StreamingState::default();
-            let mut expected = String::new();
             for chunk in &chunks {
-                if !chunk.trim().is_empty() {
-                    expected.push_str(chunk);
-                }
                 state.append_text(chunk);
             }
-            prop_assert_eq!(state.accumulated_text, expected);
+            prop_assert_eq!(state.accumulated_text, chunks.concat());
         }
 
         /// After appending any non-whitespace chunk, the same chunk is
         /// recognized as a duplicate-resend if presented again. This is
         /// the cursor-acp dedup invariant. Generator constrained to
-        /// strings with at least one non-whitespace character because
-        /// `append_text` is documented to drop whitespace-only inputs.
+        /// strings with at least one non-whitespace character, because an
+        /// answer of only whitespace is never a resend.
         #[test]
         fn appended_text_is_recognized_as_duplicate(chunk in "[a-zA-Z0-9][a-zA-Z0-9 ]{0,40}") {
             let mut state = StreamingState::default();
@@ -134,8 +133,8 @@ mod streaming_state_proptests {
             prop_assert!(!state.is_duplicate_resend(&s));
         }
 
-        /// is_duplicate_resend matches the documented spec: true iff
-        /// accumulated is non-empty and trims equal.
+        /// is_duplicate_resend matches the documented spec: true iff the
+        /// trimmed answer is non-empty and trims equal.
         #[test]
         fn duplicate_resend_matches_spec(
             seed in "[a-zA-Z0-9 ]{1,40}",
@@ -143,7 +142,7 @@ mod streaming_state_proptests {
         ) {
             let mut state = StreamingState::default();
             state.append_text(&seed);
-            let expected = !state.accumulated_text.is_empty()
+            let expected = !state.accumulated_text.trim().is_empty()
                 && candidate.trim() == state.accumulated_text.trim();
             prop_assert_eq!(state.is_duplicate_resend(&candidate), expected);
         }

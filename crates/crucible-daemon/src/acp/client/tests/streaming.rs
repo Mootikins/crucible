@@ -18,13 +18,55 @@ fn streaming_state_merges_chunks_without_newlines() {
 }
 
 #[test]
-fn streaming_state_drops_whitespace_only_chunks() {
+fn streaming_state_keeps_whitespace_only_chunks() {
     let mut state = StreamingState::default();
     state.append_text("Hello");
     state.append_text("   ");
     state.append_text("World");
 
-    assert_eq!(state.accumulated_text, "HelloWorld");
+    assert_eq!(state.accumulated_text, "Hello   World");
+}
+
+/// One text chunk frame, as `session/update` carries it.
+fn text_chunk(text: &str) -> serde_json::Value {
+    json!({
+        "sessionId": "s1",
+        "update": {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": text},
+        },
+    })
+}
+
+/// The text of each chunk that the client forwards for these frames.
+fn forwarded_text(chunks: &[&str]) -> Vec<String> {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    chunks
+        .iter()
+        .flat_map(|text| capture_apply(&mut client, &mut state, text_chunk(text)))
+        .filter_map(|chunk| match chunk {
+            StreamingChunk::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+/// cursor-acp sends the whole answer again at the end of a turn. A
+/// whitespace-only chunk between paragraphs must count toward the answer,
+/// or the resend does not match and the user sees the answer twice.
+#[test]
+fn a_resend_after_a_whitespace_only_chunk_is_not_forwarded() {
+    assert_eq!(
+        forwarded_text(&["Hello", "\n\n", "World", "Hello\n\nWorld"]),
+        vec!["Hello", "\n\n", "World"]
+    );
+}
+
+/// Two whitespace-only chunks in a row are both text, not a resend.
+#[test]
+fn a_second_whitespace_only_chunk_is_not_a_resend() {
+    assert_eq!(forwarded_text(&["\n", "\n", "Hi"]), vec!["\n", "\n", "Hi"]);
 }
 
 /// A second frame for the same call id merges into the first entry, so the
