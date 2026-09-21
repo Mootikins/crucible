@@ -6,16 +6,57 @@ use super::CrucibleAcpClient;
 use crate::acp::Result;
 
 impl CrucibleAcpClient {
-    pub(super) async fn respond_to_permission_request(
+    /// Answer an inbound `session/request_permission` frame.
+    ///
+    /// The agent blocks its turn until the reply comes, so every request gets
+    /// one. Params that the client cannot read get `-32602`. A frame with no
+    /// `id` is a notification, and JSON-RPC forbids a reply to it.
+    pub(super) async fn answer_permission_frame(
         &mut self,
-        request_id: u64,
+        frame: &serde_json::Value,
+    ) -> Result<()> {
+        let Some(request_id) = frame.get("id") else {
+            tracing::debug!("Ignoring session/request_permission sent as a notification");
+            return Ok(());
+        };
+        let params = frame
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        match serde_json::from_value::<RequestPermissionRequest>(params) {
+            Ok(request) => {
+                self.respond_to_permission_request(request_id, request)
+                    .await
+            }
+            Err(error) => {
+                tracing::warn!(%request_id, %error, "Unreadable session/request_permission params");
+                self.write_agent_response(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32602,
+                        "message": format!("Invalid params for session/request_permission: {error}"),
+                    }
+                }))
+                .await
+            }
+        }
+    }
+
+    /// Ask the permission handler for an outcome and send it back.
+    ///
+    /// The id is echoed as the raw JSON value, for the same reason as in
+    /// [`Self::respond_method_not_found`].
+    async fn respond_to_permission_request(
+        &mut self,
+        request_id: &serde_json::Value,
         request: RequestPermissionRequest,
     ) -> Result<()> {
         let outcome = if let Some(handler) = self.permission_handler.clone() {
             handler(request).await
         } else {
             tracing::warn!(
-                request_id,
+                %request_id,
                 "No ACP permission handler configured; cancelling request"
             );
             RequestPermissionOutcome::Cancelled
@@ -61,13 +102,5 @@ impl CrucibleAcpClient {
             }
         }))
         .await
-    }
-
-    pub(super) fn parse_request_id(&self, value: &serde_json::Value) -> Option<u64> {
-        match value {
-            serde_json::Value::Number(n) => n.as_u64(),
-            serde_json::Value::String(s) => s.parse::<u64>().ok(),
-            _ => None,
-        }
     }
 }

@@ -1,8 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use agent_client_protocol::schema::v1::{
-    ContentBlock, RequestPermissionRequest, SessionNotification, SessionUpdate,
-};
+use agent_client_protocol::schema::v1::{ContentBlock, SessionNotification, SessionUpdate};
 
 use super::types::StreamingState;
 use super::{CrucibleAcpClient, REQUEST_ID};
@@ -321,18 +319,7 @@ impl CrucibleAcpClient {
                     }
                 }
             } else if method_name == "session/request_permission" {
-                if let Some(params) = response.get("params") {
-                    if let Ok(request) =
-                        serde_json::from_value::<RequestPermissionRequest>(params.clone())
-                    {
-                        if let Some(id_value) = response.get("id") {
-                            if let Some(permission_id) = self.parse_request_id(id_value) {
-                                self.respond_to_permission_request(permission_id, request)
-                                    .await?;
-                            }
-                        }
-                    }
-                }
+                self.answer_permission_frame(response).await?;
             } else {
                 self.refuse_unhandled_method(response, method_name).await?;
             }
