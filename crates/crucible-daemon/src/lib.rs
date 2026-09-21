@@ -37,6 +37,7 @@ pub mod agent_manager;
 pub mod background_manager;
 pub mod daemon_plugins;
 pub mod delegation;
+pub mod diff;
 pub mod embedding;
 mod empty_providers;
 pub mod enrichment;
