@@ -23,11 +23,15 @@ use helpers::{
     extract_content_without_frontmatter, resolve_note_write, serialize_frontmatter_to_yaml,
 };
 
+use crate::file_write::{write_locked, LockedChange};
+use crucible_core::file_write::ExpectedBase;
+use crucible_core::note_edit::disk_hash;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::KnowledgeRepository;
 use helpers::ensure_md_suffix;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
+use std::path::Path;
 use std::sync::Arc;
 
 pub use params::{
@@ -144,13 +148,17 @@ impl NoteTools {
             content
         };
 
-        std::fs::write(full_path.as_path(), &final_content).mcp_err_ctx("Failed to write file")?;
+        // `create_note` replaces an existing file with no check, as it did
+        // before the checked write.
+        let answer =
+            write_note(full_path.as_path(), final_content, ExpectedBase::Unchecked).await?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note creation
 
         json_success(serde_json::json!({
             "path": path,
-            "status": "created"
+            "status": "created",
+            "content_hash": answer["content_hash"]
         }))
     }
 
@@ -296,66 +304,18 @@ impl NoteTools {
         let full_path = resolve_note_write(&self.scope, &path)?;
         let _write = crate::file_write::lock(full_path.as_path()).await;
 
-        if !full_path.exists() {
-            return Err(rmcp::ErrorData::invalid_params(
-                format!("File not found: {path}"),
-                None,
-            ));
-        }
-
-        // Read existing file
-        let existing_content =
-            std::fs::read_to_string(full_path.as_path()).mcp_err_ctx("Failed to read file")?;
-
-        // Track what fields are being updated
-        let mut updated_fields = Vec::new();
-
-        // Determine the final frontmatter and content
-        let (final_frontmatter, final_content) = match (new_frontmatter, new_content) {
-            (Some(fm), Some(content)) => {
-                // Update both frontmatter and content
-                updated_fields.push("frontmatter");
-                updated_fields.push("content");
-                (Some(fm), content)
-            }
-            (Some(fm), None) => {
-                // Update frontmatter only, preserve content
-                updated_fields.push("frontmatter");
-                let content = extract_content_without_frontmatter(&existing_content);
-                (Some(fm), content)
-            }
-            (None, Some(content)) => {
-                // Update content only, preserve frontmatter
-                updated_fields.push("content");
-                let fm = parse_yaml_frontmatter(&existing_content);
-                (fm, content)
-            }
-            (None, None) => {
-                // Nothing to update
-                return Err(rmcp::ErrorData::invalid_params(
-                    "Must provide either content or frontmatter to update".to_string(),
-                    None,
-                ));
-            }
-        };
-
-        // Build final file content
-        let final_file_content = if let Some(fm) = final_frontmatter {
-            let fm_str = serialize_frontmatter_to_yaml(&fm).mcp_err()?;
-            format!("{fm_str}{final_content}")
-        } else {
-            final_content
-        };
-
-        std::fs::write(full_path.as_path(), &final_file_content)
-            .mcp_err_ctx("Failed to update file")?;
+        let (text, base, updated_fields) =
+            updated_note(full_path.as_path(), &path, new_frontmatter, new_content)?;
+        let answer = write_note(full_path.as_path(), text, base).await?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note update
 
         json_success(serde_json::json!({
             "path": path,
             "status": "updated",
-            "updated_fields": updated_fields
+            "updated_fields": updated_fields,
+            "merged": answer["merged"],
+            "content_hash": answer["content_hash"]
         }))
     }
 
@@ -443,4 +403,101 @@ pub(super) fn indexed_frontmatter(row: &NoteRecord) -> serde_json::Value {
 /// reports `mtime`.
 pub(super) fn indexed_modified(row: &NoteRecord) -> Option<u64> {
     row.updated_at.timestamp().try_into().ok()
+}
+
+/// Read the note at `full_path` and build the text that `update_note` writes.
+/// The base is the text that this function read, so a write after an outside
+/// edit merges with that edit. The caller holds `file_write::lock(full_path)`.
+fn updated_note(
+    full_path: &Path,
+    path: &str,
+    new_frontmatter: Option<serde_json::Value>,
+    new_content: Option<String>,
+) -> Result<(String, ExpectedBase, Vec<&'static str>), rmcp::ErrorData> {
+    if !full_path.exists() {
+        return Err(rmcp::ErrorData::invalid_params(
+            format!("File not found: {path}"),
+            None,
+        ));
+    }
+
+    // Read existing file
+    let existing_content = std::fs::read_to_string(full_path).mcp_err_ctx("Failed to read file")?;
+
+    // Track what fields are being updated
+    let mut updated_fields = Vec::new();
+
+    // Determine the final frontmatter and content
+    let (final_frontmatter, final_content) = match (new_frontmatter, new_content) {
+        (Some(fm), Some(content)) => {
+            // Update both frontmatter and content
+            updated_fields.push("frontmatter");
+            updated_fields.push("content");
+            (Some(fm), content)
+        }
+        (Some(fm), None) => {
+            // Update frontmatter only, preserve content
+            updated_fields.push("frontmatter");
+            let content = extract_content_without_frontmatter(&existing_content);
+            (Some(fm), content)
+        }
+        (None, Some(content)) => {
+            // Update content only, preserve frontmatter
+            updated_fields.push("content");
+            let fm = parse_yaml_frontmatter(&existing_content);
+            (fm, content)
+        }
+        (None, None) => {
+            // Nothing to update
+            return Err(rmcp::ErrorData::invalid_params(
+                "Must provide either content or frontmatter to update".to_string(),
+                None,
+            ));
+        }
+    };
+
+    // Build final file content
+    let final_file_content = if let Some(fm) = final_frontmatter {
+        let fm_str = serialize_frontmatter_to_yaml(&fm).mcp_err()?;
+        format!("{fm_str}{final_content}")
+    } else {
+        final_content
+    };
+
+    let base = ExpectedBase::Text {
+        hash: disk_hash(&existing_content),
+        text: existing_content,
+    };
+    Ok((final_file_content, base, updated_fields))
+}
+
+/// Write `text` through the daemon's checked write. A conflict or a refusal
+/// becomes a tool error, and the disk does not change. The caller holds
+/// `file_write::lock(full_path)`.
+async fn write_note(
+    full_path: &Path,
+    text: String,
+    base: ExpectedBase,
+) -> Result<serde_json::Value, rmcp::ErrorData> {
+    let answer = write_locked(full_path, LockedChange::Put(text), base)
+        .await
+        .mcp_err_ctx("Failed to write file")?;
+    if answer["ok"] == true {
+        return Ok(answer);
+    }
+    if let Some(message) = answer["message"].as_str() {
+        return Err(rmcp::ErrorData::invalid_params(
+            format!("Failed to write file: {message}"),
+            None,
+        ));
+    }
+    Err(rmcp::ErrorData::invalid_request(
+        "The note changed on disk, and the change conflicts with this edit. \
+         The note on disk did not change. Read the note again, then repeat the edit."
+            .to_string(),
+        Some(serde_json::json!({
+            "current_hash": answer["current_hash"],
+            "regions": answer["regions"],
+        })),
+    ))
 }

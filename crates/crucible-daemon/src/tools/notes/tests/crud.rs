@@ -885,3 +885,61 @@ async fn note_updates_share_the_rpc_write_lock() {
     update.await.unwrap();
     assert_eq!(std::fs::read_to_string(path).unwrap(), "after");
 }
+
+/// The answer JSON of a tool call.
+fn answer(result: &rmcp::model::CallToolResult) -> serde_json::Value {
+    let text = &result.content[0].as_text().unwrap().text;
+    serde_json::from_str(text).unwrap()
+}
+
+#[tokio::test]
+async fn create_note_writes_through_the_checked_write() {
+    let dir = TempDir::new().unwrap();
+    let tools = super::unindexed(dir.path().to_string_lossy().into_owned());
+    // The checked write makes the parent folders, and it answers the hash of
+    // the text on disk.
+    let result = tools
+        .create_note(Parameters(CreateNoteParams {
+            path: "new/folder/note.md".into(),
+            content: "body\n".into(),
+            frontmatter: None,
+        }))
+        .await
+        .unwrap();
+    let disk = std::fs::read_to_string(dir.path().join("new/folder/note.md")).unwrap();
+    assert_eq!(disk, "body\n");
+    assert_eq!(
+        answer(&result)["content_hash"],
+        crucible_core::note_edit::disk_hash(&disk)
+    );
+}
+
+#[tokio::test]
+async fn update_note_merges_with_an_outside_edit() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("note.md");
+    std::fs::write(&path, "a\nb\nc\nd\ne\n").unwrap();
+    // `update_note` reads the note, then an outside editor changes the last
+    // line before the tool writes.
+    let (text, base, _) =
+        super::super::updated_note(&path, "note.md", None, Some("A\nb\nc\nd\ne\n".into())).unwrap();
+    std::fs::write(&path, "a\nb\nc\nd\nE\n").unwrap();
+    let written = super::super::write_note(&path, text, base).await.unwrap();
+    assert_eq!(written["merged"], true);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "A\nb\nc\nd\nE\n");
+}
+
+#[tokio::test]
+async fn update_note_refuses_a_conflicting_outside_edit() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("note.md");
+    std::fs::write(&path, "a\nb\n").unwrap();
+    let (text, base, _) =
+        super::super::updated_note(&path, "note.md", None, Some("tool\nb\n".into())).unwrap();
+    std::fs::write(&path, "outside\nb\n").unwrap();
+    let error = super::super::write_note(&path, text, base)
+        .await
+        .unwrap_err();
+    assert!(error.message.contains("changed on disk"), "{error:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "outside\nb\n");
+}
