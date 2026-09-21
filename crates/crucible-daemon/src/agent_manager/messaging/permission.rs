@@ -1576,3 +1576,161 @@ mod acp_tool_name_tests {
         ));
     }
 }
+
+/// Tests that call the real handler that `build_acp_permission_handler`
+/// returns. The unit tests above cover its parts. These tests cover the
+/// order of the parts: the declared policy, then the gate, then the prompt.
+#[cfg(test)]
+mod acp_permission_handler_tests {
+    use super::*;
+    use crate::agent_manager::tests::create_test_agent_manager;
+    use crate::test_support::temp_session_manager;
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
+        ToolCallUpdate, ToolCallUpdateFields, ToolKind,
+    };
+    use crucible_core::agent::{ToolPolicy, ToolPolicyMap};
+    use crucible_core::interaction::PermResponse;
+    use std::time::Duration;
+
+    const SESSION: &str = "acp-perm-session";
+
+    /// An ACP `bash` call that offers exactly one allow and one reject.
+    fn execute_request() -> RequestPermissionRequest {
+        let mut fields = ToolCallUpdateFields::default();
+        fields.kind = Some(ToolKind::Execute);
+        fields.title = Some("Run cargo test".to_string());
+        fields.raw_input = Some(serde_json::json!({ "command": "cargo test" }));
+        RequestPermissionRequest::new(
+            "acp-wire-session",
+            ToolCallUpdate::new("call-1", fields),
+            vec![
+                PermissionOption::new("allow_once", "Allow once", PermissionOptionKind::AllowOnce),
+                PermissionOption::new(
+                    "reject_once",
+                    "Reject once",
+                    PermissionOptionKind::RejectOnce,
+                ),
+            ],
+        )
+    }
+
+    fn selected(outcome: &RequestPermissionOutcome) -> Option<String> {
+        match outcome {
+            RequestPermissionOutcome::Selected(s) => Some(s.option_id.to_string()),
+            _ => None,
+        }
+    }
+
+    fn policy(stance: ToolPolicy) -> ToolPolicyMap {
+        ToolPolicyMap::from([("bash".to_string(), stance)])
+    }
+
+    /// Build the handler for an interactive session with no override.
+    fn handler(
+        am: &AgentManager,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+        tool_policy: Option<ToolPolicyMap>,
+    ) -> crate::acp::client::PermissionRequestHandler {
+        am.build_acp_permission_handler(SESSION, event_tx, true, None, None, tool_policy)
+    }
+
+    /// Read events until the prompt arrives. Return its request id.
+    async fn prompt_id(rx: &mut broadcast::Receiver<SessionEventMessage>) -> String {
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .expect("the handler must emit interaction_requested")
+                .expect("event channel open");
+            if msg.event == "interaction_requested" {
+                return msg.data["request_id"]
+                    .as_str()
+                    .expect("request_id")
+                    .to_string();
+            }
+        }
+    }
+
+    /// A card that allows `bash` answers the call. No prompt appears.
+    #[tokio::test]
+    async fn a_declared_allow_selects_allow_once_without_a_prompt() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Allow)));
+
+        let outcome = handle(execute_request()).await;
+
+        assert_eq!(selected(&outcome).as_deref(), Some("allow_once"));
+        assert!(
+            event_rx.try_recv().is_err(),
+            "a declared Allow must not prompt the user"
+        );
+        assert!(am.list_all_pending_permissions().is_empty());
+    }
+
+    /// A card that denies `bash` refuses the call. No prompt appears.
+    #[tokio::test]
+    async fn a_declared_deny_selects_reject_once_without_a_prompt() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Deny)));
+
+        let outcome = handle(execute_request()).await;
+
+        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(
+            event_rx.try_recv().is_err(),
+            "a declared Deny must not prompt the user"
+        );
+    }
+
+    /// With no policy, the handler asks the user. The answer goes through
+    /// the manager reply API, as a client answer does.
+    #[tokio::test]
+    async fn with_no_policy_the_user_answer_selects_the_option() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        for (answer, expected) in [
+            (PermResponse::allow(), "allow_once"),
+            (PermResponse::deny(), "reject_once"),
+        ] {
+            let pending = tokio::spawn(handle(execute_request()));
+            let id = prompt_id(&mut event_rx).await;
+            am.respond_to_permission(SESSION, &id, answer)
+                .expect("the prompt must be in the session registry");
+
+            let outcome = tokio::time::timeout(Duration::from_secs(5), pending)
+                .await
+                .expect("the handler must return after the answer")
+                .expect("join");
+            assert_eq!(selected(&outcome).as_deref(), Some(expected));
+        }
+    }
+
+    /// Nobody answers. After 300 s the handler rejects the call. It does not
+    /// wait forever. It also removes the prompt from the registry.
+    #[tokio::test(start_paused = true)]
+    async fn an_unanswered_prompt_rejects_after_the_timeout() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        let pending = tokio::spawn(handle(execute_request()));
+        let _id = prompt_id(&mut event_rx).await;
+        assert_eq!(am.list_all_pending_permissions().len(), 1);
+
+        tokio::time::advance(Duration::from_secs(301)).await;
+        let outcome = tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .expect("the handler must return after the 300 s timeout")
+            .expect("join");
+
+        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(
+            am.list_all_pending_permissions().is_empty(),
+            "a timed-out prompt must leave the registry"
+        );
+    }
+}

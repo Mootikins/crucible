@@ -773,7 +773,9 @@ pub(super) fn configure_provider_endpoint(am: &AgentManager, endpoint: &str) {
         .add_provider(&format!("mock-{endpoint}"), entry, false);
 }
 
-fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManager {
+pub(in crate::agent_manager) fn create_test_agent_manager(
+    session_manager: Arc<SessionManager>,
+) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
