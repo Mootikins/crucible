@@ -1812,11 +1812,15 @@ export async function recordRecent(absPath: string, name: string): Promise<void>
  * the daemon had said in a sentence which root it refused and why. The query
  * parameters are the document's own (`root` / `rel_path` / `show_ignored` /
  * `show_hidden`), so a rename in Rust fails the build here.
+ *
+ * `notify: false` rejects without a toast. The `@` completer uses it, because
+ * a refused workspace root is not an error that the user can correct there.
  */
 export async function listDir(
   root: string,
   relPath = '',
   showHidden = false,
+  { notify = true }: { notify?: boolean } = {},
 ): Promise<FsListing> {
   return decode(
     await client.GET('/api/fs/list', {
@@ -1825,7 +1829,7 @@ export async function listDir(
       },
     }),
     `Failed to list ${root}`,
-    { notify: true },
+    { notify },
   );
 }
 

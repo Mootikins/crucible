@@ -3,6 +3,7 @@ import { createRoot, createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { FileEntry } from '@/lib/types';
 import type { SlashCommand } from '@/lib/api';
+import { notificationActions, notificationStore } from '@/stores/notificationStore';
 import {
   fuzzyFilter,
   resetCommandCache,
@@ -25,6 +26,8 @@ let notes: FileEntry[] = [];
 let dirs: Record<string, Array<{ name: string; rel_path: string; is_dir: boolean }>> = {};
 /** When true, `GET /api/commands` refuses once. */
 let refuseCommands = false;
+/** When true, `GET /api/fs/list` refuses the root, as the daemon does for a root it did not admit. */
+let refuseDirs = false;
 
 let env: TestQueryEnv;
 
@@ -40,6 +43,12 @@ function installEnv(): void {
     'GET /api/kiln/files': () => ({ files }),
     'GET /api/kiln/notes': () => ({ files: notes }),
     'GET /api/fs/list': (request: Request) => {
+      if (refuseDirs) {
+        return new Response(
+          JSON.stringify({ error: { code: 422, message: 'root is not a registered project' } }),
+          { status: 422 },
+        );
+      }
       const rel = new URL(request.url).searchParams.get('rel_path') ?? '';
       const entries = (dirs[rel] ?? []).map((e) => ({
         ...e,
@@ -268,6 +277,8 @@ describe('useAutocomplete file mentions', () => {
       src: [{ name: 'main.rs', rel_path: 'src/main.rs', is_dir: false }],
     };
     refuseCommands = false;
+    refuseDirs = false;
+    notificationActions.clearAll();
     installEnv();
   });
 
@@ -294,6 +305,21 @@ describe('useAutocomplete file mentions', () => {
       expect(index).toBeGreaterThanOrEqual(0);
       auto.complete(index);
       expect(input()).toBe('@src/main.rs');
+      dispose();
+    });
+  });
+
+  // The user types `@` often. A workspace that is not an admitted root is not
+  // an error that the user can correct here, so the completer shows no toast.
+  it('a refused workspace shows no toast and lists the kiln files', async () => {
+    await createRoot(async (dispose) => {
+      refuseDirs = true;
+      const { auto, type } = harness('', '/ws');
+      await type('@wiki');
+      expect(env.fetch.calls('GET /api/fs/list')).toBeGreaterThan(0);
+      expect(auto.isOpen()).toBe(true);
+      expect(auto.items().map((i) => i.insertText)).toEqual(['Help/Wikilinks.md']);
+      expect(notificationStore.notifications.filter((n) => !n.dismissed)).toEqual([]);
       dispose();
     });
   });

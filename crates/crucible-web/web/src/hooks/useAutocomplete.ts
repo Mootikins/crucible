@@ -210,7 +210,8 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
   /**
    * The workspace folder that the `@` path names, as rows. The listing is one
    * level, so `@src/ma` lists `src` and the fuzzy filter picks from it.
-   * A refused root lists nothing: the kiln rows still complete.
+   * A refused root lists nothing and shows no toast: the kiln rows still
+   * complete.
    */
   const loadWorkspaceFolder = async (path: string) => {
     const root = options.workspacePath?.();
@@ -221,7 +222,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     const cut = path.lastIndexOf('/');
     const folder = cut < 0 ? '' : path.slice(0, cut);
     try {
-      const listing = await fetchDirOnce({ root, relPath: folder });
+      const listing = await fetchDirOnce({ root, relPath: folder, notify: false });
       setWorkspaceItems(
         listing.entries.map((entry) => {
           const rel = entry.is_dir ? `${entry.rel_path}/` : entry.rel_path;

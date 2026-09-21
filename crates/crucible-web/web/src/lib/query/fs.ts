@@ -48,6 +48,11 @@ export interface DirRequest {
   readonly relPath?: string;
   /** Whether dotfiles are listed. NOT part of the key — see `dirOptions`. */
   readonly showHidden?: boolean;
+  /**
+   * Whether a refusal shows a toast. The default is true. NOT part of the key:
+   * a quiet reader and a loud reader read the same folder.
+   */
+  readonly notify?: boolean;
 }
 
 /** What one move asks for. `kind` picks the daemon's allowlist. */
@@ -114,7 +119,10 @@ export function absFolderPath(root: string, relPath = ''): string {
 function dirOptions(request: DirRequest) {
   return {
     queryKey: keys.fsDir(absFolderPath(request.root, request.relPath)),
-    queryFn: () => listDir(request.root, request.relPath ?? '', request.showHidden ?? false),
+    queryFn: () =>
+      listDir(request.root, request.relPath ?? '', request.showHidden ?? false, {
+        notify: request.notify ?? true,
+      }),
   };
 }
 
