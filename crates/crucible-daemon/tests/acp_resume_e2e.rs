@@ -178,6 +178,108 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
     );
 }
 
+/// A stored id that the agent no longer knows is replaced by the id of the
+/// session that the fallback opens.
+///
+/// The agent answers `-32002` for the stored id, and the connect falls back
+/// to `session/new`. If `send.rs` keeps the stale id, every later rebuild
+/// sends `session/resume` for it again, and every rebuild loses the history
+/// of the session that the fallback opened. The second manager proves the
+/// replacement: it must resume the NEW id.
+#[tokio::test]
+async fn a_resume_fallback_replaces_the_stale_stored_id_with_the_new_one() {
+    let temp = TempDir::new().expect("temp dir");
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).expect("kiln dir");
+    let log_path = temp.path().join("methods.log");
+
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
+    let (event_tx, _event_rx) = broadcast::channel(256);
+
+    let session = session_manager
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .expect("session");
+
+    // The profile of the first manager: the agent forgot every session.
+    let mut forgetting = resuming_profile(&log_path);
+    forgetting
+        .env
+        .insert("CRU_MOCK_RESUME_UNKNOWN".to_string(), "1".to_string());
+    let first = manager(session_manager.clone(), forgetting, &event_tx);
+    first
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .expect("configure the ACP agent");
+
+    // A previous handle stored an id that the agent no longer knows.
+    let mut stored = session_manager
+        .get_session(&session.id)
+        .expect("the session exists");
+    stored.acp_session_id = Some("stale".to_string());
+    session_manager
+        .storage()
+        .save(&stored)
+        .await
+        .expect("store the stale id");
+    session_manager.register_transient(stored);
+
+    let (_id, done) = first
+        .send_message_notified(&session.id, "first".to_string(), &event_tx, true, None)
+        .await
+        .expect("turn one accepted");
+    completed_turn(done, TURN_TIMEOUT).await;
+
+    let log = method_log(&log_path);
+    assert!(
+        log.contains(&"session/resume stale".to_string()),
+        "the first handle must try to resume the stored id; log: {log:?}"
+    );
+    let opened: Vec<&str> = log
+        .iter()
+        .filter_map(|l| l.strip_prefix("session/prompt "))
+        .collect();
+    let [fresh_id] = opened[..] else {
+        panic!("turn one must send exactly one prompt; log: {log:?}");
+    };
+    assert_ne!(fresh_id, "stale", "the fallback must open a new session");
+    let persisted = session_manager
+        .get_session(&session.id)
+        .and_then(|s| s.acp_session_id);
+    assert_eq!(
+        persisted.as_deref(),
+        Some(fresh_id),
+        "the id of the fallback session must replace the stale stored id"
+    );
+    let fresh_id = fresh_id.to_string();
+
+    // The second manager: the agent resumes what it is asked for.
+    let second = manager(
+        session_manager.clone(),
+        resuming_profile(&log_path),
+        &event_tx,
+    );
+    let (_id, done) = second
+        .send_message_notified(&session.id, "second".to_string(), &event_tx, true, None)
+        .await
+        .expect("turn two accepted");
+    completed_turn(done, TURN_TIMEOUT).await;
+
+    let log = method_log(&log_path);
+    let resumes: Vec<&String> = log
+        .iter()
+        .filter(|l| l.starts_with("session/resume"))
+        .collect();
+    assert_eq!(
+        resumes,
+        [
+            &"session/resume stale".to_string(),
+            &format!("session/resume {fresh_id}")
+        ],
+        "the rebuilt handle must resume the NEW id, not the stale one; log: {log:?}"
+    );
+}
+
 /// An agent that reports its mode set again on `session/resume` hands it to
 /// the resumed session. The `session/new` path is covered by
 /// `acp_integration/session_modes.rs`; the resume path builds its
