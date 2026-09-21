@@ -61,7 +61,6 @@ const {
   pendingReveal,
   reviewActions,
   reviewStore,
-  revealedToolCall,
   useReviewSession,
 } = await import('@/lib/review-store');
 
@@ -131,7 +130,7 @@ afterEach(() => {
 });
 
 describe('FileViewerPanel — inline review layer', () => {
-  it('decorates the composed hunks in the real buffer, with an attribution chip', async () => {
+  it('decorates the composed hunks in the real buffer', async () => {
     await seed([hunk()]);
     const { container } = render(() => <FileViewerPanel filePath={FILE_PATH} />);
 
@@ -140,19 +139,6 @@ describe('FileViewerPanel — inline review layer', () => {
     await waitFor(() =>
       expect(container.querySelectorAll('.cm-review-unreviewed')).toHaveLength(2),
     );
-    const chip = container.querySelector('.cm-review-chip')!;
-    expect(chip.getAttribute('data-hunk-id')).toBe('h1');
-  });
-
-  it('the gutter chip points the transcript at the tool call that wrote it', async () => {
-    await seed([hunk()]);
-    const { container } = render(() => <FileViewerPanel filePath={FILE_PATH} />);
-    await waitFor(() => expect(container.querySelector('.cm-review-chip')).toBeTruthy());
-
-    container
-      .querySelector('.cm-review-chip')!
-      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    expect(revealedToolCall()).toBe('call-1');
   });
 
   it('hunks belonging to another file never reach this buffer', async () => {
@@ -161,14 +147,14 @@ describe('FileViewerPanel — inline review layer', () => {
     await waitFor(() => expect(container.querySelector('.cm-editor')).toBeTruthy());
     // Give the deferred install a turn before asserting the absence.
     await new Promise((r) => setTimeout(r, 0));
-    expect(container.querySelectorAll('.cm-review-chip')).toHaveLength(0);
+    expect(container.querySelectorAll('.cm-review-unreviewed')).toHaveLength(0);
   });
 
   it('an external hunk is marked as unowned, not blamed on a tool', async () => {
     await seed([hunk({ tool_call_ids: [] })]);
     const { container } = render(() => <FileViewerPanel filePath={FILE_PATH} />);
     await waitFor(() => expect(container.querySelectorAll('.cm-review-external')).toHaveLength(2));
-    expect(container.querySelector('.cm-review-chip')!.textContent).toBe('external');
+    expect(container.querySelectorAll('.cm-review-unreviewed')).toHaveLength(0);
   });
 
   it('a reveal for THIS file scrolls the buffer and is consumed', async () => {

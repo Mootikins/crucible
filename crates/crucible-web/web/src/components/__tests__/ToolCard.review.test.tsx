@@ -136,15 +136,15 @@ afterEach(() => {
 const expand = () => fireEvent.click(screen.getByRole('button', { expanded: false }));
 
 describe('ToolCard — review attribution', () => {
-  it('stamps the daemon call id so the editor gutter can scroll to it', () => {
+  it('stamps the daemon call id so a reveal can scroll to it', () => {
     const { container } = render(() => <ToolCard toolCall={editCall()} />);
     expect(container.querySelector('[data-tool-call-id="call-1"]')).toBeTruthy();
   });
 
   it('publishes the tool name for surfaces that only have ids', () => {
     render(() => <ToolCard toolCall={editCall()} />);
-    // The Changes panel and the editor gutter render outside ChatProvider and
-    // have no other source for this.
+    // The Changes panel renders outside ChatProvider and has
+    // no other source for this.
     expect(toolCallLabel('call-1')).toBe('Edit');
   });
 
@@ -157,7 +157,7 @@ describe('ToolCard — review attribution', () => {
     expect(screen.queryByTestId('tool-superseded')).toBeNull();
   });
 
-  it('highlights the card the gutter chip pointed at', async () => {
+  it('highlights the card that a reveal names', async () => {
     const { container } = render(() => <ToolCard toolCall={editCall()} />);
     reviewActions.revealToolCall('call-1');
     expect(revealedToolCall()).toBe('call-1');

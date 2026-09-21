@@ -27,7 +27,7 @@ import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/windowing';
 import { EditorView } from '@codemirror/view';
 import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
-import { pendingReveal, reviewActions, reviewStore, toolCallLabel } from '@/lib/review-store';
+import { pendingReveal, reviewActions, reviewStore } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
 
 /** Extensions the browser renders itself, kept in step with the canvas media
@@ -237,16 +237,11 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
       end: hunk.current_range.end,
       state: hunk.state,
       external: isExternal(hunk),
-      // The tool name, not "turn 7 · Edit": the turn coordinate does not cross
-      // the wire on a composed hunk, and a number inferred here would be a
-      // guess dressed as attribution.
-      label: hunk.tool_call_ids.length > 0 ? toolCallLabel(hunk.tool_call_ids[0]) : 'external',
-      toolCallId: hunk.tool_call_ids[0] ?? null,
     }));
   });
 
-  // Sync the layer with the file's hunks — which installs it on the first one
-  // and leaves a hunk-free file with no gutter column at all.
+  // Sync the layer with the file's hunks. The layer has no gutter, so a
+  // hunk-free file loses no width.
   //
   // Deferred to a microtask because `CodeMirrorEditor` rebuilds its entire
   // configuration with `StateEffect.reconfigure` whenever one of seven props
@@ -257,7 +252,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // KNOWN GAP: the markdown reading/live mode toggle is internal to
   // EditorWithPreview, so it is not one of the dependencies below. The layer
   // reappears on the next store refresh (any tool result or turn end). The
-  // real fix is one `extensions.push(reviewDecorations(…))` inside
+  // real fix is one `extensions.push(reviewDecorations())` inside
   // `createExtensions()`, which belongs to that component.
   createEffect(() => {
     const marks = reviewMarks();
@@ -274,9 +269,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     if (!view) return;
     queueMicrotask(() => {
       if (editorView() !== view) return;
-      syncReviewLayer(view, marks, {
-        onReveal: (h) => h.toolCallId && reviewActions.revealToolCall(h.toolCallId),
-      });
+      syncReviewLayer(view, marks);
     });
   });
 

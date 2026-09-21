@@ -3,12 +3,11 @@
  *
  * Review happens inline — real highlighting, real folding, real go-to-
  * definition, and your spatial memory of the file survives — so this is a
- * decoration set plus a gutter, not a second side-by-side viewer.
+ * decoration set, not a second side-by-side viewer.
  *
- * Two pieces:
- *   - one `Decoration.line` per line of every live hunk, toned by review state;
- *   - a per-hunk gutter chip carrying the attribution, which scrolls the chat
- *     transcript to the tool call that made the change when clicked.
+ * The layer puts one `Decoration.line` on each line of every live hunk. The
+ * review state of the hunk sets the tone. The layer has no gutter: a text chip
+ * took too much width next to reflowed prose.
  *
  * The hunks arrive by effect (`setReviewHunks`) rather than by closure so the
  * extension is a plain value with no owner: `FileViewerPanel` dispatches into
@@ -21,7 +20,7 @@ import {
   StateField,
   type Extension,
 } from '@codemirror/state';
-import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
+import { Decoration, EditorView } from '@codemirror/view';
 import type { ReviewState } from '@/lib/review-types';
 
 /** One hunk, already projected onto this buffer's line numbers. */
@@ -34,10 +33,6 @@ export interface ReviewHunkMark {
   state: ReviewState;
   /** Unattributed (§5) — rendered for context, never blamed on the agent. */
   external: boolean;
-  /** What the gutter chip says; the tool that wrote it. */
-  label: string;
-  /** Where the chip jumps to. Null for an external hunk. */
-  toolCallId: string | null;
 }
 
 const setReviewHunks = StateEffect.define<ReviewHunkMark[]>();
@@ -77,39 +72,6 @@ function buildDecorations(state: EditorState) {
   return builder.finish();
 }
 
-class ChipMarker extends GutterMarker {
-  constructor(
-    private readonly hunk: ReviewHunkMark,
-    private readonly onClick: (hunk: ReviewHunkMark) => void,
-  ) {
-    super();
-  }
-
-  eq(other: ChipMarker): boolean {
-    return other.hunk.id === this.hunk.id && other.hunk.state === this.hunk.state;
-  }
-
-  toDOM(): Node {
-    const el = document.createElement('span');
-    el.className = `cm-review-chip cm-review-chip-${this.hunk.external ? 'external' : this.hunk.state}`;
-    el.textContent = this.hunk.label;
-    el.title = this.hunk.toolCallId
-      ? `${this.hunk.label} — show the tool call that made this change`
-      : 'Changed outside any tool call';
-    el.setAttribute('data-hunk-id', this.hunk.id);
-    if (this.hunk.toolCallId) {
-      el.addEventListener('mousedown', (e) => {
-        // mousedown, not click: the gutter is inside the editor and a click
-        // would first move the cursor, scrolling the buffer out from under the
-        // jump the user asked for.
-        e.preventDefault();
-        this.onClick(this.hunk);
-      });
-    }
-    return el;
-  }
-}
-
 /** The theme lives with the extension so a host that adds one line gets the
  * complete surface. Tokens, not literals, so it tracks the shell palette. */
 const reviewTheme = EditorView.baseTheme({
@@ -117,52 +79,12 @@ const reviewTheme = EditorView.baseTheme({
   '.cm-review-accepted': { backgroundColor: 'color-mix(in srgb, var(--color-ok) 10%, transparent)' },
   '.cm-review-rejected': { opacity: '0.5' },
   '.cm-review-external': { backgroundColor: 'color-mix(in srgb, var(--color-muted) 10%, transparent)' },
-  // No minimum: the column is as wide as the chips in it, so one whose hunks
-  // have all been resolved takes no space while it waits for a reconfigure.
-  '.cm-review-gutter': { padding: '0 2px' },
-  '.cm-review-chip': {
-    display: 'inline-block',
-    maxWidth: '7rem',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    padding: '0 4px',
-    // 11px, the floor. The literal here was 10px, which sat BELOW the floor
-    // and passed the type gate: that gate read `text-[Npx]` classes only, so
-    // a size written as a style property was invisible to it.
-    fontSize: 'var(--cru-font-floor)',
-    lineHeight: '1.4',
-    borderRadius: 'var(--cru-radius-sm)',
-    cursor: 'pointer',
-    border: '1px solid var(--color-hairline-strong)',
-    color: 'var(--color-muted)',
-  },
-  '.cm-review-chip-unreviewed': { color: 'var(--color-attention)' },
-  '.cm-review-chip-accepted': { color: 'var(--color-ok)' },
-  '.cm-review-chip-external': { cursor: 'default' },
 });
 
-export interface ReviewDecorationOptions {
-  /** Chip click. Called with the hunk; only fires when it has a tool call. */
-  onReveal: (hunk: ReviewHunkMark) => void;
-}
-
-export function reviewDecorations(opts: ReviewDecorationOptions): Extension {
+export function reviewDecorations(): Extension {
   return [
     reviewHunksField,
     EditorView.decorations.compute([reviewHunksField], buildDecorations),
-    gutter({
-      class: 'cm-review-gutter',
-      lineMarker(view, line) {
-        const n = view.state.doc.lineAt(line.from).number;
-        // One chip per hunk, on its first line — a chip per line would be a
-        // column of noise saying the same thing.
-        const hunk = view.state.field(reviewHunksField).find((h) => h.start === n);
-        return hunk ? new ChipMarker(hunk, opts.onReveal) : null;
-      },
-      lineMarkerChange: (update) =>
-        update.transactions.some((tr) => tr.effects.some((e) => e.is(setReviewHunks))),
-    }),
     reviewTheme,
   ];
 }
@@ -179,9 +101,9 @@ export function reviewDecorations(opts: ReviewDecorationOptions): Extension {
  *
  * Returns whether it appended.
  */
-export function ensureReviewLayer(view: EditorView, opts: ReviewDecorationOptions): boolean {
+export function ensureReviewLayer(view: EditorView): boolean {
   if (view.state.field(reviewHunksField, false) !== undefined) return false;
-  view.dispatch({ effects: StateEffect.appendConfig.of(reviewDecorations(opts)) });
+  view.dispatch({ effects: StateEffect.appendConfig.of(reviewDecorations()) });
   return true;
 }
 
@@ -191,30 +113,12 @@ export function applyReviewHunks(view: EditorView, hunks: ReviewHunkMark[]): voi
 }
 
 /**
- * Bring a view's review layer in line with the hunks it should be showing —
- * installing it on the first hunk, and never before.
+ * Bring a view's review layer in line with the hunks it must show.
  *
- * A gutter column exists as soon as its extension does, whether or not any
- * line has a marker for it. Installing the layer on open therefore charged
- * every file the width of a chip that was not there: an empty strip on every
- * note the user opened by hand, and in live preview — which drops the
- * line-number gutter so the buffer reads as prose — the only gutter on screen.
- *
- * Hunk-free is the common case, so the layer waits for one. Once up it cannot
- * be taken down in place (CodeMirror has no way to remove an appended
- * extension), so a file whose hunks are all resolved keeps an empty column
- * until the host next reconfigures. That column collapses to nothing on its
- * own: its width is the chips' width, and there are none.
+ * The layer has no gutter, so it takes no width. It installs on a hunk-free
+ * file too. It installs again after a host reconfigure.
  */
-export function syncReviewLayer(
-  view: EditorView,
-  hunks: ReviewHunkMark[],
-  opts: ReviewDecorationOptions,
-): void {
-  const installed = view.state.field(reviewHunksField, false) !== undefined;
-  if (!installed) {
-    if (hunks.length === 0) return;
-    ensureReviewLayer(view, opts);
-  }
+export function syncReviewLayer(view: EditorView, hunks: ReviewHunkMark[]): void {
+  ensureReviewLayer(view);
   applyReviewHunks(view, hunks);
 }
