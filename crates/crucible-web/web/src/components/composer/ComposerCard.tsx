@@ -16,6 +16,8 @@ export interface ComposerCardProps {
    * leaves those triggers inert; `/command` completion works regardless.
    */
   kilnPath?: Accessor<string | null | undefined>;
+  /** Workspace whose files `@file` lists. Absent lists only the kiln files. */
+  workspacePath?: Accessor<string | null | undefined>;
   placeholder: string;
   ariaLabel?: string;
   /** Lines the prompt occupies when empty. It grows from here, never below. */
@@ -75,6 +77,7 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
     input: props.value,
     setInput: props.setValue,
     kilnPath: props.kilnPath ?? (() => null),
+    workspacePath: props.workspacePath ?? (() => null),
     textareaRef,
   });
 

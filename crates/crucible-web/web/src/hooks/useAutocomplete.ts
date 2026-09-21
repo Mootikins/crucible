@@ -1,5 +1,6 @@
 import { Accessor, Setter, createSignal } from 'solid-js';
 import { fetchKilnFilesOnce, fetchKilnNotesOnce } from '@/lib/query/notes';
+import { fetchDirOnce } from '@/lib/query/fs';
 import { fetchSlashCommandsOnce } from '@/lib/query/commands';
 import { fuzzyScore } from '@/lib/fuzzy';
 import type { FileEntry } from '@/lib/types';
@@ -24,6 +25,11 @@ interface UseAutocompleteOptions {
   input: Accessor<string>;
   setInput: Setter<string>;
   kilnPath: Accessor<string | null | undefined>;
+  /**
+   * The workspace of the session. `@` lists its files one folder at a time.
+   * Absent (or null) leaves only the kiln files in the `@` list.
+   */
+  workspacePath?: Accessor<string | null | undefined>;
   textareaRef: Accessor<HTMLTextAreaElement | undefined>;
 }
 
@@ -64,6 +70,31 @@ function toAutocompleteItems(entries: FileEntry[], prefix: string): Autocomplete
     label: entry.name,
     insertText: entry.name,
   }));
+}
+
+/**
+ * The `@` rows of a kiln. The daemon resolves a mention under each root of the
+ * session, so the row inserts the path under the kiln root, not the basename.
+ */
+function toMentionItems(entries: FileEntry[]): AutocompleteItem[] {
+  return entries.map((entry) => ({
+    id: `file:${entry.path}`,
+    label: entry.path,
+    insertText: entry.path,
+  }));
+}
+
+/**
+ * A line suffix at the end of an `@` query: `:12`, `:12-14`, or a part of one
+ * that the user still types (`:`, `:12-`). The daemon attaches only those lines.
+ */
+const LINE_SUFFIX = /:\d*(?:-\d*)?$/;
+
+/** Split an `@` query into the path to complete and its line suffix. */
+export function splitLineSuffix(query: string): { path: string; suffix: string } {
+  const match = LINE_SUFFIX.exec(query);
+  if (!match) return { path: query, suffix: '' };
+  return { path: query.slice(0, match.index), suffix: match[0] };
 }
 
 function extractTagItems(entries: FileEntry[]): AutocompleteItem[] {
@@ -141,6 +172,8 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
   const [tagItems, setTagItems] = createSignal<AutocompleteItem[]>([]);
   const [commandItems, setCommandItems] = createSignal<AutocompleteItem[]>([]);
   const [loadedKiln, setLoadedKiln] = createSignal<string | null>(null);
+  const [workspaceItems, setWorkspaceItems] = createSignal<AutocompleteItem[]>([]);
+  const [lineSuffix, setLineSuffix] = createSignal('');
 
   const close = () => {
     setIsOpen(false);
@@ -167,16 +200,46 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
       fetchKilnFilesOnce(kiln),
       fetchKilnNotesOnce(kiln),
     ]);
-    const fileOptions = toAutocompleteItems(files, 'file');
     const noteOptions = toAutocompleteItems(notes, 'note');
-    setFileItems([...fileOptions, ...noteOptions]);
+    setFileItems(toMentionItems([...files, ...notes]));
     setNoteItems(noteOptions);
     setTagItems(extractTagItems(notes));
     setLoadedKiln(kiln);
   };
 
+  /**
+   * The workspace folder that the `@` path names, as rows. The listing is one
+   * level, so `@src/ma` lists `src` and the fuzzy filter picks from it.
+   * A refused root lists nothing: the kiln rows still complete.
+   */
+  const loadWorkspaceFolder = async (path: string) => {
+    const root = options.workspacePath?.();
+    if (!root) {
+      setWorkspaceItems([]);
+      return;
+    }
+    const cut = path.lastIndexOf('/');
+    const folder = cut < 0 ? '' : path.slice(0, cut);
+    try {
+      const listing = await fetchDirOnce({ root, relPath: folder });
+      setWorkspaceItems(
+        listing.entries.map((entry) => {
+          const rel = entry.is_dir ? `${entry.rel_path}/` : entry.rel_path;
+          return { id: `workspace:${rel}`, label: rel, insertText: rel };
+        }),
+      );
+    } catch {
+      setWorkspaceItems([]);
+    }
+  };
+
   const sourceItemsFor = (kind: TriggerType): AutocompleteItem[] => {
-    if (kind === '@') return fileItems();
+    if (kind === '@') {
+      // One path can be in the workspace and in a kiln. The workspace row
+      // wins, because the daemon tries the workspace first.
+      const seen = new Set(workspaceItems().map((i) => i.insertText));
+      return [...workspaceItems(), ...fileItems().filter((i) => !seen.has(i.insertText))];
+    }
     if (kind === '#') return [...tagItems(), ...noteItems()];
     if (kind === '/') return commandItems();
     return noteItems();
@@ -193,9 +256,15 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     setTriggerStart(match.start);
     setCursorPosition(cursor);
 
+    const { path, suffix } =
+      match.trigger === '@' ? splitLineSuffix(match.query) : { path: match.query, suffix: '' };
+    setLineSuffix(suffix);
+
     try {
       if (match.trigger === '/') {
         setCommandItems(await loadCommandItems());
+      } else if (match.trigger === '@') {
+        await Promise.all([ensureKilnData(), loadWorkspaceFolder(path)]);
       } else {
         await ensureKilnData();
       }
@@ -204,7 +273,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
       return;
     }
 
-    const filtered = fuzzyFilter(sourceItemsFor(match.trigger), match.query);
+    const filtered = fuzzyFilter(sourceItemsFor(match.trigger), path);
     if (filtered.length === 0) {
       close();
       return;
@@ -238,14 +307,18 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     if (activeTrigger === '[[') {
       replacement = `[[${selected.insertText}]]`;
     } else if (activeTrigger === '@') {
-      replacement = `@${selected.insertText}`;
+      replacement = `@${selected.insertText}${lineSuffix()}`;
     } else if (activeTrigger === '#') {
       replacement = selected.insertText.startsWith('#') ? selected.insertText : `#${selected.insertText}`;
     } else {
       replacement = `/${selected.insertText}`;
     }
 
-    const needsSpace = activeTrigger !== '[[' && after.length > 0 && !/^\s/.test(after);
+    // A line suffix after the cursor belongs to the path: `@READ|:12` must
+    // become `@README.md:12`, not `@README.md :12`.
+    const keepsSuffix = activeTrigger === '@' && /^:\d/.test(after);
+    const needsSpace =
+      activeTrigger !== '[[' && !keepsSuffix && after.length > 0 && !/^\s/.test(after);
     const insertText = needsSpace ? `${replacement} ` : replacement;
     const nextValue = `${before}${insertText}${after}`;
     const nextCursor = before.length + insertText.length;

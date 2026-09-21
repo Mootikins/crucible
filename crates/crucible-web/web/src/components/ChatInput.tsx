@@ -9,7 +9,7 @@ import type { ComposerChip } from '@/components/composer/ChipRow';
 import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
 import { statusBarStore } from '@/stores/statusBarStore';
-import { sessionDefaultKiln } from '@/lib/session-scope';
+import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
 import { ArrowUp, X } from '@/lib/icons';
 import { ConnectionBanner } from '@/components/ui/ConnectionBanner';
@@ -228,6 +228,12 @@ export const ChatInput: Component = () => {
         kilnPath={() => {
           const s = currentSession();
           return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
+        }}
+        // `@file` lists the files of the session's workspace, where the
+        // daemon resolves a mention first.
+        workspacePath={() => {
+          const s = currentSession();
+          return s ? sessionWorkspace(s) : null;
         }}
         placeholder={session() ? 'Type a message...' : 'Select a session first...'}
         // Typing stays live mid-turn: a message sent while the agent works

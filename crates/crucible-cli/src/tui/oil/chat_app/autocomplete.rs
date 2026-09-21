@@ -15,6 +15,24 @@ use super::repl_command::ReplCommand;
 use super::state::AutocompleteKind;
 use super::OilChatApp;
 
+/// Split an `@` filter into the path and a trailing line suffix.
+///
+/// The suffix is `:12`, `:12-14`, or a part of one that the user still types
+/// (`:`, `:12-`). The daemon attaches only the lines that the suffix names.
+fn split_line_suffix(filter: &str) -> (&str, &str) {
+    let Some(colon) = filter.rfind(':') else {
+        return (filter, "");
+    };
+    let tail = &filter[colon + 1..];
+    let (start, end) = tail.split_once('-').unwrap_or((tail, ""));
+    let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+    if digits(start) && digits(end) && !(start.is_empty() && tail.contains('-')) {
+        (&filter[..colon], &filter[colon..])
+    } else {
+        (filter, "")
+    }
+}
+
 impl OilChatApp {
     pub(super) fn check_autocomplete_trigger(&mut self) -> Option<Action<ChatAppMsg>> {
         let content = self.input.content();
@@ -173,7 +191,8 @@ impl OilChatApp {
 
         match self.popup.kind {
             AutocompleteKind::File => {
-                Self::filter_to_popup_items(&self.workspace_files, &filter, "file", 15)
+                let (path, _) = split_line_suffix(&filter);
+                Self::filter_to_popup_items(&self.workspace_files, path, "file", 15)
             }
             AutocompleteKind::Note => {
                 Self::filter_to_popup_items(&self.kiln_notes, &filter, "note", 15)
@@ -467,7 +486,18 @@ impl OilChatApp {
     pub(super) fn insert_autocomplete_selection(&mut self, label: &str) {
         match &self.popup.kind {
             AutocompleteKind::File => {
-                self.replace_at_trigger(format!("@{} ", label));
+                // A line suffix after the cursor (`@READ|:12`) belongs to the
+                // path. A space before it makes the daemon see two tokens.
+                // A suffix typed before the cursor (`@READ:12|`) stays too.
+                let (_, typed) = split_line_suffix(&self.popup.filter);
+                let typed = typed.to_string();
+                let after = &self.input.content()[self.input.cursor()..];
+                let separator = if Self::starts_with_line_suffix(after) {
+                    ""
+                } else {
+                    " "
+                };
+                self.replace_at_trigger(format!("@{label}{typed}{separator}"));
             }
             AutocompleteKind::Note => {
                 self.replace_at_trigger(format!("[[{}]] ", label));
@@ -509,6 +539,12 @@ impl OilChatApp {
         }
 
         self.close_popup();
+    }
+
+    /// Whether `text` starts with `:` and a digit, the start of `:12` or `:12-14`.
+    fn starts_with_line_suffix(text: &str) -> bool {
+        text.strip_prefix(':')
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
     }
 
     pub(super) fn replace_at_trigger(&mut self, replacement: String) {
@@ -751,6 +787,39 @@ mod tests {
         app.insert_autocomplete_selection("README.md");
         assert_eq!(app.input_content(), "@README.md ");
         assert!(!app.popup.show);
+    }
+
+    #[test]
+    fn accept_file_keeps_a_line_suffix() {
+        // The user typed `@READ:12` and moved the cursor back to complete the
+        // path. The `:12` after the cursor must stay attached to the path, or
+        // the daemon reads `README.md` and the stray `:12` as two things.
+        let mut app = app();
+        app.set_input_and_cursor("@READ:12 see", "@READ".len());
+        app.check_autocomplete_trigger();
+        assert_eq!(app.popup.kind, AutocompleteKind::File);
+        app.insert_autocomplete_selection("README.md");
+        assert_eq!(app.input_content(), "@README.md:12 see");
+        assert_eq!(app.input.cursor(), "@README.md".len());
+    }
+
+    #[test]
+    fn accept_file_keeps_a_typed_line_suffix() {
+        let mut app = app();
+        let (kind, labels) = probe(&mut app, "@READ:12-14");
+        assert_eq!(kind, AutocompleteKind::File);
+        assert!(labels.contains(&"README.md".to_string()), "got: {labels:?}");
+        app.insert_autocomplete_selection("README.md");
+        assert_eq!(app.input_content(), "@README.md:12-14 ");
+    }
+
+    #[test]
+    fn a_line_suffix_splits_only_from_digits() {
+        assert_eq!(split_line_suffix("a.rs:12"), ("a.rs", ":12"));
+        assert_eq!(split_line_suffix("a.rs:12-"), ("a.rs", ":12-"));
+        assert_eq!(split_line_suffix("a.rs:"), ("a.rs", ":"));
+        assert_eq!(split_line_suffix("a:b"), ("a:b", ""));
+        assert_eq!(split_line_suffix("a.rs:-3"), ("a.rs:-3", ""));
     }
 
     #[test]

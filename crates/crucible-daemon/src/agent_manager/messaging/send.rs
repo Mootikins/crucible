@@ -301,8 +301,16 @@ impl AgentManager {
         // `@file` mentions resolve here, on every turn — not just the first,
         // and regardless of Precognition: attaching a file is something the
         // user did on purpose, so it is not subject to the auto-RAG gate.
+        // The containment of the session decides which files a mention can
+        // read, so a mention cannot reach more than a `read_file` call.
+        let mention_roots = crate::agent_manager::scope::session_containment(
+            &session,
+            self.session_manager.sessions_root(),
+            self.session_manager.kiln_registry(),
+        );
         let attachment_message = crate::agent_manager::attachments::build_attachment_message(
             &tool_root,
+            &mention_roots,
             &original_content,
         );
         if attachment_message.is_some() {

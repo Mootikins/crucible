@@ -6,12 +6,21 @@
 //! the web composer sends the same text and needs no expansion logic of its
 //! own, and a message replayed from history resolves the same way.
 //!
+//! A mention can end in a line suffix: `@a.rs:12` or `@a.rs:12-14`. Then only
+//! those lines attach. The path resolves under the tool root of the session
+//! and then under each root of its containment, so a kiln-relative path works.
+//! The containment of the session judges each candidate, so a mention reads
+//! no file that a `read_file` call could not read.
+//!
 //! Everything here is best-effort and silent. A mention that names no file,
-//! escapes the workspace, or is binary is left alone: the agent still sees the
+//! escapes every root, or is binary is left alone: the agent still sees the
 //! text the user typed and can call `read_file` itself. Failing loudly on
 //! `user@example.com` would be worse than doing nothing.
 
+use crate::tools::containment::{Access, Containment, RootSet};
+use crate::tools::path_resolution::ResolvedPath;
 use crucible_core::traits::ContextMessage;
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
 /// Metadata tag marking the attachment block, mirroring `PRECOGNITION_TAG`.
@@ -28,24 +37,43 @@ const MAX_TOTAL_BYTES: usize = 192 * 1024;
 
 /// Build the system block carrying the contents of every `@file` mention in
 /// `content`, or `None` when nothing resolved.
-pub(super) fn build_attachment_message(workspace: &Path, content: &str) -> Option<ContextMessage> {
+///
+/// `tool_root` is where the tools of the session act. `roots` is the
+/// containment of the session: it supplies the other roots to try, and it
+/// judges every candidate.
+pub(super) fn build_attachment_message(
+    tool_root: &Path,
+    roots: &RootSet,
+    content: &str,
+) -> Option<ContextMessage> {
     let mut block = String::new();
     let mut total = 0usize;
-    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut seen: Vec<(PathBuf, Option<RangeInclusive<usize>>)> = Vec::new();
 
     for mention in extract_mentions(content) {
-        let Some(path) = resolve_in_workspace(workspace, mention) else {
+        let (path_text, lines) = split_line_suffix(mention);
+        let Some(path) = resolve_under_roots(tool_root, roots, path_text) else {
             continue;
         };
-        if seen.contains(&path) {
+        let key = (path, lines.clone());
+        if seen.contains(&key) {
             continue;
         }
         // Read before the dedup commit: an unreadable path should not shadow
         // a later readable mention of the same file.
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Ok(text) = std::fs::read_to_string(&key.0) else {
             continue;
         };
-        seen.push(path);
+        let text = match &lines {
+            Some(range) => match select_lines(&text, range) {
+                Some(selected) => selected,
+                // A range past the end names no text. The agent still sees
+                // the mention and can read the file itself.
+                None => continue,
+            },
+            None => text,
+        };
+        seen.push(key);
 
         if total >= MAX_TOTAL_BYTES {
             block.push_str("\n(further attachments omitted: total size limit reached)\n");
@@ -114,29 +142,62 @@ fn trim_trailing_punctuation(token: &str) -> &str {
     token.trim_end_matches([',', ';', ':', '!', '?', ')', ']', '}', '"', '\''])
 }
 
-/// Resolve a mention against the workspace, refusing anything that leaves it.
+/// Split a trailing `:N` or `:N-M` from a mention.
+///
+/// The lines are 1-based and the end is inclusive, as in the reference form
+/// `path:start-end`. A token with no digit suffix is all path. A digit suffix
+/// that names no line (`:0`, `:3-2`) still splits, so [`select_lines`]
+/// refuses it and the mention attaches nothing rather than the whole file.
+fn split_line_suffix(mention: &str) -> (&str, Option<RangeInclusive<usize>>) {
+    // A sentence can end right after the range: `see @a.rs:2-3.`
+    let token = mention.strip_suffix('.').unwrap_or(mention);
+    let Some((path, suffix)) = token.rsplit_once(':') else {
+        return (mention, None);
+    };
+    let (start, end) = suffix.split_once('-').unwrap_or((suffix, suffix));
+    let parse = |part: &str| {
+        (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| part.parse::<usize>().ok())
+            .flatten()
+    };
+    match (parse(start), parse(end)) {
+        (Some(start), Some(end)) if !path.is_empty() => (path, Some(start..=end)),
+        _ => (mention, None),
+    }
+}
+
+/// The lines of `text` in `range`, or `None` when the range names no line.
+fn select_lines(text: &str, range: &RangeInclusive<usize>) -> Option<String> {
+    let (start, end) = (*range.start(), *range.end());
+    if start == 0 || end < start {
+        return None;
+    }
+    let selected: Vec<&str> = text.lines().skip(start - 1).take(end - start + 1).collect();
+    (!selected.is_empty()).then(|| selected.join("\n"))
+}
+
+/// Resolve a mention under the tool root, then under each containment root.
 ///
 /// Absolute paths are refused outright rather than checked: a message is
 /// user-authored text reaching a daemon that may be serving several clients,
-/// and "the file I meant" is always workspace-relative. Symlinks are followed
-/// by `canonicalize`, so the containment check sees where a link really points.
-fn resolve_in_workspace(workspace: &Path, mention: &str) -> Option<PathBuf> {
+/// and "the file I meant" is always relative to a root. The containment of
+/// the session judges each candidate on both of its resolved forms, so a
+/// `..` or a link out of every root attaches nothing.
+fn resolve_under_roots(tool_root: &Path, roots: &RootSet, mention: &str) -> Option<PathBuf> {
     let candidate = Path::new(mention);
-    if candidate.is_absolute() {
+    if mention.is_empty() || candidate.is_absolute() {
         return None;
     }
 
-    let joined = workspace.join(candidate);
-    let resolved = joined.canonicalize().ok()?;
-    if !resolved.is_file() {
-        return None;
-    }
-
-    // Canonicalize the workspace too: a workspace reached through a symlink
-    // (macOS `/tmp` → `/private/tmp`, which is every tempdir-based test on
-    // that platform) would fail the prefix check against an un-resolved root.
-    let root = workspace.canonicalize().ok()?;
-    resolved.starts_with(&root).then_some(resolved)
+    std::iter::once(tool_root)
+        .chain(roots.allowed_roots())
+        .find_map(|root| {
+            let resolved = ResolvedPath::resolve(&root.join(candidate));
+            match roots.judge_resolved(&resolved, Access::Read) {
+                Containment::Permitted(path) if path.is_file() => Some(path),
+                _ => None,
+            }
+        })
 }
 
 /// Cut `text` to at most `limit` bytes without splitting a character.
@@ -167,13 +228,101 @@ mod tests {
         dir
     }
 
+    /// Attach with the workspace as the only root, as a session with no kiln.
+    fn attach(workspace: &Path, content: &str) -> Option<ContextMessage> {
+        let roots = RootSet::scoped([workspace.to_path_buf()], []);
+        build_attachment_message(workspace, &roots, content)
+    }
+
+    const FIVE_LINES: &str = "line-one\nline-two\nline-three\nline-four\nline-five\n";
+
+    #[test]
+    fn a_line_suffix_attaches_that_line() {
+        let ws = workspace_with(&[("a.rs", FIVE_LINES)]);
+        let msg = attach(ws.path(), "look at @a.rs:2").expect("a line suffix must resolve");
+        assert!(msg.content.contains("line-two"), "got: {}", msg.content);
+        for other in ["line-one", "line-three"] {
+            assert!(
+                !msg.content.contains(other),
+                "only line 2 attaches, got: {}",
+                msg.content
+            );
+        }
+    }
+
+    #[test]
+    fn a_range_suffix_attaches_those_lines() {
+        let ws = workspace_with(&[("a.rs", FIVE_LINES)]);
+        let msg = attach(ws.path(), "look at @a.rs:2-3.").expect("a range suffix must resolve");
+        assert!(msg.content.contains("line-two"), "got: {}", msg.content);
+        assert!(msg.content.contains("line-three"), "got: {}", msg.content);
+        for other in ["line-one", "line-four"] {
+            assert!(
+                !msg.content.contains(other),
+                "only lines 2-3 attach, got: {}",
+                msg.content
+            );
+        }
+    }
+
+    #[test]
+    fn a_range_that_is_not_valid_attaches_nothing() {
+        let ws = workspace_with(&[("a.rs", FIVE_LINES)]);
+        for bad in ["@a.rs:0", "@a.rs:3-2", "@a.rs:9"] {
+            assert!(
+                attach(ws.path(), bad).is_none(),
+                "{bad} must attach nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn a_mention_resolves_under_an_attached_kiln() {
+        let ws = workspace_with(&[]);
+        let kiln = workspace_with(&[("notes/idea.md", "KILN-BODY")]);
+        let roots = RootSet::scoped([kiln.path().to_path_buf(), ws.path().to_path_buf()], []);
+        let msg = build_attachment_message(ws.path(), &roots, "see @notes/idea.md")
+            .expect("a kiln-relative mention must resolve");
+        assert!(msg.content.contains("KILN-BODY"));
+    }
+
+    #[test]
+    fn a_mention_outside_every_root_is_refused() {
+        let ws = workspace_with(&[]);
+        let kiln = workspace_with(&[]);
+        let outside = workspace_with(&[("secret.txt", "LEAKED")]);
+        let roots = RootSet::scoped([kiln.path().to_path_buf(), ws.path().to_path_buf()], []);
+
+        let escape = format!(
+            "read @../{}/secret.txt",
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+        assert!(
+            build_attachment_message(ws.path(), &roots, &escape).is_none(),
+            "a `..` mention must not leave every root"
+        );
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                outside.path().join("secret.txt"),
+                kiln.path().join("link.txt"),
+            )
+            .unwrap();
+            assert!(
+                build_attachment_message(ws.path(), &roots, "read @link.txt").is_none(),
+                "a link out of a root must not attach its target"
+            );
+        }
+    }
+
     #[test]
     fn an_email_address_is_not_an_attachment() {
         // The mention rule has to survive ordinary prose, or every message
         // mentioning a colleague tries to open a file.
         let ws = workspace_with(&[("example.com", "NOT-THIS")]);
         assert!(
-            build_attachment_message(ws.path(), "ask user@example.com about it").is_none(),
+            attach(ws.path(), "ask user@example.com about it").is_none(),
             "an `@` mid-word is not a file mention"
         );
     }
@@ -181,7 +330,7 @@ mod tests {
     #[test]
     fn a_mention_with_no_matching_file_attaches_nothing() {
         let ws = workspace_with(&[]);
-        assert!(build_attachment_message(ws.path(), "see @nope.md").is_none());
+        assert!(attach(ws.path(), "see @nope.md").is_none());
     }
 
     #[test]
@@ -195,13 +344,13 @@ mod tests {
             outside.path().file_name().unwrap().to_string_lossy()
         );
         assert!(
-            build_attachment_message(ws.path(), &escape).is_none(),
+            attach(ws.path(), &escape).is_none(),
             "a mention must not escape the workspace"
         );
 
         let absolute = format!("read @{}", outside.path().join("secret.txt").display());
         assert!(
-            build_attachment_message(ws.path(), &absolute).is_none(),
+            attach(ws.path(), &absolute).is_none(),
             "an absolute path is not a workspace mention"
         );
     }
@@ -209,7 +358,7 @@ mod tests {
     #[test]
     fn trailing_sentence_punctuation_does_not_break_a_mention() {
         let ws = workspace_with(&[("notes.md", "BODY")]);
-        let msg = build_attachment_message(ws.path(), "look at @notes.md, then stop")
+        let msg = attach(ws.path(), "look at @notes.md, then stop")
             .expect("mention followed by a comma should resolve");
         assert!(msg.content.contains("BODY"));
     }
@@ -217,7 +366,7 @@ mod tests {
     #[test]
     fn the_same_file_mentioned_twice_is_attached_once() {
         let ws = workspace_with(&[("notes.md", "BODY-ONCE")]);
-        let msg = build_attachment_message(ws.path(), "@notes.md vs @notes.md").unwrap();
+        let msg = attach(ws.path(), "@notes.md vs @notes.md").unwrap();
         assert_eq!(msg.content.matches("BODY-ONCE").count(), 1);
     }
 
@@ -225,7 +374,7 @@ mod tests {
     fn an_oversized_file_is_truncated_rather_than_dropped() {
         let big = "x".repeat(MAX_FILE_BYTES * 2);
         let ws = workspace_with(&[("big.log", big.as_str())]);
-        let msg = build_attachment_message(ws.path(), "@big.log").expect("still attached");
+        let msg = attach(ws.path(), "@big.log").expect("still attached");
         assert!(msg.content.contains("truncated"), "and says so");
         assert!(
             msg.content.len() < MAX_FILE_BYTES + 4096,
@@ -236,6 +385,6 @@ mod tests {
     #[test]
     fn a_directory_mention_attaches_nothing() {
         let ws = workspace_with(&[("dir/file.md", "BODY")]);
-        assert!(build_attachment_message(ws.path(), "@dir").is_none());
+        assert!(attach(ws.path(), "@dir").is_none());
     }
 }

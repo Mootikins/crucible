@@ -250,6 +250,19 @@ impl RootSet {
         }
     }
 
+    /// The allowed roots, in their lexical form. An ambient set has none.
+    ///
+    /// A caller uses these to anchor a relative path. The caller must still
+    /// judge the result with [`Self::judge_resolved`], because a root does not
+    /// know about the denials and the links below it.
+    pub(crate) fn allowed_roots(&self) -> impl Iterator<Item = &Path> {
+        let allowed: &[ResolvedPath] = match self {
+            Self::Ambient => &[],
+            Self::Rooted(roots) => &roots.allowed,
+        };
+        allowed.iter().map(ResolvedPath::lexical)
+    }
+
     /// Whether this set imposes no boundary at all.
     pub(crate) fn is_ambient(&self) -> bool {
         matches!(self, Self::Ambient)

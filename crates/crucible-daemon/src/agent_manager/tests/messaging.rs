@@ -1188,6 +1188,88 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
     );
 }
 
+/// `@a.rs:2-3` through a real `session.send` must attach lines 2 and 3 only.
+///
+/// The daemon splits the range from the path. Before this, the token
+/// `a.rs:2-3` named no file and the agent received nothing.
+#[tokio::test]
+async fn at_mention_with_a_range_attaches_only_the_range() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("a.rs"),
+        "LINE-ONE\nLINE-TWO\nLINE-THREE\nLINE-FOUR\n",
+    )
+    .unwrap();
+
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    let mut agent = test_agent();
+    agent.precognition_enabled = false; // isolate: only attachment may inject
+    agent_manager
+        .configure_agent(&session.id, agent)
+        .await
+        .unwrap();
+
+    let received_messages = Arc::new(StdMutex::new(None));
+    agent_manager.install_agent_for_test(
+        session.id.to_string(),
+        Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
+            received_prompt: Arc::new(StdMutex::new(None)),
+            received_messages: received_messages.clone(),
+            events: vec![script::text("ok"), script::done()],
+        }) as BoxedAgentHandle)),
+    );
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SessionEventMessage>(64);
+    agent_manager
+        .send_message(
+            &session.id,
+            "explain @a.rs:2-3 please".to_string(),
+            &event_tx,
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+    let _ = next_event_or_skip(&mut event_rx, "message_complete").await;
+
+    let messages = received_messages
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the agent should have received messages");
+    let attached: Vec<&str> = messages
+        .iter()
+        .filter(|m| m.content.contains("attached these files"))
+        .map(|m| m.content.as_str())
+        .collect();
+    assert_eq!(
+        attached.len(),
+        1,
+        "one attachment block must reach the agent, got: {:?}",
+        messages.iter().map(|m| &m.content).collect::<Vec<_>>()
+    );
+    let block = attached[0];
+    assert!(
+        block.contains("LINE-TWO") && block.contains("LINE-THREE"),
+        "got: {block}"
+    );
+    assert!(
+        !block.contains("LINE-ONE") && !block.contains("LINE-FOUR"),
+        "only the range attaches, got: {block}"
+    );
+}
+
 // -- ACP session id persistence (plan W7) -----------------------------------
 
 /// An agent that reports an external (ACP) session id, the way

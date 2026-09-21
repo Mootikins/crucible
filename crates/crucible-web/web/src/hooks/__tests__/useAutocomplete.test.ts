@@ -21,6 +21,8 @@ import {
 let commands: SlashCommand[] = [];
 let files: FileEntry[] = [];
 let notes: FileEntry[] = [];
+/** What `GET /api/fs/list` answers, by the `rel_path` it is asked for. */
+let dirs: Record<string, Array<{ name: string; rel_path: string; is_dir: boolean }>> = {};
 /** When true, `GET /api/commands` refuses once. */
 let refuseCommands = false;
 
@@ -37,6 +39,16 @@ function installEnv(): void {
     },
     'GET /api/kiln/files': () => ({ files }),
     'GET /api/kiln/notes': () => ({ files: notes }),
+    'GET /api/fs/list': (request: Request) => {
+      const rel = new URL(request.url).searchParams.get('rel_path') ?? '';
+      const entries = (dirs[rel] ?? []).map((e) => ({
+        ...e,
+        size: 0,
+        modified: null,
+        status: null,
+      }));
+      return { entries, truncated: false };
+    },
   });
 }
 
@@ -64,13 +76,14 @@ describe('useAutocomplete fuzzyFilter', () => {
 });
 
 /** Drive the hook the way a textarea does, without mounting a component. */
-function harness(initial = '') {
+function harness(initial = '', workspace: string | null = null) {
   const [input, setInput] = createSignal(initial);
   const textarea = document.createElement('textarea');
   const auto = useAutocomplete({
     input,
     setInput: setInput as never,
     kilnPath: () => '/kiln',
+    workspacePath: () => workspace,
     textareaRef: () => textarea,
   });
   const type = async (value: string, cursor = value.length) => {
@@ -237,6 +250,69 @@ describe('useAutocomplete wikilinks', () => {
       const { auto, type } = harness();
       await type('see [[Tags]] then');
       expect(auto.isOpen()).toBe(false);
+      dispose();
+    });
+  });
+});
+
+describe('useAutocomplete file mentions', () => {
+  beforeEach(() => {
+    commands = [];
+    files = [{ name: 'Wikilinks.md', path: 'Help/Wikilinks.md', is_dir: false }];
+    notes = [];
+    dirs = {
+      '': [
+        { name: 'src', rel_path: 'src', is_dir: true },
+        { name: 'README.md', rel_path: 'README.md', is_dir: false },
+      ],
+      src: [{ name: 'main.rs', rel_path: 'src/main.rs', is_dir: false }],
+    };
+    refuseCommands = false;
+    installEnv();
+  });
+
+  // The daemon resolves `@path` against its roots. A basename names no file
+  // there, so the completer must insert the path under the root.
+  it('inserts the root-relative path', async () => {
+    await createRoot(async (dispose) => {
+      const { auto, type, input } = harness();
+      await type('see @wiki');
+      const index = auto.items().findIndex((i) => i.insertText === 'Help/Wikilinks.md');
+      expect(index).toBeGreaterThanOrEqual(0);
+      auto.complete(index);
+      expect(input()).toBe('see @Help/Wikilinks.md');
+      dispose();
+    });
+  });
+
+  it('lists the files of the session workspace, one folder at a time', async () => {
+    await createRoot(async (dispose) => {
+      const { auto, type, input } = harness('', '/ws');
+      await type('@src/ma');
+      expect(auto.isOpen()).toBe(true);
+      const index = auto.items().findIndex((i) => i.insertText === 'src/main.rs');
+      expect(index).toBeGreaterThanOrEqual(0);
+      auto.complete(index);
+      expect(input()).toBe('@src/main.rs');
+      dispose();
+    });
+  });
+
+  it('completing a path keeps a line suffix', async () => {
+    await createRoot(async (dispose) => {
+      const { auto, type, input } = harness('', '/ws');
+
+      // The suffix typed before the completion is accepted.
+      await type('@READ:12-14');
+      expect(auto.isOpen()).toBe(true);
+      auto.complete(auto.items().findIndex((i) => i.insertText === 'README.md'));
+      expect(input()).toBe('@README.md:12-14');
+
+      // The suffix after the cursor stays, with no space before it.
+      await type('@READ:12 why', '@READ'.length);
+      expect(auto.isOpen()).toBe(true);
+      auto.complete(auto.items().findIndex((i) => i.insertText === 'README.md'));
+      expect(input()).toBe('@README.md:12 why');
       dispose();
     });
   });

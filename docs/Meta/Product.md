@@ -296,7 +296,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 ### Context & Knowledge
 
 - [x] **File Attachment** `P0` — `@file` context attachment in chat, resolved daemon-side so every client gets it · `crucible-cli`, `crucible-daemon`
-  - **Gets you:** `@`-picking (or typing) a workspace file puts its contents in front of the agent as a tagged system block for that turn, so the agent does not have to go read it. Workspace-relative only, deduped, truncated past 64KB per file, and `user@example.com` is not a file.
+  - **Gets you:** `@`-picking (or typing) a workspace file puts its contents in front of the agent as a tagged system block for that turn, so the agent does not have to go read it. The path is relative to the workspace or to an attached kiln, and the session's containment decides which files it can read. `@a.rs:12` or `@a.rs:12-14` attaches only those lines. Both completers insert the root-relative path and keep a line suffix. Deduped, truncated past 64KB per file, and `user@example.com` is not a file.
 - [x] **Rules Files** `P0` — project-level AI instructions (`AGENTS.md`, `.rules`, `.github/copilot-instructions.md` by default; `[context] rules_files` to change the set) loaded into the system prompt, hierarchically from the repo root down to the workspace · [[Help/Rules Files]] · `crucible-core` (config), `crucible-daemon`
   - **Gets you:** instructions in your project's `AGENTS.md` are in the agent's system prompt under `# Project rules`, after the agent card's own prompt, with a rules file nearer the workspace read later and so winning.
 - [x] **Multi-Kiln Sessions** `P0` — extra knowledge kilns attach at creation or mid-session · `crucible-daemon`, `crucible-web`
