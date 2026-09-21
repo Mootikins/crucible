@@ -9,7 +9,7 @@
 //! agent rather than per known agent name.
 
 use crate::acp::client::ClientConfig;
-use crate::acp::discovery::builtin_command;
+use crate::acp::discovery::{builtin_command, resolve_configured_profile};
 use crate::acp_handle::AcpHandleError;
 use crucible_core::config::components::acp::AcpConfig;
 use crucible_core::session::SessionAgent;
@@ -123,20 +123,23 @@ fn resolve_agent_command(
     agent_config: &SessionAgent,
     acp_config: Option<&AcpConfig>,
 ) -> Result<ResolvedCommand, AcpHandleError> {
-    let (mut command, mut args) = builtin_command(agent_name)
-        .map(|(cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
-        .unwrap_or_else(|| (agent_name.to_string(), Vec::new()));
+    let profile = acp_config
+        .and_then(|config| resolve_configured_profile(agent_name, config))
+        .transpose()
+        .map_err(|e| AcpHandleError::Config(e.to_string()))?;
 
-    if let Some(config) = acp_config {
-        if let Some(profile) = config.agents.get(agent_name) {
-            if let Some(ref cmd) = profile.command {
-                command = cmd.clone();
-            }
-            if let Some(ref profile_args) = profile.args {
-                args = profile_args.clone();
-            }
-        }
-    }
+    let (command, args) = match &profile {
+        Some(profile) => (
+            profile
+                .command
+                .clone()
+                .unwrap_or_else(|| agent_name.to_string()),
+            profile.args.clone().unwrap_or_default(),
+        ),
+        None => builtin_command(agent_name)
+            .map(|(cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
+            .unwrap_or_else(|| (agent_name.to_string(), Vec::new())),
+    };
 
     let mut env_vars: Vec<(String, String)> = agent_config
         .env_overrides
@@ -144,14 +147,12 @@ fn resolve_agent_command(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    if let Some(config) = acp_config {
-        if let Some(profile) = config.agents.get(agent_name) {
-            for (k, v) in &profile.env {
-                if let Some(existing) = env_vars.iter_mut().find(|(ek, _)| ek == k) {
-                    existing.1 = v.clone();
-                } else {
-                    env_vars.push((k.clone(), v.clone()));
-                }
+    if let Some(profile) = &profile {
+        for (k, v) in &profile.env {
+            if let Some(existing) = env_vars.iter_mut().find(|(ek, _)| ek == k) {
+                existing.1 = v.clone();
+            } else {
+                env_vars.push((k.clone(), v.clone()));
             }
         }
     }
@@ -283,6 +284,80 @@ mod tests {
         let (cmd, _, _) = resolve_agent_command("opencode", &config, Some(&acp_config)).unwrap();
         assert_eq!(cmd, "/usr/local/bin/opencode");
     }
+    /// A profile that extends a built-in agent launches the command of that
+    /// agent. The launcher ran the profile name as a command instead.
+    #[test]
+    fn a_profile_that_extends_a_builtin_launches_the_builtin_command() {
+        let agent = test_session_agent("my-claude");
+        let mut acp_config = AcpConfig::default();
+        acp_config.agents.insert(
+            "my-claude".to_string(),
+            crucible_core::config::AgentProfile {
+                extends: Some("claude".to_string()),
+                env: [("ANTHROPIC_MODEL".to_string(), "opus".to_string())].into(),
+                ..Default::default()
+            },
+        );
+
+        let config =
+            build_client_config(&agent, Path::new("/tmp/w"), Some(&acp_config), None).unwrap();
+
+        assert_eq!(config.agent_path, PathBuf::from("npx"));
+        assert_eq!(
+            config.agent_args,
+            Some(vec!["@agentclientprotocol/claude-agent-acp".to_string()])
+        );
+        assert_eq!(
+            config.env_vars,
+            Some(vec![("ANTHROPIC_MODEL".to_string(), "opus".to_string())])
+        );
+    }
+
+    /// A profile that extends a built-in and sets `args` keeps the command
+    /// of the built-in.
+    #[test]
+    fn a_profile_that_extends_a_builtin_keeps_the_builtin_command_with_its_own_args() {
+        let agent = test_session_agent("fast-cursor");
+        let mut acp_config = AcpConfig::default();
+        acp_config.agents.insert(
+            "fast-cursor".to_string(),
+            crucible_core::config::AgentProfile {
+                extends: Some("cursor".to_string()),
+                args: Some(vec!["acp".to_string(), "--fast".to_string()]),
+                ..Default::default()
+            },
+        );
+
+        let (cmd, args, _) =
+            resolve_agent_command("fast-cursor", &agent, Some(&acp_config)).unwrap();
+
+        assert_eq!(cmd, "cursor-agent");
+        assert_eq!(args, vec!["acp", "--fast"]);
+    }
+
+    /// A profile that extends an agent that does not exist is a config
+    /// error that names both agents. The launcher must not run the profile
+    /// name as a command.
+    #[test]
+    fn a_profile_that_extends_an_unknown_agent_is_an_error() {
+        let agent = test_session_agent("broken");
+        let mut acp_config = AcpConfig::default();
+        acp_config.agents.insert(
+            "broken".to_string(),
+            crucible_core::config::AgentProfile {
+                extends: Some("nope".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let error = resolve_agent_command("broken", &agent, Some(&acp_config))
+            .expect_err("an unknown base is a config error");
+
+        let message = error.to_string();
+        assert!(message.contains("'broken'"), "{message}");
+        assert!(message.contains("'nope'"), "{message}");
+    }
+
     #[test]
     fn test_build_client_config() {
         let agent = test_session_agent("opencode");

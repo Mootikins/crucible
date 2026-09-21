@@ -444,7 +444,15 @@ fn resolve_profile(
         ));
     }
 
-    let mut resolved = merged_profiles.get(base_name).cloned().unwrap_or_default();
+    Ok(overlay_profile(profile, merged_profiles.get(base_name)))
+}
+
+/// Lay the fields that `profile` sets over its `base` profile.
+///
+/// This is the one merge rule for ACP profiles. Discovery, the launcher and
+/// the permission lookup all use it, so they agree on what a profile means.
+pub(crate) fn overlay_profile(profile: &AgentProfile, base: Option<&AgentProfile>) -> AgentProfile {
+    let mut resolved = base.cloned().unwrap_or_default();
     resolved.extends = profile.extends.clone();
 
     if let Some(command) = &profile.command {
@@ -459,10 +467,32 @@ fn resolve_profile(
     if let Some(delegation) = &profile.delegation {
         resolved.delegation = Some(delegation.clone());
     }
+    if let Some(permissions) = &profile.permissions {
+        resolved.permissions = Some(permissions.clone());
+    }
 
     resolved.env.extend(profile.env.clone());
+    resolved
+}
 
-    Ok(resolved)
+/// Resolve the configured profile `name` for a launch.
+///
+/// Returns `None` when the config does not name the agent. An error in
+/// another profile does not stop this launch. An error in this profile does.
+pub(crate) fn resolve_configured_profile(
+    name: &str,
+    config: &AcpConfig,
+) -> Option<Result<AgentProfile>> {
+    let profile = config.agents.get(name)?;
+    let mut merged = default_agent_profiles();
+    for (other, other_profile) in &config.agents {
+        if other != name {
+            if let Ok(resolved) = resolve_profile(other, other_profile, &merged) {
+                merged.insert(other.clone(), resolved);
+            }
+        }
+    }
+    Some(resolve_profile(name, profile, &merged))
 }
 
 #[cfg(test)]

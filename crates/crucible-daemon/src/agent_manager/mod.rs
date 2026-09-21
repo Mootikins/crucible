@@ -57,28 +57,10 @@ pub(crate) fn resolve_agent_profile(
 ) -> Option<AgentProfile> {
     let profile = configured.get(name)?;
     let base_name = profile.extends.as_deref().unwrap_or(name);
-
-    let mut resolved = available.get(base_name).cloned().unwrap_or_default();
-    resolved.extends = profile.extends.clone();
-
-    if let Some(command) = &profile.command {
-        resolved.command = Some(command.clone());
-    }
-    if let Some(args) = &profile.args {
-        resolved.args = Some(args.clone());
-    }
-    if let Some(description) = &profile.description {
-        resolved.description = Some(description.clone());
-    }
-    if let Some(delegation) = &profile.delegation {
-        resolved.delegation = Some(delegation.clone());
-    }
-    if let Some(permissions) = &profile.permissions {
-        resolved.permissions = Some(permissions.clone());
-    }
-
-    resolved.env.extend(profile.env.clone());
-    Some(resolved)
+    Some(crate::acp::discovery::overlay_profile(
+        profile,
+        available.get(base_name),
+    ))
 }
 
 #[derive(Error, Debug)]
