@@ -69,7 +69,9 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
     BuiltinAgent {
         name: "gemini",
         command: "gemini",
-        args: &[],
+        // Without `--acp`, Gemini CLI starts its interactive UI and never
+        // answers `initialize`. `--experimental-acp` is the deprecated name.
+        args: &["--acp"],
         description: "Google's Gemini CLI, speaks ACP directly",
         requires: None,
         install: "npm install -g @google/gemini-cli",

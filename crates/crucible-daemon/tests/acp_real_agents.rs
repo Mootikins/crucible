@@ -145,6 +145,12 @@ async fn opencode_profile_completes_the_real_handshake() {
 }
 
 #[tokio::test]
+#[ignore = "requires: ACP agent — spawns the real `gemini` profile binary"]
+async fn gemini_profile_completes_the_real_handshake() {
+    assert_profile_completes_handshake("gemini").await;
+}
+
+#[tokio::test]
 #[ignore = "requires: ACP agent — spawns the real `hermes` profile binary"]
 async fn hermes_profile_completes_the_real_handshake() {
     assert_profile_completes_handshake("hermes").await;

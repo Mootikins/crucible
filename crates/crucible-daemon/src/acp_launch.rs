@@ -227,6 +227,15 @@ mod tests {
         assert!(env.is_empty());
     }
     #[test]
+    fn gemini_is_launched_in_acp_mode() {
+        let config = test_session_agent("gemini");
+        let (cmd, args, _) = resolve_agent_command("gemini", &config, None).unwrap();
+        assert_eq!(cmd, "gemini");
+        // Without the flag, Gemini CLI starts its interactive UI and never
+        // answers `initialize`.
+        assert_eq!(args, vec!["--acp"]);
+    }
+    #[test]
     fn test_resolve_claude_agent() {
         let config = test_session_agent("claude");
         let (cmd, args, _) = resolve_agent_command("claude", &config, None).unwrap();

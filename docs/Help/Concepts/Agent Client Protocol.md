@@ -121,7 +121,7 @@ Crucible ships with profiles for common ACP-compatible agents:
 |---------|---------|---------|
 | `opencode` | `opencode acp` | `npm install -g opencode-ai@latest` (or `curl -fsSL https://opencode.ai/install \| bash`) |
 | `claude` | `npx @agentclientprotocol/claude-agent-acp` | `npm install -g @agentclientprotocol/claude-agent-acp` (bridges to the Claude Code CLI) |
-| `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
+| `gemini` | `gemini --acp` | `npm install -g @google/gemini-cli` (Google no longer serves Gemini Code Assist for individuals through this client; use an API key or `antigravity`) |
 | `codex` | `npx @agentclientprotocol/codex-acp` | `npm install -g @agentclientprotocol/codex-acp` (bridges to the OpenAI Codex CLI) |
 | `cursor` | `cursor-agent acp` | `curl https://cursor.com/install -fsS \| bash` |
 | `hermes` | `hermes acp` | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` |
