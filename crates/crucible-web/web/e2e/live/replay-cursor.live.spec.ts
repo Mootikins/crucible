@@ -120,6 +120,18 @@ async function send(page: Page, text: string): Promise<void> {
   await page.getByTestId('send-button').first().click();
 }
 
+/** The active tab of each centre pane, so a spec can see what a reload restored. */
+async function activeCenterTabs(page: Page): Promise<string[]> {
+  const groups = await centerGroupIds(page);
+  return page.evaluate(
+    (ids) => {
+      const store = (window as unknown as Record<string, any>).__windowStore;
+      return ids.map((g) => store.tabGroups[g]?.activeTabId ?? '');
+    },
+    groups,
+  );
+}
+
 /** The outage itself: the server stays down for exactly this long. */
 async function outage(ms: number): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -243,15 +255,18 @@ test.describe('live seq-cursor replay', () => {
       timeout: 30_000,
     });
 
+    // A reloaded page is a fresh module context: the restored pane cannot
+    // carry a cursor (nothing has been applied yet). The persisted layout
+    // restores the chat tab in its centre pane, and that pane binds on load —
+    // one bind, one hydration, one stream. So the log attaches BEFORE the
+    // reload: attached after it, the restored pane's reads are already gone,
+    // and a second tab for the same session reads the cache, not the route.
+    const log = captureApiRequests(page);
     await page.reload();
     await appReady(page);
-    // A reloaded page is a fresh module context: the restored pane cannot
-    // carry a cursor (nothing has been applied yet), so it is re-mounted the
-    // way the persisted layout would — one bind, one hydration, one stream.
-    await openSessionsList(page);
-    const groupsAfter = await centerGroupIds(page);
-    const log = captureApiRequests(page);
-    await mountChat(page, groupsAfter[0], id, `tab-chat-${id}-reloaded`);
+    expect(await activeCenterTabs(page), 'the reload restored the chat tab').toContain(
+      `tab-chat-${id}`,
+    );
     await expect(page.getByTestId('chat-input').first()).toBeVisible({ timeout: 20_000 });
 
     // Replay ≡ reload, measured while the turn is STILL RUNNING: the reloaded
