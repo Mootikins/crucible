@@ -28,6 +28,10 @@ impl OilChatApp {
         if self.surface_modal.is_some() && self.handle_surface_modal_key(key) {
             return Action::Continue;
         }
+        // The diff view owns the screen in the same way.
+        if let Some(action) = self.handle_diff_modal_key(key) {
+            return action;
+        }
         if self.interaction_modal.is_some() {
             return self.handle_interaction_key(key);
         }

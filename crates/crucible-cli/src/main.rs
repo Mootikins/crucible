@@ -150,6 +150,7 @@ fn config_need(command: &Option<Commands>) -> ConfigNeed {
         | Commands::Workflow { .. }
         | Commands::Skills(_)
         | Commands::Session(_)
+        | Commands::Diff { .. }
         | Commands::Plugin(_)
         | Commands::Install(_) => ConfigNeed::Daemon,
         // `config init` writes the example file and reads nothing: no
@@ -460,6 +461,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 
         Some(Commands::Project { command }) => commands::project::handle(command).await?,
+
+        Some(Commands::Diff { command }) => commands::diff::handle(command).await?,
 
         Some(Commands::Process {
             path,

@@ -6,6 +6,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod agents;
 mod auth;
 mod config;
+mod diff;
 mod eval;
 mod kiln;
 mod models;
@@ -21,6 +22,7 @@ mod tests;
 pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
+pub use diff::DiffCommands;
 pub use eval::EvalCommands;
 pub use kiln::KilnCommands;
 pub use models::{EmbeddingsCommands, ModelsCommands};
@@ -229,6 +231,15 @@ pub enum Commands {
     Project {
         #[command(subcommand)]
         command: ProjectCommands,
+    },
+
+    /// Show a diffset the daemon computes (the changes of a branch)
+    #[command(
+        long_about = "Show a diffset: a set of file changes that the daemon computes.\n\nExamples:\n  # The changes of this branch against the default branch\n  cru diff branch\n\n  # Against a named base\n  cru diff branch --base develop"
+    )]
+    Diff {
+        #[command(subcommand)]
+        command: DiffCommands,
     },
 
     /// Process kiln files through the pipeline (parse, enrich, store)

@@ -1,0 +1,14 @@
+---
+source: crates/crucible-cli/src/tui/oil/components/diff_view.rs
+expression: out
+---
+[38;2;0;206;209medit [0m[38;5;7mbig.rs[0m[38;5;7m[2m  +30 -30[0m
+[38;2;247;118;142m-line_8_old[0m
+[38;2;247;118;142m-line_9_old[0m
+[38;2;247;118;142m-line_10_old[0m
+[38;2;247;118;142m-line_11_old[0m
+[38;2;247;118;142m-line_12_old[0m
+[38;2;247;118;142m-line_13_old[0m
+[38;2;247;118;142m-line_14_old[0m
+[38;2;247;118;142m-line_15_old[0m
+[38;5;7m[2m  … 44 more lines (+30 -14)                                                     [0m

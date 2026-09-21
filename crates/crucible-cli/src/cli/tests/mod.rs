@@ -1,5 +1,6 @@
 mod agents;
 mod chat;
+mod diff;
 mod init;
 mod misc;
 mod models;

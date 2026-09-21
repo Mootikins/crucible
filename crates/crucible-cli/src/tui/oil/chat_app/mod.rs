@@ -1,8 +1,8 @@
 use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    CommandPanel, InputComponent, InteractionModal, NotificationArea, ShellModal, StatusComponent,
-    SurfaceModal, SurfaceModalOutcome,
+    CommandPanel, DiffModal, DiffModalOutcome, InputComponent, InteractionModal, NotificationArea,
+    ShellModal, StatusComponent, SurfaceModal, SurfaceModalOutcome,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -94,6 +94,8 @@ pub struct OilChatApp {
     /// A modal rather than a pane: a pane needs the window layer, and nothing
     /// owns a transcript scroll offset yet. See `components/surface_modal.rs`.
     surface_modal: Option<SurfaceModal>,
+    /// A diffset, open full-screen (`:diff`). See `components/diff_modal.rs`.
+    diff_modal: Option<DiffModal>,
     /// Spinner animation start time (frame derived from elapsed time, not ticks)
     spinner_epoch: std::time::Instant,
     /// The frame clock. See [`OilChatApp::set_frame_time`].
@@ -157,6 +159,11 @@ impl OilChatApp {
         }
 
         if let Some(ref modal) = self.surface_modal {
+            let (w, h) = ctx.terminal_size;
+            return modal.view(w as usize, h as usize);
+        }
+
+        if let Some(ref modal) = self.diff_modal {
             let (w, h) = ctx.terminal_size;
             return modal.view(w as usize, h as usize);
         }
@@ -706,7 +713,7 @@ impl OilChatApp {
     /// know about is drawn inline, which leaves the transcript behind it and the
     /// prompt on top of it.
     pub(crate) fn has_fullscreen_modal(&self) -> bool {
-        self.shell_modal.is_some() || self.surface_modal.is_some()
+        self.shell_modal.is_some() || self.surface_modal.is_some() || self.diff_modal.is_some()
     }
 
     /// The open surface. Test-only: production reads it through the view and
@@ -714,6 +721,43 @@ impl OilChatApp {
     #[cfg(test)]
     pub(crate) fn surface_modal(&self) -> Option<&SurfaceModal> {
         self.surface_modal.as_ref()
+    }
+
+    /// The open diff view. Test-only, as [`Self::surface_modal`] is.
+    #[cfg(test)]
+    pub(crate) fn diff_modal(&self) -> Option<&DiffModal> {
+        self.diff_modal.as_ref()
+    }
+
+    /// Open a diffset and ask for the text of its first file.
+    pub(crate) fn open_diff_modal(
+        &mut self,
+        diffset: crucible_core::diff::Diffset,
+    ) -> Action<ChatAppMsg> {
+        let mut modal = DiffModal::new(diffset);
+        let request = modal.request_text();
+        self.diff_modal = Some(modal);
+        self.needs_full_redraw = true;
+        request.map_or(Action::Continue, |r| {
+            Action::Send(ChatAppMsg::FetchDiffFile(r))
+        })
+    }
+
+    /// Route a key to the open diff view. `None` means no diff view is open.
+    pub(crate) fn handle_diff_modal_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<Action<ChatAppMsg>> {
+        let modal = self.diff_modal.as_mut()?;
+        Some(match modal.handle_key(key) {
+            DiffModalOutcome::Close => {
+                self.diff_modal = None;
+                self.needs_full_redraw = true;
+                Action::Continue
+            }
+            DiffModalOutcome::Handled => Action::Continue,
+            DiffModalOutcome::Load(request) => Action::Send(ChatAppMsg::FetchDiffFile(request)),
+        })
     }
 
     pub(crate) fn open_surface_modal(&mut self, modal: SurfaceModal) {

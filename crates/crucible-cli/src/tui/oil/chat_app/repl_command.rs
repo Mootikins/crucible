@@ -35,6 +35,8 @@ pub(super) enum ReplCommand {
     Lua,
     /// Open a plugin's surface full-screen.
     Surfaces,
+    /// Open the branch diff of the workspace full-screen.
+    Diff,
 }
 
 impl ReplCommand {
@@ -56,6 +58,7 @@ impl ReplCommand {
         Self::Config,
         Self::Lua,
         Self::Surfaces,
+        Self::Diff,
     ];
 
     /// The word after `:` that runs this command.
@@ -77,6 +80,7 @@ impl ReplCommand {
             Self::Config => "config",
             Self::Lua => "lua",
             Self::Surfaces => "surfaces",
+            Self::Diff => "diff",
         }
     }
 
@@ -98,7 +102,8 @@ impl ReplCommand {
             | Self::Reload
             | Self::Config
             | Self::Lua
-            | Self::Surfaces => &[],
+            | Self::Surfaces
+            | Self::Diff => &[],
         }
     }
 
@@ -121,6 +126,7 @@ impl ReplCommand {
             Self::Config => ":config",
             Self::Lua => ":lua <expr>",
             Self::Surfaces => ":surfaces [name]",
+            Self::Diff => ":diff [base]",
         }
     }
 
@@ -143,6 +149,7 @@ impl ReplCommand {
             Self::Config => "Show current configuration",
             Self::Lua => "Evaluate Lua (daemon-side; := shorthand)",
             Self::Surfaces => "Open a plugin surface (lists them with no name)",
+            Self::Diff => "Show the branch diff against the default branch or [base]",
         }
     }
 
@@ -164,7 +171,8 @@ impl ReplCommand {
             | Self::Reload
             | Self::Config
             | Self::Lua
-            | Self::Surfaces => "core",
+            | Self::Surfaces
+            | Self::Diff => "core",
         }
     }
 
@@ -192,6 +200,7 @@ impl ReplCommand {
             Self::Config => ":config",
             Self::Lua => ":lua",
             Self::Surfaces => ":surfaces",
+            Self::Diff => ":diff",
         }
     }
 

@@ -39,6 +39,7 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:reload [name]` | Reload a plugin (no name = all) |
 | `:config` | Show current configuration |
 | `:lua <expr>` | Evaluate Lua daemon-side (shorthand: `:= <expr>`) |
+| `:diff [base]` | Show the branch diff of the workspace full-screen — [[Help/CLI/diff]] |
 | `:quit` / `:q` | Exit chat |
 | `:help [topic]` | Show help (alias: `:h`) |
 
@@ -259,6 +260,8 @@ state yet.)
 :config                 # Show current configuration summary
 :lua <expr>             # Evaluate a Lua expression in the daemon's plugin
                         # runtime; result renders as a system message (:= works too)
+:diff [base]            # Show the branch diff of the workspace against the
+                        # default branch or [base]; n/p file, PgUp/PgDn page
 ```
 
 ## Configuration Layers

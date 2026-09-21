@@ -260,6 +260,20 @@ pub enum ChatAppMsg {
     /// sends nothing, because an unreachable daemon is not a withdrawal and
     /// must not close a panel the user reads.
     SurfaceWithdrawn(String),
+    /// **Command** (TUI → daemon): compute the branch diff of the workspace
+    /// and open it (`:diff [base]`). `None` compares with the default branch.
+    OpenDiff(Option<String>),
+    /// **Event** (daemon → TUI): a diffset arrived. It opens the diff view.
+    DiffLoaded(Box<crucible_core::diff::Diffset>),
+    /// **Command** (TUI → daemon): read the two texts of one file of the
+    /// open diffset.
+    FetchDiffFile(crate::tui::oil::components::DiffFileRequest),
+    /// **Event** (daemon → TUI): the two texts of one file arrived.
+    DiffFileLoaded {
+        id: crucible_core::diff::DiffsetId,
+        index: usize,
+        text: crucible_core::diff::DiffFileText,
+    },
     /// **Command** (TUI → daemon): Evaluate a Lua expression via `lua.eval`
     /// (the `:lua` / `:=` escape hatch).
     EvalLua(String),
@@ -429,6 +443,10 @@ impl ChatAppMsg {
             | Self::RefreshSurface(_)
             | Self::SurfaceLoaded { .. }
             | Self::SurfaceWithdrawn(_)
+            | Self::OpenDiff(_)
+            | Self::DiffLoaded(_)
+            | Self::FetchDiffFile(_)
+            | Self::DiffFileLoaded { .. }
             | Self::EvalLua(_)
             | Self::LuaEvaled { .. }
             | Self::ConfigSet { .. }

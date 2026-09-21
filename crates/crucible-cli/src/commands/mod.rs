@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chat_preflight;
 pub mod completions;
 pub mod daemon;
+pub mod diff;
 pub mod doctor;
 pub mod eval;
 pub mod init;

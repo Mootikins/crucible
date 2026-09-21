@@ -291,6 +291,15 @@ impl OilChatApp {
             // The plugin is gone, so the panel must go too. This closes; it
             // never opens, and it never touches another surface's panel.
             ChatAppMsg::SurfaceWithdrawn(name) => self.close_withdrawn_surface(&name),
+            // The user asked for this diffset, so it takes the screen.
+            ChatAppMsg::DiffLoaded(diffset) => return self.open_diff_modal(*diffset),
+            ChatAppMsg::DiffFileLoaded { id, index, text } => {
+                if let Some(modal) = self.diff_modal.as_mut() {
+                    modal.set_text(&id, index, text);
+                }
+            }
+            // Both fetches are the runner's work.
+            ChatAppMsg::OpenDiff(_) | ChatAppMsg::FetchDiffFile(_) => {}
             // Both fetches are the runner's work; nothing for the reducer to do.
             ChatAppMsg::OpenSurface(_) | ChatAppMsg::RefreshSurface(_) => {}
             ChatAppMsg::LuaEvaled { output, is_error } => {

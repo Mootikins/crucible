@@ -679,6 +679,38 @@ impl OilChatRunner {
                             }
                         }));
                     }
+                    // `:diff`. Same replay gate: a replay must reach no daemon.
+                    // The root is the git top level of the workspace, and the
+                    // daemon admits it or refuses it.
+                    ChatAppMsg::OpenDiff(ref base) if !self.is_replay => {
+                        let base = base.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match fetch_branch_diff(base.as_deref()).await {
+                                Ok(diffset) => ChatAppMsg::DiffLoaded(Box::new(diffset)),
+                                Err(e) => ChatAppMsg::Error(format!("Diff failed: {e:#}")),
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
+                    ChatAppMsg::FetchDiffFile(ref request) if !self.is_replay => {
+                        let request = request.clone();
+                        let tx = params.msg_tx.clone();
+                        params.background_tasks.push(tokio::spawn(async move {
+                            let msg = match fetch_diff_file(&request).await {
+                                Ok(text) => ChatAppMsg::DiffFileLoaded {
+                                    id: request.id,
+                                    index: request.index,
+                                    text,
+                                },
+                                Err(e) => ChatAppMsg::Error(format!(
+                                    "Diff of {} failed: {e:#}",
+                                    request.path
+                                )),
+                            };
+                            let _ = tx.send(msg);
+                        }));
+                    }
                     // A `surface_changed` refetch. Same replay gate, and
                     // `open_if_closed = false`: this must refresh what is open and
                     // never open anything.
@@ -884,6 +916,8 @@ impl OilChatRunner {
                     ChatAppMsg::ReloadPlugin(_)
                     | ChatAppMsg::OpenSurface(_)
                     | ChatAppMsg::RefreshSurface(_)
+                    | ChatAppMsg::OpenDiff(_)
+                    | ChatAppMsg::FetchDiffFile(_)
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }
@@ -960,6 +994,27 @@ pub(super) fn refresh_outcome(
         Ok(None) => Some(ChatAppMsg::SurfaceWithdrawn(name.to_string())),
         Err(_) => None,
     }
+}
+
+/// Compute the branch diff of the workspace against `base`.
+///
+/// The session's workspace is the working directory of this process. An
+/// absent base asks the daemon for the default branch.
+async fn fetch_branch_diff(base: Option<&str>) -> anyhow::Result<crucible_core::diff::Diffset> {
+    let start = std::env::current_dir()?;
+    let source = crate::commands::diff::branch_source(&start, base, None);
+    let client = crucible_daemon::DaemonClient::connect().await?;
+    client.diff_get(&source).await
+}
+
+/// Read the two texts of one file of the open diffset.
+async fn fetch_diff_file(
+    request: &crate::tui::oil::components::DiffFileRequest,
+) -> anyhow::Result<crucible_core::diff::DiffFileText> {
+    let client = crucible_daemon::DaemonClient::connect().await?;
+    client
+        .diff_file(&request.source, &request.path, request.from.as_deref())
+        .await
 }
 
 /// Fetch one surface for the modal, or the first declared when none is named.

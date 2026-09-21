@@ -239,6 +239,7 @@ impl OilChatApp {
             // `arg` is already `None` for a bare `:surfaces` — the split above
             // filters an empty remainder — so no name means "the first one".
             ReplCommand::Surfaces => Action::Send(ChatAppMsg::OpenSurface(arg.map(str::to_string))),
+            ReplCommand::Diff => Action::Send(ChatAppMsg::OpenDiff(arg.map(str::to_string))),
             ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue

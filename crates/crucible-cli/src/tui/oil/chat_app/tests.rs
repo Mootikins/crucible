@@ -699,3 +699,88 @@ fn an_unnamed_request_still_opens_a_named_surface() {
 
     assert!(app.surface_modal().is_none());
 }
+
+// ── The diff view ───────────────────────────────────────────────────────────
+
+fn branch_diffset(paths: &[&str]) -> crucible_core::diff::Diffset {
+    use crucible_core::diff::{DiffFileEntry, DiffsetSource, FileStatus};
+    use crucible_core::session::PhysicalRoot;
+    let source = DiffsetSource::Branch {
+        root: PhysicalRoot::from_top_level("/repo"),
+        base: "main".into(),
+        head: None,
+    };
+    crucible_core::diff::Diffset {
+        id: source.id(),
+        source,
+        files: paths
+            .iter()
+            .map(|path| DiffFileEntry {
+                root: PhysicalRoot::from_top_level("/repo"),
+                path: (*path).to_string(),
+                status: FileStatus::Modified,
+                added: 1,
+                removed: 1,
+                binary: false,
+                too_large: false,
+            })
+            .collect(),
+    }
+}
+
+/// `:diff` asks the runner to fetch, and `:diff develop` names the base. The
+/// reducer itself must not try to reach the daemon.
+#[test]
+fn the_diff_command_asks_the_runner_to_fetch() {
+    let mut app = OilChatApp::default();
+    match app.handle_repl_command(":diff") {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::OpenDiff(base)) => {
+            assert_eq!(base, None, "no argument means the default branch");
+        }
+        other => panic!("expected a fetch, got {other:?}"),
+    }
+    match app.handle_repl_command(":diff develop") {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::OpenDiff(base)) => {
+            assert_eq!(base.as_deref(), Some("develop"));
+        }
+        other => panic!("expected a fetch against a base, got {other:?}"),
+    }
+}
+
+/// A loaded diffset opens full-screen and asks for the text of its first
+/// file. Escape closes it and hands the screen back.
+#[test]
+fn a_loaded_diff_opens_full_screen_and_asks_for_the_first_file() {
+    let mut app = OilChatApp::default();
+    let diffset = branch_diffset(&["a.rs", "b.rs"]);
+    let id = diffset.id.clone();
+
+    match app.on_message(ChatAppMsg::DiffLoaded(Box::new(diffset))) {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::FetchDiffFile(request)) => {
+            assert_eq!(request.path, "a.rs");
+            assert_eq!(request.id, id);
+        }
+        other => panic!("expected a text fetch, got {other:?}"),
+    }
+    assert!(app.has_fullscreen_modal(), "the runner must go fullscreen");
+
+    // The next file asks for its own text through the key router.
+    let action = app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('n'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    match action {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::FetchDiffFile(request)) => {
+            assert_eq!(request.path, "b.rs");
+        }
+        other => panic!("expected a text fetch for the next file, got {other:?}"),
+    }
+    assert_eq!(app.diff_modal().expect("open").file(), 1);
+
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(!app.has_fullscreen_modal(), "the screen went back");
+    assert!(app.diff_modal().is_none());
+}

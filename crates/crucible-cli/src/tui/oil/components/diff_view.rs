@@ -8,6 +8,7 @@
 use crate::formatting::SyntaxHighlighter;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::{truncate_to_chars, visible_width};
+use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
 use crucible_core::types::acp::{FileDiff, MAX_DIFF_BYTES};
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{Color, Style};
@@ -15,6 +16,10 @@ use similar::{ChangeTag, TextDiff};
 use std::path::Path;
 
 pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
+
+/// The narrowest pane of the side-by-side view. A narrower one falls back to
+/// the unified view.
+const MIN_PANE_WIDTH: usize = 10;
 
 fn count_changes(old: &str, new: &str) -> (usize, usize) {
     let diff = TextDiff::from_lines(old, new);
@@ -44,6 +49,14 @@ pub struct DiffOptions {
     pub collapsed: bool,
     /// `None` = auto-pick from `max_width`; `Some` = forced override (used by tests).
     pub layout: Option<DiffLayout>,
+    /// The change that the diffset states for the file. `None` lets the header
+    /// guess the verb from the two sides, as a tool call preview does.
+    pub status: Option<FileStatus>,
+    /// `None` gives a preview: the line budget trims each long hunk so that
+    /// both of its sides stay visible. `Some(n)` gives a page: the view skips
+    /// the first `n` rows, then cuts at `max_lines`. A page cuts in a straight
+    /// line, because a trim would hide rows that the next page does not show.
+    pub first_line: Option<usize>,
 }
 
 impl DiffOptions {
@@ -54,6 +67,8 @@ impl DiffOptions {
             context_lines: 3,
             collapsed: false,
             layout: None,
+            status: None,
+            first_line: None,
         }
     }
 
@@ -84,18 +99,35 @@ fn diff_action(diff: &FileDiff) -> &'static str {
     }
 }
 
-fn render_header(diff: &FileDiff, line_counts: Option<(usize, usize)>) -> Node {
+/// The verb and the path label for a file whose change the diffset states.
+///
+/// A diffset knows the change, so this verb does not guess. A rename shows
+/// the old path and the new path.
+fn status_label(status: &FileStatus, path: &str) -> (&'static str, String) {
+    match status {
+        FileStatus::Added => ("add", path.to_string()),
+        FileStatus::Modified => ("edit", path.to_string()),
+        FileStatus::Deleted => ("delete", path.to_string()),
+        FileStatus::Renamed { from } => ("rename", format!("{from} → {path}")),
+    }
+}
+
+fn render_header(
+    diff: &FileDiff,
+    status: Option<&FileStatus>,
+    line_counts: Option<(usize, usize)>,
+) -> Node {
     let t = theme::active();
-    let action = diff_action(diff);
+    let (action, label) = match status {
+        Some(status) => status_label(status, &diff.path),
+        None => (diff_action(diff), diff.path.clone()),
+    };
     let mut parts = vec![
         styled(
             format!("{} ", action),
             Style::new().fg(t.resolve_color(t.colors.info)),
         ),
-        styled(
-            diff.path.clone(),
-            Style::new().fg(t.resolve_color(t.colors.text)),
-        ),
+        styled(label, Style::new().fg(t.resolve_color(t.colors.text))),
     ];
     if let Some((added, removed)) = line_counts {
         parts.push(styled(
@@ -113,7 +145,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     // Oversize guard runs *before* count_changes / TextDiff / highlighter so a
     // 10 MiB blob doesn't pin the UI thread just to render a one-line header.
     if old.len() > MAX_DIFF_BYTES || new.len() > MAX_DIFF_BYTES {
-        let header = render_header(diff, None);
+        let header = render_header(diff, opts.status.as_ref(), None);
         if opts.collapsed {
             return header;
         }
@@ -126,7 +158,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
     }
 
     let counts = count_changes(old, new);
-    let header = render_header(diff, Some(counts));
+    let header = render_header(diff, opts.status.as_ref(), Some(counts));
 
     if opts.collapsed {
         return header;
@@ -141,7 +173,7 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
             new,
             opts.context_lines,
             opts.max_width,
-            opts.max_lines,
+            window(opts),
             &highlighter,
             language.as_deref(),
         ),
@@ -149,13 +181,80 @@ pub fn render_diff(diff: &FileDiff, opts: &DiffOptions) -> Node {
             old,
             new,
             opts.max_width,
-            opts.max_lines,
+            window(opts),
             &highlighter,
             language.as_deref(),
         ),
     };
 
     col([header, body])
+}
+
+/// The two sides of one file of a diffset, as the renderer takes them.
+///
+/// A deleted file has no current text. Its new side is empty.
+pub fn diffset_file_diff(entry: &DiffFileEntry, text: &DiffFileText) -> FileDiff {
+    FileDiff::from_contents(
+        entry.path.clone(),
+        text.base_text.clone(),
+        text.current_text.clone().unwrap_or_default(),
+    )
+}
+
+/// Draw one file of a diffset.
+///
+/// `text` is `None` while the client waits for `diff.file`. A binary file and
+/// a file above [`MAX_DIFF_BYTES`] have no text, so they show a line that
+/// says so. `opts.status` is ignored: the entry states the change.
+pub fn render_diffset_file(
+    entry: &DiffFileEntry,
+    text: Option<&DiffFileText>,
+    opts: &DiffOptions,
+) -> Node {
+    let opts = DiffOptions {
+        status: Some(entry.status.clone()),
+        ..opts.clone()
+    };
+    let note = match text {
+        _ if entry.binary => "  binary file, no text",
+        _ if entry.too_large => "  file larger than 1 MiB, no text",
+        None => "  loading…",
+        Some(text) => return render_diff(&diffset_file_diff(entry, text), &opts),
+    };
+    let diff = FileDiff::new(entry.path.clone(), "");
+    let header = render_header(
+        &diff,
+        opts.status.as_ref(),
+        Some((entry.added as usize, entry.removed as usize)),
+    );
+    if opts.collapsed {
+        return header;
+    }
+    let t = theme::active();
+    let line = styled(
+        note,
+        Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
+    );
+    col([header, line])
+}
+
+/// The rows that the body shows.
+#[derive(Debug, Clone, Copy)]
+enum Window {
+    /// At most this many rows. Each long hunk keeps both of its sides.
+    Preview(Option<usize>),
+    /// Skip `first` rows, then show at most `lines` rows in a straight cut.
+    Page { first: usize, lines: Option<usize> },
+}
+
+fn window(opts: &DiffOptions) -> Window {
+    match opts.first_line {
+        None => Window::Preview(opts.max_lines),
+        Some(first) => Window::Page {
+            first,
+            lines: opts.max_lines,
+        },
+    }
 }
 
 fn is_binary_extension(ext: &str) -> bool {
@@ -297,28 +396,10 @@ struct HunkChange {
     line: String,
 }
 
-fn render_unified(
-    old: &str,
-    new: &str,
-    context_lines: usize,
-    max_width: usize,
-    max_lines: Option<usize>,
-    highlighter: &SyntaxHighlighter,
-    language: Option<&str>,
-) -> Node {
-    if old == new {
-        return Node::Empty;
-    }
-
+/// The hunks of the unified view: each change with its context lines.
+fn collect_hunks(old: &str, new: &str, context_lines: usize) -> Vec<Vec<HunkChange>> {
     let diff = TextDiff::from_lines(old, new);
 
-    // Two-pass approach: collect hunks first, then emit with a budget that
-    // balances deletes vs inserts. The previous single-pass design cut at
-    // `max_lines` mid-hunk; because `similar` emits all deletes before any
-    // inserts within a contiguous changed region, a 30D-then-30I hunk with
-    // budget=8 produced 8 minus-lines and zero plus-lines — the user saw
-    // what was removed but never what replaced it. Collecting first lets
-    // us split the budget proportionally per hunk.
     let mut hunks: Vec<Vec<HunkChange>> = Vec::new();
     let mut current_hunk: Vec<HunkChange> = Vec::new();
     let mut in_hunk = false;
@@ -387,6 +468,52 @@ fn render_unified(
         }
         hunks.push(current_hunk);
     }
+    hunks
+}
+
+/// The number of body rows that the diff has before any cut.
+///
+/// A pager needs it to stop at the last page. A binary or an oversize file
+/// has no body rows.
+pub fn diff_row_count(diff: &FileDiff, opts: &DiffOptions) -> usize {
+    let old = diff.old_content.as_deref().unwrap_or("");
+    let new = diff.new_content.as_str();
+    if old == new || old.len() > MAX_DIFF_BYTES || new.len() > MAX_DIFF_BYTES {
+        return 0;
+    }
+    let side_by_side = opts.resolved_layout() == DiffLayout::SideBySide
+        && opts.max_width.saturating_sub(3) / 2 >= MIN_PANE_WIDTH;
+    if side_by_side {
+        pair_changes(old, new).len()
+    } else {
+        collect_hunks(old, new, opts.context_lines)
+            .iter()
+            .map(Vec::len)
+            .sum()
+    }
+}
+
+fn render_unified(
+    old: &str,
+    new: &str,
+    context_lines: usize,
+    max_width: usize,
+    window: Window,
+    highlighter: &SyntaxHighlighter,
+    language: Option<&str>,
+) -> Node {
+    if old == new {
+        return Node::Empty;
+    }
+
+    // Two-pass approach: collect hunks first, then emit with a budget that
+    // balances deletes vs inserts. The previous single-pass design cut at
+    // `max_lines` mid-hunk; because `similar` emits all deletes before any
+    // inserts within a contiguous changed region, a 30D-then-30I hunk with
+    // budget=8 produced 8 minus-lines and zero plus-lines — the user saw
+    // what was removed but never what replaced it. Collecting first lets
+    // us split the budget proportionally per hunk.
+    let mut hunks = collect_hunks(old, new, context_lines);
 
     // Emit pass: walk hunks within the line budget. Each hunk that exceeds
     // its share of the remaining budget gets a balanced trim.
@@ -411,7 +538,26 @@ fn render_unified(
     let mut nodes: Vec<Node> = Vec::new();
     let mut remaining_added = 0usize;
     let mut remaining_removed = 0usize;
-    let max = max_lines.unwrap_or(usize::MAX);
+    let max = match window {
+        Window::Preview(max_lines) => max_lines.unwrap_or(usize::MAX),
+        Window::Page { first, lines } => {
+            // A page cuts the rows of all hunks in one straight line.
+            let rows = hunks.iter().flatten().skip(first);
+            for (index, change) in rows.enumerate() {
+                if index < lines.unwrap_or(usize::MAX) {
+                    nodes.push(render_change(change));
+                } else {
+                    match change.tag {
+                        ChangeTag::Insert => remaining_added += 1,
+                        ChangeTag::Delete => remaining_removed += 1,
+                        ChangeTag::Equal => {}
+                    }
+                }
+            }
+            hunks.clear();
+            0
+        }
+    };
 
     for hunk in &hunks {
         let remaining_budget = max.saturating_sub(nodes.len());
@@ -535,7 +681,7 @@ fn render_side_by_side(
     old: &str,
     new: &str,
     max_width: usize,
-    max_lines: Option<usize>,
+    window: Window,
     highlighter: &SyntaxHighlighter,
     language: Option<&str>,
 ) -> Node {
@@ -544,8 +690,8 @@ fn render_side_by_side(
     // Defensive: Auto only picks SideBySide at max_width >= 120, but explicit
     // callers can request a narrow side-by-side. Fall back to unified rather
     // than render unreadable 3-column-wide panes.
-    if pane_width < 10 {
-        return render_unified(old, new, 3, max_width, max_lines, highlighter, language);
+    if pane_width < MIN_PANE_WIDTH {
+        return render_unified(old, new, 3, max_width, window, highlighter, language);
     }
     let separator_style = Style::new().fg(t.resolve_color(t.colors.text_dim)).dim();
     let delete_color = t.resolve_color(t.colors.error);
@@ -573,9 +719,14 @@ fn render_side_by_side(
     };
 
     let all_rows = pair_changes(old, new);
+    let (first, max_lines) = match window {
+        Window::Preview(max_lines) => (0, max_lines),
+        Window::Page { first, lines } => (first, lines),
+    };
+    let shown = &all_rows[first.min(all_rows.len())..];
     let (visible, dropped): (&[PairedRow], &[PairedRow]) = match max_lines {
-        Some(max) if all_rows.len() > max => all_rows.split_at(max),
-        _ => (all_rows.as_slice(), &[]),
+        Some(max) if shown.len() > max => shown.split_at(max),
+        _ => (shown, &[]),
     };
 
     let mut rows = Vec::with_capacity(visible.len() + 1);
@@ -1042,5 +1193,97 @@ mod snapshot_tests {
         opts.layout = Some(DiffLayout::Unified);
         let out = snap(&d, &opts);
         insta::assert_snapshot!(out);
+    }
+
+    /// A deleted file of a diffset: the new side is empty and the diffset
+    /// states the deletion, so the header says "delete". Without the status
+    /// the header says "edit", because an empty new side proves nothing.
+    #[test]
+    fn snap_deleted_file() {
+        let d = FileDiff::from_contents(
+            "src/old.rs",
+            Some("fn doomed() {}\nfn also_doomed() {}\n".into()),
+            "",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        opts.status = Some(FileStatus::Deleted);
+        let out = snap(&d, &opts);
+        assert!(out.contains("delete"), "the stated verb: {out:?}");
+        insta::assert_snapshot!(out);
+    }
+
+    /// A renamed file shows the old path and the new path.
+    #[test]
+    fn snap_renamed_file() {
+        let d = FileDiff::from_contents(
+            "src/new_name.rs",
+            Some("fn kept() {}\nfn old() {}\n".into()),
+            "fn kept() {}\nfn new() {}\n",
+        );
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        opts.status = Some(FileStatus::Renamed {
+            from: "src/old_name.rs".into(),
+        });
+        let out = snap(&d, &opts);
+        assert!(
+            out.contains("src/old_name.rs → src/new_name.rs"),
+            "both paths: {out:?}"
+        );
+        insta::assert_snapshot!(out);
+    }
+
+    /// The second page starts at the row after the first page and cuts in a
+    /// straight line. It shows the deletions 8 to 15 of one long hunk, not a
+    /// trim of both sides.
+    #[test]
+    fn snap_second_page() {
+        let mut old = String::new();
+        let mut new = String::new();
+        for i in 0..30 {
+            old.push_str(&format!("line_{i}_old\n"));
+            new.push_str(&format!("line_{i}_NEW\n"));
+        }
+        let d = FileDiff::from_contents("big.rs", Some(old), new);
+        let mut opts = DiffOptions::for_width(80);
+        opts.layout = Some(DiffLayout::Unified);
+        opts.max_lines = Some(8);
+        opts.first_line = Some(8);
+        let out = snap(&d, &opts);
+        assert!(
+            out.contains("line_8_old"),
+            "the first row of the page: {out:?}"
+        );
+        assert!(
+            out.contains("line_15_old"),
+            "the last row of the page: {out:?}"
+        );
+        assert!(
+            !out.contains("line_7_old"),
+            "no row of the first page: {out:?}"
+        );
+        assert!(
+            !out.contains("line_16_old"),
+            "no row of the next page: {out:?}"
+        );
+        insta::assert_snapshot!(out);
+    }
+
+    /// Side by side, a page skips the paired rows before it.
+    #[test]
+    fn a_side_by_side_page_skips_the_rows_before_it() {
+        let mut old = String::new();
+        for i in 0..20 {
+            old.push_str(&format!("row_{i}\n"));
+        }
+        let d = FileDiff::from_contents("x.rs", Some(old), "");
+        let mut opts = DiffOptions::for_width(140);
+        opts.layout = Some(DiffLayout::SideBySide);
+        opts.max_lines = Some(5);
+        opts.first_line = Some(10);
+        let out = snap(&d, &opts);
+        assert!(out.contains("row_10") && out.contains("row_14"), "{out:?}");
+        assert!(!out.contains("row_9") && !out.contains("row_15"), "{out:?}");
     }
 }

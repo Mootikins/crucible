@@ -284,6 +284,11 @@ state in `chat_app/tests.rs`; T2 `user_story_tests/agent_card_tests.rs` draws th
 resolved model through the production event translator. The process boundary is
 covered by the card-backed query in `oneshot_precognition_query_e2e.rs`.
 
+### US-910: The branch diff, drawn by the TUI
+**As a user**, `:diff` shows me the changes of my branch since its merge base, one file at a time, without leaving the chat. `cru diff branch` prints the same diff in a shell.
+**Acceptance:** `:diff` compares the workspace with the default branch and `:diff <base>` with that base; the root is the git top level of the working directory, and the daemon admits it or refuses it; the view takes the whole screen through the fullscreen path; `n`/`p` move between files, `PgUp`/`PgDn` page through one file, `j`/`k` scroll one row, `esc`/`q` close; the view asks for the text of a file only when the user moves to it, so a branch with many files does not send all its texts; a deleted file says `delete`, a renamed file shows `old → new`; a binary or oversize file shows a line that says so. Comments in the TUI view are out of scope.
+**Tests:** T1 paging, one text request for one file and the rename's old path in `components/diff_modal.rs`; T1 `snap_deleted_file`, `snap_renamed_file` and `snap_second_page` in `components/diff_view.rs`; T1 `the_diff_command_asks_the_runner_to_fetch` and the open/next/close reducer in `chat_app/tests.rs`; T2 `a_branch_diff_reaches_the_frame` in `user_story_tests/diff_tests.rs`. The process boundary is `tests/cli_e2e_diff.rs`: a real `cru diff branch` against a real daemon and a temp repository.
+
 ### US-HERO: One session, many consoles (cross-surface)
 **As a user**, work I start in the terminal is fully continuable in the browser and back again — the session lives in the daemon (the "hypervisor"), the TUI and web are stateless consoles, and kiln files are a shared buffer.
 **Acceptance:** a session created + advanced in `cru chat` resumes in `cru web` with turn 1 hydrated both sides; a note the terminal wrote via the shell modal opens in the web editor; the browser's edit to that note is visible from a later `cru chat --resume` via `!cat`; both consoles see the same 3-turn history and the same bytes on disk.
