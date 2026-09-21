@@ -799,15 +799,22 @@ impl DaemonClient {
         path: &str,
         from: Option<&str>,
     ) -> Result<crucible_core::diff::DiffFileText> {
-        self.typed_call_with_retry(
-            "diff.file",
-            DiffFileRequest {
-                source: source.clone(),
-                path: path.to_string(),
-                from: from.map(str::to_string),
-            },
-        )
+        self.diff_file_request(DiffFileRequest {
+            source: source.clone(),
+            path: path.to_string(),
+            from: from.map(str::to_string),
+            root: None,
+        })
         .await
+    }
+
+    /// `diff.file` with the whole request. A session record source needs
+    /// `root`, because a session can have more than one root.
+    pub async fn diff_file_request(
+        &self,
+        request: DiffFileRequest,
+    ) -> Result<crucible_core::diff::DiffFileText> {
+        self.typed_call_with_retry("diff.file", request).await
     }
 
     /// Move/rename a file or directory within a registered project or open

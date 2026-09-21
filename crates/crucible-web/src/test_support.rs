@@ -551,13 +551,16 @@ pub fn mock_diffset_for(
 #[cfg(any(test, feature = "test-utils"))]
 /// The texts `diff.file` answers for `request`.
 ///
-/// The base text is the old path and the current text is the path, so a
-/// route test sees the paths that the route sent.
+/// The base text is the old path, or else the root. The current text is the
+/// path. Thus a route test sees the paths that the route sent.
 pub fn mock_diff_file_text_for(
     request: &crucible_daemon::rpc_client::DiffFileRequest,
 ) -> crucible_core::diff::DiffFileText {
     crucible_core::diff::DiffFileText {
-        base_text: request.from.clone(),
+        base_text: request
+            .from
+            .clone()
+            .or_else(|| request.root.as_ref().map(|r| r.display().to_string())),
         current_text: Some(request.path.clone()),
     }
 }

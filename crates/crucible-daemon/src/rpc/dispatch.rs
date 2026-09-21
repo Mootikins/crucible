@@ -1260,6 +1260,7 @@ impl RpcDispatcher {
             projects: &self.ctx.project_manager,
             kilns: &self.ctx.kiln,
             sessions: &self.ctx.sessions,
+            review: &self.ctx.agents.review,
         }
     }
 

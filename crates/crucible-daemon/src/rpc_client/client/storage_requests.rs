@@ -332,6 +332,11 @@ pub struct DiffFileRequest {
     /// The old path of a renamed file. The base text comes from this path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// The root of the file. A session record needs it, because a session
+    /// can have more than one root. A branch source names its own root, so
+    /// a branch request omits it or repeats the root of the source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<crucible_core::session::PhysicalRoot>,
 }
 
 /// Request for `fs.move`.

@@ -182,9 +182,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/diff` — the files of the branch diff of one root.
-         * @description The reply has the counts of each file and no text. Its `source` names the
-         *     base branch that the daemon used.
+         * `GET /api/diff` — the files of the branch diff of one root, or of the
+         *     record of one session.
+         * @description The reply has the counts of each file and no text. For a branch, its
+         *     `source` names the base branch that the daemon used. A session with no
+         *     review ledger has no files.
          */
         get: operations["get_diff"];
         put?: never;
@@ -203,7 +205,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/diff/file` — the two texts of one file of a branch diff.
+         * `GET /api/diff/file` — the two texts of one file of a branch diff or of a
+         *     session record.
          * @description A side is `null` when the file is absent on it, binary or too large.
          */
         get: operations["get_diff_file"];
@@ -5057,13 +5060,21 @@ export interface operations {
     };
     get_diff: {
         parameters: {
-            query: {
+            query?: {
                 /** @description The branch to compare against. Absent takes the default branch. */
                 base?: string;
                 /** @description The other side. Absent takes the working tree. */
                 head?: string;
-                /** @description Absolute path of the top level of a git repository. */
-                root: string;
+                /**
+                 * @description Absolute path of the top level of a git repository. Names a branch
+                 *     source. Give `root` or `session`, not both.
+                 */
+                root?: string;
+                /**
+                 * @description The id of a session. Names the record of the session: its session
+                 *     base, to the files on disk.
+                 */
+                session?: string;
             };
             header?: never;
             path?: never;
@@ -5079,7 +5090,7 @@ export interface operations {
                     "application/json": components["schemas"]["Diffset"];
                 };
             };
-            /** @description The daemon refuses the root or the branch, and says why */
+            /** @description The query or the daemon refuses the source, and says why */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5106,8 +5117,17 @@ export interface operations {
                 head?: string;
                 /** @description The path of the file relative to `root`, on the current side. */
                 path: string;
-                /** @description Absolute path of the top level of a git repository. */
+                /**
+                 * @description Absolute path of the root of the file. For a branch source, the top
+                 *     level of the git repository. For a session record, the `root` of the
+                 *     file entry.
+                 */
                 root: string;
+                /**
+                 * @description The id of a session. Names the record of the session instead of a
+                 *     branch.
+                 */
+                session?: string;
             };
             header?: never;
             path?: never;
@@ -5123,7 +5143,7 @@ export interface operations {
                     "application/json": components["schemas"]["DiffFileText"];
                 };
             };
-            /** @description The daemon refuses the root, the branch or the path, and says why */
+            /** @description The query or the daemon refuses the source, the root or the path, and says why */
             422: {
                 headers: {
                     [name: string]: unknown;

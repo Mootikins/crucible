@@ -317,15 +317,24 @@
     },
     "/api/diff": {
       "get": {
-        "summary": "`GET /api/diff` — the files of the branch diff of one root.",
-        "description": "The reply has the counts of each file and no text. Its `source` names the\nbase branch that the daemon used.",
+        "summary": "`GET /api/diff` — the files of the branch diff of one root, or of the\nrecord of one session.",
+        "description": "The reply has the counts of each file and no text. For a branch, its\n`source` names the base branch that the daemon used. A session with no\nreview ledger has no files.",
         "operationId": "get_diff",
         "parameters": [
           {
             "name": "root",
             "in": "query",
-            "description": "Absolute path of the top level of a git repository.",
-            "required": true,
+            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give `root` or `session`, not both.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "description": "The id of a session. Names the record of the session: its session\nbase, to the files on disk.",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -361,7 +370,7 @@
             }
           },
           "422": {
-            "description": "The daemon refuses the root or the branch, and says why"
+            "description": "The query or the daemon refuses the source, and says why"
           },
           "502": {
             "description": "git failed, or the daemon could not be reached"
@@ -371,15 +380,24 @@
     },
     "/api/diff/file": {
       "get": {
-        "summary": "`GET /api/diff/file` — the two texts of one file of a branch diff.",
+        "summary": "`GET /api/diff/file` — the two texts of one file of a branch diff or of a\nsession record.",
         "description": "A side is `null` when the file is absent on it, binary or too large.",
         "operationId": "get_diff_file",
         "parameters": [
           {
             "name": "root",
             "in": "query",
-            "description": "Absolute path of the top level of a git repository.",
+            "description": "Absolute path of the root of the file. For a branch source, the top\nlevel of the git repository. For a session record, the `root` of the\nfile entry.",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "description": "The id of a session. Names the record of the session instead of a\nbranch.",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -433,7 +451,7 @@
             }
           },
           "422": {
-            "description": "The daemon refuses the root, the branch or the path, and says why"
+            "description": "The query or the daemon refuses the source, the root or the path, and says why"
           },
           "502": {
             "description": "git failed, or the daemon could not be reached"

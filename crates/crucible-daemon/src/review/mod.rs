@@ -49,6 +49,10 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use backend::RootBackend;
+use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
+use crucible_core::types::acp::MAX_DIFF_BYTES;
+
+use crate::diff::branch::FileText;
 
 pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
@@ -868,6 +872,109 @@ impl ReviewLedgers {
         Ok((all, statuses))
     }
 
+    /// The files of the session record: each path that differs between the
+    /// session base and the disk, with its line counts and no text.
+    ///
+    /// A session with no ledger has an empty record, because it has no base
+    /// to compare with. A root that the ledger cannot read contributes no
+    /// files, as in [`Self::list_hunks_with_status`].
+    pub(crate) async fn record_files(&self, session_id: &str) -> ReviewResult<Vec<DiffFileEntry>> {
+        let Some(ledger) = self.ledger(session_id) else {
+            return Ok(Vec::new());
+        };
+        let integrity = self
+            .integrity
+            .get(session_id)
+            .map(|r| r.value().clone())
+            .unwrap_or_default();
+        let mut files = Vec::new();
+        for base in ledger.session_base() {
+            let backend = RootBackend::of(&base.base_tree);
+            if let Some(reason) = degraded_reason(&integrity, base, backend, &self.plain).await {
+                warn!(
+                    session_id,
+                    root = %base.root.display(),
+                    reason = %reason,
+                    "the session record leaves out a root that the ledger cannot read"
+                );
+                continue;
+            }
+            let current = backend.capture(&self.plain, &base.root).await?;
+            let changes = backend
+                .changed_paths(&self.plain, &base.root, &base.base_tree, &current)
+                .await?;
+            for (path, kind) in changes {
+                let before = self
+                    .snapshot_text(backend, base, &base.base_tree, &path, kind.has_before())
+                    .await?;
+                let after = self
+                    .snapshot_text(backend, base, &current, &path, kind.has_after())
+                    .await?;
+                files.push(record_entry(&base.root, path, kind, &before, &after));
+            }
+        }
+        files.sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
+        Ok(files)
+    }
+
+    /// The two texts of one file of the session record: the session base
+    /// snapshot, and the file on disk.
+    ///
+    /// `root` must be one of the roots of the ledger. The caller checks that
+    /// `path` is a plain relative path that stays inside `root`.
+    pub(crate) async fn record_text(
+        &self,
+        session_id: &str,
+        root: &PhysicalRoot,
+        path: &str,
+    ) -> ReviewResult<DiffFileText> {
+        let ledger = self
+            .ledger(session_id)
+            .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
+        let base = ledger
+            .session_base()
+            .iter()
+            .find(|b| &b.root == root)
+            .ok_or_else(|| ReviewError::PathEscapesRoot {
+                path: root.to_path_buf(),
+            })?;
+        let backend = RootBackend::of(&base.base_tree);
+        let exists = backend
+            .contains_path(&self.plain, &base.root, &base.base_tree, path)
+            .await?;
+        let before = self
+            .snapshot_text(backend, base, &base.base_tree, path, exists)
+            .await?;
+        let after = crate::diff::branch::disk_text(&base.root.join(path))
+            .await
+            .map_err(|e| std::io::Error::other(format!("{e:#}")))?;
+        Ok(DiffFileText {
+            base_text: before.into_shown(),
+            current_text: after.into_shown(),
+        })
+    }
+
+    /// The text of `path` in the snapshot `snap` of one root.
+    async fn snapshot_text(
+        &self,
+        backend: RootBackend,
+        base: &RootBase,
+        snap: &SnapshotId,
+        path: &str,
+        exists: bool,
+    ) -> ReviewResult<FileText> {
+        if !exists {
+            return Ok(FileText::Absent);
+        }
+        Ok(
+            match backend.blob(&self.plain, &base.root, snap, path).await? {
+                None => FileText::Binary,
+                Some(text) if text.len() > MAX_DIFF_BYTES => FileText::TooLarge,
+                Some(text) => FileText::Text(text),
+            },
+        )
+    }
+
     /// Hunks the gate may block on: unreviewed and owned by the ledger.
     ///
     /// External hunks are excluded on purpose. They are the user's own edits
@@ -1278,6 +1385,67 @@ impl ReviewLedgers {
         };
         brackets.remove(pos).contested
     }
+}
+
+/// The entry of one file of the session record.
+///
+/// A binary or too-large side gives no counts, because the daemon does not
+/// compare a text that it does not send.
+fn record_entry(
+    root: &PhysicalRoot,
+    path: String,
+    kind: git::ChangeKind,
+    before: &FileText,
+    after: &FileText,
+) -> DiffFileEntry {
+    let status = match kind {
+        git::ChangeKind::Added => FileStatus::Added,
+        git::ChangeKind::Modified => FileStatus::Modified,
+        git::ChangeKind::Deleted => FileStatus::Deleted,
+    };
+    let binary = matches!(before, FileText::Binary) || matches!(after, FileText::Binary);
+    let too_large = matches!(before, FileText::TooLarge) || matches!(after, FileText::TooLarge);
+    let (added, removed) = if binary || too_large {
+        (0, 0)
+    } else {
+        line_counts(text_or_empty(before), text_or_empty(after))
+    };
+    DiffFileEntry {
+        root: root.clone(),
+        path,
+        status,
+        added,
+        removed,
+        binary,
+        too_large,
+    }
+}
+
+fn text_or_empty(text: &FileText) -> &str {
+    match text {
+        FileText::Text(text) => text,
+        FileText::Absent | FileText::Binary | FileText::TooLarge => "",
+    }
+}
+
+/// The lines that `after` adds and the lines that it removes, from `before`.
+fn line_counts(before: &str, after: &str) -> (u32, u32) {
+    let (mut added, mut removed) = (0usize, 0usize);
+    for op in similar::TextDiff::from_lines(before, after).ops() {
+        match *op {
+            similar::DiffOp::Equal { .. } => {}
+            similar::DiffOp::Insert { new_len, .. } => added += new_len,
+            similar::DiffOp::Delete { old_len, .. } => removed += old_len,
+            similar::DiffOp::Replace {
+                old_len, new_len, ..
+            } => {
+                added += new_len;
+                removed += old_len;
+            }
+        }
+    }
+    let clamp = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    (clamp(added), clamp(removed))
 }
 
 /// Why one root's attribution cannot be trusted, or `None` when it can.

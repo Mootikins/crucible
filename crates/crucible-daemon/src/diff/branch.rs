@@ -33,6 +33,16 @@ pub enum FileText {
     TooLarge,
 }
 
+impl FileText {
+    /// The text to show, or `None` when the side has no text to show.
+    pub fn into_shown(self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Absent | Self::Binary | Self::TooLarge => None,
+        }
+    }
+}
+
 async fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(run_git(root, args, GitOpts::default()).await?)
 }
@@ -376,7 +386,7 @@ async fn untracked_entry(root: &PhysicalRoot, path: &str) -> Result<DiffFileEntr
 
 /// The text of a file in the working tree. A symbolic link gives its target,
 /// as git stores it.
-async fn disk_text(path: &Path) -> Result<FileText> {
+pub(crate) async fn disk_text(path: &Path) -> Result<FileText> {
     let meta = match tokio::fs::symlink_metadata(path).await {
         Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(FileText::Absent),

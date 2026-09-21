@@ -18,9 +18,10 @@ use std::sync::Arc;
 use crucible_core::diff::{DiffFileText, Diffset, DiffsetSource};
 use crucible_core::session::PhysicalRoot;
 
-use crate::diff::branch::{self, FileText};
+use crate::diff::branch;
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
+use crate::review::{ReviewError, ReviewLedgers};
 use crate::protocol::{Request, RequestId, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::rpc_client::{DiffFileRequest, DiffGetRequest};
 use crate::scm::{run_git, GitOpts};
@@ -51,6 +52,8 @@ pub(crate) struct Admission<'a> {
     pub(crate) projects: &'a Arc<ProjectManager>,
     pub(crate) kilns: &'a Arc<KilnManager>,
     pub(crate) sessions: &'a Arc<SessionManager>,
+    /// The review ledgers, which hold the base of each session record.
+    pub(crate) review: &'a Arc<ReviewLedgers>,
 }
 
 impl Admission<'_> {
@@ -155,16 +158,19 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
                 files,
             })
         }
-        DiffsetSource::SessionRecord { .. } => Err(unserved("session record")),
+        DiffsetSource::SessionRecord { session } => {
+            let files = admission
+                .review
+                .record_files(session.as_str())
+                .await
+                .map_err(internal_error)?;
+            Ok(Diffset {
+                id: source.id(),
+                source: source.clone(),
+                files,
+            })
+        }
         DiffsetSource::Proposal { .. } => Err(unserved("proposal")),
-    }
-}
-
-/// The text of one side, or `None` when the side has no text to show.
-fn shown(text: FileText) -> Option<String> {
-    match text {
-        FileText::Text(text) => Some(text),
-        FileText::Absent | FileText::Binary | FileText::TooLarge => None,
     }
 }
 
@@ -206,6 +212,11 @@ async fn diff_file(
     match &request.source {
         DiffsetSource::Branch { root, base, head } => {
             let sides = branch_sides(admission, root, base, head.as_deref()).await?;
+            if request.root.as_ref().is_some_and(|r| *r != sides.root) {
+                return Err(params_error(
+                    "the root of the request is not the root of the branch source",
+                ));
+            }
             if sides.head.is_none() {
                 check_contained(&sides.root, &request.path)?;
             }
@@ -216,11 +227,30 @@ async fn diff_file(
                 .await
                 .map_err(internal_error)?;
             Ok(DiffFileText {
-                base_text: shown(base_text),
-                current_text: shown(current_text),
+                base_text: base_text.into_shown(),
+                current_text: current_text.into_shown(),
             })
         }
-        DiffsetSource::SessionRecord { .. } => Err(unserved("session record")),
+        DiffsetSource::SessionRecord { session } => {
+            let Some(root) = &request.root else {
+                return Err(params_error("a session record file needs its root"));
+            };
+            // The ledger lists no renames, so no file has an old path.
+            if request.from.is_some() {
+                return Err(params_error("a session record has no renamed file"));
+            }
+            check_contained(root, &request.path)?;
+            admission
+                .review
+                .record_text(session.as_str(), root, &request.path)
+                .await
+                .map_err(|e| match e {
+                    ReviewError::NoLedger(_) | ReviewError::PathEscapesRoot { .. } => {
+                        params_error(e.to_string())
+                    }
+                    other => internal_error(other),
+                })
+        }
         DiffsetSource::Proposal { .. } => Err(unserved("proposal")),
     }
 }
@@ -267,6 +297,7 @@ mod tests {
         projects: Arc<ProjectManager>,
         kilns: Arc<KilnManager>,
         sessions: Arc<SessionManager>,
+        review: Arc<ReviewLedgers>,
         _store: TempDir,
     }
 
@@ -279,6 +310,7 @@ mod tests {
                 sessions: Arc::new(SessionManager::with_storage(
                     crate::test_support::temp_session_storage(),
                 )),
+                review: Arc::new(ReviewLedgers::new(store.path().join("snapshots"))),
                 _store: store,
             }
         }
@@ -288,6 +320,7 @@ mod tests {
                 projects: &self.projects,
                 kilns: &self.kilns,
                 sessions: &self.sessions,
+                review: &self.review,
             }
         }
 
@@ -320,10 +353,21 @@ mod tests {
             path: &str,
             from: Option<&str>,
         ) -> Result<DiffFileText, RpcError> {
+            self.file_in(source, None, path, from).await
+        }
+
+        async fn file_in(
+            &self,
+            source: &DiffsetSource,
+            root: Option<&PhysicalRoot>,
+            path: &str,
+            from: Option<&str>,
+        ) -> Result<DiffFileText, RpcError> {
             let request = DiffFileRequest {
                 source: source.clone(),
                 path: path.to_string(),
                 from: from.map(str::to_string),
+                root: root.cloned(),
             };
             let value = self
                 .call("diff.file", serde_json::to_value(request).unwrap())
@@ -490,22 +534,102 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_session_record_or_a_proposal_source_is_refused() {
+    async fn a_proposal_source_is_refused() {
         let daemon = Daemon::new();
-        for source in [
-            DiffsetSource::SessionRecord {
-                session: crucible_core::session::SessionId::parse("chat-1").unwrap(),
-            },
-            DiffsetSource::Proposal {
-                id: "6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f".parse().unwrap(),
-            },
-        ] {
-            let error = daemon.get(&source).await.unwrap_err();
-            assert_eq!(error.code, INVALID_PARAMS);
-            assert!(error.message.contains("does not serve"), "{error:?}");
-            let error = daemon.file(&source, "a.md", None).await.unwrap_err();
-            assert!(error.message.contains("does not serve"), "{error:?}");
+        let source = DiffsetSource::Proposal {
+            id: "6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f".parse().unwrap(),
+        };
+        let error = daemon.get(&source).await.unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(error.message.contains("does not serve"), "{error:?}");
+        let error = daemon.file(&source, "a.md", None).await.unwrap_err();
+        assert!(error.message.contains("does not serve"), "{error:?}");
+    }
+
+    fn record(session: &str) -> DiffsetSource {
+        DiffsetSource::SessionRecord {
+            session: crucible_core::session::SessionId::parse(session).unwrap(),
         }
+    }
+
+    #[tokio::test]
+    async fn a_session_record_serves_the_base_and_the_disk() {
+        let daemon = Daemon::new();
+        let tmp = TempDir::new().unwrap();
+        init_repo(tmp.path(), &[("a.md", "one\n")]).await;
+        daemon
+            .review
+            .open("chat-1", &[tmp.path().to_path_buf()])
+            .await
+            .unwrap();
+        fs::write(tmp.path().join("a.md"), "one\ntwo\n").unwrap();
+
+        let source = record("chat-1");
+        let diffset = daemon.get(&source).await.unwrap();
+        assert_eq!(diffset.id, source.id());
+        assert_eq!(diffset.source, source);
+        let root = PhysicalRoot::from_top_level(tmp.path().canonicalize().unwrap());
+        assert_eq!(
+            diffset.files,
+            vec![DiffFileEntry {
+                root: root.clone(),
+                path: "a.md".into(),
+                status: FileStatus::Modified,
+                added: 1,
+                removed: 0,
+                binary: false,
+                too_large: false,
+            }]
+        );
+
+        let text = daemon
+            .file_in(&source, Some(&root), "a.md", None)
+            .await
+            .unwrap();
+        assert_eq!(
+            text,
+            DiffFileText {
+                base_text: Some("one\n".into()),
+                current_text: Some("one\ntwo\n".into()),
+            }
+        );
+
+        // The file request must name the root, and no old path.
+        let error = daemon.file(&source, "a.md", None).await.unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        let error = daemon
+            .file_in(&source, Some(&root), "a.md", Some("b.md"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        // A root that the session does not track is refused.
+        let other = TempDir::new().unwrap();
+        let error = daemon
+            .file_in(
+                &source,
+                Some(&PhysicalRoot::from_top_level(other.path())),
+                "a.md",
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        for path in ["../outside", "/etc/passwd", ""] {
+            let error = daemon
+                .file_in(&source, Some(&root), path, None)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, INVALID_PARAMS, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_with_no_ledger_serves_an_empty_record() {
+        let daemon = Daemon::new();
+        let source = record("chat-1");
+        let diffset = daemon.get(&source).await.unwrap();
+        assert_eq!(diffset.source, source);
+        assert!(diffset.files.is_empty());
     }
 
     #[tokio::test]

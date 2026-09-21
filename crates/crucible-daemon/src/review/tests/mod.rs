@@ -12,6 +12,7 @@ mod delegation;
 mod gate;
 mod identity;
 mod persistence;
+mod record;
 mod retention;
 
 use std::path::{Path, PathBuf};

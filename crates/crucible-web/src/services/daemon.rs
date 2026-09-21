@@ -643,12 +643,8 @@ impl ReconnectingDaemon {
 
     forward_rpc! {
         Safe DiffFile =>
-        diff_file(
-            source: &crucible_core::diff::DiffsetSource,
-            path: &str,
-            from: Option<&str> => from.map(str::to_owned),
-        )
-        -> crucible_core::diff::DiffFileText = diff_file(&source, &path, from.as_deref());
+        diff_file_request(request: &crucible_daemon::rpc_client::DiffFileRequest)
+        -> crucible_core::diff::DiffFileText = diff_file_request(request.clone());
     }
 
     forward_rpc! {
