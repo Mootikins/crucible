@@ -37,17 +37,15 @@ async fn initialize_parses_the_reply_and_stores_the_agent_capabilities() {
     assert!(client.agent_supports_session_close());
 }
 
-/// An `initialize` answer with no `result` is a session error, not a parse
-/// of whatever the frame held.
-#[tokio::test]
-async fn initialize_without_a_result_is_a_session_error() {
-    use agent_client_protocol::schema::v1::InitializeRequest;
+/// A client whose agent answers the first request with a frame that holds
+/// `body` and the request id.
+fn answering_client(body: serde_json::Value) -> (CrucibleAcpClient, tokio::task::JoinHandle<()>) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let (client_end, agent_end) = tokio::io::duplex(8192);
     let (client_read, client_write) = tokio::io::split(client_end);
     let (agent_read, mut agent_write) = tokio::io::split(agent_end);
-    let mut client = CrucibleAcpClient::with_transport(
+    let client = CrucibleAcpClient::with_transport(
         ClientConfig::default(),
         Box::pin(client_write),
         Box::pin(BufReader::new(client_read)),
@@ -60,16 +58,70 @@ async fn initialize_without_a_result_is_a_session_error() {
             .expect("line reads")
             .expect("a line arrives");
         let frame: serde_json::Value = serde_json::from_str(&line).expect("frame is JSON");
-        let reply = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": frame["id"],
-            "error": {"code": -32603, "message": "boom"}
-        });
+        let mut reply = body;
+        reply["jsonrpc"] = "2.0".into();
+        reply["id"] = frame["id"].clone();
         agent_write
             .write_all(format!("{reply}\n").as_bytes())
             .await
             .expect("reply writes");
     });
+    (client, agent)
+}
+
+/// An `initialize` error reply is a session error that keeps the agent's
+/// own text. The user reads that text to fix the cause, for example a
+/// missing login.
+#[tokio::test]
+async fn an_initialize_error_keeps_the_agent_message() {
+    use agent_client_protocol::schema::v1::InitializeRequest;
+
+    let (mut client, agent) = answering_client(serde_json::json!({"error": {
+        "code": -32603,
+        "message": "Internal error",
+        "data": {"message": "not logged in"}
+    }}));
+
+    let result = client.initialize(InitializeRequest::new(1u16.into())).await;
+    agent.await.expect("agent task completes");
+
+    match result {
+        Err(ClientError::Session(msg)) => {
+            assert_eq!(msg, "initialize failed: Internal error: not logged in")
+        }
+        other => panic!("expected a session error, got {other:?}"),
+    }
+}
+
+/// A `session/new` error reply keeps the agent's own text.
+#[tokio::test]
+async fn a_session_new_error_keeps_the_agent_message() {
+    use agent_client_protocol::schema::v1::NewSessionRequest;
+
+    let (mut client, agent) = answering_client(serde_json::json!({"error": {
+        "code": -32000,
+        "message": "Authentication required"
+    }}));
+
+    let result = client
+        .create_new_session(NewSessionRequest::new(PathBuf::from("/test")))
+        .await;
+    agent.await.expect("agent task completes");
+
+    match result {
+        Err(ClientError::Session(msg)) => {
+            assert_eq!(msg, "session/new failed: Authentication required")
+        }
+        other => panic!("expected a session error, got {other:?}"),
+    }
+}
+
+/// A reply with neither `result` nor `error` is still a session error.
+#[tokio::test]
+async fn an_initialize_reply_without_a_result_or_an_error_is_a_session_error() {
+    use agent_client_protocol::schema::v1::InitializeRequest;
+
+    let (mut client, agent) = answering_client(serde_json::json!({}));
 
     let result = client.initialize(InitializeRequest::new(1u16.into())).await;
     agent.await.expect("agent task completes");

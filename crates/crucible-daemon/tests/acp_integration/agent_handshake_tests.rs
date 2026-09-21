@@ -98,13 +98,15 @@ async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConf
     )
     .await
     .expect("an error reply must fail the handshake, not stall it");
-    // The agent's own error message is not asserted: the client maps an
-    // error reply to "Missing result field ...", so the text never arrives.
-    assert!(
-        matches!(result, Err(ClientError::Session(_))),
-        "an injected error must fail the handshake as a session error, got: {:?}",
-        result.err()
-    );
+    // The agent's own text reaches the caller, so the user can act on it.
+    match result {
+        Err(ClientError::Session(message)) => {
+            assert_eq!(message, "initialize failed: Simulated initialization error")
+        }
+        other => {
+            panic!("an injected error must fail the handshake as a session error, got: {other:?}")
+        }
+    }
 }
 
 // -- session/close (plan W7, decision d) ------------------------------------

@@ -25,6 +25,26 @@ fn is_resource_not_found(response: &serde_json::Value) -> bool {
         == Some(-32002)
 }
 
+/// The `result` of a JSON-RPC reply to `method`.
+///
+/// An `error` reply keeps the agent's own text, because that text tells the
+/// user the cause, for example a missing login.
+fn reply_result<'a>(
+    response: &'a serde_json::Value,
+    method: &str,
+) -> Result<&'a serde_json::Value> {
+    if let Some(result) = response.get("result") {
+        return Ok(result);
+    }
+    Err(ClientError::Session(match response.get("error") {
+        Some(error) => format!(
+            "{method} failed: {}",
+            super::streaming::describe_rpc_error(error)
+        ),
+        None => format!("Missing result field in {method} response"),
+    }))
+}
+
 impl CrucibleAcpClient {
     /// Send InitializeRequest to agent
     ///
@@ -53,9 +73,7 @@ impl CrucibleAcpClient {
             .await?;
 
         // Extract the result field from JSON-RPC response
-        let result = response.get("result").ok_or_else(|| {
-            ClientError::Session("Missing result field in initialize response".to_string())
-        })?;
+        let result = reply_result(&response, "initialize")?;
 
         // Parse the result as InitializeResponse
         let init_response: agent_client_protocol::schema::v1::InitializeResponse =
@@ -120,13 +138,12 @@ impl CrucibleAcpClient {
 
         let response = self.send_request(client_request).await?;
 
-        let result = response.get("result").ok_or_else(|| {
+        let result = reply_result(&response, "session/new").inspect_err(|_| {
             tracing::debug!(
                 agent = %self.agent_name,
                 response = %response,
-                "session/new response missing result field"
+                "session/new response has no result field"
             );
-            ClientError::Session("Missing result field in new session response".to_string())
         })?;
 
         // Parse the result as NewSessionResponse
@@ -166,9 +183,7 @@ impl CrucibleAcpClient {
             .await?;
 
         // Extract the result field from JSON-RPC response
-        let result = response.get("result").ok_or_else(|| {
-            ClientError::Session("Missing result field in set mode response".to_string())
-        })?;
+        let result = reply_result(&response, "session/set_mode")?;
 
         // Parse the result as SetSessionModeResponse
         let mode_response: agent_client_protocol::schema::v1::SetSessionModeResponse =
@@ -202,9 +217,7 @@ impl CrucibleAcpClient {
             .send_request(ClientRequest::SetSessionConfigOptionRequest(request))
             .await?;
 
-        let result = response.get("result").ok_or_else(|| {
-            ClientError::Session("Missing result field in set config option response".to_string())
-        })?;
+        let result = reply_result(&response, "session/set_config_option")?;
 
         Ok(serde_json::from_value(result.clone())?)
     }

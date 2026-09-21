@@ -5,8 +5,8 @@
 //! suite all do. Real agents do not: codex-acp emits a `session/update`
 //! reporting MCP server startup *before* it answers `session/new`, so the
 //! very first line the client reads is a notification and the session never
-//! opens. The symptom is "Missing result field in new session response",
-//! which names the frame it got rather than the frame it skipped.
+//! opens. The symptom was a missing-result error for `session/new`, which
+//! named the frame it got rather than the frame it skipped.
 //!
 //! Every request/response call shares this path — `initialize`,
 //! `session/new`, `session/resume`, `session/close`, `session/set_mode`,
