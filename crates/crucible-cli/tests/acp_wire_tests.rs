@@ -696,10 +696,9 @@ fn permission_turn(option_id: &str) -> (Value, Option<String>) {
         .iter()
         .map(|o| o["optionId"].as_str().expect("optionId"))
         .collect();
-    assert_eq!(
-        options,
-        ["allow_once", "allow_always", "reject_once", "reject_always"]
-    );
+    // No "reject always": the daemon cannot store a deny rule, so that
+    // option would give only a one-time deny under a wider name.
+    assert_eq!(options, ["allow_once", "allow_always", "reject_once"]);
     assert_eq!(request["params"]["toolCall"]["kind"], "edit", "{request}");
 
     acp.send(&json!({

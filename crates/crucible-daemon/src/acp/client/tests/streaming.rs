@@ -40,11 +40,10 @@ fn text_chunk(text: &str) -> serde_json::Value {
 
 /// The text of each chunk that the client forwards for these frames.
 fn forwarded_text(chunks: &[&str]) -> Vec<String> {
-    let mut client = make_client();
     let mut state = StreamingState::default();
     chunks
         .iter()
-        .flat_map(|text| capture_apply(&mut client, &mut state, text_chunk(text)))
+        .flat_map(|text| capture_apply(&mut state, text_chunk(text)))
         .filter_map(|chunk| match chunk {
             StreamingChunk::Text(text) => Some(text),
             _ => None,

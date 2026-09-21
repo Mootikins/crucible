@@ -19,7 +19,6 @@ use crucible_daemon::SessionEvent;
 pub const OPT_ALLOW_ONCE: &str = "allow_once";
 pub const OPT_ALLOW_ALWAYS: &str = "allow_always";
 pub const OPT_REJECT_ONCE: &str = "reject_once";
-pub const OPT_REJECT_ALWAYS: &str = "reject_always";
 
 /// One step of a prompt turn, derived from a single daemon `SessionEvent`.
 #[derive(Debug)]
@@ -218,7 +217,9 @@ fn humanize_title(name: &str) -> String {
 }
 
 /// Build the permission options offered to the host for a Crucible permission
-/// request. Always the standard four; a host may present a subset.
+/// request. ACP lets an agent offer any subset of the four kinds. There is no
+/// "reject always", because the daemon cannot store a deny rule: the option
+/// would give a one-time deny under a wider name.
 pub fn permission_options() -> Vec<PermissionOption> {
     vec![
         PermissionOption::new(
@@ -235,11 +236,6 @@ pub fn permission_options() -> Vec<PermissionOption> {
             PermissionOptionId::new(OPT_REJECT_ONCE),
             "Reject once",
             PermissionOptionKind::RejectOnce,
-        ),
-        PermissionOption::new(
-            PermissionOptionId::new(OPT_REJECT_ALWAYS),
-            "Reject always",
-            PermissionOptionKind::RejectAlways,
         ),
     ]
 }
@@ -296,7 +292,6 @@ pub fn outcome_to_interaction_response(
             Some(p) => PermResponse::allow_pattern(p, PermissionScope::Session),
             None => PermResponse::allow(),
         },
-        OPT_REJECT_ALWAYS => PermResponse::deny_with_reason("denied by host (always)"),
         // Default and OPT_REJECT_ONCE: deny once.
         _ => PermResponse::deny(),
     };
@@ -575,10 +570,11 @@ mod tests {
         )
     }
 
-    /// The host sees the four options in this order, and each id matches the
-    /// constant `outcome_to_interaction_response` reads back.
+    /// The host sees the three options in this order, and each id matches
+    /// the constant `outcome_to_interaction_response` reads back. There is no
+    /// "reject always", because the daemon cannot store a deny rule.
     #[test]
-    fn permission_options_offer_the_four_ids_in_order() {
+    fn permission_options_offer_the_three_ids_in_order() {
         let offered: Vec<(String, PermissionOptionKind)> = permission_options()
             .into_iter()
             .map(|o| (o.option_id.0.to_string(), o.kind))
@@ -594,10 +590,6 @@ mod tests {
                 (
                     OPT_REJECT_ONCE.to_string(),
                     PermissionOptionKind::RejectOnce
-                ),
-                (
-                    OPT_REJECT_ALWAYS.to_string(),
-                    PermissionOptionKind::RejectAlways
                 ),
             ]
         );
