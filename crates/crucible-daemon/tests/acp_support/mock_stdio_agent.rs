@@ -74,6 +74,12 @@ pub struct MockStdioAgentConfig {
     /// field, so it also honors the `CRU_MOCK_HOLD_UNTIL_CANCEL` env hook.
     #[allow(dead_code)]
     pub hold_turn_until_cancel: bool,
+    /// Record a `session/cancel` for a held turn, but keep the turn open.
+    /// The agent never sends the final PromptResponse, so the client keeps
+    /// the turn. This models an agent that does not obey a cancel. Only the
+    /// stdio run loop honors it. The spawned binary cannot reach this
+    /// field; it honors the `CRU_MOCK_IGNORE_CANCEL` env hook.
+    pub ignore_cancel: bool,
     /// Advertise `sessionCapabilities.close` and answer `session/close`.
     /// Off = the unknown-method fallthrough answers `-32601`, which is what
     /// an agent without the method (Hermes) does. The spawned binary cannot
@@ -110,6 +116,7 @@ impl Default for MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            ignore_cancel: false,
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
@@ -132,6 +139,7 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            ignore_cancel: false,
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
@@ -155,6 +163,7 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            ignore_cancel: false,
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
@@ -176,6 +185,7 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            ignore_cancel: false,
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
@@ -197,6 +207,7 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            ignore_cancel: false,
             supports_session_close: false,
             supports_session_resume: false,
             method_log: None,
@@ -419,6 +430,8 @@ impl MockStdioAgent {
     /// tick, the way a working agent keeps talking. Without it the agent is
     /// quiet while it holds, the way an agent in a long tool call is.
     /// Requests that arrive during the hold are answered.
+    /// When `cancel_ignored` is true, the agent records the cancel and
+    /// keeps the turn open.
     fn hold_until_cancel(
         &mut self,
         request: &Value,
@@ -454,6 +467,9 @@ impl MockStdioAgent {
             self.record_request(&inner);
             if inner.get("method").and_then(|m| m.as_str()) == Some("session/cancel") {
                 self.note_cancel(&inner);
+                if self.cancel_ignored() {
+                    continue;
+                }
                 return write_frame(stdout, &turn.cancelled);
             }
             if inner.get("id").is_some() {
@@ -484,6 +500,12 @@ impl MockStdioAgent {
                 .unwrap_or_default();
             write_capture(&path, session_id);
         }
+    }
+
+    /// True when a held turn must stay open after `session/cancel`. Same
+    /// grammar as `close_supported`.
+    fn cancel_ignored(&self) -> bool {
+        self.config.ignore_cancel || env_flag("CRU_MOCK_IGNORE_CANCEL")
     }
 
     /// True when the flag names support for `session/close`. The env hook

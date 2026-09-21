@@ -742,6 +742,57 @@ async fn collect_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEve
     .expect("the turn timed out")
 }
 
+/// The text that a held turn streams before it holds.
+const HELD_ANSWER: &str = "first words";
+
+/// Connect to a mock agent that holds each turn until `session/cancel`.
+/// The agent writes the id of the cancelled session to `cancel_capture`.
+/// `extra_env` gives more mock hooks to the agent process.
+async fn connect_held_agent(
+    workspace: &Path,
+    cancel_capture: &Path,
+    extra_env: &[(&str, &str)],
+) -> AcpAgentHandle {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    for (key, value) in [
+        ("CRU_MOCK_STREAM_CHUNKS", HELD_ANSWER),
+        ("CRU_MOCK_HOLD_UNTIL_CANCEL", "1"),
+        ("CRU_MOCK_CANCEL_CAPTURE", &cancel_capture.to_string_lossy()),
+    ]
+    .iter()
+    .chain(extra_env)
+    {
+        agent_config
+            .env_overrides
+            .insert((*key).to_string(), (*value).to_string());
+    }
+
+    timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace)),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed")
+}
+
+/// Start a held turn on `handle`. Read its first chunk. Then drop the
+/// stream, which is how the daemon cancels an ACP turn.
+async fn start_and_drop_a_held_turn(handle: &mut AcpAgentHandle) {
+    let mut stream = handle
+        .turn(TurnContext::new("start a long turn"))
+        .await
+        .expect("Agent::turn failed");
+    let first = timeout(Duration::from_secs(30), stream.next())
+        .await
+        .expect("the held turn streamed nothing");
+    assert!(
+        matches!(&first, Some(TurnEvent::TextDelta(text)) if text == HELD_ANSWER),
+        "the held turn's first event, got {first:?}"
+    );
+}
+
 /// Start a held turn, drop its stream, and start the next turn at once.
 ///
 /// Dropping a turn stream is how the daemon cancels an ACP turn. The client
@@ -753,52 +804,18 @@ async fn collect_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEve
 /// agent is quiet, as in a long tool call, and the client must notice the
 /// drop without a chunk.
 async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
-    const ANSWER: &str = "first words";
     let workspace = TempDir::new().expect("temp workspace");
     let cancel_capture = workspace.path().join("cancel.txt");
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    for (key, value) in [
-        ("CRU_MOCK_STREAM_CHUNKS", ANSWER.to_string()),
-        ("CRU_MOCK_HOLD_UNTIL_CANCEL", "1".to_string()),
-        (
-            "CRU_MOCK_CANCEL_CAPTURE",
-            cancel_capture.to_string_lossy().into_owned(),
-        ),
-    ] {
-        agent_config.env_overrides.insert(key.to_string(), value);
-    }
-    if let Some(tick_ms) = tick_ms {
-        agent_config
-            .env_overrides
-            .insert("CRU_MOCK_HOLD_TICK_MS".to_string(), tick_ms.to_string());
-    }
-
-    let mut handle = timeout(
-        Duration::from_secs(30),
-        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
-    )
-    .await
-    .expect("ACP handshake timed out")
-    .expect("ACP handshake failed");
+    let tick_env: Vec<(&str, &str)> = tick_ms
+        .map(|tick_ms| ("CRU_MOCK_HOLD_TICK_MS", tick_ms))
+        .into_iter()
+        .collect();
+    let mut handle = connect_held_agent(workspace.path(), &cancel_capture, &tick_env).await;
     let session_id = handle
         .acp_session_id()
         .expect("a connected handle has an agent session");
 
-    {
-        let mut stream = handle
-            .turn(TurnContext::new("start a long turn"))
-            .await
-            .expect("Agent::turn failed");
-        let first = timeout(Duration::from_secs(30), stream.next())
-            .await
-            .expect("the held turn streamed nothing");
-        assert!(
-            matches!(&first, Some(TurnEvent::TextDelta(text)) if text == ANSWER),
-            "the held turn's first event, got {first:?}"
-        );
-        // The daemon cancels a turn by dropping its stream.
-    }
+    start_and_drop_a_held_turn(&mut handle).await;
 
     let events = collect_turn(&mut handle, "and now a normal turn").await;
 
@@ -819,7 +836,7 @@ async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
         })
         .collect();
     assert_eq!(
-        text, ANSWER,
+        text, HELD_ANSWER,
         "the next turn must run in full; events: {events:?}"
     );
     assert!(
@@ -845,6 +862,63 @@ async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
 #[tokio::test]
 async fn dropping_a_turn_of_a_quiet_agent_sends_session_cancel_and_the_next_turn_runs() {
     drop_a_held_turn_then_run_the_next(None).await;
+}
+
+/// An agent that does not end a cancelled turn keeps the client lock. The
+/// next turn waits for the lock for `CANCELLED_TURN_GRACE` (30 s) only.
+/// Then it yields one `AgentUnavailable` error and ends.
+///
+/// The test pauses the tokio clock after the agent receives the cancel. The
+/// runtime then moves the clock to the next timer when all tasks wait. The
+/// grace is the first timer: the per-read timeout is 300 s and the stream
+/// timeout is 900 s. Thus the test does not wait 30 s of real time.
+#[tokio::test]
+async fn a_turn_after_a_cancel_that_the_agent_ignores_fails_after_the_grace() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let cancel_capture = workspace.path().join("cancel.txt");
+    let mut handle = connect_held_agent(
+        workspace.path(),
+        &cancel_capture,
+        &[("CRU_MOCK_IGNORE_CANCEL", "1")],
+    )
+    .await;
+
+    start_and_drop_a_held_turn(&mut handle).await;
+    // The capture shows that the client sent `session/cancel`. The turn
+    // task now waits for a reply that the agent never sends.
+    wait_for_capture(
+        &cancel_capture,
+        "the agent never received session/cancel after the turn was dropped",
+    )
+    .await;
+
+    tokio::time::pause();
+    let started = Instant::now();
+    // This bound is longer than the grace, so the grace fires first. A
+    // handle without the grace fails here after 120 s of paused time.
+    let events = timeout(Duration::from_secs(120), async {
+        let stream = handle
+            .turn(TurnContext::new("a turn after the ignored cancel"))
+            .await
+            .expect("Agent::turn failed");
+        stream.collect::<Vec<_>>().await
+    })
+    .await
+    .expect("the next turn must end after the grace, not wait for the agent");
+
+    assert!(
+        matches!(
+            events.as_slice(),
+            [TurnEvent::Error(TurnError::AgentUnavailable(message))]
+                if message.contains("did not end the cancelled turn")
+        ),
+        "the next turn must yield one AgentUnavailable error; events: {events:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the paused clock must skip the grace; real time: {:?}",
+        started.elapsed()
+    );
 }
 
 /// An agent process that dies mid-turn ends the turn with a connection
