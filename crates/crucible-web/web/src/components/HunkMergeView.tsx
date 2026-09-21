@@ -17,10 +17,7 @@
 import { Component, onCleanup } from 'solid-js';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { unifiedMergeView } from '@codemirror/merge';
-import { getLanguageExtension } from './editor/CodeMirrorEditor';
-import { editorThemeExtension } from './editor/editor-theme';
-import { theme } from '@/lib/theme';
+import { mergeViewExtensions } from '@/lib/merge-view';
 import type { ComposedHunk } from '@/lib/review-types';
 
 export interface HunkMergeViewProps {
@@ -73,21 +70,12 @@ export const HunkMergeView: Component<HunkMergeViewProps> = (props) => {
     view = new EditorView({
       state: EditorState.create({
         doc: props.hunk.after_content,
-        extensions: [
-          EditorState.readOnly.of(true),
-          EditorView.editable.of(false),
-          EditorView.lineWrapping,
-          editorThemeExtension(theme()),
-          getLanguageExtension(props.hunk.path) ?? [],
-          unifiedMergeView({
-            original: props.hunk.before_content,
-            mergeControls: renderControls,
-            collapseUnchanged: { margin: 3 },
-            highlightChanges: true,
-            allowInlineDiffs: true,
-            gutter: true,
-          }),
-        ],
+        extensions: mergeViewExtensions({
+          original: props.hunk.before_content,
+          path: props.hunk.path,
+          controls: renderControls,
+          collapse: { margin: 3 },
+        }),
       }),
       parent: el,
     });
