@@ -1,5 +1,6 @@
 //! Bridge from ACP permission requests to the daemon's permission system.
 
+use crucible_core::agent::ToolPolicy;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine,
 };
@@ -8,7 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::agent_manager::is_safe;
+use crate::agent_manager::messaging::gate_decision::{decide_tool_gate, ToolGate};
 
 pub type PermissionPromptFuture = Pin<Box<dyn Future<Output = PermResponse> + Send>>;
 pub type PermissionPromptCallback =
@@ -52,30 +53,40 @@ impl Default for DaemonPermissionGate {
 
 impl DaemonPermissionGate {
     /// Decide one permission request for an agent action.
-    pub async fn request_permission(&self, request: PermRequest) -> PermResponse {
+    ///
+    /// `card_policy` is what the session's agent card says about this tool,
+    /// when it says anything. The ACP path passes it here rather than
+    /// answering ahead of the gate, so an agent that runs its own tools and
+    /// an agent the daemon dispatches for get the same answer.
+    pub async fn request_permission(
+        &self,
+        request: PermRequest,
+        card_policy: Option<ToolPolicy>,
+    ) -> PermResponse {
         let (tool_name, input) = Self::to_engine_input(&request);
 
-        // The engine first, so a `deny` the operator wrote by hand is
-        // absolute. The read-only exemption used to be checked ahead of it,
-        // which meant `deny = ["read_file:*"]` lost to a hardcoded name list
-        // and was ignored without a word. Only an *undecided* tool — one no
-        // rule matched — falls through to the exemption.
+        // The one tool policy: the card, the operator's rules and the
+        // read-only exemption, decided in the one place both agent kinds read.
+        match decide_tool_gate(card_policy, Some(&self.engine), tool_name, &input) {
+            ToolGate::Refuse(reason) => return PermResponse::deny_with_reason(reason),
+            ToolGate::Approve(_) => return PermResponse::allow(),
+            ToolGate::Ask => {}
+        }
+
+        // This gate's own layers. The daemon's tool path has more of them —
+        // the `--permissions` override, the saved patterns, the Lua hooks and
+        // the mode stance — and runs them in `handle_permission_request`. An
+        // ACP session has none of those: its override is already folded into
+        // this engine's config by `resolve_effective_permission_config`.
         //
         // Always evaluated as interactive, and the interactivity decided here
         // instead: the engine folds `ask` into `deny` when non-interactive,
         // which is a statement about there being nobody to prompt, not about
         // what the rules say. Letting it answer for both collapses "the
-        // operator denied this" into "we could not ask", and a read-only tool
-        // in a non-interactive session would be refused for the wrong reason.
+        // operator denied this" into "we could not ask".
         match self.engine.evaluate(tool_name, &input, true) {
             PermissionDecision::Allow => PermResponse::allow(),
             PermissionDecision::Deny { reason } => PermResponse::deny_with_reason(reason),
-            // Only an *undecided* tool takes the exemption. An `ask` rule the
-            // operator wrote names this tool on purpose, and skipping it is
-            // the same defect as ignoring a `deny`.
-            PermissionDecision::Ask {
-                rule_matched: false,
-            } if is_safe(tool_name) => PermResponse::allow(),
             PermissionDecision::Ask { .. } => match &self.prompt_callback {
                 Some(callback) if self.is_interactive => callback(request).await,
                 _ => PermResponse::deny_with_reason(
@@ -106,7 +117,7 @@ mod tests {
         };
         let gate = DaemonPermissionGate::new(Some(config), true);
         let request = PermRequest::tool("read_file", json!({"path": "/etc/passwd"}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(
             !response.allowed,
             "an explicit deny must hold even for a read-only tool"
@@ -126,7 +137,7 @@ mod tests {
         };
         let gate = DaemonPermissionGate::new(Some(config), true);
         let response = gate
-            .request_permission(PermRequest::tool("read_file", json!({"path": "x"})))
+            .request_permission(PermRequest::tool("read_file", json!({"path": "x"})), None)
             .await;
         assert!(!response.allowed, "default deny is not a suggestion");
     }
@@ -137,7 +148,7 @@ mod tests {
     async fn a_hardcoded_deny_outranks_everything() {
         let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::bash(["rm", "-rf", "/"]);
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed, "rm -rf / is denied unconditionally");
     }
 
@@ -145,7 +156,7 @@ mod tests {
     async fn safe_tool_is_allowed() {
         let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::tool("read_file", json!({"path": "/tmp/test.txt"}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(response.allowed);
     }
 
@@ -153,7 +164,7 @@ mod tests {
     async fn interactive_default_ask_without_prompt_callback_denies() {
         let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::tool("dangerous_tool", json!({}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
 
@@ -161,7 +172,7 @@ mod tests {
     async fn non_interactive_ask_becomes_deny() {
         let gate = DaemonPermissionGate::new(None, false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
 
@@ -175,7 +186,7 @@ mod tests {
         });
         let gate = DaemonPermissionGate::new(None, false).with_prompt_callback(callback);
         let request = PermRequest::tool("dangerous_tool", serde_json::json!({}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed, "should be denied");
         assert!(
             !called.load(std::sync::atomic::Ordering::SeqCst),
@@ -187,7 +198,7 @@ mod tests {
     async fn bash_command_not_safe() {
         let gate = DaemonPermissionGate::new(None, false);
         let request = PermRequest::bash(["rm", "-rf", "/tmp/test"]);
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
 
@@ -195,7 +206,7 @@ mod tests {
     async fn read_action_defaults_to_ask_then_deny_without_prompt_callback() {
         let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::read(["src", "main.rs"]);
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
 
@@ -203,7 +214,7 @@ mod tests {
     async fn write_action_defaults_to_ask_then_deny_without_prompt_callback() {
         let gate = DaemonPermissionGate::new(None, true);
         let request = PermRequest::write(["src", "main.rs"]);
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
 
@@ -222,7 +233,7 @@ mod tests {
         };
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(
             response.allowed,
             "with allow default, tool should be allowed"
@@ -238,7 +249,7 @@ mod tests {
         };
         let gate = DaemonPermissionGate::new(Some(config), false);
         let request = PermRequest::tool("dangerous_tool", json!({}));
-        let response = gate.request_permission(request).await;
+        let response = gate.request_permission(request, None).await;
         assert!(
             !response.allowed,
             "with deny default, tool should be denied"

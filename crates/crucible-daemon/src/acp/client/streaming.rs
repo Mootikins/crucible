@@ -170,10 +170,15 @@ impl CrucibleAcpClient {
         let session_id = request.session_id.clone();
         let (updates_tx, mut updates) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
-        super::lock(&self.shared).turn = Some(super::Turn {
-            updates: updates_tx,
-            cancel: cancel.clone(),
-        });
+        {
+            let mut shared = super::lock(&self.shared);
+            shared.turn = Some(super::Turn {
+                updates: updates_tx,
+                cancel: cancel.clone(),
+            });
+            // The tool names of the turn that ended answer nothing now.
+            shared.tool_names.clear();
+        }
         let _slot = TurnSlot(&self.shared);
 
         let limit = self

@@ -6,6 +6,7 @@ use super::types::ClientConfig;
 use super::CrucibleAcpClient;
 
 mod handshake;
+mod permission_name;
 mod streaming;
 
 /// The agent end of an in-process pipe: raw lines, with no SDK.

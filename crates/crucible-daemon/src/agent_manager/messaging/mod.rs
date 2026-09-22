@@ -1,7 +1,7 @@
 use super::*;
 use crucible_core::types::ToolSource;
 
-mod gate_decision;
+pub(crate) mod gate_decision;
 mod isolation_gate;
 pub(in crate::agent_manager) mod permission;
 pub(crate) mod review_capture;
@@ -227,7 +227,7 @@ mod permission_override_tests {
         let gate = DaemonPermissionGate::new(effective, false);
 
         let response = gate
-            .request_permission(PermRequest::tool("Task", serde_json::json!({})))
+            .request_permission(PermRequest::tool("Task", serde_json::json!({})), None)
             .await;
         assert!(
             response.allowed,
@@ -251,7 +251,7 @@ mod permission_override_tests {
         let gate = DaemonPermissionGate::new(effective, false);
 
         let response = gate
-            .request_permission(PermRequest::tool("Task", serde_json::json!({})))
+            .request_permission(PermRequest::tool("Task", serde_json::json!({})), None)
             .await;
         assert!(
             !response.allowed,

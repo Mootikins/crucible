@@ -7,6 +7,8 @@ use std::ops::ControlFlow;
 
 use crate::agent_manager::vm_pass::run_handlers;
 
+use super::gate_decision::ToolGate;
+
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
 ///
@@ -350,23 +352,20 @@ impl AgentManager {
         // reordering it would change every plugin's contract. So does the
         // isolation gate, deliberately: there, a handler taking the call over
         // *is* the sandbox.
-        use crucible_core::agent::ToolPolicy;
+        // Asked of `decide_tool_gate` with no engine, so the rule that
+        // outranks interception is not written a second time here: with no
+        // rules to read, the only refusal that function can give is the
+        // card's own deny.
         let card_policy = stream_ctx
             .agent_stream_config
             .tool_policy
             .as_ref()
             .and_then(|m| m.get(&tool_call.name))
             .copied();
-        if card_policy == Some(ToolPolicy::Deny) {
-            return deny_tool_call(
-                stream_ctx,
-                &call_id,
-                &tool_call.name,
-                format!(
-                    "Tool '{}' is denied by this agent's card tool policy",
-                    tool_call.name
-                ),
-            );
+        if let ToolGate::Refuse(reason) =
+            super::gate_decision::decide_tool_gate(card_policy, None, &tool_call.name, "")
+        {
+            return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason);
         }
 
         // The capture bracket opens HERE, below the hard refusals and the
@@ -492,62 +491,49 @@ impl AgentManager {
             }
         }
 
-        // `card_policy` was resolved above the hook loop, where the Deny half is
-        // enforced. Ask and Allow only matter once a call actually reaches the
-        // gate, so they are read here.
-        let requires_gate =
-            super::gate_decision::requires_permission_gate(card_policy, &tool_call.name);
-
-        // A card's `allow` skips the PROMPT, never the operator's config:
-        // the global `[permissions]` deny rules are absolute even for
-        // card-allowed tools. Without this, an untrusted kiln could ship a
-        // card granting `bash: allow` and sidestep a configured deny.
-        let config_deny = if requires_gate {
-            None // the full gate below evaluates the config itself
-        } else {
-            Self::config_deny_reason(stream_ctx, &tool_call.name, &args)
-        };
-        if let Some(reason) = config_deny {
-            let error_msg = format!(
-                "Tool '{}' denied by permissions config: {reason}",
-                tool_call.name
-            );
-            return deny_tool_call(stream_ctx, &call_id, &tool_call.name, error_msg);
-        }
-
-        // `Some(reason)` = approved without asking. Captured here, before the
-        // `tool_call` event is emitted below, so the marker ships with the card
-        // instead of arriving as a follow-up and popping in.
-        let auto_approved = if requires_gate {
-            match Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await {
-                Ok(reason) => reason,
-                Err(deny_reason) => {
-                    // Feed the SPECIFIC denial reason back to the model so it
-                    // can adapt (config rule vs shell policy vs non-interactive).
-                    return Some(crucible_core::traits::chat::ChatToolResult::error(
-                        tool_call.name.clone(),
-                        call_id.clone(),
-                        deny_reason,
-                    ));
-                }
+        // The one tool policy, the same function the ACP permission handler
+        // calls. `auto_approved` is `Some(reason)` when the call was approved
+        // WITHOUT asking, and by which layer. Captured here, before the
+        // `tool_call` event is emitted below, so the marker ships with the
+        // card instead of arriving as a follow-up and popping in.
+        //
+        // `asked` records that the call reached the gate below, which is the
+        // only layer that can put the question to a person.
+        let (auto_approved, asked) = match super::gate_decision::decide_tool_gate(
+            card_policy,
+            stream_ctx.permission_engine.as_deref(),
+            &tool_call.name,
+            &super::permission::engine_input(&tool_call.name, &args),
+        ) {
+            ToolGate::Refuse(reason) => {
+                return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
             }
-        } else {
-            // An agent card's `allow` is also a grant the user never saw, and
-            // deserves the same marker. A genuinely safe (read-only) tool is
-            // not — nothing was granted, because nothing was needed.
-            match card_policy {
-                Some(ToolPolicy::Allow) => Some("agent card policy".to_string()),
-                _ => None,
+            ToolGate::Approve(marker) => (marker, false),
+            ToolGate::Ask => {
+                match Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
+                {
+                    Ok(reason) => (reason, true),
+                    Err(deny_reason) => {
+                        // Feed the SPECIFIC denial reason back to the model so
+                        // it can adapt (config rule vs shell policy vs
+                        // non-interactive).
+                        return Some(crucible_core::traits::chat::ChatToolResult::error(
+                            tool_call.name.clone(),
+                            call_id.clone(),
+                            deny_reason,
+                        ));
+                    }
+                }
             }
         };
 
         // The second unbounded wait, and the only other one. Re-baseline only
         // when the gate genuinely put the question to a person: `auto_approved`
         // is `Some` exactly when config, the mode, or the card answered without
-        // asking, and `requires_gate` is false when nothing was asked at all.
+        // asking, and `asked` is false when nothing was asked at all.
         // Rebaselining unconditionally would discard whatever a plugin handler
         // legitimately wrote above.
-        if requires_gate && auto_approved.is_none() {
+        if asked && auto_approved.is_none() {
             stream_ctx.rebase_review_bracket(bracket).await;
         }
 

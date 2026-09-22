@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, SessionUpdate,
+    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallId,
 };
 use agent_client_protocol::{Agent, Client, ConnectTo, ConnectionTo, JsonRpcRequest};
 use tokio::sync::{mpsc, oneshot};
@@ -60,6 +60,17 @@ struct Shared {
     turn: Option<Turn>,
     /// The model choice from the latest `config_option_update`.
     model_update: Option<ModelChoice>,
+    /// The tool name each `tool_call` frame of this turn announced, by id.
+    ///
+    /// An agent may ask permission for a tool it does not name in the
+    /// request: codex-acp asks about an MCP call with `kind: "execute"` and
+    /// nothing else, because the identity reached the client in the
+    /// `tool_call` frame that came first. The permission policy keys on a
+    /// name, so the client keeps what it saw and joins on `toolCallId`.
+    ///
+    /// Cleared at the start of each turn, which bounds it: a permission
+    /// request always belongs to the turn that is running.
+    tool_names: std::collections::HashMap<ToolCallId, String>,
 }
 
 /// One connection to one ACP agent.
@@ -115,14 +126,23 @@ impl CrucibleAcpClient {
             .on_receive_request(
                 {
                     let shared = Arc::clone(&shared);
-                    async move |request: RequestPermissionRequest,
+                    async move |mut request: RequestPermissionRequest,
                                 responder,
                                 cx: ConnectionTo<Agent>| {
-                        let cancel = lock(&shared)
-                            .turn
-                            .as_ref()
-                            .map(|turn| turn.cancel.clone())
-                            .unwrap_or_default();
+                        let cancel = {
+                            let shared = lock(&shared);
+                            // An agent that asks about a tool it did not name
+                            // is answered from the `tool_call` frame it sent
+                            // for the same id. The permission policy keys on
+                            // a name; supplying it here keeps that one join
+                            // beside the frames it reads, not in the gate.
+                            name_the_tool_call(&shared, &mut request);
+                            shared
+                                .turn
+                                .as_ref()
+                                .map(|turn| turn.cancel.clone())
+                                .unwrap_or_default()
+                        };
                         let permission = permission.clone();
                         // The dispatch loop waits for a handler. A user who
                         // takes a minute to answer must not stop the updates
@@ -234,8 +254,50 @@ fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
 }
 
 /// Keep the model choice. Send the other updates to the turn that runs.
+/// The tool id and name a session update announces, when it names one.
+///
+/// `name` is the ACP field, stable since schema 1.9.1. An agent that sends
+/// no `name` for an MCP call puts the identity in `rawInput` instead —
+/// codex-acp sends `{server, tool, arguments}` — so the wire form of its
+/// own title, `mcp.<server>.<tool>`, is rebuilt from those two fields.
+///
+/// `title` is never read as a name. It is prose for a person, and a name
+/// taken from prose matches no rule.
+fn announced_tool_name(update: &SessionUpdate) -> Option<(ToolCallId, String)> {
+    let (id, name, raw_input) = match update {
+        SessionUpdate::ToolCall(call) => (&call.tool_call_id, &call.name, &call.raw_input),
+        SessionUpdate::ToolCallUpdate(update) => (
+            &update.tool_call_id,
+            &update.fields.name,
+            &update.fields.raw_input,
+        ),
+        _ => return None,
+    };
+
+    let name = match name {
+        Some(name) => name.clone(),
+        None => mcp_tool_name(raw_input.as_ref()?)?,
+    };
+    Some((id.clone(), name))
+}
+
+/// The `mcp.<server>.<tool>` name an MCP call's raw input carries.
+fn mcp_tool_name(raw_input: &serde_json::Value) -> Option<String> {
+    let server = raw_input.get("server")?.as_str()?;
+    let tool = raw_input.get("tool")?.as_str()?;
+    Some(format!("mcp.{server}.{tool}"))
+}
+
 fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
     let mut shared = lock(shared);
+
+    // Recorded before the routing below, and whether or not a turn is
+    // running: an agent that announces a tool call and then asks about it
+    // must find the name it sent.
+    if let Some((id, name)) = announced_tool_name(&update) {
+        shared.tool_names.insert(id, name);
+    }
+
     match update {
         // The one option that Crucible tracks is the model selector. The
         // handle reads the choice with `take_model_update` after the turn.
@@ -252,6 +314,21 @@ fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
             None => tracing::debug!(?update, "Ignoring a session update outside a turn"),
         },
     }
+}
+
+/// Give a permission request the tool name its own `tool_call` frame
+/// announced, when the request itself names no tool.
+///
+/// A request that names a tool keeps that name: the agent is the authority
+/// on what it is about to run, and a later frame must not rewrite it.
+fn name_the_tool_call(shared: &Shared, request: &mut RequestPermissionRequest) {
+    if request.tool_call.fields.name.is_some() {
+        return;
+    }
+    request.tool_call.fields.name = shared
+        .tool_names
+        .get(&request.tool_call.tool_call_id)
+        .cloned();
 }
 
 async fn ask(

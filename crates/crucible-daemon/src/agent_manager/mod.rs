@@ -1751,7 +1751,7 @@ pub(crate) mod configured;
 pub mod context_length;
 mod interaction;
 mod iter;
-mod messaging;
+pub(crate) mod messaging;
 mod models;
 /// The pending-permission registry and reply routing.
 mod permissions;
