@@ -122,7 +122,7 @@ export function diffsetLabel(source: DiffsetSource): string {
  * The daemon stores `end` as one past the last line. The text forms show the
  * last line, so the end is inclusive only in text.
  */
-export function inclusiveLines(start: number, end: number): [number, number] {
+function inclusiveLines(start: number, end: number): [number, number] {
   return [start, Math.max(start, end - 1)];
 }
 

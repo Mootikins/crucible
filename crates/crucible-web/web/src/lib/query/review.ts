@@ -1,9 +1,7 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
-import { getDiffComments, getDiffset } from '@/lib/diff-api';
-import type { DiffFileEntry, DiffsetSource } from '@/lib/diffset';
-import { resolveReviewComment } from '@/lib/review-api';
-import type { ReviewComment } from '@/lib/review-types';
+import { getDiffComments, getDiffset, resolveDiffComment } from '@/lib/diff-api';
+import type { DiffComment, DiffFileEntry, DiffsetSource } from '@/lib/diffset';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -23,12 +21,17 @@ import { keys } from './keys';
 /** The files of a session record and its comments. */
 export interface SessionRecordListing {
   files: DiffFileEntry[];
-  comments: ReviewComment[];
+  comments: DiffComment[];
+}
+
+/** The session record source of a session. */
+function sessionRecord(sessionId: string): DiffsetSource {
+  return { kind: 'session_record', session: sessionId };
 }
 
 /** Reads the files and the comments of one session record. */
 async function listSessionRecord(sessionId: string): Promise<SessionRecordListing> {
-  const source: DiffsetSource = { kind: 'session_record', session: sessionId };
+  const source = sessionRecord(sessionId);
   const [diffset, comments] = await Promise.all([getDiffset(source), getDiffComments(source)]);
   return { files: diffset.files, comments: comments.map((listed) => listed.comment) };
 }
@@ -73,5 +76,5 @@ export function resolveReviewCommentOnce(
   sessionId: string,
   commentId: string,
 ): Promise<{ comment_id: string }> {
-  return writing(sessionId, () => resolveReviewComment(sessionId, commentId));
+  return writing(sessionId, () => resolveDiffComment(sessionRecord(sessionId), commentId));
 }

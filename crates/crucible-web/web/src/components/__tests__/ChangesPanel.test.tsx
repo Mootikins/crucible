@@ -7,8 +7,7 @@ import { proposalFixture, proposalRoutes } from '@/test-utils/proposals';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { Session } from '@/lib/types';
-import type { ReviewComment } from '@/lib/review-types';
-import type { DiffFileEntry } from '@/lib/diffset';
+import type { DiffComment, DiffFileEntry } from '@/lib/diffset';
 import type { Conflicted } from '@/lib/offline/outbox';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
@@ -28,15 +27,11 @@ vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
 // The session record and its comments come from the diffset API.
 const getDiffset = vi.fn();
 const getDiffComments = vi.fn();
+const resolveDiffComment = vi.fn(async () => ({ comment_id: 'c1' }));
 vi.mock('@/lib/diff-api', () => ({
   getDiffset: (...a: unknown[]) => getDiffset(...a),
   getDiffComments: (...a: unknown[]) => getDiffComments(...a),
-}));
-const addReviewComment = vi.fn(async () => ({ comment: {} }));
-const resolveReviewComment = vi.fn(async () => ({ comment_id: 'c1' }));
-vi.mock('@/lib/review-api', () => ({
-  addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
-  resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
+  resolveDiffComment: (...a: unknown[]) => resolveDiffComment(...(a as [])),
 }));
 
 // A conflict is a note write waiting on a person, read from the outbox. The
@@ -99,7 +94,7 @@ const session = (id = 's1'): Session => ({
   event_count: 0,
 });
 
-const answer = (files: DiffFileEntry[], comments: ReviewComment[] = []) => {
+const answer = (files: DiffFileEntry[], comments: DiffComment[] = []) => {
   getDiffset.mockImplementation(async (source: { session: string }) => ({
     id: `session-${source.session}`,
     source,
@@ -227,7 +222,7 @@ describe('ChangesPanel — the session record', () => {
   });
 
   it('lists open comments and resolves them', async () => {
-    const comment: ReviewComment = {
+    const comment: DiffComment = {
       id: 'c1',
       diffset: 'session-s1',
       root: '/repo',
@@ -250,7 +245,10 @@ describe('ChangesPanel — the session record', () => {
     expect(screen.queryByTestId('comment-c2')).toBeNull();
 
     fireEvent.click(screen.getByTestId('resolve-c1'));
-    await waitFor(() => expect(resolveReviewComment).toHaveBeenCalledWith('s1', 'c1'));
+    await waitFor(() => expect(resolveDiffComment).toHaveBeenCalledWith(
+        { kind: 'session_record', session: 's1' },
+        'c1',
+      ),);
   });
 });
 

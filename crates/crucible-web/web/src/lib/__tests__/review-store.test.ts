@@ -13,7 +13,6 @@ import type { DiffFileEntry } from '@/lib/diffset';
 import {
   __resetReviewStore,
   REVIEW_REFRESH_DEBOUNCE_MS,
-  pendingReveal,
   reviewActions,
   reviewStore,
   useReviewSession,
@@ -22,7 +21,7 @@ import {
 /**
  * The review slot, over the cache and the stream that feed it.
  *
- * Nothing in `@/lib/review-api` is stubbed. The listing is a cache entry now,
+ * Nothing in `@/lib/diff-api` is stubbed. The listing is a cache entry now,
  * so a mocked module would count the calls that reach IT rather than the ones
  * that reach the daemon — and the two facts this suite exists for, that three
  * surfaces share one listing and that a burst of events costs one, are both
@@ -330,14 +329,5 @@ describe('subscription lifecycle', () => {
     expect(FakeEventSource.instances[0].closed).toBe(true);
     expect(FakeEventSource.instances[1].closed).toBe(false);
     dispose();
-  });
-});
-
-describe('reveal channel', () => {
-  it('reveal sets a target the editor consumes and clears', () => {
-    reviewActions.reveal('/repo/src/a.rs', 42);
-    expect(pendingReveal()).toEqual({ path: '/repo/src/a.rs', line: 42 });
-    reviewActions.clearReveal();
-    expect(pendingReveal()).toBeNull();
   });
 });

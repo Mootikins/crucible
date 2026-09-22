@@ -2,16 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
 import { getBus } from '@/lib/bus';
 import { resetAuthThrottleForTests } from '../api-client';
-import { resolveReviewComment } from '../review-api';
+import { resolveDiffComment } from '../diff-api';
+import type { DiffsetSource } from '../diffset';
 
 /**
- * The Changes panel resolves a comment of a session record through the
- * diff route `POST /api/diff/comment/resolve`. The body names the session
- * record source, because a comment belongs to a diffset and not to a
- * session route.
+ * The client resolves a comment through the diff route
+ * `POST /api/diff/comment/resolve`. The body names the diffset source,
+ * because a comment belongs to a diffset and not to a session route.
  */
 
 const originalFetch = global.fetch;
+
+/** The session record source of a session. */
+const record = (session: string): DiffsetSource => ({ kind: 'session_record', session });
 
 /** Answers one route with a body, and nothing else with a 404. */
 const serve = (key: string, body: unknown) => {
@@ -28,14 +31,14 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-describe('review REST surface', () => {
+describe('diff comment REST surface', () => {
   it('resolves a comment of the session record through the diff route', async () => {
     const mockFetch = serve('POST /api/diff/comment/resolve', {
       diffset: 'session-a/b',
       comment_id: 'c 1',
       resolved: true,
     });
-    await resolveReviewComment('a/b', 'c 1');
+    await resolveDiffComment(record('a/b'), 'c 1');
 
     const sent = await mockFetch.sent(0);
     expect(sent.path).toBe('/api/diff/comment/resolve');
@@ -54,7 +57,7 @@ describe('review REST surface', () => {
       'POST /api/diff/comment/resolve': apiError(422, 'unknown comment c1'),
     });
 
-    const error = await resolveReviewComment('s1', 'c1').then(
+    const error = await resolveDiffComment(record('s1'), 'c1').then(
       () => null,
       (e: Error) => e,
     );
@@ -73,7 +76,7 @@ describe('review REST surface', () => {
       'POST /api/diff/comment/resolve': { status: 401 },
     });
 
-    await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow();
+    await expect(resolveDiffComment(record('s1'), 'c1')).rejects.toThrow();
 
     expect(prompted).toHaveBeenCalled();
     stopListening();
@@ -83,6 +86,6 @@ describe('review REST surface', () => {
     global.fetch = createMockFetch({
       'POST /api/diff/comment/resolve': { status: 500 },
     });
-    await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow('HTTP 500');
+    await expect(resolveDiffComment(record('s1'), 'c1')).rejects.toThrow('HTTP 500');
   });
 });

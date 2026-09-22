@@ -16,7 +16,7 @@ import { notificationActions, notificationStore } from '@/stores/notificationSto
 
 /**
  * The client is the whole transport, so what it does on a failure IS the
- * error behaviour of every call in `api.ts` and `review-api.ts`.
+ * error behaviour of every call in `api.ts` and `diff-api.ts`.
  */
 
 const originalFetch = global.fetch;

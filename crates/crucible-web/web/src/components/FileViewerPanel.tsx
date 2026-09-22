@@ -26,7 +26,6 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/windowing';
 import { EditorView } from '@codemirror/view';
-import { pendingReveal, reviewActions } from '@/lib/review-store';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel, isPending, writePath } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
@@ -161,22 +160,6 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const handleSave = () => {
     if (props.filePath) void saveFile(props.filePath);
   };
-
-  // A line picked elsewhere scrolls THIS buffer to it. Tab metadata
-  // cannot carry this: a panel only re-renders when its active tab id changes,
-  // so an already-open file would never see the request.
-  createEffect(() => {
-    const target = pendingReveal();
-    const view = editorView();
-    if (!target || !view || target.path !== props.filePath) return;
-    const line = Math.min(Math.max(target.line, 1), view.state.doc.lines);
-    const pos = view.state.doc.line(line).from;
-    view.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
-    });
-    reviewActions.clearReveal();
-  });
 
   // Track ONLY props.filePath. openFile() begins with openFilesStore.find(),
   // a reactive store read; left tracked, this effect would subscribe to the

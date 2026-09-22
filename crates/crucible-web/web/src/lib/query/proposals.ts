@@ -65,7 +65,7 @@ export type ProposalDecision =
  * Makes the proposal `id`, its diffset and the Inbox list wrong. A decision
  * changes the state, and a decision on some files changes the file list.
  */
-export function invalidateProposal(id: string): Promise<void> {
+function invalidateProposal(id: string): Promise<void> {
   const client = getQueryClient();
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.proposal(id) }),

@@ -91,7 +91,7 @@ function toMentionItems(entries: FileEntry[]): AutocompleteItem[] {
 const LINE_SUFFIX = /:\d*(?:-\d*)?$/;
 
 /** Split an `@` query into the path to complete and its line suffix. */
-export function splitLineSuffix(query: string): { path: string; suffix: string } {
+function splitLineSuffix(query: string): { path: string; suffix: string } {
   const match = LINE_SUFFIX.exec(query);
   if (!match) return { path: query, suffix: '' };
   return { path: query.slice(0, match.index), suffix: match[0] };

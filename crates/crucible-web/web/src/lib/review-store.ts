@@ -19,24 +19,23 @@
  * its comments (`GET /api/diff/comments?session=`). The daemon no longer
  * lists hunks, and no hunk has a decision.
  */
-import { createEffect, createSignal, on, onCleanup, type Accessor } from 'solid-js';
+import { createEffect, on, onCleanup, type Accessor } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { createSingletonRoot } from '@solid-primitives/rootless';
 import { sessionEvents } from './query/sse';
 import type { ChatEvent } from './types';
-import type { DiffFileEntry } from './diffset';
+import type { DiffComment, DiffFileEntry } from './diffset';
 import {
   invalidateReview,
   resolveReviewCommentOnce,
   useSessionRecord,
   type SessionRecordListing,
 } from './query/review';
-import type { ReviewComment } from './review-types';
 
 export interface ReviewSessionState {
   /** The files that differ between the session base and the disk. */
   files: DiffFileEntry[];
-  comments: ReviewComment[];
+  comments: DiffComment[];
   /** A list has succeeded at least once. Distinguishes "no changes" from
    * "we do not know yet". */
   loaded: boolean;
@@ -78,24 +77,6 @@ export const reviewStore = {
     return (id && sessions[id]) || EMPTY;
   },
 };
-
-// =============================================================================
-// Cross-surface navigation
-// =============================================================================
-
-/**
- * A line the user asked to see in the open buffer. `FileViewerPanel` consumes
- * and clears it.
- *
- * Not tab metadata: `Pane` reads a tab's metadata untracked and only re-renders
- * a panel when the ACTIVE TAB ID changes, so mutating metadata on an
- * already-open file scrolls nothing.
- */
-const [pendingReveal, setPendingReveal] = createSignal<{
-  path: string;
-  line: number;
-} | null>(null);
-export { pendingReveal };
 
 // =============================================================================
 // Writes / lifecycle
@@ -146,15 +127,6 @@ export const reviewActions = {
   async resolveComment(id: string, commentId: string): Promise<void> {
     await resolveReviewCommentOnce(id, commentId);
   },
-
-  /** Ask the open editor for this path to scroll to a line. */
-  reveal(path: string, line: number): void {
-    setPendingReveal({ path, line });
-  },
-  clearReveal(): void {
-    setPendingReveal(null);
-  },
-
 };
 
 // =============================================================================
@@ -304,5 +276,4 @@ export function __resetReviewStore(): void {
   for (const pending of timers.values()) clearTimeout(pending);
   timers.clear();
   setSessions(produce((s) => Object.keys(s).forEach((k) => delete s[k])));
-  setPendingReveal(null);
 }

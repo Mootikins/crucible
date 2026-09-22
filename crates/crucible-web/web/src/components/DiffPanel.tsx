@@ -73,7 +73,7 @@ import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/li
 import { hit } from '@/lib/touch';
 
 /** A file with more changed lines than this starts collapsed. */
-export const LARGE_FILE_LINES = 400;
+const LARGE_FILE_LINES = 400;
 
 /** The unchanged-line collapse of the design: 3 lines of context, 4 at least. */
 const COLLAPSE: MergeCollapse = { margin: 3, minSize: 4 };
