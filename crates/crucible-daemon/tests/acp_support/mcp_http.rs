@@ -3,6 +3,38 @@
 
 use serde_json::{json, Value};
 
+/// Start the in-process MCP host over `dir` with the mock providers, or panic.
+///
+/// A sandbox that forbids the localhost bind fails here with "Operation not
+/// permitted". That is a missing prerequisite, and a test that returns early
+/// on it reports a pass for a check that never ran.
+#[allow(dead_code)]
+pub async fn start_host(
+    dir: &std::path::Path,
+    delegation: Option<crucible_daemon::tools::DelegationContext>,
+) -> crucible_daemon::InProcessMcpHost {
+    use crucible_core::enrichment::EmbeddingProvider;
+    use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+
+    crucible_daemon::InProcessMcpHost::start(
+        dir.to_path_buf(),
+        dir.to_path_buf(),
+        std::sync::Arc::new(MockKnowledgeRepository::new())
+            as std::sync::Arc<dyn KnowledgeRepository>,
+        std::sync::Arc::new(MockEmbeddingProvider::new()) as std::sync::Arc<dyn EmbeddingProvider>,
+        delegation,
+        crucible_daemon::tools::containment::RootSet::Ambient,
+    )
+    .await
+    .unwrap_or_else(|err| {
+        panic!(
+            "InProcessMcpHost::start failed; the in-process MCP HTTP server needs a \
+             localhost bind, which a sandbox may deny: {err:?}"
+        )
+    })
+}
+
 /// Open an MCP session on a Streamable HTTP endpoint the way an agent does:
 /// `initialize`, then `notifications/initialized`. Returns the session id the
 /// server assigned.

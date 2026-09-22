@@ -1,3 +1,6 @@
+#[path = "acp_support/mcp_http.rs"]
+mod mcp_http;
+
 use async_trait::async_trait;
 use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult};
 use crucible_core::enrichment::EmbeddingProvider;
@@ -5,7 +8,8 @@ use crucible_core::traits::KnowledgeRepository;
 use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
 use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 use crucible_daemon::tools::{CrucibleMcpServer, DelegationContext};
-use crucible_daemon::InProcessMcpHost;
+use mcp_http::{mcp_http_open_session, mcp_http_request, start_host};
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,121 +103,10 @@ fn delegation_context(enabled: bool) -> DelegationContext {
     }
 }
 
-/// Start the in-process MCP host, or panic.
-///
-/// A sandbox that forbids the localhost bind fails here with "Operation not
-/// permitted". That is a missing prerequisite, and a test that returns early
-/// on it reports a pass for a check that never ran.
-async fn start_host(temp: &TempDir, delegation: Option<DelegationContext>) -> InProcessMcpHost {
-    InProcessMcpHost::start(
-        temp.path().to_path_buf(),
-        temp.path().to_path_buf(),
-        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
-        delegation,
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    .unwrap_or_else(|err| {
-        panic!(
-            "InProcessMcpHost::start failed; the in-process MCP HTTP server needs a \
-             localhost bind, which a sandbox may deny: {err:?}"
-        )
-    })
-}
-
-fn parse_jsonrpc_payload(body: &str) -> serde_json::Value {
-    let payload = body
-        .lines()
-        .find(|line| line.starts_with("data: {"))
-        .and_then(|line| line.strip_prefix("data: "))
-        .unwrap_or(body);
-
-    serde_json::from_str(payload).expect("valid JSON-RPC payload")
-}
-
-async fn initialize_mcp_session(client: &reqwest::Client, url: &str, client_name: &str) -> String {
-    let init_body = format!(
-        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{{}},\"clientInfo\":{{\"name\":\"{}\",\"version\":\"0.1.0\"}}}}}}",
-        client_name
-    );
-
-    let init_resp = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .body(init_body)
-        .send()
-        .await
-        .expect("initialize should succeed");
-    assert!(init_resp.status().is_success());
-
-    let session_id = init_resp
-        .headers()
-        .get("mcp-session-id")
-        .expect("initialize should return mcp-session-id")
-        .to_str()
-        .expect("session id should be a valid header value")
-        .to_string();
-
-    let initialized_resp = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", &session_id)
-        .body(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-        .send()
-        .await
-        .expect("initialized notification should succeed");
-    assert!(initialized_resp.status().is_success());
-
-    session_id
-}
-
-async fn call_tools_list(
-    client: &reqwest::Client,
-    url: &str,
-    session_id: &str,
-) -> serde_json::Value {
-    let tools_resp = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", session_id)
-        .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
-        .send()
-        .await
-        .expect("tools/list should succeed");
-    assert!(tools_resp.status().is_success());
-
-    let body = tools_resp.text().await.expect("tools/list body");
-    parse_jsonrpc_payload(&body)
-}
-
-async fn call_semantic_search(
-    client: &reqwest::Client,
-    url: &str,
-    session_id: &str,
-    request_id: u64,
-) -> serde_json::Value {
-    let search_body = format!(
-        "{{\"jsonrpc\":\"2.0\",\"id\":{},\"method\":\"tools/call\",\"params\":{{\"name\":\"semantic_search\",\"arguments\":{{\"query\":\"acp-delegation-e2e\",\"limit\":5}}}}}}",
-        request_id
-    );
-
-    let search_resp = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", session_id)
-        .body(search_body)
-        .send()
-        .await
-        .expect("tools/call semantic_search should return response");
-    assert!(search_resp.status().is_success());
-
-    let body = search_resp.text().await.expect("semantic_search body");
-    parse_jsonrpc_payload(&body)
+/// Call `semantic_search` on an open MCP session.
+async fn semantic_search(client: &reqwest::Client, url: &str, session_id: &str, id: u64) -> Value {
+    let args = json!({"name": "semantic_search", "arguments": {"query": "acp-delegation-e2e", "limit": 5}});
+    mcp_http_request(client, url, session_id, id, "tools/call", args).await
 }
 
 /// The MCP server an ACP agent reaches answers `semantic_search` through
@@ -223,13 +116,12 @@ async fn call_semantic_search(
 #[tokio::test]
 async fn mcp_server_serves_search_and_gates_delegate_session_on_delegation() {
     let temp = TempDir::new().expect("temp dir");
-    let host = start_host(&temp, None).await;
+    let host = start_host(temp.path(), None).await;
 
     let client = reqwest::Client::new();
     let url = host.mcp_url();
-    let session_id =
-        initialize_mcp_session(&client, &url, "acp-delegation-e2e-providers-only").await;
-    let search_payload = call_semantic_search(&client, &url, &session_id, 3).await;
+    let session_id = mcp_http_open_session(&client, &url).await;
+    let search_payload = semantic_search(&client, &url, &session_id, 3).await;
 
     assert!(
         search_payload.get("result").is_some(),
@@ -315,13 +207,14 @@ async fn mcp_server_serves_search_and_gates_delegate_session_on_delegation() {
     );
 
     let temp = TempDir::new().expect("temp dir");
-    let host = start_host(&temp, Some(delegation_context(true))).await;
+    let host = start_host(temp.path(), Some(delegation_context(true))).await;
 
     let client = reqwest::Client::new();
     let url = host.mcp_url();
-    let session_id = initialize_mcp_session(&client, &url, "acp-delegation-e2e-integration").await;
+    let session_id = mcp_http_open_session(&client, &url).await;
 
-    let tools_payload = call_tools_list(&client, &url, &session_id).await;
+    let tools_payload =
+        mcp_http_request(&client, &url, &session_id, 2, "tools/list", json!({})).await;
     let tools = tools_payload["result"]["tools"]
         .as_array()
         .expect("tools/list response should include result.tools");
@@ -334,7 +227,7 @@ async fn mcp_server_serves_search_and_gates_delegate_session_on_delegation() {
         "tools/list should include delegate_session when delegation is enabled, got: {tool_names:?}",
     );
 
-    let search_payload = call_semantic_search(&client, &url, &session_id, 4).await;
+    let search_payload = semantic_search(&client, &url, &session_id, 4).await;
     assert!(
         search_payload.get("result").is_some(),
         "semantic_search should succeed in integration scenario, got: {search_payload}",

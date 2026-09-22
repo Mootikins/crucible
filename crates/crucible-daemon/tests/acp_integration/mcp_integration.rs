@@ -6,33 +6,10 @@
 //! wire in `acp_transport_negotiation.rs`. A tool result that crosses from this host
 //! through an ACP turn is asserted in `tool_roundtrip.rs`.
 
-use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};
-use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::traits::KnowledgeRepository;
-use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
-use crucible_daemon::InProcessMcpHost;
+use crate::support::mcp_http::start_host;
 use serde_json::json;
-use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
-
-/// Start an MCP host over `kiln`. The host binds a localhost port, so a
-/// sandbox that denies the bind fails the test with the bind error.
-async fn start_mcp_host(kiln: &Path) -> InProcessMcpHost {
-    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
-    InProcessMcpHost::start(
-        kiln.to_path_buf(),
-        kiln.to_path_buf(),
-        knowledge_repo,
-        embedding_provider,
-        None,
-        crucible_daemon::tools::containment::RootSet::Ambient,
-    )
-    .await
-    .expect("the in-process MCP host binds to localhost")
-}
 
 /// The MCP `initialize` request body.
 fn initialize_body() -> String {
@@ -53,7 +30,7 @@ fn initialize_body() -> String {
 #[tokio::test]
 async fn test_in_process_mcp_host_provides_valid_sse_url() {
     let temp = TempDir::new().unwrap();
-    let host = start_mcp_host(temp.path()).await;
+    let host = start_host(temp.path(), None).await;
 
     let url = host.mcp_url();
 
@@ -76,7 +53,7 @@ async fn test_in_process_mcp_host_provides_valid_sse_url() {
 #[tokio::test]
 async fn test_in_process_mcp_sse_endpoint_is_reachable() {
     let temp = TempDir::new().unwrap();
-    let host = start_mcp_host(temp.path()).await;
+    let host = start_host(temp.path(), None).await;
 
     let resp = reqwest::Client::new()
         .post(host.mcp_url())
@@ -100,7 +77,7 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
 #[tokio::test]
 async fn test_in_process_mcp_host_graceful_shutdown() {
     let temp = TempDir::new().unwrap();
-    let host = start_mcp_host(temp.path()).await;
+    let host = start_host(temp.path(), None).await;
 
     let url = host.mcp_url();
     let client = reqwest::Client::new();
@@ -134,7 +111,7 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
 #[tokio::test]
 async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
     let temp = TempDir::new().unwrap();
-    let host = start_mcp_host(temp.path()).await;
+    let host = start_host(temp.path(), None).await;
 
     let init_resp = reqwest::Client::new()
         .post(host.mcp_url())
@@ -149,41 +126,6 @@ async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
         init_resp.status().is_success(),
         "missing text/event-stream should still succeed, got: {}",
         init_resp.status()
-    );
-
-    host.shutdown().await;
-}
-
-/// Test that tools/list over HTTP returns all 15 tools including delegate_session.
-/// Note: The MCP HTTP endpoint uses the rmcp tool_router directly (all tools),
-/// not the filtered list_tools() helper. delegate_session is always present in
-/// the HTTP endpoint; filtering only applies to the Rust API (list_tools() method).
-#[tokio::test]
-async fn test_tools_list_over_http_returns_delegate_session() {
-    let temp = TempDir::new().unwrap();
-    let host = start_mcp_host(temp.path()).await;
-
-    let url = host.mcp_url();
-    let client = reqwest::Client::new();
-    let session_id = mcp_http_open_session(&client, &url).await;
-    let parsed = mcp_http_request(&client, &url, &session_id, 2, "tools/list", json!({})).await;
-
-    let tools = parsed["result"]["tools"]
-        .as_array()
-        .unwrap_or_else(|| panic!("should have tools array: {parsed}"));
-    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-
-    // Kiln + delegation only; workspace tools are not on the MCP surface.
-    assert_eq!(
-        tools.len(),
-        15,
-        "Should have 15 tools, got: {:?}",
-        tool_names
-    );
-    assert!(
-        tool_names.contains(&"delegate_session"),
-        "Should contain delegate_session, got: {:?}",
-        tool_names
     );
 
     host.shutdown().await;
