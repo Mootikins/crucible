@@ -9,23 +9,29 @@ import { MOCK_PROJECT, MOCK_SESSION } from './helpers/fixtures';
  * The bar is the 3 px gutter of `@codemirror/merge`. CodeMirror places a
  * gutter element from its height map, and lays out the rows in normal flow.
  * The two agree only while the height map knows the height of every block.
- * `getBoundingClientRect` leaves a margin out, so a block widget with a
- * vertical margin makes every bar below it ride high by that margin — see
- * `.cm-diff-comment` in `components/diff-comments.tsx`.
+ * Two faults break that:
+ *
+ * - `getBoundingClientRect` leaves a margin out, so a block widget with a
+ *   vertical margin makes every bar below it ride high by that margin — see
+ *   `.cm-diff-comment` in `components/diff-comments.tsx`.
+ * - CodeMirror measures the rows of a view that the window shows, and keeps
+ *   an estimate of 14 px a row for any other view. A file under the fold
+ *   therefore drew a 14 px bar beside an 18 px row until the user scrolled to
+ *   it — see `measureHiddenRows` in `lib/merge-view.ts`.
+ *
+ * This spec measures every file of the mock diffset: `src/lib.rs` and
+ * `src/server.rs` at the top of the pane, and `README.md` under the fold. It
+ * scrolls nowhere, so the bars of `README.md` must already cover its rows.
  *
  * jsdom has no layout, so a vitest unit cannot see this. A browser can.
  */
 
 const ROOT = MOCK_PROJECT.path;
 const FILE = `diff-file-${ROOT}:src/server.rs`;
-/**
- * The files this spec measures, by their section key.
- *
- * Both are at the top of the pane, so their editors are on screen and
- * measured. `README.md` is below the fold: its editor keeps the estimated
- * heights of a view that nobody has seen, which is a different subject.
- */
-const MEASURED = [`${ROOT}:src/lib.rs`, `${ROOT}:src/server.rs`];
+/** The file that the mock diffset leaves under the fold. */
+const UNDER_FOLD = `${ROOT}:README.md`;
+/** The files this spec measures, by their section key. */
+const MEASURED = [`${ROOT}:src/lib.rs`, `${ROOT}:src/server.rs`, UNDER_FOLD];
 
 /** One row of the diff and the bar that marks it, in page coordinates. */
 interface Pair {
@@ -99,6 +105,38 @@ function expectAligned(found: Pair[], atLeast: number): void {
   expect(off).toEqual([]);
 }
 
+/**
+ * True while the window shows no part of the section of this file.
+ *
+ * The estimated heights belong to a view that the window does not show. The
+ * case below is worthless if the pane grew tall enough to show this file.
+ */
+async function underTheFold(page: Page, key: string): Promise<boolean> {
+  return page.evaluate((k: string) => {
+    const section = document.querySelector<HTMLElement>(`section[data-file-key="${k}"]`);
+    if (!section) throw new Error(`no section ${k}`);
+    return section.getBoundingClientRect().top >= window.innerHeight;
+  }, key);
+}
+
+/**
+ * Hold the text of one file back until the files above it filled the pane.
+ *
+ * The daemon answers one request for each file, and the answers can arrive in
+ * any order. An editor that mounts while the pane is still short mounts in
+ * the window, and CodeMirror measures it there. The case below needs the
+ * other order: the pane is already taller than the window when this editor
+ * mounts, so the window never shows it.
+ */
+async function textArrivesLast(page: Page, path: string): Promise<void> {
+  await page.route('**/api/diff/file**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('path') === path) {
+      await new Promise((done) => setTimeout(done, 500));
+    }
+    await route.fallback();
+  });
+}
+
 /** Open the Files tab of the right edge panel through the store. */
 async function openFilesPanel(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -137,6 +175,7 @@ async function everyBarCoversItsRow(page: Page): Promise<void> {
   await setupBasicMocks(page, {
     projects: [{ ...MOCK_PROJECT, repository: { root: ROOT, is_worktree: false } }],
   });
+  await textArrivesLast(page, 'README.md');
 
   // A narrow window makes the centre pane narrow, so the long lines of
   // `src/server.rs` wrap. The size is set before the first paint, so the
@@ -149,18 +188,26 @@ async function everyBarCoversItsRow(page: Page): Promise<void> {
   await page.getByTestId('open-branch-diff').click();
   await expect(page.getByTestId(FILE)).toBeVisible();
   await expect(page.getByTestId(FILE).locator('.cm-changedLineGutter').first()).toBeVisible();
+  // The held-back editor. `toBeAttached` does not scroll, so the file stays
+  // under the fold.
+  await expect(page.getByTestId(`diff-file-${UNDER_FOLD}`).locator('.cm-editor')).toBeAttached();
 
   // A wrapped row is taller than one line, so its bar must be taller too. A
   // removed row is a block widget of its own, and it is in the count.
   // A row taller than one line has wrapped. The case is worthless without it.
   const wrapped = await settled(page);
   expect(wrapped.some((p) => p.row.bottom - p.row.top > 30)).toBe(true);
-  expectAligned(wrapped, 6);
+  // `README.md` is under the fold. Its rows must already be measured: the
+  // spec scrolls nowhere, so only a mount-time measurement can align them.
+  expect(await underTheFold(page, UNDER_FOLD)).toBe(true);
+  expect(wrapped.filter((p) => p.file === UNDER_FOLD).length).toBeGreaterThanOrEqual(3);
+  expectAligned(wrapped, 9);
 
   // A comment is a block widget between two rows. Every bar below it must
   // still cover its row.
   await commentOnLine(page, 17, 'The timeout is now 10 seconds. Why?');
-  expectAligned(await settled(page), 6);
+  expect(await underTheFold(page, UNDER_FOLD)).toBe(true);
+  expectAligned(await settled(page), 9);
 }
 
 /** The stored theme preference, which the shell reads before its first paint. */
