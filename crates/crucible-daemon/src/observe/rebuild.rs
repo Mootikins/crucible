@@ -52,7 +52,13 @@ pub(crate) fn apply_injection_to_tree(tree: &mut ConversationTree, event: &LogEv
     let message = match event {
         LogEvent::User { content, .. } => ContextMessage::user(content),
         LogEvent::Assistant { content, .. } => ContextMessage::assistant(content),
-        LogEvent::System { content, .. } => ContextMessage::system(content),
+        LogEvent::System { content, tags, .. } => {
+            let mut message = ContextMessage::system(content);
+            // The kind of the block, so a `transform_context` handler finds
+            // it again after a replay, an undo or a fork.
+            message.metadata.tags.clone_from(tags);
+            message
+        }
         _ => return,
     };
     tree.add_child_and_advance(tree.current(), NodeContent::Injected { message });

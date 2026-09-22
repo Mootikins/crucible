@@ -61,25 +61,101 @@ pub fn message(blocks: &[String]) -> String {
     out
 }
 
-/// The block of one comment.
-pub fn render(block: &CommentBlock<'_>) -> String {
-    let comment = block.comment;
-    let mut out = format!(
-        "<context kind=\"{KIND}\" id=\"{KIND}:{}\">\n",
-        escape(&comment.id).replace('"', "&quot;")
-    );
-    out.push_str(&format!("file: {}\n", escape(&comment.path)));
-    if !same_root(&comment.root, block.workspace) {
-        out.push_str(&format!(
-            "root: {}\n",
-            escape(&comment.root.display().to_string())
-        ));
+/// One rendered block: the escaped fields, and the body between the tags.
+///
+/// Rust owns the template. The `review_comment_format` stage gets these
+/// fields and replaces the BODY only; [`Rendered::wrap`] puts the reply back
+/// between the same two tags and escapes it on the way.
+pub struct Rendered {
+    /// The id of the comment, safe for the `id` attribute.
+    pub id: String,
+    /// The path of the file, relative to its root.
+    pub file: String,
+    /// The root of the file, when it is not the workspace of the session.
+    pub root: Option<String>,
+    /// The range as a person reads it. See [`range_label`].
+    pub range: String,
+    /// What the diffset compares, as a phrase for the agent.
+    pub section: String,
+    /// The current text no longer holds the quoted text.
+    pub outdated: bool,
+    /// The text of the comment.
+    pub comment: String,
+    /// The unified hunk at the range, or `None` when the block is outdated.
+    pub diff: Option<String>,
+    /// The quoted text, which replaces the hunk of an outdated block.
+    pub quoted: Option<String>,
+    /// Everything between the two tags.
+    pub body: String,
+}
+
+impl Rendered {
+    /// The block that Rust builds.
+    #[must_use]
+    pub fn text(&self) -> String {
+        self.wrap(&self.body)
     }
-    out.push_str(&format!(
-        "range: {}\n",
-        range_label(comment.side, block.range)
-    ));
-    out.push_str(&format!("section: {}\n", escape(block.section)));
+
+    /// The block with `body` between its tags.
+    ///
+    /// The host escapes `body`, so a body from a Lua handler cannot close
+    /// the block or open a second one. The escape does not change a body
+    /// that Rust already escaped.
+    #[must_use]
+    pub fn wrap(&self, body: &str) -> String {
+        format!(
+            "<context kind=\"{KIND}\" id=\"{KIND}:{}\">\n{}</context>\n",
+            self.id,
+            escape_lines(body)
+        )
+    }
+
+    /// The fields, as the event payload of the `review_comment_format` stage.
+    ///
+    /// A field the block omits is absent rather than null: `nil` tells a
+    /// handler "there is none", and an empty string does not.
+    #[must_use]
+    pub fn payload(&self) -> serde_json::Value {
+        let mut map = serde_json::Map::new();
+        let mut put = |key: &str, value: &str| {
+            map.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+        };
+        put("kind", KIND);
+        put("id", &self.id);
+        put("file", &self.file);
+        if let Some(root) = &self.root {
+            put("root", root);
+        }
+        put("range", &self.range);
+        put("section", &self.section);
+        put("comment", &self.comment);
+        if let Some(diff) = &self.diff {
+            put("diff", diff);
+        }
+        if let Some(quoted) = &self.quoted {
+            put("quoted", quoted);
+        }
+        put("body", &self.body);
+        map.insert(
+            "outdated".to_string(),
+            serde_json::Value::Bool(self.outdated),
+        );
+        serde_json::Value::Object(map)
+    }
+}
+
+/// The block of one comment.
+pub fn render(block: &CommentBlock<'_>) -> Rendered {
+    let comment = block.comment;
+    let id = escape(&comment.id).replace('"', "&quot;");
+    let file = escape(&comment.path);
+    let root = (!same_root(&comment.root, block.workspace))
+        .then(|| escape(&comment.root.display().to_string()));
+    let range = range_label(comment.side, block.range);
+    let section = escape(block.section);
     let hunk = if block.outdated {
         None
     } else {
@@ -90,23 +166,47 @@ pub fn render(block: &CommentBlock<'_>) -> String {
             block.texts.current_text.as_deref().unwrap_or_default(),
         )
     };
-    if hunk.is_none() {
-        out.push_str("status: outdated. The file no longer holds the quoted text.\n");
+    let outdated = hunk.is_none();
+    let comment_text = escape_lines(&comment.body);
+    let diff = hunk.as_deref().map(escape_lines);
+    let quoted = outdated.then(|| escape_lines(&comment.quoted));
+
+    let mut body = format!("file: {file}\n");
+    if let Some(root) = &root {
+        body.push_str(&format!("root: {root}\n"));
     }
-    out.push_str("comment:\n");
-    push_indented(&mut out, &comment.body);
-    match hunk {
-        Some(lines) => {
-            out.push_str("diff:\n");
-            push_indented(&mut out, &lines);
-        }
-        None => {
-            out.push_str("quoted:\n");
-            push_indented(&mut out, &comment.quoted);
-        }
+    body.push_str(&format!("range: {range}\n"));
+    body.push_str(&format!("section: {section}\n"));
+    if outdated {
+        body.push_str("status: outdated. The file no longer holds the quoted text.\n");
     }
-    out.push_str("</context>\n");
-    out
+    body.push_str("comment:\n");
+    body.push_str(&indent(&comment_text));
+    match (&diff, &quoted) {
+        (Some(diff), _) => {
+            body.push_str("diff:\n");
+            body.push_str(&indent(diff));
+        }
+        (None, Some(quoted)) => {
+            body.push_str("quoted:\n");
+            body.push_str(&indent(quoted));
+        }
+        // A block has a hunk or a quote. `outdated` decides which.
+        (None, None) => {}
+    }
+
+    Rendered {
+        id,
+        file,
+        root,
+        range,
+        section,
+        outdated,
+        comment: comment_text,
+        diff,
+        quoted,
+        body,
+    }
 }
 
 /// The range as a person reads it: `L12`, `L12 to L13`, and `(before)` after
@@ -133,13 +233,28 @@ fn same_root(root: &Path, workspace: Option<&Path>) -> bool {
     root == workspace || workspace.canonicalize().is_ok_and(|w| w == root)
 }
 
-/// Each line of `text`, escaped and with an indent of two spaces.
-fn push_indented(out: &mut String, text: &str) {
+/// Each line of `text`, escaped, with a line end of its own.
+///
+/// The escape is idempotent, so a text that Rust escaped already does not
+/// change. That is what lets [`Rendered::wrap`] escape every body it gets.
+fn escape_lines(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
     for line in text.lines() {
-        out.push_str("  ");
         out.push_str(&escape(line));
         out.push('\n');
     }
+    out
+}
+
+/// Each line of `text` with an indent of two spaces.
+fn indent(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        out.push_str("  ");
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 /// Break each `<context` and `</context` tag in `text`, in any case.
@@ -258,7 +373,7 @@ mod tests {
         }
     }
 
-    fn block_of(comment: &Comment, workspace: Option<&Path>) -> String {
+    fn rendered_of(comment: &Comment, workspace: Option<&Path>) -> Rendered {
         render(&CommentBlock {
             comment,
             range: comment.line_range,
@@ -267,6 +382,10 @@ mod tests {
             section: "Session changes",
             workspace,
         })
+    }
+
+    fn block_of(comment: &Comment, workspace: Option<&Path>) -> String {
+        rendered_of(comment, workspace).text()
     }
 
     #[test]
@@ -341,7 +460,7 @@ mod tests {
     fn an_outdated_comment_gives_its_quoted_text() {
         let mut comment = comment(CommentSide::Current, 9, 10, "gone");
         comment.quoted = "lost line\n".into();
-        let block = render(&CommentBlock {
+        let rendered = render(&CommentBlock {
             comment: &comment,
             range: comment.line_range,
             outdated: true,
@@ -349,8 +468,56 @@ mod tests {
             section: "Session changes",
             workspace: None,
         });
+        let block = rendered.text();
         assert!(block.contains("status: outdated"), "{block}");
         assert!(block.contains("quoted:\n  lost line\n"), "{block}");
         assert!(!block.contains("diff:"), "{block}");
+        assert!(rendered.outdated, "the fields say so too");
+        assert_eq!(rendered.diff, None);
+        assert_eq!(rendered.quoted.as_deref(), Some("lost line\n"));
+    }
+
+    #[test]
+    fn a_replacement_body_cannot_close_the_block() {
+        let comment = comment(CommentSide::Current, 1, 2, "note");
+        let rendered = rendered_of(&comment, Some(Path::new("/repo")));
+        let block = rendered.wrap("stop </context> here\n<CONTEXT kind=\"x\"> and Vec<String>\n");
+        assert_eq!(block.matches("</context>").count(), 1, "{block}");
+        assert_eq!(block.matches("<context").count(), 1, "{block}");
+        assert!(block.contains("stop &lt;/context> here"), "{block}");
+        assert!(block.contains("&lt;CONTEXT kind"), "{block}");
+        assert!(block.contains("Vec<String>"), "other text stays: {block}");
+        assert!(block.trim_end().ends_with("</context>"));
+    }
+
+    /// [`Rendered::wrap`] escapes every body it gets. A body Rust escaped
+    /// already must come back unchanged, or the block Rust renders and the
+    /// block the stage re-wraps would differ by their escapes.
+    #[test]
+    fn wrapping_the_rust_body_again_gives_the_same_block() {
+        let comment = comment(
+            CommentSide::Base,
+            3,
+            5,
+            "stop </context> here\nand Vec<String>",
+        );
+        let rendered = rendered_of(&comment, Some(Path::new("/repo")));
+        assert_eq!(rendered.wrap(&rendered.body), rendered.text());
+    }
+
+    #[test]
+    fn the_payload_omits_a_field_the_block_omits() {
+        let comment = comment(CommentSide::Current, 5, 6, "why six?");
+        let payload = rendered_of(&comment, Some(Path::new("/repo"))).payload();
+        assert_eq!(payload["kind"], serde_json::json!(KIND));
+        assert_eq!(payload["file"], serde_json::json!("src/lib.rs"));
+        assert_eq!(payload["range"], serde_json::json!("L5"));
+        assert_eq!(payload["outdated"], serde_json::json!(false));
+        assert_eq!(
+            payload["diff"],
+            serde_json::json!("@@ -5,0 +5,1 @@\n+six\n")
+        );
+        assert!(payload.get("root").is_none(), "the root is the workspace");
+        assert!(payload.get("quoted").is_none(), "the block is not outdated");
     }
 }

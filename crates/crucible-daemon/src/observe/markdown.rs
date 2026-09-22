@@ -60,7 +60,7 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             writeln!(output, "---\n").unwrap();
         }
 
-        LogEvent::System { ts, content } => {
+        LogEvent::System { ts, content, .. } => {
             if options.include_timestamps {
                 writeln!(output, "<!-- system: {} -->", ts.format("%H:%M:%S")).unwrap();
             }

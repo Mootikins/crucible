@@ -37,7 +37,20 @@ pub enum LogEvent {
     },
 
     /// System message (prompt, context injection)
-    System { ts: DateTime<Utc>, content: String },
+    System {
+        ts: DateTime<Utc>,
+        content: String,
+        /// What kind of block this content is, for the handler that wants to
+        /// find it again.
+        ///
+        /// The tags travel to the `ContextMessage` the turn assembles, so a
+        /// `transform_context` handler identifies an injected block by its
+        /// kind instead of by a substring of its text. A record written
+        /// before this field loads with no tag, which is what an untagged
+        /// system message means.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+    },
 
     /// User message
     User { ts: DateTime<Utc>, content: String },
@@ -156,6 +169,19 @@ impl LogEvent {
         LogEvent::System {
             ts: Utc::now(),
             content: content.into(),
+            tags: Vec::new(),
+        }
+    }
+
+    /// Create a system event that names the kind of block it carries.
+    ///
+    /// The tag reaches the agent on the `ContextMessage`, and the session log
+    /// keeps it, so replay and fork give the block back with its kind.
+    pub fn system_tagged(content: impl Into<String>, tags: Vec<String>) -> Self {
+        LogEvent::System {
+            ts: Utc::now(),
+            content: content.into(),
+            tags,
         }
     }
 
@@ -457,6 +483,7 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
                 data.get("notes_count").and_then(Value::as_u64).unwrap_or(0),
                 text("query_summary").unwrap_or_default(),
             ),
+            tags: Vec::new(),
         }),
         // `segment_complete` is a prefix of the same turn's
         // `message_complete.full_response` — `segment_complete`'s own doc comment says so outright

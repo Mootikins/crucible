@@ -215,6 +215,10 @@ impl AgentManager {
         // gets them as accepted context before the user turn, so replay, undo
         // and fork keep them with their role. An ACP agent owns its history,
         // so the block goes with this turn only, as the `@file` attachments do.
+        //
+        // Both routes tag the block with its kind. A `transform_context`
+        // handler then finds the block by its tag on either route, instead of
+        // matching a substring of the text the daemon rendered.
         let mut acp_review_context = None;
         if let Some(text) = review_context {
             if agent_config.agent_type == "acp" {
@@ -223,7 +227,10 @@ impl AgentManager {
                 .accept(
                     self.session_manager.storage().as_ref(),
                     &session,
-                    crate::observe::LogEvent::system(text),
+                    crate::observe::LogEvent::system_tagged(
+                        text,
+                        vec![crate::diff::context::KIND.to_string()],
+                    ),
                 )
                 .await
             {

@@ -71,6 +71,29 @@ fn blocks(messages: &CapturedMessages) -> Vec<(MessageRole, String)> {
         .collect()
 }
 
+/// The blocks the agent saw, found by their metadata tag and not by their
+/// text.
+///
+/// A `transform_context` handler finds the block this way, so the tag must
+/// reach the agent on the internal route as well as on the ACP route, and it
+/// must survive the session log.
+fn tagged(messages: &CapturedMessages) -> Vec<String> {
+    messages
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .into_iter()
+        .filter(|m| {
+            m.metadata
+                .tags
+                .iter()
+                .any(|tag| tag == crate::diff::context::KIND)
+        })
+        .map(|m| m.content)
+        .collect()
+}
+
 fn error_of(response: Response) -> String {
     response.error.expect("the daemon refuses").message
 }
@@ -173,6 +196,11 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
 
     let seen = blocks(&messages);
     assert_eq!(seen.len(), 1, "one block: {seen:?}");
+    assert_eq!(
+        tagged(&messages).len(),
+        1,
+        "the block carries its kind as a tag"
+    );
     let (role, block) = &seen[0];
     assert_eq!(*role, MessageRole::System, "context is not a user turn");
     for part in [
@@ -239,6 +267,11 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
     let seen = blocks(&replayed);
     assert_eq!(seen.len(), 2, "replay keeps both blocks: {seen:?}");
     assert!(seen.iter().all(|(role, _)| *role == MessageRole::System));
+    assert_eq!(
+        tagged(&replayed).len(),
+        2,
+        "the session log keeps the tag of each block"
+    );
 
     // Fork: the child history holds the blocks too.
     let (child, _) = am
@@ -254,4 +287,9 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
     let seen = blocks(&forked);
     assert_eq!(seen.len(), 2, "the fork keeps both blocks: {seen:?}");
     assert!(seen.iter().all(|(role, _)| *role == MessageRole::System));
+    assert_eq!(
+        tagged(&forked).len(),
+        2,
+        "the fork keeps the tag of each block"
+    );
 }
