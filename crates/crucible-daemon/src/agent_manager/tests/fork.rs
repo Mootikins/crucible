@@ -212,3 +212,101 @@ async fn a_fork_inherits_the_record_that_a_plugin_isolated_the_parent() {
 
     assert_eq!(child.isolation_record, Some(record));
 }
+
+/// A fork of an ACP session is refused through both entry points.
+///
+/// The copy dropped `acp_session_id`, so the fork's agent started empty
+/// under a transcript that looked complete, and both entry points answered
+/// with a new session id. The refusal must reach each caller with its reason,
+/// and no child session may exist afterwards. The parent has a workspace, so
+/// the Lua bridge must give the ACP reason before its isolation advice.
+#[tokio::test]
+async fn lua_and_rpc_refuse_to_fork_an_acp_session() {
+    let workspace = TempDir::new().unwrap();
+    let sm = temp_session_manager_with_kilns(&[("notes", workspace.path())]);
+    let am = create_test_agent_manager(sm.clone());
+    let parent = sm
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("notes")],
+            Some(workspace.path().into()),
+            None,
+        )
+        .await
+        .unwrap();
+    let mut agent = test_agent();
+    agent.agent_type = "acp".into();
+    am.configure_agent(&parent.id, agent).await.unwrap();
+    let stored = sm
+        .modify_session(&parent.id, |live| {
+            live.acp_session_id = Some("agent-side-history".into());
+            true
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    sm.storage()
+        .append_event(
+            &stored,
+            &crate::observe::LogEvent::user("first").to_jsonl().unwrap(),
+        )
+        .await
+        .unwrap();
+    let sessions_before = sm.list_sessions().len();
+
+    let (tx, _) = broadcast::channel(16);
+    let ctx = Arc::new(crate::rpc::RpcContext::for_test(
+        am.kiln_manager.clone(),
+        sm.clone(),
+        am.clone(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            workspace.path().join("projects.json"),
+        )),
+        tx,
+        workspace.path().into(),
+    ));
+    let lua = mlua::Lua::new();
+    register_sessions_module_with_api(
+        &lua,
+        Arc::new(crate::session_bridge::DaemonSessionBridge::new(ctx)),
+    )
+    .unwrap();
+    lua.globals().set("parent", parent.id.to_string()).unwrap();
+    let lua_reason: String = lua
+        .load("local child, err = cru.session.fork(parent); assert(child == nil, 'fork must not create a child'); return err")
+        .eval_async()
+        .await
+        .unwrap();
+    assert!(
+        lua_reason.contains("external ACP agent"),
+        "Lua must read the reason: {lua_reason}"
+    );
+
+    let response = crate::server::session::handle_session_fork(
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session.fork",
+            "params": { "session_id": parent.id },
+            "id": 1,
+        }))
+        .unwrap(),
+        &sm,
+        &am,
+    )
+    .await;
+    assert!(response.result.is_none(), "{:?}", response.result);
+    let error = response.error.expect("an error body");
+    // A refusal is the caller's request, not a daemon fault.
+    assert_eq!(error.code, crate::protocol::INVALID_PARAMS, "{error:?}");
+    let rpc_reason = error.message;
+    assert!(
+        rpc_reason.contains("external ACP agent"),
+        "the RPC error must name the reason: {rpc_reason}"
+    );
+
+    assert_eq!(
+        sm.list_sessions().len(),
+        sessions_before,
+        "a refused fork must not leave a child session behind"
+    );
+}

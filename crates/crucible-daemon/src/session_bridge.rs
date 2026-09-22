@@ -606,6 +606,13 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Session not found: {session_id}"))?;
+            // The ACP reason comes first: the isolation advice below points
+            // at `session.fork`, which refuses an ACP parent too.
+            if let Some(reason) = parent.agent.as_ref().and_then(|agent| {
+                crate::agent_manager::session_config::fork_refusal(&agent.agent_type)
+            }) {
+                return Err(reason);
+            }
             // Lua can call from inside a lifecycle hook, whose loader lock is
             // not reentrant. Without running start hooks, a configured fork
             // must not silently lose its parent's requested, recorded or

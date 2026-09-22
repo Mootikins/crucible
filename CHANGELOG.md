@@ -32,6 +32,12 @@ is a Keep a Changelog category.
   `cru.session.undo` now refuse with the reason, and `can_undo`, `undo_depth`
   and `undo_history` report nothing to undo.
 
+- **A fork of a session an external agent runs is refused.** The copy dropped
+  the agent's session id, so the fork's agent started with no history under a
+  transcript that looked complete. `session.fork` and `cru.session.fork` now
+  refuse with the reason. Copying the id is not an option: both sessions
+  would resume one agent history.
+
 - **A session's `env_overrides` now beats the profile's `env`.** The profile
   environment was merged twice — once onto the session and once at launch —
   and the launch copy put the config value back, so a `session.create`

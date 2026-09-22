@@ -22,6 +22,21 @@
 
 use super::*;
 
+/// Why a fork of a session with this `agent_type` cannot run, or `None`.
+///
+/// The copy drops `acp_session_id`, so the agent of the fork starts empty
+/// under a transcript that looks complete. A copy of the id is worse: each
+/// handle sends `session/resume` with it, so two sessions write their turns
+/// into one agent history, and each transcript shows only a part of it.
+pub(crate) fn fork_refusal(agent_type: &str) -> Option<String> {
+    (agent_type == "acp").then(|| {
+        "this session is delegated to an external ACP agent, which keeps its \
+         own conversation history — a fork would copy the transcript but not \
+         that history"
+            .to_string()
+    })
+}
+
 impl AgentManager {
     /// Admit the exact parent snapshot the caller inspected, then copy it.
     /// A fresh Active child must not bypass the trust gate that resuming its
@@ -33,6 +48,9 @@ impl AgentManager {
     ) -> Result<(crucible_core::session::Session, u64), AgentError> {
         if let Some(agent) = &parent.agent {
             self.refuse_untrusted_for_attached_kilns(&parent, agent)?;
+            if let Some(reason) = fork_refusal(&agent.agent_type) {
+                return Err(AgentError::NotSupported(reason));
+            }
         }
         Ok(self.session_manager.copy_session(parent, up_to).await?)
     }

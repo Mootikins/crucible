@@ -191,9 +191,10 @@ pub(crate) async fn handle_session_fork(
                 "messages_copied": count,
             }),
         ),
-        Err(crate::agent_manager::AgentError::InvalidConfig(message)) => {
-            Response::error(req.id, INVALID_PARAMS, message)
-        }
+        Err(
+            crate::agent_manager::AgentError::InvalidConfig(message)
+            | crate::agent_manager::AgentError::NotSupported(message),
+        ) => Response::error(req.id, INVALID_PARAMS, message),
         Err(error) => internal_error(req.id, error),
     }
 }
