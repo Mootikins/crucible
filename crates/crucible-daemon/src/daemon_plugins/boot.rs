@@ -839,6 +839,7 @@ fn restore_boot_guards(lua: &Lua, saved: Vec<(String, Value)>) -> mlua::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::test_support::EnvVarGuard;
     use serde_json::json;
 
     /// Plugin-path resolution over the fixture only: `<entry>/plugins` for
@@ -859,7 +860,53 @@ mod tests {
         std::fs::write(dir.join("init.lua"), body).unwrap();
     }
 
+    /// This repository's `runtime/` tree — the defaults this build ships.
+    ///
+    /// A test binary runs from `target/debug/deps`, so both exe-relative roots
+    /// `runtime_roots::for_current_exe` builds point at directories that do not
+    /// exist. Resolution then falls through to what a RELEASE INSTALL left on
+    /// the machine: `~/.config/crucible/runtime` from `cru setup`, or the
+    /// version-stamped tree the installed binary extracted. Those files belong
+    /// to another build, and a test that asserts the shipped defaults must read
+    /// this checkout instead.
+    fn repo_runtime_root() -> PathBuf {
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime"));
+        assert!(
+            root.join("defaults").join("init.luau").is_file(),
+            "the repository runtime tree must hold the shipped defaults: {}",
+            root.display()
+        );
+        root
+    }
+
+    /// Pin the defaults resolution to this repository for as long as the guard
+    /// lives.
+    ///
+    /// `$CRUCIBLE_RUNTIME` outranks every root the resolver discovers, so no
+    /// installed tree can answer while the guard is alive. Hold it across the
+    /// boot: `load_shipped_defaults` reads the file during the boot.
+    #[must_use]
+    fn pin_the_runtime_to_this_repository() -> EnvVarGuard {
+        EnvVarGuard::set(
+            "CRUCIBLE_RUNTIME",
+            repo_runtime_root().display().to_string(),
+        )
+    }
+
+    /// Boot on the fixture config, with the shipped defaults pinned to this
+    /// repository.
     async fn boot_with(config_root: &Path, init_lua: &str) -> BootConfig {
+        let _runtime = pin_the_runtime_to_this_repository();
+        boot_with_the_machines_runtime(config_root, init_lua).await
+    }
+
+    /// [`boot_with`] WITHOUT the pin: the defaults come from whatever tree the
+    /// machine resolves, an installed one included.
+    ///
+    /// Only [`the_machines_runtime_tree_answers_an_unpinned_boot`] uses this.
+    /// Every other test here states something about the SHIPPED defaults, and
+    /// an installed tree cannot prove that.
+    async fn boot_with_the_machines_runtime(config_root: &Path, init_lua: &str) -> BootConfig {
         std::fs::create_dir_all(config_root).unwrap();
         let config_file = config_root.join("config.toml");
         if !config_file.exists() {
@@ -869,6 +916,94 @@ mod tests {
         evaluate_boot_config_with_paths(Some(config_file), None, None, fixture_paths())
             .await
             .expect("boot must not error for a Lua-level failure")
+    }
+
+    /// Plant a runtime tree at the roots an INSTALLED Crucible owns, and say
+    /// which marker hook its defaults file registers.
+    ///
+    /// The two roots come from `dirs`, so the guards redirect them into `home`
+    /// and nothing touches the developer's own directories. The decoy
+    /// registers a hook the shipped defaults never register, which is how a
+    /// caller tells the two files apart.
+    fn plant_an_installed_runtime(home: &Path) -> (&'static str, Vec<EnvVarGuard>) {
+        const MARKER: &str = "turn:complete";
+        let guards = vec![
+            // An exported value on the developer's machine would outrank the
+            // planted tree and make the test prove nothing.
+            EnvVarGuard::remove("CRUCIBLE_RUNTIME"),
+            EnvVarGuard::set("XDG_CONFIG_HOME", home.join("config").display().to_string()),
+            EnvVarGuard::set("XDG_DATA_HOME", home.join("data").display().to_string()),
+        ];
+
+        let roots = [
+            crucible_core::runtime_roots::user_runtime(),
+            crucible_core::runtime_roots::bundled_runtime_dir(),
+        ];
+        for root in roots.into_iter().flatten() {
+            let defaults = root.join("defaults");
+            std::fs::create_dir_all(&defaults).unwrap();
+            std::fs::write(
+                defaults.join("init.luau"),
+                format!("cru.on(\"{MARKER}\", function() end)\n"),
+            )
+            .unwrap();
+        }
+        (MARKER, guards)
+    }
+
+    /// The names of the hooks a boot left registered.
+    fn hook_names(boot: &BootConfig) -> Vec<String> {
+        boot.loader
+            .plugin_handlers()
+            .all()
+            .iter()
+            .map(|h| h.name.to_string())
+            .collect()
+    }
+
+    /// An installed runtime tree must not answer a shipped-defaults test.
+    ///
+    /// The gate every other test here rests on. `boot_with` pins the tree, so
+    /// the defaults come from this checkout and the planted tree loses. Delete
+    /// the pin and this test goes red: the machine's tree answers instead, and
+    /// its marker hook appears where the shipped hooks should be.
+    #[tokio::test]
+    async fn the_shipped_defaults_come_from_this_repository() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (marker, _guards) = plant_an_installed_runtime(tmp.path());
+
+        let boot = boot_with(&tmp.path().join("config"), "").await;
+
+        let names = hook_names(&boot);
+        assert!(
+            !names.contains(&marker.to_string()),
+            "an installed tree answered a test about the shipped defaults: {names:?}"
+        );
+        assert!(
+            names.contains(&"precognition_format".to_string()),
+            "the defaults this repository ships must be the ones that ran: {names:?}"
+        );
+    }
+
+    /// The other half of the pair: the planted tree IS reachable.
+    ///
+    /// Without this, the test above could pass because the plant went to a
+    /// path no resolver reads — a gate that proves nothing. This one boots
+    /// with no pin, which is what a test did before the pin existed, and the
+    /// machine's tree wins.
+    #[tokio::test]
+    async fn the_machines_runtime_tree_answers_an_unpinned_boot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (marker, _guards) = plant_an_installed_runtime(tmp.path());
+
+        let boot = boot_with_the_machines_runtime(&tmp.path().join("config"), "").await;
+
+        let names = hook_names(&boot);
+        assert!(
+            names.contains(&marker.to_string()),
+            "the planted tree must be a root the resolver reads, or the pin \
+             above proves nothing: {names:?}"
+        );
     }
 
     /// The order pin, one fixture file: a `require` BEFORE the runtimepath
@@ -966,8 +1101,7 @@ error("boom")
         // The USER's registrations from before the error line are gone with
         // the VM. The shipped defaults file is re-run onto the fresh VM, so
         // its handlers are the ones that remain.
-        let handlers = boot.loader.plugin_handlers();
-        let names: Vec<String> = handlers.all().iter().map(|h| h.name.to_string()).collect();
+        let names = hook_names(&boot);
         assert!(
             !names.contains(&"turn:complete".to_string()),
             "a hook registered before the error must not survive the rollback: {names:?}"
