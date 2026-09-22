@@ -21,8 +21,9 @@
 //! # Reading is not the same as capturing
 //!
 //! A journal that exists and cannot be read must never fall through to
-//! capturing a fresh base. Only two things ever set `session_base`: a session
-//! with no journal at all, and an explicit rebase. Everything else degrades.
+//! capturing a fresh base. Only a session with no journal at all captures
+//! `session_base`; a `rebase` record of an old daemon moves it on replay.
+//! Everything else degrades.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -39,8 +40,6 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, warn};
 
 use super::error::{ReviewError, ReviewResult};
-use super::undo::REJECT_STACK_DEPTH;
-use super::{RejectBatch, RejectedHunk};
 
 /// The journal's name inside a session's storage directory.
 pub(super) const FILE: &str = "review.jsonl";
@@ -66,7 +65,9 @@ pub(super) enum Record {
         base_tree: SnapshotId,
     },
     /// A new base for a root, superseding every `Base` and `Rebase` above it
-    /// and voiding the intervals measured from the old one.
+    /// and voiding the intervals measured from the old one. The daemon no
+    /// longer writes this record, because `review.rebase` is gone. Replay
+    /// still applies it.
     Rebase {
         root: PathBuf,
         base_tree: SnapshotId,
@@ -89,15 +90,12 @@ pub(super) enum Record {
     CommentResolved {
         comment: String,
     },
-    /// One user action's rejects, as they were reverted, so an undo can
-    /// write them back. Written after the `State` record of every hunk in
-    /// it; replay pushes it onto the undo stack.
-    Rejected {
-        batch: Vec<RejectedHunk>,
-    },
-    /// The most recent `Rejected` batch was undone. Replay pops it. The
-    /// hunks' `State` records were rewritten as `Unreviewed` beside it, so
-    /// the decision and the stack agree on a reload.
+    /// One reject of an old daemon, which reverted hunks on disk. The daemon
+    /// no longer writes this record. Replay reads the tag and skips the
+    /// record, so an old journal still restores. The batch is not read.
+    Rejected {},
+    /// The undo of a [`Record::Rejected`] of an old daemon. The daemon no
+    /// longer writes this record. Replay skips it.
     Undone,
 }
 
@@ -146,8 +144,6 @@ impl JournalComment {
 pub(super) struct Restored {
     pub(super) ledger: Ledger,
     pub(super) states: HashMap<HunkId, ReviewState>,
-    /// Rejects an undo can still take back, oldest first.
-    pub(super) reject_stack: Vec<RejectBatch>,
     /// The old comments of the journal, with their resolution applied.
     pub(super) comments: Vec<JournalComment>,
     pub(super) integrity: Integrity,
@@ -191,7 +187,6 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     let mut intervals: Vec<Interval> = Vec::new();
     let mut children: Vec<ChildLedgerRef> = Vec::new();
     let mut states: HashMap<HunkId, ReviewState> = HashMap::new();
-    let mut reject_stack: Vec<RejectBatch> = Vec::new();
     let mut comments: Vec<JournalComment> = Vec::new();
     let mut integrity = Integrity::default();
 
@@ -250,10 +245,8 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
                 // now is the baseline". Records the loader could not read
                 // describe history that no longer bears on the review surface,
                 // so the block they imposed is exactly what the rebase is for
-                // — but only for the root it names. Clearing wholesale let a
-                // partial rebase's block evaporate on the next restart, while
-                // the in-memory `rebase_session` kept it, so replay and live
-                // state disagreed about whether the gate should hold.
+                // — but only for the root it names. A partial rebase kept the
+                // loss of each root that it could not capture.
                 integrity.clear_root(&root);
                 set_base(&mut bases, root, base_tree);
             }
@@ -279,22 +272,9 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
                     });
                 }
             }
-            Record::Rejected { batch } => {
-                reject_stack.push(batch);
-                // The same cap the live stack keeps, applied in the same
-                // direction, so a reload answers the same undo the process
-                // would have.
-                if reject_stack.len() > REJECT_STACK_DEPTH {
-                    reject_stack.remove(0);
-                }
-            }
-            Record::Undone => {
-                if reject_stack.pop().is_none() {
-                    // The batch it undid was skipped above, or fell off the
-                    // cap; there is nothing to pop and nothing lost by it.
-                    debug!("undo for a reject batch this journal does not hold");
-                }
-            }
+            // The `State` record of each rejected hunk is above, and it
+            // keeps the decision. Nothing reverts or undoes a hunk now.
+            Record::Rejected {} | Record::Undone => {}
             Record::Comment(comment) => comments.push(comment),
             Record::CommentResolved { comment } => {
                 match comments.iter_mut().find(|c| c.id == comment) {
@@ -332,7 +312,6 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     Ok(Restored {
         ledger,
         states,
-        reject_stack,
         comments,
         integrity,
     })
@@ -370,15 +349,6 @@ pub(super) fn header(session_id: &str) -> Record {
     }
 }
 
-/// A decision, stamped with the arithmetic it was made under.
-pub(super) fn state(hunk: &HunkId, state: ReviewState) -> Record {
-    Record::State {
-        hunk: hunk.clone(),
-        state,
-        alg: alg().to_string(),
-    }
-}
-
 /// Last writer wins, per root.
 fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: SnapshotId) {
     let root = PhysicalRoot::from_top_level(root);
@@ -400,8 +370,8 @@ fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: SnapshotId) {
 /// session.
 fn classify(line: &str) -> SkipKind {
     match scan_string(line, "t").as_deref() {
-        // A lost reject batch costs one undo, never a hold: the decision it
-        // belonged to has its own `state` record.
+        // A lost reject batch costs nothing: the daemon skips the record,
+        // and the decision it belonged to has its own `state` record.
         Some("child" | "state" | "comment" | "comment_resolved" | "rejected" | "undone") => {
             SkipKind::Informational
         }

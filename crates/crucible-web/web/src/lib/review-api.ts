@@ -1,7 +1,7 @@
 /**
  * The `review.*` surface, over the axum bridge.
  *
- * One module per feature slice rather than more of `api.ts`: these seven calls
+ * One module per feature slice rather than more of `api.ts`: these three calls
  * are the whole attributed-diff review API and share an error contract nothing
  * else needs.
  *
@@ -10,22 +10,17 @@
  * A local "throw on !ok" would put a raw JSON blob in a toast where the server
  * had already written a sentence, and would leave a remote client whose cookie
  * expired mid-review with an opaque failure and no way to sign back in.
- *
- * There is deliberately no `revertHunk`. Rejecting IS reverting — one daemon
- * operation, reached through `setHunkState(id, hunk, 'rejected')`. A second
- * spelling existed through eight layers, did nothing the first did not, and
- * cost the agent a duplicate tool description every turn.
  */
 import { client, decode } from './api-client';
 import type { components } from './api-schema';
-import type { ReviewScope, ReviewState } from './review-types';
+import type { ReviewScope } from './review-types';
 
 type Schemas = components['schemas'];
 
 /**
  * The `Content-Type` of a write that carries no body.
  *
- * Three of these routes take no request body, so the client sends none. The
+ * One of these routes takes no request body, so the client sends none. The
  * header still has to ride along, because it is load-bearing beyond encoding:
  * it takes the request out of the CORS simple-request set, forcing a preflight
  * the server's allowlist refuses. Dropping it makes every review write
@@ -45,10 +40,7 @@ export type IntegritySkip = Schemas['ReviewSkipRow'];
  * The list response.
  *
  * `scope` is the scope the daemon answered under — a store that switched scope
- * while this listing was in flight uses it to drop the stale answer. `gate` is
- * non-null only while a turn is parked on the review gate, and carries the
- * tool and the path and nothing else: a gate that is present IS a blocked
- * turn, so a separate `blocked` flag said the same thing twice.
+ * while this listing was in flight uses it to drop the stale answer.
  */
 export type ReviewHunksResponse = Schemas['ReviewHunksResponse'];
 
@@ -65,83 +57,6 @@ export async function listReviewHunks(
       params: { path: { id: sessionId }, query: { scope } },
     }),
     'Failed to load review',
-  );
-}
-
-/** Accept, reject (which reverts and tells the agent), or return to the queue. */
-export async function setHunkState(
-  sessionId: string,
-  hunkId: string,
-  state: ReviewState,
-): Promise<Schemas['ReviewStateResponse']> {
-  return decode(
-    await client.POST('/api/session/{id}/review/state', {
-      params: { path: { id: sessionId } },
-      body: { hunk_id: hunkId, state },
-    }),
-    'Failed to record review decision',
-  );
-}
-
-/**
- * What a bulk decision or an undo did.
- *
- * A refused hunk is part of the answer, not an error: `applied` names the ids
- * that landed, in order, and `failed` names the rest with the daemon's reason
- * for each. The caller shows `failed` and keeps the rest, rather than
- * re-listing to learn which was which.
- */
-export type BulkOutcome = Schemas['ReviewUndoRejectResponse'];
-
-/**
- * One decision over several hunks, as ONE daemon call.
- *
- * The ids go in the order given. The daemon applies them in that order, and a
- * reject reverts files as it goes, so the caller's order is the diff order.
- */
-export async function setHunkStates(
-  sessionId: string,
-  hunkIds: string[],
-  state: ReviewState,
-): Promise<Schemas['ReviewStatesResponse']> {
-  return decode(
-    await client.POST('/api/session/{id}/review/states', {
-      params: { path: { id: sessionId } },
-      body: { hunk_ids: hunkIds, state },
-    }),
-    'Failed to record review decision',
-  );
-}
-
-/**
- * Take back the most recent reject, single or bulk, as one action.
- *
- * Names no hunk: the daemon owns the stack of rejects for the session and
- * pops it. An empty stack answers two empty lists. The `{}` body is the same
- * preflight rule as `rebaseReview` and `resolveReviewComment`.
- */
-export async function undoReject(
-  sessionId: string,
-): Promise<Schemas['ReviewUndoRejectResponse']> {
-  return decode(
-    await client.POST('/api/session/{id}/review/undo-reject', {
-      params: { path: { id: sessionId } },
-      ...preflighted,
-    }),
-    'Failed to undo the reject',
-  );
-}
-
-/** The release for a degraded root; nothing else clears one. */
-export async function rebaseReview(
-  sessionId: string,
-): Promise<Schemas['ReviewRebaseResponse']> {
-  return decode(
-    await client.POST('/api/session/{id}/review/rebase', {
-      params: { path: { id: sessionId } },
-      ...preflighted,
-    }),
-    'Failed to rebase review',
   );
 }
 

@@ -183,19 +183,19 @@ expect_text = ["When you exit, the recording saves to the path you specified.", 
 
 # TRANSITION Help/Concepts/Review Ledger.md
 #   "## The composed diff" — "Hunk identity is derived from content and base position, not worktree position"
-#   "## The review queue" — "Each hunk is `unreviewed`, `accepted`, or `rejected`."
+#   "## The review record" — "A hunk still carries a `state`."
 [[queries]]
-question = "how does a hunk keep its identity after nearby edits, and what states can a hunk be in?"
+question = "how does a hunk keep its identity after nearby edits, and does a hunk still carry a state?"
 expect_note = "Review Ledger"
-expect_text = ["Hunk identity is derived from content and base position, not worktree position", "Each hunk is `unreviewed`, `accepted`, or `rejected`."]
+expect_text = ["Hunk identity is derived from content and base position, not worktree position", "A hunk still carries a `state`."]
 
 # TRANSITION Help/Concepts/Review Ledger.md
-#   "## The review gate" — "The release for that state is an explicit **rebase** ... always a deliberate human action."
+#   "## The review record" — "A degraded root contributes no hunks, and the listing names it with a reason"
 #   "## Where you meet it" — "**The web console.** The Changes panel lists the composed diff"
 [[queries]]
-question = "how do I release a review root that got degraded, and where in the web UI do I accept hunks?"
+question = "how is a degraded review root reported, and where in the web UI do I read the hunks?"
 expect_note = "Review Ledger"
-expect_text = ["The release for that state is an explicit **rebase**", "**The web console.** The Changes panel lists the composed diff"]
+expect_text = ["A degraded root contributes no hunks, and the listing names it with a reason", "**The web console.** The Changes panel lists the composed diff"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## Why a proposed note waits in the kiln" — "This is the deliberate correction of the removed `session-digest` feature"
@@ -432,7 +432,7 @@ expect_note = "Session Replay"
 question = "are edits I make by hand in my editor attributed to the agent?"
 expect_note = "Review Ledger"
 
-# CONTROL Help/Concepts/Review Ledger.md — "**The bundled `review` plugin**" — "review_list_hunks, review_set_state"
+# CONTROL Help/Concepts/Review Ledger.md — "**The bundled `review` plugin**" — "review_list_hunks, review_comment"
 [[queries]]
 question = "which tools let an agent review another session's diff?"
 expect_note = "Review Ledger"

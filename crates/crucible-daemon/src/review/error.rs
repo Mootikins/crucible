@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crucible_core::session::{HunkId, SnapshotId};
+use crucible_core::session::SnapshotId;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -26,22 +26,6 @@ pub enum ReviewError {
     /// root list or roots that are not there at all.
     #[error("no trackable root among: {0}")]
     NoTrackableRoots(String),
-
-    /// Fail-closed answer for an identity the ledger does not recognise. A
-    /// stale client acting on a hunk that no longer exists must be told so,
-    /// never have its decision applied to whatever is at those lines now.
-    #[error("unknown hunk {0}")]
-    UnknownHunk(HunkId),
-
-    /// The file changed under us between listing and reverting. The client
-    /// re-lists and retries; we never write a hunk we cannot recognise.
-    #[error("{path} changed since the hunk was computed")]
-    Stale { path: String },
-
-    /// Reverting an unattributed hunk would destroy the user's own edit while
-    /// reporting that an agent edit was undone.
-    #[error("hunk {0} is external and cannot be reverted")]
-    ExternalHunk(HunkId),
 
     /// The session id is not a valid session id, so it names no session
     /// record diffset.

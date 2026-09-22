@@ -3,17 +3,11 @@ import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import {
   addReviewComment,
   listReviewHunks,
-  rebaseReview,
   resolveReviewComment,
-  setHunkState,
-  setHunkStates,
-  undoReject,
-  type BulkOutcome,
-  type DegradedRoot,
   type NewComment,
   type ReviewHunksResponse,
 } from '@/lib/review-api';
-import type { ReviewComment, ReviewScope, ReviewState } from '@/lib/review-types';
+import type { ReviewComment, ReviewScope } from '@/lib/review-types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -26,12 +20,8 @@ import { keys } from './keys';
  * the daemon's own event reach them — the session stream says `review_changed`
  * and the route of that stream invalidates this entry.
  *
- * Every write invalidates rather than patches. The daemon decides what a
- * decision did: a reject reverts lines on disk and can renumber every hunk
- * after it, and a bulk decision reports which ids it refused, so "what is
- * left" is the daemon's answer and not something the browser can compute from
- * the reply. The optimistic marks that make a click feel immediate live in
- * `lib/review-store.ts`, over the slot, and this answer corrects them.
+ * Every write invalidates rather than patches: the listing is the daemon's
+ * answer and not something the browser can compute from the reply.
  *
  * The scope is ASKED, not keyed. The slot is the listing: one array per
  * session, read by all three surfaces, so a second array per scope would be a
@@ -75,38 +65,9 @@ export function invalidateReview(sessionId: string): Promise<void> {
 
 /** Runs one write, then makes the listing it changed wrong. */
 function writing<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
-  // `finally`, not `then`: a refused decision changes the listing too. A bulk
-  // reject that fails halfway has reverted the files it got to, and a listing
-  // left as it was would show them unreviewed.
+  // `finally`, not `then`: a refused write can still leave the listing
+  // stale, and a re-list costs one request.
   return run().finally(() => invalidateReview(sessionId));
-}
-
-/** Accept, reject (which reverts and tells the agent), or return to the queue. */
-export function setHunkStateOnce(
-  sessionId: string,
-  hunkId: string,
-  state: ReviewState,
-): Promise<{ hunk_id: string; state: ReviewState }> {
-  return writing(sessionId, () => setHunkState(sessionId, hunkId, state));
-}
-
-/** One decision over several hunks, as ONE daemon call, in the order given. */
-export function setHunkStatesOnce(
-  sessionId: string,
-  hunkIds: string[],
-  state: ReviewState,
-): Promise<BulkOutcome & { state: ReviewState }> {
-  return writing(sessionId, () => setHunkStates(sessionId, hunkIds, state));
-}
-
-/** Take back the most recent reject, single or bulk, as one action. */
-export function undoRejectOnce(sessionId: string): Promise<BulkOutcome> {
-  return writing(sessionId, () => undoReject(sessionId));
-}
-
-/** Accept the worktree as the new base, releasing a block reviewing cannot. */
-export function rebaseReviewOnce(sessionId: string): Promise<{ roots: DegradedRoot[] }> {
-  return writing(sessionId, () => rebaseReview(sessionId));
 }
 
 /** Leave a comment on a range of one file. */

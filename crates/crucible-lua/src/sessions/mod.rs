@@ -409,16 +409,6 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
-    /// Record a decision about one hunk. `state` is `"unreviewed"`,
-    /// `"accepted"` or `"rejected"`; rejecting reverts the hunk on disk and
-    /// tells the session's agent it was rejected.
-    fn review_set_state(
-        &self,
-        session_id: String,
-        hunk_id: String,
-        state: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
-
     /// Anchor a comment to a line range. `spec` carries
     /// `{ path, line_start, line_end?, body, root?, author? }`; the stored
     /// comment (including its minted id) comes back.

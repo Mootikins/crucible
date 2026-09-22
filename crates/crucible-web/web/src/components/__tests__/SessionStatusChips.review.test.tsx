@@ -3,30 +3,16 @@ import { render, screen, cleanup, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import type { ModeDescriptor, Session } from '@/lib/types';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
-import { FakeEventSource, installFakeEventSource, onlyEventSource } from '@/test-utils/sse';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({ currentSession }),
 }));
-// No `vi.mock('@/lib/api')`. The review store opens its stream through the
-// REAL `subscribeToEvents`, which `beforeEach` answers with a
-// `FakeEventSource` — one source per bound session, so the gate frames below
-// ride the same transport the daemon's would. The status slots and the mode
-// list are read through `lib/query/`, so they answer the ROUTES below — which
-// is what proves the chips ask about the session they are pointed at.
-
-
-const listReviewHunks = vi.fn();
-vi.mock('@/lib/review-api', () => ({
-  listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
-  setHunkState: vi.fn(),
-  addReviewComment: vi.fn(),
-  resolveReviewComment: vi.fn(),
-}));
+// No `vi.mock('@/lib/api')`. The status slots and the mode list are read
+// through `lib/query/`, so they answer the ROUTES below — which is what proves
+// the chips ask about the session they are pointed at.
 
 const { SessionStatusChips } = await import('../SessionStatusChips');
-const { __resetReviewStore } = await import('@/lib/review-store');
 
 const session = (id = 's1'): Session => ({
   session_id: id,
@@ -62,8 +48,6 @@ const mode = (id: string, writes: ModeDescriptor['writes'] = 'apply'): ModeDescr
 });
 
 beforeEach(() => {
-  installFakeEventSource();
-  listReviewHunks.mockResolvedValue({ session_id: 's1', hunks: [], comments: [] });
   modes('ask', mode('ask'));
   // The mode list is a query, and its cache outlives one case. A fresh client
   // per case keeps one session's answer from serving the next one.
@@ -82,7 +66,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   setCurrentSession(undefined);
-  __resetReviewStore();
   env?.restore();
   vi.clearAllMocks();
 });
@@ -128,78 +111,7 @@ describe('SessionStatusChips — effective write mode', () => {
   });
 });
 
-describe('SessionStatusChips — waiting on review', () => {
-  // One gate frame, as the daemon would send it: the SSE event name and the
-  // tagged payload travel together on the wire.
-  const gate = (blocked: boolean, extra: Record<string, unknown> = {}) =>
-    onlyEventSource().emit('session_event', {
-      type: 'session_event',
-      event: 'review_gate',
-      data: { blocked, tool: 'Edit', path: '/repo/src/a.rs', ...extra },
-    });
-
-  it('a held agent gets a loud chip naming what it is waiting on', async () => {
-    setCurrentSession(session());
-    render(() => <SessionStatusChips />);
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-
-    gate(true);
-    const chip = await waitFor(() => screen.getByTestId('session-review-gate'));
-    // A blocked agent must never read as a stalled one.
-    expect(chip.textContent).toContain('waiting on review');
-    expect(chip.getAttribute('title')).toContain('/repo/src/a.rs');
-    expect(chip.getAttribute('title')).toContain('Edit');
-  });
-
-  it('the chip clears when the gate releases', async () => {
-    setCurrentSession(session());
-    render(() => <SessionStatusChips />);
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-
-    gate(true);
-    await waitFor(() => expect(screen.getByTestId('session-review-gate')).toBeInTheDocument());
-    gate(false);
-    await waitFor(() => expect(screen.queryByTestId('session-review-gate')).toBeNull());
-  });
-
-  it('counts what is owed, ignoring the user’s own external edits', async () => {
-    listReviewHunks.mockResolvedValue({
-      session_id: 's1',
-      hunks: [
-        {
-          id: 'a',
-          root: '/repo',
-          path: 'src/a.rs',
-          base_range: { start: 1, end: 2 },
-          current_range: { start: 1, end: 2 },
-          before_content: '',
-          after_content: 'x\n',
-          tool_call_ids: ['c1'],
-          state: 'unreviewed',
-        },
-        {
-          id: 'b',
-          root: '/repo',
-          path: 'src/a.rs',
-          base_range: { start: 9, end: 10 },
-          current_range: { start: 9, end: 10 },
-          before_content: '',
-          after_content: 'y\n',
-          tool_call_ids: [],
-          state: 'unreviewed',
-        },
-      ],
-      comments: [],
-    });
-    setCurrentSession(session());
-    render(() => <SessionStatusChips />);
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    gate(true);
-
-    const chip = await waitFor(() => screen.getByTestId('session-review-gate'));
-    await waitFor(() => expect(chip.textContent).toContain('(1)'));
-  });
-
+describe('SessionStatusChips — no session', () => {
   it('no session means no chips at all', () => {
     render(() => <SessionStatusChips />);
     expect(screen.queryByTestId('session-status')).toBeNull();

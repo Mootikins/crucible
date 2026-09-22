@@ -9,7 +9,6 @@
 
 mod attribution;
 mod delegation;
-mod gate;
 mod identity;
 mod persistence;
 mod record;
@@ -19,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use crucible_core::session::{
     CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, ReviewState,
-    SkipKind, Verdict,
+    SkipKind,
 };
 use tempfile::TempDir;
 
@@ -92,10 +91,6 @@ impl Fixture {
         std::fs::write(self.dir.path().join("a.txt"), contents).unwrap();
     }
 
-    fn read(&self) -> String {
-        std::fs::read_to_string(self.dir.path().join("a.txt")).unwrap()
-    }
-
     /// Run one bracketed "tool call" that rewrites the file.
     async fn call(&self, tool_call_id: &str, node_id: u32, contents: &str) -> bool {
         let handle = self.ledgers.open_bracket(&self.session).await.unwrap();
@@ -109,13 +104,6 @@ impl Fixture {
     async fn hunks(&self) -> Vec<ComposedHunk> {
         self.ledgers.list_hunks(&self.session).await.unwrap()
     }
-}
-
-/// One spelling of one file, which is what a test gate query is. The gate
-/// itself passes several, because a tool's relative path argument has no
-/// single base — see `has_unreviewed_in_file`.
-fn only(path: PathBuf) -> [PathBuf; 1] {
-    [path]
 }
 
 fn find<'a>(hunks: &'a [ComposedHunk], after: &str) -> &'a ComposedHunk {
@@ -187,10 +175,6 @@ impl Persisted {
 
     fn write(&self, contents: &str) {
         std::fs::write(self.repo_dir.path().join("a.txt"), contents).unwrap();
-    }
-
-    fn read(&self) -> String {
-        std::fs::read_to_string(self.repo_dir.path().join("a.txt")).unwrap()
     }
 
     async fn call(&self, tool_call_id: &str, contents: &str) {
@@ -270,10 +254,6 @@ impl PlainKiln {
 
     fn write(&self, name: &str, contents: &str) {
         std::fs::write(self.root.path().join(name), contents).unwrap();
-    }
-
-    fn read(&self, name: &str) -> String {
-        std::fs::read_to_string(self.root.path().join(name)).unwrap()
     }
 
     /// One bracketed "tool call" that rewrites a file.

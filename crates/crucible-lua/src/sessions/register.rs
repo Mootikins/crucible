@@ -139,10 +139,6 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "review_list_hunks",
         "(session_id: string) -> ({ any }?, string?)",
     ),
-    (
-        "review_set_state",
-        "(session_id: string, hunk_id: string, state: string) -> (boolean?, string?)",
-    ),
     // The spec deserializes into the daemon's `ReviewCommentRequest`, minus
     // the `session_id` the bridge stamps, so these are its fields exactly.
     (
@@ -760,20 +756,6 @@ pub(crate) async fn review_list_hunks_op(
     }
 }
 
-/// review_set_state(session_id, hunk_id, state) -> (true, nil) | (nil, err)
-pub(crate) async fn review_set_state_op(
-    lua: &Lua,
-    api: &Arc<dyn DaemonSessionApi>,
-    sid: &str,
-    hunk: String,
-    state: String,
-) -> mlua::Result<(Value, Value)> {
-    match api.review_set_state(sid.to_string(), hunk, state).await {
-        Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
-        Err(e) => err_pair(lua, e),
-    }
-}
-
 /// review_comment(session_id, { path, line_start, line_end?, body, root?,
 /// author? }) -> (comment, nil) | (nil, err)
 pub(crate) async fn review_comment_op(
@@ -861,7 +843,6 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("undo_depth", String);
     stub_async!("undo_history", String);
     stub_async!("review_list_hunks", String);
-    stub_async!("review_set_state", (String, String, String));
     stub_async!("review_comment", (String, Value));
     stub_async!("review_resolve_comment", (String, String));
 
@@ -1229,16 +1210,6 @@ fn register_sessions_inner(
         move |lua, sid: String| {
             let a = Arc::clone(&a);
             async move { review_list_hunks_op(&lua, &a, &sid).await }
-        },
-    )?;
-
-    let a = Arc::clone(&api);
-    ns.async_func(
-        "review_set_state",
-        decl("review_set_state")?,
-        move |lua, (sid, hunk, state): (String, String, String)| {
-            let a = Arc::clone(&a);
-            async move { review_set_state_op(&lua, &a, &sid, hunk, state).await }
         },
     )?;
 

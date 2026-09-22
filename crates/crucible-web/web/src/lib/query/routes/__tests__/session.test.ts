@@ -167,17 +167,16 @@ describe('the session event route', () => {
   });
 
   /**
-   * Both events mean "the composed diff may have moved", and a turn fires
-   * several of them — one per tool call, one per review action. They coalesce
+   * The event means "the composed diff may have moved", and a turn fires
+   * several of them. They coalesce
    * into ONE listing, because an invalidation does not fold concurrent
    * refetches of a key into one request: it cancels the one in flight and
    * starts another, so a burst is a listing per edit of a diff that settles
    * once.
    */
-  it('coalesces a burst of gate and change events into one review listing', async () => {
+  it('coalesces a burst of change events into one review listing', async () => {
     const source = openStream();
 
-    source.emit('session_event', { type: 'session_event', event: 'review_gate', data: {} });
     source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
     source.emit('session_event', { type: 'session_event', event: 'review_changed', data: {} });
 

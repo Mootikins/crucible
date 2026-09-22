@@ -162,12 +162,8 @@ rpc_methods! {
     SessionCanUndo = "session.can_undo",
     SessionUndoDepth = "session.undo_depth",
     ReviewListHunks = "review.list_hunks",
-    ReviewSetState = "review.set_state",
-    ReviewSetStates = "review.set_states",
-    ReviewUndoReject = "review.undo_reject",
     ReviewComment = "review.comment",
     ReviewResolveComment = "review.resolve_comment",
-    ReviewRebase = "review.rebase",
     PluginReload = "plugin.reload",
     PluginList = "plugin.list",
     PluginCommands = "plugin.commands",
@@ -731,7 +727,7 @@ impl RpcDispatcher {
                 )
             ),
 
-            // Review queue. Session-scoped like the handlers above, but
+            // Review record. Session-scoped like the handlers above, but
             // namespaced `review.*` rather than `session.*`: the unit they act
             // on is a composed hunk, and a delegating agent reviewing a child
             // session addresses that child's id, not its own.
@@ -741,40 +737,6 @@ impl RpcDispatcher {
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.sessions
-                )
-            ),
-            RpcMethod::ReviewSetState => forward!(
-                id,
-                crate::server::session::handle_review_set_state(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions,
-                    &self.ctx.event_tx
-                )
-            ),
-            // One decision over several hunks. The daemon applies them in
-            // order and names each refusal, so a client never has to loop
-            // over `review.set_state` and reconcile a half-applied batch.
-            RpcMethod::ReviewSetStates => forward!(
-                id,
-                crate::server::session::handle_review_set_states(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions,
-                    &self.ctx.event_tx
-                )
-            ),
-            // Takes back the most recent reject, single or bulk, as one
-            // action. A daemon method because the reject rewrote the disk
-            // and the hunk left the composed diff, so no client holds what
-            // it would take to undo it.
-            RpcMethod::ReviewUndoReject => forward!(
-                id,
-                crate::server::session::handle_review_undo_reject(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions,
-                    &self.ctx.event_tx
                 )
             ),
             RpcMethod::ReviewComment => forward!(
@@ -797,19 +759,6 @@ impl RpcDispatcher {
                     )
                 )
             }
-            // The release valve for the one block reviewing cannot clear: a
-            // base tree gc'd out of the object store, a root that moved, a
-            // journal record that would not parse. Without it, failing closed
-            // on a structural failure would be an unreleasable hang.
-            RpcMethod::ReviewRebase => forward!(
-                id,
-                crate::server::session::handle_review_rebase(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions,
-                    &self.ctx.event_tx
-                )
-            ),
 
             RpcMethod::SessionListModels => forward!(
                 id,

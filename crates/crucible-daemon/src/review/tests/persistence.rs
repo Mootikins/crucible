@@ -18,12 +18,11 @@ use super::*;
 
 /// The defect, stated as the property: restart, and the queue is still there.
 ///
-/// Checks the base, the attribution and the decision together, because each
-/// alone can be preserved while the review surface is still wrong — a base
-/// that survives without its intervals makes every hunk external, and a hunk
-/// that survives without its decision goes back to the queue.
+/// Checks the base and the attribution together, because each alone can be
+/// preserved while the review surface is still wrong — a base that survives
+/// without its intervals makes every hunk external.
 #[tokio::test]
-async fn a_restart_keeps_the_session_base_the_attribution_and_the_decisions() {
+async fn a_restart_keeps_the_session_base_and_the_attribution() {
     let fx = Persisted::new("one\ntwo\n").await;
     let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
         .base_tree
@@ -32,10 +31,6 @@ async fn a_restart_keeps_the_session_base_the_attribution_and_the_decisions() {
 
     let before = fx.ledgers.list_hunks(&fx.session).await.unwrap();
     assert_eq!(before.len(), 1);
-    fx.ledgers
-        .set_state(&fx.session, &before[0].id, ReviewState::Accepted)
-        .await
-        .unwrap();
 
     let restarted = fx.restart().await;
     assert_eq!(
@@ -52,7 +47,6 @@ async fn a_restart_keeps_the_session_base_the_attribution_and_the_decisions() {
         vec!["call-1".to_string()],
         "the interval was lost, so a hunk the agent made reads as the user's own edit"
     );
-    assert_eq!(after[0].state, ReviewState::Accepted);
 }
 
 /// A comment that evaporates on restart is a review someone wrote and nobody
@@ -181,37 +175,6 @@ async fn the_migration_runs_once() {
     );
 }
 
-/// A rejection is recorded against a hunk that the revert has just removed
-/// from the composed diff. The entry has to survive anyway: the `reapplied`
-/// derivation is defined by finding a recorded `Rejected` for a hunk that is
-/// live *again*, and it cannot find one that was pruned on the way out.
-#[tokio::test]
-async fn a_rejection_survives_a_restart_even_with_no_live_hunk() {
-    let fx = Persisted::new("one\n").await;
-    fx.call("call-1", "EDITED\n").await;
-    let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
-        .id
-        .clone();
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Rejected)
-        .await
-        .unwrap();
-    assert!(fx.ledgers.list_hunks(&fx.session).await.unwrap().is_empty());
-
-    let restarted = fx.restart().await;
-    // Re-applied by the agent after the restart: the recorded rejection is the
-    // only thing that can tell this apart from a first sighting.
-    fx.write("EDITED\n");
-    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
-    assert_eq!(hunks.len(), 1);
-    assert_eq!(hunks[0].id, id);
-    assert!(
-        hunks[0].reapplied,
-        "the rejection did not survive, so a re-applied change reads as new work"
-    );
-    assert_eq!(hunks[0].state, ReviewState::Unreviewed);
-}
-
 /// The trap defect 13 sets for its own fix: a journal that *exists* and cannot
 /// be read must never fall through to capturing a fresh base. A fresh base
 /// reports that the agent changed nothing, which is the same data loss with a
@@ -249,17 +212,14 @@ async fn an_unreadable_journal_never_captures_a_fresh_base() {
     );
 }
 
-/// The other half of the same failure, and the one the shape above used to
-/// create: leaving the session with *no ledger* is the same signal a workspace
-/// outside git produces, so the gate returned before it queried anything and
-/// every write in the session proceeded unheld. A journal whose header line is
-/// merely corrupt already blocks everything; losing the whole file is strictly
-/// more broken and must block at least as much.
+/// The other half of the same failure: leaving the session with *no ledger*
+/// is the same signal a workspace outside git produces. A journal whose header
+/// line is merely corrupt already degrades every root; losing the whole file
+/// is strictly more broken and must degrade at least as much.
 #[tokio::test]
-async fn an_unreadable_journal_holds_every_write_until_a_rebase() {
+async fn an_unreadable_journal_degrades_every_root() {
     let fx = Persisted::new("one\n").await;
     fx.call("call-1", "EDITED\n").await;
-    let root = fx.repo_dir.path().to_path_buf();
 
     std::fs::remove_file(fx.journal()).unwrap();
     std::fs::create_dir(fx.journal()).unwrap();
@@ -277,47 +237,15 @@ async fn an_unreadable_journal_holds_every_write_until_a_rebase() {
 
     assert!(
         ledgers.integrity(&fx.session).blocks_everything(),
-        "an unreadable journal recorded no unscoped loss, so nothing blocks"
-    );
-    assert!(
-        matches!(
-            ledgers
-                .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-                .await
-                .unwrap(),
-            Verdict::Degraded { .. }
-        ),
-        "a write proceeded on the strength of a ledger that could not be read"
-    );
-
-    // The release has to be reachable, or the block above is a hang. The
-    // journal is a directory here, so the append cannot land — but the ledger
-    // is rebased in memory and the gate opens, which is what unblocks the turn.
-    std::fs::remove_dir(fx.journal()).unwrap();
-    ledgers
-        .rebase_session(
-            &fx.session,
-            fx.session_dir.path(),
-            std::slice::from_ref(&root),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        ledgers
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear,
-        "rebase did not release the block it exists to bound"
+        "an unreadable journal recorded no unscoped loss"
     );
 }
 
 /// Degradation is graded because losing attribution fails *open*: a hunk no
-/// interval accounts for is external, `unreviewed_hunks` excludes external
-/// hunks, and the gate silently stops blocking. A skipped interval therefore
-/// has to block writes under its root.
+/// interval accounts for is external, and `unreviewed_hunks` excludes external
+/// hunks. A skipped interval therefore has to degrade its root.
 #[tokio::test]
-async fn a_skipped_interval_blocks_writes_under_its_own_root() {
+async fn a_skipped_interval_degrades_its_own_root() {
     let fx = Persisted::new("one\n").await;
     fx.call("call-1", "EDITED\n").await;
     let root = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
@@ -346,29 +274,23 @@ async fn a_skipped_interval_blocks_writes_under_its_own_root() {
         SkipKind::Root { root: root.clone() },
         "an interval whose root is legible must not escalate to the whole session"
     );
-    assert!(matches!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Degraded { .. }
-    ));
-    // ...and a path under no tracked root is still clear, or a gate query the
-    // ledger has no business answering would hang the turn.
-    assert_eq!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(PathBuf::from("/elsewhere/a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear
+    let (_, statuses) = restarted
+        .list_hunks_with_status(&fx.session, ReviewScope::Session, None)
+        .await
+        .unwrap();
+    assert!(
+        statuses.iter().any(|s| s.root == root && s.is_degraded()),
+        "{statuses:?}"
     );
+    // ...and a path under no tracked root is not degraded.
+    assert!(!skips.blocks(Path::new("/elsewhere")));
 }
 
 /// An interval naming several roots cannot be scoped to one of them.
 ///
-/// Scoping to the *first* legible root blocked that root and left the others
-/// open — and a root whose intervals were lost reports external hunks, which
-/// `unreviewed_hunks` excludes, so the gate went quiet on exactly the root
+/// Scoping to the *first* legible root degraded that root and left the others
+/// intact — and a root whose intervals were lost reports external hunks, which
+/// `unreviewed_hunks` excludes, so the listing went quiet on exactly the root
 /// whose evidence was destroyed.
 #[tokio::test]
 async fn a_truncated_interval_naming_two_roots_blocks_the_whole_session() {
@@ -398,19 +320,12 @@ async fn a_truncated_interval_naming_two_roots_blocks_the_whole_session() {
         SkipKind::Session,
         "a loss that cannot be scoped must block everything, not its first root"
     );
-    assert!(matches!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Degraded { .. }
-    ));
+    assert!(skips.blocks(&root));
 }
 
 /// A rebase names one root, so it can only vouch for that one. Clearing every
 /// skip on replay let a *partial* rebase — one root recaptured, another still
-/// degraded — come back from a restart reporting both intact, with the gate no
-/// longer holding writes under the root nobody rebased.
+/// degraded — come back from a restart reporting both intact.
 #[tokio::test]
 async fn replaying_a_rebase_keeps_another_roots_block() {
     let fx = Persisted::new("one\n").await;
@@ -451,7 +366,7 @@ async fn replaying_a_rebase_keeps_another_roots_block() {
 }
 
 /// The other half of the grading: a lost comment costs no safety property, and
-/// blocking the agent on one would be a self-inflicted outage.
+/// it degrades no root.
 #[tokio::test]
 async fn a_skipped_comment_blocks_nothing() {
     let fx = Persisted::new("one\n").await;
@@ -469,24 +384,18 @@ async fn a_skipped_comment_blocks_nothing() {
         restarted.integrity(&fx.session).skips()[0].record,
         SkipKind::Informational
     );
-    assert_eq!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("b.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear,
-        "a lost comment blocked a write it has nothing to do with"
+    assert!(
+        !restarted.integrity(&fx.session).blocks(&root),
+        "a lost comment degraded a root it has nothing to do with"
     );
 }
 
 /// A journal with no readable base cannot name the roots it tracked, so there
-/// is nothing left to scope a block to. It has to block everything — and
-/// `review.rebase` is what keeps that from being an unreleasable hang.
+/// is nothing left to scope the loss to. It has to degrade everything.
 #[tokio::test]
-async fn a_journal_with_no_base_blocks_every_write_until_a_rebase() {
+async fn a_journal_with_no_base_degrades_every_root() {
     let fx = Persisted::new("one\n").await;
     fx.call("call-1", "EDITED\n").await;
-    let root = fx.repo_dir.path().to_path_buf();
 
     let text = std::fs::read_to_string(fx.journal()).unwrap();
     let kept: Vec<&str> = text.lines().filter(|l| !l.contains("\"base\"")).collect();
@@ -494,34 +403,6 @@ async fn a_journal_with_no_base_blocks_every_write_until_a_rebase() {
 
     let restarted = fx.restart().await;
     assert!(restarted.integrity(&fx.session).blocks_everything());
-    assert!(matches!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Degraded { .. }
-    ));
-
-    restarted
-        .rebase_session(
-            &fx.session,
-            fx.session_dir.path(),
-            std::slice::from_ref(&root),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear,
-        "rebase did not release the block it exists to bound"
-    );
-    // ...and the release survives, or the next restart re-reads the same
-    // corrupt line and blocks again with no way out.
-    let again = fx.restart().await;
-    assert!(again.integrity(&fx.session).is_intact());
 }
 
 /// A decision is a statement about specific lines, named by an id derived from
@@ -535,25 +416,20 @@ async fn a_decision_from_different_hunk_arithmetic_is_excluded_not_deleted() {
     let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
         .id
         .clone();
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Accepted)
-        .await
-        .unwrap();
 
-    let text = std::fs::read_to_string(fx.journal()).unwrap();
-    let rewritten: Vec<String> = text
-        .lines()
-        .map(|line| {
-            if line.contains("\"state\"") && line.contains("\"accepted\"") {
-                let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
-                value["alg"] = serde_json::json!("from-a-future-version");
-                serde_json::to_string(&value).unwrap()
-            } else {
-                line.to_string()
-            }
+    // Nothing records a decision now, so the test writes the record that an
+    // old daemon wrote.
+    let mut text = std::fs::read_to_string(fx.journal()).unwrap();
+    text.push_str(&format!(
+        "{}\n",
+        serde_json::json!({
+            "t": "state",
+            "hunk": id,
+            "state": "accepted",
+            "alg": "from-a-future-version",
         })
-        .collect();
-    std::fs::write(fx.journal(), rewritten.join("\n") + "\n").unwrap();
+    ));
+    std::fs::write(fx.journal(), text).unwrap();
 
     let restarted = fx.restart().await;
     let hunks = restarted.list_hunks(&fx.session).await.unwrap();
@@ -570,261 +446,50 @@ async fn a_decision_from_different_hunk_arithmetic_is_excluded_not_deleted() {
     );
 }
 
-/// A rebase is reachable on a session that has never run a turn — the panel
-/// opens on a resumed session, the queue reads empty, and rebasing is the
-/// natural thing to try. Nothing has registered a journal for it yet, so every
-/// append silently no-ops and `refresh_keep_refs` returns at its guard: the
-/// rebase answers `Ok` while persisting nothing and leaving the base tree it
-/// just captured reachable from no ref, one `git gc` from being uncomputable.
+/// A journal from a daemon that reverted hunks holds `rejected` and `undone`
+/// records. The daemon no longer reverts or undoes, but an old journal must
+/// still replay intact. If replay reads those records as unknown, every such
+/// session loses its whole review record at the upgrade.
 #[tokio::test]
-async fn a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_trees() {
-    let repo_dir = TempDir::new().unwrap();
-    repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
-    std::fs::write(repo_dir.path().join("uncommitted.txt"), "scratch\n").unwrap();
-    let session_dir = TempDir::new().unwrap();
-
-    let ledgers = Arc::new(ReviewLedgers::for_tests(
-        crate::test_support::scratch_snapshot_root(),
-    ));
-    ledgers
-        .rebase_session("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
-        .await
-        .unwrap();
-
-    assert!(
-        session_dir.path().join("review.jsonl").exists(),
-        "the rebase never reached disk; it is gone on the next restart"
-    );
-    assert_eq!(
-        keep_ref_ids(repo_dir.path()).await.unwrap(),
-        vec!["sess".to_string()],
-        "the freshly captured base tree is reachable from no ref"
-    );
-
-    // ...and the whole thing replays, which is the only proof the append was
-    // the right shape rather than merely present.
-    let restarted = Arc::new(ReviewLedgers::for_tests(
-        crate::test_support::scratch_snapshot_root(),
-    ));
-    restarted
-        .open_or_restore("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
-        .await
-        .unwrap();
-    assert_eq!(
-        restarted.ledger("sess").unwrap().session_base(),
-        ledgers.ledger("sess").unwrap().session_base()
-    );
-}
-
-/// A rebase over several roots can fail on one of them. Dropping that root from
-/// `session_base` takes it out of the composed diff *and* out of every gate
-/// query, so the moment the failure clears the gate answers `Clear` for a root
-/// whose changes are no longer in the queue at all — and only another rebase
-/// would ever put them back.
-#[tokio::test]
-async fn a_root_a_rebase_could_not_recapture_stays_tracked() {
-    let workspace = TempDir::new().unwrap();
-    repo(workspace.path(), &[("a.txt", "one\n")]).await;
-    let kiln = TempDir::new().unwrap();
-    repo(kiln.path(), &[("b.txt", "one\n")]).await;
-    let session_dir = TempDir::new().unwrap();
-
-    let roots = vec![workspace.path().to_path_buf(), kiln.path().to_path_buf()];
-    let ledgers = Arc::new(ReviewLedgers::for_tests(
-        crate::test_support::scratch_snapshot_root(),
-    ));
-    ledgers
-        .open_or_restore("sess", session_dir.path(), &roots)
-        .await
-        .unwrap();
-
-    // One bracketed write under the kiln, so the root has attribution to lose.
-    let handle = ledgers.open_bracket("sess").await.unwrap();
-    std::fs::write(kiln.path().join("b.txt"), "BY THE AGENT\n").unwrap();
-    ledgers.close("sess", handle, "call-1", 1).await.unwrap();
-
-    // A directory where the kiln's index belongs: `rev-parse --show-toplevel`
-    // still answers, so the root is unmistakably a repository, while the
-    // capture's index copy cannot run. This is the transient shape — a
-    // concurrent `git` holding the index — without depending on file modes the
-    // test process might be allowed to ignore.
-    let index = kiln.path().join(".git").join("index");
-    std::fs::remove_file(&index).unwrap();
-    std::fs::create_dir(&index).unwrap();
-
-    let statuses = ledgers
-        .rebase_session("sess", session_dir.path(), &roots)
-        .await
-        .unwrap();
-    let kiln_top = std::fs::canonicalize(kiln.path()).unwrap();
-    assert!(
-        statuses
-            .iter()
-            .find(|s| *s.root == *kiln_top)
-            .expect("the kiln must still be reported")
-            .is_degraded(),
-        "{statuses:?}"
-    );
-
-    // The failure clears; the root has to be there when it does.
-    std::fs::remove_dir(&index).unwrap();
-    let ledger = ledgers.ledger("sess").unwrap();
-    assert!(
-        ledger.roots().any(|r| r == kiln_top),
-        "the kiln was dropped from session_base, so nothing under it is reviewable again"
-    );
-    let hunks = ledgers.list_hunks("sess").await.unwrap();
-    let kiln_hunk = hunks
-        .iter()
-        .find(|h| *h.root == *kiln_top)
-        .expect("the kiln's change is still in the worktree and must still compose");
-    assert_eq!(
-        kiln_hunk.tool_call_ids,
-        vec!["call-1".to_string()],
-        "the un-rebased root lost its intervals, so agent work reads as the user's own edit"
-    );
-    assert_eq!(
-        ledgers
-            .has_unreviewed_in_file("sess", &only(kiln_top.join("b.txt")))
-            .await
-            .unwrap(),
-        Verdict::Unreviewed,
-        "a write to the un-rebased root went through unheld"
-    );
-}
-
-/// An undo is a decision too, and it has to be journaled as one. A stack
-/// held only in memory would leave the `Rejected` record as the last word on
-/// the hunk: a reload would replay it, and the restored lines would list as
-/// `reapplied` — the agent blamed for the user's own undo.
-#[tokio::test]
-async fn an_undone_reject_restores_the_lines_and_lists_the_hunk_unreviewed_after_a_reload() {
-    let fx = Persisted::new("one\n").await;
-    fx.call("call-1", "EDITED\n").await;
-    let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
-        .id
-        .clone();
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Rejected)
-        .await
-        .unwrap();
-    assert_eq!(fx.read(), "one\n");
-
-    let outcome = fx.ledgers.undo_reject(&fx.session).await.unwrap();
-    assert_eq!(outcome.applied, vec![id.clone()]);
-    assert!(outcome.failed.is_empty(), "{:?}", outcome.failed);
-    assert_eq!(fx.read(), "EDITED\n", "the undo did not restore the lines");
-
-    let restarted = fx.restart().await;
-    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
-    assert_eq!(hunks.len(), 1, "{hunks:?}");
-    assert_eq!(hunks[0].id, id);
-    assert_eq!(hunks[0].state, ReviewState::Unreviewed);
-    assert!(
-        !hunks[0].reapplied,
-        "the reload resurrected the rejection, so the user's undo reads as the agent's re-apply"
-    );
-    // ...and the batch is gone from the restored stack too, or the next undo
-    // would write the same lines a second time.
-    let again = restarted.undo_reject(&fx.session).await.unwrap();
-    assert!(
-        again.applied.is_empty() && again.failed.is_empty(),
-        "the undo did not replay, so the stack still holds a batch already taken back: {again:?}"
-    );
-}
-
-/// The stack is the journal's, not the process's: two rejects, a restart, and
-/// the undo still pops the most recent one first.
-#[tokio::test]
-async fn a_reject_stack_survives_a_reload() {
-    let fx = Persisted::new("1\n2\n3\n").await;
-    fx.call("call-1", "one\n2\nthree\n").await;
-    let mut hunks = fx.ledgers.list_hunks(&fx.session).await.unwrap();
-    hunks.sort_by_key(|h| h.current_range.start);
-    assert_eq!(hunks.len(), 2, "{hunks:?}");
-    let (first, second) = (hunks[0].id.clone(), hunks[1].id.clone());
-    fx.ledgers
-        .set_state(&fx.session, &first, ReviewState::Rejected)
-        .await
-        .unwrap();
-    fx.ledgers
-        .set_state(&fx.session, &second, ReviewState::Rejected)
-        .await
-        .unwrap();
-    assert_eq!(fx.read(), "1\n2\n3\n");
-
-    let restarted = fx.restart().await;
-    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
-    assert_eq!(
-        outcome.applied,
-        vec![second.clone()],
-        "the restored stack did not pop the most recent reject first"
-    );
-    assert_eq!(fx.read(), "1\n2\nthree\n");
-    let listed = restarted.list_hunks(&fx.session).await.unwrap();
-    assert_eq!(listed.len(), 1, "{listed:?}");
-    assert_eq!(listed[0].id, second);
-    assert_eq!(listed[0].state, ReviewState::Unreviewed);
-
-    // ...and the earlier reject is still on the stack, in its own turn.
-    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
-    assert_eq!(outcome.applied, vec![first]);
-    assert_eq!(fx.read(), "one\n2\nthree\n");
-    assert!(restarted
-        .undo_reject(&fx.session)
-        .await
-        .unwrap()
-        .applied
-        .is_empty());
-}
-
-/// A journal from before the reject stack existed holds `header`, `base`,
-/// `interval`, `state` and `rebase` records and nothing else. It has to
-/// replay intact, with an empty stack, or every session on disk degrades at
-/// the upgrade.
-#[tokio::test]
-async fn a_journal_written_before_the_reject_stack_still_replays() {
-    let fx = Persisted::new("one\n").await;
+async fn an_old_journal_with_reject_records_still_replays() {
+    let fx = Persisted::new("one\ntwo\n").await;
     let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0].clone();
-    fx.call("call-1", "EDITED\n").await;
-    let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
-        .id
-        .clone();
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Accepted)
-        .await
-        .unwrap();
+    fx.call("call-1", "EDITED\ntwo\n").await;
+    let hunk = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0].clone();
+
+    // The records that an old daemon wrote for one reject, one undo and a
+    // second reject whose batch nothing undid.
+    let batch = serde_json::json!([{
+        "id": hunk.id,
+        "root": base.root,
+        "path": "a.txt",
+        "start": 1,
+        "before_content": "one\n",
+        "after_content": "EDITED\n",
+    }]);
     let mut text = std::fs::read_to_string(fx.journal()).unwrap();
-    text.push_str(&format!(
-        "{{\"t\":\"rebase\",\"root\":{},\"base_tree\":{}}}\n",
-        serde_json::to_string(base.root.as_path()).unwrap(),
-        serde_json::to_string(&base.base_tree).unwrap(),
-    ));
-    std::fs::write(fx.journal(), &text).unwrap();
-    // The premise: the fixture names no record kind the stack introduced.
-    for line in text.lines() {
-        let tag: serde_json::Value = serde_json::from_str(line).unwrap();
-        assert!(
-            matches!(
-                tag["t"].as_str(),
-                Some("header" | "base" | "interval" | "state" | "rebase")
-            ),
-            "the fixture is not a pre-stack journal: {line}"
-        );
+    for record in [
+        serde_json::json!({ "t": "rejected", "batch": batch }),
+        serde_json::json!({ "t": "undone" }),
+        serde_json::json!({ "t": "rejected", "batch": batch }),
+    ] {
+        text.push_str(&format!("{record}\n"));
     }
+    std::fs::write(fx.journal(), text).unwrap();
 
     let restarted = fx.restart().await;
     assert!(
         restarted.integrity(&fx.session).is_intact(),
-        "{:?}",
+        "an old reject record was read as unknown: {:?}",
         restarted.integrity(&fx.session).skips()
     );
     assert_eq!(
-        restarted.list_hunks(&fx.session).await.unwrap()[0].state,
-        ReviewState::Accepted
+        restarted.ledger(&fx.session).unwrap().session_base()[0],
+        base
     );
-    let outcome = restarted.undo_reject(&fx.session).await.unwrap();
-    assert!(outcome.applied.is_empty() && outcome.failed.is_empty());
+    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
+    assert_eq!(hunks.len(), 1, "{hunks:?}");
+    assert_eq!(hunks[0].tool_call_ids, vec!["call-1".to_string()]);
 }
 
 /// Every journal on disk was written before the plain store existed, and each

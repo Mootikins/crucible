@@ -108,13 +108,12 @@ function routeSessionSubEvent(
       appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;
 
-    // The table debounces these two, and the debounce is load-bearing. An
+    // The table debounces this one, and the debounce is load-bearing. An
     // invalidation does NOT fold concurrent refetches of one key into one
     // request: it CANCELS the one in flight and starts another, so a turn that
     // fires five of these is five listings of a diff that settles once. The
     // timer is per session and deletes itself, and a listing it starts after
     // the last reader has gone reaches a key nobody holds.
-    case 'review_gate':
     case 'review_changed':
       scheduleReviewInvalidation(client, sessionId);
       break;

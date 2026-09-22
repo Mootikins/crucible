@@ -10,8 +10,8 @@
 //!
 //! Everything is keyed on tree SHAs rather than on "did this call report an
 //! edit", because the filesystem is the only witness both an internal agent
-//! and an external ACP agent share. That is also why attribution keeps
-//! working for agents the gate cannot block.
+//! and an external ACP agent share. That is also why attribution works for
+//! an external agent, whose tools the daemon does not run.
 //!
 //! **Any write to a [`Ledger`] that does not go through a [`ReviewLedgers`]
 //! method is a persistence bug.** The mutators are methods on the value, so a
@@ -29,7 +29,6 @@ mod journal;
 pub(crate) mod paths;
 mod persist;
 mod plain_store;
-mod undo;
 
 #[cfg(test)]
 mod tests;
@@ -40,12 +39,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crucible_core::session::{
-    ChildLedgerRef, Comment, ComposedHunk, GateBlock, HunkId, Integrity, Interval, Ledger,
-    PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, SnapshotId,
-    Verdict,
+    ChildLedgerRef, Comment, ComposedHunk, HunkId, Integrity, Interval, Ledger, PhysicalRoot,
+    ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, SnapshotId,
 };
 use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use backend::RootBackend;
@@ -59,7 +56,6 @@ use crucible_core::session::SessionId;
 
 pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
-pub use undo::REJECT_STACK_DEPTH;
 
 /// Where a daemon rooted at `data_home` snapshots the review roots that are
 /// not in a git repository.
@@ -118,79 +114,6 @@ impl Drop for CaptureHandle {
     }
 }
 
-/// A live review-gate block: the session it names is parked waiting for a
-/// human, until this is dropped.
-///
-/// Mirrors [`CaptureHandle`]'s backstop, and for the same reason rather than
-/// for symmetry. `hold_for_review` awaits `sleep(POLL_INTERVAL)`, which is a
-/// yield point, so a turn cancelled or timed out while parked drops the whole
-/// future *there* and never reaches the release. Without `Drop` that turns a
-/// transient invisible block into a permanent visible lie — a session chip
-/// claiming to wait on a review with no turn running behind it, and no action
-/// a user can take to clear it.
-///
-/// Not `Clone`: two holds for one session would race on release and the loser
-/// would clear a block that is still live.
-#[derive(Debug)]
-pub struct GateHold {
-    session_id: String,
-    /// Weak for the same reason as [`CaptureHandle::ledgers`]: a hold that
-    /// outlives its manager has nothing left to release.
-    ledgers: Weak<ReviewLedgers>,
-}
-
-impl Drop for GateHold {
-    fn drop(&mut self) {
-        if let Some(ledgers) = self.ledgers.upgrade() {
-            ledgers.gate.remove(&self.session_id);
-        }
-    }
-}
-
-/// What one bulk decision did: the ids it applied, in order, and the ids it
-/// refused, each with the refusal.
-///
-/// Both lists are reported rather than the first refusal ending the call: the
-/// client holds a list of ids that may be stale one at a time, and it needs to
-/// know which ones landed so it can redraw the rest, not retry the batch.
-///
-/// `ended_on` is the error that stopped the loop after at least one id was
-/// processed — one about the ledger or the repository, never about a hunk.
-/// It rides with the outcome rather than replacing it, because the ids in
-/// `applied` are already on disk and in the journal, and the boundary owes
-/// the agent a note about every one of them before it answers the error.
-#[derive(Debug, Default)]
-pub struct BulkOutcome {
-    pub applied: Vec<HunkId>,
-    pub failed: Vec<(HunkId, ReviewError)>,
-    pub ended_on: Option<ReviewError>,
-}
-
-/// What one revert wrote, kept so an undo can write it back.
-///
-/// Recorded from the hunk *as it was reverted*, not re-derived: the revert
-/// removes the hunk from the composed diff, so nothing can list it again.
-/// `start` is the line the revert wrote `before_content` at, in the
-/// coordinates of the file just after that revert — which is where an undo
-/// finds it, because every later revert in the same batch is undone first.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RejectedHunk {
-    pub id: HunkId,
-    pub root: PhysicalRoot,
-    /// Path relative to [`Self::root`].
-    pub path: String,
-    /// First line of the restored `before_content`, 1-based.
-    pub start: u32,
-    pub before_content: String,
-    pub after_content: String,
-}
-
-/// The hunks one user action rejected, in the order they were reverted.
-///
-/// One entry for a single reject, the whole batch for a bulk decision, so
-/// one undo takes back one action rather than one hunk of it.
-pub type RejectBatch = Vec<RejectedHunk>;
-
 /// Per-session review ledgers.
 ///
 /// Mirrors `SnapshotMap`: a `DashMap` owned by `AgentManager`, cleared on
@@ -211,11 +134,6 @@ pub struct ReviewLedgers {
     /// safe one: an identity we do not recognise must never inherit a
     /// decision made about different lines.
     states: DashMap<String, HashMap<HunkId, ReviewState>>,
-    /// Rejects an undo can take back, newest last, per session.
-    ///
-    /// Rebuilt from the journal on restore and capped at
-    /// [`REJECT_STACK_DEPTH`] batches; see [`Self::undo_reject`].
-    reject_stack: DashMap<String, Vec<RejectBatch>>,
     /// The comments of each diffset. A session keeps no comments of its
     /// own: the comments of its record belong to its session record diffset.
     comments: CommentStore,
@@ -224,17 +142,6 @@ pub struct ReviewLedgers {
     /// is tracked globally rather than per session — the concurrent writers
     /// are usually a parent and its delegated children.
     open: DashMap<PathBuf, Vec<OpenBracket>>,
-    /// Sessions whose turn is currently parked on the review gate.
-    ///
-    /// Here rather than on `AgentManager` or `session.status` because this map
-    /// is already per-session, already keyed the same way, already drained by
-    /// [`Self::clear_session`], and already reachable from the gate — the gate
-    /// holds a [`ReviewLedgers`] and nothing else. At most one entry per
-    /// session: a turn runs one tool batch at a time, and the gate holds at
-    /// most one call in it.
-    ///
-    /// In memory only. See [`GateBlock`] for why persisting it would be wrong.
-    gate: DashMap<String, GateBlock>,
     /// Where each session's `review.jsonl` lives.
     ///
     /// A session absent from this map is not persisted at all — the ledger
@@ -255,8 +162,7 @@ pub struct ReviewLedgers {
     parents: DashMap<String, String>,
     /// The worktree watch's tracker, when the daemon started one.
     ///
-    /// Here so that *every* path that reverts takes a suppression window,
-    /// including [`Self::set_state`] with [`ReviewState::Rejected`]. Bound
+    /// Here so that an open capture bracket takes a suppression window. Bound
     /// after construction because the watch needs an async constructor and
     /// this type is built by `Default` in `AgentManager::new`.
     external: std::sync::OnceLock<Arc<crate::watch::external_changes::ExternalChangeTracker>>,
@@ -294,10 +200,8 @@ impl ReviewLedgers {
             plain: plain_store::PlainStore::new(plain_root),
             ledgers: DashMap::new(),
             states: DashMap::new(),
-            reject_stack: DashMap::new(),
             comments,
             open: DashMap::new(),
-            gate: DashMap::new(),
             journals: DashMap::new(),
             integrity: DashMap::new(),
             parents: DashMap::new(),
@@ -392,9 +296,7 @@ impl ReviewLedgers {
     pub fn has_session(&self, session_id: &str) -> bool {
         self.ledgers.contains_key(session_id)
             || self.states.contains_key(session_id)
-            || self.reject_stack.contains_key(session_id)
             || self.parents.contains_key(session_id)
-            || self.gate.contains_key(session_id)
             || self.journals.contains_key(session_id)
             || self.integrity.contains_key(session_id)
     }
@@ -412,10 +314,8 @@ impl ReviewLedgers {
     /// Suppress external-change detection for `session_id`'s roots while the
     /// returned guard lives. `None` when no watch is running.
     ///
-    /// Every daemon-side write to a watched worktree has to hold one. Without
-    /// it the watcher sees the daemon's own revert land, reports it as a
-    /// change the user made, and announces that the composed diff moved for
-    /// the file the user just finished reviewing.
+    /// An open capture bracket holds one. Without it the watcher reports
+    /// each write of the bracketed call as a change that the user made.
     fn suppress(&self, session_id: &str) -> Option<crate::watch::external_changes::CaptureWindow> {
         self.external.get().map(|t| t.capture(session_id))
     }
@@ -459,35 +359,13 @@ impl ReviewLedgers {
     pub fn clear_session(&self, session_id: &str) {
         self.ledgers.remove(session_id);
         self.states.remove(session_id);
-        self.reject_stack.remove(session_id);
         self.parents.remove(session_id);
-        // Belt to the `GateHold` braces: a session torn down while a turn is
-        // parked must not leave a block behind for an id that may be reissued.
-        self.gate.remove(session_id);
         // The journal itself stays on disk — teardown is not deletion, and the
         // queue has to be there when the session is resumed. Only the in-memory
         // handles go, or every session the daemon ever loads leaks two map
         // entries for its lifetime.
         self.journals.remove(session_id);
         self.integrity.remove(session_id);
-    }
-
-    /// Mark the session as parked on the review gate.
-    ///
-    /// The returned [`GateHold`] releases it on drop, which is the only thing
-    /// that covers a turn cancelled or timed out while the gate loop sits on
-    /// its sleep. Hold it for exactly as long as the call is blocked.
-    pub fn hold_gate(self: &Arc<Self>, session_id: &str, block: GateBlock) -> GateHold {
-        self.gate.insert(session_id.to_string(), block);
-        GateHold {
-            session_id: session_id.to_string(),
-            ledgers: Arc::downgrade(self),
-        }
-    }
-
-    /// What this session's turn is waiting on, if it is waiting at all.
-    pub fn gate_block(&self, session_id: &str) -> Option<GateBlock> {
-        self.gate.get(session_id).map(|r| r.value().clone())
     }
 
     /// Open a capture bracket: record every tracked root's current tree.
@@ -755,9 +633,8 @@ impl ReviewLedgers {
 
     /// The composed diff for a session, attributed and carrying review state.
     ///
-    /// Always the whole session: this is what the gate and every decision
-    /// read, and a scope is a view for a person, never a narrowing of what
-    /// the ledger owes.
+    /// Always the whole session: a scope is a view for a person, never a
+    /// narrowing of what the ledger owes.
     pub async fn list_hunks(&self, session_id: &str) -> ReviewResult<Vec<ComposedHunk>> {
         Ok(self
             .list_hunks_with_status(session_id, ReviewScope::Session, None)
@@ -780,10 +657,9 @@ impl ReviewLedgers {
     /// have to come back beside them: losing attribution fails open on its own
     /// (see [`crucible_core::session::Integrity`]), so "this root produced
     /// nothing" and "this root cannot be read" must be distinguishable by every
-    /// caller that gates on the answer.
+    /// caller.
     ///
-    /// Read-only, in the strongest sense: this is the gate poller's half-second
-    /// `&self` loop, and it prunes nothing. A decision recorded for a hunk with
+    /// Read-only, in the strongest sense: it prunes nothing. A decision recorded for a hunk with
     /// no live counterpart round-trips unconditionally, because the `reapplied`
     /// derivation below is defined by that decision still being there.
     pub async fn list_hunks_with_status(
@@ -830,8 +706,7 @@ impl ReviewLedgers {
             // Structural failure — a root that is gone, a base tree gc'd out
             // from under us — is evidence that attribution is broken rather
             // than merely unavailable, so it degrades rather than erroring.
-            // Erroring would take today's transient fail-open path and let the
-            // write through. `review.rebase` is what bounds the block.
+            // The listing then names the root with a reason.
             let backend = RootBackend::of(&base.base_tree);
             if let Some(reason) = degraded_reason(&integrity, base, backend, &self.plain).await {
                 warn!(
@@ -1002,7 +877,7 @@ impl ReviewLedgers {
         )
     }
 
-    /// Hunks the gate may block on: unreviewed and owned by the ledger.
+    /// Hunks that are unreviewed and owned by the ledger.
     ///
     /// External hunks are excluded on purpose. They are the user's own edits
     /// (or writes no bracket saw), and refusing to let the agent work until
@@ -1014,326 +889,6 @@ impl ReviewLedgers {
             .into_iter()
             .filter(|h| h.state == ReviewState::Unreviewed && !h.is_external())
             .collect())
-    }
-
-    /// Whether a write to one file may proceed — the per-write gate query.
-    ///
-    /// `spellings` are the candidate spellings of a **single** file, absolute
-    /// or root-relative, and a match on any of them answers for all. There is
-    /// more than one because a tool's relative path argument has no single
-    /// base: `write_file` names a workspace-relative path and `create_note`
-    /// names a kiln-relative one, while a hunk's own `path` is relative to its
-    /// repository top level — which is a third thing again whenever one of
-    /// those directories contains the other. Resolving against one base alone
-    /// matched nothing for the rest, and a gate query that matches nothing is
-    /// a gate that never blocks.
-    ///
-    /// An absolute spelling is normalised before it is compared. Roots are
-    /// stored as `git rev-parse --show-toplevel` printed them — physical —
-    /// while the caller resolves against directories as the session was
-    /// *registered*, so a workspace reached through a symlink produces two
-    /// spellings of one file. Normalising here and not at ingest is
-    /// deliberate: see [`paths`].
-    ///
-    /// Three-valued because "nothing unreviewed here" and "I cannot tell" are
-    /// different facts with opposite safety properties — see [`Verdict`]. A
-    /// file under no tracked root is [`Verdict::Clear`] and always has been:
-    /// no hunk exists there, so no human action could release a hold, and
-    /// blocking would be an unreleasable hang rather than a safe default. The
-    /// [`Verdict::Degraded`] cases are the ones `review.rebase` bounds.
-    pub async fn has_unreviewed_in_file(
-        &self,
-        session_id: &str,
-        spellings: &[PathBuf],
-    ) -> ReviewResult<Verdict> {
-        // An unscoped loss is checked before anything else: it can mean the
-        // ledger no longer knows which roots it tracked, so there is no root
-        // list left to compare `file` against.
-        if self
-            .integrity
-            .get(session_id)
-            .is_some_and(|i| i.blocks_everything())
-        {
-            return Ok(Verdict::Degraded { root: None });
-        }
-
-        let (hunks, statuses) = self
-            .list_hunks_with_status(session_id, ReviewScope::Session, None)
-            .await?;
-        // Resolved once rather than per hunk: each is a syscall, and the answer
-        // does not depend on which hunk it is compared against.
-        let resolved: Vec<PathBuf> = spellings
-            .iter()
-            .filter(|s| s.is_absolute())
-            .map(|s| paths::resolve(s))
-            .collect();
-        let unreviewed = hunks
-            .iter()
-            .filter(|h| h.state == ReviewState::Unreviewed && !h.is_external())
-            .any(|h| {
-                let absolute = h.absolute_path();
-                resolved.contains(&absolute)
-                    || spellings
-                        .iter()
-                        .any(|s| *s == absolute || Path::new(&h.path) == s.as_path())
-            });
-        if unreviewed {
-            return Ok(Verdict::Unreviewed);
-        }
-
-        let mut degraded = statuses.iter().filter(|s| s.is_degraded());
-        let held = if resolved.is_empty() {
-            // No absolute spelling, so no root to compare against and no
-            // telling whether the target lands in the degraded one. Fail
-            // closed.
-            degraded.next()
-        } else {
-            degraded.find(|s| resolved.iter().any(|r| r.starts_with(&s.root)))
-        };
-        Ok(match held {
-            Some(status) => Verdict::Degraded {
-                root: Some(status.root.clone()),
-            },
-            None => Verdict::Clear,
-        })
-    }
-
-    /// Record a decision about a hunk.
-    ///
-    /// [`ReviewState::Rejected`] reverts through [`Self::revert_hunk`]: a
-    /// rejection recorded without the revert having happened is a lie about
-    /// the state of the worktree, and §3 requires the write to land
-    /// immediately rather than be deferred into a conflict-prone queue.
-    pub async fn set_state(
-        &self,
-        session_id: &str,
-        hunk_id: &HunkId,
-        state: ReviewState,
-    ) -> ReviewResult<()> {
-        if state == ReviewState::Rejected {
-            return self.revert_hunk(session_id, hunk_id).await;
-        }
-        let hunks = self.list_hunks(session_id).await?;
-        if !hunks.iter().any(|h| &h.id == hunk_id) {
-            return Err(ReviewError::UnknownHunk(hunk_id.clone()));
-        }
-        self.record_state(session_id, hunk_id, state).await;
-        Ok(())
-    }
-
-    /// Record one decision about several hunks, in the given order.
-    ///
-    /// Each id goes through [`Self::set_state`], so every reject re-lists the
-    /// worktree after the reverts before it. A hunk's identity survives a
-    /// neighbour's revert (it hashes the base range, not the current one),
-    /// while its current range does not, and the re-list is what keeps the
-    /// second write on the right lines.
-    ///
-    /// A refusal about one hunk — [`ReviewError::UnknownHunk`],
-    /// [`ReviewError::Stale`], [`ReviewError::ExternalHunk`] — is recorded and
-    /// the loop continues, because a later hunk's range is independent of it.
-    /// Any other error is about the ledger or the repository, not the hunk,
-    /// and ends the loop. When it ends the loop before any id was processed
-    /// it is the answer; otherwise it is [`BulkOutcome::ended_on`], beside
-    /// the ids that were applied before it, because those are on disk and in
-    /// the journal and the caller must still account for them.
-    ///
-    /// A bulk reject pushes ONE batch onto the undo stack, holding every
-    /// hunk it reverted, so one undo takes the whole action back. The batch
-    /// is pushed after the loop, and also when the loop ends on an error, so
-    /// the reverts that landed are never left with no way back.
-    pub async fn set_states(
-        &self,
-        session_id: &str,
-        hunk_ids: &[HunkId],
-        state: ReviewState,
-    ) -> ReviewResult<BulkOutcome> {
-        let mut outcome = BulkOutcome::default();
-        let mut batch: RejectBatch = Vec::new();
-        let mut ended_on = None;
-        for hunk_id in hunk_ids {
-            let result = if state == ReviewState::Rejected {
-                self.revert_hunk_recorded(session_id, hunk_id)
-                    .await
-                    .map(|rejected| batch.push(rejected))
-            } else {
-                self.set_state(session_id, hunk_id, state).await
-            };
-            match result {
-                Ok(()) => outcome.applied.push(hunk_id.clone()),
-                Err(
-                    e @ (ReviewError::UnknownHunk(_)
-                    | ReviewError::Stale { .. }
-                    | ReviewError::ExternalHunk(_)),
-                ) => outcome.failed.push((hunk_id.clone(), e)),
-                Err(e) => {
-                    ended_on = Some(e);
-                    break;
-                }
-            }
-        }
-        self.push_reject_batch(session_id, batch).await;
-        match ended_on {
-            Some(e) if outcome.applied.is_empty() && outcome.failed.is_empty() => Err(e),
-            Some(e) => {
-                outcome.ended_on = Some(e);
-                Ok(outcome)
-            }
-            None => Ok(outcome),
-        }
-    }
-
-    /// Revert one composed hunk in the worktree and mark it rejected.
-    ///
-    /// The revert is against `session_base`, which is what makes it safe: the
-    /// hunk's base text is restored regardless of how many tool calls
-    /// contributed to it, with no three-way merge.
-    ///
-    /// One hunk is one user action, so it is one batch on the undo stack.
-    pub async fn revert_hunk(&self, session_id: &str, hunk_id: &HunkId) -> ReviewResult<()> {
-        let rejected = self.revert_hunk_recorded(session_id, hunk_id).await?;
-        self.push_reject_batch(session_id, vec![rejected]).await;
-        Ok(())
-    }
-
-    /// The revert itself, answering what it wrote so the caller can batch it.
-    ///
-    /// Pushes nothing onto the undo stack: [`Self::revert_hunk`] pushes one
-    /// hunk as one batch, and [`Self::set_states`] pushes the whole bulk
-    /// decision as one, and only the caller knows which action it is.
-    async fn revert_hunk_recorded(
-        &self,
-        session_id: &str,
-        hunk_id: &HunkId,
-    ) -> ReviewResult<RejectedHunk> {
-        let hunk = self
-            .list_hunks(session_id)
-            .await?
-            .into_iter()
-            .find(|h| &h.id == hunk_id)
-            .ok_or_else(|| ReviewError::UnknownHunk(hunk_id.clone()))?;
-        if hunk.is_external() {
-            return Err(ReviewError::ExternalHunk(hunk_id.clone()));
-        }
-
-        let path = hunk.absolute_path();
-        // A *missing* file reads as empty on purpose: that is what reverting the
-        // agent's deletion of a whole file looks like, and the write below
-        // recreates it from `before_content`. Any other read failure is not
-        // evidence of emptiness — treating a permission error as "no lines"
-        // would pass the staleness guard for a deletion hunk and then overwrite
-        // a file we could not read.
-        let current = match tokio::fs::read_to_string(&path).await {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(_) => {
-                return Err(ReviewError::Stale {
-                    path: hunk.path.clone(),
-                })
-            }
-        };
-        let lines = compose::lines(&current);
-        // The worktree may have moved since the hunk was computed. Rewriting
-        // lines we can no longer recognise would silently destroy whatever is
-        // there now, so refuse and let the caller re-list.
-        if compose::slice(&lines, &hunk.current_range) != hunk.after_content {
-            return Err(ReviewError::Stale {
-                path: hunk.path.clone(),
-            });
-        }
-
-        let start = hunk.current_range.start.saturating_sub(1) as usize;
-        // The guard above cannot see this case. A pure deletion has an EMPTY
-        // `current_range` and `after_content == ""`, and `slice` answers `""`
-        // for any empty range — so `"" == ""` passes however far the file has
-        // shrunk underneath. Unclamped, `lines[..start]` then panics, and the
-        // release profile aborts rather than unwinds, taking every live session
-        // with it. A start past the end is the same evidence the guard looks
-        // for: the file is no longer the one this hunk was computed against.
-        if start > lines.len() {
-            return Err(ReviewError::Stale {
-                path: hunk.path.clone(),
-            });
-        }
-        let end = (hunk.current_range.end.saturating_sub(1) as usize).min(lines.len());
-        let mut next = String::with_capacity(current.len());
-        next.push_str(&lines[..start].concat());
-        next.push_str(&hunk.before_content);
-        next.push_str(&lines[end..].concat());
-        // Absence at session start is insufficient: the user can create an
-        // empty file between opening the ledger and the agent's first write.
-        // Require an uncontested creation followed only by modifications,
-        // including empty-file creations with no attributed line hunk. A
-        // deletion or ambiguous recreation ends that ownership evidence.
-        let remove = if next.is_empty() {
-            let ledger = self
-                .ledger(session_id)
-                .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
-            let base = ledger
-                .base_tree(&hunk.root)
-                .ok_or_else(|| ReviewError::Stale {
-                    path: hunk.path.clone(),
-                })?;
-            let backend = RootBackend::of(base);
-            let mut created = false;
-            if !backend
-                .contains_path(&self.plain, &hunk.root, base, &hunk.path)
-                .await?
-            {
-                for interval in ledger.intervals() {
-                    let Some(root) = interval
-                        .roots_touched
-                        .iter()
-                        .find(|root| root.root == hunk.root)
-                    else {
-                        continue;
-                    };
-                    let changes = backend
-                        .changed_paths(&self.plain, &hunk.root, &root.before_tree, &root.after_tree)
-                        .await?;
-                    if let Some((_, kind)) =
-                        changes.into_iter().find(|(path, _)| path == &hunk.path)
-                    {
-                        let expected = if created {
-                            git::ChangeKind::Modified
-                        } else {
-                            git::ChangeKind::Added
-                        };
-                        if interval.contested || kind != expected {
-                            created = false;
-                            break;
-                        }
-                        created = true;
-                    }
-                }
-            }
-            created
-        } else {
-            false
-        };
-        // Held across the write and released after it: this is the daemon
-        // editing the user's worktree, and the watcher cannot tell it apart
-        // from the user doing so. Unsuppressed, rejecting a hunk announces an
-        // external change for the file it just reverted — the queue reporting
-        // its own drain as new work.
-        let suppressed = self.suppress(session_id);
-        if remove {
-            tokio::fs::remove_file(&path).await?;
-        } else {
-            tokio::fs::write(&path, next).await?;
-        }
-        drop(suppressed);
-
-        self.record_state(session_id, hunk_id, ReviewState::Rejected)
-            .await;
-        Ok(RejectedHunk {
-            id: hunk.id,
-            root: hunk.root,
-            path: hunk.path,
-            start: hunk.current_range.start,
-            before_content: hunk.before_content,
-            after_content: hunk.after_content,
-        })
     }
 
     /// The store of the comments of every diffset.

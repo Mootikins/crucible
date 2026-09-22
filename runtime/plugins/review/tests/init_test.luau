@@ -34,7 +34,6 @@ local function stub(overrides: { [string]: any }?)
         end
     end
     cru.session.review_list_hunks = record("review_list_hunks")
-    cru.session.review_set_state = record("review_set_state")
     cru.session.review_comment = record("review_comment")
     cru.session.review_resolve_comment = record("review_resolve_comment")
 end
@@ -172,8 +171,8 @@ describe("review", function()
                     return {
                         hunk({ id = "a", state = "unreviewed" }),
                         hunk({ id = "b", state = "accepted" }),
-                        -- External and unreviewed: cannot be rejected, so it is
-                        -- not work the reviewer can action.
+                        -- External and unreviewed: somebody's own edit, so it
+                        -- is not work the reviewer can action.
                         hunk({ id = "c", state = "unreviewed", tool_call_ids = {} }),
                     }
                 end,
@@ -189,75 +188,6 @@ describe("review", function()
             expect.equal(result.count, 0)
             expect.equal(result.unreviewed, 0)
             expect.deep_equal(result.hunks, {})
-        end)
-    end)
-
-    describe("review_set_state", function()
-        it("requires a session_id", function()
-            local result = plugin.tools.review_set_state.fn({ hunk_id = "h1", state = "accepted" })
-            expect.equal(result.error, "session_id is required")
-        end)
-
-        it("requires a hunk_id", function()
-            local result = plugin.tools.review_set_state.fn({ session_id = SESSION, state = "accepted" })
-            expect.equal(result.error, "hunk_id is required")
-        end)
-
-        it("accepts each of the three valid states", function()
-            for _, state in ipairs({ "accepted", "rejected", "unreviewed" }) do
-                stub({ review_set_state = function() return true end })
-                local result = plugin.tools.review_set_state.fn({
-                    session_id = SESSION,
-                    hunk_id = "h1",
-                    state = state,
-                })
-                expect.equal(result.state, state)
-            end
-        end)
-
-        it("rejects any other state before calling the daemon", function()
-            for _, state in ipairs({ "approved", "ACCEPTED", "", "maybe" }) do
-                stub({ review_set_state = function() return true end })
-                local result = plugin.tools.review_set_state.fn({
-                    session_id = SESSION,
-                    hunk_id = "h1",
-                    state = state,
-                })
-                expect.truthy(result.error)
-                expect.equal(#calls, 0)
-            end
-        end)
-
-        it("rejects a missing state", function()
-            local result = plugin.tools.review_set_state.fn({ session_id = SESSION, hunk_id = "h1" })
-            expect.truthy(result.error)
-            expect.equal(#calls, 0)
-        end)
-
-        it("passes session, hunk and state down in order", function()
-            stub({ review_set_state = function() return true end })
-            plugin.tools.review_set_state.fn({
-                session_id = SESSION,
-                hunk_id = "h9",
-                state = "rejected",
-            })
-            expect.equal(calls[1].args[1], SESSION)
-            expect.equal(calls[1].args[2], "h9")
-            expect.equal(calls[1].args[3], "rejected")
-        end)
-
-        it("surfaces a refusal from the daemon", function()
-            stub({
-                review_set_state = function()
-                    return false, "external hunks cannot be rejected"
-                end,
-            })
-            local result = plugin.tools.review_set_state.fn({
-                session_id = SESSION,
-                hunk_id = "h1",
-                state = "rejected",
-            })
-            expect.equal(result.error, "external hunks cannot be rejected")
         end)
     end)
 
@@ -353,7 +283,6 @@ describe("review", function()
         -- `no_shipped_module_table_carries_fragment_metadata` says so.
         it("exports every review operation as a tool", function()
             expect.truthy(plugin.tools.review_list_hunks)
-            expect.truthy(plugin.tools.review_set_state)
             expect.truthy(plugin.tools.review_comment)
             expect.truthy(plugin.tools.review_resolve_comment)
         end)

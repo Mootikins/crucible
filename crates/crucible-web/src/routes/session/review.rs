@@ -1,6 +1,6 @@
 //! `/api/session/{id}/review/…` — the attributed-diff review surface.
 //!
-//! The browser never speaks raw JSON-RPC, so these seven routes are the only
+//! The browser never speaks raw JSON-RPC, so these three routes are the only
 //! way `ChangesPanel`, the file viewer's gutter, and `ToolCard` reach the
 //! daemon's `review.*` methods. They are registered inside
 //! [`super::session_routes_with`] rather than as their own group, and that is
@@ -12,15 +12,15 @@
 //! **Each reply is named here, and the names are what the browser reads.** The
 //! routes forwarded `serde_json::Value` until task A6, so the OpenAPI document
 //! could say nothing about them and `review-api.ts` described the seven shapes
-//! by hand — where it got the gate, the degraded roots and three `session_id`
-//! keys wrong. A named struct is what puts the fields in the document and in
+//! by hand — where it got the degraded roots and three `session_id` keys
+//! wrong. A named struct is what puts the fields in the document and in
 //! the generated TypeScript.
 //!
 //! The cost the old note warned about is real: a struct drops a key the daemon
 //! added, and a new feature goes silently missing rather than failing to
 //! compile. `review_shape_tests.rs` answers it. Each row round-trips the
 //! *core* type the daemon serialises — `ComposedHunk`, `Comment`,
-//! `RootStatus`, `Integrity`, `GateBlock` — and demands the same JSON back, so
+//! `RootStatus`, `Integrity` — and demands the same JSON back, so
 //! a field added in `crucible-core` fails a test here instead of disappearing
 //! on the way to the browser.
 
@@ -43,9 +43,8 @@ use super::daemon_shape;
 
 /// `GET /review/hunks?scope=` — which hunks to list.
 ///
-/// Typed, unlike `state` on [`SetStateRequest`], and for the opposite reason:
-/// this is not a copy of the daemon's vocabulary but a mirror of the daemon's
-/// own type, which [`ReviewScopeRow`] converts into. A scope the type does not
+/// Typed, because this is a mirror of the daemon's own type, which
+/// [`ReviewScopeRow`] converts into. A scope the type does not
 /// know is refused as a bad query before the daemon is asked; absent means the
 /// whole session.
 #[derive(Debug, Default, Deserialize, IntoParams)]
@@ -54,28 +53,6 @@ pub(super) struct ListHunksQuery {
     /// The hunks to list. Absent means the whole session.
     #[serde(default)]
     scope: Option<ReviewScopeRow>,
-}
-
-/// `POST /review/state` — accept, reject, or requeue one hunk.
-#[derive(Debug, Deserialize, ToSchema)]
-pub(super) struct SetStateRequest {
-    hunk_id: String,
-    /// Forwarded unvalidated: the daemon owns the state vocabulary and answers
-    /// `INVALID_PARAMS` for anything outside it. A copy of the enum here could
-    /// only ever refuse a state the daemon had newly learned.
-    state: String,
-}
-
-/// `POST /review/states` — one decision over several hunks, in order.
-///
-/// The ids reach the daemon in the order the caller gave them, because the
-/// daemon applies them in that order and a reject reverts files as it goes.
-/// `state` is forwarded unvalidated for the same reason as on
-/// [`SetStateRequest`].
-#[derive(Debug, Deserialize, ToSchema)]
-pub(super) struct SetStatesRequest {
-    hunk_ids: Vec<String>,
-    state: String,
 }
 
 /// `POST /review/comment` — anchor a comment to a line range.
@@ -272,10 +249,10 @@ pub(super) struct ReviewRootRow {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(super) enum ReviewSkipKindRow {
-    /// The session's base is untrustworthy, so every root blocks — including
-    /// ones the ledger may no longer know it tracked.
+    /// The session's base is untrustworthy, so every root is degraded —
+    /// including ones the ledger may no longer know it tracked.
     Session,
-    /// One root's attribution is incomplete. Only writes under it block.
+    /// One root's attribution is incomplete. Only that root is degraded.
     Root { root: String },
     /// A lost decision or comment. The queue is poorer, not wrong.
     Informational,
@@ -295,27 +272,10 @@ pub(super) struct ReviewSkipRow {
 ///
 /// Separate from the degraded roots because the worst losses are the ones with
 /// no root to name: a journal that will not read at all leaves `degraded`
-/// empty while the gate holds every write in the session.
+/// empty.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub(super) struct ReviewIntegrityRow {
     skips: Vec<ReviewSkipRow>,
-}
-
-/// A turn parked on the review gate, waiting for a human.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewGateRow {
-    /// The tool call being held.
-    tool: String,
-    /// The first target still unreviewed — what a human must answer to release
-    /// the turn.
-    path: String,
-}
-
-/// One hunk a bulk decision refused, with the daemon's reason.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewFailureRow {
-    hunk_id: String,
-    reason: String,
 }
 
 // =========================================================================
@@ -331,59 +291,9 @@ pub(super) struct ReviewHunksResponse {
     scope: ReviewScopeRow,
     hunks: Vec<ReviewHunkRow>,
     comments: Vec<ReviewCommentRow>,
-    /// Only the roots that are broken. An empty array is the common case; a
-    /// non-empty one means the gate holds writes that no reviewing releases.
+    /// Only the roots that are broken. An empty array is the common case.
     degraded: Vec<ReviewRootRow>,
     integrity: ReviewIntegrityRow,
-    /// What this session's turn is parked on, or `null`.
-    ///
-    /// Always written, and `required` in the document for that reason: a
-    /// client has to be able to tell "not blocked" from "this daemon does not
-    /// report it", and an optional key collapses the two.
-    #[schema(required = true)]
-    gate: Option<ReviewGateRow>,
-}
-
-/// What `POST /api/session/{id}/review/rebase` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewRebaseResponse {
-    session_id: String,
-    /// Every tracked root and what the rebase could do for it. A root that
-    /// still carries a reason was not recovered.
-    roots: Vec<ReviewRootRow>,
-}
-
-/// What `POST /api/session/{id}/review/state` answers.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewStateResponse {
-    session_id: String,
-    hunk_id: String,
-    state: ReviewStateRow,
-}
-
-/// What `POST /api/session/{id}/review/states` answers.
-///
-/// A refused hunk is part of the answer rather than an error status: the ids
-/// in `applied` are on disk whatever happened to the rest, and a client told
-/// only "failed" would have to re-list to learn which were which.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewStatesResponse {
-    session_id: String,
-    state: ReviewStateRow,
-    /// The ids that applied, in the order the request sent them.
-    applied: Vec<String>,
-    failed: Vec<ReviewFailureRow>,
-}
-
-/// What `POST /api/session/{id}/review/undo-reject` answers.
-///
-/// The same report as a bulk decision, minus the state: an undo restores
-/// whatever the batch rejected. An empty stack answers two empty lists.
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewUndoRejectResponse {
-    session_id: String,
-    applied: Vec<String>,
-    failed: Vec<ReviewFailureRow>,
 }
 
 /// What `POST /api/session/{id}/review/comment` answers.
@@ -430,114 +340,6 @@ pub(super) async fn list_hunks(
         .await
         .daemon_err()?;
     Ok(Json(daemon_shape(hunks, "review.list_hunks")?))
-}
-
-/// `POST /api/session/{id}/review/rebase`
-///
-/// The release for a root the daemon can no longer account for. A degraded root
-/// contributes no hunks, so nothing in the queue can clear it and every write
-/// under it stays held — this is the only shipped way out, which is why it is
-/// a sixth route rather than something the panel infers.
-///
-/// The `{}` body is load-bearing for the same reason as on
-/// `…/comment/{id}/resolve`: it is what carries `Content-Type:
-/// application/json` and forces a preflight the CORS allowlist refuses.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/review/rebase",
-    params(("id" = String, Path, description = "The session to rebase")),
-    responses(
-        (status = 200, body = ReviewRebaseResponse),
-        (status = 422, description = "The session has no ledger and no trackable root"),
-        (status = 502, description = "The daemon could not recapture a root"),
-    )
-)]
-pub(super) async fn rebase(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ReviewRebaseResponse>, WebError> {
-    let result = state.daemon.review_rebase(&id).await.daemon_err()?;
-    Ok(Json(daemon_shape(result, "review.rebase")?))
-}
-
-/// `POST /api/session/{id}/review/state`
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/review/state",
-    params(("id" = String, Path, description = "The session under review")),
-    request_body = SetStateRequest,
-    responses(
-        (status = 200, body = ReviewStateResponse),
-        (status = 422, description = "The daemon knows no such hunk, or refuses the state"),
-        (status = 502, description = "The daemon could not record the decision"),
-    )
-)]
-pub(super) async fn set_state(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetStateRequest>,
-) -> Result<Json<ReviewStateResponse>, WebError> {
-    let result = state
-        .daemon
-        .review_set_state(&id, &req.hunk_id, &req.state)
-        .await
-        .daemon_err()?;
-    Ok(Json(daemon_shape(result, "review.set_state")?))
-}
-
-/// `POST /api/session/{id}/review/states`
-///
-/// The daemon answers the ids it applied and the ids it refused, each with a
-/// reason. A refused hunk is part of the answer, not an error status: the
-/// client shows which ones and keeps the rest, so this route forwards the
-/// object whole.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/review/states",
-    params(("id" = String, Path, description = "The session under review")),
-    request_body = SetStatesRequest,
-    responses(
-        (status = 200, body = ReviewStatesResponse),
-        (status = 422, description = "The daemon refuses the state"),
-        (status = 502, description = "The daemon could not record the decisions"),
-    )
-)]
-pub(super) async fn set_states(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<SetStatesRequest>,
-) -> Result<Json<ReviewStatesResponse>, WebError> {
-    let result = state
-        .daemon
-        .review_set_states(&id, &req.hunk_ids, &req.state)
-        .await
-        .daemon_err()?;
-    Ok(Json(daemon_shape(result, "review.set_states")?))
-}
-
-/// `POST /api/session/{id}/review/undo-reject`
-///
-/// Takes back the most recent reject, single or bulk, as one action. The
-/// daemon owns the stack, so the request names no hunk: the session in the
-/// path is the whole input. The `{}` body is load-bearing for the same reason
-/// as on `…/rebase` and `…/comment/{id}/resolve`: it carries `Content-Type:
-/// application/json` and forces the preflight the CORS allowlist refuses.
-#[utoipa::path(
-    post,
-    path = "/api/session/{id}/review/undo-reject",
-    params(("id" = String, Path, description = "The session under review")),
-    responses(
-        (status = 200, body = ReviewUndoRejectResponse),
-        (status = 422, description = "The daemon knows no such hunk any more"),
-        (status = 502, description = "The daemon could not restore the rejects"),
-    )
-)]
-pub(super) async fn undo_reject(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<ReviewUndoRejectResponse>, WebError> {
-    let result = state.daemon.review_undo_reject(&id).await.daemon_err()?;
-    Ok(Json(daemon_shape(result, "review.undo_reject")?))
 }
 
 /// `POST /api/session/{id}/review/comment`

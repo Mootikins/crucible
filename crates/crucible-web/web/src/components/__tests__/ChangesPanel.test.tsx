@@ -25,31 +25,12 @@ const device = vi.hoisted(() => ({ compact: false }));
 vi.mock('@/stores/deviceStore', () => ({ isCompact: () => device.compact }));
 
 const listReviewHunks = vi.fn();
-const setHunkState = vi.fn(async () => ({
-  hunk_id: 'h',
-  state: 'accepted' as const,
-}));
-// The bulk answers echo the ids they were given, the way the mock daemon does.
-const setHunkStates = vi.fn(async (_s: string, ids: string[], state: string) => ({
-  applied: ids,
-  failed: [] as { hunk_id: string; reason: string }[],
-  state,
-}));
-const undoReject = vi.fn(async () => ({
-  applied: ['h1'],
-  failed: [] as { hunk_id: string; reason: string }[],
-}));
 const addReviewComment = vi.fn(async () => ({ comment: {} }));
 const resolveReviewComment = vi.fn(async () => ({ comment_id: 'c1' }));
-const rebaseReview = vi.fn(async () => ({ roots: [] }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
-  setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
-  setHunkStates: (...a: unknown[]) => setHunkStates(...(a as [string, string[], string])),
-  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
   addReviewComment: (...a: unknown[]) => addReviewComment(...(a as [])),
   resolveReviewComment: (...a: unknown[]) => resolveReviewComment(...(a as [])),
-  rebaseReview: (...a: unknown[]) => rebaseReview(...(a as [])),
 }));
 
 const openFileInEditor = vi.fn();
@@ -71,7 +52,7 @@ vi.mock('@/lib/panel-actions', () => ({
   openDiff: (source: unknown) => openDiff(source),
 }));
 
-// Rejecting rewrites a file; the toast is how the user learns it happened.
+// A refused comment is reported in a toast.
 const addNotification = vi.fn();
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: (...a: unknown[]) => addNotification(...a) },
@@ -148,23 +129,7 @@ beforeEach(() => {
   conflicts.rows = [];
   __resetConflictStore();
   answer([]);
-  // clearMocks wipes call history, not implementations — the in-flight test
-  // installs one that never settles.
-  setHunkState.mockReset();
-  setHunkState.mockResolvedValue({ hunk_id: 'h', state: 'accepted' });
-  setHunkStates.mockReset();
-  setHunkStates.mockImplementation(async (_s, ids, state) => ({ applied: ids, failed: [], state }));
-  undoReject.mockReset();
-  undoReject.mockResolvedValue({ applied: ['h1'], failed: [] });
 });
-
-/** The `Undo` the last toast offered, or a failure naming what was posted. */
-function lastUndo(): () => void {
-  const calls = addNotification.mock.calls as [string, string, { label: string; run: () => void }?][];
-  const withUndo = calls.filter((c) => c[2]?.label === 'Undo');
-  expect(withUndo, JSON.stringify(calls)).not.toHaveLength(0);
-  return withUndo.at(-1)![2]!.run;
-}
 
 afterEach(() => {
   cleanup();
@@ -214,141 +179,15 @@ describe('ChangesPanel — the queue', () => {
     expect(screen.getByTestId('changes-count').textContent).toContain('4 total');
   });
 
-  it('external hunks render for context with NO reject affordance', async () => {
+  it('external hunks render for context and are not counted as owed', async () => {
     answer([hunk({ id: 'ext', tool_call_ids: [] })]);
     setCurrentSession(session());
     render(() => <ChangesPanel />);
 
     await waitFor(() => expect(screen.getByTestId('hunk-ext')).toBeInTheDocument());
     expect(screen.getByTestId('hunk-external')).toBeInTheDocument();
-    // Reverting it would destroy the user's own edit while reporting that an
-    // agent edit was undone.
-    expect(screen.queryByTestId('reject-ext')).toBeNull();
-    // Accepting is still meaningful: it clears it from the queue.
-    expect(screen.getByTestId('accept-ext')).toBeInTheDocument();
-    // ...and it is not counted as work the agent owes.
+    // It is not counted as work the agent owes.
     expect(screen.getByTestId('changes-count').textContent).toContain('0 unreviewed');
-  });
-
-  it('accept reaches the daemon with the hunk id', async () => {
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('accept-h1'));
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'accepted'));
-  });
-
-  it('reject is a state, not a separate verb — the daemon reverts on the same call', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
-    confirm.mockRestore();
-  });
-
-  // The gradient: deleting a session — which loses nothing on disk — already
-  // confirmed, while this, which rewrites a file the daemon cannot restore,
-  // was one unguarded click on a 22px glyph.
-  it('asks before reverting, and names the lines it is about to rewrite', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledOnce());
-
-    const prompt = confirm.mock.calls[0][0] as string;
-    expect(prompt).toContain('src/a.rs');
-    expect(prompt).toContain('L4');
-    // The daemon keeps a stack of rejects now; a prompt that still said
-    // "cannot be undone" would be a lie the user acts on.
-    expect(prompt).not.toContain('cannot be undone');
-    expect(prompt).toContain('Undo');
-    confirm.mockRestore();
-  });
-
-  it('touches no disk when the user backs out of the confirm', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(setHunkState).not.toHaveBeenCalled();
-    confirm.mockRestore();
-  });
-
-  // Accept is the cheap, recoverable half of the pair. Confirming it too would
-  // be the fatigue the `re-applied` flag exists to make visible.
-  it('accept stays one click', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('accept-h1'));
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'accepted'));
-    expect(confirm).not.toHaveBeenCalled();
-    confirm.mockRestore();
-  });
-
-  it('leaves a receipt naming what it reverted', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    await waitFor(() => expect(addNotification).toHaveBeenCalled());
-    const [type, message] = addNotification.mock.calls.at(-1) as [string, string];
-    expect(type).toBe('info');
-    expect(message).toContain('src/a.rs');
-    confirm.mockRestore();
-  });
-
-  // A single reject is a batch of one on the daemon's stack, so it gets the
-  // same way back as a bulk one.
-  it('a single reject offers an undo that pops the daemon stack', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer([hunk({ id: 'h1' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    await waitFor(() => expect(addNotification).toHaveBeenCalled());
-    lastUndo()();
-    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
-    confirm.mockRestore();
-  });
-
-  it('a hunk in flight refuses a second click', async () => {
-    answer([hunk({ id: 'h1' })]);
-    let release: () => void = () => {};
-    setHunkState.mockImplementation(
-      () => new Promise<never>((_, __) => (release = () => _(undefined as never))),
-    );
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('accept-h1'));
-    await waitFor(() => expect(screen.getByTestId('reject-h1')).toBeDisabled());
-    fireEvent.click(screen.getByTestId('reject-h1'));
-    expect(setHunkState).toHaveBeenCalledTimes(1);
-    release();
   });
 
   it('the unreviewed filter drains to "nothing left", not to an empty panel', async () => {
@@ -425,41 +264,25 @@ describe('ChangesPanel — the queue', () => {
     expect(pendingReveal()).toEqual({ path: '/repo/src/a.rs', line: 12 });
   });
 
-  // The daemon decides. CodeMirror's own accept/reject `action` would edit the
-  // browser's copy of the text and leave the disk untouched, so the controls
-  // the merge view draws call the same review actions as the row's buttons.
-  it('an expanded hunk mounts the merge view with accept and reject controls', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  // The daemon no longer accepts or reverts a hunk, so neither the row nor
+  // the merge view offers a decision.
+  it('an expanded hunk mounts the merge view with no decision controls', async () => {
     answer([hunk({ id: 'h1', before_content: 'a\n', after_content: 'b\n' })]);
     setCurrentSession(session());
     render(() => <ChangesPanel />);
     await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
     expect(screen.queryByTestId('hunk-merge')).toBeNull();
+    expect(screen.queryByTestId('accept-h1')).toBeNull();
+    expect(screen.queryByTestId('reject-h1')).toBeNull();
+    expect(screen.queryByTestId('changes-accept-all')).toBeNull();
+    expect(screen.queryByTestId('changes-reject-all')).toBeNull();
 
     fireEvent.click(screen.getByTestId('hunk-h1').querySelector('button')!);
     const merge = await waitFor(() => screen.getByTestId('hunk-merge'));
-    const accept = await waitFor(() => within(merge).getByRole('button', { name: 'Accept' }));
-    const reject = within(merge).getByRole('button', { name: 'Reject' });
-    expect(accept.className).toContain('min-h-11');
-    expect(reject.className).toContain('min-h-11');
-
-    fireEvent.click(reject);
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
-    // The merge view still shows the hunk as the daemon composed it.
+    // The merge view shows the hunk as the daemon composed it.
+    await waitFor(() => expect(merge.textContent).toContain('b'));
     expect(merge.textContent).toContain('a');
-    expect(merge.textContent).toContain('b');
-    confirm.mockRestore();
-  });
-
-  it("an external hunk's merge view offers accept and no reject", async () => {
-    answer([hunk({ id: 'ext', tool_call_ids: [], before_content: 'a\n', after_content: 'b\n' })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-ext')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('hunk-ext').querySelector('button')!);
-    const merge = await waitFor(() => screen.getByTestId('hunk-merge'));
-    await waitFor(() => within(merge).getByRole('button', { name: 'Accept' }));
+    expect(within(merge).queryByRole('button', { name: 'Accept' })).toBeNull();
     expect(within(merge).queryByRole('button', { name: 'Reject' })).toBeNull();
   });
 
@@ -469,10 +292,9 @@ describe('ChangesPanel — the queue', () => {
     setCurrentSession(session());
     render(() => <ChangesPanel />);
     await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-    for (const id of ['accept-h1', 'reject-h1', 'comment-h1']) {
-      expect(screen.getByTestId(id).className, id).toContain('min-h-11');
-      expect(screen.getByTestId(id).className, id).toContain('min-w-11');
-    }
+    const comment = screen.getByTestId('comment-h1');
+    expect(comment.className).toContain('min-h-11');
+    expect(comment.className).toContain('min-w-11');
   });
 
   it('on the desktop shell the hunk controls keep their dense size', async () => {
@@ -480,9 +302,7 @@ describe('ChangesPanel — the queue', () => {
     setCurrentSession(session());
     render(() => <ChangesPanel />);
     await waitFor(() => expect(screen.getByTestId('hunk-h1')).toBeInTheDocument());
-    for (const id of ['accept-h1', 'reject-h1', 'comment-h1']) {
-      expect(screen.getByTestId(id).className, id).not.toContain('min-h-11');
-    }
+    expect(screen.getByTestId('comment-h1').className).not.toContain('min-h-11');
   });
 
   it('comments a range, not a hunk id', async () => {
@@ -532,160 +352,6 @@ describe('ChangesPanel — the queue', () => {
 
     fireEvent.click(screen.getByTestId('resolve-c1'));
     await waitFor(() => expect(resolveReviewComment).toHaveBeenCalledWith('s1', 'c1'));
-  });
-});
-
-describe('ChangesPanel — bulk decisions', () => {
-  // Composed-diff order, with one file's hunks interleaved with another's, an
-  // external hunk and an already-decided one: the bulk buttons must pick the
-  // right subset and keep the order.
-  const queue = () => [
-    hunk({ id: 'a' }),
-    hunk({ id: 'x', path: 'src/b.rs' }),
-    hunk({ id: 'b', current_range: { start: 20, end: 21 } }),
-    hunk({ id: 'ext', tool_call_ids: [], current_range: { start: 30, end: 31 } }),
-    hunk({ id: 'done', state: 'accepted', current_range: { start: 40, end: 41 } }),
-    hunk({ id: 'y', root: '/other', path: 'x.md' }),
-  ];
-
-  it('reject all on a file asks once and then undoes as one', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(confirm.mock.calls[0][0]).toContain('src/a.rs');
-    expect(confirm.mock.calls[0][0]).toContain('2');
-    // One call, the file's unreviewed non-external hunks, in file order.
-    await waitFor(() => expect(setHunkStates).toHaveBeenCalledOnce());
-    expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'b'], 'rejected');
-    expect(setHunkState).not.toHaveBeenCalled();
-
-    // The receipt carries the way back, and the way back is one daemon call.
-    await waitFor(() => expect(addNotification).toHaveBeenCalled());
-    lastUndo()();
-    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
-    confirm.mockRestore();
-  });
-
-  it('reject all is not sent when the confirm is declined', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
-    expect(confirm).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByTestId('changes-reject-all'));
-    expect(confirm).toHaveBeenCalledTimes(2);
-    expect(setHunkStates).not.toHaveBeenCalled();
-    expect(addNotification).not.toHaveBeenCalled();
-    confirm.mockRestore();
-  });
-
-  it('accept all on a file is one click and one call', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('accept-all-src/a.rs'));
-    await waitFor(() => expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'b'], 'accepted'));
-    expect(confirm).not.toHaveBeenCalled();
-    confirm.mockRestore();
-  });
-
-  it('the review-wide buttons decide every root in composed order', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('changes-accept-all'));
-    await waitFor(() =>
-      expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'x', 'b', 'y'], 'accepted'),
-    );
-    expect(confirm).not.toHaveBeenCalled();
-
-    // The pair is one door: the second click waits for the first to settle.
-    await waitFor(() => expect(screen.getByTestId('changes-reject-all')).toBeEnabled());
-    fireEvent.click(screen.getByTestId('changes-reject-all'));
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(confirm.mock.calls[0][0]).toContain('4');
-    await waitFor(() =>
-      expect(setHunkStates).toHaveBeenCalledWith('s1', ['a', 'x', 'b', 'y'], 'rejected'),
-    );
-    confirm.mockRestore();
-  });
-
-  it('a file with nothing left to decide offers no bulk buttons', async () => {
-    answer([hunk({ id: 'done', state: 'accepted' }), hunk({ id: 'ext', tool_call_ids: [] })]);
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-done')).toBeInTheDocument());
-
-    expect(screen.queryByTestId('accept-all-src/a.rs')).toBeNull();
-    expect(screen.queryByTestId('reject-all-src/a.rs')).toBeNull();
-    expect(screen.getByTestId('changes-accept-all')).toBeDisabled();
-    expect(screen.getByTestId('changes-reject-all')).toBeDisabled();
-  });
-
-  // The daemon applies what it can and names what it refused. Silence on the
-  // refused half would read as "everything went through".
-  it('names the hunks the daemon refused in one notification', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    setHunkStates.mockResolvedValue({
-      applied: ['a'],
-      failed: [{ hunk_id: 'b', reason: 'unknown hunk b' }],
-      state: 'rejected',
-    });
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
-    await waitFor(() => expect(setHunkStates).toHaveBeenCalledOnce());
-    const warning = await waitFor(() => {
-      const c = addNotification.mock.calls.find((c) => c[0] === 'warning');
-      expect(c).toBeDefined();
-      return c as [string, string];
-    });
-    // Named as the user saw the hunk, not by its hash.
-    expect(warning[1]).toContain('src/a.rs L20');
-    expect(warning[1]).toContain('unknown hunk b');
-    // The one that landed still has its way back.
-    expect(lastUndo()).toBeTypeOf('function');
-    confirm.mockRestore();
-  });
-
-  it('an undo the daemon refused says which hunks moved on', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    undoReject.mockResolvedValue({
-      applied: [],
-      failed: [{ hunk_id: 'a', reason: 'src/a.rs changed since the hunk was computed' }],
-    });
-    answer(queue());
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-    await waitFor(() => expect(screen.getByTestId('hunk-a')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('reject-all-src/a.rs'));
-    await waitFor(() => expect(addNotification).toHaveBeenCalled());
-    lastUndo()();
-    await waitFor(() => expect(undoReject).toHaveBeenCalledOnce());
-    await waitFor(() => {
-      const c = addNotification.mock.calls.find((c) => c[0] === 'warning') as [string, string];
-      expect(c).toBeDefined();
-      expect(c[1]).toContain('changed since the hunk was computed');
-    });
-    confirm.mockRestore();
   });
 });
 
@@ -757,20 +423,6 @@ describe('ChangesPanel — degradation', () => {
     expect(screen.queryByTestId('changes-degraded')).toBeNull();
   });
 
-  // The only release. Reviewing cannot clear a degraded root — it contributes
-  // no hunks — and for a while `review.rebase` existed as a daemon method with
-  // no client anywhere, reachable only by hand-written JSON-RPC.
-  it('offers the rebase that is the only way out of the block', async () => {
-    answer([], [], {
-      degraded: [{ root: '/repo', degraded: 'tracked root no longer exists' }],
-    });
-    setCurrentSession(session());
-    render(() => <ChangesPanel />);
-
-    await waitFor(() => expect(screen.getByTestId('changes-rebase')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('changes-rebase'));
-    await waitFor(() => expect(rebaseReview).toHaveBeenCalledWith('s1'));
-  });
 });
 
 describe('ChangesPanel — re-applied changes', () => {

@@ -21,8 +21,7 @@ use crate::agent_manager::vm_pass::run_handlers;
 /// arrives after the fact and stops nothing. That is why the session
 /// lifecycle refuses to pair an isolation claim with an external agent
 /// (`unenforceable_isolation` in session_lifecycle.rs, whose rule is the pure
-/// `unenforceable_reason` beside it), and why the review gate degrades to
-/// post-turn review for one rather than pretending to block.
+/// `unenforceable_reason` beside it).
 fn deny_tool_call(
     stream_ctx: &StreamContext,
     call_id: &str,
@@ -370,38 +369,15 @@ impl AgentManager {
             );
         }
 
-        // Review gate. Waits — it does not refuse — while a file this call
-        // targets still has unreviewed hunks from the agent's own earlier
-        // work. See `review_gate` for the rule and for why waiting beats
-        // denying.
+        // The capture bracket opens HERE, below the hard refusals and the
+        // `invoke_tool` unwrap, and not at the call site above this function.
         //
-        // Above the hook loop, with the hard refusals, and for the same
-        // reason: a `pre_tool_call` handler returning `Handled` returns at the
-        // interception branch below and never reaches the isolation gate, the
-        // permission gate, or dispatch — yet it can still write, since oci's
-        // handler runs bash inside a container over the same bind-mounted
-        // workspace. A gate placed under the loop would be one a plugin can
-        // opt out of. It also means the wait happens before the session-state
-        // lock is taken, so a held call does not starve the session.
-        //
-        // The cost of being up here is that a Transform handler's rewritten
-        // path is not what the gate checked. That is the right trade: the
-        // rewrite is the plugin's, the unreviewed hunk is the user's.
-        super::review_gate::hold_for_review(stream_ctx, &tool_call.name, &args, &diffs).await;
-
-        // The capture bracket opens HERE, below the gate, and not at the call
-        // site above this function. `hold_for_review` is an unbounded wait on
-        // a human: everything they do to the worktree while it waits — most
-        // sharply the revert that rejecting a hunk performs, which is what
-        // releases the gate — would otherwise be measured inside this call's
-        // interval and attributed to the agent.
-        //
-        // It cannot open any lower either. The `pre_tool_call` handlers just
-        // below can write (oci's handler runs bash in a container over the
-        // same bind-mounted workspace), and a bracket opened after them would
+        // It cannot open any lower. The `pre_tool_call` handlers just below
+        // can write (oci's handler runs bash in a container over the same
+        // bind-mounted workspace), and a bracket opened after them would
         // report their edits as `external`. The permission prompt further down
-        // is the other unbounded wait, and it is handled by re-baselining
-        // rather than by moving this point.
+        // is an unbounded wait on a person. The bracket rebases after that
+        // prompt, so this point does not move.
         //
         // Side effect of being below the `invoke_tool` unwrap: the bracket now
         // sees the real tool name, so `invoke_tool`→`read_file` stops being

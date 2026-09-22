@@ -5,7 +5,6 @@ mod gate_decision;
 mod isolation_gate;
 pub(in crate::agent_manager) mod permission;
 pub(crate) mod review_capture;
-mod review_gate;
 mod send;
 pub(in crate::agent_manager) mod stream;
 mod tool_call;

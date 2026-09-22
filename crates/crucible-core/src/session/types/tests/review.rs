@@ -5,7 +5,7 @@
 
 use crate::session::types::{
     ChildLedgerRef, ComposedHunk, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, SnapshotId, Verdict,
+    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, SnapshotId,
 };
 use std::path::Path;
 
@@ -427,16 +427,6 @@ fn an_informational_skip_blocks_nothing() {
     assert!(!integrity.is_intact());
     assert!(!integrity.blocks(&PhysicalRoot::from_top_level("/a")));
     assert!(!integrity.blocks_everything());
-}
-
-/// Only `Clear` may let a write through. Collapsing `Degraded` into it is the
-/// structural-failure case turning the gate off exactly when attribution has
-/// stopped working.
-#[test]
-fn only_a_clear_verdict_lets_a_write_through() {
-    assert!(!Verdict::Clear.blocks());
-    assert!(Verdict::Unreviewed.blocks());
-    assert!(Verdict::Degraded { root: None }.blocks());
 }
 
 /// `0` is a real conversation-tree node — the root — so a row written before

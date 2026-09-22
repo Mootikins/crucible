@@ -213,18 +213,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.delete", json!({}), bad_state!("delete")),
         ("session.compact", json!({}), bad_state!("compact")),
         // ── 3. refuses, naming the LEDGER ───────────────────────────────────
-        ("review.rebase", json!({}), no_ledger()),
-        (
-            "review.set_state",
-            json!({"hunk_id": "h", "state": "accepted"}),
-            no_ledger(),
-        ),
-        (
-            "review.set_states",
-            json!({"hunk_ids": ["h"], "state": "accepted"}),
-            no_ledger(),
-        ),
-        ("review.undo_reject", json!({}), no_ledger()),
         (
             "review.comment",
             json!({"path": "p", "body": "b", "line_start": 1}),
@@ -291,7 +279,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
                 "scope": "session",
                 "hunks": [], "comments": [], "degraded": [],
                 "integrity": {"skips": []},
-                "gate": serde_json::Value::Null,
             })),
         ),
         (

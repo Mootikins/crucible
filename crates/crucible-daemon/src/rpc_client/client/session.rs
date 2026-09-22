@@ -235,7 +235,7 @@ pub struct SessionListRequest {
 /// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
 /// `session.list_notifications`, `session.load_events`,
 /// `session.get_precognition`, `session.archive`, `session.unarchive`,
-/// `session.delete`, `review.list_hunks`, `review.rebase`.
+/// `session.delete`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionIdRequest {
     pub session_id: String,

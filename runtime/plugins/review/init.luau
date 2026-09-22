@@ -2,9 +2,8 @@
 --- review — the attributed-diff review queue, as tools an agent can call.
 ---
 --- The daemon owns review; this plugin is the *tool* surface over it. Both it
---- and the web panel go through the same `review.*` operations, so a hunk
---- rejected by an agent and a hunk rejected by a human are reverted the same
---- way and reported the same way.
+--- and the web panel go through the same `review.*` operations, so a comment
+--- from an agent and a comment from a person are stored the same way.
 ---
 --- The reason this exists at all is delegation. A delegating agent spawns a
 --- sub-session, the sub-session edits the workspace, and the delegator is the
@@ -16,10 +15,9 @@
 --- Get the id of a session you delegated to from `delegate_session`'s result
 --- (`child_session_id`).
 ---
---- The action unit is the composed hunk, never a tool call: every hunk is
---- independently revertible against the session's base tree. `external` hunks
+--- The unit is the composed hunk, never a tool call. `external` hunks
 --- (`tool_call_ids` empty) are somebody's own edits — they are listed so the
---- diff stays honest, and they cannot be rejected.
+--- diff stays honest.
 
 local M = {}
 
@@ -92,26 +90,6 @@ function M.list_hunks(args: { [string]: any }): ToolResult
     return { hunks = out, count = #out, unreviewed = unreviewed }
 end
 
---- Accept or reject one hunk.
-function M.set_state(args: { [string]: any }): ToolResult
-    if not args.session_id then
-        return { error = "session_id is required" }
-    end
-    if not args.hunk_id then
-        return { error = "hunk_id is required" }
-    end
-    local state = args.state
-    if state ~= "accepted" and state ~= "rejected" and state ~= "unreviewed" then
-        return { error = "state must be 'accepted', 'rejected' or 'unreviewed'" }
-    end
-
-    local ok, err = cru.session.review_set_state(args.session_id, args.hunk_id, state)
-    if not ok then
-        return { error = err }
-    end
-    return { hunk_id = args.hunk_id, state = state }
-end
-
 --- Comment on a line range.
 function M.comment(args: { [string]: any }): ToolResult
     if not args.session_id then
@@ -168,24 +146,8 @@ return {
             },
             fn = M.list_hunks,
         },
-        review_set_state = {
-            desc = "Accept or reject one hunk. Rejecting reverts it on disk immediately and "
-                .. "tells that session's agent, so it does not re-apply the same edit. "
-                .. "External hunks (external = true) cannot be rejected.",
-            params = {
-                { name = "session_id", type = "string", desc = "Session being reviewed" },
-                { name = "hunk_id", type = "string", desc = "Hunk id from review_list_hunks" },
-                {
-                    name = "state",
-                    type = "string",
-                    desc = "accepted | rejected | unreviewed",
-                },
-            },
-            fn = M.set_state,
-        },
         review_comment = {
-            desc = "Comment on a line range — changed or unchanged. Say what should change; "
-                .. "use review_set_state to undo something instead.",
+            desc = "Comment on a line range — changed or unchanged. Say what should change.",
             params = {
                 { name = "session_id", type = "string", desc = "Session being reviewed" },
                 {

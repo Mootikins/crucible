@@ -32,18 +32,13 @@ vi.mock('@/contexts/ChatContext', () => ({
 }));
 
 const listReviewHunks = vi.fn();
-const setHunkState = vi.fn(async () => ({ hunk_id: 'h1', state: 'accepted' as const }));
-const undoReject = vi.fn(async () => ({ applied: ['h1'], failed: [] }));
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
-  setHunkState: (...a: unknown[]) => setHunkState(...(a as [])),
-  undoReject: (...a: unknown[]) => undoReject(...(a as [])),
   addReviewComment: vi.fn(),
   resolveReviewComment: vi.fn(),
 }));
 
 const { ToolCard } = await import('../ToolCard');
-const { notificationActions } = await import('@/stores/notificationStore');
 const {
   __resetReviewStore,
   reviewActions,
@@ -118,8 +113,6 @@ beforeEach(() => {
   installFakeEventSource();
   env = createTestQueryEnv({ 'GET /api/kiln/file': () => ({ content: '' }) });
   setSessionId('s1');
-  setHunkState.mockReset();
-  setHunkState.mockResolvedValue({ hunk_id: 'h1', state: 'accepted' });
 });
 
 afterEach(() => {
@@ -205,94 +198,25 @@ describe('ToolCard — superseded', () => {
   });
 });
 
-describe('ToolCard — accept / reject', () => {
-  it('offers one control pair per live composed hunk', async () => {
+describe('ToolCard — live hunks', () => {
+  // The daemon no longer accepts or reverts a hunk, so a chip names the lines
+  // and offers no decision.
+  it('shows one chip per live composed hunk, with no decision on it', async () => {
     await seed([hunk({ id: 'h1' }), hunk({ id: 'h2', current_range: { start: 30, end: 31 } })]);
     render(() => <ToolCard toolCall={editCall()} />);
     expand();
     await waitFor(() => expect(screen.getByTestId('tool-hunk-h1')).toBeInTheDocument());
     expect(screen.getByTestId('tool-hunk-h2')).toBeInTheDocument();
-  });
-
-  it('accepting from the card names the composed hunk, not the tool call', async () => {
-    await seed([hunk({ id: 'h1' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    fireEvent.click(await waitFor(() => screen.getByTestId('tool-accept-h1')));
-    // The action unit is the composed hunk — rejecting a call's own
-    // contribution after later edits touched the same lines is a three-way
-    // merge that fails exactly when it matters.
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'accepted'));
-  });
-
-  it('rejecting from the card reverts the composed hunk', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await seed([hunk({ id: 'h1' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
-    await waitFor(() => expect(setHunkState).toHaveBeenCalledWith('s1', 'h1', 'rejected'));
-    confirm.mockRestore();
-  });
-
-  // The same receipt as the panel's: the reject is a batch of one on the
-  // daemon's stack whichever door it came through.
-  it('a reject from the transcript offers the same undo as the panel', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await seed([hunk({ id: 'h1' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
-    const add = vi.mocked(notificationActions.addNotification);
-    await waitFor(() => expect(add).toHaveBeenCalled());
-    const action = add.mock.calls.at(-1)![2] as { label: string; run: () => void };
-    expect(action.label).toBe('Undo');
-    action.run();
-    await waitFor(() => expect(undoReject).toHaveBeenCalledWith('s1'));
-    confirm.mockRestore();
-  });
-
-  // The transcript is the SECOND doorway to the same daemon revert. A gate on
-  // one of two doors is not a gate.
-  it('the transcript chip asks before reverting, exactly as the panel does', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await seed([hunk({ id: 'h1' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    fireEvent.click(await waitFor(() => screen.getByTestId('tool-reject-h1')));
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(setHunkState).not.toHaveBeenCalled();
-    confirm.mockRestore();
-  });
-
-  it('on a compact shell the transcript chip controls are at least 44 px', async () => {
-    device.compact = true;
-    await seed([hunk({ id: 'h1' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    const accept = await waitFor(() => screen.getByTestId('tool-accept-h1'));
-    const reject = screen.getByTestId('tool-reject-h1');
-    expect(accept.className).toContain('min-h-11');
-    expect(accept.className).toContain('min-w-11');
-    expect(reject.className).toContain('min-h-11');
-    expect(reject.className).toContain('min-w-11');
-  });
-
-  it('an accepted hunk keeps its reject, loses its accept', async () => {
-    await seed([hunk({ id: 'h1', state: 'accepted' })]);
-    render(() => <ToolCard toolCall={editCall()} />);
-    expand();
-    await waitFor(() => expect(screen.getByTestId('tool-reject-h1')).toBeInTheDocument());
     expect(screen.queryByTestId('tool-accept-h1')).toBeNull();
+    expect(screen.queryByTestId('tool-reject-h1')).toBeNull();
   });
 
-  it('a superseded call has no accept/reject at all — the action unit is gone', async () => {
+  it('a superseded call has no hunk chip — the action unit is gone', async () => {
     await seed([hunk({ tool_call_ids: ['call-2'] })]);
     render(() => <ToolCard toolCall={editCall()} />);
     expand();
     await waitFor(() => expect(screen.getByTestId('tool-superseded')).toBeInTheDocument());
-    expect(screen.queryByTestId('tool-accept-h1')).toBeNull();
-    expect(screen.queryByTestId('tool-reject-h1')).toBeNull();
+    expect(screen.queryByTestId('tool-hunk-h1')).toBeNull();
     // The card still shows what the call did — it is an index entry, not a
     // pending action.
     expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();

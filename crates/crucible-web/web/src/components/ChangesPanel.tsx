@@ -19,14 +19,6 @@ import { HunkMergeView } from './HunkMergeView';
 import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
-import {
-  announceRefused,
-  announceReject,
-  announceRejectAll,
-  confirmReject,
-  confirmRejectAll,
-  undoLastReject,
-} from '@/lib/review-confirm';
 import { hit } from '@/lib/touch';
 import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
 import {
@@ -36,7 +28,7 @@ import {
   type ComposedHunk,
   type ReviewScope,
 } from '@/lib/review-types';
-import { AlertTriangle, Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
+import { AlertTriangle, Check, ChevronRight, MessageCircle, RefreshCw } from '@/lib/icons';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
@@ -71,15 +63,6 @@ function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] 
   return roots;
 }
 
-/**
- * The hunks a bulk decision reaches: unreviewed and the agent's own. An
- * accepted or rejected hunk is already decided, and an external one is the
- * user's edit, which "Reject all" must never revert out from under them.
- */
-function decidable(hunks: ComposedHunk[]): ComposedHunk[] {
-  return hunks.filter((h) => h.state === 'unreviewed' && !isExternal(h));
-}
-
 const STATE_CLASS: Record<string, string> = {
   unreviewed: 'border-attention/50 bg-attention/10 text-attention',
   accepted: 'border-ok/50 bg-ok/10 text-ok',
@@ -95,27 +78,14 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
   const external = () => isExternal(props.hunk);
   const range = () => hunkRangeLabel(props.hunk);
 
-  // A refused mutation means the disk did not change — an unknown or stale
-  // hunk, or an external one. Silence would read as a dropped click.
+  // A refused comment means nothing was stored. Silence would read as a
+  // dropped click.
   const act = (fn: () => Promise<void>) => {
     if (busy()) return;
     setBusy(true);
     void fn()
       .catch((e: Error) => notificationActions.addNotification('error', e.message))
       .finally(() => setBusy(false));
-  };
-
-  const accept = () =>
-    act(() => reviewActions.setState(props.sessionId, props.hunk.id, 'accepted'));
-  // The confirm is the gate in front of the one destructive verb. The row's
-  // button and the merge view's control share it, so neither is an unguarded
-  // door to the same daemon call.
-  const reject = () => {
-    if (!confirmReject(props.hunk)) return;
-    act(async () => {
-      await reviewActions.reject(props.sessionId, props.hunk.id);
-      announceReject(props.hunk, () => void undoLastReject(props.sessionId, [props.hunk]));
-    });
   };
 
   const submitComment = () => {
@@ -182,32 +152,6 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
           </Show>
         </button>
 
-        <Show when={props.hunk.state !== 'accepted'}>
-          <button
-            type="button"
-            title="Accept"
-            data-testid={`accept-${props.hunk.id}`}
-            disabled={busy()}
-            onClick={accept}
-            class={`shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-          >
-            <Check class="w-3.5 h-3.5" />
-          </button>
-        </Show>
-        {/* No reject for an external hunk: reverting one destroys the user's
-            own concurrent edit while reporting that an agent edit was undone. */}
-        <Show when={!external()}>
-          <button
-            type="button"
-            title="Reject — reverts the change on disk and tells the agent"
-            data-testid={`reject-${props.hunk.id}`}
-            disabled={busy()}
-            onClick={reject}
-            class={`shrink-0 rounded p-1 text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-          >
-            <Undo2 class="w-3.5 h-3.5" />
-          </button>
-        </Show>
         <button
           type="button"
           title="Comment on these lines"
@@ -245,13 +189,8 @@ const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) =>
         <div class="px-2 pb-2">
           {/* `before_content` is the hunk's session_base text and
               `after_content` its worktree text: the original and the document
-              of one merge view. The view's controls decide through the daemon,
-              the way the row's buttons do. */}
-          <HunkMergeView
-            hunk={props.hunk}
-            onAccept={accept}
-            onReject={external() ? undefined : reject}
-          />
+              of one merge view. */}
+          <HunkMergeView hunk={props.hunk} />
         </div>
       </Show>
     </div>
@@ -274,59 +213,10 @@ export const ChangesPanel: Component = () => {
   useReviewSession(sessionId);
 
   const [unreviewedOnly, setUnreviewedOnly] = createSignal(false);
-  const [rebasing, setRebasing] = createSignal(false);
-  const [bulkBusy, setBulkBusy] = createSignal(false);
 
   const state = () => reviewStore.session(sessionId());
   const scope = () => reviewStore.scope(sessionId());
 
-  // One bulk decision in flight at a time. A second click while the daemon is
-  // still applying the first would send the same ids again.
-  const bulk = (fn: (id: string) => Promise<void>) => {
-    const id = sessionId();
-    if (!id || bulkBusy()) return;
-    setBulkBusy(true);
-    void fn(id)
-      .catch((e: Error) => notificationActions.addNotification('error', e.message))
-      .finally(() => setBulkBusy(false));
-  };
-
-  /** Accept every decidable hunk in `hunks`, in the order given. */
-  const acceptAll = (hunks: ComposedHunk[]) => {
-    const batch = decidable(hunks);
-    if (batch.length === 0) return;
-    bulk(async (id) => {
-      const outcome = await reviewActions.setStates(
-        id,
-        batch.map((h) => h.id),
-        'accepted',
-      );
-      announceRefused(outcome.failed, batch);
-    });
-  };
-
-  /**
-   * Reject every decidable hunk in `hunks` as ONE batch: one confirm, one
-   * daemon call, one receipt with one undo. `label` names the scope in the
-   * confirm.
-   */
-  const rejectAll = (hunks: ComposedHunk[], label: string) => {
-    const batch = decidable(hunks);
-    if (batch.length === 0) return;
-    if (!confirmRejectAll(batch.length, label)) return;
-    bulk(async (id) => {
-      const outcome = await reviewActions.rejectMany(
-        id,
-        batch.map((h) => h.id),
-      );
-      // The names come from the batch, not from a re-list: a reverted hunk has
-      // already left the composed diff by the time the daemon answers.
-      if (outcome.applied.length > 0) {
-        announceRejectAll(outcome.applied.length, () => void undoLastReject(id, batch));
-      }
-      announceRefused(outcome.failed, batch);
-    });
-  };
   // Named roots first, then the losses that name none — a journal that will not
   // read at all leaves nothing that can identify a repository, and that is
   // precisely the case a root-only list reports as "everything is fine".
@@ -350,9 +240,6 @@ export const ChangesPanel: Component = () => {
   );
   const roots = createMemo(() => groupByRoot(visible()));
   const unreviewed = () => reviewStore.unreviewedCount(sessionId());
-  // The whole review, filter or no filter: the buttons decide what is owed,
-  // not what is on screen.
-  const decidableAll = createMemo(() => decidable(state().hunks));
 
   const openComments = createMemo(() => state().comments.filter((c) => !c.resolved));
 
@@ -400,9 +287,8 @@ export const ChangesPanel: Component = () => {
             <RefreshCw class={`w-3.5 h-3.5 ${state().loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        {/* The review-wide pair. Disabled, not hidden, so the panel keeps its
-            shape while the queue drains. The scope control sits beside them:
-            the daemon decides what the turn holds, the panel only asks. */}
+        {/* The scope control: the daemon decides what the turn holds, the
+            panel only asks. */}
         <div class="mt-1 flex items-center gap-1.5">
           <div
             role="group"
@@ -431,26 +317,6 @@ export const ChangesPanel: Component = () => {
               )}
             </For>
           </div>
-          <button
-            type="button"
-            title="Accept every unreviewed change in this review"
-            data-testid="changes-accept-all"
-            disabled={bulkBusy() || decidableAll().length === 0}
-            onClick={() => acceptAll(state().hunks)}
-            class={`rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-          >
-            Accept all
-          </button>
-          <button
-            type="button"
-            title="Reject every unreviewed change in this review — reverts them on disk and tells the agent"
-            data-testid="changes-reject-all"
-            disabled={bulkBusy() || decidableAll().length === 0}
-            onClick={() => rejectAll(state().hunks, 'every file in this review')}
-            class={`rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-          >
-            Reject all
-          </button>
         </div>
       </PanelHeader>
 
@@ -546,18 +412,15 @@ export const ChangesPanel: Component = () => {
           </Show>
 
           {/* Before the empty state, and instead of it. A degraded root
-              contributes ZERO hunks while the gate holds every write under it,
-              so "No changes in this session yet" is the exact wrong sentence
-              for the exact moment nothing can proceed — and reviewing cannot
-              clear it, because there is nothing in the queue to review. */}
+              contributes ZERO hunks, so "No changes in this session yet" is
+              the wrong sentence for a record that cannot be read. */}
           <Show when={reviewStore.isDegraded(sessionId())}>
             <div
               class="m-2 rounded border border-attention/50 bg-attention/10 px-3 py-2"
               data-testid="changes-degraded"
             >
               <p class="text-xs text-attention">
-                This session's change history cannot be read, so writes are held. Reviewing will not
-                release them.
+                This session's change history cannot be read, so this list is incomplete.
               </p>
               <ul class="mt-1 space-y-0.5">
                 <For each={degradedReasons()}>
@@ -566,23 +429,6 @@ export const ChangesPanel: Component = () => {
                   )}
                 </For>
               </ul>
-              <button
-                type="button"
-                data-testid="changes-rebase"
-                disabled={rebasing()}
-                onClick={() => {
-                  const id = sessionId();
-                  if (!id) return;
-                  setRebasing(true);
-                  void reviewActions
-                    .rebase(id)
-                    .catch((e: Error) => notificationActions.addNotification('error', e.message))
-                    .finally(() => setRebasing(false));
-                }}
-                class="mt-2 rounded border border-hairline px-2 py-1 text-floor text-shell-ink hover:bg-hover-wash disabled:opacity-50"
-              >
-                Accept the worktree as the new base
-              </button>
             </div>
           </Show>
 
@@ -633,30 +479,6 @@ export const ChangesPanel: Component = () => {
                             {file.hunks.length}
                           </span>
                         </button>
-                        {/* Per-file pair. Hidden once the file has nothing left
-                            to decide: a decided file is history, not a queue. */}
-                        <Show when={decidable(file.hunks).length > 0}>
-                          <button
-                            type="button"
-                            title={`Accept every unreviewed change in ${file.path}`}
-                            data-testid={`accept-all-${file.path}`}
-                            disabled={bulkBusy()}
-                            onClick={() => acceptAll(file.hunks)}
-                            class={`shrink-0 rounded px-1.5 py-0.5 text-floor text-muted-dark hover:text-ok hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-                          >
-                            Accept all
-                          </button>
-                          <button
-                            type="button"
-                            title={`Reject every unreviewed change in ${file.path} — reverts them on disk and tells the agent`}
-                            data-testid={`reject-all-${file.path}`}
-                            disabled={bulkBusy()}
-                            onClick={() => rejectAll(file.hunks, file.path)}
-                            class={`shrink-0 rounded px-1.5 py-0.5 text-floor text-muted-dark hover:text-error hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
-                          >
-                            Reject all
-                          </button>
-                        </Show>
                       </div>
                       <For each={file.hunks}>
                         {(hunk) => <HunkRow sessionId={sessionId()!} hunk={hunk} />}

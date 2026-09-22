@@ -30,9 +30,9 @@ use crate::host_hook::HostHook;
 use crate::sessions::register::{
     cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
     fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
-    review_comment_op, review_list_hunks_op, review_resolve_comment_op, review_set_state_op,
-    send_and_collect_op, send_message_op, set_mode_op, set_title_op, subscribe_op, undo_depth_op,
-    undo_history_op, undo_op, unsubscribe_op,
+    review_comment_op, review_list_hunks_op, review_resolve_comment_op, send_and_collect_op,
+    send_message_op, set_mode_op, set_title_op, subscribe_op, undo_depth_op, undo_history_op,
+    undo_op, unsubscribe_op,
 };
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
@@ -468,13 +468,6 @@ impl UserData for Session {
         session_method!(methods, "undo_depth", undo_depth_op);
         session_method!(methods, "undo_history", undo_history_op);
         session_method!(methods, "review_list_hunks", review_list_hunks_op);
-        session_method!(
-            methods,
-            "review_set_state",
-            review_set_state_op,
-            hunk: String,
-            state: String
-        );
         session_method!(methods, "review_comment", review_comment_op, spec: Value);
         session_method!(
             methods,

@@ -955,8 +955,8 @@ fn every_route_the_router_serves_is_in_the_document() {
 /// The TypeScript modules that name `/api` paths as literals.
 ///
 /// `review-api.ts` is here because the regex scan this test replaces never
-/// read it, and its seven paths went unchecked.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/review-api.ts", 7)];
+/// read it, and its paths went unchecked.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/review-api.ts", 3)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.
@@ -1035,7 +1035,7 @@ fn api_path_literals(source: &str) -> Vec<(char, String, usize)> {
 /// The path prefixes a module builds once and reuses, as
 /// `const base = (id: string) => \`/api/…\`;`.
 ///
-/// `review-api.ts` writes all seven of its paths as `${base(sessionId)}/…`.
+/// `review-api.ts` once wrote all of its paths as `${base(sessionId)}/…`.
 /// A scan that read literals alone would find the prefix and none of the
 /// paths, and would report that the file calls nothing.
 fn path_prefix_aliases(source: &str) -> std::collections::BTreeMap<String, (String, usize)> {

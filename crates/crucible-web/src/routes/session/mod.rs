@@ -414,10 +414,6 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         // are applied to the session router, and a separate group is how the
         // review surface would quietly stop inheriting them.
         .routes(routes!(review::list_hunks))
-        .routes(routes!(review::rebase))
-        .routes(routes!(review::set_state))
-        .routes(routes!(review::set_states))
-        .routes(routes!(review::undo_reject))
         .routes(routes!(review::comment))
         .routes(routes!(review::resolve_comment))
         .routes(routes!(export_session))

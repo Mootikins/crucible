@@ -5,11 +5,8 @@
  * deleted line is red and an inserted one is green, with a word-level
  * highlight inside a changed line. It is read-only and display only.
  *
- * The controls the merge view draws beside a chunk do NOT call CodeMirror's
- * own `action`. That action edits the browser's copy of the text and leaves
- * the disk as it was. The daemon decides a hunk: Accept records a state and
- * Reject rewrites the file. The buttons therefore call the same review actions
- * as the row's buttons in `ChangesPanel`, through the same confirm for Reject.
+ * The view draws no controls. The daemon no longer accepts or reverts a
+ * hunk, so there is no decision for a control to send.
  *
  * `DiffViewer` stays for the tool card and the permission prompt, where a diff
  * is shown and nothing is disposed.
@@ -22,48 +19,10 @@ import type { ComposedHunk } from '@/lib/review-types';
 
 export interface HunkMergeViewProps {
   hunk: ComposedHunk;
-  onAccept: () => void;
-  /**
-   * Absent for an external hunk. The view then draws no Reject control, for
-   * the reason the row draws no Reject button: a revert of the user's own edit
-   * would report that an agent edit was undone.
-   */
-  onReject?: () => void;
 }
-
-/** The two words the review vocabulary uses. Never Keep. */
-const CONTROL_LABEL: Record<'accept' | 'reject', string> = {
-  accept: 'Accept',
-  reject: 'Reject',
-};
 
 export const HunkMergeView: Component<HunkMergeViewProps> = (props) => {
   let view: EditorView | undefined;
-
-  const renderControls = (type: 'accept' | 'reject'): HTMLElement => {
-    const onClick = type === 'accept' ? props.onAccept : props.onReject;
-    if (!onClick) {
-      const gap = document.createElement('span');
-      gap.hidden = true;
-      return gap;
-    }
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = CONTROL_LABEL[type];
-    button.dataset.testid = `merge-${type}-${props.hunk.id}`;
-    button.className =
-      'min-w-11 min-h-11 rounded border border-hairline px-2 text-floor text-shell-ink ' +
-      'hover:bg-hover-wash disabled:opacity-50 ' +
-      (type === 'accept' ? 'hover:text-ok' : 'hover:text-error');
-    // Stop CodeMirror from reading the click as an edit of its own.
-    button.addEventListener('mousedown', (e) => e.preventDefault());
-    button.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onClick();
-    });
-    return button;
-  };
 
   const mount = (el: HTMLDivElement) => {
     if (view) return;
@@ -73,7 +32,6 @@ export const HunkMergeView: Component<HunkMergeViewProps> = (props) => {
         extensions: mergeViewExtensions({
           original: props.hunk.before_content,
           path: props.hunk.path,
-          controls: renderControls,
           collapse: { margin: 3 },
         }),
       }),

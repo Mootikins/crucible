@@ -173,8 +173,8 @@ impl Group {
             | "bash_job_completed"
             | "bash_job_failed"
             | "background_job_completed" => Self::Job,
-            // Review (3)
-            "review_changed" | "review_gate" | "session_undo" => Self::Review,
+            // Review (2)
+            "review_changed" | "session_undo" => Self::Review,
             // Notification (2)
             "notification_added" | "notification_dismissed" => Self::Notification,
             // Workflow (8)

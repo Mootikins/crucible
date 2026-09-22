@@ -362,8 +362,7 @@ field the old plain table exposed (`session.id`, `session.state`,
   `end_session`, `set_mode`, `set_title`, `interaction_respond`, `subscribe`, `unsubscribe`,
   `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
   `undo`, `can_undo`, `undo_depth`, `undo_history`,
-  `review_list_hunks`, `review_set_state`, `review_comment`,
-  `review_resolve_comment`.
+  `review_list_hunks`, `review_comment`, `review_resolve_comment`.
 - On the *current session's* handle (`cru.session.current()`), the live config
   `s:get_variable(k)`. These need the per-session RPC binding; on a handle
   from `create`/`get`/`list` they report not-connected, and config changes go

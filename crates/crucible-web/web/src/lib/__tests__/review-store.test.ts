@@ -119,23 +119,19 @@ function reviewRoutes() {
     });
     return answers.get(session)!();
   };
-  // `undo-reject` and `comment/{id}/resolve` declare no request body, so the
+  // `comment/{id}/resolve` declares no request body, so the
   // client sends none — the JSON content type rides alone to force the
   // preflight. A write that sends nothing records an empty body.
   const write = (name: string) => async (request: Request) => {
     const text = await request.text();
     wrote.push({ name, body: text ? (JSON.parse(text) as Record<string, unknown>) : {} });
-    return writeAnswers.get(name)?.() ?? { applied: [], failed: [] };
+    return writeAnswers.get(name)?.() ?? {};
   };
 
   const routes: Record<string, unknown> = {};
   for (const session of ['s1', 's2']) {
     const base = `/api/session/${session}/review`;
     routes[`GET ${base}/hunks`] = listing(session);
-    routes[`POST ${base}/state`] = write('state');
-    routes[`POST ${base}/states`] = write('states');
-    routes[`POST ${base}/undo-reject`] = write('undo');
-    routes[`POST ${base}/rebase`] = write('rebase');
     routes[`POST ${base}/comment`] = write('comment');
     routes[`POST ${base}/comment/c1/resolve`] = write('resolve');
   }
@@ -290,110 +286,6 @@ describe('refresh', () => {
 });
 
 describe('mutations', () => {
-  it('accept applies optimistically, then re-lists', async () => {
-    answer('s1', [hunk({ id: 'h1' })]);
-    const dispose = await bound('s1');
-
-    let release: () => void = () => {};
-    const held = new Promise<void>((r) => (release = r));
-    writeAnswers.set('state', () => held.then(() => ({ hunk_id: 'h1', state: 'accepted' })));
-    const pending = reviewActions.setState('s1', 'h1', 'accepted');
-
-    await waitFor(() => expect(reviewStore.session('s1').hunks[0].state).toBe('accepted'));
-    answer('s1', [hunk({ id: 'h1', state: 'accepted' })]);
-    release();
-    await pending;
-
-    expect(wrote.filter((w) => w.name === 'state')[0].body).toEqual({
-      hunk_id: 'h1',
-      state: 'accepted',
-    });
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-    dispose();
-  });
-
-  it('reject IS set-state rejected — one operation, one disk write', async () => {
-    answer('s1', [hunk({ id: 'h1' })]);
-    const dispose = await bound('s1');
-
-    await reviewActions.reject('s1', 'h1');
-
-    expect(wrote.filter((w) => w.name === 'state')[0].body).toEqual({
-      hunk_id: 'h1',
-      state: 'rejected',
-    });
-    dispose();
-  });
-
-  it('a failed accept still re-lists, so the optimistic mark cannot stick', async () => {
-    answer('s1', [hunk({ id: 'h1' })]);
-    const dispose = await bound('s1');
-    writeAnswers.set('state', () => refuse(409, 'stale'));
-
-    await expect(reviewActions.setState('s1', 'h1', 'accepted')).rejects.toThrow('stale');
-
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-    await waitFor(() => expect(reviewStore.session('s1').hunks[0].state).toBe('unreviewed'));
-    dispose();
-  });
-
-  it('a bulk reject is ONE call with the ids in the order given, then a re-list', async () => {
-    answer('s1', [hunk({ id: 'h1' }), hunk({ id: 'h2' })]);
-    const dispose = await bound('s1');
-    writeAnswers.set('states', () => ({ applied: ['h2', 'h1'], failed: [] }));
-
-    const outcome = await reviewActions.rejectMany('s1', ['h2', 'h1']);
-
-    expect(writeCount('states')).toBe(1);
-    expect(wrote.filter((w) => w.name === 'states')[0].body).toEqual({
-      hunk_ids: ['h2', 'h1'],
-      state: 'rejected',
-    });
-    expect(writeCount('state')).toBe(0);
-    expect(outcome.applied).toEqual(['h2', 'h1']);
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-    dispose();
-  });
-
-  it('a bulk decision marks every named hunk optimistically and a failed call re-lists', async () => {
-    answer('s1', [hunk({ id: 'h1' }), hunk({ id: 'h2' }), hunk({ id: 'h3' })]);
-    const dispose = await bound('s1');
-
-    let release: () => void = () => {};
-    const held = new Promise<void>((r) => (release = r));
-    writeAnswers.set('states', () => held.then(() => ({ applied: ['h1', 'h3'], failed: [] })));
-    const pending = reviewActions.setStates('s1', ['h1', 'h3'], 'accepted');
-
-    await waitFor(() =>
-      expect(reviewStore.session('s1').hunks.map((h) => h.state)).toEqual([
-        'accepted',
-        'unreviewed',
-        'accepted',
-      ]),
-    );
-    release();
-    await pending;
-
-    writeAnswers.set('states', () => refuse(409, 'stale'));
-    await expect(reviewActions.setStates('s1', ['h2'], 'accepted')).rejects.toThrow('stale');
-
-    await waitFor(() => expect(countOf('s1')).toBe(3));
-    await waitFor(() => expect(reviewStore.session('s1').hunks[1].state).toBe('unreviewed'));
-    dispose();
-  });
-
-  it('undo names no hunk, returns what the daemon restored, and re-lists', async () => {
-    answer('s1', [hunk({ id: 'h1', state: 'rejected' })]);
-    const dispose = await bound('s1');
-    writeAnswers.set('undo', () => ({ applied: ['h1'], failed: [] }));
-
-    const outcome = await reviewActions.undoReject('s1');
-
-    expect(wrote.filter((w) => w.name === 'undo')[0].body).toEqual({});
-    expect(outcome.applied).toEqual(['h1']);
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-    dispose();
-  });
 
   it('commenting and resolving both re-list', async () => {
     const dispose = await bound('s1');
@@ -503,35 +395,6 @@ describe('subscription lifecycle', () => {
     dispose();
   });
 
-  it('a review_gate event records the block and re-lists', async () => {
-    const dispose = await bound('s1');
-    const source = onlyEventSource();
-
-    source.emit('session_event', {
-      type: 'session_event',
-      event: 'review_gate',
-      data: { blocked: true, tool: 'edit_file', path: '/repo/src/a.rs' },
-    });
-
-    // The block is state only this slot holds, so it lands at once — the chip
-    // must not wait on a round trip.
-    expect(reviewStore.session('s1').gate).toEqual({
-      blocked: true,
-      tool: 'edit_file',
-      path: '/repo/src/a.rs',
-    });
-    await afterDebounce();
-    expect(countOf('s1')).toBe(2);
-
-    source.emit('session_event', {
-      type: 'session_event',
-      event: 'review_gate',
-      data: { blocked: false },
-    });
-    expect(reviewStore.session('s1').gate?.blocked).toBe(false);
-    dispose();
-  });
-
   it('following the active session releases the one it left', async () => {
     const [id, setId] = createSignal<string | undefined>('s1');
     const dispose = createRoot((d) => {
@@ -563,57 +426,5 @@ describe('reveal channel', () => {
     expect(pendingReveal()).toEqual({ path: '/repo/src/a.rs', line: 42 });
     reviewActions.clearReveal();
     expect(pendingReveal()).toBeNull();
-  });
-});
-
-/**
- * The gate chip has to survive a reload. `review_gate` is an event, and events
- * are dropped rather than replayed across a reconnect, so without the listing
- * carrying the block a tab opened mid-turn shows nothing while the agent sits
- * parked — the exact "agent looks hung" failure the chip exists to prevent.
- */
-describe('gate state from a listing', () => {
-  const blocked = () => ({
-    session_id: 's1',
-    hunks: [],
-    comments: [],
-    gate: { tool: 'edit_file', path: '/repo/src/a.rs' },
-  });
-
-  it('restores a block a reload never saw the event for', async () => {
-    answerWith('s1', blocked);
-    const dispose = await bound('s1');
-
-    expect(reviewStore.session('s1').gate).toEqual({
-      blocked: true,
-      tool: 'edit_file',
-      path: '/repo/src/a.rs',
-    });
-    dispose();
-  });
-
-  it('an explicit null clears a block that has since been released', async () => {
-    answerWith('s1', blocked);
-    const dispose = await bound('s1');
-
-    answerWith('s1', () => ({ session_id: 's1', hunks: [], comments: [], gate: null }));
-    await reviewActions.refresh('s1');
-
-    await waitFor(() => expect(reviewStore.session('s1').gate).toBeNull());
-    dispose();
-  });
-
-  it('a daemon that reports no gate key leaves the event-established block alone', async () => {
-    answerWith('s1', blocked);
-    const dispose = await bound('s1');
-
-    // An older daemon omits the key entirely. Treating that as "not blocked"
-    // would erase a live block on every refresh.
-    answer('s1', []);
-    await reviewActions.refresh('s1');
-
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-    expect(reviewStore.session('s1').gate?.blocked).toBe(true);
-    dispose();
   });
 });

@@ -10,17 +10,9 @@ import { deepPrettyPrintJson } from '@/lib/pretty-print';
 import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
 import { notificationActions } from '@/stores/notificationStore';
 import { useChatSafe } from '@/contexts/ChatContext';
-import {
-  indexToolCall,
-  reviewActions,
-  reviewStore,
-  revealedToolCall,
-} from '@/lib/review-store';
+import { indexToolCall, reviewStore, revealedToolCall } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
-import { announceReject, confirmReject, undoLastReject } from '@/lib/review-confirm';
-import { hit } from '@/lib/touch';
 import {
-  Check,
   ChevronRight,
   FileOutput,
   FileText,
@@ -28,7 +20,6 @@ import {
   Pencil,
   Search,
   StickyNote,
-  Undo2,
   Wrench,
   Zap,
 } from '@/lib/icons';
@@ -176,11 +167,6 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
       reviewStore.scope(sessionId()) === 'session' &&
       liveHunks().length === 0,
   );
-
-  /** A rejected mutation is worth saying out loud — it means the disk did not
-   * change, and a silent no-op here reads as a dropped click. */
-  const review = (op: Promise<void>) =>
-    void op.catch((e: Error) => notificationActions.addNotification('error', e.message));
 
   // Open the edited file in the real editor with this change overlaid as an
   // inline diff: fetch the current content, apply the tool's edit to get the
@@ -357,9 +343,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               file (an ACP call may touch several). */}
           <Show when={diffs().length > 0}>
             <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
-              {/* One control pair per composed hunk this call still owns.
-                  External hunks cannot appear here by construction (they
-                  have no tool call), so there is no reject to suppress. */}
+              {/* One chip per composed hunk this call still owns. External
+                  hunks cannot appear here by construction: they have no tool
+                  call. */}
               <div class="flex items-center justify-end gap-1.5 mb-1.5 flex-wrap">
                 <div class="flex items-center gap-1.5 flex-wrap mr-auto">
                   <For each={liveHunks().filter((h) => !isExternal(h))}>
@@ -371,41 +357,6 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                         <span class="text-floor font-mono text-muted-dark">
                           L{hunk.current_range.start}
                         </span>
-                        <Show when={hunk.state !== 'accepted'}>
-                          <button
-                            type="button"
-                            title="Accept this hunk"
-                            data-testid={`tool-accept-${hunk.id}`}
-                            onClick={() =>
-                              review(reviewActions.setState(sessionId()!, hunk.id, 'accepted'))
-                            }
-                            class={`rounded p-0.5 text-muted-dark hover:text-ok hover:bg-hover-wash ${hit()}`}
-                          >
-                            <Check class="w-3 h-3" />
-                          </button>
-                        </Show>
-                        {/* Same gate as the Changes panel: this is the same
-                            daemon call rewriting the same bytes, and a second
-                            unguarded doorway to it would be no gate at all. */}
-                        <button
-                          type="button"
-                          title="Reject — reverts it on disk and tells the agent"
-                          data-testid={`tool-reject-${hunk.id}`}
-                          onClick={() => {
-                            if (!confirmReject(hunk)) return;
-                            const id = sessionId()!;
-                            review(
-                              reviewActions
-                                .reject(id, hunk.id)
-                                .then(() =>
-                                  announceReject(hunk, () => void undoLastReject(id, [hunk])),
-                                ),
-                            );
-                          }}
-                          class={`rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash ${hit()}`}
-                        >
-                          <Undo2 class="w-3 h-3" />
-                        </button>
                       </span>
                     )}
                   </For>

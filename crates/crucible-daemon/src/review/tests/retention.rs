@@ -154,11 +154,11 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     );
 }
 
-/// The structural failure the rebase RPC exists for: the base tree is gone, so
-/// the composed diff cannot be computed at all and no amount of reviewing will
-/// produce a hunk to review.
+/// A structural failure: the base tree is gone, so the composed diff cannot
+/// be computed at all. The listing must say that the root is degraded, not
+/// answer an empty queue.
 #[tokio::test]
-async fn a_gcd_base_tree_blocks_until_a_rebase_and_then_clears() {
+async fn a_gcd_base_tree_degrades_its_root() {
     let fx = Persisted::new_with_uncommitted("one\n").await;
     fx.call("call-1", "EDITED\n").await;
     let root = fx.repo_dir.path().to_path_buf();
@@ -179,41 +179,6 @@ async fn a_gcd_base_tree_blocks_until_a_rebase_and_then_clears() {
         .unwrap();
     assert!(hunks.is_empty());
     assert!(statuses[0].is_degraded(), "{statuses:?}");
-    assert!(
-        matches!(
-            fx.ledgers
-                .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-                .await
-                .unwrap(),
-            Verdict::Degraded { .. }
-        ),
-        "a root with no readable base let a write through on the strength of having no hunks"
-    );
-
-    fx.ledgers
-        .rebase_session(
-            &fx.session,
-            fx.session_dir.path(),
-            std::slice::from_ref(&root),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        fx.ledgers
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear
-    );
-    // The rebase is only a real release if it also survives the next restart.
-    let restarted = fx.restart().await;
-    assert_eq!(
-        restarted
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear
-    );
 }
 
 /// The seam the delegation harvest must use. `Ledger::push_interval` compiles

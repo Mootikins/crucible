@@ -2,15 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
 import { getBus } from '@/lib/bus';
 import { resetAuthThrottleForTests } from '../api-client';
-import {
-  addReviewComment,
-  listReviewHunks,
-  rebaseReview,
-  resolveReviewComment,
-  setHunkState,
-  setHunkStates,
-  undoReject,
-} from '../review-api';
+import { addReviewComment, listReviewHunks, resolveReviewComment } from '../review-api';
 
 /**
  * These URLs and bodies ARE the contract with the axum layer in
@@ -76,56 +68,6 @@ describe('review REST surface', () => {
     expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/review/hunks');
   });
 
-  it('sets state by hunk id', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/state', {
-      hunk_id: 'h1',
-      state: 'accepted',
-    });
-    await setHunkState('s1', 'h1', 'accepted');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/state');
-    expect(sent.body).toEqual({ hunk_id: 'h1', state: 'accepted' });
-  });
-
-  // One daemon call for a whole file or a whole review. The ids go in the
-  // order given: the daemon applies them in that order, and a reject reverts
-  // as it goes, so a set-ified or sorted list would revert a different diff.
-  it('setHunkStates posts the ids and the state', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/states', {
-      session_id: 's1',
-      state: 'rejected',
-      applied: ['h3', 'h1'],
-      failed: [],
-    });
-    const outcome = await setHunkStates('s1', ['h3', 'h1'], 'rejected');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/states');
-    expect(sent.method).toBe('POST');
-    expect(sent.body).toEqual({ hunk_ids: ['h3', 'h1'], state: 'rejected' });
-    expect(outcome.applied).toEqual(['h3', 'h1']);
-    expect(outcome.failed).toEqual([]);
-  });
-
-  // The undo names no hunk: the daemon pops its own stack. The route reads no
-  // body, so the JSON content type rides alone — it is the preflight rule of
-  // `rebase` and `resolve` too.
-  it('undoReject posts to the session with the header that forces a preflight', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/undo-reject', {
-      session_id: 's1',
-      applied: ['h1'],
-      failed: [],
-    });
-    const outcome = await undoReject('s1');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/undo-reject');
-    expect(sent.method).toBe('POST');
-    expect(sent.headers.get('Content-Type')).toBe('application/json');
-    expect(outcome.applied).toEqual(['h1']);
-  });
-
   it('comments on a range, passing only what the caller gave', async () => {
     const mockFetch = serve('POST /api/session/s1/review/comment', { comment: {} });
     await addReviewComment('s1', { path: 'src/a.rs', line_start: 3, body: 'why' });
@@ -135,20 +77,6 @@ describe('review REST surface', () => {
     // `line_end` is deliberately absent: the daemon defaults it to
     // `line_start + 1`, and sending a guess here would fight that.
     expect(sent.body).toEqual({ path: 'src/a.rs', line_start: 3, body: 'why' });
-  });
-
-  // The only release for a degraded root — reviewing cannot clear one, because
-  // it contributes no hunks. The JSON content type is what forces the
-  // preflight the CORS allowlist refuses; dropping it makes the rebase
-  // fireable cross-origin.
-  it('rebases the session base, with the header that forces a preflight', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/rebase', { roots: [] });
-    await rebaseReview('s1');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/rebase');
-    expect(sent.method).toBe('POST');
-    expect(sent.headers.get('Content-Type')).toBe('application/json');
   });
 
   it('resolves a comment by id', async () => {
@@ -163,12 +91,12 @@ describe('review REST surface', () => {
   });
 
   it('surfaces the daemon message on failure, not a bare status', async () => {
-    // The INVALID_PARAMS cases — unknown hunk, stale hunk, external hunk — all
-    // mean "re-list and try again", and the body says which.
+    // An INVALID_PARAMS case means "re-list and try again", and the body says
+    // why.
     global.fetch = createMockFetch({
-      'GET /api/session/s1/review/hunks': { status: 400, body: 'hunk no longer exists' },
+      'GET /api/session/s1/review/hunks': { status: 400, body: 'no such session' },
     });
-    await expect(listReviewHunks('s1')).rejects.toThrow('hunk no longer exists');
+    await expect(listReviewHunks('s1')).rejects.toThrow('no such session');
   });
 
   it('unwraps the error envelope instead of throwing the JSON at the user', async () => {
@@ -176,14 +104,14 @@ describe('review REST surface', () => {
     // `{"error": {code, message}}`. Throwing the body raw puts that blob in a
     // toast where the server had already written a sentence.
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/state': apiError(422, 'Hunk no longer exists'),
+      'POST /api/session/s1/review/comment/c1/resolve': apiError(422, 'unknown comment c1'),
     });
 
-    const error = await setHunkState('s1', 'h1', 'rejected').then(
+    const error = await resolveReviewComment('s1', 'c1').then(
       () => null,
       (e: Error) => e,
     );
-    expect(error?.message).toContain('Hunk no longer exists');
+    expect(error?.message).toContain('unknown comment c1');
     expect(error?.message).not.toContain('{');
   });
 
@@ -195,10 +123,10 @@ describe('review REST surface', () => {
     const prompted = vi.fn();
     const stopListening = getBus().on('authRequired', prompted);
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/state': { status: 401 },
+      'POST /api/session/s1/review/comment/c1/resolve': { status: 401 },
     });
 
-    await expect(setHunkState('s1', 'h1', 'accepted')).rejects.toThrow();
+    await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow();
 
     expect(prompted).toHaveBeenCalled();
     stopListening();
@@ -206,8 +134,8 @@ describe('review REST surface', () => {
 
   it('falls back to the status when the body is empty', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/state': { status: 500 },
+      'POST /api/session/s1/review/comment/c1/resolve': { status: 500 },
     });
-    await expect(setHunkState('s1', 'h1', 'rejected')).rejects.toThrow('HTTP 500');
+    await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow('HTTP 500');
   });
 });

@@ -43,50 +43,6 @@ async fn identical_hunks_in_one_file_get_distinct_identities() {
 }
 
 #[tokio::test]
-async fn review_state_survives_an_edit_above_the_hunk() {
-    let fx = Fixture::new("one\ntwo\nthree\n").await;
-    fx.call("call-1", 1, "one\ntwo\nEDITED\n").await;
-    let id = find(&fx.hunks().await, "EDITED\n").id.clone();
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Accepted)
-        .await
-        .unwrap();
-
-    fx.call("call-2", 1, "zero\none\ntwo\nEDITED\n").await;
-
-    let hunks = fx.hunks().await;
-    assert_eq!(find(&hunks, "EDITED\n").state, ReviewState::Accepted);
-    assert_eq!(
-        find(&hunks, "zero\n").state,
-        ReviewState::Unreviewed,
-        "the new hunk must not inherit a decision"
-    );
-}
-
-#[tokio::test]
-async fn unrecognised_identity_is_unreviewed_and_rejected_by_set_state() {
-    let fx = Fixture::new("one\n").await;
-    fx.call("call-1", 1, "two\n").await;
-
-    let stranger = HunkId::derive(
-        &PhysicalRoot::from_top_level(fx.dir.path()),
-        "a.txt",
-        "nothing\n",
-        "like it\n",
-        LineRange::new(1, 2),
-    );
-    let err = fx
-        .ledgers
-        .set_state(&fx.session, &stranger, ReviewState::Accepted)
-        .await
-        .unwrap_err();
-    assert!(matches!(err, ReviewError::UnknownHunk(_)), "{err:?}");
-
-    // And the real hunk is still unreviewed — nothing leaked onto it.
-    assert_eq!(fx.hunks().await[0].state, ReviewState::Unreviewed);
-}
-
-#[tokio::test]
 async fn each_hunk_attributes_to_the_call_that_made_it() {
     let fx = Fixture::new("one\ntwo\nthree\nfour\nfive\n").await;
     fx.call("call-1", 1, "ONE\ntwo\nthree\nfour\nfive\n").await;
@@ -312,21 +268,6 @@ async fn an_edit_no_bracket_saw_is_external() {
     );
 }
 
-#[tokio::test]
-async fn external_hunks_are_not_revertible() {
-    let fx = Fixture::new("one\n").await;
-    fx.write("edited by hand\n");
-    let id = fx.hunks().await[0].id.clone();
-
-    let err = fx.ledgers.revert_hunk(&fx.session, &id).await.unwrap_err();
-    assert!(matches!(err, ReviewError::ExternalHunk(_)), "{err:?}");
-    assert_eq!(
-        fx.read(),
-        "edited by hand\n",
-        "the user's edit was destroyed"
-    );
-}
-
 /// Concurrent delegated sessions share a workspace by default, so overlapping
 /// brackets are the normal path, not an edge case.
 #[tokio::test]
@@ -403,136 +344,6 @@ async fn a_bracket_dropped_without_closing_does_not_poison_its_roots() {
 }
 
 #[tokio::test]
-async fn reverting_restores_the_base_content_and_records_the_rejection() {
-    let fx = Fixture::new("one\ntwo\nthree\n").await;
-    fx.call("call-1", 1, "one\nEDITED\nthree\n").await;
-    let id = find(&fx.hunks().await, "EDITED\n").id.clone();
-
-    fx.ledgers.revert_hunk(&fx.session, &id).await.unwrap();
-
-    assert_eq!(fx.read(), "one\ntwo\nthree\n");
-    assert!(
-        fx.hunks().await.is_empty(),
-        "a reverted hunk is gone from the composed diff"
-    );
-}
-
-/// Rejecting a hunk whose file has shrunk underneath must refuse and write
-/// nothing.
-///
-/// The shrink is caught here by identity: `revert_hunk` re-lists first, so a
-/// moved file yields a different `HunkId` and `UnknownHunk`. That leaves the
-/// `start > lines.len()` clamp in `revert_hunk` as a backstop for the window
-/// this test cannot reach — the worktree moving *between* that re-list and the
-/// read, which an ungated `bash` call can do while a human is clicking Reject.
-/// The clamp is not decoration: a deletion hunk has an empty `current_range`
-/// and empty `after_content`, so the staleness guard passes (`slice` answers
-/// `""` for any empty range), and `lines[..start]` would then index past the
-/// end. The release profile aborts rather than unwinds, taking every live
-/// session with it.
-#[tokio::test]
-async fn reverting_a_hunk_whose_file_shrank_refuses_and_writes_nothing() {
-    let fx = Fixture::new("one\ntwo\nthree\nfour\nfive\n").await;
-    fx.call("call-1", 1, "one\ntwo\n").await;
-    let id = find(&fx.hunks().await, "").id.clone();
-
-    fx.write("one\n");
-
-    let err = fx
-        .ledgers
-        .revert_hunk(&fx.session, &id)
-        .await
-        .expect_err("a shrunk file must refuse");
-    assert!(
-        matches!(err, ReviewError::UnknownHunk(_) | ReviewError::Stale { .. }),
-        "{err:?}"
-    );
-    assert_eq!(fx.read(), "one\n", "a refused revert writes nothing");
-}
-
-/// The counterpart, because the fix is one `?` away from breaking it: reverting
-/// the agent's deletion of an entire file depends on the read failing and being
-/// read as empty, so `NotFound` must stay distinct from a real read error.
-#[tokio::test]
-async fn reverting_a_whole_file_deletion_recreates_the_file() {
-    let fx = Fixture::new("one\ntwo\n").await;
-    let handle = fx.ledgers.open_bracket(&fx.session).await.unwrap();
-    std::fs::remove_file(fx.dir.path().join("a.txt")).unwrap();
-    fx.ledgers
-        .close(&fx.session, handle, "call-1", 1)
-        .await
-        .unwrap();
-
-    let hunks = fx.hunks().await;
-    let id = hunks.first().expect("a deletion hunk").id.clone();
-    fx.ledgers.revert_hunk(&fx.session, &id).await.unwrap();
-
-    assert_eq!(fx.read(), "one\ntwo\n");
-}
-
-#[tokio::test]
-async fn reverting_one_hunk_leaves_the_others_alone() {
-    let fx = Fixture::new("one\ntwo\nthree\nfour\nfive\n").await;
-    fx.call("call-1", 1, "ONE\ntwo\nthree\nfour\nFIVE\n").await;
-    let hunks = fx.hunks().await;
-    let first = find(&hunks, "ONE\n").id.clone();
-
-    fx.ledgers.revert_hunk(&fx.session, &first).await.unwrap();
-
-    assert_eq!(fx.read(), "one\ntwo\nthree\nfour\nFIVE\n");
-    let remaining = fx.hunks().await;
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].after_content, "FIVE\n");
-}
-
-#[tokio::test]
-async fn rejecting_reverts_rather_than_only_recording() {
-    let fx = Fixture::new("one\n").await;
-    fx.call("call-1", 1, "EDITED\n").await;
-    let id = fx.hunks().await[0].id.clone();
-
-    fx.ledgers
-        .set_state(&fx.session, &id, ReviewState::Rejected)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        fx.read(),
-        "one\n",
-        "a recorded rejection that did not revert"
-    );
-}
-
-#[tokio::test]
-async fn the_gate_query_is_scoped_to_the_file() {
-    let fx = Fixture::new("one\n").await;
-    let handle = fx.ledgers.open_bracket(&fx.session).await.unwrap();
-    fx.write("EDITED\n");
-    fx.ledgers
-        .close(&fx.session, handle, "call-1", 1)
-        .await
-        .unwrap();
-
-    let root = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
-        .root
-        .clone();
-    assert_eq!(
-        fx.ledgers
-            .has_unreviewed_in_file(&fx.session, &only(root.join("a.txt")))
-            .await
-            .unwrap(),
-        Verdict::Unreviewed
-    );
-    assert_eq!(
-        fx.ledgers
-            .has_unreviewed_in_file(&fx.session, &only(root.join("elsewhere.txt")))
-            .await
-            .unwrap(),
-        Verdict::Clear
-    );
-}
-
-#[tokio::test]
 async fn session_base_is_captured_once_and_never_moves() {
     let fx = Fixture::new("one\n").await;
     let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
@@ -595,12 +406,6 @@ async fn a_kiln_outside_git_is_tracked_through_a_restored_journal_and_its_hunks_
     assert_eq!(hunks[0].before_content, "two\n");
     assert_eq!(hunks[0].after_content, "EDITED\n");
     assert_eq!(hunks[0].tool_call_ids, ["call-1"]);
-
-    ledgers
-        .set_state(&kiln.session, &hunks[0].id, ReviewState::Rejected)
-        .await
-        .unwrap();
-    assert_eq!(kiln.read("note.md"), "one\ntwo\nthree\n");
 }
 
 /// The id is the one source of the backend, so a kiln that *is* in a
@@ -659,85 +464,6 @@ async fn a_new_file_is_one_hunk_attributed_to_its_call() {
     assert_eq!(hunks[0].path, "new.txt");
     assert!(hunks[0].before_content.is_empty());
     assert_eq!(hunks[0].tool_call_ids, ["call-1"]);
-    fx.ledgers
-        .revert_hunk(&fx.session, &hunks[0].id)
-        .await
-        .unwrap();
-    assert!(!fx.dir.path().join("new.txt").exists());
-    let undo = fx.ledgers.undo_reject(&fx.session).await.unwrap();
-    assert!(undo.failed.is_empty());
-    assert_eq!(
-        std::fs::read_to_string(fx.dir.path().join("new.txt")).unwrap(),
-        "brand new\n"
-    );
-
-    fx.call("call-2", 2, "filled\n").await;
-    let existing = fx
-        .hunks()
-        .await
-        .into_iter()
-        .find(|h| h.path == "a.txt")
-        .unwrap();
-    fx.ledgers
-        .revert_hunk(&fx.session, &existing.id)
-        .await
-        .unwrap();
-    assert_eq!(fx.read(), "", "an existing empty file must not be deleted");
-
-    for (name, agent_created, recreated) in [
-        ("human.txt", false, false),
-        ("agent-empty.txt", true, false),
-        ("recreated.txt", true, true),
-    ] {
-        let creation = if agent_created {
-            Some(fx.ledgers.open_bracket(&fx.session).await.unwrap())
-        } else {
-            None
-        };
-        let path = fx.dir.path().join(name);
-        std::fs::write(&path, "").unwrap();
-        if let Some(creation) = creation {
-            fx.ledgers
-                .close(&fx.session, creation, "create-empty", 3)
-                .await
-                .unwrap();
-        }
-        if recreated {
-            let deletion = fx.ledgers.open_bracket(&fx.session).await.unwrap();
-            std::fs::remove_file(&path).unwrap();
-            fx.ledgers
-                .close(&fx.session, deletion, "delete-empty", 4)
-                .await
-                .unwrap();
-            std::fs::write(&path, "").unwrap();
-        }
-        let fill = fx.ledgers.open_bracket(&fx.session).await.unwrap();
-        std::fs::write(&path, "filled\n").unwrap();
-        fx.ledgers
-            .close(&fx.session, fill, &format!("fill-{name}"), 4)
-            .await
-            .unwrap();
-        let hunk = fx
-            .hunks()
-            .await
-            .into_iter()
-            .find(|h| h.path == name)
-            .unwrap();
-        assert_eq!(hunk.tool_call_ids, [format!("fill-{name}")]);
-        fx.ledgers.revert_hunk(&fx.session, &hunk.id).await.unwrap();
-        if agent_created && !recreated {
-            assert!(
-                !path.exists(),
-                "a separate empty-file creation is still attributable to the agent"
-            );
-        } else {
-            assert_eq!(
-                std::fs::read_to_string(&path).unwrap(),
-                "",
-                "the user's empty file created after the session opened must survive"
-            );
-        }
-    }
 }
 
 #[tokio::test]

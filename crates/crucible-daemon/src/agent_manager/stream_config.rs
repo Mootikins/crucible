@@ -66,20 +66,10 @@ pub(crate) struct AgentStreamConfig {
     /// Carried so pass-through tool-call events can name which agent ran the
     /// tool — the renderer badges it as `acp:<agent>`.
     pub(crate) agent_name: Option<String>,
-    /// `"internal"` or `"acp"`, straight from `SessionAgent`.
-    ///
-    /// The review gate needs it and `agent_name` will not do: `agent_name` is
-    /// `None` for every internal agent *and* for an owns-history agent that is
-    /// not ACP, so it cannot distinguish "the daemon dispatches this agent's
-    /// tools" from "it doesn't". That distinction decides whether a pre-write
-    /// gate can be enforced at all. See
-    /// [`crucible_core::types::mode::WriteMode::effective_for`].
-    pub(crate) agent_type: String,
     /// The session's review ledgers, when the manager wired them in.
     ///
-    /// `None` leaves the review gate vacuous, which is what tests and any
-    /// manager built without ledgers want — the gate is an overlay on
-    /// attribution, so a session with no ledger has nothing to gate on.
+    /// `None` records no attribution, which is what tests and any manager
+    /// built without ledgers want.
     pub(crate) review: Option<Arc<crate::review::ReviewLedgers>>,
     /// Explicit per-session tool sets (`cru.tools.set_active`).
     ///
@@ -132,7 +122,6 @@ impl AgentStreamConfig {
             modes,
             mcp_read_only_tools,
             agent_name: session_agent.agent_name.clone(),
-            agent_type: session_agent.agent_type.clone(),
             review: None,
             active_tools: None,
         }

@@ -1,6 +1,5 @@
 /**
- * Session-scoped review state: the composed diff, its comments, and whether
- * the agent is currently parked waiting on it.
+ * Session-scoped review state: the composed diff and its comments.
  *
  * Global rather than context-bound because its three consumers do not share a
  * provider. `ChangesPanel` renders in the RIGHT edge region, outside the
@@ -23,21 +22,11 @@ import { createStore, produce } from 'solid-js/store';
 import { createSingletonRoot } from '@solid-primitives/rootless';
 import { sessionEvents } from './query/sse';
 import type { ChatEvent } from './types';
-import type {
-  BulkOutcome,
-  DegradedRoot,
-  IntegritySkip,
-  NewComment,
-  ReviewHunksResponse,
-} from './review-api';
+import type { DegradedRoot, IntegritySkip, NewComment, ReviewHunksResponse } from './review-api';
 import {
   addReviewCommentOnce,
   invalidateReview,
-  rebaseReviewOnce,
   resolveReviewCommentOnce,
-  setHunkStateOnce,
-  setHunkStatesOnce,
-  undoRejectOnce,
   useReviewHunks,
 } from './query/review';
 import {
@@ -46,15 +35,7 @@ import {
   type ComposedHunk,
   type ReviewComment,
   type ReviewScope,
-  type ReviewState,
 } from './review-types';
-
-/** What the daemon's `review_gate` event says about a held tool call. */
-interface ReviewGate {
-  blocked: boolean;
-  tool: string;
-  path: string | null;
-}
 
 export interface ReviewSessionState {
   /**
@@ -73,10 +54,9 @@ export interface ReviewSessionState {
    * Roots the daemon can no longer account for, and the unscoped losses that
    * name no root at all.
    *
-   * Kept because a degraded root contributes ZERO hunks while the gate holds
-   * every write under it. Dropping them left the panel drawing "No changes in
-   * this session yet" for exactly the state in which nothing can proceed, with
-   * no reason shown and no release offered.
+   * Kept because a degraded root contributes ZERO hunks. Dropping them left
+   * the panel drawing "No changes in this session yet" for a record that
+   * cannot be read, with no reason shown.
    */
   degraded: DegradedRoot[];
   skips: IntegritySkip[];
@@ -85,7 +65,6 @@ export interface ReviewSessionState {
   loaded: boolean;
   loading: boolean;
   error: string | null;
-  gate: ReviewGate | null;
 }
 
 const EMPTY: ReviewSessionState = {
@@ -97,7 +76,6 @@ const EMPTY: ReviewSessionState = {
   loaded: false,
   loading: false,
   error: null,
-  gate: null,
 };
 
 /**
@@ -143,8 +121,8 @@ export const reviewStore = {
    * The editor is asked for a PATH, not a session — a buffer in the center
    * region has no idea which chat tab's agent touched it, and with several
    * sessions sharing a workspace the honest answer is "all of them". The
-   * session id rides along so an accept/reject from the gutter still names the
-   * ledger that owns the hunk.
+   * session id rides along so a reader still knows the ledger that owns the
+   * hunk.
    */
   hunksForOpenPath(absPath: string): { sessionId: string; hunk: ComposedHunk }[] {
     const out: { sessionId: string; hunk: ComposedHunk }[] = [];
@@ -246,25 +224,6 @@ export { revealedToolCall };
 // =============================================================================
 
 /**
- * Gate state carried by a listing, which is how it survives a reload.
- *
- * `review_gate` is an event, and events are dropped rather than replayed
- * across a reconnect — so a tab opened (or refreshed) while a turn is already
- * parked would show no "waiting on review" chip and the agent would read as
- * hung. The listing carries the daemon's live block, so a reload restores it.
- *
- * Three cases, and the third is why this is not a one-liner. An object means
- * blocked. An explicit `null` means nothing is parked, and must CLEAR a stale
- * chip. A missing key means the daemon does not report gate state at all, and
- * must leave whatever the event stream established alone — overwriting it with
- * `null` would erase a live block on every refresh.
- */
-function gateFromList(data: ReviewHunksResponse, current: ReviewGate | null): ReviewGate | null {
-  if (!('gate' in data)) return current;
-  return data.gate ? { blocked: true, tool: data.gate.tool, path: data.gate.path } : null;
-}
-
-/**
  * Folds one answer from the daemon into a session's slot.
  *
  * The listing itself is held in `lib/query/review.ts`, under the session; this
@@ -288,7 +247,6 @@ function adoptListing(id: string, data: ReviewHunksResponse): void {
     // outlive the failure it described.
     degraded: data.degraded ?? [],
     skips: data.integrity?.skips ?? [],
-    gate: gateFromList(data, s.gate),
     loaded: true,
     loading: false,
     error: null,
@@ -318,20 +276,6 @@ export const reviewActions = {
     await invalidateReview(id);
   },
 
-  async setState(id: string, hunkId: string, state: ReviewState): Promise<void> {
-    // Optimistic: the round trip is a disk write plus a git diff, and a
-    // checkmark that lags a second reads as a dropped click. A refresh follows
-    // either way, so a rejected optimistic state corrects itself.
-    setSessions(
-      id,
-      produce((s) => {
-        const h = s.hunks.find((x) => x.id === hunkId);
-        if (h) h.state = state;
-      }),
-    );
-    await setHunkStateOnce(id, hunkId, state);
-  },
-
   /**
    * List under another scope. The daemon decides what the turn holds; this
    * only re-asks with the other word. The same scope again is not a round
@@ -342,57 +286,6 @@ export const reviewActions = {
     if (sessions[id].scope === scope) return;
     setSessions(id, 'scope', scope);
     await reviewActions.refresh(id);
-  },
-
-  /** Reject == revert on disk == tell the agent. One operation, one name. */
-  reject(id: string, hunkId: string): Promise<void> {
-    return reviewActions.setState(id, hunkId, 'rejected');
-  },
-
-  /**
-   * One decision over several hunks: ONE daemon call, the ids in the order
-   * given.
-   *
-   * Optimistic like `setState`, for the same reason, and corrected by the
-   * same refresh. The outcome is returned rather than swallowed: `failed`
-   * names the hunks the daemon refused, and only the caller can show them.
-   */
-  async setStates(id: string, hunkIds: string[], state: ReviewState): Promise<BulkOutcome> {
-    const named = new Set(hunkIds);
-    setSessions(
-      id,
-      produce((s) => {
-        for (const h of s.hunks) if (named.has(h.id)) h.state = state;
-      }),
-    );
-    return setHunkStatesOnce(id, hunkIds, state);
-  },
-
-  /** A bulk reject: every id reverted on disk, one note to the agent. */
-  rejectMany(id: string, hunkIds: string[]): Promise<BulkOutcome> {
-    return reviewActions.setStates(id, hunkIds, 'rejected');
-  },
-
-  /**
-   * Take back the most recent reject, single or bulk, as one action.
-   *
-   * Not optimistic: the browser does not know which batch is on top of the
-   * daemon's stack, so there is nothing honest to mark before the answer.
-   * A `failed` list means the batch is still on the stack for the next try.
-   */
-  async undoReject(id: string): Promise<BulkOutcome> {
-    return undoRejectOnce(id);
-  },
-
-  /**
-   * Accept the worktree as the new base, releasing a block reviewing cannot.
-   *
-   * Deliberately NOT optimistic and NOT silent about failure: it throws so the
-   * caller can surface why. A rebase that half-succeeds leaves some roots
-   * degraded, and the refresh below is what shows which.
-   */
-  async rebase(id: string): Promise<void> {
-    await rebaseReviewOnce(id);
   },
 
   async comment(id: string, comment: NewComment): Promise<void> {
@@ -453,20 +346,10 @@ function scheduleRefresh(id: string): void {
 function foldEvent(id: string, event: ChatEvent): void {
   switch (event.type) {
     case 'session_event': {
-      const data = (event.data ?? {}) as Record<string, unknown>;
-      if (event.event === 'review_gate') {
-        setSessions(id, 'gate', {
-          blocked: data.blocked === true,
-          tool: typeof data.tool === 'string' ? data.tool : '',
-          path: typeof data.path === 'string' ? data.path : null,
-        });
-        return;
-      }
-      // `review_gate` and `review_changed` both make the listing wrong, and
-      // the ROUTE of this stream (`lib/query/routes/session.ts`) invalidates
-      // it for every reader at once. Re-listing here as well would be a second
-      // request for one event. The gate above is different: it is state only
-      // this slot holds, and no cache entry carries it.
+      // `review_changed` makes the listing wrong, and the ROUTE of this
+      // stream (`lib/query/routes/session.ts`) invalidates it for every reader
+      // at once. Re-listing here as well would be a second request for one
+      // event.
       return;
     }
     // No event announces "the agent just created hunks" — `review_changed`

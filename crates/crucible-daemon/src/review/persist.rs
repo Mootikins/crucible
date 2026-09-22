@@ -1,6 +1,5 @@
 //! The journal side of [`ReviewLedgers`]: restoring a session from
-//! `review.jsonl`, appending to it, rebasing off it, and keeping the git trees
-//! it names alive.
+//! `review.jsonl`, appending to it, and keeping the git trees it names alive.
 //!
 //! Split from [`super`] along the seam that was already there — everything
 //! here either reads or writes durable state, and nothing in it decides what a
@@ -9,9 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crucible_core::session::{
-    HunkId, Integrity, Interval, Ledger, ReviewState, RootBase, RootStatus, Skip, SkipKind,
-};
+use crucible_core::session::{Integrity, Interval, Ledger, Skip, SkipKind};
 use tracing::{debug, warn};
 
 use super::backend::RootBackend;
@@ -29,9 +26,8 @@ impl ReviewLedgers {
     /// and empties the review queue of everything done before the restart.
     ///
     /// **A journal that exists and cannot be read never falls through to
-    /// [`ReviewLedgers::open`].** Only two things ever set `session_base`: a
-    /// session with no journal at all, and an explicit
-    /// [`Self::rebase_session`]. An unreadable journal is an error the caller
+    /// [`ReviewLedgers::open`].** Only a session with no journal at all sets
+    /// `session_base`. An unreadable journal is an error the caller
     /// must see, because the alternative — capturing a fresh base — is the same
     /// data loss wearing a different hat.
     pub async fn open_or_restore(
@@ -82,8 +78,7 @@ impl ReviewLedgers {
     ///
     /// Records the lenient parser could not use are recorded on the session's
     /// [`crucible_core::session::Integrity`] rather than dropped, and the
-    /// grading there is what decides whether the gate blocks — see
-    /// [`ReviewLedgers::has_unreviewed_in_file`].
+    /// grading there decides which roots the listing marks as degraded.
     ///
     /// A journal that cannot be read *at all* is [`Self::poison`]ed before the
     /// error propagates, so the failure lands on the same graded path as a
@@ -108,8 +103,6 @@ impl ReviewLedgers {
             .insert(session_id.to_string(), path.to_path_buf());
         self.states
             .insert(session_id.to_string(), restored.states.clone());
-        self.reject_stack
-            .insert(session_id.to_string(), restored.reject_stack);
         self.migrate_comments(session_id, restored.comments).await;
         self.integrity
             .insert(session_id.to_string(), restored.integrity);
@@ -171,12 +164,11 @@ impl ReviewLedgers {
     /// Register a session whose journal exists and could not be read at all.
     ///
     /// Without this the session simply has no ledger, and *no ledger* is the
-    /// same signal a workspace outside git produces: the gate returns before it
-    /// queries anything, every write proceeds unheld, and the panel reports an
+    /// same signal a workspace outside git produces: the panel reports an
     /// empty queue. A journal whose *header line* is merely corrupt already
-    /// fails closed through [`crucible_core::session::SkipKind::Session`], so
-    /// without this the wholly-unreadable case — strictly more broken — would
-    /// be the only one that blocks nothing.
+    /// degrades every root through [`crucible_core::session::SkipKind::Session`],
+    /// so without this the wholly-unreadable case — strictly more broken —
+    /// would be the only one that reports nothing.
     ///
     /// The ledger inserted here has an **empty** `session_base`, which is
     /// exactly the shape `journal::load` produces for a journal whose base
@@ -185,9 +177,7 @@ impl ReviewLedgers {
     /// only to make the session *present* to every reader.
     ///
     /// The journal path is registered too, even though nothing could be read
-    /// from it. [`Self::rebase_session`] is the human-reachable release, and
-    /// without a registered path its records — and the keep refs that protect
-    /// its trees — would silently go nowhere.
+    /// from it, so that a later append does not go to a different file.
     fn poison(&self, session_id: &str, path: &Path, error: &ReviewError) {
         let mut integrity = Integrity::default();
         integrity.record(Skip {
@@ -199,181 +189,13 @@ impl ReviewLedgers {
             session_id,
             path = %path.display(),
             error = %error,
-            "review journal unreadable; every write in this session is held until a rebase"
+            "review journal unreadable; every root of this session is degraded"
         );
         self.integrity.insert(session_id.to_string(), integrity);
         self.journals
             .insert(session_id.to_string(), path.to_path_buf());
         self.ledgers
             .insert(session_id.to_string(), Ledger::new(session_id, Vec::new()));
-    }
-
-    /// Make sure `session_id` has somewhere to append to, without disturbing a
-    /// journal it already has.
-    ///
-    /// A fresh file gets a header, so the arithmetic every later decision was
-    /// made under is on record from the first line.
-    async fn ensure_journal(&self, session_id: &str, dir: &Path) {
-        if self.journals.contains_key(session_id) {
-            return;
-        }
-        let path = dir.join(journal::FILE);
-        let fresh = !tokio::fs::try_exists(&path).await.unwrap_or(false);
-        self.journals.insert(session_id.to_string(), path);
-        if fresh {
-            self.append(session_id, journal::header(session_id)).await;
-        }
-    }
-
-    /// Move `session_base` to the worktree as it is now, over `roots`.
-    ///
-    /// The release valve for a block no review can clear: a base tree that has
-    /// been gc'd, a root that has moved, a journal whose records could not be
-    /// read. Structural failure fails closed precisely *because* this exists —
-    /// without it, blocking on a broken ledger would be an unreleasable hang
-    /// rather than a bounded one.
-    ///
-    /// Everything the old base described stops being in the composed diff, so
-    /// this is destructive to the queue and is only ever a deliberate human
-    /// action. Decisions survive: they are keyed by content, not by base, and
-    /// [`ReviewLedgers::list_hunks`] will re-apply any that still name a live
-    /// hunk.
-    ///
-    /// `roots` is re-derived by the caller rather than read from the ledger,
-    /// so a session whose journal lost its base records — the case with no
-    /// roots left to recapture — is still recoverable. `dir` is the session's
-    /// storage directory, and is needed for the same reason: a rebase is
-    /// reachable on a session that has never run a turn, and therefore has no
-    /// journal registered yet.
-    pub async fn rebase_session(
-        &self,
-        session_id: &str,
-        dir: &Path,
-        roots: &[PathBuf],
-    ) -> ReviewResult<Vec<RootStatus>> {
-        let existing = self.ledger(session_id);
-        let mut captured: Vec<RootBase> = Vec::new();
-        let mut kept: Vec<RootBase> = Vec::new();
-        let mut statuses: Vec<RootStatus> = Vec::new();
-        for root in roots {
-            let (top, backend) = match RootBackend::detect(root).await {
-                Ok(pair) => pair,
-                // A root that can no longer be reached takes the same
-                // keep-and-report path as one that merely failed to capture,
-                // and for the same reason: dropping it removes it from
-                // `session_base`, so it contributes neither hunks nor a status
-                // and the gate answers `Clear` for it. Silently narrowing the
-                // gate is not what the user asked for when they reached for
-                // the release valve.
-                Err(e) => {
-                    if let Some(base) = existing.as_ref().and_then(|ledger| {
-                        ledger
-                            .session_base()
-                            .iter()
-                            .find(|base| root.starts_with(base.root.as_path()))
-                            .cloned()
-                    }) {
-                        let reported = base.root.clone();
-                        kept.push(base);
-                        statuses.push(RootStatus::degraded(reported, e.to_string()));
-                    }
-                    continue;
-                }
-            };
-            if statuses.iter().any(|s| s.root == top) {
-                continue;
-            }
-            match backend.capture(&self.plain, &top).await {
-                Ok(base_tree) => {
-                    captured.push(RootBase {
-                        root: top.clone(),
-                        base_tree,
-                    });
-                    statuses.push(RootStatus::intact(top));
-                }
-                // Reported rather than skipped: a root that cannot be captured
-                // is exactly the root the user is trying to unblock, and
-                // silently dropping it would leave them rebasing forever.
-                //
-                // And *kept* rather than dropped, which is the other half.
-                // `Ledger::rebase` replaces `session_base` wholesale, so a root
-                // missing from the new set stops existing for the ledger — it
-                // contributes neither hunks nor a `RootStatus`, so the gate
-                // answers `Clear` for it the moment the failure clears, with
-                // its changes gone from the composed diff and only another
-                // rebase able to put them back. Capture failure here is
-                // transient by construction (`RootBackend::detect` already
-                // answered, so the root is there and has a store), so the base
-                // it had is still the right one.
-                Err(e) => {
-                    if let Some(base) = existing.as_ref().and_then(|l| l.base_tree(&top)) {
-                        kept.push(RootBase {
-                            root: top.clone(),
-                            base_tree: base.clone(),
-                        });
-                    }
-                    statuses.push(RootStatus::degraded(top, e.to_string()));
-                }
-            }
-        }
-        if statuses.is_empty() {
-            return Err(ReviewError::NoTrackableRoots(
-                roots
-                    .iter()
-                    .map(|r| r.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ));
-        }
-
-        let bases: Vec<RootBase> = captured.iter().cloned().chain(kept).collect();
-        match self.ledgers.get_mut(session_id) {
-            Some(mut ledger) => ledger.rebase(bases.clone()),
-            None => {
-                self.ledgers
-                    .insert(session_id.to_string(), Ledger::new(session_id, bases));
-            }
-        }
-        // Cleared only when nothing was left behind. A partial rebase has not
-        // answered what the journal lost under the root it could not capture,
-        // and retrying once that root recovers is the release.
-        if statuses.iter().all(|s| !s.is_degraded()) {
-            self.integrity.remove(session_id);
-        }
-
-        // Before the first append, and after the `statuses.is_empty()` refusal
-        // so a rebase that found no repository leaves no journal behind.
-        self.ensure_journal(session_id, dir).await;
-        // Only the roots whose base actually moved. A `Rebase` record voids
-        // every interval under its root on replay, so writing one for a root
-        // this call could not recapture would throw away the attribution the
-        // `kept` branch above exists to preserve.
-        for base in &captured {
-            self.append(
-                session_id,
-                journal::Record::Rebase {
-                    root: base.root.to_path_buf(),
-                    base_tree: base.base_tree.clone(),
-                },
-            )
-            .await;
-        }
-        self.refresh_keep_refs(session_id).await;
-        Ok(statuses)
-    }
-
-    pub(super) async fn record_state(
-        &self,
-        session_id: &str,
-        hunk_id: &HunkId,
-        state: ReviewState,
-    ) {
-        self.states
-            .entry(session_id.to_string())
-            .or_default()
-            .insert(hunk_id.clone(), state);
-        self.append(session_id, journal::state(hunk_id, state))
-            .await;
     }
 
     /// Add an interval to a ledger and to its journal, as one operation.
@@ -401,8 +223,7 @@ impl ReviewLedgers {
     /// Append one record to the session's journal, if it has one.
     ///
     /// Best-effort and loud rather than fallible: every caller is a mutation
-    /// that has already happened — the revert is on disk, the interval is in
-    /// memory — and turning a completed action into a failed RPC would leave
+    /// that has already happened — the interval is in memory — and turning a completed action into a failed RPC would leave
     /// the caller believing it did not happen.
     pub(super) async fn append(&self, session_id: &str, record: journal::Record) {
         let Some(path) = self.journals.get(session_id).map(|r| r.value().clone()) else {

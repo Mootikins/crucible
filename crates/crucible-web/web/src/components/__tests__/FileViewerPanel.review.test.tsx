@@ -50,7 +50,6 @@ vi.mock('@/stores/windowStore', () => ({
 const listReviewHunks = vi.fn();
 vi.mock('@/lib/review-api', () => ({
   listReviewHunks: (...a: unknown[]) => listReviewHunks(...a),
-  setHunkState: vi.fn(),
   addReviewComment: vi.fn(),
   resolveReviewComment: vi.fn(),
 }));

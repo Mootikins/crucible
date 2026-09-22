@@ -1,6 +1,6 @@
 //! Review route contract tests.
 //!
-//! These seven routes forward a request untouched and answer a **named
+//! These three routes forward a request untouched and answer a **named
 //! struct**. Task A6 named the replies (`routes/session/review.rs`), so the
 //! daemon's result no longer travels as `serde_json::Value`: the route reads
 //! the daemon's object into its reply type and writes that type back. A key
@@ -11,8 +11,8 @@
 //!
 //! What holds the reply to the daemon is
 //! `src/routes/session/review_shape_tests.rs`. It builds the core types the
-//! daemon serialises — `ComposedHunk`, `Comment`, `RootStatus`, `Integrity`,
-//! `GateBlock` — pushes each through its row and demands the same JSON back,
+//! daemon serialises — `ComposedHunk`, `Comment`, `RootStatus`, `Integrity` —
+//! pushes each through its row and demands the same JSON back,
 //! so a new field in `crucible-core` fails a test instead of going missing.
 //! These tests pin the HTTP surface around it: the path, the query, the
 //! statuses, and what reaches the daemon. `web/src/lib/__tests__/review-api.test.ts`
@@ -95,7 +95,6 @@ async fn list_hunks_drops_a_daemon_key_the_reply_does_not_model() {
             "comments",
             "degraded",
             "integrity",
-            "gate",
         ],
         "the body carries the fields `ReviewHunksResponse` declares, in order"
     );
@@ -110,15 +109,6 @@ async fn list_hunks_keeps_the_keys_the_panel_reads() {
     assert!(
         json.get("degraded").is_some(),
         "a broken root must reach the client: {json}"
-    );
-    // `gate` specifically, and specifically its null-ness: the store treats an
-    // absent key as "leave the chip alone" and a null one as "clear it", so a
-    // layer that dropped a null on the floor would silently strand a stale
-    // "waiting on review" chip. The field is `required` in the OpenAPI
-    // document for the same reason.
-    assert!(
-        json.get("gate").is_some_and(Value::is_null),
-        "an explicit null must survive the reply, not be elided: {json}"
     );
     assert!(
         json["hunks"][0].get("reapplied").is_some(),
@@ -175,104 +165,6 @@ async fn a_session_id_with_a_slash_survives_the_path() {
     assert_eq!(
         mock.received_params("review.list_hunks").unwrap()["session_id"],
         "a/b"
-    );
-}
-
-/// The release for a degraded root. It is the only way out of a fail-closed
-/// block — a degraded root contributes no hunks, so no amount of reviewing
-/// clears it — and for a while it existed only as a daemon method with no
-/// client anywhere, reachable solely by hand-written JSON-RPC.
-#[tokio::test]
-async fn rebase_reaches_the_daemon_and_returns_its_root_statuses() {
-    let (mock, status, json) = call("POST", "/api/session/s1/review/rebase", Some(json!({}))).await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        mock.received_params("review.rebase").unwrap()["session_id"],
-        "s1"
-    );
-    assert_eq!(json["roots"][0]["root"], "/tmp/test-project");
-}
-
-#[tokio::test]
-async fn set_state_forwards_hunk_id_and_state() {
-    let (mock, status, json) = call(
-        "POST",
-        "/api/session/s1/review/state",
-        Some(json!({ "hunk_id": "h1", "state": "accepted" })),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    let params = mock.received_params("review.set_state").unwrap();
-    assert_eq!(params["session_id"], "s1");
-    assert_eq!(params["hunk_id"], "h1");
-    assert_eq!(params["state"], "accepted");
-    assert_eq!(json["state"], "accepted");
-}
-
-/// A bulk decision is ONE daemon call, and the order of the ids is the order
-/// the daemon applies them in — a reject that reverts two hunks in one file
-/// must revert the lower one first, so a route that re-sorted or set-ified the
-/// list would change what lands on disk.
-#[tokio::test]
-async fn set_states_forwards_the_ids_in_order() {
-    let (mock, status, json) = call(
-        "POST",
-        "/api/session/s1/review/states",
-        Some(json!({ "hunk_ids": ["h3", "h1", "h2"], "state": "rejected" })),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(mock.received_methods(), vec!["review.set_states"]);
-    let params = mock.received_params("review.set_states").unwrap();
-    assert_eq!(params["session_id"], "s1");
-    assert_eq!(params["hunk_ids"], json!(["h3", "h1", "h2"]));
-    assert_eq!(params["state"], "rejected");
-    // The reply names both halves of the daemon's answer: the ids that
-    // applied and the ids it refused, each with its reason, so the client
-    // never re-lists to learn which was which.
-    assert_eq!(json["state"], "rejected");
-    assert_eq!(json["applied"], json!(["h3", "h1", "h2"]));
-    assert!(json.get("failed").is_some_and(Value::is_array), "{json}");
-}
-
-/// The undo names no hunk: the daemon pops its own stack for the session in
-/// the PATH. The `{}` body carries the `Content-Type` that forces a preflight,
-/// the same rule as `…/rebase` and `…/resolve`.
-#[tokio::test]
-async fn undo_reject_reaches_the_daemon_with_the_path_session() {
-    let (mock, status, json) = call(
-        "POST",
-        "/api/session/a%2Fb/review/undo-reject",
-        Some(json!({})),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(mock.received_methods(), vec!["review.undo_reject"]);
-    let params = mock.received_params("review.undo_reject").unwrap();
-    assert_eq!(params["session_id"], "a/b");
-    assert!(json.get("applied").is_some_and(Value::is_array), "{json}");
-    assert!(json.get("failed").is_some_and(Value::is_array), "{json}");
-}
-
-/// The state vocabulary belongs to the daemon. A copy of it in this crate
-/// could only ever refuse a state the daemon had newly learned, so an unknown
-/// value must travel and be refused there.
-#[tokio::test]
-async fn an_unknown_state_is_the_daemons_refusal_not_this_crates() {
-    let (mock, _status, _json) = call(
-        "POST",
-        "/api/session/s1/review/state",
-        Some(json!({ "hunk_id": "h1", "state": "Accepted" })),
-    )
-    .await;
-
-    assert_eq!(
-        mock.received_params("review.set_state").unwrap()["state"],
-        "Accepted"
     );
 }
 
@@ -363,15 +255,18 @@ async fn resolve_comment_takes_the_comment_id_from_the_path() {
     assert_eq!(json["resolved"], true);
 }
 
-/// Everything the daemon refuses as INVALID_PARAMS — unknown hunk, stale hunk,
-/// external hunk, and now a comment on a path under no git root — is the
-/// caller's problem, not a gateway failure, and the client's response is to
-/// re-list rather than to report the daemon as broken.
+/// Everything the daemon refuses as INVALID_PARAMS — such as a comment on a
+/// path under no tracked root — is the caller's problem, not a gateway
+/// failure, and the client's response is to re-list rather than to report the
+/// daemon as broken.
 #[tokio::test]
 async fn a_daemon_refusal_is_a_422_carrying_its_message() {
     let errors: MockErrors = [(
-        "review.set_state".to_string(),
-        (-32602i64, "Hunk no longer exists: h1".to_string()),
+        "review.comment".to_string(),
+        (
+            -32602i64,
+            "src/a.rs resolves outside the session's tracked roots".to_string(),
+        ),
     )]
     .into_iter()
     .collect();
@@ -382,10 +277,10 @@ async fn a_daemon_refusal_is_a_422_carrying_its_message() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/session/s1/review/state")
+                .uri("/api/session/s1/review/comment")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({ "hunk_id": "h1", "state": "rejected" }).to_string(),
+                    json!({ "path": "src/a.rs", "line_start": 1, "body": "why" }).to_string(),
                 ))
                 .unwrap(),
         )
@@ -401,7 +296,7 @@ async fn a_daemon_refusal_is_a_422_carrying_its_message() {
         json["error"]["message"]
             .as_str()
             .unwrap_or_default()
-            .contains("Hunk no longer exists"),
+            .contains("outside the session's tracked roots"),
         "the daemon's message must reach the client: {json}"
     );
 }

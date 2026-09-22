@@ -65,7 +65,6 @@ async fn the_review_plugin_offers_every_review_operation_as_a_tool() {
 
     for tool in [
         "review_list_hunks",
-        "review_set_state",
         "review_comment",
         "review_resolve_comment",
     ] {
@@ -88,7 +87,7 @@ async fn every_review_tool_takes_the_session_it_reviews() {
         .collect();
     assert_eq!(
         review.len(),
-        4,
+        3,
         "expected every review tool: {:?}",
         review.iter().map(|d| &d.name).collect::<Vec<_>>()
     );

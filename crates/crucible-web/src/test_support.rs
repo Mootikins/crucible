@@ -1518,44 +1518,17 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 // What the journal could not be read back as. Carries the
                 // losses `degraded` cannot: those have no root to name.
                 "integrity": { "skips": [] },
-                // What a parked turn is waiting on. Always present, and `null`
-                // here because the fixture session is not blocked — an absent
-                // key means something different to the store than a null one.
-                "gate": null,
                 // A key `ReviewHunksResponse` does not model.
                 //
                 // Invented here, because the daemon's review results grow keys
-                // faster than the web route follows: `degraded` and `gate` both
-                // arrived after the route was written. The route named its reply
+                // faster than the web route follows: `degraded` and
+                // `integrity` both arrived after the route was written. The route named its reply
                 // in task A6, so such a key now stops at the web layer, and
                 // `tests/route_contract_tests/review.rs` holds that behaviour
                 // where a reader can see it.
                 "a_key_the_web_does_not_model": 7,
             })
         }
-        "review.rebase" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "roots": [{ "root": "/tmp/test-project", "degraded": Value::Null }],
-        }),
-        "review.set_state" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "hunk_id": param_str(msg, "hunk_id"),
-            "state": param_str(msg, "state"),
-        }),
-        // Every id applied, in the order sent, and nothing refused: the
-        // `failed` list is present and empty so a route test can see that the
-        // key survives the forward even when there is nothing in it.
-        "review.set_states" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "state": param_str(msg, "state"),
-            "applied": param_value(msg, "hunk_ids"),
-            "failed": [],
-        }),
-        "review.undo_reject" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "applied": ["hunk-1"],
-            "failed": [],
-        }),
         "review.comment" => json!({
             "session_id": param_str(msg, "session_id"),
             "comment": review_comment_fixture("comment-2", param_str(msg, "body")),

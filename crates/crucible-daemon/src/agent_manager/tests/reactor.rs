@@ -1077,60 +1077,6 @@ mod gate_ordering {
         assert_intercepted("the card's Deny, lifted,", &payload);
     }
 
-    /// The review gate holds a write while the file it targets is unreviewed,
-    /// and a handler cannot answer past the hold.
-    ///
-    /// The gate waits rather than refuses, so the proof is the wait: the
-    /// `review_gate` event goes out and no `tool_result` follows it. A gate
-    /// below the loop would produce the handler's answer instead — and `oci`'s
-    /// handler really does write, through bash in a container over the same
-    /// bind-mounted workspace, so an answered call is a landed edit.
-    ///
-    /// The hold comes from an unreadable journal, which is the documented
-    /// "every write in this session is held until a rebase" state. It needs no
-    /// git repository and no captured hunk.
-    #[tokio::test]
-    async fn the_review_gate_is_above_the_hook_loop() {
-        let mut h = ReactorTestHarness::new().await;
-
-        let dir = tempfile::TempDir::new().unwrap();
-        let journal = dir.path().join("review.jsonl");
-        // Present to `try_exists`, unreadable to `read_to_string`.
-        std::fs::create_dir(&journal).unwrap();
-        let _ = h
-            .agent_manager
-            .review
-            .restore_from_journal(&h.session_id, &journal)
-            .await;
-
-        let _loader = interceptor(&h, "write");
-
-        h.inject_streaming_agent(vec![
-            script::tool_call(
-                "call-held",
-                "write",
-                serde_json::json!({ "path": "held.txt", "content": "x" }),
-            ),
-            script::text("done"),
-            script::done(),
-        ]);
-
-        h.send("run tool").await;
-        let gate = h.wait_for_first_of(&["review_gate", "tool_result"]).await;
-        assert_eq!(
-            gate.event, "review_gate",
-            "the review gate must hold the call before any handler answers it, got: {gate:?}"
-        );
-        assert_eq!(gate.data["blocked"], serde_json::json!(true));
-
-        // The counterfactual, on the same call: release the hold and the
-        // handler answers it. Without this the test would still pass if the
-        // handler had never registered at all.
-        h.agent_manager.review.clear_session(&h.session_id);
-        let payload = await_result(&mut h, "write").await;
-        assert_intercepted("the review gate, released,", &payload);
-    }
-
     /// The isolation gate stays BELOW the loop, deliberately.
     ///
     /// A claimed session refuses any tool no handler took over. Taking it over

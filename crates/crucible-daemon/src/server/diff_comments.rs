@@ -46,9 +46,6 @@ fn review_refusal(error: ReviewError) -> Refusal {
         | ReviewError::WrongBackend { .. } => internal_error(error),
         ReviewError::NoLedger(_)
         | ReviewError::NoTrackableRoots(_)
-        | ReviewError::UnknownHunk(_)
-        | ReviewError::Stale { .. }
-        | ReviewError::ExternalHunk(_)
         | ReviewError::InvalidSession(_)
         | ReviewError::UnknownComment(_)
         | ReviewError::InvalidComment(_)

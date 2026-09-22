@@ -8,7 +8,7 @@ use crate::protocol::SessionEventMessage;
 use crate::rpc::RpcContext;
 use crate::rpc_client::ReviewCommentRequest;
 use crate::session_manager::SessionManager;
-use crucible_core::session::{CommentAuthor, HunkId, LineRange, ReviewState};
+use crucible_core::session::{CommentAuthor, LineRange};
 use crucible_core::traits::context_ops::Range;
 use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
@@ -914,8 +914,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     // The review methods delegate to the same free functions the `review.*`
     // RPC handlers call, so a plugin tool and the web panel cannot drift on
-    // what "reject" does — in particular, both revert on disk and both tell
-    // the reviewed session's agent.
+    // what a listing or a comment does.
     //
     // Every one of them opens with `ensure_loaded`, exactly as every handler
     // does, and for the reason `ensure_loaded` exists: a review call can be the
@@ -941,32 +940,6 @@ impl DaemonSessionApi for DaemonSessionBridge {
                     .collect()
             }
         )
-    }
-
-    fn review_set_state(&self, session_id: String, hunk_id: String, state: String) -> BoxFut<()> {
-        let agent_manager = Arc::clone(&self.agent_manager);
-        let session_manager = Arc::clone(&self.session_manager);
-        let event_tx = self.event_tx.clone();
-        Box::pin(async move {
-            let state: ReviewState = serde_json::from_value(serde_json::Value::String(state))
-                .map_err(|_| "state must be one of: unreviewed, accepted, rejected".to_string())?;
-            crate::server::session::review::ensure_loaded(
-                &agent_manager,
-                &session_manager,
-                &session_id,
-            )
-            .await;
-            crate::server::session::review::set_state(
-                &agent_manager,
-                &session_manager,
-                &event_tx,
-                &session_id,
-                &HunkId::from(hunk_id),
-                state,
-            )
-            .await
-            .map_err(|e| e.to_string())
-        })
     }
 
     fn review_comment(

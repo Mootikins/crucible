@@ -2,14 +2,13 @@ import { Component, For, Show } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
 import { useSessionStatus } from '@/lib/query/session-config';
-import { reviewStore, useReviewSession } from '@/lib/review-store';
 import type { ModeDescriptor } from '@/lib/types';
 
 /**
  * Read-only status strip for the current session: whatever keyed slots the
- * daemon's plugins published, rendered as chips, plus the two things about a
- * session that are not any plugin's to say — whether the agent is parked
- * waiting on review, and what a note write in the current mode does.
+ * daemon's plugins published, rendered as chips, plus the one thing about a
+ * session that is not any plugin's to say: what a note write in the current
+ * mode does.
  *
  * The plugin half deliberately knows nothing about any particular plugin. A
  * slot arrives as `{key, plugin, text, level}`; this renders `text`, attributes
@@ -33,7 +32,6 @@ export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
 
   const sessionId = () => currentSession()?.session_id;
-  useReviewSession(sessionId);
   // The chat pane reads this same list for its mode control. This component
   // used to fetch a second copy of it on every mount, and the two disagreed
   // the moment one of them failed.
@@ -63,31 +61,13 @@ export const SessionStatusChips: Component = () => {
     return current?.writes ?? null;
   };
 
-  const gate = () => reviewStore.session(sessionId()).gate;
-  const blocked = () => gate()?.blocked === true;
   // The write mode is not a chip, because the mode control already says
   // "proposes". It stays on the wrapper as data for tests and plugins.
-  const anything = () => slots().length > 0 || blocked() || writes() !== null;
+  const anything = () => slots().length > 0 || writes() !== null;
 
   return (
     <Show when={anything()}>
       <div class="contents" data-testid="session-status" data-writes={writes() ?? undefined}>
-        {/* A blocked agent must never read as a stalled one. First chip,
-            loudest tone, and it names what it is waiting on. */}
-        <Show when={blocked()}>
-          <span
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-floor border-attention/40 bg-attention/10 text-attention"
-            data-testid="session-review-gate"
-            title={`${gate()!.tool} is held until ${gate()!.path ?? 'the file it writes'} has no unreviewed changes.`}
-          >
-            <span class="w-1.5 h-1.5 rounded-full bg-attention animate-pulse" />
-            waiting on review
-            <Show when={reviewStore.unreviewedCount(sessionId()) > 0}>
-              <span class="opacity-70">({reviewStore.unreviewedCount(sessionId())})</span>
-            </Show>
-          </span>
-        </Show>
-
         <For each={slots()}>
           {(slot) => (
             <span

@@ -1,23 +1,9 @@
-//! The `review.*` RPC surface: the composed-diff review queue.
+//! The `review.*` RPC surface: the composed diff of a session.
 //!
-//! Eight operations — list, decide, decide in bulk, revert, undo a reject,
-//! comment, resolve, rebase — over the session-scoped ledger `AgentManager`
-//! owns. The engine lives in `crate::review`; this module is the boundary
-//! that turns [`ReviewError`] into JSON-RPC codes and decides what a decision
-//! *emits*.
-//!
-//! Two boundary rules are load-bearing and are why the operations are not
-//! thin passthroughs:
-//!
-//! * **Rejection is a conversation event.** An agent that is not told its
-//!   edit was reverted re-applies the same edit on the next turn, and you are
-//!   in a loop. Every rejection injects a `user`-role note naming the file and
-//!   lines. Acceptance is silent — it costs tokens and teaches the model
-//!   nothing. An undo of a rejection un-says it with a second note, or the
-//!   agent keeps working from a revert that is no longer on disk.
-//! * **Every operation that moves the composed diff emits `review_changed`.**
-//!   Including acceptance, which is silent to the *agent* but not to the
-//!   panel showing the queue.
+//! Three operations — list, comment, resolve — over the session-scoped
+//! ledger `AgentManager` owns. The engine lives in `crate::review`; this
+//! module is the boundary that turns [`ReviewError`] into JSON-RPC codes.
+//! Every operation that changes what the panel shows emits `review_changed`.
 //!
 //! The same functions back the Lua bridge (`cru.session.review_*`), so the
 //! logic lives in free functions here rather than inside the handlers; §6
@@ -27,18 +13,16 @@
 use super::super::*;
 use crate::rpc_client::{
     ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest,
-    ReviewSetStateRequest, ReviewSetStatesRequest, SessionIdRequest,
 };
 use crate::rpc_helpers::typed_params;
 
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, ReviewScope, ReviewState,
-    RootBase, RootStatus,
+    Comment, CommentAuthor, CommentSide, ComposedHunk, LineRange, ReviewScope, RootBase, RootStatus,
 };
 
-use crate::review::{paths, record_diffset, BulkOutcome, ReviewError, ReviewResult};
+use crate::review::{paths, record_diffset, ReviewError, ReviewResult};
 use crate::server::diff_comments::{record_comment, resolve_in, CommentSpec};
 use crate::tools::containment::reject_non_normal;
 use crucible_core::session::SessionId;
@@ -70,14 +54,13 @@ pub(crate) async fn ensure_loaded(am: &AgentManager, sm: &SessionManager, sessio
     }
     // Loud but not fatal: `restore_from_journal` records the loss on the
     // session's `Integrity` before it returns, so the queue comes back
-    // degraded — held, with a reason, and releasable by `review.rebase` —
-    // rather than as an empty success.
+    // degraded, with a reason, rather than as an empty success.
     if let Err(e) = am.review.restore_from_journal(session_id, &path).await {
         warn!(
             session_id,
             path = %path.display(),
             error = %e,
-            "review journal could not be restored; this session's writes are held until a rebase"
+            "review journal could not be restored; this session's roots are degraded"
         );
     }
 }
@@ -101,12 +84,10 @@ pub(crate) async fn list_hunks(
 /// scope.
 ///
 /// The statuses are not decoration: a degraded root contributes no hunks, so a
-/// client shown only the hunks would read a broken ledger as a clean queue —
-/// while the gate is holding every write under that root.
+/// client shown only the hunks would read a broken ledger as a clean queue.
 ///
 /// The turn boundary is read here, from the session's scheduler-owned tree,
-/// because the engine knows intervals and not conversations; the same tree
-/// the gate reads its `this_turn` from.
+/// because the engine knows intervals and not conversations.
 pub(crate) async fn list_hunks_with_status(
     am: &AgentManager,
     session_id: &str,
@@ -124,225 +105,6 @@ pub(crate) async fn list_hunks_with_status(
         Err(ReviewError::NoLedger(_)) => Ok((Vec::new(), Vec::new())),
         other => other,
     }
-}
-
-/// Move the session's base to the worktree as it is now.
-///
-/// The release for a block no amount of reviewing can clear — a gc'd base
-/// tree, a moved root, a journal record that would not parse. Destructive to
-/// the queue by definition, which is why it is a sixth explicit method and
-/// never something the daemon does on its own.
-pub(crate) async fn rebase(
-    am: &AgentManager,
-    sm: &SessionManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-) -> ReviewResult<Vec<RootStatus>> {
-    let session = sm
-        .get_session(session_id)
-        .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
-    // The same root set the send path opens the ledger over, re-derived rather
-    // than read from the ledger: the case this exists to recover from includes
-    // a ledger that lost its base records and so has no roots left to name.
-    let mut roots: Vec<PathBuf> = session.workspace.iter().cloned().collect();
-    roots.extend(sm.kiln_paths(&session.kilns));
-
-    // The storage directory rather than the journal path: a session that has
-    // never run a turn has no journal registered, and a rebase whose records
-    // reach no file would answer `Ok` while persisting nothing and claiming no
-    // keep ref for the base it just captured.
-    let statuses = am
-        .review
-        .rebase_session(
-            session_id,
-            &session.storage_path(sm.sessions_root()),
-            &roots,
-        )
-        .await?;
-    emit_review_changed(event_tx, session_id, "rebased");
-    Ok(statuses)
-}
-
-/// Record a decision about a hunk.
-///
-/// [`ReviewState::Rejected`] routes through [`reject_hunk`] so a recorded
-/// rejection always corresponds to a revert that actually happened and to a
-/// note the agent will read.
-pub(crate) async fn set_state(
-    am: &AgentManager,
-    sm: &SessionManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-    hunk_id: &HunkId,
-    state: ReviewState,
-) -> ReviewResult<()> {
-    if state == ReviewState::Rejected {
-        return reject_hunk(am, sm, event_tx, session_id, hunk_id).await;
-    }
-    am.review.set_state(session_id, hunk_id, state).await?;
-    emit_review_changed(event_tx, session_id, &state_reason(state));
-    Ok(())
-}
-
-/// Revert a hunk against `session_base`, mark it rejected, and tell the agent.
-///
-/// The hunk is read *before* the revert: afterwards its identity is gone from
-/// the composed diff, and the note has to name the lines the user was looking
-/// at, not whatever occupies them now.
-async fn reject_hunk(
-    am: &AgentManager,
-    sm: &SessionManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-    hunk_id: &HunkId,
-) -> ReviewResult<()> {
-    let hunk = am
-        .review
-        .list_hunks(session_id)
-        .await?
-        .into_iter()
-        .find(|h| &h.id == hunk_id)
-        .ok_or_else(|| ReviewError::UnknownHunk(hunk_id.clone()))?;
-
-    am.review.revert_hunk(session_id, hunk_id).await?;
-
-    // The revert already landed on disk. A failure to inject the note leaves
-    // the worktree correct and the agent ignorant, which is the loop this
-    // exists to prevent — loud, but never a failed RPC.
-    if let Err(e) = super::inject_context_impl(
-        sm,
-        am,
-        event_tx,
-        session_id,
-        "user",
-        &rejection_notice(&hunk),
-    )
-    .await
-    {
-        warn!(
-            session_id,
-            hunk = %hunk_id,
-            error = %e,
-            "hunk reverted but the rejection was not injected; the agent may re-apply it"
-        );
-    }
-    emit_review_changed(event_tx, session_id, "rejected");
-    Ok(())
-}
-
-/// Record one decision about several hunks, in the given order.
-///
-/// The engine applies and reports per hunk ([`ReviewLedgers::set_states`]);
-/// this boundary adds what the single decision adds. A bulk reject tells the
-/// agent once, in one note that names every hunk that was reverted — one
-/// conversation event for one user action, not one per hunk. The hunks are
-/// read *before* the reverts, for the same reason [`reject_hunk`] reads its
-/// one: afterwards their identities are gone from the composed diff, and the
-/// note has to name the lines the user was looking at. One `review_changed`
-/// follows, and only when something applied — a batch of refusals moved
-/// nothing, so the panel has nothing to redraw.
-///
-/// A loop the engine ended on a ledger or repository error still reverted
-/// the hunks before it. The note and the event go out for those first, and
-/// the error is answered after: every rejection is a conversation event,
-/// and one a later failure interrupted is no exception.
-///
-/// [`ReviewLedgers::set_states`]: crate::review::ReviewLedgers::set_states
-pub(crate) async fn set_states(
-    am: &AgentManager,
-    sm: &SessionManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-    hunk_ids: &[HunkId],
-    state: ReviewState,
-) -> ReviewResult<BulkOutcome> {
-    let before = if state == ReviewState::Rejected {
-        am.review.list_hunks(session_id).await?
-    } else {
-        Vec::new()
-    };
-
-    let mut outcome = am.review.set_states(session_id, hunk_ids, state).await?;
-
-    if state == ReviewState::Rejected && !outcome.applied.is_empty() {
-        let notice = outcome
-            .applied
-            .iter()
-            .filter_map(|id| before.iter().find(|h| &h.id == id))
-            .map(rejection_notice)
-            .collect::<Vec<_>>()
-            .join("\n");
-        // The reverts already landed on disk. A failure to inject the note
-        // leaves the worktree correct and the agent ignorant — loud, but
-        // never a failed RPC, the same rule as the single reject.
-        if let Err(e) =
-            super::inject_context_impl(sm, am, event_tx, session_id, "user", &notice).await
-        {
-            warn!(
-                session_id,
-                hunks = outcome.applied.len(),
-                error = %e,
-                "hunks reverted but the rejection was not injected; the agent may re-apply them"
-            );
-        }
-    }
-    if !outcome.applied.is_empty() {
-        emit_review_changed(event_tx, session_id, &state_reason(state));
-    }
-    match outcome.ended_on.take() {
-        Some(e) => Err(e),
-        None => Ok(outcome),
-    }
-}
-
-/// Take back the most recent reject, single or bulk, as one action.
-///
-/// The engine pops the batch and writes the lines back
-/// ([`ReviewLedgers::undo_reject`]); this boundary adds what the reject's
-/// boundary added, in reverse. The agent was told its edit was reverted, so it
-/// is told once, in one note naming every restored hunk, that the edit is back
-/// — otherwise it works from a worktree that no longer exists. One
-/// `review_changed` follows, and only when something was restored: a refused
-/// undo moved nothing and an empty stack has nothing to redraw.
-///
-/// [`ReviewLedgers::undo_reject`]: crate::review::ReviewLedgers::undo_reject
-pub(crate) async fn undo_reject(
-    am: &AgentManager,
-    sm: &SessionManager,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-    session_id: &str,
-) -> ReviewResult<BulkOutcome> {
-    let outcome = am.review.undo_reject(session_id).await?;
-    if outcome.applied.is_empty() {
-        return Ok(outcome);
-    }
-    // The restored hunks are in the composed diff again, so they can be
-    // listed and named the way the rejection named them.
-    let restored = am.review.list_hunks(session_id).await?;
-    let notice = outcome
-        .applied
-        .iter()
-        .filter_map(|id| restored.iter().find(|h| &h.id == id))
-        .map(restoration_notice)
-        .collect::<Vec<_>>()
-        .join("\n");
-    // The lines are already back on disk. A failure to inject the note leaves
-    // the worktree correct and the agent misinformed — loud, but never a
-    // failed RPC, the same rule as the reject.
-    if !notice.is_empty() {
-        if let Err(e) =
-            super::inject_context_impl(sm, am, event_tx, session_id, "user", &notice).await
-        {
-            warn!(
-                session_id,
-                hunks = outcome.applied.len(),
-                error = %e,
-                "reject undone but the restoration was not injected; the agent believes the edit is reverted"
-            );
-        }
-    }
-    emit_review_changed(event_tx, session_id, "undone");
-    Ok(outcome)
 }
 
 /// Anchor a comment to a line range.
@@ -440,177 +202,16 @@ pub(crate) async fn handle_review_list_hunks(
                 "comments": comments,
                 // Only the roots that are actually broken. An empty array is
                 // the common case and the one a client should not have to
-                // filter for; a non-empty one means the gate is holding writes
-                // that no amount of reviewing will release.
+                // filter for.
                 "degraded": roots.iter().filter(|r| r.is_degraded()).collect::<Vec<_>>(),
                 // What the journal could not be read back as. Separate from
                 // `degraded` because the worst losses are exactly the ones
                 // with no root to attach to: a journal that will not read at
                 // all, or one whose base records are gone, leaves nothing that
-                // can name a repository — so `degraded` comes back empty while
-                // the gate holds every write in the session. Reported as
-                // success with an empty queue, that is the data loss the
-                // journal exists to prevent.
+                // can name a repository — so `degraded` comes back empty.
+                // Reported as success with an empty queue, that is the data
+                // loss the journal exists to prevent.
                 "integrity": am.review.integrity(session_id),
-                // What this session's turn is parked on, or `null`. The
-                // `review_gate` event is the live signal, but events are
-                // dropped rather than replayed across a reconnect — so a
-                // client that opens or refreshes while a turn is already
-                // blocked would otherwise show nothing and the agent would
-                // read as hung. Always present, so a client can tell "not
-                // blocked" from "this daemon does not report it".
-                "gate": am.review.gate_block(session_id),
-            }),
-        ),
-        Err(e) => review_error_to_response(req.id, e),
-    }
-}
-
-/// `review.rebase` — accept the worktree as the new base and release the queue.
-pub(crate) async fn handle_review_rebase(
-    req: Request,
-    am: &Arc<AgentManager>,
-    sm: &Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-    ensure_loaded(am, sm, session_id).await;
-
-    match rebase(am, sm, event_tx, session_id).await {
-        Ok(roots) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "roots": roots,
-            }),
-        ),
-        Err(e) => review_error_to_response(req.id, e),
-    }
-}
-
-/// `review.set_state` — accept, reject, or return a hunk to the queue.
-pub(crate) async fn handle_review_set_state(
-    req: Request,
-    am: &Arc<AgentManager>,
-    sm: &Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let params = match typed_params::<ReviewSetStateRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-    let state_str = &params.state;
-    ensure_loaded(am, sm, session_id).await;
-
-    let Some(state) = parse_wire::<ReviewState>(state_str) else {
-        return Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!("Invalid 'state': {state_str} (expected unreviewed, accepted or rejected)"),
-        );
-    };
-    let hunk_id = HunkId::from(params.hunk_id.clone());
-
-    match set_state(am, sm, event_tx, session_id, &hunk_id, state).await {
-        Ok(()) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "hunk_id": hunk_id,
-                "state": state,
-            }),
-        ),
-        Err(e) => review_error_to_response(req.id, e),
-    }
-}
-
-/// `review.set_states` — one decision over several hunks, in order.
-///
-/// A refused hunk is part of the answer, not an error: the ids that applied
-/// are on disk and in the journal whatever happened to the rest, and a client
-/// told only "failed" would have to re-list to learn which were which.
-pub(crate) async fn handle_review_set_states(
-    req: Request,
-    am: &Arc<AgentManager>,
-    sm: &Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let params = match typed_params::<ReviewSetStatesRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-    let state_str = &params.state;
-    ensure_loaded(am, sm, session_id).await;
-
-    let Some(state) = parse_wire::<ReviewState>(state_str) else {
-        return Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!("Invalid 'state': {state_str} (expected unreviewed, accepted or rejected)"),
-        );
-    };
-    let hunk_ids: Vec<HunkId> = params.hunk_ids.iter().cloned().map(HunkId::from).collect();
-
-    match set_states(am, sm, event_tx, session_id, &hunk_ids, state).await {
-        Ok(outcome) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "state": state,
-                "applied": outcome.applied,
-                "failed": outcome
-                    .failed
-                    .iter()
-                    .map(|(hunk_id, reason)| serde_json::json!({
-                        "hunk_id": hunk_id,
-                        "reason": reason.to_string(),
-                    }))
-                    .collect::<Vec<_>>(),
-            }),
-        ),
-        Err(e) => review_error_to_response(req.id, e),
-    }
-}
-
-/// `review.undo_reject` — take back the most recent reject.
-///
-/// Answers the ids it restored and the ids it refused, the same shape as the
-/// bulk decision: a refused hunk is a report, and the batch it belongs to is
-/// still on the stack for the next try. An empty stack answers two empty
-/// lists.
-pub(crate) async fn handle_review_undo_reject(
-    req: Request,
-    am: &Arc<AgentManager>,
-    sm: &Arc<SessionManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
-    let params = match typed_params::<SessionIdRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-    ensure_loaded(am, sm, session_id).await;
-
-    match undo_reject(am, sm, event_tx, session_id).await {
-        Ok(outcome) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                "applied": outcome.applied,
-                "failed": outcome
-                    .failed
-                    .iter()
-                    .map(|(hunk_id, reason)| serde_json::json!({
-                        "hunk_id": hunk_id,
-                        "reason": reason.to_string(),
-                    }))
-                    .collect::<Vec<_>>(),
             }),
         ),
         Err(e) => review_error_to_response(req.id, e),
@@ -707,9 +308,6 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
     match err {
         ReviewError::NoLedger(_)
         | ReviewError::NoTrackableRoots(_)
-        | ReviewError::UnknownHunk(_)
-        | ReviewError::Stale { .. }
-        | ReviewError::ExternalHunk(_)
         | ReviewError::UnknownComment(_)
         | ReviewError::InvalidSession(_)
         | ReviewError::InvalidComment(_)
@@ -744,52 +342,9 @@ pub(crate) fn emit_review_changed(
     }
 }
 
-/// The wire string for a state: the serde spelling, so one table serves both.
-fn state_reason(state: ReviewState) -> String {
-    serde_json::to_value(state)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
 /// Parse a wire string through the type's own serde derive.
 fn parse_wire<T: serde::de::DeserializeOwned>(raw: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(raw.to_owned())).ok()
-}
-
-/// What the agent is told when one of its edits is rejected.
-///
-/// Names the file and the lines *as the user saw them* and says the revert
-/// already happened, so the model treats it as a fact about the worktree
-/// rather than as an instruction it may decline.
-fn rejection_notice(hunk: &ComposedHunk) -> String {
-    format!(
-        "user rejected the edit to {}; reverted.",
-        hunk_location(hunk)
-    )
-}
-
-/// What the agent is told when a rejection is taken back.
-///
-/// The same shape as [`rejection_notice`], and for the same reason: the model
-/// was told the edit was reverted, and that is no longer a fact about the
-/// worktree.
-fn restoration_notice(hunk: &ComposedHunk) -> String {
-    format!(
-        "user restored the edit to {}; the rejection is withdrawn.",
-        hunk_location(hunk)
-    )
-}
-
-fn hunk_location(hunk: &ComposedHunk) -> String {
-    let range = hunk.current_range;
-    // A pure deletion has an empty current range: there are no lines left to
-    // point at, so name the seam it was removed from.
-    if range.len() <= 1 {
-        format!("{}:{}", hunk.path, range.start)
-    } else {
-        format!("{}:{}-{}", hunk.path, range.start, range.end - 1)
-    }
 }
 
 /// Resolve a client-supplied path to `(repository root, root-relative path)`.
@@ -812,8 +367,7 @@ fn hunk_location(hunk: &ComposedHunk) -> String {
 /// which the editor-opening path later joins back onto the root, so a `..` in
 /// it is stored-path confusion — and network-reachable once the web bridge
 /// lands. Refusing costs one loud `NotAGitRepo` on one RPC that the caller can
-/// retry with an explicit root, which is why the gate's opposite rule does not
-/// apply here: the gate refusing hangs a turn no human can release.
+/// retry with an explicit root.
 ///
 /// Returns the `RootBase` rather than its path: the caller needs the base tree
 /// too, and looking it up again forced an error for a branch the code itself

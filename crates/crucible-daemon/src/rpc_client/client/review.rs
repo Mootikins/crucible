@@ -1,10 +1,10 @@
-//! Review RPC methods — the composed diff, its states, and its comments.
+//! Review RPC methods — the composed diff and its comments.
 //!
 //! Two deliberate shapes here, both of which look like laziness and are not.
 //!
 //! **Responses are `serde_json::Value`.** The review result objects are grown
-//! by several concurrent lanes (`degraded` from persistence, `gate` from the
-//! gate) and every one of them would otherwise land as a breaking edit to a
+//! by several concurrent lanes (`degraded` and `integrity` from persistence)
+//! and every one of them would otherwise land as a breaking edit to a
 //! struct in this file. A passthrough forwards a key this client has never
 //! heard of to a browser that has, which is the same rationale already written
 //! for `session.list_modes`' sibling routes; the shape is pinned by the web
@@ -12,16 +12,13 @@
 //!
 //! **Writes go through [`DaemonClient::call`], never `call_with_retry`.**
 //! `call_with_retry` retries on *timeout*, which is precisely the case where
-//! the daemon may already have executed. A retried `review.revert_hunk`
-//! reverts once and injects the rejection note into the conversation twice, or
-//! answers `UnknownHunk` for a revert that in fact succeeded. At-most-once is
-//! the only correct semantics for a write that mutates the worktree and the
-//! transcript; only `review.list_hunks` is idempotent enough to retry.
+//! the daemon may already have executed. A retried `review.comment` stores
+//! the comment twice. At-most-once is the only correct semantics for a write;
+//! only `review.list_hunks` is idempotent enough to retry.
 
 use anyhow::Result;
 use serde_json::Value;
 
-use super::session::SessionIdRequest;
 use super::DaemonClient;
 use crucible_core::session::ReviewScope;
 
@@ -36,28 +33,6 @@ pub struct ReviewListHunksRequest {
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<ReviewScope>,
-}
-
-/// Request for `review.set_state`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReviewSetStateRequest {
-    pub session_id: String,
-    pub hunk_id: String,
-    /// `unreviewed`, `accepted` or `rejected`.
-    pub state: String,
-}
-
-/// Request for `review.set_states`: one state for several hunks.
-///
-/// `hunk_ids` is applied in the order given. The daemon answers which ids it
-/// applied and which it refused, so the shape of a partial success is part of
-/// the contract, not an error.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReviewSetStatesRequest {
-    pub session_id: String,
-    pub hunk_ids: Vec<String>,
-    /// `unreviewed`, `accepted` or `rejected`.
-    pub state: String,
 }
 
 /// Request for `review.comment`.
@@ -91,8 +66,8 @@ pub struct ReviewResolveCommentRequest {
 }
 
 impl DaemonClient {
-    /// One attempt, no retry. See the module doc for why the four review
-    /// writes must not ride `call_with_retry`.
+    /// One attempt, no retry. See the module doc for why the review writes
+    /// must not ride `call_with_retry`.
     async fn call_once(&self, method: &str, params: Value) -> Result<Value> {
         self.call(method, params).await
     }
@@ -114,88 +89,6 @@ impl DaemonClient {
             serde_json::to_value(ReviewListHunksRequest {
                 session_id: session_id.to_string(),
                 scope,
-            })?,
-        )
-        .await
-    }
-
-    /// `review.rebase` — accept the worktree as the new base and release the
-    /// queue.
-    ///
-    /// The one release for a block no amount of reviewing can clear: a degraded
-    /// root contributes no hunks, so there is nothing to accept. Without a
-    /// client for it the fail-closed half of the design has no shipped escape
-    /// and the only workaround is turning review gating off, which is what the
-    /// fail-closed design exists to prevent.
-    ///
-    /// A write, and destructive to the queue — everything the old base
-    /// described stops being in the composed diff — so it takes the
-    /// at-most-once path with the other four.
-    pub async fn review_rebase(&self, session_id: &str) -> Result<Value> {
-        self.call_once(
-            "review.rebase",
-            serde_json::to_value(SessionIdRequest {
-                session_id: session_id.to_string(),
-            })?,
-        )
-        .await
-    }
-
-    /// `review.set_state` — accept, reject, or return a hunk to the queue.
-    ///
-    /// `state` is forwarded as the caller spelled it; the daemon owns the
-    /// vocabulary and answers `INVALID_PARAMS` for anything outside it, which
-    /// is a better error than one this client invents from a stale copy.
-    pub async fn review_set_state(
-        &self,
-        session_id: &str,
-        hunk_id: &str,
-        state: &str,
-    ) -> Result<Value> {
-        self.call_once(
-            "review.set_state",
-            serde_json::to_value(ReviewSetStateRequest {
-                session_id: session_id.to_string(),
-                hunk_id: hunk_id.to_string(),
-                state: state.to_string(),
-            })?,
-        )
-        .await
-    }
-
-    /// `review.set_states` — one decision over several hunks, in order.
-    ///
-    /// A write that may revert several files: at-most-once, like the single
-    /// decision. The answer names the ids that applied and the ids the daemon
-    /// refused, each with its reason.
-    pub async fn review_set_states(
-        &self,
-        session_id: &str,
-        hunk_ids: &[String],
-        state: &str,
-    ) -> Result<Value> {
-        self.call_once(
-            "review.set_states",
-            serde_json::to_value(ReviewSetStatesRequest {
-                session_id: session_id.to_string(),
-                hunk_ids: hunk_ids.to_vec(),
-                state: state.to_string(),
-            })?,
-        )
-        .await
-    }
-
-    /// `review.undo_reject` — take back the most recent reject, single or
-    /// bulk, as one action.
-    ///
-    /// A write that rewrites files: at-most-once, like the reject it undoes.
-    /// A retry after a timeout could pop a second batch the user never asked
-    /// to restore. The answer names the ids restored and the ids refused.
-    pub async fn review_undo_reject(&self, session_id: &str) -> Result<Value> {
-        self.call_once(
-            "review.undo_reject",
-            serde_json::to_value(SessionIdRequest {
-                session_id: session_id.to_string(),
             })?,
         )
         .await

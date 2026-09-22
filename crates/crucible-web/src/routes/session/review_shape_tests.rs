@@ -2,7 +2,7 @@
 //! back what the daemon sent.
 //!
 //! One test per handler, because a test that reads `status == 200` proves
-//! nothing about the reply: these seven routes answered `serde_json::Value`
+//! nothing about the reply: these routes answered `serde_json::Value`
 //! until task A6 named their shapes, and a renamed field would have passed
 //! every such test. Each one decodes the body into the handler's own reply
 //! struct, which fails on a missing or retyped field, and reads one field
@@ -13,7 +13,7 @@
 //! daemon's objects verbatim so that a key the daemon added could not be
 //! dropped on the way to the browser. A named struct can drop one, so each row
 //! here serialises the *core* type the daemon answers with — `ComposedHunk`,
-//! `Comment`, `RootStatus`, `Integrity`, `GateBlock` — reads it into the row,
+//! `Comment`, `RootStatus`, `Integrity` — reads it into the row,
 //! writes it back, and demands the same JSON. A field added in `crucible-core`
 //! fails these tests rather than going silently missing.
 
@@ -23,8 +23,8 @@ use axum::http::StatusCode;
 use chrono::{TimeZone, Utc};
 use crucible_core::diff::DiffsetId;
 use crucible_core::session::{
-    Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, GateBlock, HunkId, Integrity,
-    LineRange, PhysicalRoot, ReviewState, RootStatus, SessionId, Skip, SkipKind, SnapshotId,
+    Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, Integrity, LineRange,
+    PhysicalRoot, ReviewState, RootStatus, SessionId, Skip, SkipKind, SnapshotId,
 };
 use serde_json::{json, Value};
 
@@ -53,50 +53,6 @@ async fn list_hunks_answers_the_declared_shape() {
     assert_eq!(listing.scope, ReviewScopeRow::Turn);
     assert_eq!(listing.hunks[0].id, "hunk-1");
     assert_eq!(listing.comments[0].body, "why this?");
-    // Always present, and `null` for a session no turn is parked on.
-    assert!(listing.gate.is_none());
-}
-
-#[tokio::test]
-async fn rebase_answers_the_declared_shape() {
-    let rebased: ReviewRebaseResponse =
-        shape("POST", &format!("{REVIEW}/rebase"), Some(json!({}))).await;
-    assert_eq!(rebased.roots[0].root, "/tmp/test-project");
-    assert_eq!(rebased.roots[0].degraded, None);
-}
-
-#[tokio::test]
-async fn set_state_answers_the_declared_shape() {
-    let decided: ReviewStateResponse = shape(
-        "POST",
-        &format!("{REVIEW}/state"),
-        Some(json!({"hunk_id": "hunk-1", "state": "accepted"})),
-    )
-    .await;
-    assert_eq!(decided.hunk_id, "hunk-1");
-    assert_eq!(decided.state, ReviewStateRow::Accepted);
-}
-
-#[tokio::test]
-async fn set_states_answers_the_declared_shape() {
-    let decided: ReviewStatesResponse = shape(
-        "POST",
-        &format!("{REVIEW}/states"),
-        Some(json!({"hunk_ids": ["hunk-1", "hunk-2"], "state": "rejected"})),
-    )
-    .await;
-    // The ids come back in the order they were sent, which is the order the
-    // daemon applied them in.
-    assert_eq!(decided.applied, vec!["hunk-1", "hunk-2"]);
-    assert_eq!(decided.state, ReviewStateRow::Rejected);
-    assert!(decided.failed.is_empty());
-}
-
-#[tokio::test]
-async fn undo_reject_answers_the_declared_shape() {
-    let undone: ReviewUndoRejectResponse =
-        shape("POST", &format!("{REVIEW}/undo-reject"), Some(json!({}))).await;
-    assert_eq!(undone.applied, vec!["hunk-1"]);
 }
 
 #[tokio::test]
@@ -146,8 +102,8 @@ fn a_root() -> PhysicalRoot {
 /// `review.list_hunks`'s whole object survives `ReviewHunksResponse`.
 ///
 /// Built from the daemon's own types rather than from a JSON literal, so a
-/// field added to `ComposedHunk`, `Comment`, `RootStatus`, `Integrity` or
-/// `GateBlock` fails here instead of vanishing between the daemon and the
+/// field added to `ComposedHunk`, `Comment`, `RootStatus` or `Integrity`
+/// fails here instead of vanishing between the daemon and the
 /// browser — which is the property the old forward-it-verbatim handler had and
 /// this is what replaces it.
 #[test]
@@ -192,7 +148,6 @@ fn the_hunks_reply_writes_back_the_object_review_list_hunks_sent() {
         "comments": [comment],
         "degraded": [RootStatus::degraded(a_root(), "the base tree was collected")],
         "integrity": integrity,
-        "gate": GateBlock { tool: "Write".to_string(), path: "src/a.rs".to_string() },
     });
 
     survives::<ReviewHunksResponse>(&sent);
@@ -225,22 +180,6 @@ fn every_kind_of_journal_skip_survives_the_integrity_row() {
     survives::<ReviewIntegrityRow>(&integrity);
 }
 
-/// A bulk decision's report survives, refusals and all.
-#[test]
-fn the_states_reply_writes_back_the_object_review_set_states_sent() {
-    let sent = json!({
-        "session_id": "test-session-001",
-        "state": "rejected",
-        "applied": [HunkId::from("hunk-1".to_string())],
-        "failed": [{
-            "hunk_id": "hunk-2",
-            "reason": "hunk-2 is not in the current diff",
-        }],
-    });
-
-    survives::<ReviewStatesResponse>(&sent);
-}
-
 /// A comment the daemon minted survives, including the timestamp's spelling.
 ///
 /// The row carries `created_at` as a string so the daemon's own RFC 3339
@@ -265,31 +204,6 @@ fn the_comment_reply_writes_back_the_object_review_comment_sent() {
     let sent = json!({ "session_id": "test-session-001", "comment": comment });
 
     survives::<ReviewCommentResponse>(&sent);
-}
-
-/// The listing's `gate` key is required, not optional.
-///
-/// The one contract on this surface that a Rust type cannot carry. `gate` is
-/// `Option`, and an `Option` reaches the generated TypeScript as an optional
-/// key unless the schema says otherwise — which would let a client read an
-/// absent key and a `null` as the same answer. They are not the same: `null`
-/// is "no turn is parked", and absent would be "this daemon does not report
-/// it". The daemon writes the key either way.
-#[test]
-fn the_listing_document_demands_a_gate_key() {
-    let spec = serde_json::to_value(crate::server::api_spec()).expect("the document serialises");
-    let required = &spec["components"]["schemas"]["ReviewHunksResponse"]["required"];
-    let required: Vec<&str> = required
-        .as_array()
-        .expect("the schema names its required fields")
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
-
-    assert!(
-        required.contains(&"gate"),
-        "the document lets a client drop `gate`; required were {required:?}"
-    );
 }
 
 // =========================================================================

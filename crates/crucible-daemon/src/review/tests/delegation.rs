@@ -104,34 +104,6 @@ async fn clearing_a_session_forgets_that_it_was_delegated() {
     assert_eq!(fx.ledgers.parent_of("child"), None);
 }
 
-/// Reverting is the daemon writing to the user's worktree, and the watcher
-/// cannot tell that apart from the user writing to it. Unsuppressed, rejecting
-/// a hunk announces an external change for the very file it just reverted —
-/// the queue reporting its own drain as new work.
-#[tokio::test]
-async fn a_rejected_hunks_revert_is_not_reported_as_an_external_edit() {
-    let fx = Fixture::new("one\n").await;
-    let root = fx.dir.path().canonicalize().unwrap();
-    let tracker = Arc::new(crate::watch::external_changes::ExternalChangeTracker::default());
-    tracker.track(&fx.session, std::slice::from_ref(&root));
-    fx.ledgers.set_external_tracker(Arc::clone(&tracker));
-
-    fx.call("call-1", 1, "two\n").await;
-    let hunks = fx.hunks().await;
-    fx.ledgers
-        .set_state(&fx.session, &hunks[0].id, ReviewState::Rejected)
-        .await
-        .unwrap();
-
-    // The revert lands on disk through `tokio::fs::write`; the watcher would
-    // see exactly this path.
-    assert_eq!(
-        tracker.observe(&root.join("a.txt")),
-        crate::watch::external_changes::Ownership::Bracketed,
-        "the daemon's own revert was reported as a user edit"
-    );
-}
-
 /// `node_id` indexes a `ConversationTree`, and an index is meaningless in
 /// another tree. Carrying the child's own index into the parent compares two
 /// unrelated coordinate systems: a child that ran many turns produces indices

@@ -165,15 +165,6 @@ impl DaemonSessionApi for MockDaemonApi {
         Box::pin(async { Ok(vec![]) })
     }
 
-    fn review_set_state(
-        &self,
-        _: String,
-        _: String,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        unimplemented!()
-    }
-
     fn review_comment(
         &self,
         _: String,

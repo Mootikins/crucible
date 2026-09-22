@@ -3617,169 +3617,6 @@
         }
       }
     },
-    "/api/session/{id}/review/rebase": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/rebase`",
-        "description": "The release for a root the daemon can no longer account for. A degraded root\ncontributes no hunks, so nothing in the queue can clear it and every write\nunder it stays held — this is the only shipped way out, which is why it is\na sixth route rather than something the panel infers.\n\nThe `{}` body is load-bearing for the same reason as on\n`…/comment/{id}/resolve`: it is what carries `Content-Type:\napplication/json` and forces a preflight the CORS allowlist refuses.",
-        "operationId": "rebase",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session to rebase",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewRebaseResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The session has no ledger and no trackable root"
-          },
-          "502": {
-            "description": "The daemon could not recapture a root"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/review/state": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/state`",
-        "operationId": "set_state",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session under review",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetStateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewStateResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon knows no such hunk, or refuses the state"
-          },
-          "502": {
-            "description": "The daemon could not record the decision"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/review/states": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/states`",
-        "description": "The daemon answers the ids it applied and the ids it refused, each with a\nreason. A refused hunk is part of the answer, not an error status: the\nclient shows which ones and keeps the rest, so this route forwards the\nobject whole.",
-        "operationId": "set_states",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session under review",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetStatesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewStatesResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon refuses the state"
-          },
-          "502": {
-            "description": "The daemon could not record the decisions"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/review/undo-reject": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/undo-reject`",
-        "description": "Takes back the most recent reject, single or bulk, as one action. The\ndaemon owns the stack, so the request names no hunk: the session in the\npath is the whole input. The `{}` body is load-bearing for the same reason\nas on `…/rebase` and `…/comment/{id}/resolve`: it carries `Content-Type:\napplication/json` and forces the preflight the CORS allowlist refuses.",
-        "operationId": "undo_reject",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session under review",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewUndoRejectResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon knows no such hunk any more"
-          },
-          "502": {
-            "description": "The daemon could not restore the rejects"
-          }
-        }
-      }
-    },
     "/api/session/{id}/status": {
       "get": {
         "summary": "Proxy `session.status` verbatim.",
@@ -8889,40 +8726,6 @@
           }
         }
       },
-      "ReviewFailureRow": {
-        "type": "object",
-        "description": "One hunk a bulk decision refused, with the daemon's reason.",
-        "required": [
-          "hunk_id",
-          "reason"
-        ],
-        "properties": {
-          "hunk_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "ReviewGateRow": {
-        "type": "object",
-        "description": "A turn parked on the review gate, waiting for a human.",
-        "required": [
-          "tool",
-          "path"
-        ],
-        "properties": {
-          "tool": {
-            "type": "string",
-            "description": "The tool call being held."
-          },
-          "path": {
-            "type": "string",
-            "description": "The first target still unreviewed — what a human must answer to release\nthe turn."
-          }
-        }
-      },
       "ReviewHunkRow": {
         "type": "object",
         "description": "One hunk of the composed diff, the unit a decision applies to.\n\nThere is no `external` field, here or on the wire: a hunk is external when\n`tool_call_ids` is empty, which is what `isExternal` reads in the browser.",
@@ -8991,8 +8794,7 @@
           "hunks",
           "comments",
           "degraded",
-          "integrity",
-          "gate"
+          "integrity"
         ],
         "properties": {
           "session_id": {
@@ -9019,27 +8821,16 @@
             "items": {
               "$ref": "#/components/schemas/ReviewRootRow"
             },
-            "description": "Only the roots that are broken. An empty array is the common case; a\nnon-empty one means the gate holds writes that no reviewing releases."
+            "description": "Only the roots that are broken. An empty array is the common case."
           },
           "integrity": {
             "$ref": "#/components/schemas/ReviewIntegrityRow"
-          },
-          "gate": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ReviewGateRow",
-                "description": "What this session's turn is parked on, or `null`.\n\nAlways written, and `required` in the document for that reason: a\nclient has to be able to tell \"not blocked\" from \"this daemon does not\nreport it\", and an optional key collapses the two."
-              }
-            ]
           }
         }
       },
       "ReviewIntegrityRow": {
         "type": "object",
-        "description": "What the journal could not be read back as.\n\nSeparate from the degraded roots because the worst losses are the ones with\nno root to name: a journal that will not read at all leaves `degraded`\nempty while the gate holds every write in the session.",
+        "description": "What the journal could not be read back as.\n\nSeparate from the degraded roots because the worst losses are the ones with\nno root to name: a journal that will not read at all leaves `degraded`\nempty.",
         "required": [
           "skips"
         ],
@@ -9049,26 +8840,6 @@
             "items": {
               "$ref": "#/components/schemas/ReviewSkipRow"
             }
-          }
-        }
-      },
-      "ReviewRebaseResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/rebase` answers.",
-        "required": [
-          "session_id",
-          "roots"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "roots": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewRootRow"
-            },
-            "description": "Every tracked root and what the rebase could do for it. A root that\nstill carries a reason was not recovered."
           }
         }
       },
@@ -9125,7 +8896,7 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "The session's base is untrustworthy, so every root blocks — including\nones the ledger may no longer know it tracked.",
+            "description": "The session's base is untrustworthy, so every root is degraded —\nincluding ones the ledger may no longer know it tracked.",
             "required": [
               "kind"
             ],
@@ -9140,7 +8911,7 @@
           },
           {
             "type": "object",
-            "description": "One root's attribution is incomplete. Only writes under it block.",
+            "description": "One root's attribution is incomplete. Only that root is degraded.",
             "required": [
               "root",
               "kind"
@@ -9199,26 +8970,6 @@
           }
         }
       },
-      "ReviewStateResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/state` answers.",
-        "required": [
-          "session_id",
-          "hunk_id",
-          "state"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "hunk_id": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/ReviewStateRow"
-          }
-        }
-      },
       "ReviewStateRow": {
         "type": "string",
         "description": "One user decision about one hunk.",
@@ -9227,63 +8978,6 @@
           "accepted",
           "rejected"
         ]
-      },
-      "ReviewStatesResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/states` answers.\n\nA refused hunk is part of the answer rather than an error status: the ids\nin `applied` are on disk whatever happened to the rest, and a client told\nonly \"failed\" would have to re-list to learn which were which.",
-        "required": [
-          "session_id",
-          "state",
-          "applied",
-          "failed"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/ReviewStateRow"
-          },
-          "applied": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "The ids that applied, in the order the request sent them."
-          },
-          "failed": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewFailureRow"
-            }
-          }
-        }
-      },
-      "ReviewUndoRejectResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/undo-reject` answers.\n\nThe same report as a bulk decision, minus the state: an undo restores\nwhatever the batch rejected. An empty stack answers two empty lists.",
-        "required": [
-          "session_id",
-          "applied",
-          "failed"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "applied": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "failed": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewFailureRow"
-            }
-          }
-        }
       },
       "SaveRequest": {
         "type": "object",
@@ -9910,42 +9604,6 @@
         "properties": {
           "enabled": {
             "type": "boolean"
-          }
-        }
-      },
-      "SetStateRequest": {
-        "type": "object",
-        "description": "`POST /review/state` — accept, reject, or requeue one hunk.",
-        "required": [
-          "hunk_id",
-          "state"
-        ],
-        "properties": {
-          "hunk_id": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string",
-            "description": "Forwarded unvalidated: the daemon owns the state vocabulary and answers\n`INVALID_PARAMS` for anything outside it. A copy of the enum here could\nonly ever refuse a state the daemon had newly learned."
-          }
-        }
-      },
-      "SetStatesRequest": {
-        "type": "object",
-        "description": "`POST /review/states` — one decision over several hunks, in order.\n\nThe ids reach the daemon in the order the caller gave them, because the\ndaemon applies them in that order and a reject reverts files as it goes.\n`state` is forwarded unvalidated for the same reason as on\n[`SetStateRequest`].",
-        "required": [
-          "hunk_ids",
-          "state"
-        ],
-        "properties": {
-          "hunk_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "state": {
-            "type": "string"
           }
         }
       },

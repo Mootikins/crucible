@@ -1,7 +1,6 @@
 //! Review capture: the bracket that turns a tool call into a ledger interval.
 //!
-//! Sits beside [`super::review_gate`], which decides whether a call may run at
-//! all; this module records what a call that ran actually wrote.
+//! This module records what a call that ran actually wrote.
 
 use super::super::{is_safe, StreamContext};
 use std::sync::Arc;

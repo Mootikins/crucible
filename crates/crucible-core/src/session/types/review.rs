@@ -638,9 +638,8 @@ pub struct RootStatus {
     pub root: PhysicalRoot,
     /// Why this root's attribution cannot be trusted; `None` is intact.
     ///
-    /// A reason rather than a bool because the only action available to the
-    /// user is `review.rebase`, and they should be able to tell a gc'd base
-    /// tree from a root that has been deleted before they take it.
+    /// A reason rather than a bool, so that the user can tell a gc'd base tree
+    /// from a root that has been deleted.
     pub degraded: Option<String>,
 }
 
@@ -661,49 +660,6 @@ impl RootStatus {
 
     pub fn is_degraded(&self) -> bool {
         self.degraded.is_some()
-    }
-}
-
-/// The gate's answer about one file.
-///
-/// Three-valued rather than a `bool`, because "no unreviewed hunk here" and
-/// "I cannot tell whether there is an unreviewed hunk here" must not be the
-/// same answer. Collapsing them is exactly how a structural failure turns the
-/// gate off instead of turning it up.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Verdict {
-    /// Nothing unreviewed, and the ledger can account for the root. Proceed.
-    Clear,
-    /// A live unreviewed hunk in this file. A human can clear it by reviewing.
-    Unreviewed,
-    /// The ledger cannot account for this file's root, so silence is not
-    /// evidence. A human clears it with `review.rebase`, which is what keeps
-    /// this from being an unreleasable hang.
-    ///
-    /// Carries the root rather than just the fact, because the two block for
-    /// different reasons and the user is told which. Reporting the *file* here
-    /// — which is what collapsing this into a bare "blocks" did — sends them to
-    /// review a file containing no reviewable hunk, with nothing there to act
-    /// on. `None` is an unscoped loss: the ledger no longer knows which roots
-    /// it tracked, so there is no root to name.
-    Degraded { root: Option<PhysicalRoot> },
-}
-
-impl Verdict {
-    pub fn blocks(&self) -> bool {
-        !matches!(self, Verdict::Clear)
-    }
-
-    /// What to tell the user they are waiting on, if this blocks.
-    ///
-    /// A degraded root names itself; an unreviewed hunk is answered by the
-    /// caller, which knows the path it asked about.
-    pub fn degraded_root(&self) -> Option<&PhysicalRoot> {
-        match self {
-            Verdict::Degraded { root } => root.as_ref(),
-            _ => None,
-        }
     }
 }
 
@@ -765,28 +721,6 @@ impl ComposedHunk {
     pub fn absolute_path(&self) -> PathBuf {
         self.root.join(&self.path)
     }
-}
-
-/// A turn parked on the review gate, waiting for a human.
-///
-/// **Live daemon state, never a persisted event.** It describes a turn that is
-/// running *right now*; a resumed session replaying a stored `blocked: true`
-/// would show a chip claiming to wait on a review that no turn is waiting for
-/// and no action can clear. It is therefore excluded from `should_persist` and
-/// carried only in memory, dropped with the hold that created it.
-///
-/// The field names are the `review_gate` event's payload, minus its `blocked`
-/// discriminator, so a client that missed the event and one that polls the
-/// state decode the same shape. A blocked agent that merely goes quiet is
-/// indistinguishable from a hung one, which is the whole reason this is
-/// observable at all.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GateBlock {
-    /// The tool call being held.
-    pub tool: String,
-    /// The first target still unreviewed — what a human must answer to
-    /// release the turn.
-    pub path: String,
 }
 
 /// Who wrote a review comment.

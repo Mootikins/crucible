@@ -7,11 +7,7 @@ import { keys } from '../keys';
 import {
   addReviewCommentOnce,
   invalidateReview,
-  rebaseReviewOnce,
   resolveReviewCommentOnce,
-  setHunkStateOnce,
-  setHunkStatesOnce,
-  undoRejectOnce,
   useReviewHunks,
 } from '../review';
 
@@ -24,10 +20,8 @@ import {
  * that stream invalidates this entry; before it was held here, that
  * invalidation named a key nobody had.
  *
- * Every write invalidates the same entry, because the daemon decides what a
- * decision did: a reject reverts lines on disk and can renumber every hunk
- * after it, so the answer to "what is left" is the daemon's and not a patch
- * the browser can compute.
+ * Every write invalidates the same entry, because the answer to "what is
+ * listed" is the daemon's and not a patch the browser can compute.
  */
 
 const SESSION = 's1';
@@ -44,7 +38,7 @@ function reviewRoutes() {
   wrote = [];
   const record = (name: string) => () => {
     wrote.push(name);
-    return { applied: [], failed: [] };
+    return {};
   };
   return {
     'GET /api/session/s1/review/hunks': (request: Request) => {
@@ -57,10 +51,6 @@ function reviewRoutes() {
       listed.push({ session: 's2', scope: url.searchParams.get('scope') ?? '' });
       return { session_id: 's2', hunks: [], comments: [] };
     },
-    'POST /api/session/s1/review/state': record('state'),
-    'POST /api/session/s1/review/states': record('states'),
-    'POST /api/session/s1/review/undo-reject': record('undo'),
-    'POST /api/session/s1/review/rebase': () => ({ roots: [] }),
     'POST /api/session/s1/review/comment': record('comment'),
     'POST /api/session/s1/review/comment/c1/resolve': record('resolve'),
   };
@@ -144,17 +134,10 @@ describe('useReviewHunks', () => {
 
 describe('the writes', () => {
   /**
-   * Every one of them re-asks.
-   *
-   * The daemon decides what a decision did. A reject reverts lines on disk and
-   * renumbers every hunk after it, so "what is left" is the daemon's answer
+   * Every one of them re-asks, because the listing is the daemon's answer
    * and not a patch the browser can compute from the reply.
    */
   const writes: [string, (id: string) => Promise<unknown>][] = [
-    ['setHunkStateOnce', (id) => setHunkStateOnce(id, 'h1', 'accepted')],
-    ['setHunkStatesOnce', (id) => setHunkStatesOnce(id, ['h1'], 'rejected')],
-    ['undoRejectOnce', (id) => undoRejectOnce(id)],
-    ['rebaseReviewOnce', (id) => rebaseReviewOnce(id)],
     [
       'addReviewCommentOnce',
       (id) => addReviewCommentOnce(id, { path: 'a.rs', line_start: 1, body: 'x' }),
@@ -182,7 +165,7 @@ describe('the writes', () => {
     await waitFor(() => expect(both.parent.data).toBeDefined());
     await waitFor(() => expect(both.child.data).toBeDefined());
 
-    await setHunkStateOnce(SESSION, 'h1', 'accepted');
+    await resolveReviewCommentOnce(SESSION, 'c1');
 
     await waitFor(() => expect(countOf('s1')).toBe(2));
     expect(countOf('s2')).toBe(1);

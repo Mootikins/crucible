@@ -110,7 +110,7 @@ pub enum JobPayload {
     },
 }
 
-/// Review-gate and undo events.
+/// Review and undo events.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum ReviewPayload {
@@ -131,14 +131,6 @@ pub enum ReviewPayload {
     ReviewChanged {
         #[serde(default)]
         reason: String,
-    },
-    ReviewGate {
-        #[serde(default)]
-        blocked: bool,
-        #[serde(default)]
-        tool: String,
-        #[serde(default)]
-        path: Option<String>,
     },
     SessionUndo {
         #[serde(default)]
