@@ -970,8 +970,8 @@ fn the_frontend_has_exactly_one_markdown_predicate() {
 /// serializing the variant. `session_events/mod.rs` holds `Group::of`, whose
 /// coverage `group_of_knows_every_declared_event` derives from the enums.
 ///
-/// Every other crate reads `SystemPayload::SURFACE_CHANGED` or
-/// `SystemPayload::PUBLICATION_CHANGED`.
+/// Every other crate reads `SystemPayload::SURFACE_CHANGED`,
+/// `SystemPayload::PUBLICATION_CHANGED` or `SystemPayload::PROPOSAL_CHANGED`.
 const WIRE_NAME_HOMES: &[&str] = &[
     "crates/crucible-core/src/protocol/session_events/lifecycle.rs",
     "crates/crucible-core/src/protocol/session_events/mod.rs",
@@ -1007,6 +1007,7 @@ fn a_side_channel_wire_name_is_written_once() {
     let names = [
         SystemPayload::SURFACE_CHANGED,
         SystemPayload::PUBLICATION_CHANGED,
+        SystemPayload::PROPOSAL_CHANGED,
     ];
 
     // The homes must still hold the names, or the scan below proves nothing.

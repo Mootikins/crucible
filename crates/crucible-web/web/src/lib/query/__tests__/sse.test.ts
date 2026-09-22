@@ -9,6 +9,8 @@ import {
   setSurfaceEventRoute,
   setFsEventRoute,
   setPluginEventRoute,
+  systemEvents,
+  setSystemEventRoute,
   resetSseForTests,
   advanceSessionCursor,
   sessionCursor,
@@ -293,6 +295,38 @@ describe('fsEvents', () => {
       { type: 'deleted', path: '/k/a.md' },
       { client: getQueryClient(), bus: getBus() },
     );
+  });
+});
+
+describe('systemEvents', () => {
+  it('reads the system route and carries both events', () => {
+    const handler = vi.fn();
+    const route = vi.fn();
+    setSystemEventRoute(route);
+    systemEvents().subscribe(handler);
+
+    expect(onlySource().url).toBe('/api/events/system');
+
+    onlySource().emit('proposal_changed', { id: 'p-1' });
+    onlySource().emit('publication_changed', { plugin: 'board', key: 'rows' });
+
+    expect(handler.mock.calls).toEqual([
+      [{ event: 'proposal_changed', id: 'p-1' }],
+      [{ event: 'publication_changed', plugin: 'board', key: 'rows' }],
+    ]);
+    expect(route).toHaveBeenCalledWith(
+      { event: 'proposal_changed', id: 'p-1' },
+      { client: getQueryClient(), bus: getBus() },
+    );
+  });
+
+  it('drops a proposal frame without an id', () => {
+    const handler = vi.fn();
+    systemEvents().subscribe(handler);
+
+    onlySource().emit('proposal_changed', { other: 1 });
+
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

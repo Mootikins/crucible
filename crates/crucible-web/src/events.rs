@@ -1139,6 +1139,7 @@ mod tests {
         let declared = [
             crate::routes::PublicationChangedEvent::EVENT_NAME,
             crate::routes::SurfaceChangedEvent::EVENT_NAME,
+            crate::routes::ProposalChangedEvent::EVENT_NAME,
         ];
 
         for name in declared {

@@ -323,6 +323,14 @@ pub fn publication_changed(plugin: String, key: String) -> SessionEventMessage {
     )
 }
 
+/// Build the `proposal_changed` message.
+///
+/// Addressed to [`SYSTEM_SESSION`]: a proposal belongs to no user session, and
+/// the Inbox of each client shows it.
+pub fn proposal_changed(id: crucible_core::proposal::ProposalId) -> SessionEventMessage {
+    SessionEventMessage::typed(SYSTEM_SESSION, SystemPayload::ProposalChanged { id })
+}
+
 /// A broadcast message resolved to everything a dispatch site needs.
 pub struct HookedEvent {
     /// The name to look handlers up under.

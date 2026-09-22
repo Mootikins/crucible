@@ -260,6 +260,10 @@ pub enum ChatAppMsg {
     /// sends nothing, because an unreachable daemon is not a withdrawal and
     /// must not close a panel the user reads.
     SurfaceWithdrawn(String),
+    /// **Event** (daemon → TUI): a proposal changed. The daemon sends it on
+    /// the system session, because a proposal belongs to no user session.
+    /// The status line count of proposals reads it.
+    ProposalChanged(crucible_core::proposal::ProposalId),
     /// **Command** (TUI → daemon): compute the branch diff of the workspace
     /// and open it (`:diff [base]`). `None` compares with the default branch.
     OpenDiff(Option<String>),
@@ -443,6 +447,7 @@ impl ChatAppMsg {
             | Self::RefreshSurface(_)
             | Self::SurfaceLoaded { .. }
             | Self::SurfaceWithdrawn(_)
+            | Self::ProposalChanged(_)
             | Self::OpenDiff(_)
             | Self::DiffLoaded(_)
             | Self::FetchDiffFile(_)

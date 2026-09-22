@@ -436,6 +436,14 @@ pub enum SystemPayload {
         #[serde(default)]
         key: String,
     },
+    /// A proposal changed: a proposal is new, it has a new write, or its
+    /// state changed.
+    ///
+    /// The event carries only the id. A client reads the proposal again
+    /// through `proposal.get`. A proposal belongs to no user session, so the
+    /// daemon sends this event on the system session.
+    #[serde(rename = "proposal_changed")]
+    ProposalChanged { id: crate::proposal::ProposalId },
     /// A session ended, reported daemon-wide. See [`Self::SessionCreated`].
     #[serde(rename = "session:ended")]
     SessionEnded {
@@ -469,4 +477,9 @@ impl SystemPayload {
     /// one cross-crate use with a fresh literal in `crucible-web`, so the name
     /// was written twice with nothing holding the two together.
     pub const PUBLICATION_CHANGED: &'static str = "publication_changed";
+
+    /// The wire name of [`Self::ProposalChanged`]. See
+    /// [`Self::SURFACE_CHANGED`] for the reason that the const is beside the
+    /// rename.
+    pub const PROPOSAL_CHANGED: &'static str = "proposal_changed";
 }

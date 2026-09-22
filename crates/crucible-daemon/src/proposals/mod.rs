@@ -12,12 +12,14 @@ mod store;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::Utc;
 use crucible_core::file_write::ExpectedBase;
 use crucible_core::proposal::{Proposal, ProposalAuthor, ProposalId, ProposalState, ProposedWrite};
+use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::{PhysicalRoot, SessionId};
+use tokio::sync::broadcast;
 
 pub(crate) use rpc::{
     handle_proposal_accept, handle_proposal_dismiss, handle_proposal_get, handle_proposal_list,
@@ -57,6 +59,9 @@ pub struct ProposalStore {
     /// One writer at a time. A write can change several files: the proposal
     /// of the turn and each older proposal that it supersedes.
     write: Mutex<()>,
+    /// The event bus of the daemon. The server sets it at bind. A store
+    /// without a bus, as in a unit test, changes its files and sends nothing.
+    events: OnceLock<broadcast::Sender<SessionEventMessage>>,
 }
 
 impl ProposalStore {
@@ -66,6 +71,22 @@ impl ProposalStore {
             files: store::ProposalFiles::new(dir),
             turns: Mutex::new(HashMap::new()),
             write: Mutex::new(()),
+            events: OnceLock::new(),
+        }
+    }
+
+    /// Send `proposal_changed` on `events` after each change. Returns false
+    /// when the store has a bus already; the first bus stays.
+    pub fn set_events(&self, events: broadcast::Sender<SessionEventMessage>) -> bool {
+        self.events.set(events).is_ok()
+    }
+
+    /// Tell each client that the proposal `id` changed. The store calls this
+    /// after it writes the file, so a client that reads the proposal again
+    /// sees the change.
+    fn announce(&self, id: ProposalId) {
+        if let Some(events) = self.events.get() {
+            crate::event_emitter::emit_event(events, crate::event_map::proposal_changed(id));
         }
     }
 
@@ -123,7 +144,11 @@ impl ProposalStore {
                 proposal
             }
         };
-        self.supersede(&proposal, &root, path)?;
+        let superseded = self.supersede(&proposal, &root, path)?;
+        self.announce(proposal.id);
+        for id in superseded {
+            self.announce(id);
+        }
         Ok(proposal)
     }
 
@@ -213,8 +238,14 @@ impl ProposalStore {
     }
 
     /// Mark each older pending proposal of the same author that writes
-    /// `root`/`path` as superseded by `newer`.
-    fn supersede(&self, newer: &Proposal, root: &PhysicalRoot, path: &str) -> ProposalResult<()> {
+    /// `root`/`path` as superseded by `newer`. Returns the ids that changed.
+    fn supersede(
+        &self,
+        newer: &Proposal,
+        root: &PhysicalRoot,
+        path: &str,
+    ) -> ProposalResult<Vec<ProposalId>> {
+        let mut superseded = Vec::new();
         for older in self.files.all()? {
             if older.id == newer.id
                 || older.author != newer.author
@@ -227,8 +258,9 @@ impl ProposalStore {
                 p.state = ProposalState::Superseded { by: newer.id };
                 Ok(())
             })?;
+            superseded.push(older.id);
         }
-        Ok(())
+        Ok(superseded)
     }
 
     /// Move a proposal in the Inbox to a state out of the Inbox.
@@ -244,7 +276,9 @@ impl ProposalStore {
             proposal.state = state;
             Ok(Ok(proposal.clone()))
         })?;
-        settled.ok_or(ProposalError::NotFound(*id))?
+        let settled = settled.ok_or(ProposalError::NotFound(*id))??;
+        self.announce(settled.id);
+        Ok(settled)
     }
 }
 

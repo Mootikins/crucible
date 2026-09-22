@@ -281,6 +281,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/events/system` — a push when a publication or a proposal
+         *     changes.
+         * @description A proposal belongs to no user session, so a session stream cannot carry
+         *     it. The Inbox and the note bar listen here.
+         */
+        get: operations["system_event_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/file/raw": {
         parameters: {
             query?: never;
@@ -834,7 +856,10 @@ export interface paths {
         };
         /**
          * `GET /api/plugins/events` — a push when a plugin's published data changes.
-         * @description The counterpart to `GET /api/plugins/publications`: that answers "what is
+         * @description This route is an alias of `GET /api/events/system` (`routes/events.rs`).
+         *     It forwards only `publication_changed`, until the web client moves.
+         *
+         *     The counterpart to `GET /api/plugins/publications`: that answers "what is
          *     true now", this says "read it again". A panel drawing a plugin's own state
          *     would otherwise poll on a timer and still show a stale value between ticks.
          *
@@ -3901,6 +3926,13 @@ export interface components {
             kind: "session";
         };
         /**
+         * @description A proposal changed. The browser reads it again through
+         *     `GET /api/proposals/{id}`.
+         */
+        ProposalChangedEvent: {
+            id: components["schemas"]["ProposalId"];
+        };
+        /**
          * @description The identity of one proposal.
          *
          *     The daemon stores each proposal as a file under `<data_root>/proposals/`
@@ -4880,6 +4912,11 @@ export interface components {
         SwitchModelRequest: {
             model_id: string;
         };
+        /**
+         * @description One frame of the system stream. The SSE `event:` name tells the two
+         *     shapes apart.
+         */
+        SystemEvent: components["schemas"]["PublicationChangedEvent"] | components["schemas"]["ProposalChangedEvent"];
         /** @description Response for title operations. */
         TitleResponse: {
             title: string;
@@ -5069,6 +5106,7 @@ export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest
 export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
 export type SchemaProposal = components['schemas']['Proposal'];
 export type SchemaProposalAuthor = components['schemas']['ProposalAuthor'];
+export type SchemaProposalChangedEvent = components['schemas']['ProposalChangedEvent'];
 export type SchemaProposalId = components['schemas']['ProposalId'];
 export type SchemaProposalState = components['schemas']['ProposalState'];
 export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
@@ -5150,6 +5188,7 @@ export type SchemaSurfaceMarkRow = components['schemas']['SurfaceMarkRow'];
 export type SchemaSurfaceRow = components['schemas']['SurfaceRow'];
 export type SchemaSurfaceShapeRow = components['schemas']['SurfaceShapeRow'];
 export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest'];
+export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
@@ -5698,6 +5737,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    system_event_stream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers) */
+                    "X-Crucible-Stream-Version"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["SystemEvent"];
+                };
             };
         };
     };

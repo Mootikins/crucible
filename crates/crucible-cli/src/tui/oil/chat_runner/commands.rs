@@ -426,6 +426,9 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
                 vec![ChatAppMsg::RefreshSurface(name)]
             }
         }
+        // A proposal changed. The event carries only the id; the app reads
+        // the proposal again when it needs it.
+        SystemPayload::ProposalChanged { id } => vec![ChatAppMsg::ProposalChanged(id)],
         // `replay_complete` is consumed by the stateful wrapper, not here.
         _ => vec![],
     }

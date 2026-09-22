@@ -31,7 +31,9 @@ import {
   subscribeToFsEvents,
   subscribeToPluginEvents,
   subscribeToSurfaceEvents,
+  subscribeToSystemEvents,
   type SurfaceChangedEvent,
+  type SystemEvent,
 } from '@/lib/api';
 import type { ChatEvent, FsEvent, SequencedChatEvent } from '@/lib/types';
 import { getBus, type Bus } from '@/lib/bus';
@@ -96,11 +98,13 @@ export type SessionEventRoute = (event: ChatEvent, context: SessionRouteContext)
 export type SurfaceEventRoute = (event: SurfaceChangedEvent, context: SseRouteContext) => void;
 export type FsEventRoute = (event: FsEvent, context: SseRouteContext) => void;
 export type PluginEventRoute = (event: PluginPublicationEvent, context: SseRouteContext) => void;
+export type SystemEventRoute = (event: SystemEvent, context: SseRouteContext) => void;
 
 let sessionRoute: SessionEventRoute | null = null;
 let surfaceRoute: SurfaceEventRoute | null = null;
 let fsRoute: FsEventRoute | null = null;
 let pluginRoute: PluginEventRoute | null = null;
+let systemRoute: SystemEventRoute | null = null;
 
 /** Names the route of the chat stream. `null` removes the one that is there. */
 export function setSessionEventRoute(route: SessionEventRoute | null): void {
@@ -120,6 +124,11 @@ export function setFsEventRoute(route: FsEventRoute | null): void {
 /** Names the route of the plugin stream. */
 export function setPluginEventRoute(route: PluginEventRoute | null): void {
   pluginRoute = route;
+}
+
+/** Names the route of the system stream. */
+export function setSystemEventRoute(route: SystemEventRoute | null): void {
+  systemRoute = route;
 }
 
 /** The two stores as they are now. A route reads the injected client in a test. */
@@ -294,6 +303,7 @@ const sessionRoots = new Map<string, SseStream<SequencedChatEvent>>();
 const surfaceRoots = new Map<string, SseStream<SurfaceChangedEvent>>();
 const fsRoots = new Map<string, SseStream<FsEvent>>();
 const pluginRoots = new Map<string, SseStream<PluginPublicationEvent>>();
+const systemRoots = new Map<string, SseStream<SystemEvent>>();
 
 /** The key of a stream the whole app shares, which has no id to key on. */
 const GLOBAL = 'global';
@@ -389,6 +399,19 @@ export function pluginEvents(): PluginEventStream {
   };
 }
 
+/**
+ * The daemon's system session (`GET /api/events/system`): plugin publications
+ * and proposal changes. A proposal belongs to no user session, so only this
+ * stream carries it.
+ */
+export function systemEvents(): SseStream<SystemEvent> {
+  return rootFor(systemRoots, GLOBAL, {
+    name: 'system events',
+    connect: (onEvent, onOpen) => subscribeToSystemEvents(onEvent, onOpen),
+    route: (event) => runRoute('system events', systemRoute, event, routeContext()),
+  });
+}
+
 // =============================================================================
 // The test seam
 // =============================================================================
@@ -406,9 +429,11 @@ export function resetSseForTests(): void {
   surfaceRoots.clear();
   fsRoots.clear();
   pluginRoots.clear();
+  systemRoots.clear();
   sessionCursors.clear();
   sessionRoute = null;
   surfaceRoute = null;
   fsRoute = null;
   pluginRoute = null;
+  systemRoute = null;
 }

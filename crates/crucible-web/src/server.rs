@@ -4,10 +4,10 @@ use crate::middleware::auth::{
     websocket_origin_guard, ApiKeyState, HostPolicy, ShellGateState,
 };
 use crate::routes::{
-    agents_routes, auth_routes, canvas_routes, chat_routes, config_routes, diff_routes, fs_routes,
-    health_routes, kiln_routes, layout_routes, mcp_routes, plugin_routes, project_routes,
-    proposal_routes, scm_routes, search_routes, session_routes_with, shell_routes, skills_routes,
-    surface_routes, terminal_routes, webhook_routes, EndpointPolicy,
+    agents_routes, auth_routes, canvas_routes, chat_routes, config_routes, diff_routes,
+    events_routes, fs_routes, health_routes, kiln_routes, layout_routes, mcp_routes, plugin_routes,
+    project_routes, proposal_routes, scm_routes, search_routes, session_routes_with, shell_routes,
+    skills_routes, surface_routes, terminal_routes, webhook_routes, EndpointPolicy,
 };
 use crate::services::daemon;
 use crate::{Result, WebError};
@@ -154,6 +154,7 @@ fn api_router(
         .merge(fs_routes())
         .merge(search_routes())
         .merge(plugin_routes())
+        .merge(events_routes())
         .merge(surface_routes())
         .merge(mcp_routes())
         .merge(kiln_routes())

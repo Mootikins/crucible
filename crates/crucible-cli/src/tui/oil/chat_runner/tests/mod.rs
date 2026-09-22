@@ -5,4 +5,5 @@ mod model_prefetch;
 mod replay;
 mod stream_gap;
 mod surface_refresh;
+mod system_channel;
 mod translate;

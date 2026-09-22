@@ -186,7 +186,7 @@ impl Group {
             | "workflow.assessed"
             | "workflow.failed"
             | "workflow.cancelled" => Self::Workflow,
-            // System (17)
+            // System (18)
             "file_changed"
             | "file_deleted"
             | "file_moved"
@@ -203,7 +203,8 @@ impl Group {
             | "session:created"
             | "session:ended"
             | "surface_changed"
-            | "publication_changed" => Self::System,
+            | "publication_changed"
+            | "proposal_changed" => Self::System,
             _ => return None,
         })
     }

@@ -218,3 +218,63 @@ fn a_dismissed_proposal_file_is_kept() {
     let next = fx.write(plugin("reflection"), "aux-1", "a.md", "a2");
     assert_ne!(next.id, made.id);
 }
+
+/// Take every event that the store sent.
+fn drain(
+    events: &mut tokio::sync::broadcast::Receiver<crucible_core::protocol::SessionEventMessage>,
+) -> Vec<crucible_core::protocol::SessionEventMessage> {
+    let mut out = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        out.push(event);
+    }
+    out
+}
+
+/// The id that one `proposal_changed` event names.
+fn changed_id(event: &crucible_core::protocol::SessionEventMessage) -> String {
+    assert_eq!(
+        event.session_id,
+        crate::event_map::SYSTEM_SESSION,
+        "{event:?}"
+    );
+    assert_eq!(
+        event.event,
+        crucible_core::protocol::SystemPayload::PROPOSAL_CHANGED
+    );
+    event.data["id"].as_str().expect("an id").to_string()
+}
+
+#[test]
+fn a_reject_emits_proposal_changed_on_the_system_channel() {
+    let fx = Fixture::new();
+    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    fx.store.set_events(tx);
+    let made = fx.write(plugin("reflection"), "aux-1", "a.md", "a1");
+    let written: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
+    assert_eq!(written, vec![made.id.to_string()]);
+
+    fx.store.reject(&made.id, None).unwrap();
+
+    let rejected: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
+    assert_eq!(rejected, vec![made.id.to_string()]);
+    // A refused decision changes nothing, so the store sends nothing.
+    assert!(fx.store.dismiss(&made.id).is_err());
+    assert!(drain(&mut events).is_empty());
+}
+
+#[test]
+fn a_supersede_emits_proposal_changed_for_both_proposals() {
+    let fx = Fixture::new();
+    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    fx.store.set_events(tx);
+    let older = fx.write(plugin("reflection"), "aux-1", "a.md", "a1");
+    drain(&mut events);
+
+    let newer = fx.write(plugin("reflection"), "aux-2", "a.md", "a2");
+
+    let mut changed: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
+    changed.sort();
+    let mut expected = vec![older.id.to_string(), newer.id.to_string()];
+    expected.sort();
+    assert_eq!(changed, expected);
+}

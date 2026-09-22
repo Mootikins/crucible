@@ -271,7 +271,7 @@ fn group_of_routes_each_name_to_the_enum_that_declares_it() {
 /// can satisfy it and a changed rename fails here.
 #[test]
 fn a_system_events_const_matches_its_serde_name() {
-    let cases: [(&str, SystemPayload); 2] = [
+    let cases: [(&str, SystemPayload); 3] = [
         (
             SystemPayload::SURFACE_CHANGED,
             SystemPayload::SurfaceChanged {
@@ -287,6 +287,12 @@ fn a_system_events_const_matches_its_serde_name() {
             SystemPayload::PublicationChanged {
                 plugin: "kanban".to_string(),
                 key: "kanban:board".to_string(),
+            },
+        ),
+        (
+            SystemPayload::PROPOSAL_CHANGED,
+            SystemPayload::ProposalChanged {
+                id: crate::proposal::ProposalId::generate(),
             },
         ),
     ];

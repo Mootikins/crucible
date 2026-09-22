@@ -1,8 +1,6 @@
-use crate::routes::helpers::{stream_version_frame, versioned};
 use crate::routes::plugin_caller::PluginCaller;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     extract::{Path, Query, State},
     Json,
@@ -10,11 +8,8 @@ use axum::{
 use crucible_core::protocol::SystemPayload;
 use crucible_daemon::server::plugins::OptionAction;
 use crucible_daemon::SessionEvent;
-use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::convert::Infallible;
-use tokio_stream::StreamExt;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -573,6 +568,9 @@ impl PublicationChangedEvent {
 
 /// `GET /api/plugins/events` — a push when a plugin's published data changes.
 ///
+/// This route is an alias of `GET /api/events/system` (`routes/events.rs`).
+/// It forwards only `publication_changed`, until the web client moves.
+///
 /// The counterpart to `GET /api/plugins/publications`: that answers "what is
 /// true now", this says "read it again". A panel drawing a plugin's own state
 /// would otherwise poll on a timer and still show a stale value between ticks.
@@ -599,32 +597,10 @@ impl PublicationChangedEvent {
 )]
 async fn publication_event_stream(
     State(state): State<AppState>,
-) -> Result<
-    (
-        [(axum::http::HeaderName, String); 1],
-        Sse<impl Stream<Item = Result<Event, Infallible>>>,
-    ),
-    WebError,
-> {
-    let rx = state.events.subscribe("system").await;
-    state.daemon.subscribe_sticky("system").await.daemon_err()?;
-
-    let stream = futures::stream::iter([Ok(stream_version_frame())]).chain(
-        tokio_stream::wrappers::BroadcastStream::new(rx)
-            .filter_map(|result| result.ok())
-            .filter_map(|event| {
-                // The system channel carries the file watcher and the
-                // classification prompt too; this stream is only about plugin data.
-                PublicationChangedEvent::from_daemon_event(&event).map(|pe| {
-                    let data = serde_json::to_string(&pe).unwrap_or_default();
-                    Ok(Event::default()
-                        .event(PublicationChangedEvent::EVENT_NAME)
-                        .data(data))
-                })
-            }),
-    );
-
-    Ok(versioned(Sse::new(stream).keep_alive(KeepAlive::default())))
+) -> Result<super::events::SystemStream, WebError> {
+    // An alias of `GET /api/events/system`. Its client knows only the
+    // publications, so the alias forwards nothing else.
+    super::events::system_stream(&state, super::events::SystemEvent::publication_only).await
 }
 
 /// What `POST /api/plugins/command` answers.

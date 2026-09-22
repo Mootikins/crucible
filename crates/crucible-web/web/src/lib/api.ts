@@ -2019,6 +2019,61 @@ export function subscribeToPluginEvents(
   return () => source.close();
 }
 
+/**
+ * One event of the system stream. The `event` field copies the SSE event
+ * name, so a consumer can tell the two shapes apart.
+ */
+export type SystemEvent =
+  | { event: 'publication_changed'; plugin: string; key: string }
+  | { event: 'proposal_changed'; id: string };
+
+/**
+ * Subscribe to the daemon's system session (`GET /api/events/system`).
+ *
+ * The stream carries `publication_changed` and `proposal_changed`. Like the
+ * plugin stream, it does not reconnect: an error closes it, and the shared
+ * root in `lib/query/sse.ts` reconnects it. Returns a cleanup function that
+ * closes the stream.
+ */
+export function subscribeToSystemEvents(
+  onEvent: (event: SystemEvent) => void,
+  onOpen: () => void,
+): () => void {
+  // EventSource cannot set headers; the HttpOnly session cookie (set by
+  // login()) authenticates the stream for non-localhost clients.
+  const source = new EventSource('/api/events/system');
+  guardStreamVersion('system', source, () => {});
+  source.addEventListener('publication_changed', (e: MessageEvent) => {
+    try {
+      const payload = decodeEvent<{ plugin: string; key: string }>(
+        'system',
+        'publication_changed',
+        e.data,
+        (p) =>
+          'plugin' in p && typeof p.plugin === 'string' && 'key' in p && typeof p.key === 'string',
+      );
+      onEvent({ event: 'publication_changed', plugin: payload.plugin, key: payload.key });
+    } catch {
+      console.warn('Failed to parse system SSE event:', e.data);
+    }
+  });
+  source.addEventListener('proposal_changed', (e: MessageEvent) => {
+    try {
+      const payload = decodeEvent<{ id: string }>(
+        'system',
+        'proposal_changed',
+        e.data,
+        (p) => 'id' in p && typeof p.id === 'string',
+      );
+      onEvent({ event: 'proposal_changed', id: payload.id });
+    } catch {
+      console.warn('Failed to parse system SSE event:', e.data);
+    }
+  });
+  source.onopen = () => onOpen();
+  return () => source.close();
+}
+
 // ===========================================================================
 // Canvas
 // ===========================================================================

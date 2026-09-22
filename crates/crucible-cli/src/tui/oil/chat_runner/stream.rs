@@ -16,6 +16,7 @@ use super::commands::session_event_to_chat_msgs;
 /// per-session filter: `stream_gap` (the broadcast gap marker, which names no
 /// session because `Lagged(n)` does not know one) and `ui_style_changed`'s
 /// config-level pushes both went nowhere.
+use crucible_daemon::event_map::SYSTEM_SESSION;
 use crucible_daemon::subscription::WILDCARD_SESSION;
 
 /// Stateful SessionEvent → ChatAppMsg converter.
@@ -264,7 +265,13 @@ pub(crate) async fn session_event_consumer(
         event_rx,
         msg_tx,
         context_limit,
-        move |event| event.session_id == filter_id || event.session_id == WILDCARD_SESSION,
+        // The system session carries daemon events that belong to no user
+        // session, for example `proposal_changed` and `surface_changed`.
+        move |event| {
+            event.session_id == filter_id
+                || event.session_id == WILDCARD_SESSION
+                || event.session_id == SYSTEM_SESSION
+        },
         |event, tx| {
             promote_ended_error(event, tx);
             if event.event == "replay_complete" {

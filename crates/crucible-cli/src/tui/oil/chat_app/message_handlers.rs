@@ -291,6 +291,9 @@ impl OilChatApp {
             // The plugin is gone, so the panel must go too. This closes; it
             // never opens, and it never touches another surface's panel.
             ChatAppMsg::SurfaceWithdrawn(name) => self.close_withdrawn_surface(&name),
+            // The status line count of proposals (P3.10) reads this. The app
+            // has no proposal state yet, so it does nothing now.
+            ChatAppMsg::ProposalChanged(_) => {}
             // The user asked for this diffset, so it takes the screen.
             ChatAppMsg::DiffLoaded(diffset) => return self.open_diff_modal(*diffset),
             ChatAppMsg::DiffFileLoaded { id, index, text } => {

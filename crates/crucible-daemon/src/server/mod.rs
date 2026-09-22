@@ -461,6 +461,11 @@ impl Server {
             .with_activity(activity.clone()),
         );
         delegation_service.bind_agent_manager(&agent_manager);
+        // The Inbox of each client listens for `proposal_changed` on the
+        // system session.
+        if !agent_manager.proposals().set_events(event_tx.clone()) {
+            warn!("the proposal store already has an event bus");
+        }
         let subscription_manager = Arc::new(SubscriptionManager::new());
         // With the kiln registry, so a kiln root is never listed or
         // registered as a project — including by a session whose workspace

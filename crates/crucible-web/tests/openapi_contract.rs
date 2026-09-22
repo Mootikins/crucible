@@ -375,6 +375,7 @@ fn every_stream_route_answers_with_an_event_stream() {
         ("get", "/api/chat/events/{session_id}", "ChatEvent"),
         ("get", "/api/fs/events", "FsEvent"),
         ("get", "/api/plugins/events", "PublicationChangedEvent"),
+        ("get", "/api/events/system", "SystemEvent"),
         ("get", "/api/surfaces/events", "SurfaceChangedEvent"),
         ("post", "/api/shell/exec", "ShellEvent"),
     ] {
@@ -410,6 +411,7 @@ fn every_versioned_stream_documents_the_protocol_header() {
         "/api/chat/events/{session_id}",
         "/api/fs/events",
         "/api/plugins/events",
+        "/api/events/system",
         "/api/surfaces/events",
     ] {
         let headers =

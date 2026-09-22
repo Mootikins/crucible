@@ -68,6 +68,7 @@ async fn every_versioned_stream_names_its_protocol_twice() {
         "/api/fs/events",
         "/api/surfaces/events",
         "/api/plugins/events",
+        "/api/events/system",
     ] {
         let (header, body) = open(uri).await;
 

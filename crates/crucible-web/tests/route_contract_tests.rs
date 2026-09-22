@@ -37,3 +37,5 @@ mod sessions;
 mod skills;
 #[path = "route_contract_tests/stream_version.rs"]
 mod stream_version;
+#[path = "route_contract_tests/system_events.rs"]
+mod system_events;

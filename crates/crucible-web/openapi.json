@@ -591,6 +591,35 @@
         }
       }
     },
+    "/api/events/system": {
+      "get": {
+        "summary": "`GET /api/events/system` — a push when a publication or a proposal\nchanges.",
+        "description": "A proposal belongs to no user session, so a session stream cannot carry\nit. The Inbox and the note bar listen here.",
+        "operationId": "system_event_stream",
+        "responses": {
+          "200": {
+            "description": "",
+            "headers": {
+              "X-Crucible-Stream-Version": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "The stream protocol this build speaks (also the first `stream_version` frame, for clients whose transport cannot read headers)"
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/file/raw": {
       "get": {
         "summary": "`GET /api/file/raw?path=<path>` — serve a file's raw bytes. Same\ncontainment as reading via `/api/kiln/file` (kiln, or a project whose\n`project_files` policy permits reads); used to load the media that markdown\nand canvas cards reference by path (e.g. a README's `assets/demo.gif`).",
@@ -1599,7 +1628,7 @@
     "/api/plugins/events": {
       "get": {
         "summary": "`GET /api/plugins/events` — a push when a plugin's published data changes.",
-        "description": "The counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
+        "description": "This route is an alias of `GET /api/events/system` (`routes/events.rs`).\nIt forwards only `publication_changed`, until the web client moves.\n\nThe counterpart to `GET /api/plugins/publications`: that answers \"what is\ntrue now\", this says \"read it again\". A panel drawing a plugin's own state\nwould otherwise poll on a timer and still show a stale value between ticks.\n\nSame shape as the file-tree stream in `routes/fs.rs`, including the\nload-bearing ordering: subscribe the LOCAL broker channel before telling the\ndaemon to forward, because `EventBroker::dispatch` drops events for a\nsession id with no local subscriber and the window between the two calls\nwould lose the first event.",
         "operationId": "publication_event_stream",
         "responses": {
           "200": {
@@ -8199,6 +8228,18 @@
         ],
         "description": "The writer of a proposal.\n\nA plugin pass runs a new auxiliary session each time. Thus the daemon names\nthe plugin, not the session, so that a later pass supersedes the proposal\nof an earlier pass."
       },
+      "ProposalChangedEvent": {
+        "type": "object",
+        "description": "A proposal changed. The browser reads it again through\n`GET /api/proposals/{id}`.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProposalId"
+          }
+        }
+      },
       "ProposalId": {
         "type": "string",
         "description": "The identity of one proposal.\n\nThe daemon stores each proposal as a file under `<data_root>/proposals/`\nand uses the id as the file name. A UUID has no path separator and no\nleading dot, so an id can never name a path outside that directory."
@@ -10308,6 +10349,17 @@
             "type": "string"
           }
         }
+      },
+      "SystemEvent": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PublicationChangedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ProposalChangedEvent"
+          }
+        ],
+        "description": "One frame of the system stream. The SSE `event:` name tells the two\nshapes apart."
       },
       "TitleResponse": {
         "type": "object",
