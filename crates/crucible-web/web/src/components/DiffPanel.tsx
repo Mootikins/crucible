@@ -453,7 +453,7 @@ interface HunkChoice {
  * The chip and the comment are one thing. A comment with no chip can attach
  * itself again; the `×` of a chip deletes the comment.
  */
-export interface ChipActions {
+interface ChipActions {
   attached: (commentId: string) => boolean;
   attach: (comment: DiffComment) => void;
 }
