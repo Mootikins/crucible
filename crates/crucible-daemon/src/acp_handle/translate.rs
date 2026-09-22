@@ -160,18 +160,22 @@ impl From<crate::acp::streaming::StreamingChunk> for crucible_core::turn::TurnEv
 /// ACP agents own their conversation history, so we send only the new user
 /// content — never the daemon's flattened history (that would duplicate what
 /// the agent already holds). The exception is daemon-injected context:
-/// Precognition and Lua `transform_context` handlers prepend System-role
-/// blocks to `ctx.messages` (see `apply_transform_context_handlers`). Those
+/// Precognition, `@file` attachments and Lua `transform_context` handlers add
+/// System-role blocks (see `apply_transform_context_handlers`). Those
 /// represent knowledge the external agent has no other way to see, so we
-/// forward them ahead of the user content. Precognition only fires on the
-/// first user message, so this does not bloat the agent's context every turn.
+/// forward them ahead of the user content.
+///
+/// `injected` holds only the context that THIS turn added (`ctx.injected`).
+/// System messages already in the history went to the agent before, or
+/// belong to a time before the session used this agent, so they are not
+/// sent again.
 pub(super) fn acp_prompt_text(
     content: &str,
-    messages: &[crucible_core::traits::context_ops::ContextMessage],
+    injected: &[crucible_core::traits::context_ops::ContextMessage],
 ) -> String {
     use crucible_core::traits::llm::MessageRole;
 
-    let injected: Vec<&str> = messages
+    let injected: Vec<&str> = injected
         .iter()
         .filter(|m| m.role == MessageRole::System)
         .map(|m| m.content.as_str())

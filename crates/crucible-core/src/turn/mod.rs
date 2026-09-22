@@ -386,6 +386,9 @@ pub struct TurnContext {
     /// Includes the user's new message at the end when applicable.
     /// Empty for legacy callers that rely on agent-side state.
     pub messages: Vec<ContextMessage>,
+    /// The messages in `messages` that this turn added to the history: its
+    /// injected context. See [`added_messages`].
+    pub injected: Vec<ContextMessage>,
     /// Inbound event channel. Runtime sends `ToolResult` and
     /// `ContextAttach`. May be `None` for fire-and-forget turns that need
     /// no tool loop.
@@ -399,6 +402,7 @@ impl TurnContext {
         Self {
             content: content.into(),
             messages: Vec::new(),
+            injected: Vec::new(),
             inbound: None,
         }
     }
@@ -414,6 +418,41 @@ impl TurnContext {
         self.messages = messages;
         self
     }
+
+    /// Attach the context that this turn injected into the history.
+    pub fn with_injected(mut self, injected: Vec<ContextMessage>) -> Self {
+        self.injected = injected;
+        self
+    }
+}
+
+/// The messages in `after` that are not in `before`, in the order of
+/// `after`.
+///
+/// `before` is the conversation history. `after` is that history once the
+/// context seam adds this turn's injected context (Precognition, `@file`
+/// attachments, `transform_context` handlers). An agent that owns its own
+/// history needs only this difference. Messages match on role and content,
+/// so a handler that rebuilds the array without metadata does not turn old
+/// history into new context.
+pub fn added_messages(before: &[ContextMessage], after: &[ContextMessage]) -> Vec<ContextMessage> {
+    let mut unmatched: Vec<&ContextMessage> = before.iter().collect();
+    after
+        .iter()
+        .filter(|message| {
+            match unmatched
+                .iter()
+                .position(|old| old.role == message.role && old.content == message.content)
+            {
+                Some(index) => {
+                    unmatched.swap_remove(index);
+                    false
+                }
+                None => true,
+            }
+        })
+        .cloned()
+        .collect()
 }
 
 /// A unified agent.
@@ -499,6 +538,48 @@ macro_rules! impl_noop_agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// This turn's Precognition goes in front of the whole history. Old
+    /// system context from the history is not new, and only the new block
+    /// comes back.
+    #[test]
+    fn added_messages_are_the_new_messages_only() {
+        let history = vec![
+            ContextMessage::system("OLD CONTEXT"),
+            ContextMessage::user("first question"),
+            ContextMessage::assistant("first answer"),
+            ContextMessage::user("second question"),
+        ];
+        let mut transformed = vec![ContextMessage::system("NEW CONTEXT")];
+        transformed.extend(history.iter().cloned());
+
+        assert_eq!(
+            added_messages(&history, &transformed),
+            vec![ContextMessage::system("NEW CONTEXT")]
+        );
+    }
+
+    /// A message that repeats one in the history is new when it occurs more
+    /// often than in the history.
+    #[test]
+    fn a_repeated_message_counts_once_per_occurrence() {
+        let history = vec![ContextMessage::system("X")];
+        let transformed = vec![ContextMessage::system("X"), ContextMessage::system("X")];
+
+        assert_eq!(
+            added_messages(&history, &transformed),
+            vec![ContextMessage::system("X")]
+        );
+    }
+
+    /// A handler that drops the metadata of a history message does not make
+    /// the message new.
+    #[test]
+    fn a_history_message_without_its_metadata_is_not_new() {
+        let history = vec![ContextMessage::system("OLD").with_tag("kept")];
+
+        assert!(added_messages(&history, &[ContextMessage::system("OLD")]).is_empty());
+    }
 
     /// The predicate both agent handles gate `StopReason::Empty` on. Unicode
     /// whitespace counts as blank because `str::trim` uses `White_Space`, and

@@ -190,19 +190,25 @@ impl AgentManager {
         // Kiln/Precognition handlers should attach here, not at
         // pre_llm_call — they get structured messages instead of having
         // to parse the prompt string.
-        let Some(flattened_messages) =
-            Self::apply_transform_context_handlers(flattened_messages, &stream_ctx, &stream_config)
-                .await
+        let Some(transformed_messages) = Self::apply_transform_context_handlers(
+            flattened_messages.clone(),
+            &stream_ctx,
+            &stream_config,
+        )
+        .await
         else {
             return StreamOutcome::HandlerCancelled(
                 "cancelled by transform_context handler".into(),
             );
         };
+        let injected =
+            crucible_core::turn::added_messages(&flattened_messages, &transformed_messages);
 
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
         let turn_ctx = TurnContext::new(content)
             .with_inbound(inbound_rx)
-            .with_messages(flattened_messages);
+            .with_messages(transformed_messages)
+            .with_injected(injected);
 
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "before_turn_start", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
         // Hold the handle guard for the entire turn; Agent::turn returns

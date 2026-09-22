@@ -568,7 +568,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         // Forward daemon-injected context (Precognition, Lua transform_context)
         // alongside the user content. ACP agents own their history, so we only
         // send the new turn's content plus any injected System-role blocks.
-        let message = acp_prompt_text(&ctx.content, &ctx.messages);
+        let message = acp_prompt_text(&ctx.content, &ctx.injected);
 
         // The turn task holds the gate until the agent ends the turn. A
         // dropped turn keeps it until the agent answers `session/cancel`, so

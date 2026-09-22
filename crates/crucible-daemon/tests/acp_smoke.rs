@@ -335,10 +335,10 @@ async fn mock_acp_agent_returns_message_response() {
 
 /// Regression: daemon-injected context (Precognition, Lua `transform_context`)
 /// is forwarded into the ACP prompt. The ACP agent owns its history, so
-/// `turn()` sends only the new user content — but System-role blocks in
-/// `ctx.messages` represent knowledge the external agent has no other way to
-/// see and must be forwarded. The mock logs the exact prompt that it
-/// received over the wire.
+/// `turn()` sends only the new user content — but the System-role blocks
+/// that this turn injected (`ctx.injected`) represent knowledge the external
+/// agent has no other way to see and must be forwarded. The mock logs the
+/// exact prompt that it received over the wire.
 #[tokio::test]
 async fn injected_system_context_reaches_acp_prompt() {
     use crucible_core::traits::ContextMessage;
@@ -364,11 +364,15 @@ async fn injected_system_context_reaches_acp_prompt() {
     .expect("ACP handshake failed");
 
     // Mirror what the daemon stages on the turn: a System-role Precognition
-    // block prepended ahead of the user's message in `ctx.messages`.
-    let ctx = TurnContext::new("What is the capital of Testlandia?").with_messages(vec![
-        ContextMessage::system("KNOWLEDGE: The capital of Testlandia is Fooville."),
-        ContextMessage::user("What is the capital of Testlandia?"),
-    ]);
+    // block prepended ahead of the user's message in `ctx.messages`, and
+    // named as this turn's injected context in `ctx.injected`.
+    let knowledge = ContextMessage::system("KNOWLEDGE: The capital of Testlandia is Fooville.");
+    let ctx = TurnContext::new("What is the capital of Testlandia?")
+        .with_messages(vec![
+            knowledge.clone(),
+            ContextMessage::user("What is the capital of Testlandia?"),
+        ])
+        .with_injected(vec![knowledge]);
 
     let _events = timeout(Duration::from_secs(30), async {
         let stream = handle.turn(ctx).await.expect("Agent::turn failed");

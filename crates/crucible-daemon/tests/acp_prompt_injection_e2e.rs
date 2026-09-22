@@ -105,6 +105,7 @@ struct Harness {
     _temp: TempDir,
     log_path: PathBuf,
     agent_manager: Arc<AgentManager>,
+    session_manager: Arc<crucible_daemon::SessionManager>,
     session_id: crucible_core::session::SessionId,
     event_tx: broadcast::Sender<SessionEventMessage>,
 }
@@ -195,6 +196,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
         _temp: temp,
         log_path,
         agent_manager,
+        session_manager,
         session_id: session.id,
         event_tx,
     }
@@ -297,6 +299,40 @@ return {{ name = "injector", version = "0.1.0", description = "context injector"
     assert!(
         prompt.contains(INJECTED),
         "a plugin's transform_context block must reach the ACP prompt; \
+         the agent received: {prompt:?}"
+    );
+}
+
+/// System context that is already in the stored conversation does not go
+/// to the ACP agent again. Only the context that the current turn injects
+/// goes to it. The stale block here stands for context that the session got
+/// while it used an internal agent, before it switched to ACP.
+#[tokio::test]
+async fn system_context_from_the_history_does_not_reach_the_acp_wire_prompt() {
+    use crucible_daemon::LogEvent;
+    const STALE: &str = "[history] context from before the switch to ACP";
+
+    let h = setup(true, None).await;
+    let session = h
+        .session_manager
+        .get_session(&h.session_id)
+        .expect("the session exists");
+    h.session_manager
+        .storage()
+        .append_event(&session, &LogEvent::system(STALE).to_jsonl().unwrap())
+        .await
+        .expect("append the stale system event");
+
+    let prompt = prompt_seen_by_the_agent(&h).await;
+
+    assert!(
+        !prompt.contains(STALE),
+        "system context from the history must not reach the ACP prompt; \
+         the agent received: {prompt:?}"
+    );
+    assert!(
+        prompt.contains(NOTE_TITLE),
+        "this turn's precognition must still reach the ACP prompt; \
          the agent received: {prompt:?}"
     );
 }
