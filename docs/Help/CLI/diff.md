@@ -15,6 +15,7 @@ finds the files and counts the lines. The command reads the texts and prints the
 
 ```
 cru diff branch [--base REF] [--head REF] [--root PATH] [--stat] [-f text|json]
+cru diff comments <DIFFSET> [--base REF] [--head REF] [--root PATH] [-f quickfix|json]
 ```
 
 ## branch
@@ -47,6 +48,30 @@ session or a path inside a registered kiln. To register a repository, run
 
 In the TUI, `:diff [base]` shows the same diff full-screen. See
 [[Help/TUI/Commands]].
+
+## comments
+
+Print the open comments of a diffset.
+
+```bash
+cru diff comments session-<id>
+cru diff comments branch --base develop
+cru diff comments proposal-<uuid> -f json
+vim -q <(cru diff comments session-<id>)
+```
+
+- The diffset is `session-<id>` for the record of a session, `proposal-<uuid>`
+  for a proposal, or `branch` for the branch diff that `--root`, `--base` and
+  `--head` name. A `branch-<hex>` id also works when those flags give the same id.
+- The default format is `quickfix`. A comment on one line prints as
+  `path:line: text`. A comment on a range prints as `path:start: [start-end] text`.
+  A second line of comment text has an indent of two spaces.
+- Vim reads the quickfix form with its default `errorformat`. The path is
+  relative to the root of the comment, so run Vim in that root.
+- `-f json` prints each comment with all its fields.
+
+In the web diff pane, **Copy comments** copies the same quickfix list, and
+**Send to chat** puts the reference `@path:start-end` into the composer.
 
 ## See also
 

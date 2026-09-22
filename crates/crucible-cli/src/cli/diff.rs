@@ -35,7 +35,7 @@ pub enum DiffCommands {
 
     /// Print the open comments of a diffset, one quickfix entry for each
     #[command(
-        long_about = "Print the open comments of a diffset.\n\nThe quickfix form gives one entry for each comment: `path:start: [start-end] text`. Vim reads it with its default errorformat. The path is relative to the root of the comment, so run Vim in that root.\n\nThe diffset is `session-<id>` for the record of a session, or `branch` for the branch diff that --root, --base and --head name. A `branch-<hex>` id also works when those flags give the same id.\n\nExamples:\n  # Open each comment of a session record in Vim\n  vim -q <(cru diff comments session-<id>)\n\n  # The comments of this branch diff, as JSON\n  cru diff comments branch --format json"
+        long_about = "Print the open comments of a diffset.\n\nThe quickfix form gives one entry for each comment: `path:line: text` for one line, or `path:start: [start-end] text` for a range. Vim reads it with its default errorformat. The path is relative to the root of the comment, so run Vim in that root.\n\nThe diffset is `session-<id>` for the record of a session, or `branch` for the branch diff that --root, --base and --head name. A `branch-<hex>` id also works when those flags give the same id.\n\nExamples:\n  # Open each comment of a session record in Vim\n  vim -q <(cru diff comments session-<id>)\n\n  # The comments of this branch diff, as JSON\n  cru diff comments branch --format json"
     )]
     Comments {
         /// The diffset: `session-<id>`, `proposal-<uuid>`, `branch` or `branch-<hex>`
