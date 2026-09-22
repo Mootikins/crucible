@@ -17,6 +17,11 @@ export interface TreeRoot {
   /** Absolute root path (project root, or kilnRoot()-normalized kiln root). */
   path: string;
   name: string;
+  /**
+   * Whether the root is the top level of a git working tree. Only such a
+   * root has a branch diff: `diff.get` refuses a folder below the top level.
+   */
+  git: boolean;
 }
 
 export interface RosterGroup {
@@ -33,6 +38,18 @@ export function rootKey(r: Pick<TreeRoot, 'kind' | 'path'>): string {
 function basename(p: string): string {
   const parts = p.replace(/\/$/, '').split('/');
   return parts[parts.length - 1] || p;
+}
+
+const trimSlash = (p: string) => p.replace(/\/+$/, '');
+
+/**
+ * Whether a project path is the top level of its git working tree. The
+ * daemon detects `repository` for a folder below the top level too, and
+ * `diff.get` refuses that folder.
+ */
+export function projectIsGitRoot(p: Pick<Project, 'path' | 'repository'>): boolean {
+  const root = p.repository?.root;
+  return !!root && trimSlash(root) === trimSlash(p.path);
 }
 
 /**
@@ -69,12 +86,14 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
         kind: 'project',
         path: p.path,
         name: rel ? `${basename(repo.root)} › ${rel}` : p.name || basename(p.path),
+        git: projectIsGitRoot(p),
       });
     } else {
       projectRoots.push({
         kind: 'project',
         path: p.path,
         name: p.name || basename(p.path),
+        git: projectIsGitRoot(p),
       });
     }
   }
@@ -96,6 +115,13 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
   for (const k of kilns) learn(k.path, k.name ?? null);
   for (const p of projects) for (const k of p.kilns) learn(k.path, k.name ?? null);
 
+  // Only a `GET /api/kilns` row says whether its kiln is a git top level. A
+  // project's attached kiln takes the answer of the row for the same root.
+  const gitRoots = new Set<string>();
+  for (const k of kilns) {
+    if (k.git && typeof k.path === 'string' && k.path.startsWith('/')) gitRoots.add(kilnRoot(k.path));
+  }
+
   const seen = new Map<string, TreeRoot>();
   const pushKiln = (rawPath: string, name: string | null) => {
     if (typeof rawPath !== 'string') return;
@@ -106,7 +132,7 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
       : (nameToRoot.get(rawPath) ?? rawPath);
     if (!root || seen.has(root)) return;
     const display = name?.trim() || rootToName.get(root) || kilnLabel(root);
-    seen.set(root, { kind: 'kiln', path: root, name: display });
+    seen.set(root, { kind: 'kiln', path: root, name: display, git: gitRoots.has(root) });
   };
 
   for (const k of kilns) pushKiln(k.path, k.name ?? null);

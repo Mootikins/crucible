@@ -16,7 +16,7 @@
 import type { KilnListEntry, Project, Session } from '@/lib/types';
 import { kilnPathForName } from '@/lib/kiln-registry';
 import { sessionWorkspace } from '@/lib/session-scope';
-import { rootKey, type TreeRoot } from '@/lib/tree-root';
+import { projectIsGitRoot, rootKey, type TreeRoot } from '@/lib/tree-root';
 
 /**
  * Where a root came from — and, for a non-workspace root, whether the session
@@ -71,12 +71,19 @@ export function sessionRoots(
   const own: SessionRoot[] = [];
   const attached = new Set<string>();
 
+  // A kiln is a git root when its row says so. A workspace is one when the
+  // registered project at that path is the top level of its repository.
+  const kilnIsGit = (name: string) => kilns.some((k) => k.name === name && k.git);
+
   const workspace = session ? sessionWorkspace(session) : null;
   if (workspace) {
+    const trimmed = workspace.replace(/\/+$/, '');
+    const project = projects.find((p) => p.path.replace(/\/+$/, '') === trimmed);
     own.push({
       kind: 'project',
       path: workspace,
       name: workspaceName(workspace, projects),
+      git: project ? projectIsGitRoot(project) : false,
       origin: 'workspace',
     });
   }
@@ -85,7 +92,7 @@ export function sessionRoots(
     const path = kilnPathForName(name, kilns);
     if (!path) continue;
     attached.add(name);
-    own.push({ kind: 'kiln', path, name, origin: 'attached-kiln' });
+    own.push({ kind: 'kiln', path, name, git: kilnIsGit(name), origin: 'attached-kiln' });
   }
 
   const others: SessionRoot[] = kilns
@@ -94,6 +101,7 @@ export function sessionRoots(
       kind: 'kiln' as const,
       path: k.path,
       name: k.name!,
+      git: k.git,
       origin: 'other-kiln' as const,
     }));
 
@@ -109,6 +117,7 @@ export function sessionRoots(
       kind: 'project',
       path: p.path,
       name: p.name || basename(p.path),
+      git: projectIsGitRoot(p),
       origin: 'other-project',
     });
   }

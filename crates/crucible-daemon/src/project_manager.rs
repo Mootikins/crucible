@@ -689,6 +689,24 @@ pub enum ProjectError {
     Storage(String),
 }
 
+
+/// Whether `path` is the top level of a git working tree.
+///
+/// `gix::discover` also finds a repository for a folder below the top level.
+/// `diff.get` refuses such a root, so this check compares the two paths.
+pub(crate) fn is_git_top_level(path: &Path) -> bool {
+    let Ok(repo) = gix::discover(path) else {
+        return false;
+    };
+    let Some(work_dir) = repo.workdir() else {
+        return false;
+    };
+    match (work_dir.canonicalize(), path.canonicalize()) {
+        (Ok(work_dir), Ok(path)) => work_dir == path,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

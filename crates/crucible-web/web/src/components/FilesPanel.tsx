@@ -37,7 +37,8 @@ import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
-import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus, Link2 } from '@/lib/icons';
+import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus, Link2, GitCompare } from '@/lib/icons';
+import { openDiff } from '@/lib/panel-actions';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
@@ -712,8 +713,23 @@ export const FilesPanel: Component<{
     rootBarRef?.querySelector<HTMLButtonElement>('[data-testid="root-dropdown"]')?.click();
   };
 
+  /**
+   * Open the branch diff of the browsed root. The empty base selects the
+   * default branch of the repository. A root that is not a git top level
+   * gets a notice, because the daemon refuses its diff.
+   */
+  const openBranchDiff = (head: string | null) => {
+    const root = activeRoot();
+    if (!root?.git) {
+      setError('The browsed root is not the top level of a git repository.');
+      return;
+    }
+    openDiff({ kind: 'branch', root: root.path, base: '', head });
+  };
+
   onMount(() => {
     getBus().on('toggleHiddenFiles', () => toggleHidden());
+    getBus().on('openBranchDiff', ({ head }) => openBranchDiff(head));
     // One source for the stream, whatever the count of readers: `fsEvents()`
     // is the shared root of `lib/query/sse.ts`, and the editor watches the same
     // stream for its open buffers. Each side keeps its own handler on it.
@@ -805,6 +821,18 @@ export const FilesPanel: Component<{
               class="p-1 rounded hover:bg-hover-wash text-muted"
             >
               <Plus class="w-3.5 h-3.5" />
+            </button>
+          </Show>
+          <Show when={activeRoot()?.git}>
+            <button
+              type="button"
+              aria-label="Open branch diff"
+              title="Open branch diff"
+              data-testid="open-branch-diff"
+              onClick={() => openBranchDiff(null)}
+              class="p-1 rounded hover:bg-hover-wash text-muted"
+            >
+              <GitCompare class="w-3.5 h-3.5" />
             </button>
           </Show>
           <Show when={activeRoot()?.kind === 'project'}>

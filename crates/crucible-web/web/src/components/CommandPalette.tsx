@@ -6,7 +6,7 @@ import { openFileInEditor } from '@/lib/file-actions';
 import { noteAbsolutePath } from '@/lib/note-actions';
 import { fuzzyScore } from '@/lib/fuzzy';
 
-type CommandCategory = 'Chat' | 'Session' | 'Navigation' | 'Settings';
+type CommandCategory = 'Chat' | 'Session' | 'Navigation' | 'Settings' | 'Diff';
 
 export interface PaletteCommand {
   id: string;

@@ -2954,6 +2954,11 @@ export interface components {
          */
         KilnRow: {
             /**
+             * @description Whether the kiln path is the top level of a git working tree. A folder
+             *     below the top level says `false`, because `diff.get` refuses it.
+             */
+            git: boolean;
+            /**
              * Format: int64
              * @description Seconds since the daemon last touched the kiln, or `null` when it holds
              *     it closed. Always written, so `required` rather than optional.

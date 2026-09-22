@@ -179,6 +179,7 @@ pub(crate) async fn handle_kiln_list(
             "registered": true,
             "open": opened.is_some(),
             "last_access_secs_ago": opened.map(|at| at.elapsed().as_secs()),
+            "git": crate::project_manager::is_git_top_level(kiln.path()),
         }));
     }
 
@@ -195,6 +196,7 @@ pub(crate) async fn handle_kiln_list(
             "registered": false,
             "open": true,
             "last_access_secs_ago": last_access.elapsed().as_secs(),
+            "git": crate::project_manager::is_git_top_level(&path),
         }));
     }
 
@@ -1745,6 +1747,41 @@ mod tests {
 
         let err = resp.error.expect("an unknown name must be refused");
         assert!(err.message.contains("nothing"), "{}", err.message);
+    }
+
+    /// `diff.get` refuses a root below the git top level. The `git` flag of a
+    /// row therefore says true only for a kiln at the top level, so a client
+    /// does not offer a branch diff that the daemon refuses.
+    #[tokio::test]
+    async fn kiln_list_says_git_only_for_a_git_top_level() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let repo = tmp.path().join("repo");
+        crate::test_support::init_repo(&repo, &[("notes/a.md", "a")]).await;
+        let below = repo.join("notes");
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        let registry = crate::test_support::kiln_registry(
+            &data_home,
+            &[("repo", &repo), ("below", &below), ("plain", &plain)],
+        );
+
+        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
+        let listed = resp.result.expect("kiln.list returns a list");
+        let git_of = |name: &str| {
+            listed
+                .as_array()
+                .expect("an array")
+                .iter()
+                .find(|row| row["name"] == name)
+                .unwrap_or_else(|| panic!("{name} must be listed: {listed}"))["git"]
+                .clone()
+        };
+        assert_eq!(git_of("repo"), true, "the top level is a git root: {listed}");
+        assert_eq!(git_of("below"), false, "a folder below the top level is not: {listed}");
+        assert_eq!(git_of("plain"), false, "a folder outside git is not: {listed}");
     }
 
     /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts

@@ -31,6 +31,11 @@ export type BusEvents = {
   newSession: { workspace?: string };
   /** Opens the command palette; `mode` picks the notes tree over commands. */
   openCommandPalette: { mode?: 'commands' | 'notes' };
+  /**
+   * Opens the branch diff of the root that the file tree shows. A `null`
+   * head compares the working tree, and a named head compares that commit.
+   */
+  openBranchDiff: { head: string | null };
   /** Opens one file in the editor, from any panel that names it. */
   openFile: { path: string; name?: string };
   /** Opens one session's chat tab. */

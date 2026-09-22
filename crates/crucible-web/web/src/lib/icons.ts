@@ -89,6 +89,7 @@ export { default as Cog } from 'lucide-solid/icons/cog';
 export { default as FolderTree } from 'lucide-solid/icons/folder-tree';
 export { default as Search } from 'lucide-solid/icons/search';
 export { default as GitBranch } from 'lucide-solid/icons/git-branch';
+export { default as GitCompare } from 'lucide-solid/icons/git-compare';
 export { default as Terminal } from 'lucide-solid/icons/terminal';
 export { default as AlertTriangle } from 'lucide-solid/icons/alert-triangle';
 export { default as FileOutput } from 'lucide-solid/icons/file-output';

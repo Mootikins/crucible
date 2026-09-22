@@ -423,3 +423,26 @@ describe('FilesPanel — rendered rows', () => {
     }
   });
 });
+
+// `diff.get` refuses a root that is not the top level of a git repository. The
+// header therefore offers the branch diff only for a root that says `git`.
+describe('FilesPanel — the branch diff button', () => {
+  const browse = async (git: boolean) => {
+    kilnRoster = [{ path: '/project/kiln', name: 'kiln', git }];
+    const view = render(() => <FilesPanel />);
+    const trigger = await view.findByTestId('root-dropdown');
+    await waitFor(() => expect(trigger.textContent).toContain('kiln'));
+    await view.findByText('readme.md');
+    return view;
+  };
+
+  it('shows Open branch diff only for a git root', async () => {
+    const view = await browse(true);
+    await view.findByRole('button', { name: 'Open branch diff' });
+  });
+
+  it('hides Open branch diff for a root that is not a git top level', async () => {
+    const view = await browse(false);
+    expect(view.queryByRole('button', { name: 'Open branch diff' })).toBeNull();
+  });
+});

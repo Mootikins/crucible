@@ -55,6 +55,9 @@ struct KilnRow {
     /// it closed. Always written, so `required` rather than optional.
     #[schema(required = true)]
     last_access_secs_ago: Option<u64>,
+    /// Whether the kiln path is the top level of a git working tree. A folder
+    /// below the top level says `false`, because `diff.get` refuses it.
+    git: bool,
 }
 
 /// What `GET /api/kilns` answers.
@@ -964,6 +967,14 @@ mod tests {
         let unnamed = &listing.kilns[1];
         assert_eq!(unnamed.name, "");
         assert!(!unnamed.registered);
+    }
+
+    #[tokio::test]
+    async fn a_kiln_row_says_if_it_is_a_git_repository() {
+        let listing: KilnListResponse = shape("GET", "/api/kilns", None).await;
+
+        assert!(listing.kilns[0].git, "the mock names the first kiln a git top level");
+        assert!(!listing.kilns[1].git, "the mock names the second kiln a plain folder");
     }
 
     #[tokio::test]

@@ -6,6 +6,8 @@ import { NotePicker } from '../canvas/NotePicker';
 import { statusBarActions } from '@/stores/statusBarStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { NoteEntry } from '@/lib/types';
+import { diffCommands } from '@/lib/diff-commands';
+import { getBus } from '@/lib/bus';
 
 const CMD_PLACEHOLDER = 'Run a command… ( [[ to open a note )';
 const NOTE_PLACEHOLDER = 'Open note… ( > to run a command )';
@@ -353,5 +355,25 @@ describe('CommandPalette — the shared note index', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(notesAsked).toEqual([]);
+  });
+});
+
+describe('CommandPalette — the Diff category', () => {
+  it('lists the Diff commands', () => {
+    const asked: Array<string | null> = [];
+    const off = getBus().on('openBranchDiff', ({ head }) => asked.push(head));
+    render(() => <CommandPalette open={true} commands={diffCommands()} onOpenChange={() => {}} />);
+
+    // The category is a keyword, so a query for "diff" finds both commands.
+    fireEvent.input(getInput(), { target: { value: 'diff' } });
+    const branch = screen.getByText('Diff: branch');
+    const working = screen.getByText('Diff: working tree');
+
+    fireEvent.click(branch.closest('[cmdk-item]') as HTMLElement);
+    fireEvent.click(working.closest('[cmdk-item]') as HTMLElement);
+    off();
+
+    // The branch compares the commit at HEAD. The working tree has no head.
+    expect(asked).toEqual(['HEAD', null]);
   });
 });

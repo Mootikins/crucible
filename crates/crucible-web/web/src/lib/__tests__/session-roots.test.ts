@@ -3,9 +3,9 @@ import { resolveSessionRoot, sessionRoots } from '../session-roots';
 import type { KilnListEntry, Project, Session } from '@/lib/types';
 
 const KILNS: KilnListEntry[] = [
-  { path: '/home/me/docs', name: 'docs', last_access_secs_ago: null, open: true, registered: true },
-  { path: '/home/me/notes', name: 'notes', last_access_secs_ago: null, open: true, registered: true },
-  { path: '/home/me/archive', name: 'archive', last_access_secs_ago: null, open: true, registered: true },
+  { path: '/home/me/docs', name: 'docs', last_access_secs_ago: null, open: true, registered: true, git: true },
+  { path: '/home/me/notes', name: 'notes', last_access_secs_ago: null, open: true, registered: true, git: false },
+  { path: '/home/me/archive', name: 'archive', last_access_secs_ago: null, open: true, registered: true, git: false },
 ];
 
 const PROJECTS: Project[] = [
@@ -14,6 +14,7 @@ const PROJECTS: Project[] = [
     name: 'crucible',
     kilns: [],
     last_accessed: '2026-01-01T00:00:00Z',
+    repository: { root: '/home/me/crucible', is_worktree: false },
   },
   {
     path: '/home/me/other-repo',
@@ -37,6 +38,25 @@ const session = (over: Partial<Session> = {}): Session => ({
 });
 
 describe('sessionRoots', () => {
+  // The branch diff button reads `git`. A workspace takes it from its
+  // registered project, and a kiln from its row in the kiln list.
+  it('says git for a workspace and a kiln at a git top level', () => {
+    const { own, others } = sessionRoots(
+      session({ workspace: '/home/me/crucible', kilns: ['docs', 'notes'] }),
+      KILNS,
+      PROJECTS,
+    );
+    expect(own.map((r) => [r.name, r.git])).toEqual([
+      ['crucible', true],
+      ['docs', true],
+      ['notes', false],
+    ]);
+    expect(others.map((r) => [r.name, r.git])).toEqual([
+      ['archive', false],
+      ['other-repo', false],
+    ]);
+  });
+
   it('puts the workspace first, then the attached kilns', () => {
     const { own } = sessionRoots(
       session({ workspace: '/home/me/crucible', kilns: ['docs', 'notes'] }),

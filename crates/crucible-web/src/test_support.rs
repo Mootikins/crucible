@@ -588,6 +588,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "registered": true,
                 "open": true,
                 "last_access_secs_ago": 12,
+                "git": true,
             },
             {
                 "path": "/daemon/unnamed",
@@ -595,6 +596,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "registered": false,
                 "open": true,
                 "last_access_secs_ago": 0,
+                "git": false,
             },
         ]),
         "kiln.graph" => json!({

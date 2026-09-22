@@ -85,12 +85,14 @@ const WORKSPACE: SessionRoot = {
   kind: 'project',
   path: '/home/me/crucible',
   name: 'crucible',
+  git: false,
   origin: 'workspace',
 };
 const ATTACHED: SessionRoot = {
   kind: 'kiln',
   path: '/vault',
   name: 'Vault',
+  git: false,
   origin: 'attached-kiln',
 };
 
@@ -120,7 +122,7 @@ describe('RootDropdown', () => {
   it('renders grouped section headers with the expected option counts', () => {
     const groups = buildRoster(
       [project('/p1', 'P1'), project('/p2', 'P2')],
-      [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true }],
+      [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false }],
     );
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={() => {}} />
@@ -156,7 +158,7 @@ describe('RootDropdown', () => {
     expect(getByTestId('root-dropdown').textContent).toContain('crucible');
 
     setKilns([
-      { path: '/vault', name: 'docs', registered: true, open: true, last_access_secs_ago: null },
+      { path: '/vault', name: 'docs', registered: true, open: true, last_access_secs_ago: null, git: false },
     ]);
     await Promise.resolve();
     expect(getByTestId('root-dropdown').textContent).toContain('docs');
@@ -167,14 +169,14 @@ describe('RootDropdown', () => {
   });
 
   it('calls onSelect with the resolved TreeRoot when an option is picked', () => {
-    const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true }]);
+    const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false }]);
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={onSelect} />
     ));
     openPopout(getByTestId);
     fireEvent.click(screen.getByText('Vault'));
-    expect(onSelect).toHaveBeenCalledWith({ kind: 'kiln', path: '/vault', name: 'Vault' });
+    expect(onSelect).toHaveBeenCalledWith({ kind: 'kiln', path: '/vault', name: 'Vault', git: false });
   });
 
   // The dropdown is the file pane's ONLY root control. An empty roster must
@@ -200,8 +202,8 @@ describe('RootDropdown', () => {
     const groups = buildRoster(
       [project('/home/me/crucible', 'crucible'), project('/p2', 'other')],
       [
-        { path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true },
-        { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true },
+        { path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false },
+        { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true, git: false },
       ],
     );
     const { getByTestId } = render(() => (
@@ -226,7 +228,7 @@ describe('RootDropdown', () => {
   // because picking one must never read as widening what the agent can see.
   it('marks roots the session does not own as browse-only', () => {
     const groups = buildRoster([project('/home/me/crucible', 'crucible')], [
-      { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true },
+      { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true, git: false },
     ]);
     const { getByTestId } = render(() => (
       <RootDropdown
@@ -275,7 +277,7 @@ describe('RootDropdown', () => {
         groups={groups}
         selectedKey="project:/repo"
         onSelect={onSelect}
-        activeRoot={{ kind: 'project', path: '/repo', name: 'repo' }}
+        activeRoot={{ kind: 'project', path: '/repo', name: 'repo', git: false }}
       />
     ));
     openPopout(getByTestId);
@@ -289,6 +291,7 @@ describe('RootDropdown', () => {
         kind: 'project',
         path: '/repo/tree/feat/x',
         name: 'x',
+        git: true,
       }),
     );
     expect(registered).toEqual(['/repo/tree/feat/x']);
@@ -310,7 +313,7 @@ describe('RootDropdown', () => {
         groups={groups}
         selectedKey="project:/repo"
         onSelect={onSelect}
-        activeRoot={{ kind: 'project', path: '/repo', name: 'repo' }}
+        activeRoot={{ kind: 'project', path: '/repo', name: 'repo', git: false }}
       />
     ));
     openPopout(getByTestId);
@@ -325,6 +328,7 @@ describe('RootDropdown', () => {
         kind: 'project',
         path: '/repo/tree/fix/y',
         name: 'y',
+        git: true,
       }),
     );
   });
@@ -342,7 +346,7 @@ describe('RootDropdown', () => {
         groups={groups}
         selectedKey="project:/repo"
         onSelect={() => {}}
-        activeRoot={{ kind: 'project', path: '/repo', name: 'repo' }}
+        activeRoot={{ kind: 'project', path: '/repo', name: 'repo', git: false }}
         onNotice={onNotice}
       />
     ));
@@ -375,7 +379,7 @@ describe('RootDropdown', () => {
         groups={groups}
         selectedKey={null}
         onSelect={() => {}}
-        activeRoot={{ kind: 'project', path: '/p0', name: 'P0' }}
+        activeRoot={{ kind: 'project', path: '/p0', name: 'P0', git: false }}
         onNotice={onNotice}
       />
     ));

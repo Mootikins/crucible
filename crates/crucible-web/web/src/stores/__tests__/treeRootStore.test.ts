@@ -7,8 +7,8 @@ import {
   TREE_ROOT_STORAGE_KEY,
 } from '../treeRootStore';
 
-const KILN: TreeRoot = { kind: 'kiln', path: '/vault', name: 'Vault' };
-const DOCS: TreeRoot = { kind: 'kiln', path: '/docs', name: 'Docs' };
+const KILN: TreeRoot = { kind: 'kiln', path: '/vault', name: 'Vault', git: false };
+const DOCS: TreeRoot = { kind: 'kiln', path: '/docs', name: 'Docs', git: false };
 
 describe('treeRootStore', () => {
   beforeEach(() => {

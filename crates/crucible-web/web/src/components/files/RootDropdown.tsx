@@ -123,14 +123,16 @@ export const RootDropdown: Component<{
     } catch {
       /* already registered */
     }
-    props.onSelect({ kind: 'project', path, name: basename(path) });
+    // A git worktree is the top level of its own working tree.
+    props.onSelect({ kind: 'project', path, name: basename(path), git: true });
   };
 
   const cloneRepo = async (url: string) => {
     try {
       const res = await clone.mutateAsync(url);
       props.onNotice?.(null);
-      props.onSelect({ kind: 'project', path: res.path, name: basename(res.path) });
+      // A fresh clone is the top level of its repository.
+      props.onSelect({ kind: 'project', path: res.path, name: basename(res.path), git: true });
     } catch (e) {
       props.onNotice?.(e instanceof Error ? e.message : 'Failed to clone repository');
     }

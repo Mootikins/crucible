@@ -19,6 +19,7 @@ import { openSessionInChat } from '@/lib/session-actions';
 import { openDraftSession } from '@/lib/draft-session';
 import { openFileInEditor } from '@/lib/file-actions';
 import { openPanelTab } from '@/lib/panel-actions';
+import { diffCommands } from '@/lib/diff-commands';
 import { terminalAllowed } from '@/lib/terminal-availability';
 import { statusBarActions, statusBarStore } from '@/stores/statusBarStore';
 import { attentionActions } from '@/stores/attentionStore';
@@ -213,6 +214,7 @@ const App: Component = () => {
     // existing tab when one is already open. Content-parameterized types
     // (file/chat) are excluded: they need a target, not a singleton tab.
     ...panelOpenCommands(),
+    ...diffCommands(),
     {
       id: 'nav-toggle-left',
       label: 'Toggle Left Panel',

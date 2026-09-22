@@ -8,12 +8,13 @@ const project = (path: string, name: string, kilns: Project['kilns'] = []): Proj
   kilns,
   last_accessed: '',
 });
-const kiln = (path: string, name = ''): KilnListEntry => ({
+const kiln = (path: string, name = '', git = false): KilnListEntry => ({
   path,
   name,
   registered: true,
   open: true,
   last_access_secs_ago: null,
+  git,
 });
 
 const kilnRoots = (groups: ReturnType<typeof buildRoster>) =>
@@ -46,6 +47,7 @@ describe('buildRoster', () => {
         kind: 'project',
         path: '/home/me/crucible/tree/fix/nits',
         name: 'crucible › tree/fix/nits',
+        git: false,
       },
     ]);
     // Same kind, same key scheme — a worktree resolves like any project root.
@@ -61,6 +63,32 @@ describe('buildRoster', () => {
     expect(worktreeRoots(groups)[0]).toMatchObject({ path: '/elsewhere/checkout', name: 'checkout' });
   });
 
+  // `diff.get` refuses a folder below the git top level, so only a root at
+  // the top level says `git`.
+  it('says git only for a root at the top level of its repository', () => {
+    const top: Project = {
+      ...project('/repo', 'repo'),
+      repository: { root: '/repo', is_worktree: false },
+    };
+    const below: Project = {
+      ...project('/repo/sub', 'sub'),
+      repository: { root: '/repo', is_worktree: false },
+    };
+    const groups = buildRoster(
+      [top, below, project('/plain', 'plain', [{ path: '/vault', name: 'vault' }])],
+      [kiln('/vault', 'vault', true), kiln('/notes', 'notes')],
+    );
+    expect(groups[0].roots.map((r) => [r.path, r.git])).toEqual([
+      ['/repo', true],
+      ['/repo/sub', false],
+      ['/plain', false],
+    ]);
+    expect(kilnRoots(groups).map((r) => [r.path, r.git])).toEqual([
+      ['/vault', true],
+      ['/notes', false],
+    ]);
+  });
+
   it('falls back to basename when a project name is empty', () => {
     const groups = buildRoster([project('/home/me/code/app', '')], []);
     expect(groups[0].roots[0]).toMatchObject({ kind: 'project', path: '/home/me/code/app', name: 'app' });
@@ -69,8 +97,8 @@ describe('buildRoster', () => {
   it('uses kiln names, falling back to basename on null', () => {
     const groups = buildRoster([], [kiln('/vault', 'My Vault'), kiln('/other/docs', '')]);
     expect(kilnRoots(groups)).toEqual([
-      { kind: 'kiln', path: '/vault', name: 'My Vault' },
-      { kind: 'kiln', path: '/other/docs', name: 'docs' },
+      { kind: 'kiln', path: '/vault', name: 'My Vault', git: false },
+      { kind: 'kiln', path: '/other/docs', name: 'docs', git: false },
     ]);
   });
 
@@ -121,7 +149,7 @@ describe('buildRoster', () => {
 
   it('keeps a name-only kiln when nothing maps the name to a path', () => {
     const groups = buildRoster([], [kiln('solo-kiln', '')]);
-    expect(kilnRoots(groups)).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln' }]);
+    expect(kilnRoots(groups)).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln', git: false }]);
   });
 
   it('names an unnamed kiln by its directory basename', () => {

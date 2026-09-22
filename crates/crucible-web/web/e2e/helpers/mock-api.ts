@@ -9,6 +9,8 @@ import {
   MOCK_PROJECT,
   MOCK_PUBLICATIONS,
   MOCK_PLUGIN_TARGETS,
+  MOCK_DIFF_FILES,
+  MOCK_DIFF_TEXTS,
 } from './fixtures';
 import { mockSSERoute } from './mock-sse';
 
@@ -26,6 +28,10 @@ export interface MockOverrides {
   sessionStatus?: object;
   sseEvents?: Array<{ type: string; data: object }>;
   sessionCreate?: object;
+  /** The file entries of `GET /api/diff`, without `root`. The mock adds the asked root. */
+  diffFiles?: object[];
+  /** The texts of `GET /api/diff/file`, by path. */
+  diffTexts?: Record<string, { base_text: string | null; current_text: string | null }>;
   chatMessage?: object | number;
 }
 
@@ -119,6 +125,31 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   await page.route('**/api/kilns', (route) =>
     route.fulfill({ json: overrides.kilns ?? MOCK_KILNS }),
   );
+
+  // The branch diffset. The reply names the default branch, as the daemon
+  // does for an empty base. A predicate keeps `/api/diff/file` out.
+  await page.route(
+    (url) => url.pathname === '/api/diff',
+    (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      const root = query.get('root') ?? '';
+      const head = query.get('head');
+      route.fulfill({
+        json: {
+          id: 'branch-00000000000000000000000000000000',
+          source: { kind: 'branch', root, base: query.get('base') ?? 'master', head },
+          files: (overrides.diffFiles ?? MOCK_DIFF_FILES).map((file) => ({ root, ...file })),
+        },
+      });
+    },
+  );
+
+  await page.route('**/api/diff/file**', (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+    const text = (overrides.diffTexts ?? MOCK_DIFF_TEXTS)[path];
+    if (!text) return route.fulfill({ status: 404, json: { error: `no file ${path}` } });
+    return route.fulfill({ json: text });
+  });
 
   // Draft-session panel loads (lazy session creation surface).
   await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));
