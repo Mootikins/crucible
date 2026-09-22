@@ -202,7 +202,8 @@ async fn wait_until_accepting(socket_path: &Path, ready: Duration, pid: u32) -> 
     }
 }
 
-/// Write the config the spawned daemon reads, registering one kiln.
+/// Write the config the spawned daemon reads, registering one kiln and the
+/// mock ACP agent.
 ///
 /// Sessions address kilns by NAME, and the registry is built from the app
 /// config the client hands the daemon at spawn — so a fixture with no config
@@ -215,12 +216,19 @@ fn write_daemon_config(home: &Path) -> Result<()> {
     std::fs::create_dir_all(&kiln)?;
     let config_dir = home.join(".config").join("crucible");
     std::fs::create_dir_all(&config_dir)?;
+    // The daemon launches an ACP agent by profile name, so a test that
+    // spawns the mock binary needs a profile for it. The path is the name.
+    // The variable is absent when the mock binary is not built; a test that
+    // needs the mock then fails on its own missing-binary message.
+    let mock_profile = option_env!("CARGO_BIN_EXE_mock-acp-agent")
+        .map(|mock| format!(", acp = {{ agents = {{ [{mock:?}] = {{ command = {mock:?} }} }} }}",))
+        .unwrap_or_default();
     std::fs::write(
         config_dir.join("init.lua"),
         format!(
-            "cru.config.set({{ kilns = {{ [{:?}] = {:?} }} }})\n",
+            "cru.config.set({{ kilns = {{ [{:?}] = {:?} }}{mock_profile} }})\n",
             TestDaemon::KILN,
-            kiln.display().to_string()
+            kiln.display().to_string(),
         ),
     )?;
     Ok(())
