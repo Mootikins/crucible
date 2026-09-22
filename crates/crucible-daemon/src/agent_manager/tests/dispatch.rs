@@ -6,20 +6,11 @@ mod event_dispatch {
     use crate::agent_manager::messaging::stream::TurnFacts;
     use crucible_lua::ScriptHandlerResult;
 
-    /// A turn that ran no tool, ended naturally, and is not a re-prompt.
+    /// A turn that ran no tool and ended naturally.
     fn a_first_turn() -> TurnFacts {
         TurnFacts {
             stop_reason: Some(crucible_core::turn::StopReason::EndTurn),
-            continuation_depth: 0,
             saw_tool_activity: false,
-        }
-    }
-
-    /// The same turn, reached by one re-prompt.
-    fn a_re_prompted_turn() -> TurnFacts {
-        TurnFacts {
-            continuation_depth: 1,
-            ..a_first_turn()
         }
     }
 
@@ -438,64 +429,43 @@ mod event_dispatch {
         assert_eq!(injection.as_deref(), Some("Suffix content"));
     }
 
-    /// A handler tells a re-prompted turn from the user's own, and stops.
-    ///
-    /// The payload carries `continuation_depth` and no boolean beside it. It
-    /// used to carry both, and `is_continuation` was exactly
-    /// `continuation_depth > 0`, so a handler that wants the boolean derives
-    /// it. This test derives it. It also asserts that the dropped field is
-    /// gone, and does not reach a handler as a silent `nil`.
+    /// A turn ENDS. There is no re-prompt inside it, so the payload carries
+    /// neither `continuation_depth` nor `is_continuation`. A handler that
+    /// reads either gets `nil`, which is the honest answer.
     #[tokio::test]
-    async fn a_handler_reads_the_continuation_depth_and_skips_a_re_prompt() {
+    async fn the_payload_names_no_continuation() {
         let state = handler_vm();
 
-        {
-            state
-                .lua
-                .load(
-                    r#"
-                received_depth = nil
+        state
+            .lua
+            .load(
+                r#"
+                had_depth = nil
                 had_is_continuation = nil
                 cru.on("turn:complete", function(ctx, event)
-                    received_depth = event.continuation_depth
+                    had_depth = event.continuation_depth ~= nil
                     had_is_continuation = event.is_continuation ~= nil
-                    if event.continuation_depth > 0 then
-                        return nil  -- Skip injection on a re-prompted turn
-                    end
-                    return { inject = { content = "Should not inject" } }
                 end)
             "#,
-                )
-                .exec()
-                .unwrap();
-        }
+            )
+            .exec()
+            .unwrap();
 
         let injection = AgentManager::dispatch_turn_complete_handlers(
             "test-session",
             "msg-123",
             "Some response",
             Some(&state.handlers()),
-            a_re_prompted_turn(),
+            a_first_turn(),
             tail_chars(),
         )
         .await;
+        assert!(injection.is_none());
 
-        assert!(
-            injection.is_none(),
-            "Handler should skip injection on a re-prompted turn"
-        );
-
-        let received: u32 = state.lua.load("return received_depth").eval().unwrap();
-        assert_eq!(
-            received, 1,
-            "Handler should have received the re-prompt depth"
-        );
-
-        let had_boolean: bool = state.lua.load("return had_is_continuation").eval().unwrap();
-        assert!(
-            !had_boolean,
-            "the payload must not carry is_continuation beside the depth"
-        );
+        for name in ["had_depth", "had_is_continuation"] {
+            let present: bool = state.lua.load(format!("return {name}")).eval().unwrap();
+            assert!(!present, "the payload must not carry {name}");
+        }
     }
 
     /// A handler reads the END of the reply, and is told when text was cut.
@@ -563,43 +533,6 @@ mod event_dispatch {
         .await;
 
         assert_eq!(injection.as_deref(), Some("short|truncated=false"));
-    }
-
-    /// A handler counts its own re-prompts.
-    ///
-    /// `is_continuation` is a bare bool, so a handler could tell the first
-    /// turn from the rest and nothing more. The host counts and the plugin
-    /// decides: there is no cap here, and a plugin that wants one sets it.
-    #[tokio::test]
-    async fn a_handler_counts_its_own_re_prompts() {
-        let state = handler_vm();
-
-        state
-            .lua
-            .load(
-                r#"
-                cru.on("turn:complete", function(ctx, event)
-                    return { inject = { content = "depth=" .. tostring(event.continuation_depth) } }
-                end)
-            "#,
-            )
-            .exec()
-            .unwrap();
-
-        let injection = AgentManager::dispatch_turn_complete_handlers(
-            "test-session",
-            "msg-123",
-            "Some response",
-            Some(&state.handlers()),
-            TurnFacts {
-                continuation_depth: 7,
-                ..a_first_turn()
-            },
-            tail_chars(),
-        )
-        .await;
-
-        assert_eq!(injection.as_deref(), Some("depth=7"));
     }
 
     /// A handler sees that the turn ran a tool.

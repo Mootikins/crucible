@@ -200,14 +200,16 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
     expect(ctx.messages().find((m) => m.thinking)?.thinking?.isStreaming).toBe(true);
 
     await ctx.cancelStream();
-    // The daemon records `ended` BEFORE the cancel call resolves and every
-    // subscriber receives it — the reducer's `ended` case closes the turn,
-    // not this client's cancel button. Emit the frame the daemon sends.
+    // The daemon records `ended` and then `turn_finished` BEFORE the cancel
+    // call resolves, and every subscriber receives both. The reducer's
+    // `turn_finished` case closes the turn, not this client's cancel button.
+    // Emit the frames the daemon sends.
     stream().emit('session_event', {
       type: 'session_event',
       event: 'ended',
       data: { reason: 'cancelled' },
     });
+    stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
 
     // No message_complete arrives for a cancelled turn, so the thinking
     // block must still not be left streaming — it would render "Thinking…"
@@ -224,7 +226,8 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
   it('a foreign cancel (ended without a local cancel call) closes the turn too', async () => {
     // T1's bug: a cancel issued from another client left THIS pane streaming
     // forever, because the old client-side patch only ever ran for a cancel
-    // this pane issued itself. The recorded `ended` reaches every subscriber.
+    // this pane issued itself. The `turn_finished` after the recorded `ended`
+    // reaches every subscriber.
     const ctx = mountProvider();
 
     void ctx.sendMessage('foreign');
@@ -235,6 +238,7 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
       event: 'ended',
       data: { reason: 'cancelled' },
     });
+    stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
 
     await waitFor(() => expect(ctx.isStreaming()).toBe(false));
     await waitFor(() => expect(ctx.isLoading()).toBe(false));

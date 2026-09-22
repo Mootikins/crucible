@@ -8,12 +8,12 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
-fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
+fn make_agent_manager() -> (Arc<AgentManager>, Arc<SessionManager>, TempDir) {
     let tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(16);
     let bg = Arc::new(BackgroundJobManager::new(event_tx));
-    let agent_manager = AgentManager::new(AgentManagerParams {
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
         background_manager: bg,
@@ -25,7 +25,7 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         plugin_loader: None,
         card_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    });
+    }));
     (agent_manager, session_manager, tmp)
 }
 

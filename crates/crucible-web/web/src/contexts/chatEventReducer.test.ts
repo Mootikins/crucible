@@ -943,17 +943,20 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0].args).toBe('');
   });
 
-  it('session_event ended: sweeps thinking, dangling tools, and stream flags', () => {
-    // A cancelled turn never sees message_complete. The recorded `ended`
-    // carries no content — it is purely the turn-over signal — and must
-    // leave the same clean state a completion would: no bubble streaming
-    // "Thinking…", no tool stuck "running", no stale streaming id.
+  it('turn_finished: sweeps thinking, dangling tools, and stream flags after ended', () => {
+    // A cancelled turn never sees message_complete. `ended` only tells why
+    // the turn stopped and leaves the turn open. The `turn_finished` after
+    // it must leave the same clean state a completion would: no bubble
+    // streaming "Thinking…", no tool stuck "running", no stale streaming id.
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
+    h.state.isStreaming = true;
     h.reducer({ type: 'thinking', content: 'mid-reasoning' });
     h.reducer({ type: 'tool_call', id: 'call-9', title: 'bash' });
     h.reducer({ type: 'session_event', event: 'ended', data: { reason: 'cancelled' } });
+    expect(h.state.isStreaming).toBe(true);
 
+    h.reducer({ type: 'turn_finished', status: 'cancelled' });
     expect(h.state.messages.find((m) => m.thinking)?.thinking).toMatchObject({
       isStreaming: false,
       tokenCount: 4,
@@ -1247,6 +1250,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
     'thinking',
     'segment_complete',
     'message_complete',
+    'turn_finished',
     'error',
     'interaction_requested',
     'session_event',

@@ -165,6 +165,7 @@ impl SessionEventMessage {
         )
     }
 
+    /// A person's own message.
     pub fn user_message(
         session_id: impl Into<String>,
         message_id: impl Into<String>,
@@ -175,6 +176,24 @@ impl SessionEventMessage {
             TurnPayload::UserMessage {
                 message_id: message_id.into(),
                 content: content.into(),
+                origin: crate::turn::TurnOrigin::User,
+            },
+        )
+    }
+
+    /// The message a `turn:complete` handler asked the daemon to send. The
+    /// turn it starts is a normal turn; only its origin differs.
+    pub fn plugin_message(
+        session_id: impl Into<String>,
+        message_id: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self::typed(
+            session_id,
+            TurnPayload::UserMessage {
+                message_id: message_id.into(),
+                content: content.into(),
+                origin: crate::turn::TurnOrigin::Plugin,
             },
         )
     }
@@ -338,6 +357,23 @@ impl SessionEventMessage {
             session_id,
             TurnPayload::Ended {
                 reason: reason.into(),
+            },
+        )
+    }
+
+    /// The whole turn is over. See [`TurnPayload::TurnFinished`].
+    pub fn turn_finished(
+        session_id: impl Into<String>,
+        status: crate::turn::TurnStatus,
+        stop_reason: Option<crate::turn::StopReason>,
+        error: Option<String>,
+    ) -> Self {
+        Self::typed(
+            session_id,
+            TurnPayload::TurnFinished {
+                status,
+                stop_reason,
+                error,
             },
         )
     }

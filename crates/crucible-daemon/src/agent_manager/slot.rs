@@ -65,6 +65,14 @@ pub(crate) struct SessionSlot {
     /// cell lives here, not in the dispatcher, because a dispatcher rebuild
     /// must not reset it in the middle of a turn.
     write_mode: crate::tools::notes::TurnWriteMode,
+    /// What a `turn:complete` handler asked the daemon to send as the NEXT
+    /// turn of this session.
+    ///
+    /// A turn ends; a handler that wants more work asks for a new turn, like
+    /// a queued user message. The content waits here until the turn that
+    /// produced it releases the request slot. A user cancel clears it: the
+    /// user stopped the work, so the plugin's follow-up is stopped too.
+    follow_up: Mutex<Option<String>>,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -371,6 +379,24 @@ impl SessionSlot {
 
     fn lock_pending_mode(&self) -> std::sync::MutexGuard<'_, Option<String>> {
         self.pending_mode
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Stage the turn a `turn:complete` handler asked for, replacing any
+    /// earlier one. Last writer wins, as the handler pass itself does.
+    pub(crate) fn set_follow_up(&self, content: String) {
+        *self.lock_follow_up() = Some(content);
+    }
+
+    /// Take the staged turn. Draining rather than reading is the contract:
+    /// one request makes one turn.
+    pub(crate) fn take_follow_up(&self) -> Option<String> {
+        self.lock_follow_up().take()
+    }
+
+    fn lock_follow_up(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.follow_up
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

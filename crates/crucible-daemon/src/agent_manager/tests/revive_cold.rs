@@ -86,7 +86,7 @@ pub(super) async fn cold_manager(
     open_kiln: Option<&Path>,
 ) -> (
     Arc<SessionManager>,
-    AgentManager,
+    Arc<AgentManager>,
     broadcast::Sender<SessionEventMessage>,
 ) {
     let sm = manager_over(data_home, kiln);
@@ -98,7 +98,7 @@ pub(super) async fn cold_manager(
 
     let (event_tx, _) = broadcast::channel(64);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-    let am = AgentManager::new(AgentManagerParams {
+    let am: Arc<AgentManager> = AgentManager::new(AgentManagerParams {
         kiln_manager: km,
         session_manager: sm.clone(),
         background_manager,
@@ -110,7 +110,8 @@ pub(super) async fn cold_manager(
         plugin_loader: None,
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
-    });
+    })
+    .into();
     (sm, am, event_tx)
 }
 
@@ -233,10 +234,7 @@ async fn the_trust_gate_re_runs_when_a_session_is_revived_from_storage() {
     // A cold daemon over the same root and the same registry: the session
     // exists only on disk, and the turn below is what revives it.
     let sm = manager_over(data_home.path(), kiln.path());
-    let am = Arc::new(super::create_test_agent_manager_with_llm_config(
-        sm.clone(),
-        cloud,
-    ));
+    let am = super::create_test_agent_manager_with_llm_config(sm.clone(), cloud);
     let (tx, _rx) = broadcast::channel(64);
     assert!(
         sm.get_session(&session_id).is_none(),

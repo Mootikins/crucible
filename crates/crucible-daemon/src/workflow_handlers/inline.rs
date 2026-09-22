@@ -14,22 +14,19 @@
 //! # Event flow
 //!
 //! We subscribe to `event_tx` before calling `send_message` so no queued
-//! events race past us. For a plain turn the sequence is simply:
-//! `user_message → text_delta* → message_complete → post_llm_call`.
+//! events race past us. The sequence of one turn is
+//! `user_message → text_delta* → message_complete → turn_finished`.
 //!
-//! Reactor `turn_complete` handlers can inject a continuation — see
-//! `agent_manager/messaging/stream.rs::execute_agent_stream`. Each
-//! recursion emits a fresh `message_complete` (with a new `message_id`)
-//! and its own `post_llm_call` on the way back up the stack. The
-//! DEEPEST stream emits the final-text `message_complete` immediately
-//! followed by the first `post_llm_call`, so we track the latest seen
-//! `full_response` and commit on the first `post_llm_call`. Outer
-//! `post_llm_call`s arrive after we've already returned; the
-//! session-level `request_state` guard blocks any unrelated turn on
-//! this session while we're mid-step, so same-session foreign events
-//! can't interleave.
+//! A turn ENDS on `turn_finished`, and that event carries the status of the
+//! turn. The step takes the text of the one `message_complete` before it.
+//!
+//! A `turn:complete` handler can start a turn of its own on this session, so
+//! the step reads nothing before the `user_message` that carries the id its
+//! own send returned.
 
 use async_trait::async_trait;
+use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+use crucible_core::turn::TurnStatus;
 use crucible_core::workflow::{ExecContext, StepHandler, StepOutcome};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -66,11 +63,12 @@ impl DaemonInlineHandler {
     }
 }
 
-/// `post_llm_call` (our completion signal) is emitted slightly before
-/// the turn task clears the session's `request_state` slot, so a
-/// back-to-back step can transiently see `ConcurrentRequest`. Retry
-/// briefly to absorb that window; a genuinely busy session (e.g. a user
-/// turn in flight) still fails once the budget is exhausted.
+/// `turn_finished` comes after the turn task clears the session's
+/// `request_state` slot, but a plugin turn that a `turn:complete` handler
+/// asked for claims the slot right after it, so a back-to-back step can
+/// still see `ConcurrentRequest`. Retry briefly to absorb that window; a
+/// genuinely busy session (for example a user turn in flight) still fails
+/// once the budget is exhausted.
 const SEND_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(50);
 const SEND_RETRY_BUDGET: u32 = 40;
 
@@ -102,12 +100,10 @@ impl StepHandler for DaemonInlineHandler {
 
         let _turn = self.turn_guard.lock().await;
 
-        // The returned message_id is useful for observability only —
-        // continuations use fresh ids and neither `post_llm_call` nor
-        // `ended` carry one today, so we don't filter on it. See the
-        // module-level event-flow notes.
+        // The returned message_id names the turn this step waits for. See
+        // the module-level event-flow notes.
         let mut attempts = 0u32;
-        let mut rx = loop {
+        let (mut rx, message_id) = loop {
             // Subscribe before send so queued events don't race past us.
             // Re-subscribe on retry so a failed attempt's buffered events
             // (from the turn we were waiting out) don't leak into ours.
@@ -123,7 +119,7 @@ impl StepHandler for DaemonInlineHandler {
                 )
                 .await
             {
-                Ok(_id) => break rx,
+                Ok(id) => break (rx, id),
                 Err(crate::agent_manager::AgentError::ConcurrentRequest(_))
                     if attempts < SEND_RETRY_BUDGET =>
                 {
@@ -138,20 +134,21 @@ impl StepHandler for DaemonInlineHandler {
             }
         };
 
-        await_turn_completion(&mut rx, &self.session_id).await
+        await_turn_completion(&mut rx, &self.session_id, &message_id).await
     }
 }
 
-/// Block on `rx` until we've seen one full agent turn (including any
-/// `turn_complete`-handler injection continuations) and return the
-/// matching [`StepOutcome`]. Extracted so tests can drive the loop
+/// Block on `rx` until the turn that `message_id` names is over, and return
+/// the matching [`StepOutcome`]. Extracted so tests can drive the loop
 /// directly through a `broadcast::Sender` without spinning up an
 /// [`AgentManager`].
 async fn await_turn_completion(
     rx: &mut broadcast::Receiver<SessionEventMessage>,
     session_id: &str,
+    message_id: &str,
 ) -> StepOutcome {
     let mut latest_response: Option<String> = None;
+    let mut ours = false;
     loop {
         let msg = match rx.recv().await {
             Ok(m) => m,
@@ -162,7 +159,7 @@ async fn await_turn_completion(
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
                 // Broadcast capacity exceeded — we may have dropped
-                // the `message_complete` or `post_llm_call` we were
+                // the `message_complete` or the `turn_finished` we were
                 // waiting for. Fail deterministically rather than
                 // hang. Operator can increase broadcast capacity
                 // or reduce concurrent subscriber load.
@@ -177,15 +174,21 @@ async fn await_turn_completion(
         if msg.session_id != session_id {
             continue;
         }
+        // Nothing before our own turn: a `turn:complete` handler can start a
+        // turn of its own, and its events can reach this buffer.
+        if !ours {
+            ours = matches!(
+                msg.payload(),
+                Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { message_id: id, .. }))
+                    if id == message_id
+            );
+            continue;
+        }
         match msg.event.as_str() {
             "message_complete" => {
-                // Any message_complete on this session belongs to our
-                // turn (concurrency on the same session is blocked by
-                // `AgentManager::request_state`). Continuation turns
-                // created by `turn_complete` handler injection use
-                // fresh message_ids, so we don't filter — the deepest
-                // turn's full_response is the one we'll ultimately
-                // return.
+                // A turn has one message_complete, and concurrency on the
+                // same session is blocked by `AgentManager::request_state`,
+                // so this one belongs to our turn.
                 let full = msg
                     .data
                     .get("full_response")
@@ -194,27 +197,32 @@ async fn await_turn_completion(
                     .to_string();
                 latest_response = Some(full);
             }
-            "post_llm_call" => {
-                // The first post_llm_call marks the end of the
-                // deepest stream; subsequent ones are outer frames
-                // unwinding with no new content. Commit accumulated.
-                return StepOutcome::Advance {
-                    output: Some(serde_json::Value::String(
-                        latest_response.unwrap_or_default(),
-                    )),
+            // The one event that ends a whole turn. It carries the status,
+            // so this reads no free-form text of `ended`.
+            "turn_finished" => {
+                return match msg.payload() {
+                    Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
+                        status: TurnStatus::Completed,
+                        ..
+                    })) => StepOutcome::Advance {
+                        output: Some(serde_json::Value::String(
+                            latest_response.unwrap_or_default(),
+                        )),
+                    },
+                    Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
+                        status,
+                        error,
+                        ..
+                    })) => StepOutcome::Fail {
+                        reason: error.unwrap_or_else(|| format!("the turn ended: {status:?}")),
+                    },
+                    _ => StepOutcome::Fail {
+                        reason: format!(
+                            "the daemon sent a turn_finished event that does not decode: {}",
+                            msg.data
+                        ),
+                    },
                 };
-            }
-            "ended" => {
-                // `ended` is emitted on abort paths (cancel, stream
-                // error, timeout, empty response, permission denial).
-                // Normal completion flows through `post_llm_call`.
-                let reason = msg
-                    .data
-                    .get("reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                return StepOutcome::Fail { reason };
             }
             _ => continue,
         }
@@ -236,9 +244,19 @@ mod tests {
     use serde_json::json;
 
     const SID: &str = "test-session";
+    /// The id of the turn the tests wait for.
+    const OURS: &str = "msg-ours";
 
     fn msg(event: &str, data: serde_json::Value) -> SessionEventMessage {
         SessionEventMessage::new(SID, event, data)
+    }
+
+    /// The `user_message` that opens the turn the tests below wait for.
+    fn opening() -> SessionEventMessage {
+        msg(
+            "user_message",
+            json!({ "message_id": OURS, "content": "go" }),
+        )
     }
 
     fn message_complete(id: &str, text: &str) -> SessionEventMessage {
@@ -248,17 +266,18 @@ mod tests {
         )
     }
 
-    fn post_llm_call() -> SessionEventMessage {
-        msg("post_llm_call", json!({}))
+    fn turn_finished(status: &str, error: Option<&str>) -> SessionEventMessage {
+        msg("turn_finished", json!({ "status": status, "error": error }))
     }
 
     #[tokio::test]
     async fn plain_turn_returns_final_text() {
         let (tx, mut rx) = broadcast::channel(16);
+        tx.send(opening()).unwrap();
         tx.send(message_complete("msg-a", "answer")).unwrap();
-        tx.send(post_llm_call()).unwrap();
+        tx.send(turn_finished("completed", None)).unwrap();
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
+        let outcome = await_turn_completion(&mut rx, SID, OURS).await;
         match outcome {
             StepOutcome::Advance { output } => {
                 assert_eq!(output, Some(json!("answer")));
@@ -267,43 +286,73 @@ mod tests {
         }
     }
 
+    /// `post_llm_call` used to end the step. It is telemetry, it comes once
+    /// per provider call, and it says nothing about how the turn ended, so
+    /// the step now waits for `turn_finished`.
     #[tokio::test]
-    async fn injection_chain_commits_deepest_response() {
-        // Mirrors the production event order when a turn_complete
-        // handler injects a continuation: each recursion emits its own
-        // message_complete, the deepest post_llm_call fires first, and
-        // subsequent post_llm_calls (from outer frames unwinding) must
-        // not override the captured response.
-        let (tx, mut rx) = broadcast::channel(32);
-        tx.send(message_complete("msg-a", "initial")).unwrap();
-        tx.send(msg("injection_pending", json!({ "content": "more" })))
-            .unwrap();
-        tx.send(message_complete("msg-b", "middle")).unwrap();
-        tx.send(msg("injection_pending", json!({ "content": "even more" })))
-            .unwrap();
-        tx.send(message_complete("msg-c", "final answer")).unwrap();
-        tx.send(post_llm_call()).unwrap(); // deepest — we should commit here
-        tx.send(post_llm_call()).unwrap(); // outer — not reached
-        tx.send(post_llm_call()).unwrap(); // outermost — not reached
+    async fn post_llm_call_does_not_end_the_step() {
+        let (tx, mut rx) = broadcast::channel(16);
+        tx.send(opening()).unwrap();
+        tx.send(message_complete("msg-a", "answer")).unwrap();
+        tx.send(msg("post_llm_call", json!({}))).unwrap();
+        tx.send(turn_finished("completed", None)).unwrap();
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
-        match outcome {
-            StepOutcome::Advance { output } => {
-                assert_eq!(output, Some(json!("final answer")));
-            }
+        match await_turn_completion(&mut rx, SID, OURS).await {
+            StepOutcome::Advance { output } => assert_eq!(output, Some(json!("answer"))),
+            other => panic!("expected Advance, got {other:?}"),
+        }
+    }
+
+    /// `ended` says why a turn stopped early, in free-form text. The step
+    /// reads the status of `turn_finished` instead.
+    #[tokio::test]
+    async fn a_failed_turn_fails_the_step_with_the_error_text() {
+        let (tx, mut rx) = broadcast::channel(8);
+        tx.send(opening()).unwrap();
+        tx.send(msg("ended", json!({ "reason": "error: backend down" })))
+            .unwrap();
+        tx.send(turn_finished("failed", Some("backend down")))
+            .unwrap();
+
+        match await_turn_completion(&mut rx, SID, OURS).await {
+            StepOutcome::Fail { reason } => assert_eq!(reason, "backend down"),
+            other => panic!("expected Fail, got {other:?}"),
+        }
+    }
+
+    /// A user cancel is not a completed step either.
+    /// A `turn:complete` handler can start a turn of its own. Its events can
+    /// already sit in this buffer, and the step must not end on them.
+    #[tokio::test]
+    async fn the_end_of_another_turn_does_not_end_the_step() {
+        let (tx, mut rx) = broadcast::channel(16);
+        tx.send(msg(
+            "user_message",
+            json!({ "message_id": "msg-plugin", "content": "keep going", "origin": "plugin" }),
+        ))
+        .unwrap();
+        tx.send(message_complete("msg-plugin", "the plugin's answer"))
+            .unwrap();
+        tx.send(turn_finished("failed", Some("the plugin's turn failed")))
+            .unwrap();
+        tx.send(opening()).unwrap();
+        tx.send(message_complete("msg-a", "ours")).unwrap();
+        tx.send(turn_finished("completed", None)).unwrap();
+
+        match await_turn_completion(&mut rx, SID, OURS).await {
+            StepOutcome::Advance { output } => assert_eq!(output, Some(json!("ours"))),
             other => panic!("expected Advance, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn ended_event_fails_with_reason() {
+    async fn a_cancelled_turn_fails_the_step() {
         let (tx, mut rx) = broadcast::channel(8);
-        tx.send(msg("ended", json!({ "reason": "error: backend down" })))
-            .unwrap();
+        tx.send(opening()).unwrap();
+        tx.send(turn_finished("cancelled", None)).unwrap();
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
-        match outcome {
-            StepOutcome::Fail { reason } => assert_eq!(reason, "error: backend down"),
+        match await_turn_completion(&mut rx, SID, OURS).await {
+            StepOutcome::Fail { reason } => assert!(reason.contains("Cancelled"), "{reason}"),
             other => panic!("expected Fail, got {other:?}"),
         }
     }
@@ -313,7 +362,7 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(4);
         drop(tx);
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
+        let outcome = await_turn_completion(&mut rx, SID, OURS).await;
         assert!(
             matches!(outcome, StepOutcome::Fail { reason } if reason.contains("event stream closed")),
             "expected close-specific Fail"
@@ -331,9 +380,9 @@ mod tests {
         }
         // Now emit the completion the handler is actually waiting for;
         // by this point it's been dropped from the queue.
-        let _ = tx.send(post_llm_call());
+        let _ = tx.send(turn_finished("completed", None));
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
+        let outcome = await_turn_completion(&mut rx, SID, OURS).await;
         match outcome {
             StepOutcome::Fail { reason } => {
                 assert!(
@@ -351,14 +400,15 @@ mod tests {
         // Event on a different session — must be skipped.
         tx.send(SessionEventMessage::new(
             "other-session",
-            "post_llm_call",
-            json!({}),
+            "turn_finished",
+            json!({ "status": "failed" }),
         ))
         .unwrap();
+        tx.send(opening()).unwrap();
         tx.send(message_complete("msg-a", "ours")).unwrap();
-        tx.send(post_llm_call()).unwrap();
+        tx.send(turn_finished("completed", None)).unwrap();
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
+        let outcome = await_turn_completion(&mut rx, SID, OURS).await;
         match outcome {
             StepOutcome::Advance { output } => assert_eq!(output, Some(json!("ours"))),
             other => panic!("expected Advance, got {other:?}"),
@@ -371,7 +421,7 @@ mod tests {
         // in real streams; make sure we don't confuse them for end
         // signals or fresh responses.
         let (tx, mut rx) = broadcast::channel(32);
-        tx.send(msg("user_message", json!({}))).unwrap();
+        tx.send(opening()).unwrap();
         tx.send(msg("text_delta", json!({ "content": "par" })))
             .unwrap();
         tx.send(msg("text_delta", json!({ "content": "tial" })))
@@ -381,9 +431,9 @@ mod tests {
         tx.send(msg("tool_result", json!({ "tool": "x", "result": "ok" })))
             .unwrap();
         tx.send(message_complete("msg-a", "done")).unwrap();
-        tx.send(post_llm_call()).unwrap();
+        tx.send(turn_finished("completed", None)).unwrap();
 
-        let outcome = await_turn_completion(&mut rx, SID).await;
+        let outcome = await_turn_completion(&mut rx, SID, OURS).await;
         match outcome {
             StepOutcome::Advance { output } => assert_eq!(output, Some(json!("done"))),
             other => panic!("expected Advance, got {other:?}"),

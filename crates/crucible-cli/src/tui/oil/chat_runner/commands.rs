@@ -291,6 +291,10 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 let rate = (denom != 0).then(|| read as f64 / denom as f64);
                 msgs.push(ChatAppMsg::CacheHitRate(rate));
             }
+            // A turn has exactly one `message_complete`, so this and the
+            // `turn_finished` below both end the same turn. `StreamComplete`
+            // is idempotent, and history from a daemon older than
+            // `turn_finished` still ends its turns here.
             msgs.push(ChatAppMsg::StreamComplete);
             // After `StreamComplete`, never before: the completion seals the
             // trailing assistant bubble only while that bubble is the last
@@ -300,6 +304,11 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             }
             msgs
         }
+        // The one event that ends the whole turn, for every status. Not
+        // `StreamCancelled`: that message also asks the daemon to cancel. A
+        // turn that a cancel or a failure stopped sends no `message_complete`,
+        // and this is what ends it — a cancel from ANOTHER client included.
+        TurnPayload::TurnFinished { .. } => vec![ChatAppMsg::StreamComplete],
         TurnPayload::PrecognitionComplete {
             notes_count, notes, ..
         } => {
@@ -317,7 +326,6 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
         | TurnPayload::Ended { .. }
         | TurnPayload::InteractionRequested { .. }
         | TurnPayload::InteractionCompleted { .. }
-        | TurnPayload::InjectionPending { .. }
         | TurnPayload::ContextInjected { .. }
         | TurnPayload::PostLlmCall { .. } => vec![],
     }

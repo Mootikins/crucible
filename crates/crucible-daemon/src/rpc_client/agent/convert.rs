@@ -7,7 +7,7 @@
 use crucible_core::interaction::InteractionEvent;
 use crucible_core::protocol::session_events::{SessionEventPayload, ToolResultBody, TurnPayload};
 use crucible_core::traits::llm::TokenUsage;
-use crucible_core::turn::{StopReason, TurnEvent};
+use crucible_core::turn::{StopReason, TurnEvent, TurnStatus};
 use tokio::sync::mpsc;
 
 use crate::SessionEvent;
@@ -123,11 +123,9 @@ pub fn strip_chat_error_prefix(inner: &str) -> &str {
 ///
 /// Daemon-proxy path: the daemon runs the tool loop internally, so the
 /// client only observes events and never replies on an inbound channel.
-/// `message_complete` and `ended` both map to a terminal `Done` — whichever
-/// comes first finishes the turn.
-///
-/// An `ended` event whose `reason` starts with `"error: "` maps to
-/// `TurnEvent::Error(TurnError::Communication(...))` instead of `Done`.
+/// Only `turn_finished` ends the turn. `message_complete` seals one reply and
+/// gives the usage. A failed or timed-out turn maps to `TurnEvent::Error`;
+/// every other status maps to `Done`.
 pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEvent> {
     use crucible_core::turn::TurnError;
 
@@ -205,7 +203,6 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
             total_tokens,
             cache_read_tokens,
             cache_creation_tokens,
-            stop_reason,
             ..
         } => {
             let mut events = Vec::new();
@@ -218,22 +215,43 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
             ) {
                 events.push(TurnEvent::Usage(usage));
             }
-            // The daemon's own reason, when it sent one. This path used to
-            // fabricate `EndTurn`, so a proxied turn reported a natural
-            // completion for a truncation the daemon had already named.
-            events.push(TurnEvent::Done {
-                stop_reason: stop_reason.unwrap_or(StopReason::EndTurn),
-            });
+            // The stop reason arrives again on `turn_finished`, which is
+            // where the turn ends.
             events
         }
-        TurnPayload::Ended { reason } => match reason.strip_prefix("error: ") {
-            Some(inner) => vec![TurnEvent::Error(TurnError::Communication(
-                strip_chat_error_prefix(inner).to_string(),
-            ))],
-            None => vec![TurnEvent::Done {
-                stop_reason: StopReason::EndTurn,
-            }],
-        },
+        TurnPayload::TurnFinished {
+            status,
+            stop_reason,
+            error,
+        } => {
+            let error = || {
+                error
+                    .clone()
+                    .unwrap_or_else(|| format!("the turn ended: {status:?}"))
+            };
+            match status {
+                // The daemon's own reason, when it sent one. This path used
+                // to fabricate `EndTurn`, so a proxied turn reported a
+                // natural completion for a truncation the daemon had named.
+                TurnStatus::Completed => vec![TurnEvent::Done {
+                    stop_reason: stop_reason.unwrap_or(StopReason::EndTurn),
+                }],
+                TurnStatus::Cancelled => vec![TurnEvent::Done {
+                    stop_reason: StopReason::Cancelled,
+                }],
+                // A handler stopped the turn on purpose: an end, not an
+                // error of the connection.
+                TurnStatus::HandlerCancelled => vec![TurnEvent::Done {
+                    stop_reason: StopReason::Refusal,
+                }],
+                TurnStatus::Failed | TurnStatus::TimedOut => {
+                    vec![TurnEvent::Error(TurnError::Communication(error()))]
+                }
+            }
+        }
+        // `turn_finished` ends the turn. `ended` only tells why it stopped
+        // early, and the same turn sends `turn_finished` after it.
+        TurnPayload::Ended { .. } => Vec::new(),
         // `user_message` is the client's own input echoed back.
         TurnPayload::UserMessage { .. }
         // Segments are additive over `message_complete`'s full text; a
@@ -246,7 +264,6 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
         | TurnPayload::InteractionRequested { .. }
         | TurnPayload::InteractionCompleted { .. }
         // Context plumbing and telemetry: presentation, not turn content.
-        | TurnPayload::InjectionPending { .. }
         | TurnPayload::ContextInjected { .. }
         | TurnPayload::PrecognitionComplete { .. }
         | TurnPayload::PostLlmCall { .. } => Vec::new(),
@@ -453,40 +470,35 @@ mod tests {
     }
 
     #[test]
-    fn message_complete_yields_done_with_usage() {
+    fn message_complete_yields_usage_and_does_not_end_the_turn() {
         let out = session_event_to_turn_events(&event(
             "message_complete",
             json!({
                 "prompt_tokens": 200,
                 "completion_tokens": 80,
-                "total_tokens": 280
+                "total_tokens": 280,
+                "stop_reason": "end_turn"
             }),
         ));
         match out.as_slice() {
-            [TurnEvent::Usage(usage), TurnEvent::Done { stop_reason }] => {
+            [TurnEvent::Usage(usage)] => {
                 assert_eq!(usage.prompt_tokens, 200);
                 assert_eq!(usage.completion_tokens, 80);
                 assert_eq!(usage.total_tokens, 280);
                 assert!(usage.cache_read_tokens.is_none());
                 assert!(usage.cache_creation_tokens.is_none());
-                assert_eq!(*stop_reason, StopReason::EndTurn);
             }
-            other => panic!("expected Usage + Done, got {other:?}"),
+            other => panic!("expected only Usage, got {other:?}"),
         }
     }
 
     #[test]
-    fn message_complete_without_token_fields_yields_only_done() {
+    fn message_complete_without_token_fields_yields_nothing() {
         let out = session_event_to_turn_events(&event(
             "message_complete",
             json!({ "message_id": "m-1" }),
         ));
-        match out.as_slice() {
-            [TurnEvent::Done { stop_reason }] => {
-                assert_eq!(*stop_reason, StopReason::EndTurn);
-            }
-            other => panic!("expected single Done, got {other:?}"),
-        }
+        assert!(out.is_empty(), "got {out:?}");
     }
 
     #[test]
@@ -502,11 +514,11 @@ mod tests {
             }),
         ));
         match out.as_slice() {
-            [TurnEvent::Usage(usage), TurnEvent::Done { .. }] => {
+            [TurnEvent::Usage(usage)] => {
                 assert_eq!(usage.cache_read_tokens, Some(800));
                 assert_eq!(usage.cache_creation_tokens, Some(150));
             }
-            other => panic!("expected Usage + Done, got {other:?}"),
+            other => panic!("expected Usage, got {other:?}"),
         }
     }
 
@@ -518,67 +530,83 @@ mod tests {
             json!({ "total_tokens": 500 }),
         ));
         match out.as_slice() {
-            [TurnEvent::Usage(usage), TurnEvent::Done { .. }] => {
+            [TurnEvent::Usage(usage)] => {
                 assert_eq!(usage.total_tokens, 500);
                 assert_eq!(usage.prompt_tokens, 0);
                 assert_eq!(usage.completion_tokens, 0);
             }
-            other => panic!("expected Usage + Done, got {other:?}"),
+            other => panic!("expected Usage, got {other:?}"),
         }
     }
 
+    /// `ended` tells why a turn stopped early. The `turn_finished` that
+    /// follows it ends the turn, so `ended` itself yields nothing, also when
+    /// its text starts with "error: ".
     #[test]
-    fn ended_without_error_prefix_yields_done() {
-        let out = session_event_to_turn_events(&event("ended", json!({ "reason": "complete" })));
-        match out.as_slice() {
-            [TurnEvent::Done { stop_reason }] => {
-                assert_eq!(*stop_reason, StopReason::EndTurn);
-            }
-            other => panic!("expected single Done, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn ended_with_bare_error_prefix_surfaces_communication_error() {
-        let out = session_event_to_turn_events(&event(
-            "ended",
-            json!({ "reason": "error: connection refused" }),
-        ));
-        match out.as_slice() {
-            [TurnEvent::Error(TurnError::Communication(msg))] => {
-                assert_eq!(msg, "connection refused");
-            }
-            other => panic!("expected single Communication error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn ended_strips_chat_error_display_prefixes() {
-        // Each PREFIX listed in `session_event_to_turn_events` should be
-        // stripped from the inner error reason so the event surfaces a
-        // clean single message.
-        let cases = &[
-            ("error: Connection error: refused", "refused"),
-            ("error: Communication error: LLM timeout", "LLM timeout"),
-            ("error: Mode change error: bad mode", "bad mode"),
-            ("error: Command execution failed: exit 1", "exit 1"),
-            ("error: Invalid input: missing field", "missing field"),
-            ("error: Agent not available: down", "down"),
-            ("error: Internal error: panic", "panic"),
-            ("error: Invalid mode: debug", "debug"),
-            (
-                "error: Operation not supported: switch_model",
-                "switch_model",
-            ),
-        ];
-        for (reason, expected) in cases {
+    fn ended_yields_nothing() {
+        for reason in ["complete", "cancelled", "error: connection refused"] {
             let out = session_event_to_turn_events(&event("ended", json!({ "reason": reason })));
-            match out.as_slice() {
+            assert!(out.is_empty(), "reason {reason:?}: got {out:?}");
+        }
+    }
+
+    /// Each status of `turn_finished` has one ending.
+    #[test]
+    fn turn_finished_maps_each_status_to_its_ending() {
+        let finished = |status: &str, stop_reason: Option<&str>, error: Option<&str>| {
+            session_event_to_turn_events(&event(
+                "turn_finished",
+                json!({ "status": status, "stop_reason": stop_reason, "error": error }),
+            ))
+        };
+        let done = |out: Vec<TurnEvent>| match out.as_slice() {
+            [TurnEvent::Done { stop_reason }] => *stop_reason,
+            other => panic!("expected single Done, got {other:?}"),
+        };
+        assert_eq!(
+            done(finished("completed", Some("max_tokens"), None)),
+            StopReason::MaxTokens
+        );
+        assert_eq!(done(finished("completed", None, None)), StopReason::EndTurn);
+        assert_eq!(
+            done(finished("cancelled", None, None)),
+            StopReason::Cancelled
+        );
+        assert_eq!(
+            done(finished(
+                "handler_cancelled",
+                None,
+                Some("stopped by a hook")
+            )),
+            StopReason::Refusal
+        );
+        for status in ["failed", "timed_out"] {
+            match finished(status, None, Some("the provider is down")).as_slice() {
                 [TurnEvent::Error(TurnError::Communication(msg))] => {
-                    assert_eq!(msg, expected, "reason {reason:?}");
+                    assert_eq!(msg, "the provider is down", "status {status}");
                 }
-                other => panic!("reason {reason:?}: expected Communication error, got {other:?}"),
+                other => panic!("status {status}: expected an error, got {other:?}"),
             }
+        }
+    }
+
+    /// The display prefixes the browser strips from an `ended` reason.
+    #[test]
+    fn strip_chat_error_prefix_strips_each_display_prefix() {
+        let cases = &[
+            ("Connection error: refused", "refused"),
+            ("Communication error: LLM timeout", "LLM timeout"),
+            ("Mode change error: bad mode", "bad mode"),
+            ("Command execution failed: exit 1", "exit 1"),
+            ("Invalid input: missing field", "missing field"),
+            ("Agent not available: down", "down"),
+            ("Internal error: panic", "panic"),
+            ("Invalid mode: debug", "debug"),
+            ("Operation not supported: switch_model", "switch_model"),
+            ("no prefix here", "no prefix here"),
+        ];
+        for (inner, expected) in cases {
+            assert_eq!(strip_chat_error_prefix(inner), *expected, "{inner:?}");
         }
     }
 

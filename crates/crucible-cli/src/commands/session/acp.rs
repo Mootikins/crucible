@@ -1,6 +1,8 @@
 use crate::config::CliConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use crucible_core::config::BackendType;
+use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+use crucible_core::turn::TurnStatus;
 use crucible_daemon::DaemonClient;
 
 /// Whether `session create` should print only the session id.
@@ -477,41 +479,67 @@ pub(super) mod rpc {
             eprintln!("--- Message {} ---", message_id);
         }
 
+        // Nothing before our own turn. A `turn:complete` handler can start a
+        // turn of its own, and its events can already sit in this channel;
+        // without this the command would end on that turn's `turn_finished`.
+        let mut ours = false;
         loop {
-            match event_rx.recv().await {
-                Some(event) => {
-                    if event.session_id != session_id {
-                        continue;
-                    }
+            let Some(event) = event_rx.recv().await else {
+                bail!("Event channel closed before the turn finished");
+            };
+            if event.session_id != session_id {
+                continue;
+            }
+            if !ours {
+                ours = matches!(
+                    event.payload(),
+                    Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { message_id: id, .. }))
+                        if id == message_id
+                );
+                continue;
+            }
 
-                    if !print_event(&event, raw) {
-                        match event.event.as_str() {
-                            "ended" => {
-                                let reason = event
-                                    .data
-                                    .get("reason")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown");
-                                eprintln!("[ended] {}", reason);
-                            }
-                            other => {
-                                eprintln!("[{}] {:?}", other, event.data);
-                            }
-                        }
-                    }
-
-                    if event.event == "message_complete" || event.event == "ended" {
-                        break;
-                    }
+            // `turn_finished` is the one event that ends the whole turn.
+            if let Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
+                status, error, ..
+            })) = event.payload()
+            {
+                if raw {
+                    print_event(&event, raw);
                 }
-                None => {
-                    eprintln!("Event channel closed");
-                    break;
+                return finished_turn_result(status, error);
+            }
+
+            if !print_event(&event, raw) {
+                match event.event.as_str() {
+                    "ended" => {
+                        let reason = event
+                            .data
+                            .get("reason")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        eprintln!("[ended] {}", reason);
+                    }
+                    other => {
+                        eprintln!("[{}] {:?}", other, event.data);
+                    }
                 }
             }
         }
+    }
 
-        Ok(())
+    /// The exit result of `cru session send` for each way a turn ends.
+    ///
+    /// A user cancel exits 0, as before: the user asked for it. A handler
+    /// cancel exits non-zero, the same as a failure.
+    pub(super) fn finished_turn_result(status: TurnStatus, error: Option<String>) -> Result<()> {
+        let detail = error.unwrap_or_default();
+        match status {
+            TurnStatus::Completed | TurnStatus::Cancelled => Ok(()),
+            TurnStatus::HandlerCancelled => bail!("A handler cancelled the turn: {detail}"),
+            TurnStatus::TimedOut => bail!("The turn timed out: {detail}"),
+            TurnStatus::Failed => bail!("The turn failed: {detail}"),
+        }
     }
 
     /// The agent `cru session configure` sends. The provider is explicit

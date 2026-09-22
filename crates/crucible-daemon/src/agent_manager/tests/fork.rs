@@ -5,7 +5,7 @@ use crucible_lua::register_sessions_module_with_api;
 async fn lua_and_rpc_forks_inherit_scope_config_and_run_with_the_selected_history() {
     let workspace = TempDir::new().unwrap();
     let sm = temp_session_manager_with_kilns(&[("notes", workspace.path())]);
-    let am = Arc::new(create_test_agent_manager(sm.clone()));
+    let am = create_test_agent_manager(sm.clone());
     let mut parent = sm
         .create_session(
             SessionType::Chat,

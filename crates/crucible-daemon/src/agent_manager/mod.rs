@@ -136,14 +136,9 @@ struct RequestState {
     _work: Option<crate::activity::WorkGuard>,
 }
 
-/// Terminal status of a `send_message` turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnStatus {
-    Completed,
-    Cancelled,
-    TimedOut,
-    Failed,
-}
+/// Terminal status of a `send_message` turn. Core owns the type, because the
+/// `turn_finished` event carries it to every client.
+pub use crucible_core::turn::TurnStatus;
 
 /// Terminal outcome of a turn, delivered through the completion channel of
 /// [`AgentManager::send_message_notified`]. This is the reliable completion
@@ -158,12 +153,15 @@ pub struct TurnOutcome {
 }
 
 /// Internal result of `execute_agent_stream`: distinguishes a turn that ran
-/// to a normal end from one that bailed on an error path. Every early-return
-/// site maps to `Failed` with the same reason string it emitted as an
-/// `ended` event.
+/// to a normal end from one that a handler stopped and from one that bailed
+/// on an error path. Every early-return site carries the reason text.
 #[derive(Debug, Clone)]
 pub(crate) enum StreamOutcome {
-    Completed,
+    /// The turn ran to its end. The value is the stop reason of the last
+    /// provider call, when the provider sent one.
+    Completed(Option<crucible_core::turn::StopReason>),
+    /// A `pre_llm_call` or `transform_context` handler cancelled the turn.
+    HandlerCancelled(String),
     Failed(String),
 }
 

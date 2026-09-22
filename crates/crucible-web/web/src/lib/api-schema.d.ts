@@ -2196,7 +2196,7 @@ export interface components {
          * @description The browser's view of a session event, streamed by `GET
          *     /api/chat/events/{session_id}`.
          *
-         *     `ToSchema` publishes the 21 tag values to the OpenAPI document, so the
+         *     `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
          *     browser reads the union from the enum instead of repeating it.
          */
         ChatEvent: {
@@ -2297,6 +2297,12 @@ export interface components {
             total_tokens?: number | null;
             /** @enum {string} */
             type: "message_complete";
+        } | {
+            error?: string | null;
+            status: string;
+            stop_reason?: string | null;
+            /** @enum {string} */
+            type: "turn_finished";
         } | {
             code: string;
             message: string;

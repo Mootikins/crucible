@@ -1,11 +1,16 @@
 use super::super::*;
 use crucible_core::config::components::permissions::PermissionMode;
+use crucible_core::turn::{StopReason, TurnOrigin};
 
-/// Map the stream driver's outcome to the completion-channel status pair.
-fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<String>) {
+/// Map the stream driver's outcome to the status, the last stop reason and
+/// the error text of the turn.
+fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<StopReason>, Option<String>) {
     match outcome {
-        StreamOutcome::Completed => (TurnStatus::Completed, None),
-        StreamOutcome::Failed(reason) => (TurnStatus::Failed, Some(reason)),
+        StreamOutcome::Completed(stop_reason) => (TurnStatus::Completed, stop_reason, None),
+        StreamOutcome::HandlerCancelled(reason) => {
+            (TurnStatus::HandlerCancelled, None, Some(reason))
+        }
+        StreamOutcome::Failed(reason) => (TurnStatus::Failed, None, Some(reason)),
     }
 }
 
@@ -15,19 +20,22 @@ fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<String>) {
 /// keeps each call readable, and it lets a new field reach the turn without a
 /// new argument on every caller.
 pub(crate) struct TurnRequest<'a> {
+    /// Who asked for the turn. A plugin turn has no caller to notify.
+    pub origin: TurnOrigin,
     /// The review comments that the message attaches, as the daemon rendered
     /// them. `server::diff_context::review_context` builds this text.
     pub review_context: Option<String>,
     pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
     pub is_interactive: bool,
     pub permission_override: Option<PermissionMode>,
-    /// Resolved when the turn reaches a terminal state.
+    /// Resolved when the turn reaches a terminal state. `None` when nobody
+    /// awaits the turn.
     pub completion_tx: Option<oneshot::Sender<TurnOutcome>>,
 }
 
 impl AgentManager {
     pub async fn send_message(
-        &self,
+        self: &Arc<Self>,
         session_id: &str,
         content: String,
         event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -38,6 +46,7 @@ impl AgentManager {
             session_id,
             content,
             TurnRequest {
+                origin: TurnOrigin::User,
                 review_context: None,
                 event_tx,
                 is_interactive,
@@ -51,7 +60,7 @@ impl AgentManager {
     /// Like [`send_message`], with the review comments that the message
     /// attaches.
     pub async fn send_message_with_context(
-        &self,
+        self: &Arc<Self>,
         session_id: &str,
         content: String,
         review_context: Option<String>,
@@ -63,6 +72,7 @@ impl AgentManager {
             session_id,
             content,
             TurnRequest {
+                origin: TurnOrigin::User,
                 review_context,
                 event_tx,
                 is_interactive,
@@ -78,7 +88,7 @@ impl AgentManager {
     /// out, failed). This is the only reliable way to await a turn: the event
     /// bus emits no terminal event on successful completion.
     pub async fn send_message_notified(
-        &self,
+        self: &Arc<Self>,
         session_id: &str,
         content: String,
         event_tx: &broadcast::Sender<SessionEventMessage>,
@@ -91,6 +101,7 @@ impl AgentManager {
                 session_id,
                 content,
                 TurnRequest {
+                    origin: TurnOrigin::User,
                     review_context: None,
                     event_tx,
                     is_interactive,
@@ -102,13 +113,61 @@ impl AgentManager {
         Ok((message_id, completion_rx))
     }
 
+    /// Start the turn a `turn:complete` handler asked for.
+    ///
+    /// Boxed, because it re-enters `send_message_inner`, which spawns the
+    /// task that calls this: an unboxed future would hold its own type.
+    ///
+    /// The turn takes the request slot like any other. A client that sends
+    /// its own message in the same instant can win that slot, and the
+    /// handler's turn is then lost — said out loud here rather than hidden,
+    /// because one slot per session is what stops two turns at once.
+    fn start_follow_up_turn(
+        self: &Arc<Self>,
+        session_id: String,
+        content: String,
+        event_tx: broadcast::Sender<SessionEventMessage>,
+        is_interactive: bool,
+        permission_override: Option<PermissionMode>,
+    ) -> futures::future::BoxFuture<'static, ()> {
+        let manager = self.clone();
+        Box::pin(async move {
+            info!(
+                session_id = %session_id,
+                "Starting the turn a turn:complete handler asked for"
+            );
+            if let Err(e) = manager
+                .send_message_inner(
+                    &session_id,
+                    content,
+                    TurnRequest {
+                        origin: TurnOrigin::Plugin,
+                        review_context: None,
+                        event_tx: &event_tx,
+                        is_interactive,
+                        permission_override,
+                        completion_tx: None,
+                    },
+                )
+                .await
+            {
+                warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "The turn a turn:complete handler asked for did not start"
+                );
+            }
+        })
+    }
+
     async fn send_message_inner(
-        &self,
+        self: &Arc<Self>,
         session_id: &str,
         content: String,
         request: TurnRequest<'_>,
     ) -> Result<String, AgentError> {
         let TurnRequest {
+            origin,
             review_context,
             event_tx,
             is_interactive,
@@ -239,10 +298,16 @@ impl AgentManager {
             }
         }
 
-        if !emit_event(
-            event_tx,
-            SessionEventMessage::user_message(session_id, &message_id, &original_content),
-        ) {
+        // One exhaustive table, so a new origin fails to compile here.
+        let opening_event = match origin {
+            TurnOrigin::User => {
+                SessionEventMessage::user_message(session_id, &message_id, &original_content)
+            }
+            TurnOrigin::Plugin => {
+                SessionEventMessage::plugin_message(session_id, &message_id, &original_content)
+            }
+        };
+        if !emit_event(event_tx, opening_event) {
             warn!(session_id = %session_id, "No subscribers for user_message event");
         }
 
@@ -521,6 +586,8 @@ impl AgentManager {
             context_attach: self.context_attach(),
         };
 
+        let manager = self.clone();
+        let slot = self.slot(session_id);
         let task = tokio::spawn(async move {
             let mut accumulated_response = String::new();
             let stream_config = stream_ctx.agent_stream_config.clone();
@@ -531,19 +598,22 @@ impl AgentManager {
                 stream_ctx.clone(),
                 stream_config,
                 &mut accumulated_response,
-                0,
             );
 
-            let (status, error) = tokio::select! {
+            let (status, stop_reason, error) = tokio::select! {
                 _ = cancel_rx => {
                     debug!(session_id = %session_id_owned, "Request cancelled");
+                    // The user stopped the work, so the turn a turn:complete
+                    // handler asked for stops with it. Dropping the stored
+                    // content is the whole clear.
+                    drop(slot.take_follow_up());
                     if !emit_event(
                         &event_tx_clone,
                         SessionEventMessage::ended(&session_id_owned, "cancelled"),
                     ) {
                         warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
                     }
-                    (TurnStatus::Cancelled, None)
+                    (TurnStatus::Cancelled, None, None)
                 }
                 outcome = stream_future => outcome_to_status(outcome),
             };
@@ -559,11 +629,38 @@ impl AgentManager {
                 let _ = tx.send(TurnOutcome {
                     status,
                     final_text: std::mem::take(&mut accumulated_response),
-                    error,
+                    error: error.clone(),
                 });
             }
 
             request_state.remove(&session_id_owned);
+
+            // The one event that ends the whole turn for the clients. It
+            // comes after the slot is free, so a client that sends its next
+            // message when it sees this event does not get
+            // `ConcurrentRequest`.
+            if !emit_event(
+                &event_tx_clone,
+                SessionEventMessage::turn_finished(&session_id_owned, status, stop_reason, error),
+            ) {
+                warn!(session_id = %session_id_owned, "No subscribers for turn_finished event");
+            }
+
+            // A turn ENDS. A `turn:complete` handler that wants more work gets
+            // a NEW turn, here, with the slot free. It is a normal turn, so it
+            // takes admission, Precognition, persistence and undo like any
+            // other; only its origin says who asked for it.
+            if let Some(follow_up) = slot.take_follow_up() {
+                manager
+                    .start_follow_up_turn(
+                        session_id_owned,
+                        follow_up,
+                        event_tx_clone,
+                        is_interactive,
+                        permission_override,
+                    )
+                    .await;
+            }
         });
 
         if let Some(mut state) = self.request_state.get_mut(session_id) {

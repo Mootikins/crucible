@@ -140,9 +140,9 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
   };
 
   // One turn, one closing rule: every way a turn ends — completion, error, a
-  // cancel from THIS client or a foreign one (the daemon records `ended` and
-  // every subscriber receives it) — sweeps the same state. No dangling tool
-  // left "running", no bubble left "Thinking…", no stale streaming id.
+  // cancel from THIS client or a foreign one — reaches every subscriber as
+  // `turn_finished`, and that sweeps the same state. No dangling tool left
+  // "running", no bubble left "Thinking…", no stale streaming id.
   const closeTurn = () => {
     finalizeDanglingTools();
     finalizeStreamingThinking();
@@ -409,6 +409,15 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
       }
 
+      case 'turn_finished': {
+        // The one event that ends the whole turn, for every status. A turn
+        // that a cancel or a failure stopped sends no `message_complete`,
+        // and this is what closes it — a cancel from ANOTHER client
+        // included.
+        closeTurn();
+        break;
+      }
+
       case 'error': {
         deps.setError(`${event.message} (${event.code})`);
         const messageId = deps.currentStreamingMessageId();
@@ -546,16 +555,9 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'session_event': {
-        // The turn ENDED: the daemon records `ended` with its reason and
-        // broadcasts it to every subscriber — the canceller's client, other
-        // panes on the session, and future replays alike. Error-prefixed
-        // reasons arrive as typed `error` events instead, so anything here
-        // simply means "the turn is over": sweep the same state a completion
-        // would. This is what makes a cancel issued from ANOTHER client stop
-        // this pane's spinner — the old client-side patch could only ever
-        // close the turn that THIS client cancelled.
+        // `ended` only tells why a turn stopped early. The `turn_finished`
+        // the daemon sends after it closes the turn for every subscriber.
         if (event.event === 'ended') {
-          closeTurn();
           break;
         }
 

@@ -120,7 +120,7 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
         )
         .await
         .unwrap();
-    let am = Arc::new(create_test_agent_manager(sm.clone()));
+    let am = create_test_agent_manager(sm.clone());
     am.configure_agent(&session.id, test_agent()).await.unwrap();
     let messages = capture(&am, &session.id);
     let projects = Arc::new(crate::project_manager::ProjectManager::new(

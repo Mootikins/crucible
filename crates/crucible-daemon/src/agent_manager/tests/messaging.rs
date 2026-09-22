@@ -1321,7 +1321,7 @@ async fn the_agents_acp_session_id_is_persisted_for_resume() {
         .await
         .unwrap();
 
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
         .configure_agent(&session.id, test_agent())
         .await

@@ -147,7 +147,7 @@ async fn a_model_switch_during_an_agent_build_is_not_lost() {
         .await
         .unwrap();
 
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
         .configure_agent(&session.id, test_agent())
         .await

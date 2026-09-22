@@ -7,8 +7,8 @@
 //!
 //! Tool-loop control is event-driven: the agent emits `ToolCall`, the
 //! runtime replies with a `ToolResult` on an inbound channel. The
-//! runtime uses the same inbound channel to inject handler output
-//! (`HandlerInjection`). There is one channel topology, not two.
+//! runtime uses the same inbound channel to attach retrieved context
+//! (`ContextAttach`). There is one channel topology, not two.
 //!
 //! Conversation state lives in [`tree::ConversationTree`]: scheduler-
 //! owned, append-only, fanout/collect preserved as first-class ops so
@@ -28,7 +28,7 @@ use crate::traits::context_ops::ContextMessage;
 use crate::traits::llm::TokenUsage;
 
 /// Event flowing from an `Agent` to the runtime, or (for a subset of
-/// variants — `ToolResult`, `HandlerInjection`) from the
+/// variants — `ToolResult`, `ContextAttach`) from the
 /// runtime back to the agent on the inbound channel.
 ///
 /// Terminal variants: `Done`, `Error`.
@@ -106,20 +106,12 @@ pub enum TurnEvent {
     /// native `Agent` impl) right before it waits for `ToolResult`s.
     ToolBatchEnd,
 
-    /// Inbound only. The runtime's post-turn handler returned an
-    /// injection; the agent should treat `content` as the next turn's
-    /// user message.
-    ///
-    /// The content is the WHOLE next user message, so there is nothing to
-    /// place it against and the variant carries no placement field.
-    HandlerInjection { content: String },
-
     /// Inbound only. Knowledge retrieved mid-turn (a Lua handler called
     /// `cru.context.attach`) that the agent should have available for its
     /// next LLM call.
     ///
-    /// Distinct from `HandlerInjection`, which speaks *as the user*. This is
-    /// reference material, so agents append it as a system message.
+    /// Reference material, not a user turn, so agents append it as a system
+    /// message.
     ///
     /// **Append at the end; never prepend.** Inserting ahead of the existing
     /// messages invalidates the whole prompt-cache prefix, and the cost then
@@ -229,6 +221,53 @@ impl StopReason {
             Self::Refusal => Some("the model declined to answer"),
             Self::EndTurn | Self::Cancelled | Self::Empty => None,
         }
+    }
+}
+
+/// How a whole turn ended.
+///
+/// The daemon sends it in the `turn_finished` event and gives it to the
+/// in-process caller of `send_message_notified`. [`StopReason`] tells why ONE
+/// provider call stopped. This tells what happened to the turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnStatus {
+    /// The turn ran to its end.
+    Completed,
+    /// A user stopped the turn: a `session.cancel` from any client.
+    Cancelled,
+    /// Plugin or system code stopped the turn, for example a `pre_llm_call`
+    /// or `transform_context` handler that returned a cancel. The `error`
+    /// field of `turn_finished` holds the reason.
+    HandlerCancelled,
+    /// The turn did not end in the time that its caller allowed.
+    TimedOut,
+    /// The turn stopped on an error. The `error` field holds the text.
+    Failed,
+}
+
+/// Who asked for a turn.
+///
+/// A turn ENDS, and a `turn:complete` handler that wants more work asks for a
+/// NEW turn. That turn is a normal turn: it takes admission, Precognition,
+/// persistence and undo like any other. Only this field says who asked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnOrigin {
+    /// A person sent the message through a client.
+    #[default]
+    User,
+    /// A `turn:complete` handler asked for the turn.
+    Plugin,
+}
+
+impl TurnOrigin {
+    /// Is this the default origin?
+    ///
+    /// The `user_message` event omits the field then, so the wire form and
+    /// the stored line of a person's own turn do not change.
+    pub fn is_user(&self) -> bool {
+        matches!(self, Self::User)
     }
 }
 
@@ -348,12 +387,9 @@ pub struct TurnContext {
     /// Empty for legacy callers that rely on agent-side state.
     pub messages: Vec<ContextMessage>,
     /// Inbound event channel. Runtime sends `ToolResult` and
-    /// `HandlerInjection`. May be `None` for
-    /// fire-and-forget turns that need no continuation.
+    /// `ContextAttach`. May be `None` for fire-and-forget turns that need
+    /// no tool loop.
     pub inbound: Option<mpsc::Receiver<TurnEvent>>,
-    /// Whether this turn is a continuation (reactor handler injection
-    /// follow-up) rather than a fresh user message.
-    pub is_continuation: bool,
 }
 
 impl TurnContext {
@@ -364,19 +400,12 @@ impl TurnContext {
             content: content.into(),
             messages: Vec::new(),
             inbound: None,
-            is_continuation: false,
         }
     }
 
     /// Attach an inbound channel (for agents that need tool results).
     pub fn with_inbound(mut self, rx: mpsc::Receiver<TurnEvent>) -> Self {
         self.inbound = Some(rx);
-        self
-    }
-
-    /// Mark this turn as a continuation.
-    pub fn continuation(mut self) -> Self {
-        self.is_continuation = true;
         self
     }
 
@@ -503,9 +532,8 @@ mod tests {
 
     #[test]
     fn turn_context_builder() {
-        let ctx = TurnContext::new("hello").continuation();
+        let ctx = TurnContext::new("hello");
         assert_eq!(ctx.content, "hello");
-        assert!(ctx.is_continuation);
         assert!(ctx.inbound.is_none());
     }
 

@@ -1237,14 +1237,14 @@ impl GenaiAgentHandle {
             let mut chat_stream = self.stream_chat_from_messages(messages.clone());
 
             // Knowledge attached by Lua handlers mid-turn. Declared outside
-            // `'turn: loop` because both `continue 'turn` paths below restart
-            // the iteration — a per-iteration binding silently dropped whatever
-            // had been attached, and the registry has already charged its
-            // budget and burned its dedup key, so it can never be re-supplied.
+            // the loop because an iteration restart would otherwise drop
+            // whatever had been attached, and the registry has already charged
+            // its budget and burned its dedup key, so it can never be
+            // re-supplied.
             let mut attached: Vec<String> = Vec::new();
 
             // Whether this turn put anything in front of the user. Declared
-            // outside `'turn: loop` for the same reason as `attached`: a later
+            // outside the loop for the same reason as `attached`: a later
             // iteration that yields nothing still belongs to a turn that
             // already showed text or ran a tool, and that turn is not empty.
             //
@@ -1256,7 +1256,7 @@ impl GenaiAgentHandle {
             // (`acp_handle/translate.rs::turn_stop_reason`).
             let mut produced_content = false;
 
-            'turn: loop {
+            loop {
                 // Collect ToolCall events emitted during this LLM iteration
                 // so the outer loop can dispatch them when the stream ends.
                 let mut pending_calls: Vec<ChatToolCall> = Vec::new();
@@ -1356,15 +1356,6 @@ impl GenaiAgentHandle {
                                 call_id: Some(id.clone()),
                                 terminate: false,
                             });
-                        }
-                        TurnEvent::HandlerInjection { content } => {
-                            drop(chat_stream);
-                            for attachment in attached.drain(..) {
-                                messages.push(ChatMessage::system(&attachment));
-                            }
-                            messages.push(ChatMessage::user(&content));
-                            chat_stream = self.stream_chat_from_messages(messages.clone());
-                            continue 'turn;
                         }
                         TurnEvent::ContextAttach { content } => {
                             // Retrieved reference material, not a user turn —

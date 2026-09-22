@@ -53,7 +53,7 @@ async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
     let session_manager = temp_session_manager();
     let (event_tx, mut event_rx) = broadcast::channel(256);
 
-    let agent_manager = AgentManager::new(AgentManagerParams {
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
         background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
@@ -67,7 +67,7 @@ async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
         plugin_loader: None,
         card_roots: Default::default(),
         review_snapshot_root: crucible_daemon::test_support::scratch_snapshot_root(),
-    });
+    }));
 
     let session = session_manager
         .create_session(

@@ -1,12 +1,12 @@
 use crucible_core::protocol::session_events::turn::ToolResultBody;
-use crucible_core::turn::StopReason;
+use crucible_core::turn::{StopReason, TurnStatus};
 use crucible_daemon::SessionEvent;
 use serde::{Deserialize, Serialize};
 
 /// The browser's view of a session event, streamed by `GET
 /// /api/chat/events/{session_id}`.
 ///
-/// `ToSchema` publishes the 21 tag values to the OpenAPI document, so the
+/// `ToSchema` publishes the 22 tag values to the OpenAPI document, so the
 /// browser reads the union from the enum instead of repeating it.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -111,6 +111,22 @@ pub enum ChatEvent {
         stop_notice: Option<String>,
     },
 
+    /// The whole turn is over. The browser ends the turn on this event, not
+    /// on `message_complete` and not on `ended`.
+    ///
+    /// `status` and `stop_reason` are strings in the document for the same
+    /// reason as `stop_reason` above. The values are `TurnStatus` and
+    /// `StopReason`, serialised snake_case.
+    TurnFinished {
+        #[schema(value_type = String)]
+        status: TurnStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[schema(value_type = Option<String>)]
+        stop_reason: Option<StopReason>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+
     Error {
         code: String,
         message: String,
@@ -193,6 +209,7 @@ impl ChatEvent {
             ChatEvent::Thinking { .. } => "thinking",
             ChatEvent::SegmentComplete { .. } => "segment_complete",
             ChatEvent::MessageComplete { .. } => "message_complete",
+            ChatEvent::TurnFinished { .. } => "turn_finished",
             ChatEvent::Error { .. } => "error",
             ChatEvent::InteractionRequested { .. } => "interaction_requested",
             ChatEvent::SubagentSpawned { .. } => "subagent_spawned",
@@ -371,6 +388,16 @@ impl ChatEvent {
                     None => passthrough(),
                 },
 
+                TurnPayload::TurnFinished {
+                    status,
+                    stop_reason,
+                    error,
+                } => ChatEvent::TurnFinished {
+                    status,
+                    stop_reason,
+                    error,
+                },
+
                 TurnPayload::InteractionRequested { ref request_id, .. } => {
                     ChatEvent::InteractionRequested {
                         id: request_id.clone(),
@@ -399,7 +426,6 @@ impl ChatEvent {
                 | TurnPayload::ToolCallArgsUpdate { .. }
                 | TurnPayload::ToolCallDiffUpdate { .. }
                 | TurnPayload::InteractionCompleted { .. }
-                | TurnPayload::InjectionPending { .. }
                 | TurnPayload::ContextInjected { .. }
                 | TurnPayload::PostLlmCall { .. } => passthrough(),
             },
@@ -1022,6 +1048,28 @@ mod tests {
             ChatEvent::SessionEvent { event, .. } => assert_eq!(event, "ended"),
             other => panic!("expected passthrough, got {other:?}"),
         }
+    }
+
+    /// `turn_finished` reaches the browser as its own frame with the daemon's
+    /// snake_case values, not as a passthrough.
+    #[test]
+    fn turn_finished_projects_to_its_own_frame() {
+        let event = SessionEventMessage::turn_finished(
+            "s1",
+            TurnStatus::HandlerCancelled,
+            Some(StopReason::EndTurn),
+            Some("cancelled by pre_llm_call handler".into()),
+        );
+        let json = serde_json::to_value(ChatEvent::from_daemon_event(&event)).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "type": "turn_finished",
+                "status": "handler_cancelled",
+                "stop_reason": "end_turn",
+                "error": "cancelled by pre_llm_call handler",
+            })
+        );
     }
 
     // ── The stop-reason notice: one wording, served from Rust ────────

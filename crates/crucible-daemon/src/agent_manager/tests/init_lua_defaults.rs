@@ -56,7 +56,9 @@ async fn session_with_lua(
         .await
         .expect("session");
     let agent_manager = Arc::new(
-        create_test_agent_manager(session_manager.clone()).with_modes(Some(loader.mode_registry())),
+        Arc::into_inner(create_test_agent_manager(session_manager.clone()))
+            .expect("the fixture hands out the only reference")
+            .with_modes(Some(loader.mode_registry())),
     );
     agent_manager.set_daemon_permissions(loader.permission_registry());
     agent_manager.set_plugin_handlers(loader.plugin_handlers(), loader.plugin_lua());
@@ -564,7 +566,7 @@ async fn selecting_the_former_normal_id_stores_the_canonical_one() {
         )
         .await
         .unwrap();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
         .configure_agent(&session.id, test_agent())
         .await

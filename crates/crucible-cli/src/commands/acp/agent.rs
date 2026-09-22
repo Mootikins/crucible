@@ -18,11 +18,11 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
-    CloseSessionRequest, CloseSessionResponse, Error, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
-    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionRequest,
-    Result as AcpResult, SessionCapabilities, SessionCloseCapabilities, SessionId,
-    SessionNotification, StopReason,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk, Error,
+    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
+    NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionRequest, Result as AcpResult, SessionCapabilities, SessionCloseCapabilities,
+    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use agent_client_protocol::{
     on_receive_notification, on_receive_request, Agent, Client, ConnectTo, ConnectionTo, Responder,
@@ -35,8 +35,8 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info, warn};
 
 use super::translate::{
-    classify_event, interaction_tool_call, outcome_to_interaction_response, permission_options,
-    replay_step, TurnStep,
+    classify_event, interaction_tool_call, opens_turn, outcome_to_interaction_response,
+    permission_options, replay_step, TurnEnd, TurnStep,
 };
 
 /// Shared event stream for one ACP session's daemon connection.
@@ -239,15 +239,22 @@ impl CrucibleAcpAgent {
 
     /// Pump daemon events into ACP `session/update` notifications until the turn
     /// ends, returning the stop reason to report on `session/prompt`.
+    #[allow(clippy::too_many_arguments)]
     async fn pump_turn(
         &self,
         acp_session_id: &SessionId,
         client: &Arc<DaemonClient>,
         daemon_session_id: &str,
+        message_id: &str,
         events: &EventStream,
         conn: &HostConnection,
     ) -> AcpResult<StopReason> {
         let mut rx = events.lock().await;
+        // Nothing before our own turn. A `turn:complete` handler can start a
+        // turn after we answered the previous prompt, and its events wait
+        // here; without this the next prompt would end on that turn's
+        // `turn_finished`.
+        let mut ours = false;
         loop {
             let Some(event) = rx.recv().await else {
                 // Daemon connection closed mid-turn: report a JSON-RPC error
@@ -257,6 +264,10 @@ impl CrucibleAcpAgent {
                 return Err(Error::internal_error());
             };
             if event.session_id != daemon_session_id {
+                continue;
+            }
+            if !ours {
+                ours = opens_turn(&event, message_id);
                 continue;
             }
             match classify_event(&event) {
@@ -281,7 +292,23 @@ impl CrucibleAcpAgent {
                     )
                     .await?;
                 }
-                TurnStep::Finished(reason) => return Ok(reason),
+                // `turn_finished` is the last event of the turn, so nothing of
+                // this turn stays in the queue for the next prompt.
+                TurnStep::Finished(TurnEnd::Stop(reason)) => return Ok(reason),
+                TurnStep::Finished(TurnEnd::Refused(reason)) => {
+                    let text = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                        ContentBlock::Text(TextContent::new(reason)),
+                    ));
+                    let notif = SessionNotification::new(acp_session_id.clone(), text);
+                    if let Err(e) = conn.send_notification(notif) {
+                        warn!(error = ?e, "failed to send the handler reason");
+                    }
+                    return Ok(StopReason::Refusal);
+                }
+                TurnStep::Finished(TurnEnd::Failed(message)) => {
+                    warn!(session = %daemon_session_id, error = %message, "the turn failed");
+                    return Err(Error::internal_error().data(serde_json::Value::String(message)));
+                }
                 TurnStep::Ignore => {}
             }
         }
@@ -428,7 +455,7 @@ impl CrucibleAcpAgent {
         }
 
         debug!(session = %daemon_session_id, "acp prompt: sending message");
-        client
+        let message_id = client
             .session_send_message(&daemon_session_id, &text, true)
             .await
             .map_err(|e| {
@@ -437,7 +464,14 @@ impl CrucibleAcpAgent {
             })?;
 
         let reason = self
-            .pump_turn(&acp_session_id, &client, &daemon_session_id, &events, conn)
+            .pump_turn(
+                &acp_session_id,
+                &client,
+                &daemon_session_id,
+                &message_id,
+                &events,
+                conn,
+            )
             .await?;
         Ok(PromptResponse::new(reason))
     }

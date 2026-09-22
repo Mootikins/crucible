@@ -797,8 +797,10 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         });
                                     }
                                 }
-                                "message_complete" | "response_complete" | "response_done"
-                                | "ended" => {
+                                // The one event that ends a whole turn.
+                                // `message_complete` seals one reply and
+                                // `ended` only says why a turn stopped early.
+                                "turn_finished" => {
                                     let _ = flush_text(&mut text_buf, &part_tx);
                                     break;
                                 }

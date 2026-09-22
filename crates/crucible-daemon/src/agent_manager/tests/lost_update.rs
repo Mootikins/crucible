@@ -18,7 +18,7 @@ struct Fixture {
     _tmp: TempDir,
     storage: Arc<GatedStorage>,
     session_manager: Arc<SessionManager>,
-    agents: AgentManager,
+    agents: Arc<AgentManager>,
     id: String,
 }
 

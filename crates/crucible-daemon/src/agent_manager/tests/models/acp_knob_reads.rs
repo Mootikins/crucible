@@ -163,7 +163,7 @@ fn acp_factory() -> AgentFactoryOverride {
 /// yet: nothing sent a message.
 async fn acp_session() -> (Arc<AgentManager>, Arc<SessionManager>, String) {
     let session_manager = temp_session_manager();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
 
     let agent = SessionAgent {
         mode: None,

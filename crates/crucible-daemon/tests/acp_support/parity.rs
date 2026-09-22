@@ -162,7 +162,7 @@ impl ShapeProjector {
             // being silently dropped from every parity assertion — the same
             // intent as `_terminal_variant_check` in
             // `crucible-daemon/src/rpc_client/agent/native_agent.rs:112-128`.
-            TurnEvent::HandlerInjection { .. } | TurnEvent::ContextAttach { .. } => return None,
+            TurnEvent::ContextAttach { .. } => return None,
         })
     }
 }
@@ -550,11 +550,6 @@ mod tests {
         assert!(p
             .project(&TurnEvent::ContextAttach {
                 content: "note".into()
-            })
-            .is_none());
-        assert!(p
-            .project(&TurnEvent::HandlerInjection {
-                content: "go on".into(),
             })
             .is_none());
     }

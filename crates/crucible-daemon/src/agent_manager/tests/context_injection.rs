@@ -14,7 +14,7 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
         )
         .await
         .unwrap();
-    let am = Arc::new(create_test_agent_manager(sm.clone()));
+    let am = create_test_agent_manager(sm.clone());
     am.configure_agent(&session.id, test_agent()).await.unwrap();
     let messages = Arc::new(StdMutex::new(None));
     let handle = Arc::new(Mutex::new(Box::new(PromptCapturingAgent {

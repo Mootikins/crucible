@@ -161,11 +161,11 @@ one:
 ```lua
 cru.on_session_start(function(session)
   if not enabled_for(session) then return end
-  -- A loop that re-prompts the model when the work is not done. It must run
+  -- A loop that asks for another turn when the work is not done. It must run
   -- for the sessions the user turned it on for, and for no others.
   cru.on("turn:complete", { session = session.id, key = "ralph" }, function(ctx, event)
     if not done(event) then
-      return { inject = "Keep going." }
+      return { inject = { content = "Keep going." } }
     end
   end)
 end)
@@ -675,6 +675,12 @@ header of `init.luau` carries the numbers.
 `post_llm_call` fires after the response has finished streaming and carries
 `event.response_summary`, `event.model` and `event.duration_ms`.
 
+A `pre_llm_call` or `transform_context` handler that returns
+`{ cancel = true }` stops the turn. The clients then get a `turn_finished`
+event with the status `handler_cancelled`, which is not the status of a user
+cancel. `cru acp` answers the editor with `stopReason: refusal`, and
+`cru session send` exits non-zero.
+
 ### `transform_context`
 
 Fires every turn, over the assembled context, whether or not a kiln search ran.
@@ -683,10 +689,20 @@ The hook for "always add something", where `precognition_format` is the hook for
 
 ### `turn:complete`
 
-Fires once when the whole turn has finished — after the final
-`message_complete`, not once per LLM call. The place for end-of-turn side
-effects (writing a note, updating a statusline value), and the only event whose
-`inject` return starts another turn.
+Fires once per turn, after the turn's `message_complete` and before its
+`turn_finished`. The place for end-of-turn side effects (writing a note,
+updating a statusline value), and the only event whose `inject` return starts
+another turn.
+
+**A turn ends.** An `inject` does not continue the turn that just ended: it
+asks the daemon for a NEW turn, which starts once the finished turn releases
+its request slot. The new turn is a turn like any other — it takes admission,
+Precognition, persistence and undo — and its `user_message` event carries
+`origin: "plugin"` so a client and a replay can tell who asked for it. A user
+cancel clears a turn a handler asked for but that has not started yet.
+
+`cru acp` and `cru session send` answer when the turn THEY started is over.
+The turn the handler asked for then runs in the session.
 
 The event carries what the turn knows about itself:
 
@@ -696,7 +712,6 @@ The event carries what the turn knows about itself:
 | `event.response_tail` | The END of the reply, up to `chat.response_tail_chars` characters |
 | `event.response_truncated` | `true` when the tail left text out |
 | `event.stop_reason` | `end_turn`, `cancelled`, `empty`, `max_tokens` or `refusal`; `nil` when the turn ended without one |
-| `event.continuation_depth` | How many injects precede this turn. `0` is the user's own message |
 | `event.saw_tool_activity` | `true` when the turn ran a tool |
 
 The tail is the END of the reply because that is where a model says what it
@@ -710,14 +725,11 @@ model vendor's prose. Whether a turn finished the work is your handler's
 decision, from whatever source it trusts — a plan file, a tool result, a
 second model asked through `cru.session.complete`, or the text itself.
 
-`continuation_depth` is a fact and not a limit. The host counts and does not
-cap: a long plan needs as many turns as it has steps. A handler that wants a
-bound reads the number and stops injecting. What stops a runaway loop either
-way is the user's cancel, which reaches every depth.
-
-There is no `is_continuation` beside it. The payload carried one, and it was
-exactly `continuation_depth > 0`, so it answered less about the same thing. To
-ask whether an `inject` started this turn, write `event.continuation_depth > 0`.
+The payload carries no `continuation_depth` and no `is_continuation`. Both
+described a re-prompt INSIDE a turn, and there is no such thing any more: each
+`inject` makes a whole turn of its own. A handler that wants a bound counts its
+own turns, in its own state. What stops a runaway loop is the user's cancel,
+which ends the running turn and clears the turn the handler asked for.
 
 ## Handler Return Values
 
@@ -775,6 +787,9 @@ end)
 ### Inject
 
 Return `{ inject = { content = "..." } }` to start another turn. The content becomes the whole user message of that turn, so there is no placement option: an earlier API documented `position = "user_prefix" | "user_suffix"`, the scheduler never read it, and both values behaved identically. A handler that still sets it keeps working, and the key means nothing.
+
+The value must be a TABLE. `return { inject = "text" }` sets nothing and starts
+no turn.
 
 > **`turn:complete` only.** Inject is collected by the turn-completion
 > dispatcher; every other event (including `pre_tool_call`) ignores it

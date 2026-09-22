@@ -143,9 +143,9 @@ impl Group {
             | "tool_call_diff_update"
             | "tool_result"
             | "ended"
+            | "turn_finished"
             | "interaction_requested"
             | "interaction_completed"
-            | "injection_pending"
             | "context_injected"
             | "precognition_complete"
             | "post_llm_call" => Self::Turn,

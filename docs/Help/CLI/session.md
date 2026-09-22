@@ -64,8 +64,12 @@ parameter tweaks on a live session (model, context budget), use `cru set` instea
 Sends a message and streams the response. With `CRU_SESSION` set, a single positional
 is the message; without it, the first positional is the session ID. The message can
 also be piped on stdin. Response text streams to stdout; thinking, tool calls, and
-status markers go to stderr; the command exits when the turn completes. If the session
-is not in daemon memory it is loaded from storage automatically.
+status markers go to stderr. The command exits when the daemon sends `turn_finished`.
+If the session is not in daemon memory it is loaded from storage automatically.
+
+The exit status tells how the turn ended. A completed turn and a user cancel exit 0. A
+failed turn, a timed-out turn, a turn that a handler cancelled, and an event stream that
+closes before the turn ends exit non-zero, with the reason on stderr.
 
 | Option | Description |
 |--------|-------------|

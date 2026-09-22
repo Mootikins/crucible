@@ -111,6 +111,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **The daemon words the note.** `StopReason::user_notice` is the only wording. The TUI calls it. The browser cannot, so the web layer puts the answer on the frame as `stop_notice` and the page draws the string it received — the page holds no table of its own, because the two wordings drifted when it did.
 **Tests:** T1 `chat_runner/tests/translate.rs::{a_truncated_reply_draws_a_note_after_the_bubble, a_finished_reply_mints_no_notice}`; T2 `user_story_tests/stop_reason_tests`. Web: `crucible-web`'s `the_projection_carries_the_daemon_wording_for_every_reason` and `the_frontend_words_no_stop_reason_notice`, plus `ChatContext.test.tsx` "a reply the provider cut off".
 
+### US-207: A turn ends once, and a plugin can ask for the next one
+**As a user**, the console stops showing a turn as running the moment the daemon says the turn is over, whatever ended it; and a turn a plugin asked for reads as its own turn under the reply.
+**Acceptance:** `turn_finished` ends the turn for every status (`completed`, `cancelled`, `handler_cancelled`, `timed_out`, `failed`), so a cancel from ANOTHER client stops this console's spinner; the `user_message` of a turn a `turn:complete` handler asked for carries `origin: "plugin"` and renders like any other message, with its own reply under it.
+**Tests:** T2 `user_story_tests/turn_end_tests.rs::{every_turn_finished_status_ends_the_turn, the_turn_a_handler_asks_for_renders_as_its_own_turn}`. Daemon: `agent_manager/tests/turn_finished.rs`.
+
 ## 3. Tools, Subagents & MCP
 
 ### US-301: Tool call lifecycle display

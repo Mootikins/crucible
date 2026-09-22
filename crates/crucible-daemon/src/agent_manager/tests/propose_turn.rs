@@ -62,7 +62,11 @@ async fn a_propose_turn_leaves_the_disk_unchanged_and_lists_a_proposal() {
     let kiln = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     let sm = temp_session_manager_with_kilns(&[("knowledge", kiln.path())]);
-    let am = create_test_agent_manager(sm.clone()).with_modes(Some(propose_registry()));
+    let am = Arc::new(
+        Arc::into_inner(create_test_agent_manager(sm.clone()))
+            .expect("the fixture hands out the only reference")
+            .with_modes(Some(propose_registry())),
+    );
     let session = sm
         .create_session(
             SessionType::Chat,

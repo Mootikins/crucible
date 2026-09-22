@@ -2,7 +2,7 @@ use super::*;
 use crate::test_support::temp_session_manager;
 
 /// A mock agent whose stream never yields — blocks forever until cancelled.
-struct PendingMockAgent;
+pub(super) struct PendingMockAgent;
 
 #[async_trait::async_trait]
 impl crucible_core::turn::Agent for PendingMockAgent {
@@ -130,7 +130,7 @@ async fn cancel_during_streaming_emits_ended_event() {
 async fn send_during_cancel_wind_down_is_rejected() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
         .configure_agent(&session.id, test_agent())
         .await
@@ -251,7 +251,7 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager
         .configure_agent(&session.id, test_agent())
         .await
@@ -393,7 +393,7 @@ async fn scope_mutation_releases_request_slot_on_completion() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_first_uses_share_one_session_slot() {
     let session_manager = temp_session_manager();
-    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+    let agent_manager = create_test_agent_manager(session_manager);
     let session_id = "shared-vm-session";
 
     // A barrier, not a sleep: both threads are inside the call at the same

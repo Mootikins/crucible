@@ -397,6 +397,75 @@ fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
     }
 }
 
+/// `turn_finished` has one wire shape: snake_case status, and no key for an
+/// absent stop reason or error. It is persisted, so a replay knows where each
+/// turn ended.
+#[test]
+fn turn_finished_has_a_pinned_wire_shape_and_is_persisted() {
+    use crate::turn::{StopReason, TurnStatus};
+
+    let msg = SessionEventMessage::turn_finished(
+        "s1",
+        TurnStatus::Completed,
+        Some(StopReason::MaxTokens),
+        None,
+    );
+    assert_eq!(msg.event, "turn_finished");
+    assert_eq!(
+        msg.data,
+        serde_json::json!({"status": "completed", "stop_reason": "max_tokens"})
+    );
+    assert!(msg.payload().unwrap().is_persisted());
+
+    let cases = [
+        (TurnStatus::Completed, "completed"),
+        (TurnStatus::Cancelled, "cancelled"),
+        (TurnStatus::HandlerCancelled, "handler_cancelled"),
+        (TurnStatus::TimedOut, "timed_out"),
+        (TurnStatus::Failed, "failed"),
+    ];
+    for (status, wire) in cases {
+        let msg = SessionEventMessage::turn_finished("s1", status, None, Some("why".into()));
+        assert_eq!(
+            msg.data,
+            serde_json::json!({"status": wire, "error": "why"})
+        );
+    }
+}
+
+/// An event that does not say how the turn ended is malformed, not a
+/// completed turn: a default status would report a failure as a success.
+#[test]
+fn a_turn_finished_without_a_status_is_malformed() {
+    let err = SessionEventPayload::from_wire("turn_finished", &serde_json::json!({}))
+        .expect_err("a missing status must not decode");
+    assert!(matches!(err, EventDecodeError::MalformedPayload { .. }));
+}
+
+/// A person's own turn keeps the wire shape it always had, and only a turn a
+/// `turn:complete` handler asked for names its origin. The line is persisted,
+/// so a replay says who asked for each turn.
+#[test]
+fn only_a_plugin_turn_names_its_origin_on_the_wire() {
+    let user = SessionEventMessage::user_message("s1", "m-1", "hello");
+    assert_eq!(
+        user.data,
+        serde_json::json!({"message_id": "m-1", "content": "hello"})
+    );
+
+    let plugin = SessionEventMessage::plugin_message("s1", "m-2", "keep going");
+    assert_eq!(plugin.event, "user_message");
+    assert_eq!(
+        plugin.data,
+        serde_json::json!({
+            "message_id": "m-2",
+            "content": "keep going",
+            "origin": "plugin",
+        })
+    );
+    assert!(plugin.payload().unwrap().is_persisted());
+}
+
 /// A `session_initialized` whose model is empty must NOT be persisted: the setup
 /// task runs before `session.configure_agent`, so it almost always carries `""`,
 /// and an empty model on resume looks like an answer.

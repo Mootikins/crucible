@@ -223,7 +223,7 @@ async fn internal_edit_fixture_matches_a_live_capture() {
     };
     let (message_id, ()) = tokio::join!(send, approve);
     let message_id = message_id.unwrap();
-    let _ = next_event_or_skip(&mut watcher, "message_complete").await;
+    let _ = next_event_or_skip(&mut watcher, "turn_finished").await;
 
     let permission_id = granted.lock().unwrap().clone().unwrap();
     assert_matches_fixture(
@@ -267,7 +267,7 @@ async fn delegated_edit_fixture_matches_a_live_capture() {
 
     let mut collected = h.event_tx.subscribe();
     let message_id = h.send("fix the greeting").await;
-    let _ = h.wait_for("message_complete").await;
+    let _ = h.wait_for("turn_finished").await;
 
     assert_matches_fixture(
         &drain(&mut collected),
@@ -294,7 +294,7 @@ async fn internal_read_fixture_matches_a_live_capture() {
 
     let mut collected = h.event_tx.subscribe();
     let message_id = h.send("read the greeting").await;
-    let _ = h.wait_for("message_complete").await;
+    let _ = h.wait_for("turn_finished").await;
 
     assert_matches_fixture(
         &drain(&mut collected),
@@ -326,7 +326,7 @@ async fn delegated_read_fixture_matches_a_live_capture() {
 
     let mut collected = h.event_tx.subscribe();
     let message_id = h.send("read the greeting").await;
-    let _ = h.wait_for("message_complete").await;
+    let _ = h.wait_for("turn_finished").await;
 
     assert_matches_fixture(
         &drain(&mut collected),

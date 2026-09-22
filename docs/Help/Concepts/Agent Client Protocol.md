@@ -77,7 +77,7 @@ A prompt turn streams through `session/update` notifications:
 1. Client sends `session/prompt` with the user's input
 2. The agent emits `session/update` notifications as it works: incremental message text, thought chunks (if the model exposes reasoning), and `tool_call` / `tool_call_update` entries as tools start and finish
 3. If a tool needs approval, the agent sends `session/request_permission` and waits for the client's answer
-4. The `session/prompt` response returns with a stop reason (`end_turn`, `cancelled`, ...) when the turn completes
+4. The `session/prompt` response returns with a stop reason (`end_turn`, `cancelled`, ...) when the turn completes. A turn that fails gets a JSON-RPC error instead of a stop reason
 
 The client renders updates in real time (TUI streaming, web SSE, etc.) and can cancel mid-turn with `session/cancel`.
 

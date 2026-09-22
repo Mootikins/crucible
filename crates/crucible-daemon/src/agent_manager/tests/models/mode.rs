@@ -57,7 +57,7 @@ pub(super) async fn setup_with_agent() -> (
         .configure_agent(&session.id, test_agent())
         .await
         .unwrap();
-    (tmp, session_manager, session, Arc::new(agent_manager))
+    (tmp, session_manager, session, agent_manager)
 }
 
 #[tokio::test]

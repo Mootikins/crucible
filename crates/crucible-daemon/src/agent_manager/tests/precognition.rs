@@ -602,10 +602,10 @@ async fn setup_precog_session_with_handler(
         .unwrap();
     let session_id = session.id.clone();
 
-    let agent_manager = Arc::new(create_test_agent_manager_with_enrichment(
+    let agent_manager = create_test_agent_manager_with_enrichment(
         session_manager.clone(),
         crucible_core::config::EmbeddingProviderConfig::mock(Some(384)),
-    ));
+    );
 
     let handle = agent_manager
         .kiln_manager

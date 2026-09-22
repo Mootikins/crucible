@@ -209,6 +209,7 @@ export const SSE_EVENT_TYPES = [
   'thinking',
   'segment_complete',
   'message_complete',
+  'turn_finished',
   'error',
   'interaction_requested',
   'session_event',

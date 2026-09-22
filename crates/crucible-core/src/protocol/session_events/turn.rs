@@ -51,6 +51,10 @@ pub enum TurnPayload {
         message_id: String,
         #[serde(default)]
         content: String,
+        /// Who asked for this turn. Absent on the wire for a person's own
+        /// message, so their turns keep the shape they always had.
+        #[serde(default, skip_serializing_if = "crate::turn::TurnOrigin::is_user")]
+        origin: crate::turn::TurnOrigin,
     },
     TextDelta {
         #[serde(default)]
@@ -184,6 +188,23 @@ pub enum TurnPayload {
         #[serde(default)]
         reason: String,
     },
+    /// The whole turn is over. The daemon sends it exactly once for each
+    /// turn, as the last event of the turn, after the request slot is free.
+    /// A client ends a turn on this event, not on `message_complete` or on
+    /// `ended`.
+    ///
+    /// `status` has no default: an event that does not say how the turn
+    /// ended tells a client nothing.
+    TurnFinished {
+        status: crate::turn::TurnStatus,
+        /// The stop reason of the last provider call, when it sent one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stop_reason: Option<crate::turn::StopReason>,
+        /// The error text for `failed` and `timed_out`, and the reason for
+        /// `handler_cancelled`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     InteractionRequested {
         #[serde(default)]
         request_id: String,
@@ -193,14 +214,6 @@ pub enum TurnPayload {
         #[serde(default)]
         request_id: String,
         response: InteractionResponse,
-    },
-    InjectionPending {
-        #[serde(default)]
-        content: String,
-        #[serde(default)]
-        position: String,
-        #[serde(default)]
-        is_continuation: bool,
     },
     ContextInjected {
         #[serde(default)]
@@ -290,9 +303,9 @@ impl TurnPayload {
             Self::SegmentComplete { .. }
             | Self::ToolCallArgsUpdate { .. }
             | Self::ToolCallDiffUpdate { .. }
-            | Self::InjectionPending { .. }
             | Self::ContextInjected { .. }
-            | Self::PostLlmCall { .. } => return None,
+            | Self::PostLlmCall { .. }
+            | Self::TurnFinished { .. } => return None,
         })
     }
 
@@ -311,6 +324,8 @@ impl TurnPayload {
             | Self::ToolCall { .. }
             | Self::ToolResult { .. }
             | Self::Ended { .. }
+            // A replay needs to know where a turn ended and how.
+            | Self::TurnFinished { .. }
             // Late ACP merges are part of the tool's record. claude-agent-acp
             // announces the call without `rawInput`/diffs and supplies them in
             // a follow-up frame; dropping the update left every replayed
@@ -332,7 +347,6 @@ impl TurnPayload {
             Self::TextDelta { .. }
             | Self::InteractionRequested { .. }
             | Self::InteractionCompleted { .. }
-            | Self::InjectionPending { .. }
             | Self::ContextInjected { .. }
             | Self::PostLlmCall { .. } => false,
         }

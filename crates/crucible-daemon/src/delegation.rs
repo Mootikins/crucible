@@ -283,7 +283,9 @@ impl DelegationService {
                 info.mark_failed();
                 JobResult::failure(info, "Delegated session timed out".into())
             }
-            TurnStatus::Failed => {
+            // A handler that stops a delegated turn fails the delegation, as
+            // it did before the status had its own variant.
+            TurnStatus::Failed | TurnStatus::HandlerCancelled => {
                 let mut info = info;
                 info.mark_failed();
                 JobResult::failure(

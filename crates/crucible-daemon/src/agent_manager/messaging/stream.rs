@@ -1,21 +1,14 @@
 //! Agent turn driver.
 //!
 //! Drives an `Agent::turn()` stream, emits session events, dispatches
-//! tool calls, and steers the agent's continuation via the inbound
+//! tool calls, and steers the agent's tool loop via the inbound
 //! `mpsc<TurnEvent>` channel. The plan's "one channel topology, not
-//! three" rule: `ToolResult` and `HandlerInjection` both arrive on the
+//! three" rule: `ToolResult` and `ContextAttach` both arrive on the
 //! same inbound channel and drive matching adapter-side behaviour.
 //!
-//! Two tool-loop re-entry points share the inbound channel:
-//!
-//! 1. **Tool continuation** — runtime sends `ToolResult` after
-//!    dispatching the agent's `ToolCall`.
-//! 2. **Handler injection** — runtime's `turn:complete` handler returns
-//!    injected content; runtime re-enters `execute_agent_stream`
-//!    recursively at one greater `continuation_depth`. (The inbound channel
-//!    handles this within a single adapter turn, but handler
-//!    injection happens after `Done`, so we re-enter for a fresh
-//!    message_id + user_message visibility.)
+//! A turn ENDS here. A `turn:complete` handler that wants more work asks
+//! for a NEW turn; `send.rs` starts it. There is no continuation
+//! inside a turn.
 
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
@@ -37,20 +30,13 @@ use tokio::sync::mpsc;
 /// The host reads none of these. They ride the `turn:complete` payload so a
 /// plugin can decide whether the model stopped before the work was done — from
 /// a plan file, a subsession, a tool result or the reply text. The host
-/// provides the inputs and holds no opinion, which is why there is no depth
-/// cap and no budget check here: a plugin that wants a bound sets its own.
+/// provides the inputs and holds no opinion, which is why there is no budget
+/// check here: a plugin that wants a bound sets its own.
 #[derive(Debug, Clone, Copy)]
 pub(in crate::agent_manager) struct TurnFacts {
     /// Why the provider or the delegated agent ended the turn. `None` when
     /// the stream closed without a terminal `Done`.
     pub(in crate::agent_manager) stop_reason: Option<StopReason>,
-    /// How many re-prompts precede this turn. 0 is the user's own message.
-    ///
-    /// A FACT, not a cap. A 500-step plan needs 500 re-prompts, so any depth
-    /// the host enforced would be wrong for some plan. What stops a runaway
-    /// re-prompt is the user's cancel, which reaches every recursion depth
-    /// through the `tokio::select!` in `send.rs`.
-    pub(in crate::agent_manager) continuation_depth: u32,
     /// Did the turn run a tool the user can see?
     ///
     /// A turn that ends right after a tool result is a model still working,
@@ -86,7 +72,7 @@ impl AgentManager {
         usage: Option<&TokenUsage>,
         accumulated_response: &mut String,
         facts: TurnFacts,
-    ) -> Option<String> {
+    ) {
         // Scheduler-owned conversation tree: commit the assistant
         // response text as an Agent node. Today this is shadow state;
         // later phases flip the handle to read from the tree.
@@ -149,7 +135,11 @@ impl AgentManager {
             );
         }
 
-        let injection = Self::dispatch_turn_complete_handlers(
+        // A handler that wants more work asks for a NEW turn. The daemon
+        // starts it after this turn releases its request slot, so the new
+        // turn gets admission, precognition, persistence and undo like any
+        // other turn. There is no continuation inside a turn.
+        if let Some(content) = Self::dispatch_turn_complete_handlers(
             &stream_ctx.session_id,
             &stream_ctx.message_id,
             accumulated_response,
@@ -157,51 +147,30 @@ impl AgentManager {
             facts,
             stream_ctx.agent_stream_config.response_tail_chars,
         )
-        .await;
-
-        if let Some(injected_content) = &injection {
+        .await
+        {
             info!(
                 session_id = %stream_ctx.session_id,
-                content_len = injected_content.len(),
-                "Processing handler injection"
+                content_len = content.len(),
+                "A turn:complete handler asked for a new turn"
             );
-
-            if !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::new(
-                    &stream_ctx.session_id,
-                    "injection_pending",
-                    serde_json::json!({
-                        "content": injected_content,
-                        "is_continuation": true,
-                    }),
-                ),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "No subscribers for injection_pending event"
-                );
-            }
+            stream_ctx.slot.set_follow_up(content);
         }
-
-        injection
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_agent_stream(
         agent: Arc<Mutex<BoxedAgentHandle>>,
         content: String,
         stream_ctx: StreamContext,
         stream_config: AgentStreamConfig,
         accumulated_response: &mut String,
-        continuation_depth: u32,
     ) -> StreamOutcome {
         let ttft_local = Instant::now();
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "execute_stream_entry", elapsed_ms = 0, "ttft");
         let Some(content) =
             Self::apply_pre_llm_call_handlers(content, &stream_ctx, &stream_config).await
         else {
-            return StreamOutcome::Failed("cancelled by pre_llm_call handler".into());
+            return StreamOutcome::HandlerCancelled("cancelled by pre_llm_call handler".into());
         };
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "pre_llm_done", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
 
@@ -225,16 +194,15 @@ impl AgentManager {
             Self::apply_transform_context_handlers(flattened_messages, &stream_ctx, &stream_config)
                 .await
         else {
-            return StreamOutcome::Failed("cancelled by transform_context handler".into());
+            return StreamOutcome::HandlerCancelled(
+                "cancelled by transform_context handler".into(),
+            );
         };
 
         let (inbound_tx, inbound_rx) = mpsc::channel::<TurnEvent>(32);
-        let mut turn_ctx = TurnContext::new(content)
+        let turn_ctx = TurnContext::new(content)
             .with_inbound(inbound_rx)
             .with_messages(flattened_messages);
-        if continuation_depth > 0 {
-            turn_ctx = turn_ctx.continuation();
-        }
 
         info!(target: "ttft", session_id = %stream_ctx.session_id, stage = "before_turn_start", elapsed_ms = ttft_local.elapsed().as_millis() as u64, "ttft");
         // Hold the handle guard for the entire turn; Agent::turn returns
@@ -791,7 +759,7 @@ impl AgentManager {
                         }
                         // A tool-requested terminate is a deliberate end of
                         // turn, not a failure.
-                        return StreamOutcome::Completed;
+                        return StreamOutcome::Completed(None);
                     }
                 }
                 TurnEvent::Usage(usage) => {
@@ -854,9 +822,9 @@ impl AgentManager {
                         });
                     }
                 }
-                TurnEvent::HandlerInjection { .. } | TurnEvent::ContextAttach { .. } => {
-                    // Inbound-only variants. Adapter should not echo
-                    // them, but tolerate if it ever does.
+                TurnEvent::ContextAttach { .. } => {
+                    // Inbound-only variant. Adapter should not echo
+                    // it, but tolerate if it ever does.
                 }
                 TurnEvent::Done { stop_reason } => {
                     terminal_stop_reason = Some(stop_reason);
@@ -916,75 +884,19 @@ impl AgentManager {
             );
         }
 
-        // Emit message_complete + run turn:complete handlers. Handler
-        // injection short-circuits back into a fresh execute_agent_stream
-        // with a new message_id so subscribers see a clean user message
-        // boundary.
-        let injection = Self::run_reactor_handlers(
+        // Emit message_complete + run turn:complete handlers. A handler that
+        // asks for more work stores a follow-up on the slot; `send.rs` starts
+        // it as a new turn after this one releases the request slot.
+        Self::run_reactor_handlers(
             &stream_ctx,
             last_usage.as_ref(),
             accumulated_response,
             TurnFacts {
                 stop_reason: terminal_stop_reason,
-                continuation_depth,
                 saw_tool_activity,
             },
         )
         .await;
-
-        let mut continuation_outcome = StreamOutcome::Completed;
-        if let Some(injected_content) = injection {
-            drop(event_stream);
-            // Release the handle lock before recursing so the inner
-            // invocation can re-acquire it.
-            drop(guard);
-
-            accumulated_response.clear();
-            // This literal names every field on purpose, although
-            // `StreamContext` derives `Clone`. A new field then fails to
-            // compile here, so its author must decide whether the retry
-            // carries it or resets it. Do not replace it with `.clone()`.
-            let continuation_ctx = StreamContext {
-                session_id: stream_ctx.session_id.clone(),
-                message_id: format!("msg-{}", uuid::Uuid::new_v4()),
-                event_tx: stream_ctx.event_tx.clone(),
-                slot: stream_ctx.slot.clone(),
-                workspace_path: stream_ctx.workspace_path.clone(),
-                session_dir: stream_ctx.session_dir.clone(),
-                whitelists_dir: stream_ctx.whitelists_dir.clone(),
-                agent_stream_config: stream_ctx.agent_stream_config.clone(),
-                tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
-                permission_override: stream_ctx.permission_override,
-                conversation_tree: stream_ctx.conversation_tree.clone(),
-                session_manager: stream_ctx.session_manager.clone(),
-                // Don't re-inject Precognition on a validation retry —
-                // the original turn already prepended it.
-                precognition_message: None,
-                // Same reasoning for attachments: the original turn already
-                // put the file contents in front of the agent.
-                attachment_message: None,
-                session_mode: stream_ctx.session_mode.clone(),
-                is_interactive: stream_ctx.is_interactive,
-                permission_engine: stream_ctx.permission_engine.clone(),
-                // Carried across the retry: dedup and budget are per session,
-                // so a validation retry must not get a fresh allowance to
-                // re-attach what the original turn already attached.
-                context_attach: stream_ctx.context_attach.clone(),
-            };
-
-            continuation_outcome = Box::pin(Self::execute_agent_stream(
-                agent,
-                injected_content,
-                continuation_ctx,
-                stream_config.clone(),
-                accumulated_response,
-                // The host counts; the plugin decides. No cap: the payload
-                // carries this number so a plugin that wants a bound sets its
-                // own, and the user's cancel reaches every depth.
-                continuation_depth + 1,
-            ))
-            .await;
-        }
 
         let duration_ms = stream_start.elapsed().as_millis() as u64;
         let response_summary: String = accumulated_response.chars().take(200).collect();
@@ -1040,7 +952,7 @@ impl AgentManager {
         )
         .await;
 
-        continuation_outcome
+        StreamOutcome::Completed(terminal_stop_reason)
     }
 
     /// One registry's `post_llm_call` pass — fire-and-forget, fail-open.
@@ -1096,14 +1008,6 @@ impl AgentManager {
                 "response_length": response.len(),
                 "response_tail": response_tail,
                 "response_truncated": response_truncated,
-                // The depth alone, not a boolean beside it. The payload
-                // used to carry `is_continuation`, which was exactly
-                // `continuation_depth > 0` — two fields that answer
-                // one question, and a handler that read the boolean could
-                // not tell the first re-prompt from the fiftieth. A handler
-                // that wants the boolean writes
-                // `event.continuation_depth > 0`.
-                "continuation_depth": facts.continuation_depth,
                 "saw_tool_activity": facts.saw_tool_activity,
                 "stop_reason": facts.stop_reason,
             }),
@@ -1119,14 +1023,8 @@ impl AgentManager {
         run_handlers(plugin_handlers, None, |registry, lua, pending_injection| {
             let event = &event;
             Box::pin(async move {
-                let injection = Self::run_turn_complete_handlers(
-                    session_id,
-                    &registry,
-                    &lua,
-                    event,
-                    facts.continuation_depth,
-                )
-                .await;
+                let injection =
+                    Self::run_turn_complete_handlers(session_id, &registry, &lua, event).await;
                 ControlFlow::Continue(injection.or(pending_injection))
             })
         })
@@ -1139,7 +1037,6 @@ impl AgentManager {
         registry: &crucible_lua::LuaScriptHandlerRegistry,
         lua: &mlua::Lua,
         event: &SessionEvent,
-        continuation_depth: u32,
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
@@ -1155,7 +1052,6 @@ impl AgentManager {
         debug!(
             session_id = %session_id,
             handler_count = handlers.len(),
-            continuation_depth = continuation_depth,
             "Dispatching turn:complete handlers"
         );
 

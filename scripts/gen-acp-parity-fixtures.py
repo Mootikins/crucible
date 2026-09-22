@@ -104,6 +104,8 @@ common_tail = [
         "message_complete",
         {"message_id": MSG_ID, "full_response": FULL, "stop_reason": "end_turn"},
     ),
+    # The one event that ends the whole turn. A client ends the turn here.
+    ("turn_finished", {"status": "completed", "stop_reason": "end_turn"}),
 ]
 
 internal = common_head + [
@@ -225,6 +227,7 @@ read_tail = [
             "stop_reason": "end_turn",
         },
     ),
+    ("turn_finished", {"status": "completed", "stop_reason": "end_turn"}),
 ]
 
 read_internal = (

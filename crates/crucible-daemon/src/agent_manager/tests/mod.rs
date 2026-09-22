@@ -407,7 +407,7 @@ async fn assert_no_event_until_message_complete(
 }
 
 struct ReactorTestHarness {
-    agent_manager: AgentManager,
+    agent_manager: Arc<AgentManager>,
     session_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
     event_rx: broadcast::Receiver<SessionEventMessage>,
@@ -784,14 +784,14 @@ pub(super) fn configure_provider_endpoint(am: &AgentManager, endpoint: &str) {
 
 pub(in crate::agent_manager) fn create_test_agent_manager(
     session_manager: Arc<SessionManager>,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     create_test_agent_manager_with_permissions(session_manager, None)
 }
 
 fn create_test_agent_manager_with_permissions(
     session_manager: Arc<SessionManager>,
     permission_config: Option<PermissionConfig>,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
@@ -807,12 +807,13 @@ fn create_test_agent_manager_with_permissions(
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
+    .into()
 }
 
 fn create_test_agent_manager_with_providers(
     session_manager: Arc<SessionManager>,
     llm_config: crucible_core::config::LlmConfig,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
@@ -828,12 +829,13 @@ fn create_test_agent_manager_with_providers(
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
+    .into()
 }
 
 fn create_test_agent_manager_with_enrichment(
     session_manager: Arc<SessionManager>,
     enrichment_config: crucible_core::config::EmbeddingProviderConfig,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
     AgentManager::new(AgentManagerParams {
@@ -853,12 +855,13 @@ fn create_test_agent_manager_with_enrichment(
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
+    .into()
 }
 
 fn create_test_agent_manager_with_llm_config(
     session_manager: Arc<SessionManager>,
     llm_config: crucible_core::config::LlmConfig,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
@@ -874,6 +877,7 @@ fn create_test_agent_manager_with_llm_config(
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
+    .into()
 }
 
 async fn start_mock_ollama_tags_server(models: Vec<&str>) -> (String, tokio::task::JoinHandle<()>) {
@@ -960,7 +964,7 @@ async fn start_mock_openai_models_server(
 fn create_test_agent_manager_with_both(
     session_manager: Arc<SessionManager>,
     llm_config: crucible_core::config::LlmConfig,
-) -> AgentManager {
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
@@ -976,6 +980,7 @@ fn create_test_agent_manager_with_both(
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),
     })
+    .into()
 }
 
 mod active_tools;
@@ -1007,6 +1012,7 @@ mod session_stop;
 mod title;
 mod transcript_containment;
 mod trust_gate;
+mod turn_finished;
 mod two_sessions;
 mod workspace;
 

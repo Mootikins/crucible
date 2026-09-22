@@ -9,22 +9,28 @@ import { openSessionsList } from '../helpers/nav';
  *
  * Sending sets isStreaming synchronously, so the stop control appears; clicking
  * it POSTs /api/session/:id/cancel, and the turn closes on the daemon's own
- * `ended` frame (the daemon emits `ended("cancelled")` on the session event
- * stream before the cancel POST resolves). The web synthesizes nothing: the
- * transcript keeps exactly what streamed, and the composer returns to send.
+ * `turn_finished` frame (the daemon emits `ended("cancelled")` and then
+ * `turn_finished` on the session event stream before the cancel POST
+ * resolves). The web synthesizes nothing: the transcript keeps exactly what
+ * streamed, and the composer returns to send.
  *
  * Determinism note: the app's EventSource treats ANY closed SSE stream as a
  * disconnect and emits a reconnect 'error' that flips isStreaming off. The
  * session event stream here therefore stays open until the cancel lands, then
- * delivers the `ended` frame and closes; reconnects hang so nothing churns
+ * delivers the end-of-turn frames and closes; reconnects hang so nothing churns
  * after the turn is closed. Real cancellation through the live daemon is
  * exercised by the live tier.
  */
 
-/** The frame `send.rs` emits when a turn is cancelled, on the SSE wire. */
+/** The frames `send.rs` emits when a turn is cancelled, on the SSE wire. */
 const ENDED_FRAME = {
   type: 'session_event',
   data: { type: 'session_event', event: 'ended', data: { reason: 'cancelled' } },
+};
+/** The one frame that ends the turn, whatever stopped it. */
+const TURN_FINISHED_FRAME = {
+  type: 'turn_finished',
+  data: { type: 'turn_finished', status: 'cancelled' },
 };
 
 test.describe('WS-108 cancel a turn', () => {
@@ -42,8 +48,8 @@ test.describe('WS-108 cancel a turn', () => {
     });
 
     // Hold the event stream open so isStreaming stays true (no reconnect
-    // churn); answer it with the daemon's `ended` frame once the cancel POST
-    // lands.
+    // churn); answer it with the daemon's end-of-turn frames once the cancel
+    // POST lands.
     let hit = 0;
     await page.route(/\/api\/chat\/events\/.*/, async (route) => {
       hit += 1;
@@ -52,7 +58,7 @@ test.describe('WS-108 cancel a turn', () => {
         return route.fulfill({
           status: 200,
           headers: SSE_HEADERS,
-          body: createSSEStream([ENDED_FRAME]),
+          body: createSSEStream([ENDED_FRAME, TURN_FINISHED_FRAME]),
         });
       }
       await new Promise(() => {}); // never resolves; closed when the context tears down

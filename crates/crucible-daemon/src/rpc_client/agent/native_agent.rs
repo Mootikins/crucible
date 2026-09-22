@@ -121,7 +121,6 @@ fn _terminal_variant_check(event: TurnEvent) -> bool {
         | TurnEvent::ToolCallDiffUpdate { .. }
         | TurnEvent::ToolCallArgsUpdate { .. }
         | TurnEvent::ToolBatchEnd
-        | TurnEvent::HandlerInjection { .. }
         | TurnEvent::ContextAttach { .. }
         | TurnEvent::Usage(_)
         | TurnEvent::ContextWindow { .. } => false,

@@ -4870,6 +4870,37 @@
           },
           {
             "type": "object",
+            "description": "The whole turn is over. The browser ends the turn on this event, not\non `message_complete` and not on `ended`.\n\n`status` and `stop_reason` are strings in the document for the same\nreason as `stop_reason` above. The values are `TurnStatus` and\n`StopReason`, serialised snake_case.",
+            "required": [
+              "status",
+              "type"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "stop_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "turn_finished"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "required": [
               "code",
               "message",
@@ -5140,7 +5171,7 @@
             }
           }
         ],
-        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 21 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
+        "description": "The browser's view of a session event, streamed by `GET\n/api/chat/events/{session_id}`.\n\n`ToSchema` publishes the 22 tag values to the OpenAPI document, so the\nbrowser reads the union from the enum instead of repeating it."
       },
       "CloneRequest": {
         "type": "object",

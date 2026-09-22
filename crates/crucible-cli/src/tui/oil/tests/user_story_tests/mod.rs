@@ -29,5 +29,6 @@ mod stop_reason_tests; // US-206
 mod stream_gap_tests; // US-907
 mod subagent_mcp_tests; // US-302 / US-303
 mod surface_tests; // US-908
+mod turn_end_tests; // US-207
 mod undo_tests; // US-902
 mod vocab_tests; // intent-vocabulary exemplars (E)

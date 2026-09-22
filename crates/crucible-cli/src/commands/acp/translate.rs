@@ -12,6 +12,8 @@ use agent_client_protocol::schema::v1::{
 use crucible_core::interaction::{
     InteractionRequest, InteractionResponse, PermResponse, PermissionScope,
 };
+use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+use crucible_core::turn::{StopReason as CoreStopReason, TurnStatus};
 use crucible_daemon::SessionEvent;
 
 /// Permission option IDs advertised to the host. Matching them back in
@@ -30,10 +32,62 @@ pub enum TurnStep {
         request_id: String,
         request: Box<InteractionRequest>,
     },
-    /// The turn is over; respond to `session/prompt` with this stop reason.
-    Finished(StopReason),
+    /// The whole turn is over (`turn_finished`); respond to `session/prompt`.
+    Finished(TurnEnd),
     /// Nothing to forward (unknown or empty event).
     Ignore,
+}
+
+/// How `cru acp` answers `session/prompt` when the turn is over.
+#[derive(Debug, PartialEq)]
+pub enum TurnEnd {
+    /// Reply with this stop reason.
+    Stop(StopReason),
+    /// A handler stopped the turn. Send the reason as turn text, then reply
+    /// with `refusal`. ACP keeps `cancelled` for a user cancel.
+    Refused(String),
+    /// The turn failed or timed out. Reply with a JSON-RPC error that holds
+    /// this text, and with no result.
+    Failed(String),
+}
+
+/// The one table from a daemon turn status to an ACP answer.
+pub fn turn_end(
+    status: TurnStatus,
+    stop_reason: Option<CoreStopReason>,
+    error: Option<String>,
+) -> TurnEnd {
+    let text = || {
+        error
+            .clone()
+            .unwrap_or_else(|| format!("the turn ended: {status:?}"))
+    };
+    match status {
+        TurnStatus::Completed => TurnEnd::Stop(match stop_reason {
+            // An empty turn is still an end of turn for the editor.
+            None | Some(CoreStopReason::EndTurn | CoreStopReason::Empty) => StopReason::EndTurn,
+            Some(CoreStopReason::MaxTokens) => StopReason::MaxTokens,
+            Some(CoreStopReason::Refusal) => StopReason::Refusal,
+            Some(CoreStopReason::Cancelled) => StopReason::Cancelled,
+        }),
+        TurnStatus::Cancelled => TurnEnd::Stop(StopReason::Cancelled),
+        TurnStatus::HandlerCancelled => TurnEnd::Refused(text()),
+        TurnStatus::Failed | TurnStatus::TimedOut => TurnEnd::Failed(text()),
+    }
+}
+
+/// Does this event open the turn that `message_id` names?
+///
+/// A `turn:complete` handler can start a turn of its own after a client
+/// answered, so a client's queue can hold the events of a turn it never
+/// started. Every turn opens with the `user_message` that carries its id, and
+/// a client reads nothing before its own.
+pub fn opens_turn(event: &SessionEvent, message_id: &str) -> bool {
+    matches!(
+        event.payload(),
+        Ok(SessionEventPayload::Turn(TurnPayload::UserMessage { message_id: id, .. }))
+            if id == message_id
+    )
 }
 
 /// Classify a daemon event into a single turn step.
@@ -51,8 +105,20 @@ pub fn classify_event(event: &SessionEvent) -> TurnStep {
             .unwrap_or(TurnStep::Ignore),
         "tool_call" => classify_tool_call(event),
         "tool_result" => classify_tool_result(event),
-        "message_complete" => TurnStep::Finished(StopReason::EndTurn),
-        "ended" => TurnStep::Finished(ended_stop_reason(event)),
+        // `message_complete` seals one reply and `ended` only tells why a
+        // turn stopped early. `turn_finished` is the one event that ends the
+        // turn.
+        "turn_finished" => match event.payload() {
+            Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
+                status,
+                stop_reason,
+                error,
+            })) => TurnStep::Finished(turn_end(status, stop_reason, error)),
+            _ => TurnStep::Finished(TurnEnd::Failed(format!(
+                "the daemon sent a turn_finished event that does not decode: {}",
+                event.data
+            ))),
+        },
         "interaction_requested" => classify_interaction(event),
         _ => TurnStep::Ignore,
     }
@@ -156,22 +222,6 @@ fn classify_interaction(event: &SessionEvent) -> TurnStep {
             Err(_) => TurnStep::Ignore,
         },
         _ => TurnStep::Ignore,
-    }
-}
-
-/// Daemon `ended` events carry a free-form reason. Only an explicit
-/// cancellation maps to `Cancelled`; everything else (including `error: ...`)
-/// is a normal end of turn as far as ACP's stop reasons are concerned.
-fn ended_stop_reason(event: &SessionEvent) -> StopReason {
-    let reason = event
-        .data
-        .get("reason")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    if reason.contains("cancel") {
-        StopReason::Cancelled
-    } else {
-        StopReason::EndTurn
     }
 }
 
@@ -387,22 +437,110 @@ mod tests {
         }
     }
 
+    /// `message_complete` seals one reply, so it must not end the prompt
+    /// turn: only `turn_finished` does.
     #[test]
-    fn message_complete_finishes_end_turn() {
-        let step = classify_event(&event("message_complete", json!({"total_tokens": 5})));
-        assert!(matches!(step, TurnStep::Finished(StopReason::EndTurn)));
+    fn message_complete_does_not_finish_the_turn() {
+        let step = classify_event(&event(
+            "message_complete",
+            json!({"total_tokens": 5, "stop_reason": "max_tokens"}),
+        ));
+        assert!(matches!(step, TurnStep::Ignore), "got {step:?}");
+    }
+
+    /// `ended` does not end the turn and its text is not read: a reason with
+    /// "cancel" or "error: " in it gives no stop reason.
+    #[test]
+    fn ended_does_not_finish_the_turn_whatever_its_text() {
+        for reason in [
+            "cancelled",
+            "cancelled by handler: x",
+            "error: cancel failed",
+        ] {
+            let step = classify_event(&event("ended", json!({"reason": reason})));
+            assert!(matches!(step, TurnStep::Ignore), "{reason}: got {step:?}");
+        }
+    }
+
+    fn finished(data: serde_json::Value) -> TurnEnd {
+        match classify_event(&event("turn_finished", data)) {
+            TurnStep::Finished(end) => end,
+            other => panic!("expected Finished, got {other:?}"),
+        }
     }
 
     #[test]
-    fn ended_cancel_maps_to_cancelled() {
-        let step = classify_event(&event("ended", json!({"reason": "cancelled by user"})));
-        assert!(matches!(step, TurnStep::Finished(StopReason::Cancelled)));
+    fn turn_finished_completed_maps_the_stop_reason() {
+        let cases = [
+            (None, StopReason::EndTurn),
+            (Some("end_turn"), StopReason::EndTurn),
+            (Some("empty"), StopReason::EndTurn),
+            (Some("max_tokens"), StopReason::MaxTokens),
+            (Some("refusal"), StopReason::Refusal),
+            (Some("cancelled"), StopReason::Cancelled),
+        ];
+        for (stop_reason, expected) in cases {
+            assert_eq!(
+                finished(json!({"status": "completed", "stop_reason": stop_reason})),
+                TurnEnd::Stop(expected),
+                "{stop_reason:?}"
+            );
+        }
     }
 
     #[test]
-    fn ended_error_maps_to_end_turn() {
-        let step = classify_event(&event("ended", json!({"reason": "error: boom"})));
-        assert!(matches!(step, TurnStep::Finished(StopReason::EndTurn)));
+    fn turn_finished_user_cancel_maps_to_cancelled() {
+        assert_eq!(
+            finished(json!({"status": "cancelled"})),
+            TurnEnd::Stop(StopReason::Cancelled)
+        );
+    }
+
+    /// ACP keeps `cancelled` for a user cancel. A handler cancel is a refusal
+    /// that carries the handler's reason.
+    #[test]
+    fn turn_finished_handler_cancel_maps_to_refused_with_the_reason() {
+        assert_eq!(
+            finished(json!({
+                "status": "handler_cancelled",
+                "error": "cancelled by pre_llm_call handler"
+            })),
+            TurnEnd::Refused("cancelled by pre_llm_call handler".to_string())
+        );
+    }
+
+    #[test]
+    fn turn_finished_failure_maps_to_failed_even_when_its_text_says_cancel() {
+        for status in ["failed", "timed_out"] {
+            assert_eq!(
+                finished(json!({"status": status, "error": "request cancelled upstream"})),
+                TurnEnd::Failed("request cancelled upstream".to_string()),
+                "{status}"
+            );
+        }
+    }
+
+    /// A client reads nothing before the turn it started. A `turn:complete`
+    /// handler can start a turn after the client answered, and that turn's
+    /// events then wait in the client's queue.
+    #[test]
+    fn opens_turn_matches_only_the_user_message_of_that_turn() {
+        let ours = event(
+            "user_message",
+            json!({"message_id": "m-2", "content": "hi"}),
+        );
+        assert!(opens_turn(&ours, "m-2"));
+        assert!(!opens_turn(&ours, "m-1"));
+
+        let plugin_turn = event(
+            "user_message",
+            json!({"message_id": "m-3", "content": "keep going", "origin": "plugin"}),
+        );
+        assert!(!opens_turn(&plugin_turn, "m-2"));
+        assert!(opens_turn(&plugin_turn, "m-3"));
+
+        let stale_end = event("turn_finished", json!({"status": "completed"}));
+        assert!(!opens_turn(&stale_end, "m-2"));
     }
 
     #[test]
@@ -455,9 +593,9 @@ mod tests {
     /// Terminal steps classify as themselves: the replay loop skips them
     /// instead of ending the replay early or answering a prompt nobody sent.
     #[test]
-    fn replay_maps_message_complete_to_finished_not_an_update() {
-        let step = replay_step(&event("message_complete", json!({"total_tokens": 5})));
-        assert!(matches!(step, TurnStep::Finished(StopReason::EndTurn)));
+    fn replay_maps_turn_finished_to_finished_not_an_update() {
+        let step = replay_step(&event("turn_finished", json!({"status": "completed"})));
+        assert!(matches!(step, TurnStep::Finished(_)), "got {step:?}");
     }
 
     #[test]

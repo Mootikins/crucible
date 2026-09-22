@@ -57,13 +57,33 @@ before attaching it, if you would rather not take the derived one.
 | `initialize` | Echoes the client's protocol version; advertises text prompts, `load_session`, and `session/close` support |
 | `authenticate` | No-op — no auth methods are advertised |
 | `session/new` | Creates a daemon chat session (workspace = the host's `cwd`) and configures the internal agent from your config |
-| `session/prompt` | Forwards the prompt via `session.send_message`, streams the turn as `session/update` notifications, returns the stop reason |
+| `session/prompt` | Forwards the prompt via `session.send_message`, streams the turn as `session/update` notifications, and answers when the whole turn is over (see "How a turn ends" below) |
 | `session/cancel` | Cancels the in-flight turn (best-effort) |
 | `session/load` | Resumes an existing daemon session by ID; history is **not** replayed as `session/update` — the host keeps its own transcript |
 | `session/close` | Cancels any in-flight turn and drops the session's daemon connection |
 
 In the other direction the agent sends `session/update` notifications and round-trips
 tool permission prompts to the host via `session/request_permission`.
+
+## How a turn ends
+
+The daemon sends one `turn_finished` event at the end of each turn. `cru acp`
+answers `session/prompt` only when this event comes, so no event of the turn stays
+behind for the next prompt.
+
+| Status of the turn | Answer to `session/prompt` |
+|--------------------|----------------------------|
+| `completed` | `stopReason` from the last provider call: `end_turn` (also for an empty reply), `max_tokens` or `refusal` |
+| `cancelled` (a user cancel, from this editor or from another client) | `stopReason: cancelled` |
+| `handler_cancelled` (a `pre_llm_call` or `transform_context` handler cancelled the turn) | the reason as agent text, then `stopReason: refusal` |
+| `failed` or `timed_out` | a JSON-RPC error with the error text in `data`, and no result |
+
+ACP keeps `cancelled` for a cancel that a user asked for. A handler cancel is a refusal
+of the prompt, so the editor gets `refusal` and the reason.
+
+A `turn:complete` plugin handler can ask the daemon for another turn. That turn runs in
+the session after `cru acp` answers this prompt, and the editor sees it on the next
+`session/load` replay.
 
 ## Host configuration
 

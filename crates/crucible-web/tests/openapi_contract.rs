@@ -242,6 +242,11 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             stop_reason: None,
             stop_notice: None,
         },
+        ChatEvent::TurnFinished {
+            status: crucible_core::turn::TurnStatus::Completed,
+            stop_reason: None,
+            error: None,
+        },
         ChatEvent::Error {
             code: String::new(),
             message: String::new(),
