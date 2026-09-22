@@ -1,49 +1,36 @@
-//! ACP Client implementation for agent communication
+//! The daemon side of one ACP agent connection.
 //!
-//! This module provides the main client interface for communicating with
-//! AI agents via the Agent Client Protocol.
+//! The `agent-client-protocol` SDK owns the JSON-RPC framing, the request
+//! correlation and the inbound dispatch. This module owns what Crucible adds
+//! on top: the agent process, the handshake, the permission bridge, and the
+//! translation of a turn's session updates into [`StreamingChunk`]s.
 //!
-//! ## Responsibilities
-//!
-//! - Agent process lifecycle management (start, stop, restart)
-//! - Connection establishment and maintenance
-//! - Protocol version negotiation
-//! - Message routing to appropriate handlers
-//!
-//! ## Design Principles
-//!
-//! - **Single Responsibility**: Focused on agent connection and lifecycle
-//! - **Dependency Inversion**: Uses traits from crucible-core for extensibility
-//! - **Open/Closed**: New agent types can be added without modifying this code
+//! The SDK connection runs on its own task. The client holds a clone of its
+//! [`ConnectionTo<Agent>`], so a request and a turn can run at the same time.
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
-use tokio::io::{AsyncBufRead, AsyncWrite, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
-
-/// Global request ID counter for JSON-RPC requests.
-/// Shared between send_request and send_prompt_with_callback to ensure unique IDs.
-static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest,
+    AgentCapabilities, AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SessionNotification, SessionUpdate,
 };
+use agent_client_protocol::{Agent, Client, ConnectTo, ConnectionTo, JsonRpcRequest};
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+
+use crate::acp::session::ModelChoice;
+use crate::acp::{ClientError, Result};
 
 mod connection;
-mod io;
-mod permission;
-mod protocol;
 mod recording;
 pub mod replay;
 mod streaming;
 mod tool_table;
 mod tools;
 mod types;
-mod usage;
-
-pub use usage::extract_usage;
 
 #[cfg(test)]
 mod tests;
@@ -51,186 +38,290 @@ mod tests;
 pub use recording::{Direction, FixtureHeader, FrameRecord, Recorder};
 pub use types::ClientConfig;
 
-/// Type-erased async writer for agent communication
-pub type BoxedWriter = Pin<Box<dyn AsyncWrite + Send + Sync + Unpin>>;
-/// Type-erased async reader for agent communication
-pub type BoxedReader = Pin<Box<dyn AsyncBufRead + Send + Sync + Unpin>>;
 pub type PermissionOutcomeFuture = Pin<Box<dyn Future<Output = RequestPermissionOutcome> + Send>>;
 pub type PermissionRequestHandler =
     Arc<dyn Fn(RequestPermissionRequest) -> PermissionOutcomeFuture + Send + Sync>;
 
-/// Main client for ACP communication
-///
-/// This struct manages the lifecycle of agent connections and provides
-/// the primary interface for sending requests to agents.
-pub struct CrucibleAcpClient {
-    pub(super) config: ClientConfig,
-    /// Agent name (e.g., "opencode", "claude") for display
-    pub(super) agent_name: String,
-    /// True while the client holds a connection to an agent.
-    pub(super) connected: bool,
-    /// Agent process handle, if spawned (None for in-process transports)
-    pub(super) agent_process: Option<Child>,
-    /// Agent stdin for writing requests (concrete type from process)
-    pub(super) agent_stdin: Option<ChildStdin>,
-    /// Agent stdout for reading responses (concrete type from process)
-    pub(super) agent_stdout: Option<BufReader<ChildStdout>>,
-    /// Type-erased writer for in-process transports (e.g., ThreadedMockAgent)
-    pub(super) boxed_writer: Option<BoxedWriter>,
-    /// Type-erased reader for in-process transports (e.g., ThreadedMockAgent)
-    pub(super) boxed_reader: Option<BoxedReader>,
-    /// Latest available slash commands advertised by the agent
-    pub(super) available_commands: Vec<AvailableCommand>,
-    pub(super) permission_handler: Option<PermissionRequestHandler>,
-    /// Agent's MCP transport capabilities, populated after initialize()
-    pub(super) agent_mcp_capabilities: Option<agent_client_protocol::schema::v1::McpCapabilities>,
-    /// True when the agent advertised `sessionCapabilities.close` at
-    /// initialize. Gates the `session/close` goodbye on shutdown.
-    pub(super) session_close_supported: bool,
-    /// Wire-level recorder. Populated automatically when
-    /// `CRUCIBLE_ACP_RECORD_DIR` is set, otherwise `None`.
-    pub(super) recorder: Option<recording::Recorder>,
-    /// Token usage from the most recent prompt response. Set by the
-    /// streaming code when an ACP `PromptResponse` carries a `usage`
-    /// field (read from raw JSON — see `client/usage.rs`). Consumed via
-    /// `take_last_usage()`.
-    pub(super) last_usage: Option<crucible_core::traits::llm::TokenUsage>,
-    /// The model choice from the most recent `config_option_update`
-    /// notification. The agent sends one when the model changes mid-turn.
-    /// Consumed via `take_model_update()`.
-    pub(super) model_update: Option<crate::acp::session::ModelChoice>,
-    /// The bytes of a line that a cancelled read did not finish. The next
-    /// read continues this line, so `read_response_line` is safe to cancel.
-    /// Tokio's `read_line` drops these bytes with its future, and
-    /// `read_until` does not, so the buffer holds bytes, not a `String`.
-    pub(super) pending_line: Vec<u8>,
+/// The deadline of one handshake request. The old client allowed five
+/// minutes per read, and an agent that `npx` must first download can use
+/// much of that on `initialize`.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// The turn that runs now. The notification handler sends the turn's
+/// updates here. A permission request races the handler with `cancel`.
+struct Turn {
+    updates: mpsc::UnboundedSender<SessionUpdate>,
+    cancel: CancellationToken,
 }
 
-// Manual Debug implementation since Child doesn't implement Debug
+/// State that the notification handler writes and the client reads.
+#[derive(Default)]
+struct Shared {
+    turn: Option<Turn>,
+    /// The latest slash commands that the agent advertised.
+    commands: Vec<AvailableCommand>,
+    /// The model choice from the latest `config_option_update`.
+    model_update: Option<ModelChoice>,
+}
+
+/// One connection to one ACP agent.
+pub struct CrucibleAcpClient {
+    cx: ConnectionTo<Agent>,
+    agent_name: String,
+    config: ClientConfig,
+    shared: Arc<Mutex<Shared>>,
+    /// The capabilities from `initialize`. The default until the handshake.
+    caps: AgentCapabilities,
+    /// A drop of this sender ends the SDK connection.
+    _stop: oneshot::Sender<()>,
+    /// The agent process, when the client started one. `kill_on_drop` kills
+    /// it when the client drops.
+    _child: Option<tokio::process::Child>,
+}
+
 impl std::fmt::Debug for CrucibleAcpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CrucibleAcpClient")
-            .field("config", &self.config)
             .field("agent_name", &self.agent_name)
-            .field("connected", &self.connected)
-            .field("agent_process", &self.agent_process.is_some())
-            .field("agent_stdin", &self.agent_stdin.is_some())
-            .field("agent_stdout", &self.agent_stdout.is_some())
-            .field("boxed_writer", &self.boxed_writer.is_some())
-            .field("boxed_reader", &self.boxed_reader.is_some())
-            .field("available_commands", &self.available_commands.len())
-            .field("permission_handler", &self.permission_handler.is_some())
-            .field("agent_mcp_capabilities", &self.agent_mcp_capabilities)
-            .field("session_close_supported", &self.session_close_supported)
-            .field("recorder", &self.recorder)
-            .field("last_usage", &self.last_usage.is_some())
-            .field("model_update", &self.model_update.is_some())
-            .finish()
+            .field("config", &self.config)
+            .finish_non_exhaustive()
     }
 }
 
 impl CrucibleAcpClient {
-    /// Create a new ACP client with the given configuration
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Client configuration
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let config = ClientConfig {
-    ///     agent_path: PathBuf::from("/path/to/agent"),
-    ///     timeout_ms: Some(5000),
-    ///     ..Default::default()
-    /// };
-    /// let client = CrucibleAcpClient::new(config);
-    /// ```
-    pub fn new(config: ClientConfig) -> Self {
-        Self::with_name(config, "acp".to_string())
-    }
+    /// Connect over `transport`, with no agent process. Tests and replay use
+    /// this.
+    pub async fn connect(
+        config: ClientConfig,
+        transport: impl ConnectTo<Client> + 'static,
+        agent_name: impl Into<String>,
+        permission: Option<PermissionRequestHandler>,
+    ) -> Result<Self> {
+        let shared = Arc::new(Mutex::new(Shared::default()));
+        let (cx_tx, cx_rx) = oneshot::channel();
+        let (stop, stop_rx) = oneshot::channel::<()>();
+        let agent_name = agent_name.into();
 
-    /// Create a new ACP client with a specific agent name
-    pub fn with_name(config: ClientConfig, agent_name: String) -> Self {
-        let recorder = recording::Recorder::from_env(&agent_name);
-        Self {
-            config,
+        let builder = Client
+            .builder()
+            .name(agent_name.clone())
+            .on_receive_notification(
+                {
+                    let shared = Arc::clone(&shared);
+                    async move |notification: SessionNotification, _cx| {
+                        route_update(&shared, notification.update);
+                        Ok(())
+                    }
+                },
+                agent_client_protocol::on_receive_notification!(),
+            )
+            .on_receive_request(
+                {
+                    let shared = Arc::clone(&shared);
+                    async move |request: RequestPermissionRequest,
+                                responder,
+                                cx: ConnectionTo<Agent>| {
+                        let cancel = lock(&shared)
+                            .turn
+                            .as_ref()
+                            .map(|turn| turn.cancel.clone())
+                            .unwrap_or_default();
+                        let permission = permission.clone();
+                        // The dispatch loop waits for a handler. A user who
+                        // takes a minute to answer must not stop the updates
+                        // of the turn, so the answer waits on its own task.
+                        cx.spawn(async move {
+                            let outcome = tokio::select! {
+                                outcome = ask(permission, request) => outcome,
+                                () = cancel.cancelled() => RequestPermissionOutcome::Cancelled,
+                            };
+                            // A closed connection has nobody to answer. The
+                            // task returns `Ok`, because an error stops the
+                            // connection.
+                            let _ = responder.respond(RequestPermissionResponse::new(outcome));
+                            Ok(())
+                        })
+                    }
+                },
+                agent_client_protocol::on_receive_request!(),
+            );
+
+        let name = agent_name.clone();
+        tokio::spawn(async move {
+            let result = builder
+                .connect_with(transport, async move |cx| {
+                    let _ = cx_tx.send(cx);
+                    let _ = stop_rx.await;
+                    Ok(())
+                })
+                .await;
+            if let Err(error) = result {
+                tracing::debug!(agent = %name, %error, "ACP connection ended with an error");
+            }
+        });
+
+        let cx = cx_rx.await.map_err(|_| {
+            ClientError::Connection("the ACP connection ended before it started".into())
+        })?;
+        Ok(Self {
+            cx,
             agent_name,
-            connected: false,
-            agent_process: None,
-            agent_stdin: None,
-            agent_stdout: None,
-            boxed_writer: None,
-            boxed_reader: None,
-            available_commands: Vec::new(),
-            permission_handler: None,
-            agent_mcp_capabilities: None,
-            session_close_supported: false,
-            recorder,
-            last_usage: None,
-            pending_line: Vec::new(),
-            model_update: None,
-        }
+            config,
+            shared,
+            caps: AgentCapabilities::default(),
+            _stop: stop,
+            _child: None,
+        })
     }
 
-    /// Take the token usage captured from the most recent ACP prompt
-    /// response. Returns `None` if the agent didn't report usage or the
-    /// value has already been taken.
-    pub fn take_last_usage(&mut self) -> Option<crucible_core::traits::llm::TokenUsage> {
-        self.last_usage.take()
+    /// Send one request and wait for its response.
+    pub async fn request<R: JsonRpcRequest>(&self, request: R) -> Result<R::Response> {
+        let method = request.method().to_string();
+        self.cx
+            .send_request(request)
+            .block_task()
+            .await
+            .map_err(|error| request_error(&method, &error))
     }
 
-    /// Take the model choice from the most recent `config_option_update`.
-    /// Returns `None` when no update arrived or the value was already taken.
-    pub fn take_model_update(&mut self) -> Option<crate::acp::session::ModelChoice> {
-        self.model_update.take()
+    /// Send one handshake request. The outer error is the deadline; the
+    /// inner one is the agent's answer, for a caller that reads its code.
+    async fn handshake_call<R: JsonRpcRequest>(
+        &self,
+        request: R,
+    ) -> Result<std::result::Result<R::Response, agent_client_protocol::Error>> {
+        let method = request.method().to_string();
+        tokio::time::timeout(
+            HANDSHAKE_TIMEOUT,
+            self.cx.send_request(request).block_task(),
+        )
+        .await
+        .map_err(|_| {
+            ClientError::Timeout(format!("{method} timed out after {HANDSHAKE_TIMEOUT:?}"))
+        })
     }
 
-    pub fn with_permission_handler(mut self, handler: PermissionRequestHandler) -> Self {
-        self.permission_handler = Some(handler);
-        self
+    /// [`Self::request`] with the handshake deadline.
+    async fn handshake_request<R: JsonRpcRequest>(&self, request: R) -> Result<R::Response> {
+        let method = request.method().to_string();
+        self.handshake_call(request)
+            .await?
+            .map_err(|error| request_error(&method, &error))
     }
 
-    /// Get the agent name for display
+    /// The model choice from the latest `config_option_update`. The value
+    /// goes to the first caller only.
+    pub fn take_model_update(&self) -> Option<ModelChoice> {
+        lock(&self.shared).model_update.take()
+    }
+
+    /// The latest slash commands that the agent advertised.
+    pub fn available_commands(&self) -> Vec<AvailableCommand> {
+        lock(&self.shared).commands.clone()
+    }
+
     pub fn agent_name(&self) -> &str {
         &self.agent_name
     }
 
-    /// Get the latest slash commands advertised by the agent
-    pub fn available_commands(&self) -> &[AvailableCommand] {
-        &self.available_commands
-    }
-
-    /// Whether the agent reported HTTP MCP transport support during initialization.
-    ///
-    /// Returns `false` if `initialize()` has not been called yet.
-    pub fn agent_supports_http_mcp(&self) -> bool {
-        self.agent_mcp_capabilities
-            .as_ref()
-            .map(|c| c.http)
-            .unwrap_or(false)
-    }
-
-    /// Whether the agent advertised `sessionCapabilities.close` during
-    /// initialization.
-    ///
-    /// Returns `false` if `initialize()` has not been called yet.
-    pub fn agent_supports_session_close(&self) -> bool {
-        self.session_close_supported
-    }
-
-    /// Whether the agent reported SSE MCP transport support during initialization.
-    ///
-    /// Returns `false` if `initialize()` has not been called yet.
-    pub fn agent_supports_sse_mcp(&self) -> bool {
-        self.agent_mcp_capabilities
-            .as_ref()
-            .map(|c| c.sse)
-            .unwrap_or(false)
-    }
-
-    /// Get the client configuration
     pub fn config(&self) -> &ClientConfig {
         &self.config
     }
+
+    /// Whether the agent takes a Streamable HTTP MCP server. `false` before
+    /// the handshake.
+    pub fn agent_supports_http_mcp(&self) -> bool {
+        self.caps.mcp_capabilities.http
+    }
+
+    /// Whether the agent advertised `sessionCapabilities.close`. `false`
+    /// before the handshake.
+    pub fn agent_supports_session_close(&self) -> bool {
+        self.caps.session_capabilities.close.is_some()
+    }
+}
+
+/// Lock the shared state. A panic in a holder does not make the state
+/// wrong, because each holder writes whole values.
+fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
+    shared
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Keep the session-level updates. Send the others to the turn that runs.
+fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
+    let mut shared = lock(shared);
+    match update {
+        SessionUpdate::AvailableCommandsUpdate(update) => {
+            tracing::info!(
+                "Received {} available command(s) from agent",
+                update.available_commands.len()
+            );
+            shared.commands = update.available_commands;
+        }
+        // The one option that Crucible tracks is the model selector. The
+        // handle reads the choice with `take_model_update` after the turn.
+        SessionUpdate::ConfigOptionUpdate(update) => {
+            if let Some(choice) = ModelChoice::from_config_options(&update.config_options) {
+                tracing::info!(model = %choice.current, "ACP agent reported a model change");
+                shared.model_update = Some(choice);
+            }
+        }
+        update => match shared.turn.as_ref() {
+            Some(turn) => {
+                let _ = turn.updates.send(update);
+            }
+            None => tracing::debug!(?update, "Ignoring a session update outside a turn"),
+        },
+    }
+}
+
+async fn ask(
+    permission: Option<PermissionRequestHandler>,
+    request: RequestPermissionRequest,
+) -> RequestPermissionOutcome {
+    match permission {
+        Some(handler) => handler(request).await,
+        None => {
+            tracing::warn!("No ACP permission handler configured; cancelling request");
+            RequestPermissionOutcome::Cancelled
+        }
+    }
+}
+
+/// Whether a request failed because the connection ended, not because the
+/// agent answered with an error.
+///
+/// A clean EOF gives the SDK's transport-closed error. A connection that
+/// fails, for example on a write to a dead agent, drops the reply channel,
+/// and the SDK then makes an internal error with the data "response to
+/// `<method>` never received". The SDK gives no typed mark for that case,
+/// so the text is the signal. The tests that kill an agent mid-turn pin it.
+fn connection_lost(error: &agent_client_protocol::Error) -> bool {
+    let never_received = || {
+        error
+            .data
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|data| {
+                data.starts_with("response to `") && data.contains("` never received")
+            })
+    };
+    agent_client_protocol::is_incoming_transport_closed(error)
+        || (error.code == agent_client_protocol::ErrorCode::InternalError && never_received())
+}
+
+/// The client error for a failed request. A closed transport is a lost
+/// connection. An agent error keeps the agent's text, because that text
+/// tells the user the cause, for example a missing login.
+fn request_error(method: &str, error: &agent_client_protocol::Error) -> ClientError {
+    if connection_lost(error) {
+        return ClientError::Connection(format!("the agent closed the connection during {method}"));
+    }
+    let error = serde_json::to_value(error).unwrap_or_default();
+    ClientError::Session(format!(
+        "{method} failed: {}",
+        streaming::describe_rpc_error(&error)
+    ))
 }

@@ -1,325 +1,120 @@
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::io::BufReader;
-use tokio::process::Command;
+use std::sync::{Arc, Mutex};
 
-use super::types::ClientConfig;
-use super::{BoxedReader, BoxedWriter, CrucibleAcpClient};
-use crate::acp::session::AcpSession;
+use agent_client_protocol::schema::v1::{
+    CloseSessionRequest, ErrorCode, InitializeRequest, McpServer, McpServerHttp, McpServerStdio,
+    NewSessionRequest, ResumeSessionRequest, SessionId,
+};
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::Lines;
+use futures::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
+use tokio::process::Command;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+use super::recording::{Direction, Recorder};
+use super::{CrucibleAcpClient, PermissionRequestHandler};
+use crate::acp::session::{AcpSession, ModelChoice, ResumeDisposition, TransportConfig};
 use crate::acp::{ClientError, Result};
 
 impl CrucibleAcpClient {
-    /// Create a client with a pre-connected in-process transport
+    /// Start the agent process in `config` and connect to it over its stdio.
     ///
-    /// This allows using the client with a mock agent or other in-process
-    /// transport without spawning a subprocess. Used primarily for testing.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Client configuration (agent_path is ignored)
-    /// * `writer` - Async writer for sending requests to the agent
-    /// * `reader` - Async buffered reader for receiving responses
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // Create duplex streams for in-process communication
-    /// let (client_to_agent, agent_to_client) = tokio::io::duplex(8192);
-    /// let (read_half, write_half) = tokio::io::split(client_to_agent);
-    ///
-    /// let client = CrucibleAcpClient::with_transport(
-    ///     config,
-    ///     Box::pin(write_half),
-    ///     Box::pin(BufReader::new(read_half)),
-    /// );
-    /// ```
-    pub fn with_transport(config: ClientConfig, writer: BoxedWriter, reader: BoxedReader) -> Self {
-        Self {
-            config,
-            agent_name: "mock".to_string(),
-            connected: false,
-            agent_process: None,
-            agent_stdin: None,
-            agent_stdout: None,
-            boxed_writer: Some(writer),
-            boxed_reader: Some(reader),
-            available_commands: Vec::new(),
-            permission_handler: None,
-            agent_mcp_capabilities: None,
-            session_close_supported: false,
-            recorder: None,
-            last_usage: None,
-            pending_line: Vec::new(),
-            model_update: None,
-        }
-    }
+    /// With `CRUCIBLE_ACP_RECORD_DIR` set, every line in each direction goes
+    /// to a fixture file (see `recording.rs`).
+    pub async fn spawn(
+        config: super::ClientConfig,
+        agent_name: impl Into<String>,
+        permission: Option<PermissionRequestHandler>,
+    ) -> Result<Self> {
+        let agent_name = agent_name.into();
+        tracing::info!(agent = %agent_name, path = %config.agent_path.display(), "Spawning ACP agent process");
 
-    /// Connect to an agent and establish a session
-    ///
-    /// This will start the agent process if needed and perform protocol
-    /// negotiation to establish a communication session.
-    ///
-    /// # Returns
-    ///
-    /// An active `AcpSession` that can be used to send requests to the agent
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The agent process cannot be started
-    /// - Protocol negotiation fails
-    /// - Connection times out
-    pub async fn connect(&mut self) -> Result<AcpSession> {
-        // Spawn the agent process
-        self.spawn_agent().await?;
-
-        // Mark as connected
-        self.mark_connected();
-
-        // Create and return a session
-        use crate::acp::session::TransportConfig;
-        let session_id = format!(
-            "session-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        );
-
-        Ok(AcpSession::new(TransportConfig::default(), session_id))
-    }
-
-    /// Check if a transport is available (either process-based or in-process)
-    ///
-    /// Returns true if there's a reader/writer available for communication.
-    pub fn has_transport(&self) -> bool {
-        (self.boxed_reader.is_some() && self.boxed_writer.is_some())
-            || (self.agent_stdin.is_some() && self.agent_stdout.is_some())
-    }
-
-    /// Spawn the agent process
-    ///
-    /// This method spawns the agent executable specified in the client configuration
-    /// and captures stdin/stdout for communication.
-    ///
-    /// If a transport is already available (e.g., via `with_transport`), this method
-    /// returns immediately without spawning a process. The spawned child is
-    /// retained in `self.agent_process` and killed on disconnect/drop.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The agent executable does not exist
-    /// - The process cannot be spawned
-    /// - Permissions are insufficient
-    pub async fn spawn_agent(&mut self) -> Result<()> {
-        // If we already have a transport (e.g., from with_transport), skip spawning
-        if self.has_transport() {
-            tracing::debug!(agent = %self.agent_name, "Using pre-configured transport, skipping spawn");
-            return Ok(());
-        }
-
-        tracing::info!(agent = %self.agent_name, path = %self.config.agent_path.display(), "Spawning ACP agent process");
-
-        let mut cmd = Command::new(&self.config.agent_path);
-        // SIGKILL the agent if this client is dropped without an explicit
-        // disconnect — otherwise a hung agent (or one that ignores stdin EOF)
-        // leaks, since nothing else retains a handle capable of killing it.
+        let mut cmd = Command::new(&config.agent_path);
+        // Closing the pipes only sends EOF, and a hung agent ignores it.
         cmd.kill_on_drop(true);
-
-        // Add command-line arguments if specified
-        if let Some(ref args) = self.config.agent_args {
+        if let Some(args) = &config.agent_args {
             cmd.args(args);
         }
-
-        // Set working directory if specified
-        if let Some(ref working_dir) = self.config.working_dir {
-            cmd.current_dir(working_dir);
+        if let Some(dir) = &config.working_dir {
+            cmd.current_dir(dir);
         }
-
-        // Set environment variables if specified
-        if let Some(ref env_vars) = self.config.env_vars {
-            for (key, value) in env_vars {
-                cmd.env(key, value);
-            }
+        for (key, value) in config.env_vars.iter().flatten() {
+            cmd.env(key, value);
         }
-
-        // Set up stdio for communication
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-
-        // Spawn the process
         let mut child = cmd
             .spawn()
-            .map_err(|e| ClientError::Connection(format!("Failed to spawn agent: {}", e)))?;
+            .map_err(|e| ClientError::Connection(format!("Failed to spawn agent: {e}")))?;
 
-        tracing::debug!(agent = %self.agent_name, "ACP agent process spawned successfully");
-
-        // Capture stdin and stdout for communication
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| ClientError::Connection("Failed to capture agent stdin".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| ClientError::Connection("Failed to capture agent stdout".to_string()))?;
-
-        // Forward stderr to tracing for debugging
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err(ClientError::Connection(
+                "Failed to capture the agent stdio".into(),
+            ));
+        };
         if let Some(stderr) = child.stderr.take() {
-            let agent_name = self.agent_name.clone();
+            let name = agent_name.clone();
             tokio::spawn(async move {
-                use tokio::io::AsyncBufReadExt;
-                let mut reader = tokio::io::BufReader::new(stderr);
-                let mut line = String::new();
-                loop {
-                    line.clear();
-                    match reader.read_line(&mut line).await {
-                        Ok(0) => break, // EOF
-                        Ok(_) => {
-                            let trimmed = line.trim();
-                            if !trimmed.is_empty() {
-                                tracing::debug!(agent = %agent_name, "[agent stderr] {}", trimmed);
-                            }
-                        }
-                        Err(_) => break,
+                use tokio::io::AsyncBufReadExt as _;
+                let mut lines = tokio::io::BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.trim().is_empty() {
+                        tracing::debug!(agent = %name, "[agent stderr] {}", line.trim());
                     }
                 }
             });
         }
 
-        // Store stdio handles AND the child in the client. Retaining the child
-        // is the actual fix: it was previously returned and dropped immediately,
-        // so `agent_process` stayed None and the daemon had no way to terminate
-        // a hung agent. Now it lives with the client (killed on disconnect/drop).
-        self.agent_stdin = Some(stdin);
-        self.agent_stdout = Some(BufReader::new(stdout));
-        self.agent_process = Some(child);
-
-        Ok(())
+        let recorder = Recorder::from_env(&agent_name).map(|r| Arc::new(Mutex::new(r)));
+        let transport = recorded_lines(stdin, stdout, recorder);
+        let mut client = Self::connect(config, transport, agent_name, permission).await?;
+        client._child = Some(child);
+        Ok(client)
     }
 
-    /// Disconnect from the agent and clean up resources
+    /// Run the handshake and open a session.
     ///
-    /// # Arguments
-    ///
-    /// * `session` - The session to disconnect
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if cleanup fails
-    pub async fn disconnect(&mut self, _session: &AcpSession) -> Result<()> {
-        // Mark as disconnected
-        self.mark_disconnected();
-
-        // Clean up stdio handles and force-kill the agent process. Closing the
-        // pipes only sends EOF (a well-behaved agent exits; a hung one does not),
-        // so explicitly SIGKILL the retained child.
-        self.agent_stdin = None;
-        self.agent_stdout = None;
-        if let Some(mut child) = self.agent_process.take() {
-            let _ = child.start_kill();
-        }
-
-        Ok(())
-    }
-
-    /// Check if currently connected to an agent
-    ///
-    /// # Returns
-    ///
-    /// `true` if there is an active connection, `false` otherwise
-    pub fn is_connected(&self) -> bool {
-        self.connected
-    }
-
-    /// Connect to agent with capability-aware MCP transport negotiation.
-    ///
-    /// This performs the complete connection sequence and picks the best MCP
-    /// transport based on the agent's reported capabilities:
-    ///
-    /// 1. Spawn agent process (or use pre-connected transport)
-    /// 2. Send InitializeRequest — reads agent capabilities
-    /// 3. Choose transport (priority order):
-    ///    - HTTP (Streamable HTTP) if `mcp_url` is provided AND agent reports `mcp_capabilities.http == true`
-    ///    - Stdio otherwise (all agents MUST support stdio per ACP spec)
-    /// 4. Create session with chosen transport
-    ///
-    /// Note: `McpServer::Sse` means legacy SSE transport (GET /sse → endpoint event),
-    /// which our `StreamableHttpService` does not speak. We skip it entirely.
-    ///
-    /// # Arguments
-    ///
-    /// * `mcp_url` - Optional URL to an in-process MCP server. If `None` or if
-    ///   the agent doesn't support HTTP, falls back to stdio transport.
-    pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
-        self.connect_with_best_mcp_resuming(mcp_url, None).await
-    }
-
-    /// [`Self::connect_with_best_mcp`], resuming a stored agent session.
-    ///
-    /// With `resume_session_id` set, the flow sends `session/resume` after
-    /// the handshake so the agent keeps its history across a daemon restart.
-    /// The attempt is not gated on `sessionCapabilities.resume`: an agent in
-    /// transition may answer the method without advertising it, and the
-    /// specified fallback signal is the `-32601` reply. On that reply the
-    /// flow opens a fresh session with `session/new` and marks the returned
-    /// session [`ResumeDisposition::FellBackToNew`](crate::acp::session::ResumeDisposition).
-    pub async fn connect_with_best_mcp_resuming(
+    /// 1. `initialize` reads the agent capabilities.
+    /// 2. The Crucible MCP server goes to the agent over Streamable HTTP when
+    ///    `mcp_url` is given and the agent takes HTTP. Otherwise it goes over
+    ///    stdio, which every ACP agent must take. `McpServer::Sse` is the
+    ///    legacy SSE transport, which our server does not speak.
+    /// 3. With `resume_session_id`, `session/resume` continues that agent
+    ///    session. The attempt does not wait for `sessionCapabilities.resume`,
+    ///    because an agent can answer the method without the flag. A `-32601`
+    ///    or `-32002` answer falls back to `session/new`.
+    pub async fn handshake(
         &mut self,
         mcp_url: Option<&str>,
         resume_session_id: Option<&str>,
     ) -> Result<AcpSession> {
-        use crate::acp::session::ResumeDisposition;
-        use agent_client_protocol::schema::v1::{
-            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest, ResumeSessionRequest,
-            SessionId,
-        };
-
-        tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
-
-        // 1. Spawn agent process (no-op if transport already connected)
-        self.spawn_agent().await?;
-
-        // 2. Initialize — this stores agent capabilities on self
-        let init_request = InitializeRequest::new(1u16.into());
-        let _init_response = self.initialize(init_request).await?;
-
-        // 3. Choose transport based on agent capabilities
-        // Priority: HTTP (Streamable HTTP) > Stdio (all agents MUST support stdio per ACP spec)
-        tracing::debug!(
+        let init = self
+            .handshake_request(InitializeRequest::new(ProtocolVersion::V1))
+            .await?;
+        tracing::info!(
             agent = %self.agent_name,
-            supports_http = self.agent_supports_http_mcp(),
-            mcp_url_provided = mcp_url.is_some(),
-            "MCP transport decision"
+            protocol_version = %init.protocol_version,
+            http_mcp = init.agent_capabilities.mcp_capabilities.http,
+            agent_info = ?init.agent_info,
+            "ACP initialization complete"
         );
-        let crucible_mcp_server = if let Some(url) = mcp_url {
-            if self.agent_supports_http_mcp() {
-                tracing::info!(
-                    agent = %self.agent_name,
-                    url = %url,
-                    "Agent supports HTTP MCP — using Streamable HTTP transport"
-                );
+        self.caps = init.agent_capabilities;
+
+        let mcp_server = match mcp_url {
+            Some(url) if self.agent_supports_http_mcp() => {
+                tracing::info!(agent = %self.agent_name, %url, "Offering the MCP server over Streamable HTTP");
                 McpServer::Http(McpServerHttp::new("crucible", url))
-            } else {
-                // Agent doesn't support Streamable HTTP (may only support legacy SSE
-                // or nothing). Our server uses StreamableHttpService which only speaks
-                // Streamable HTTP, not legacy SSE. Fall back to stdio.
-                tracing::info!(
-                    agent = %self.agent_name,
-                    "Agent lacks Streamable HTTP support, falling back to stdio transport"
-                );
-                Self::build_stdio_mcp_server()
             }
-        } else {
-            tracing::debug!(agent = %self.agent_name, "No MCP URL provided, using stdio transport");
-            Self::build_stdio_mcp_server()
+            _ => {
+                tracing::info!(agent = %self.agent_name, "Offering the MCP server over stdio");
+                stdio_mcp_server()
+            }
         };
 
-        // 4. Create session with chosen transport
-        // Must be absolute — the agent process runs in working_dir, so a relative
-        // cwd would resolve to working_dir/cwd (double-nesting).
+        // Must be absolute: the agent runs in `working_dir`, so a relative
+        // cwd would resolve twice.
         let cwd = self
             .config
             .working_dir
@@ -328,72 +123,124 @@ impl CrucibleAcpClient {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("/"));
 
-        use crate::acp::session::{ModelChoice, TransportConfig};
-
-        // 4a. Resume the stored agent session, when the caller has one.
-        // `Ok(None)` is the -32601 answer: fall through to `session/new`.
         let mut resume = ResumeDisposition::NotAttempted;
-        if let Some(prior_id) = resume_session_id {
-            let resume_request =
-                ResumeSessionRequest::new(SessionId::from(prior_id.to_string()), cwd.clone())
-                    .mcp_servers(vec![crucible_mcp_server.clone()]);
-            match self.resume_session(resume_request).await? {
-                Some(resume_response) => {
-                    self.mark_connected();
-                    tracing::info!(
-                        agent = %self.agent_name,
-                        session_id = %prior_id,
-                        "ACP agent resumed its session"
-                    );
-                    let model = resume_response
-                        .config_options
-                        .as_deref()
-                        .and_then(ModelChoice::from_config_options);
+        if let Some(prior) = resume_session_id {
+            let request =
+                ResumeSessionRequest::new(SessionId::from(prior.to_string()), cwd.clone())
+                    .mcp_servers(vec![mcp_server.clone()]);
+            match self.handshake_call(request).await? {
+                Ok(response) => {
+                    tracing::info!(agent = %self.agent_name, session_id = %prior, "ACP agent resumed its session");
                     return Ok(
-                        AcpSession::new(TransportConfig::default(), prior_id.to_string())
-                            .with_model(model)
-                            .with_modes(resume_response.modes.clone())
-                            .with_config_options(resume_response.config_options.clone())
+                        AcpSession::new(TransportConfig::default(), prior.to_string())
+                            .with_model(
+                                response
+                                    .config_options
+                                    .as_deref()
+                                    .and_then(ModelChoice::from_config_options),
+                            )
+                            .with_modes(response.modes)
+                            .with_config_options(response.config_options)
                             .with_resume(ResumeDisposition::Resumed),
                     );
                 }
-                None => resume = ResumeDisposition::FellBackToNew,
+                // `-32601`: the agent does not speak the method. `-32002`: it
+                // no longer knows the session; claude-agent-acp and codex-acp
+                // answer this for a session that never kept a turn. Another
+                // error has a cause that a fallback would hide.
+                Err(error)
+                    if matches!(
+                        error.code,
+                        ErrorCode::MethodNotFound | ErrorCode::ResourceNotFound
+                    ) =>
+                {
+                    tracing::warn!(agent = %self.agent_name, code = ?error.code, "session/resume refused; falling back to session/new");
+                    resume = ResumeDisposition::FellBackToNew;
+                }
+                Err(error) => return Err(super::request_error("session/resume", &error)),
             }
         }
 
-        // 4b. Create session with chosen transport
-        let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
-        let session_response = self.create_new_session(session_request).await?;
-
-        self.mark_connected();
-
-        tracing::info!(
-            agent = %self.agent_name,
-            session_id = %session_response.session_id,
-            "ACP agent connected with session"
-        );
-
-        let model = session_response
-            .config_options
-            .as_deref()
-            .and_then(ModelChoice::from_config_options);
-        Ok(AcpSession::new(
-            TransportConfig::default(),
-            session_response.session_id.to_string(),
+        let response = self
+            .handshake_request(NewSessionRequest::new(cwd).mcp_servers(vec![mcp_server]))
+            .await?;
+        tracing::info!(agent = %self.agent_name, session_id = %response.session_id, "ACP agent connected with session");
+        Ok(
+            AcpSession::new(TransportConfig::default(), response.session_id.to_string())
+                .with_model(
+                    response
+                        .config_options
+                        .as_deref()
+                        .and_then(ModelChoice::from_config_options),
+                )
+                .with_modes(response.modes)
+                .with_config_options(response.config_options)
+                .with_resume(resume),
         )
-        .with_model(model)
-        .with_modes(session_response.modes.clone())
-        .with_config_options(session_response.config_options.clone())
-        .with_resume(resume))
     }
 
-    /// Mark the client as connected.
-    pub fn mark_connected(&mut self) {
-        self.connected = true;
+    /// Send `session/close` so the agent frees the session. A `-32601`
+    /// answer is not an error: the agent exits on the pipe close after it.
+    pub async fn close(&self, session_id: &str) -> Result<()> {
+        let request = CloseSessionRequest::new(SessionId::from(session_id.to_string()));
+        match self.cx.send_request(request).block_task().await {
+            Ok(_) => Ok(()),
+            Err(error) if error.code == ErrorCode::MethodNotFound => Ok(()),
+            Err(error) => Err(super::request_error("session/close", &error)),
+        }
     }
+}
 
-    /// Mark the client as disconnected.
-    pub fn mark_disconnected(&mut self) {
-        self.connected = false;
-    }
+/// A line transport over the agent stdio. A recorder, when present, gets
+/// each line in each direction.
+fn recorded_lines(
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::process::ChildStdout,
+    recorder: Option<Arc<Mutex<Recorder>>>,
+) -> Lines<
+    impl futures::Sink<String, Error = std::io::Error> + Send + 'static,
+    impl futures::Stream<Item = std::io::Result<String>> + Send + 'static,
+> {
+    let record = move |dir: Direction, line: &str| {
+        if let Some(recorder) = &recorder {
+            recorder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .record_line(dir, line);
+        }
+    };
+    let record_in = record.clone();
+    let incoming = futures::io::BufReader::new(stdout.compat())
+        .lines()
+        .inspect(move |line| {
+            if let Ok(line) = line {
+                record_in(Direction::In, line);
+            }
+        });
+    let outgoing = futures::sink::unfold(
+        Box::pin(stdin.compat_write()),
+        move |mut writer, line: String| {
+            record(Direction::Out, &line);
+            async move {
+                writer.write_all(format!("{line}\n").as_bytes()).await?;
+                writer.flush().await?;
+                Ok::<_, std::io::Error>(writer)
+            }
+        },
+    );
+    Lines::new(outgoing, Box::pin(incoming))
+}
+
+/// The stdio MCP server entry: `cru mcp` beside the running binary. Every
+/// ACP agent must take a stdio server.
+pub(super) fn stdio_mcp_server() -> McpServer {
+    let cru = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("cru")))
+        .unwrap_or_else(|| PathBuf::from("cru"));
+    McpServer::Stdio(McpServerStdio::new("crucible", cru).args(vec![
+        "mcp".to_string(),
+        "--stdio".to_string(),
+        "--standalone".to_string(),
+    ]))
 }

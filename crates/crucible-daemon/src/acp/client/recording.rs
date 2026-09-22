@@ -52,8 +52,8 @@ pub struct FrameRecord {
     pub frame: serde_json::Value,
 }
 
-/// Live recorder. Owned by `CrucibleAcpClient`; tees frames at the I/O
-/// boundary in `client/io.rs`.
+/// Live recorder. The line transport of a spawned agent (see
+/// `client/connection.rs`) gives it each line in each direction.
 pub struct Recorder {
     writer: BufWriter<File>,
     started: Instant,

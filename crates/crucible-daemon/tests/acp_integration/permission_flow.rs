@@ -13,6 +13,8 @@
 //! An assertion inside the agent task would also report as "agent closed
 //! connection" rather than as the mismatch.
 
+use crate::scripted_agent::client_with_permission;
+use crate::scripted_agent::prompt_with;
 use crate::scripted_agent::{
     client_with_custom_transport, final_response, make_prompt_request, read_frame, read_request_id,
     text_chunk, tool_call_notification, tool_call_update_completed, write_json_line, AgentReader,
@@ -157,9 +159,8 @@ fn recording_handler() -> (
 /// details, and that its choice goes back to the agent under the request's id.
 #[tokio::test]
 async fn acp_permission_handler_receives_correct_request_details() {
-    let (client, reader, writer) = client_with_custom_transport(Some(500));
     let (handler, recorded) = recording_handler();
-    let mut client = client.with_permission_handler(handler);
+    let (client, reader, writer) = client_with_permission(Some(500), Some(handler)).await;
 
     let agent = tokio::spawn(permission_turn(
         reader,
@@ -170,12 +171,12 @@ async fn acp_permission_handler_receives_correct_request_details() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-details", "exec something"),
-            Box::new(|_| true),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-details", "exec something"),
+        Box::new(|_| true),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     turn.expect("streaming should complete");
 
@@ -201,9 +202,8 @@ async fn acp_permission_handler_receives_correct_request_details() {
 /// permission handler is never invoked.
 #[tokio::test]
 async fn acp_safe_tool_no_permission_request_needed() {
-    let (client, reader, writer) = client_with_custom_transport(Some(500));
     let (handler, recorded) = recording_handler();
-    let mut client = client.with_permission_handler(handler);
+    let (client, reader, writer) = client_with_permission(Some(500), Some(handler)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -227,15 +227,15 @@ async fn acp_safe_tool_no_permission_request_needed() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-safe", "read main.rs"),
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-safe", "read main.rs"),
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) = turn.expect("streaming should complete without permission request");
 
@@ -264,8 +264,8 @@ async fn acp_safe_tool_no_permission_request_needed() {
 
 #[tokio::test]
 async fn acp_permission_approved_sends_selected_response_to_agent() {
-    let (client, reader, writer) = client_with_custom_transport(Some(2000));
-    let mut client = client.with_permission_handler(always_approve_handler());
+    let (client, reader, writer) =
+        client_with_permission(Some(2000), Some(always_approve_handler())).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -286,15 +286,15 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-perm-approve", "run echo hello"),
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-perm-approve", "run echo hello"),
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) = turn.expect("streaming should complete after permission approval");
 
@@ -322,8 +322,7 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
         })
     });
 
-    let (client, reader, writer) = client_with_custom_transport(Some(2000));
-    let mut client = client.with_permission_handler(handler);
+    let (client, reader, writer) = client_with_permission(Some(2000), Some(handler)).await;
 
     let agent = tokio::spawn(permission_turn(
         reader,
@@ -334,12 +333,12 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-perm-deny", "write a file"),
-            Box::new(|_| true),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-perm-deny", "write a file"),
+        Box::new(|_| true),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     turn.expect("streaming should complete after permission denial");
 
@@ -355,7 +354,7 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
 /// agent neither hangs nor runs the tool.
 #[tokio::test]
 async fn acp_permission_handler_not_set_defaults_to_cancelled() {
-    let (mut client, reader, writer) = client_with_custom_transport(Some(2000));
+    let (mut client, reader, writer) = client_with_custom_transport(Some(2000)).await;
 
     let agent = tokio::spawn(permission_turn(
         reader,
@@ -366,12 +365,12 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-no-handler", "delete everything"),
-            Box::new(|_| true),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-no-handler", "delete everything"),
+        Box::new(|_| true),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     turn.expect("streaming should complete with auto-cancelled permission");
 
@@ -381,9 +380,8 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
 
 #[tokio::test]
 async fn acp_multiple_permission_requests_in_single_turn() {
-    let (client, reader, writer) = client_with_custom_transport(Some(2000));
     let (handler, recorded) = recording_handler();
-    let mut client = client.with_permission_handler(handler);
+    let (client, reader, writer) = client_with_permission(Some(2000), Some(handler)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -420,15 +418,15 @@ async fn acp_multiple_permission_requests_in_single_turn() {
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-multi", "list files then write output"),
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-multi", "list files then write output"),
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) =
         turn.expect("streaming should complete with multiple permission requests");
@@ -462,8 +460,6 @@ async fn acp_multiple_permission_requests_in_single_turn() {
 /// id" change must not break Hermes.
 #[tokio::test]
 async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind() {
-    let (client, reader, writer) = client_with_custom_transport(Some(2000));
-
     // The handler reads only `kind`, the way the daemon's gate does. An
     // answer therefore proves the kind survived, and that the unknown id
     // did not stop the request.
@@ -481,7 +477,7 @@ async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind()
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
         })
     });
-    let mut client = client.with_permission_handler(handler);
+    let (client, reader, writer) = client_with_permission(Some(2000), Some(handler)).await;
 
     let agent = tokio::spawn(permission_turn(
         reader,
@@ -522,16 +518,67 @@ async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind()
         ],
     ));
 
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request("ses-hermes-perm", "remove the build directory"),
-            Box::new(|_| true),
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request("ses-hermes-perm", "remove the build directory"),
+        Box::new(|_| true),
+    )
+    .await;
     let replies = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) = turn.expect("the turn must complete after the permission answer");
 
     assert_eq!(replies.len(), 1, "one request, one reply: {replies:?}");
     assert_permission_reply(&replies[0], 700, "selected", Some("allow_once"));
     assert!(summary.announced_any, "the tc- call was announced");
+}
+
+/// A turn that the daemon drops while a permission question waits for the
+/// user ends that question with `cancelled`. The agent waits for the answer
+/// before it ends the turn, so a question that stays open holds the turn
+/// until the deadline.
+#[tokio::test]
+async fn a_dropped_turn_answers_a_pending_permission_request_with_cancelled() {
+    // The user never answers.
+    let handler: PermissionRequestHandler = Arc::new(|_| Box::pin(std::future::pending()));
+    let (client, mut reader, mut writer) = client_with_permission(Some(2000), Some(handler)).await;
+
+    let agent = tokio::spawn(async move {
+        let prompt_id = read_request_id(&mut reader).await;
+        write_json_line(
+            &mut writer,
+            permission_request_msg("ses-drop", 900, "tool-1", "execute_command"),
+        )
+        .await;
+        write_json_line(&mut writer, text_chunk("ses-drop", "waiting")).await;
+        // The client sends `session/cancel` and the answer, in either order.
+        let frames = [read_frame(&mut reader).await, read_frame(&mut reader).await];
+        write_json_line(
+            &mut writer,
+            json!({"jsonrpc": "2.0", "id": prompt_id, "result": {"stopReason": "cancelled"}}),
+        )
+        .await;
+        frames
+    });
+
+    // The first chunk drops the turn, the way the daemon cancels one.
+    let (_summary, response) =
+        prompt_with(&client, make_prompt_request("ses-drop", "go"), |_| false)
+            .await
+            .expect("the cancelled turn ends");
+    let frames = agent.await.expect("the scripted agent finished its turn");
+
+    assert_eq!(
+        response.stop_reason,
+        agent_client_protocol::schema::v1::StopReason::Cancelled
+    );
+    let cancel = frames
+        .iter()
+        .find(|f| f["method"] == "session/cancel")
+        .unwrap_or_else(|| panic!("the client sent no session/cancel: {frames:?}"));
+    assert_eq!(cancel["params"]["sessionId"], "ses-drop");
+    let reply = frames
+        .iter()
+        .find(|f| f.get("method").is_none())
+        .unwrap_or_else(|| panic!("the client did not answer the question: {frames:?}"));
+    assert_permission_reply(reply, 900, "cancelled", None);
 }

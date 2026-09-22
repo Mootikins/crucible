@@ -3,7 +3,7 @@
 //! `acp_transport_negotiation.rs` asserts the *flags* the client stored from
 //! `initialize` — `agent_supports_http_mcp()` — and that a session opened. It
 //! never reads the frame. Invert the http/stdio branch in
-//! `connection.rs::connect_with_best_mcp_resuming` and every one of those
+//! `connection.rs::handshake` and every one of those
 //! tests still passes, because the mock accepts whatever `mcpServers` it is
 //! handed and records nothing about them.
 //!
@@ -24,7 +24,8 @@ use serde_json::json;
 /// `http_mcp` is what the agent advertises in `initialize`; `mcp_url` is what
 /// the daemon would pass when it has an in-process MCP host running.
 async fn mcp_servers_sent(http_mcp: bool, mcp_url: Option<&str>) -> Vec<serde_json::Value> {
-    let (mut client, mut agent_read, mut agent_write) = client_with_custom_transport(Some(5_000));
+    let (mut client, mut agent_read, mut agent_write) =
+        client_with_custom_transport(Some(5_000)).await;
 
     let agent = tokio::spawn(async move {
         let init = read_frame(&mut agent_read).await;
@@ -62,7 +63,7 @@ async fn mcp_servers_sent(http_mcp: bool, mcp_url: Option<&str>) -> Vec<serde_js
     });
 
     client
-        .connect_with_best_mcp(mcp_url)
+        .handshake(mcp_url, None)
         .await
         .expect("the scripted agent completes the handshake");
 

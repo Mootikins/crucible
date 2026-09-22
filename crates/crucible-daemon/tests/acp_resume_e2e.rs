@@ -1,7 +1,7 @@
 //! Resuming an ACP agent's own session across a daemon restart.
 //!
 //! Three layers already have a piece of this. `agent_handshake_tests.rs`
-//! drives `connect_with_best_mcp_resuming` against an in-process mock and
+//! drives `handshake` with a resume id against an in-process mock and
 //! proves the two dispositions. `messaging.rs` proves the id an agent
 //! reports is persisted and survives storage. Neither joins them: nothing
 //! shows that a *second* handle, built by the production factory from what

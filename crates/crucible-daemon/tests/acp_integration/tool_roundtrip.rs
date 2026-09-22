@@ -2,6 +2,7 @@
 //! flow correctly through the ACP streaming pipeline and that tool results
 //! are captured in the accumulated output.
 
+use crate::scripted_agent::prompt_with;
 use crate::scripted_agent::{
     client_with_custom_transport, final_response, make_prompt_request, mcp_http_open_session,
     mcp_http_request, read_frame, read_request_id, text_chunk, tool_call_notification,
@@ -15,7 +16,8 @@ use std::sync::{Arc, Mutex};
 /// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_read_file() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(5000)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -68,16 +70,16 @@ async fn test_acp_tool_roundtrip_read_file() {
     });
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
-    let (_summary, response) = client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("tool roundtrip should complete");
+    let (_summary, response) = prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("tool roundtrip should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     // Verify chunk ordering: text -> tool_start -> tool_end -> text
@@ -166,7 +168,8 @@ async fn test_acp_tool_roundtrip_read_file() {
 /// and arrive in the correct order.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_multiple_tools() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(5000)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -238,16 +241,16 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     });
 
     let request = make_prompt_request(session_id, "search and read config");
-    let (summary, _response) = client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("multi-tool roundtrip should complete");
+    let (summary, _response) = prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("multi-tool roundtrip should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();
@@ -315,7 +318,8 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     .await
     .expect("the in-process MCP host binds to localhost");
 
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(5000)).await;
     let acp_session_id = "ses-mcp-roundtrip";
 
     let agent = tokio::spawn(async move {
@@ -389,17 +393,17 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     });
 
     client
-        .connect_with_best_mcp(Some(&host.mcp_url()))
+        .handshake(Some(&host.mcp_url()), None)
         .await
         .expect("the scripted agent completes the handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let turn = client
-        .send_prompt_with_callback(
-            make_prompt_request(acp_session_id, "list my notes"),
-            callback,
-        )
-        .await;
+    let turn = prompt_with(
+        &client,
+        make_prompt_request(acp_session_id, "list my notes"),
+        callback,
+    )
+    .await;
     let tool_output = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) = turn.expect("MCP tool roundtrip should complete");
 
@@ -440,7 +444,8 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
 /// appear in the final content string.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_content_after_tool() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(5000));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(5000)).await;
 
     let session_id = "ses-roundtrip-after";
 
@@ -484,8 +489,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
 
     let request = make_prompt_request(session_id, "find main function");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (summary, _response) = client
-        .send_prompt_with_callback(request, callback)
+    let (summary, _response) = prompt_with(&client, request, callback)
         .await
         .expect("content-after-tool roundtrip should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());

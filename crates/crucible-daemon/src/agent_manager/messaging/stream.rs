@@ -825,7 +825,7 @@ impl AgentManager {
                     // standalone event for it. Seeding `last_usage` is a
                     // floor, not the primary path: `usage_update` arrives
                     // mid-turn and `TurnEvent::Usage` (parsed from the final
-                    // `PromptResponse`, see `acp/client/usage.rs`) arrives
+                    // `PromptResponse`, see `acp::turn_usage`) arrives
                     // after it, so whenever the agent reports both, the later
                     // and strictly better value wins. The `is_none` guard only
                     // stops a trailing window frame from clobbering it.

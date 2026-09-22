@@ -1,7 +1,7 @@
-use super::test_path;
-use crate::acp::client::types::{ClientConfig, StreamingState};
+use crate::acp::client::streaming::apply_update;
+use crate::acp::client::types::StreamingState;
 use crate::acp::client::CrucibleAcpClient;
-use crate::acp::streaming::{StreamingCallback, StreamingChunk, TurnSummary};
+use crate::acp::streaming::{StreamingChunk, TurnSummary};
 use agent_client_protocol::schema::v1::SessionNotification;
 use serde_json::json;
 
@@ -32,12 +32,10 @@ fn streaming_state_drops_whitespace_only_chunks() {
 /// table still holds one entry per id.
 #[test]
 fn tool_call_updates_existing_entry() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     for path in ["PRIME", "PRIME.md"] {
         capture_apply(
-            &mut client,
             &mut state,
             json!({
                 "sessionId": "s1",
@@ -66,12 +64,10 @@ fn tool_call_updates_existing_entry() {
 /// entries.
 #[test]
 fn tool_calls_with_different_ids_are_both_recorded() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     for id in ["call-1", "call-2"] {
         capture_apply(
-            &mut client,
             &mut state,
             json!({
                 "sessionId": "s1",
@@ -95,43 +91,27 @@ fn tool_calls_with_different_ids_are_both_recorded() {
 // agents send idempotent tool_call updates.
 // =========================================================================
 
-fn make_client() -> CrucibleAcpClient {
-    let config = ClientConfig {
-        agent_path: test_path("test-agent"),
-        agent_args: None,
-        timeout_ms: Some(1000),
-        ..Default::default()
-    };
-    CrucibleAcpClient::new(config)
-}
-
 fn capture_apply(
-    client: &mut CrucibleAcpClient,
     state: &mut StreamingState,
     notification_json: serde_json::Value,
 ) -> Vec<StreamingChunk> {
     let notification: SessionNotification =
         serde_json::from_value(notification_json).expect("notification should deserialize");
-    let collected: std::sync::Arc<std::sync::Mutex<Vec<StreamingChunk>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let sink = collected.clone();
-    let mut callback: StreamingCallback = Box::new(move |chunk| {
-        sink.lock().unwrap().push(chunk);
-        true
-    });
-    client.apply_session_update_with_callback(notification, state, &mut callback);
-    let guard = collected.lock().unwrap();
-    guard.clone()
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    apply_update(notification.update, state, &tx);
+    let mut chunks = Vec::new();
+    while let Ok(chunk) = rx.try_recv() {
+        chunks.push(chunk);
+    }
+    chunks
 }
 
 #[test]
 fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     // Initial tool_call with empty diffs (Claude Code defers diffs).
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -146,7 +126,6 @@ fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
 
     // Follow-up tool_call_update with diff content.
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -175,7 +154,6 @@ fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
 
 #[test]
 fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     let initial_diff = json!([{
@@ -187,7 +165,6 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
 
     // Initial tool_call carries a diff.
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -202,7 +179,6 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
 
     // Follow-up update repeats the same diff verbatim — should be silent.
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -228,11 +204,9 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
 /// because nothing was announced before it.
 #[test]
 fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -268,11 +242,9 @@ fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() 
 /// ends.
 #[test]
 fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -326,11 +298,9 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
 /// name table of its own.
 #[test]
 fn tool_end_carries_the_name_of_its_call() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -342,7 +312,6 @@ fn tool_end_carries_the_name_of_its_call() {
         }),
     );
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -371,8 +340,6 @@ fn tool_end_carries_the_name_of_its_call() {
 /// nothing.
 #[test]
 fn turn_summary_reports_visible_content_and_announced_calls() {
-    let mut client = make_client();
-
     let mut state = StreamingState::default();
     assert_eq!(
         state.summary(),
@@ -383,7 +350,6 @@ fn turn_summary_reports_visible_content_and_announced_calls() {
     );
 
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -399,7 +365,6 @@ fn turn_summary_reports_visible_content_and_announced_calls() {
     );
 
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -420,7 +385,6 @@ fn turn_summary_reports_visible_content_and_announced_calls() {
 
     let mut state = StreamingState::default();
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -647,11 +611,9 @@ fn failed_tool_error_text_is_sanitized_and_capped() {
 /// undiagnosable.
 #[test]
 fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -664,7 +626,6 @@ fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
     );
 
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -690,11 +651,9 @@ fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
 /// re-emitting an identical snapshot has no informational gain.
 #[test]
 fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
 
     capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -708,7 +667,6 @@ fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
     );
 
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -733,10 +691,8 @@ fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
 /// text blocks as the result. Diff blocks are not text.
 #[test]
 fn completed_update_without_raw_output_reads_content_text() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -769,10 +725,8 @@ fn completed_update_without_raw_output_reads_content_text() {
 /// content text, not collapse to the generic label.
 #[test]
 fn failed_update_without_raw_output_reads_content_text() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -808,10 +762,8 @@ fn failed_update_without_raw_output_reads_content_text() {
 /// When both exist, `rawOutput` is the result and content is ignored.
 #[test]
 fn raw_output_wins_over_content_when_both_exist() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -842,10 +794,8 @@ fn raw_output_wins_over_content_when_both_exist() {
 /// user's own text. It must emit nothing, and it must not enter the answer.
 #[test]
 fn user_message_chunk_emits_nothing_and_stays_out_of_the_answer() {
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s1",
@@ -868,10 +818,8 @@ fn usage_update_emits_a_context_window_chunk() {
     // The claude wire shape, recorded in
     // `tests/fixtures/acp/recorded/claude/basic-chat.jsonl`. The typed
     // parse must carry it; no raw reader runs ahead of it.
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "c299d62f",
@@ -898,10 +846,8 @@ fn a_zero_size_usage_update_is_not_a_window() {
     // `context_limit_resolved { limit: 0, source: Agent }`, a claim that
     // the window is resolved while the statusline renders the no-data
     // state. To report nothing keeps unresolved unresolved.
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "s",
@@ -915,10 +861,8 @@ fn a_zero_size_usage_update_is_not_a_window() {
 fn a_zero_used_usage_update_is_a_window() {
     // A fresh turn used nothing yet. That is a real reading of a real
     // window, so only `size` is refused for a zero value.
-    let mut client = make_client();
     let mut state = StreamingState::default();
     let chunks = capture_apply(
-        &mut client,
         &mut state,
         json!({
             "sessionId": "ses_257dac",

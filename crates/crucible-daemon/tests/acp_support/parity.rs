@@ -216,18 +216,21 @@ pub fn tool_names_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> Vec<Str
         .collect()
 }
 
+/// The chunks of one turn, as a callback collects them.
+pub type Captured = std::sync::Arc<std::sync::Mutex<Vec<crucible_daemon::acp::StreamingChunk>>>;
+
 /// A callback that captures every chunk of one turn into the returned buffer.
 #[allow(dead_code)]
 pub fn capture_chunks() -> (
-    std::sync::Arc<std::sync::Mutex<Vec<crucible_daemon::acp::StreamingChunk>>>,
-    crucible_daemon::acp::StreamingCallback,
+    Captured,
+    impl FnMut(crucible_daemon::acp::StreamingChunk) -> bool + Send,
 ) {
-    let chunks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let chunks = Captured::default();
     let chunks_cb = chunks.clone();
-    let callback: crucible_daemon::acp::StreamingCallback = Box::new(move |chunk| {
+    let callback = move |chunk| {
         chunks_cb.lock().unwrap().push(chunk);
         true
-    });
+    };
     (chunks, callback)
 }
 

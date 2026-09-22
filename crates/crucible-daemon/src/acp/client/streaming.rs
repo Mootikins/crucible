@@ -1,10 +1,14 @@
-use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-use agent_client_protocol::schema::v1::{ContentBlock, SessionNotification, SessionUpdate};
+use agent_client_protocol::schema::v1::{
+    CancelNotification, ContentBlock, PromptRequest, PromptResponse, SessionId, SessionUpdate,
+};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use super::types::StreamingState;
-use super::{CrucibleAcpClient, REQUEST_ID};
-use crate::acp::streaming::{StreamingCallback, StreamingChunk, TurnSummary};
+use super::CrucibleAcpClient;
+use crate::acp::streaming::{StreamingChunk, TurnSummary};
 use crate::acp::{ClientError, Result};
 use crucible_core::text::{sanitize_multiline, sanitize_single_line};
 use crucible_core::turn::is_visible_content;
@@ -16,23 +20,6 @@ fn stop_reason_label(stop_reason: agent_client_protocol::schema::v1::StopReason)
         .ok()
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_else(|| format!("{stop_reason:?}"))
-}
-
-/// Build the `session/cancel` JSON-RPC notification. A notification carries
-/// no `id`, so no reply comes back. The agent must abort the in-flight turn
-/// and end it with `StopReason::Cancelled`.
-///
-/// The params come from the schema's `CancelNotification`, so the frame
-/// cannot drift from the spec shape.
-pub(super) fn build_cancel_notification(session_id: &str) -> serde_json::Value {
-    use agent_client_protocol::schema::v1::{CancelNotification, SessionId};
-
-    let params = CancelNotification::new(SessionId::from(session_id.to_string()));
-    serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "session/cancel",
-        "params": params
-    })
 }
 
 /// How far to chase a nested error payload before giving up. Deep enough for
@@ -154,370 +141,188 @@ fn detail_text(value: &serde_json::Value, depth: u8) -> Option<String> {
     }
 }
 
-impl CrucibleAcpClient {
-    /// Send a prompt request with streaming and a callback for real-time chunks.
-    ///
-    /// The ACP streaming protocol sends `session/update` notifications while
-    /// the agent works, then a final response with a `stopReason`. This method
-    /// calls the callback for each chunk as it arrives, so a caller can show
-    /// the turn in real time.
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The PromptRequest to send
-    /// * `callback` - Callback invoked for each streaming chunk. Return `false` to cancel.
-    ///
-    /// # Returns
-    ///
-    /// What the turn showed the user, and the final PromptResponse. The
-    /// chunks of the turn reach the caller only through the callback.
-    pub async fn send_prompt_with_callback(
-        &mut self,
-        request: agent_client_protocol::schema::v1::PromptRequest,
-        callback: StreamingCallback,
-    ) -> Result<(
-        TurnSummary,
-        agent_client_protocol::schema::v1::PromptResponse,
-    )> {
-        self.send_prompt_until_cancelled(request, callback, std::future::pending())
-            .await
+/// Clears the turn slot when the turn ends, also when its future drops.
+struct TurnSlot<'a>(&'a std::sync::Mutex<super::Shared>);
+
+impl Drop for TurnSlot<'_> {
+    fn drop(&mut self) {
+        super::lock(self.0).turn = None;
     }
+}
 
-    /// Send a prompt like [`Self::send_prompt_with_callback`], and cancel
-    /// the turn when `cancelled` completes.
+impl CrucibleAcpClient {
+    /// Run one turn. Each chunk of the turn goes to `out`.
     ///
-    /// A callback that returns `false` finds a cancel only when the agent
-    /// sends a chunk. An agent in a long tool call sends nothing, so the
-    /// caller also gives a future that completes at the cancel. The client
-    /// then sends `session/cancel` at once. It keeps the read until the
-    /// agent ends the turn, so the connection is clean for the next turn.
-    pub async fn send_prompt_until_cancelled(
-        &mut self,
-        request: agent_client_protocol::schema::v1::PromptRequest,
-        mut callback: StreamingCallback,
-        cancelled: impl std::future::Future<Output = ()>,
-    ) -> Result<(
-        TurnSummary,
-        agent_client_protocol::schema::v1::PromptResponse,
-    )> {
-        use serde_json::json;
-
-        let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
-        tracing::info!(
-            "Starting streaming request with callback, ID {}",
-            request_id
-        );
-
-        let json_request = json!({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": "session/prompt",
-            "params": serde_json::to_value(&request)?
+    /// A closed `out` is a cancel: the daemon dropped the turn. The client
+    /// then sends `session/cancel` once, answers a pending permission request
+    /// with `cancelled`, and waits for the agent to end the turn. The turn
+    /// has a deadline of ten times `timeout_ms` (30 s without it). At the
+    /// deadline the client sends `session/cancel` and returns a timeout.
+    ///
+    /// The SDK dispatches every update that comes before the response before
+    /// it gives the response. So the updates that are in the channel when
+    /// the response comes are all of the turn.
+    pub async fn prompt(
+        &self,
+        request: PromptRequest,
+        out: &mpsc::UnboundedSender<StreamingChunk>,
+    ) -> Result<(TurnSummary, PromptResponse)> {
+        let session_id = request.session_id.clone();
+        let (updates_tx, mut updates) = mpsc::unbounded_channel();
+        let cancel = CancellationToken::new();
+        super::lock(&self.shared).turn = Some(super::Turn {
+            updates: updates_tx,
+            cancel: cancel.clone(),
         });
+        let _slot = TurnSlot(&self.shared);
 
-        self.write_request(&json_request).await?;
-
-        let overall_timeout = self
+        let limit = self
             .config
             .timeout_ms
-            .map(|ms| tokio::time::Duration::from_millis(ms * 10))
-            .unwrap_or(tokio::time::Duration::from_secs(30));
+            .map(|ms| Duration::from_millis(ms * 10))
+            .unwrap_or(Duration::from_secs(30));
+        let deadline = tokio::time::sleep(limit);
+        tokio::pin!(deadline);
+        let response = self.cx.send_request(request).block_task();
+        tokio::pin!(response);
 
-        // Needed if the turn is cancelled mid-stream, to tell the agent to stop.
-        let session_id = request.session_id.to_string();
-
-        let streaming_future = async {
-            let mut state = StreamingState::default();
-            let mut cancel_sent = false;
-            let mut cancelled = std::pin::pin!(cancelled);
-
-            loop {
-                // Until the cancel goes out, a cancel races the next frame.
-                // The read is safe to cancel, so a lost race loses no bytes.
-                let next_line = if cancel_sent {
-                    Some(self.read_response_line().await?)
-                } else {
-                    tokio::select! {
-                        biased;
-                        line = self.read_response_line() => Some(line?),
-                        () = &mut cancelled => None,
-                    }
-                };
-                let Some(response_line) = next_line else {
-                    state.cancelled = true;
-                    tracing::debug!(session_id = %session_id, "Turn cancelled while the agent was quiet; sending session/cancel to ACP agent");
-                    self.send_session_cancel(&session_id).await?;
-                    cancel_sent = true;
-                    continue;
-                };
-                let response: serde_json::Value = serde_json::from_str(&response_line)?;
-
-                tracing::trace!("Received line: {}", response_line);
-
-                if let Some(error) = response.get("error") {
-                    let error_msg = describe_rpc_error(error);
-                    let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-
-                    return Err(ClientError::Session(format!(
-                        "Agent error during streaming: {} (code: {})",
-                        error_msg, error_code
+        let mut state = StreamingState::default();
+        let result = loop {
+            tokio::select! {
+                biased;
+                Some(update) = updates.recv() => apply_update(update, &mut state, out),
+                () = out.closed(), if !cancel.is_cancelled() => {
+                    tracing::debug!(%session_id, "Turn dropped; sending session/cancel to ACP agent");
+                    cancel.cancel();
+                    self.send_cancel(&session_id);
+                }
+                result = &mut response => break result,
+                () = &mut deadline => {
+                    cancel.cancel();
+                    self.send_cancel(&session_id);
+                    return Err(ClientError::Timeout(format!(
+                        "Streaming operation timed out after {limit:?}"
                     )));
-                }
-
-                if let Some(prompt_response) = self
-                    .process_streaming_message_with_callback(
-                        &response,
-                        request_id,
-                        &mut state,
-                        &mut callback,
-                    )
-                    .await?
-                {
-                    // The turn is over: name every call the agent never
-                    // named, and close every call it never completed.
-                    let stop_reason = stop_reason_label(prompt_response.stop_reason);
-                    for chunk in state.tool_calls.flush(&stop_reason) {
-                        state.cancelled |= !callback(chunk);
-                    }
-                    return Ok((state, prompt_response));
-                }
-
-                // A callback returned `false`: the daemon's turn stream was
-                // dropped (cancelled). Tell the agent to stop generating so it
-                // doesn't run to completion server-side and burn tokens. Send
-                // `session/cancel` once, then keep reading until the agent
-                // returns its final (Cancelled) response, which exits the loop
-                // above and leaves the connection clean for the next turn.
-                if state.cancelled && !cancel_sent {
-                    tracing::debug!(session_id = %session_id, "Turn cancelled; sending session/cancel to ACP agent");
-                    self.send_session_cancel(&session_id).await?;
-                    cancel_sent = true;
                 }
             }
         };
-
-        match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((state, response))) => Ok((state.summary(), response)),
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(ClientError::Timeout(format!(
-                "Streaming operation timed out after {}s",
-                overall_timeout.as_secs()
-            ))),
+        while let Ok(update) = updates.try_recv() {
+            apply_update(update, &mut state, out);
         }
+
+        let response = result.map_err(|error| {
+            if super::connection_lost(&error) {
+                return ClientError::Connection("the agent closed the connection mid-turn".into());
+            }
+            let error = serde_json::to_value(&error).unwrap_or_default();
+            ClientError::Session(format!(
+                "Agent error during streaming: {} (code: {})",
+                describe_rpc_error(&error),
+                error.get("code").unwrap_or(&serde_json::Value::Null)
+            ))
+        })?;
+
+        // The turn is over: name every call the agent never named, and close
+        // every call it never completed.
+        for chunk in state
+            .tool_calls
+            .flush(&stop_reason_label(response.stop_reason))
+        {
+            let _ = out.send(chunk);
+        }
+        Ok((state.summary(), response))
     }
 
-    /// Handle an inbound frame whose method we do not implement.
-    ///
-    /// A frame with an `id` is a request and gets a `-32601` reply; one without
-    /// is a notification, which by JSON-RPC must not be answered at all. The
-    /// *presence* of the key is what distinguishes the two, so every id shape
-    /// the protocol allows — string, negative, null — is answered rather than
-    /// mistaken for a notification and dropped.
-    async fn refuse_unhandled_method(
-        &mut self,
-        frame: &serde_json::Value,
-        method_name: &str,
-    ) -> Result<()> {
-        match frame.get("id") {
-            Some(request_id) => self.respond_method_not_found(request_id, method_name).await,
-            None => {
-                tracing::debug!("Ignoring RPC notification: {}", method_name);
-                Ok(())
-            }
+    /// Send `session/cancel`. The agent must end the turn with `cancelled`.
+    fn send_cancel(&self, session_id: &SessionId) {
+        if let Err(error) = self
+            .cx
+            .send_notification(CancelNotification::new(session_id.clone()))
+        {
+            tracing::debug!(%error, "session/cancel could not go to the agent");
         }
     }
+}
 
-    /// Send a `session/cancel` notification so the agent stops the in-flight
-    /// turn. Per ACP, the agent then ends the turn with `StopReason::Cancelled`.
-    async fn send_session_cancel(&mut self, session_id: &str) -> Result<()> {
-        self.write_request(&build_cancel_notification(session_id))
-            .await
-    }
-
-    /// Process a streaming message and invoke callback for chunks.
-    pub(super) async fn process_streaming_message_with_callback(
-        &mut self,
-        response: &serde_json::Value,
-        request_id: u64,
-        state: &mut StreamingState,
-        callback: &mut StreamingCallback,
-    ) -> Result<Option<agent_client_protocol::schema::v1::PromptResponse>> {
-        if let Some(method_value) = response.get("method") {
-            state.notification_count += 1;
-            let method_name = method_value.as_str().unwrap_or_default();
-
-            if method_name == "session/update" {
-                if let Some(params) = response.get("params") {
-                    match serde_json::from_value::<SessionNotification>(params.clone()) {
-                        Ok(notification) => {
-                            self.apply_session_update_with_callback(notification, state, callback);
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to parse SessionNotification: {}", e);
-                        }
-                    }
+/// Apply one update of the turn. Each chunk that the update makes goes to
+/// `out`. A closed `out` is not an error here: the turn loop sees it.
+pub(super) fn apply_update(
+    update: SessionUpdate,
+    state: &mut StreamingState,
+    out: &mpsc::UnboundedSender<StreamingChunk>,
+) {
+    let emit = |chunk| {
+        let _ = out.send(chunk);
+    };
+    match update {
+        SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+            ContentBlock::Text(text_block) => {
+                // The agent process owns every byte of this, so it is
+                // sanitised here, at the one point all agents pass through.
+                // Sanitising before the resend check keeps the comparison
+                // like-for-like with what `append_text` stores.
+                let text = sanitize_multiline(&text_block.text);
+                // cursor-acp sends the whole text again as a last chunk.
+                if state.is_duplicate_resend(&text) {
+                    tracing::debug!(
+                        text_len = text.len(),
+                        "Skipping duplicate full-text re-send from agent"
+                    );
+                    return;
                 }
-            } else if method_name == "session/request_permission" {
-                self.answer_permission_frame(response).await?;
-            } else {
-                self.refuse_unhandled_method(response, method_name).await?;
+                state.append_text(&text);
+                state.produced_content |= is_visible_content(&text);
+                emit(StreamingChunk::Text(text));
             }
-
-            return Ok(None);
+            other => tracing::debug!("Ignoring non-text content block: {:?}", other),
+        },
+        // Reasoning. The resend guard compares against the answer text, so
+        // it does not apply here: a thought must not suppress an answer
+        // chunk. `SessionEventStream::is_thinking_replay` in the CLI handles
+        // an agent that replays its whole reasoning block.
+        SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+            ContentBlock::Text(text_block) => {
+                let text = sanitize_multiline(&text_block.text);
+                state.produced_content |= is_visible_content(&text);
+                emit(StreamingChunk::Thinking(text));
+            }
+            other => tracing::debug!("Ignoring non-text thought block: {:?}", other),
+        },
+        // Both frames merge into the per-turn table, which decides what the
+        // stream sees. See `tool_table.rs`.
+        SessionUpdate::ToolCall(tool_call) => {
+            state
+                .tool_calls
+                .upsert_call(tool_call)
+                .into_iter()
+                .for_each(emit);
         }
-
-        if let Some(id_value) = response.get("id") {
-            let id_matches = match id_value {
-                serde_json::Value::Number(n) => n.as_u64() == Some(request_id),
-                serde_json::Value::String(s) => s.parse::<u64>().ok() == Some(request_id),
-                _ => false,
-            };
-
-            if id_matches {
-                let result = response.get("result").ok_or_else(|| {
-                    ClientError::Session("Missing result in prompt response".to_string())
-                })?;
-                self.last_usage = super::usage::extract_usage(result);
-                let prompt_response = serde_json::from_value(result.clone())?;
-                return Ok(Some(prompt_response));
-            }
-
-            return Ok(None);
+        SessionUpdate::ToolCallUpdate(update) => {
+            state
+                .tool_calls
+                .upsert_update(update)
+                .into_iter()
+                .for_each(emit);
         }
-
-        Err(ClientError::Session(
-            "Received message without id or method".to_string(),
-        ))
-    }
-
-    /// Apply a session update and invoke callback for streaming chunks.
-    pub(super) fn apply_session_update_with_callback(
-        &mut self,
-        notification: SessionNotification,
-        state: &mut StreamingState,
-        callback: &mut StreamingCallback,
-    ) {
-        match notification.update {
-            SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
-                ContentBlock::Text(text_block) => {
-                    // The agent process owns every byte of this, so it is
-                    // sanitised here — at the one point all agents pass
-                    // through, before anything is accumulated, broadcast,
-                    // persisted or replayed. Sanitising *before* the resend
-                    // check keeps the comparison like-for-like with what
-                    // `append_text` stores.
-                    let text = sanitize_multiline(&text_block.text);
-                    // Skip full-text re-sends from agents like cursor-acp that
-                    // emit accumulated text as a final notification
-                    if state.is_duplicate_resend(&text) {
-                        tracing::debug!(
-                            text_len = text.len(),
-                            "Skipping duplicate full-text re-send from agent"
-                        );
-                        return;
-                    }
-                    state.append_text(&text);
-                    state.produced_content |= is_visible_content(&text);
-                    state.cancelled |= !callback(StreamingChunk::Text(text));
-                }
-                other => {
-                    tracing::debug!("Ignoring non-text content block: {:?}", other);
-                }
-            },
-            // Reasoning. Every conforming ACP agent streams it, and without
-            // this arm it fell through to the terminal "ignoring session
-            // update" case below, leaving `StreamingChunk::Thinking` with no
-            // producer — so a delegated session showed no thinking blocks while
-            // the internal agent showed them.
-            //
-            // Deliberately *not* guarded by `is_duplicate_resend`: that guard
-            // compares against `accumulated_text`, which is the assistant's
-            // answer. Sharing it would let a thought suppress an answer chunk
-            // (and vice versa) whenever the two happened to match. A thinking
-            // twin of it is not added either — an agent that replays its whole
-            // reasoning block is already handled downstream, source-agnostically
-            // and turn-scoped, by `SessionEventStream::is_thinking_replay`
-            // (`crucible-cli/src/tui/oil/chat_runner/stream.rs`).
-            SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
-                ContentBlock::Text(text_block) => {
-                    let text = sanitize_multiline(&text_block.text);
-                    state.produced_content |= is_visible_content(&text);
-                    state.cancelled |= !callback(StreamingChunk::Thinking(text));
-                }
-                other => {
-                    tracing::debug!("Ignoring non-text thought block: {:?}", other);
-                }
-            },
-            // Both frames merge into the per-turn table, which decides what
-            // the stream sees: one announcement per call, a held result for
-            // a call with no name yet, and an update only when a value
-            // changed. See `tool_table.rs`.
-            SessionUpdate::ToolCall(tool_call) => {
-                for chunk in state.tool_calls.upsert_call(tool_call) {
-                    state.cancelled |= !callback(chunk);
-                }
-            }
-            SessionUpdate::ToolCallUpdate(update) => {
-                for chunk in state.tool_calls.upsert_update(update) {
-                    state.cancelled |= !callback(chunk);
-                }
-            }
-            SessionUpdate::AvailableCommandsUpdate(update) => {
-                tracing::info!(
-                    "Received {} available command(s) from agent",
-                    update.available_commands.len()
-                );
-                self.available_commands = update.available_commands;
-            }
-            // Hermes streams a `user_message_chunk` when it drains a queued
-            // prompt inside one `session/prompt` reply. Crucible refuses a
-            // concurrent turn at the handle lock, so the queue path is not
-            // reachable from here. The chunk is the user's own text, not the
-            // agent's answer, so it must not reach `accumulated_text`.
-            SessionUpdate::UserMessageChunk(chunk) => {
-                tracing::debug!("Ignoring user_message_chunk: {:?}", chunk.content);
-            }
-            // The agent reports its context-window occupancy. Schema 1.5
-            // made the variant stable, so the typed parse carries it; a raw
-            // reader ran ahead of the parse before that. A frame without
-            // `used` or `size` fails the parse above and is dropped there.
-            //
-            // `size: 0` is refused because it describes no window. To pass
-            // it on emits `context_limit_resolved { limit: 0, source:
-            // Agent }`, a claim that the window is resolved, while the
-            // statusline guards `total > 0` and renders the no-data state.
-            // To report nothing keeps unresolved unresolved. `used: 0` is
-            // accepted: a fresh turn used nothing yet, and that is a real
-            // reading of a real window.
-            //
-            // `update.cost` is dropped. Nothing in Crucible displays or
-            // aggregates a monetary figure.
-            SessionUpdate::UsageUpdate(update) => {
-                if update.size > 0 {
-                    state.cancelled |= !callback(StreamingChunk::ContextWindow {
-                        used: update.used,
-                        limit: update.size,
-                    });
-                }
-            }
-            // The agent switched a config option mid-turn. The one option
-            // Crucible tracks is the model selector; `from_config_options`
-            // finds it in the full set the update carries. The choice is
-            // parked on the client, because the handle that owns the
-            // `current_model` answer cannot be reached from the read loop —
-            // it drains the value with `take_model_update()` after the turn.
-            SessionUpdate::ConfigOptionUpdate(update) => {
-                if let Some(choice) =
-                    crate::acp::session::ModelChoice::from_config_options(&update.config_options)
-                {
-                    tracing::info!(model = %choice.current, "ACP agent reported a model change");
-                    self.model_update = Some(choice);
-                }
-            }
-            other => {
-                tracing::debug!("Ignoring session update: {:?}", other);
+        // Hermes streams a `user_message_chunk` when it drains a queued
+        // prompt. The chunk is the user's own text, not the answer.
+        SessionUpdate::UserMessageChunk(chunk) => {
+            tracing::debug!("Ignoring user_message_chunk: {:?}", chunk.content);
+        }
+        // The agent reports its context-window occupancy. `size: 0`
+        // describes no window, so it is refused: the statusline shows the
+        // no-data state for it, while a `limit: 0` claims a resolved window.
+        // `used: 0` is a real reading. `cost` is dropped, because nothing in
+        // Crucible shows a monetary figure.
+        SessionUpdate::UsageUpdate(update) => {
+            if update.size > 0 {
+                emit(StreamingChunk::ContextWindow {
+                    used: update.used,
+                    limit: update.size,
+                });
             }
         }
+        other => tracing::debug!("Ignoring session update: {:?}", other),
     }
 }
 

@@ -17,9 +17,9 @@ use test_case::test_case;
 #[tokio::test]
 async fn handshake_completes(make_config: fn() -> MockStdioAgentConfig) {
     let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
-    let result = client.connect_with_best_mcp(None).await;
+    let result = client.handshake(None, None).await;
 
     // Mock agents advertise auth/methods but don't enforce them, so the
     // handshake should always succeed for both agent kinds.
@@ -34,22 +34,18 @@ async fn handshake_completes(make_config: fn() -> MockStdioAgentConfig) {
 
     let session = result.unwrap();
     assert!(!session.id().is_empty(), "Should have valid session ID");
-    assert!(
-        client.is_connected(),
-        "Client should be connected after handshake"
-    );
 }
 
-/// Initialization (the `initialize` request inside `connect_with_best_mcp`)
+/// Initialization (the `initialize` request inside `handshake`)
 /// succeeds for every agent kind.
 #[test_case(MockStdioAgentConfig::claude_acp as fn() -> MockStdioAgentConfig; "claude_acp")]
 #[test_case(MockStdioAgentConfig::opencode as fn() -> MockStdioAgentConfig; "opencode")]
 #[tokio::test]
 async fn initialization_succeeds(make_config: fn() -> MockStdioAgentConfig) {
     let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
-    let result = client.connect_with_best_mcp(None).await;
+    let result = client.handshake(None, None).await;
     assert!(
         result.is_ok(),
         "Initialization should succeed: {:?}",
@@ -63,9 +59,9 @@ async fn initialization_succeeds(make_config: fn() -> MockStdioAgentConfig) {
 #[tokio::test]
 async fn session_id_has_mock_prefix(make_config: fn() -> MockStdioAgentConfig) {
     let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
-    let result = client.connect_with_best_mcp(None).await;
+    let result = client.handshake(None, None).await;
     assert!(
         result.is_ok(),
         "Should complete handshake: {:?}",
@@ -88,13 +84,13 @@ async fn session_id_has_mock_prefix(make_config: fn() -> MockStdioAgentConfig) {
 async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConfig) {
     let mut config = make_config();
     config.inject_errors = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     // The mock answers every request with a JSON-RPC error. The handshake
     // must fail on that answer, promptly, and not by waiting out a timeout.
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        client.connect_with_best_mcp(None),
+        client.handshake(None, None),
     )
     .await
     .expect("an error reply must fail the handshake, not stall it");
@@ -119,10 +115,10 @@ async fn close_is_sent_when_the_agent_advertises_it() {
     let mut config = MockStdioAgentConfig::opencode();
     config.supports_session_close = true;
     config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("handshake succeeds");
     assert!(
@@ -131,7 +127,7 @@ async fn close_is_sent_when_the_agent_advertises_it() {
     );
 
     client
-        .close_session(session.id())
+        .close(session.id())
         .await
         .expect("session/close succeeds");
     assert!(
@@ -146,10 +142,10 @@ async fn close_is_sent_when_the_agent_advertises_it() {
 #[tokio::test]
 async fn a_method_not_found_reply_to_close_is_not_an_error() {
     let config = MockStdioAgentConfig::opencode();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("handshake succeeds");
     assert!(
@@ -158,7 +154,7 @@ async fn a_method_not_found_reply_to_close_is_not_an_error() {
     );
 
     client
-        .close_session(session.id())
+        .close(session.id())
         .await
         .expect("a -32601 reply to session/close is tolerated");
 }
@@ -175,10 +171,10 @@ async fn resume_reuses_the_agent_session_when_the_agent_answers_it() {
     let mut config = MockStdioAgentConfig::opencode();
     config.supports_session_resume = true;
     config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp_resuming(None, Some("mock-session-prior"))
+        .handshake(None, Some("mock-session-prior"))
         .await
         .expect("resume succeeds");
 
@@ -201,10 +197,10 @@ async fn resume_falls_back_to_session_new_on_method_not_found() {
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut config = MockStdioAgentConfig::opencode();
     config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp_resuming(None, Some("mock-session-prior"))
+        .handshake(None, Some("mock-session-prior"))
         .await
         .expect("the -32601 reply falls back to session/new");
 

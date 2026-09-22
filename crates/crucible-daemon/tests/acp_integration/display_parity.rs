@@ -19,6 +19,7 @@
 //! The name is kept because `Systems.md` and the branch plan both cite it by
 //! path as the example of a test whose name overclaims its layer.
 
+use crate::scripted_agent::prompt_with;
 use crate::scripted_agent::{
     client_with_custom_transport, final_response, make_prompt_request, read_request_id, text_chunk,
     tool_call_notification, tool_call_update, tool_call_update_completed, write_json_line,
@@ -104,7 +105,8 @@ fn tool_call_update_with_diff(
 
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -127,16 +129,16 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     });
 
     let request = make_prompt_request("ses-tool-args", "search something");
-    let (summary, _response) = client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    let (summary, _response) = prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -165,7 +167,8 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
 
 #[tokio::test]
 async fn tool_start_without_arguments_has_none() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -183,16 +186,16 @@ async fn tool_start_without_arguments_has_none() {
     });
 
     let request = make_prompt_request("ses-no-args", "list models");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -213,7 +216,8 @@ async fn tool_start_without_arguments_has_none() {
 
 #[tokio::test]
 async fn tool_start_complex_arguments_preserved() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -243,16 +247,16 @@ async fn tool_start_complex_arguments_preserved() {
     });
 
     let request = make_prompt_request("ses-complex", "read file");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -280,7 +284,8 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     // `ToolCallContent::Diff` entry in its `content` array, the
     // diff must surface on the live `StreamingChunk::ToolStart`
     // so the TUI can render it in scrollback as the call appears.
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -310,16 +315,16 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     });
 
     let request = make_prompt_request("ses-diff", "edit file");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -348,7 +353,8 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     // chunk — they were previously being silently dropped because the
     // post-stream replay in `acp_handle.rs` filters out tool ids that
     // were already announced via `ToolStart`.
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -389,16 +395,16 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     });
 
     let request = make_prompt_request("ses-late-diff", "edit late");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
 
@@ -441,7 +447,8 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_result_emits_chunk() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -474,16 +481,16 @@ async fn tool_end_with_result_emits_chunk() {
     });
 
     let request = make_prompt_request("ses-result", "read readme");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
 
@@ -515,7 +522,8 @@ async fn tool_end_with_result_emits_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_error_emits_error_field() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -548,16 +556,16 @@ async fn tool_end_with_error_emits_error_field() {
     });
 
     let request = make_prompt_request("ses-error", "write file");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_end = captured
@@ -580,7 +588,8 @@ async fn tool_end_with_error_emits_error_field() {
 
 #[tokio::test]
 async fn tool_end_failed_without_output_has_generic_error() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -604,16 +613,16 @@ async fn tool_end_failed_without_output_has_generic_error() {
     });
 
     let request = make_prompt_request("ses-fail-no-out", "try broken");
-    client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("streaming should complete");
+    prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_end = captured
@@ -639,7 +648,8 @@ async fn tool_end_failed_without_output_has_generic_error() {
 
 #[tokio::test]
 async fn stream_without_usage_data_completes_gracefully() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     tokio::spawn(async move {
         let request_id = read_request_id(&mut agent_reader).await;
@@ -655,8 +665,7 @@ async fn stream_without_usage_data_completes_gracefully() {
 
     let request = make_prompt_request("ses-no-usage", "say hello");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (summary, response) = client
-        .send_prompt_with_callback(request, callback)
+    let (summary, response) = prompt_with(&client, request, callback)
         .await
         .expect("stream should complete without crash when no usage data");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
@@ -674,7 +683,8 @@ async fn stream_without_usage_data_completes_gracefully() {
 
 #[tokio::test]
 async fn empty_stream_no_usage_no_chunks_completes() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     tokio::spawn(async move {
         let request_id = read_request_id(&mut agent_reader).await;
@@ -684,8 +694,7 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
     let request = make_prompt_request("ses-empty", "nothing");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (summary, _response) = client
-        .send_prompt_with_callback(request, callback)
+    let (summary, _response) = prompt_with(&client, request, callback)
         .await
         .expect("empty stream should complete without crash");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
@@ -696,7 +705,8 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
 #[tokio::test]
 async fn full_flow_text_tool_result_text_via_callback() {
-    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(500));
+    let (mut client, mut agent_reader, mut agent_writer) =
+        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
@@ -741,16 +751,16 @@ async fn full_flow_text_tool_result_text_via_callback() {
     });
 
     let request = make_prompt_request("ses-full", "search async patterns");
-    let (summary, _response) = client
-        .send_prompt_with_callback(
-            request,
-            Box::new(move |chunk| {
-                chunks_cb.lock().unwrap().push(chunk);
-                true
-            }),
-        )
-        .await
-        .expect("full flow should complete");
+    let (summary, _response) = prompt_with(
+        &client,
+        request,
+        Box::new(move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk);
+            true
+        }),
+    )
+    .await
+    .expect("full flow should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();

@@ -30,17 +30,11 @@ pub struct ClientConfig {
 pub(super) struct StreamingState {
     /// The tool calls of this turn, one entry per id.
     pub(super) tool_calls: ToolCallTable,
-    pub(super) notification_count: usize,
     /// Raw accumulated text (for deduplication of full-text re-sends).
     /// Some ACP agents (e.g. cursor-acp) send the complete accumulated text
     /// as a final notification before the JSON-RPC response. We track the
     /// accumulated text here to detect and skip these re-sends.
     pub(super) accumulated_text: String,
-    /// Set when a streaming callback returns `false`, meaning the receiver
-    /// (the daemon's turn stream) was dropped — i.e. the turn was cancelled.
-    /// The read loop reacts by sending `session/cancel` to the agent so it
-    /// stops generating server-side instead of running to completion.
-    pub(super) cancelled: bool,
     /// Set when a text or thought chunk had a visible character. Drives
     /// `StopReason::Empty` in the consumer.
     pub(super) produced_content: bool,

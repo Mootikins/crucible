@@ -26,12 +26,13 @@ async fn main() {
         ..Default::default()
     };
 
-    let mut client = crucible_daemon::acp::CrucibleAcpClient::new(client_config);
-
     // Connect and handshake
     println!("\n=== Connecting and performing handshake ===");
+    let mut client = crucible_daemon::acp::CrucibleAcpClient::spawn(client_config, "mock", None)
+        .await
+        .expect("Spawn failed");
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("Handshake failed");
 
@@ -48,23 +49,17 @@ async fn main() {
     }))
     .expect("Failed to create PromptRequest");
 
-    let content = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let content_cb = content.clone();
-    let result = client
-        .send_prompt_with_callback(
-            prompt_request,
-            Box::new(move |chunk| {
-                if let crucible_daemon::acp::StreamingChunk::Text(text) = chunk {
-                    content_cb.lock().unwrap().push_str(&text);
-                }
-                true
-            }),
-        )
-        .await;
+    let (out, mut chunks) = tokio::sync::mpsc::unbounded_channel();
+    let result = client.prompt(prompt_request, &out).await;
 
     match result {
         Ok((summary, response)) => {
-            let content = content.lock().unwrap().clone();
+            let mut content = String::new();
+            while let Ok(chunk) = chunks.try_recv() {
+                if let crucible_daemon::acp::StreamingChunk::Text(text) = chunk {
+                    content.push_str(&text);
+                }
+            }
             println!("\n✅ Streaming successful!");
             println!("Accumulated content: '{}'", content);
             println!("Announced a tool call: {}", summary.announced_any);

@@ -13,7 +13,8 @@
 //! ```rust,ignore
 //! let fixture = ReplayFixture::load("path/to/fixture.jsonl")?;
 //! let (writer, reader, driver) = fixture.into_transport();
-//! let client = CrucibleAcpClient::with_transport(config, writer, reader);
+//! let transport = ByteStreams::new(writer.compat_write(), reader.compat());
+//! let client = CrucibleAcpClient::connect(config, transport, "replay", None).await?;
 //! tokio::spawn(driver);
 //! // ... drive the client; it will receive recorded responses
 //! ```
@@ -24,7 +25,7 @@ use std::pin::Pin;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use super::recording::{Direction, FixtureHeader, FrameRecord};
-use super::{BoxedReader, BoxedWriter};
+use tokio::io::DuplexStream;
 
 /// Loaded fixture, ready to be turned into a transport.
 pub struct ReplayFixture {
@@ -124,16 +125,16 @@ impl ReplayFixture {
     /// Convert into a transport that the ACP client can use.
     ///
     /// Returns:
-    /// - `writer` — pass to `CrucibleAcpClient::with_transport`
-    /// - `reader` — pass to `CrucibleAcpClient::with_transport`
+    /// - `writer` — the client writes its frames here
+    /// - `reader` — the client reads the recorded frames here
     /// - `driver` — a future that runs the replay loop. Spawn it on the
     ///   tokio runtime; await it after the client is done to collect any
     ///   divergences.
     pub fn into_transport(
         self,
     ) -> (
-        BoxedWriter,
-        BoxedReader,
+        DuplexStream,
+        BufReader<DuplexStream>,
         Pin<Box<dyn std::future::Future<Output = ReplayOutcome> + Send>>,
     ) {
         // Two duplex pairs: one for client→driver (the client writes
@@ -142,8 +143,8 @@ impl ReplayFixture {
         let (client_side_to_agent, our_inbox) = tokio::io::duplex(64 * 1024);
         let (our_outbox, client_side_from_agent) = tokio::io::duplex(64 * 1024);
 
-        let writer: BoxedWriter = Box::pin(client_side_to_agent);
-        let reader: BoxedReader = Box::pin(BufReader::new(client_side_from_agent));
+        let writer = client_side_to_agent;
+        let reader = BufReader::new(client_side_from_agent);
 
         let records = self.records;
         let driver = async move { run_driver(records, our_inbox, our_outbox).await };

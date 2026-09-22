@@ -1170,7 +1170,7 @@ impl MockStdioAgent {
         // differently:
         //
         // - `bare` omits every field the record gate in
-        //   `apply_session_update_with_callback` looks at (title, rawInput,
+        //   `apply_update` looks at (title, rawInput,
         //   diff content), so the update produces a `ToolEnd` chunk and is
         //   never recorded — nothing downstream can ever learn its name.
         // - `titled` carries a title, so the client *does* record it and the

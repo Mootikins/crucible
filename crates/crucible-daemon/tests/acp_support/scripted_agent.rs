@@ -11,11 +11,14 @@
 //! hang that the harness kills.
 
 use agent_client_protocol::schema::v1::PromptRequest;
-use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
+use agent_client_protocol::ByteStreams;
+use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient, PermissionRequestHandler};
+use crucible_daemon::acp::{ClientError, StreamingChunk, TurnSummary};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 /// The agent's side of the pipe that carries the client's frames.
 pub type AgentReader = BufReader<ReadHalf<DuplexStream>>;
@@ -31,7 +34,7 @@ pub const FRAME_WAIT: Duration = Duration::from_secs(2);
 const PIPE_CAPACITY: usize = 65_536;
 
 /// A client config for a custom transport. The agent path is a label only:
-/// `with_transport` spawns no process.
+/// `connect` spawns no process.
 pub fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
     ClientConfig {
         agent_path: PathBuf::from("mock-scripted-agent"),
@@ -42,8 +45,16 @@ pub fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
 }
 
 /// A client wired to an in-memory pipe, and the agent's two ends of it.
-pub fn client_with_custom_transport(
+pub async fn client_with_custom_transport(
     timeout_ms: Option<u64>,
+) -> (CrucibleAcpClient, AgentReader, AgentWriter) {
+    client_with_permission(timeout_ms, None).await
+}
+
+/// [`client_with_custom_transport`] with a permission handler.
+pub async fn client_with_permission(
+    timeout_ms: Option<u64>,
+    permission: Option<PermissionRequestHandler>,
 ) -> (CrucibleAcpClient, AgentReader, AgentWriter) {
     let (client_to_agent_client, client_to_agent_agent) = tokio::io::duplex(PIPE_CAPACITY);
     let (agent_to_client_agent, agent_to_client_client) = tokio::io::duplex(PIPE_CAPACITY);
@@ -53,11 +64,14 @@ pub fn client_with_custom_transport(
     let (_agent_read_unused, agent_write) = tokio::io::split(agent_to_client_agent);
     let (client_read, _client_write_unused) = tokio::io::split(agent_to_client_client);
 
-    let client = CrucibleAcpClient::with_transport(
+    let client = CrucibleAcpClient::connect(
         test_config(timeout_ms),
-        Box::pin(client_write),
-        Box::pin(BufReader::new(client_read)),
-    );
+        ByteStreams::new(client_write.compat_write(), client_read.compat()),
+        "mock-scripted-agent",
+        permission,
+    )
+    .await
+    .expect("the client connects");
 
     (client, BufReader::new(agent_read), agent_write)
 }
@@ -85,12 +99,13 @@ pub async fn read_frame(reader: &mut AgentReader) -> Value {
         .expect("the client wrote no frame before the deadline")
 }
 
-/// Read the client's next request and return its numeric id.
-pub async fn read_request_id(reader: &mut AgentReader) -> u64 {
+/// Read the client's next request and return its id.
+pub async fn read_request_id(reader: &mut AgentReader) -> Value {
     let request = read_frame(reader).await;
-    request["id"]
-        .as_u64()
-        .unwrap_or_else(|| panic!("the client's request carries no numeric id: {request}"))
+    request
+        .get("id")
+        .cloned()
+        .unwrap_or_else(|| panic!("the client's request carries no id: {request}"))
 }
 
 /// Write one frame to the client as a single JSON line.
@@ -113,7 +128,7 @@ pub fn make_prompt_request(session_id: &str, text: &str) -> PromptRequest {
 }
 
 /// The `session/prompt` reply that ends a turn.
-pub fn final_response(request_id: u64) -> Value {
+pub fn final_response(request_id: Value) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": request_id,
@@ -277,4 +292,41 @@ pub async fn mcp_http_request(
         .unwrap_or(&body);
     serde_json::from_str(json_text)
         .unwrap_or_else(|e| panic!("MCP {method} reply is not JSON ({e}): {body}"))
+}
+
+/// Run one turn on `client`, and call `on_chunk` for each chunk. A `false`
+/// from `on_chunk` drops the turn, the way the daemon cancels one.
+pub async fn prompt_with(
+    client: &CrucibleAcpClient,
+    request: PromptRequest,
+    mut on_chunk: impl FnMut(StreamingChunk) -> bool,
+) -> Result<
+    (
+        TurnSummary,
+        agent_client_protocol::schema::v1::PromptResponse,
+    ),
+    ClientError,
+> {
+    let (out, mut chunks) = tokio::sync::mpsc::unbounded_channel();
+    let turn = client.prompt(request, &out);
+    tokio::pin!(turn);
+    let mut open = true;
+    loop {
+        tokio::select! {
+            result = &mut turn => {
+                while let Ok(chunk) = chunks.try_recv() {
+                    if open {
+                        on_chunk(chunk);
+                    }
+                }
+                return result;
+            }
+            Some(chunk) = chunks.recv(), if open => {
+                if !on_chunk(chunk) {
+                    open = false;
+                    chunks.close();
+                }
+            }
+        }
+    }
 }

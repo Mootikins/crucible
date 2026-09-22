@@ -81,20 +81,23 @@ pub struct TurnSummary {
     pub announced_any: bool,
 }
 
-/// Callback type for receiving streaming chunks.
+/// The token usage that the agent reported at the end of a turn.
 ///
-/// The callback receives chunks as they arrive from the agent.
-/// Return `true` to continue streaming, `false` to cancel.
-pub type StreamingCallback = Box<dyn FnMut(StreamingChunk) -> bool + Send>;
-
-/// Create a callback that sends chunks to an unbounded channel.
-///
-/// This is useful for integrating with async code that needs to
-/// poll for chunks rather than receive callbacks.
-pub fn channel_callback(
-    tx: tokio::sync::mpsc::UnboundedSender<StreamingChunk>,
-) -> StreamingCallback {
-    Box::new(move |chunk| tx.send(chunk).is_ok())
+/// ACP puts it on `PromptResponse.usage`, behind the
+/// `unstable_end_turn_token_usage` schema feature. An agent that sends a
+/// partial or snake_case record reports no usage: the schema drops it.
+pub fn turn_usage(
+    response: &agent_client_protocol::schema::v1::PromptResponse,
+) -> Option<crucible_core::traits::llm::TokenUsage> {
+    let usage = response.usage.as_ref()?;
+    let tokens = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+    Some(crucible_core::traits::llm::TokenUsage {
+        prompt_tokens: tokens(usage.input_tokens),
+        completion_tokens: tokens(usage.output_tokens),
+        total_tokens: tokens(usage.total_tokens),
+        cache_read_tokens: usage.cached_read_tokens.map(tokens),
+        cache_creation_tokens: usage.cached_write_tokens.map(tokens),
+    })
 }
 
 /// Convert a tool title into a human-readable name by removing MCP schema prefixes
@@ -203,149 +206,5 @@ mod tests {
             humanize_tool_title("list_all_files_recursively"),
             "List All Files Recursively"
         );
-    }
-
-    #[test]
-    fn channel_callback_with_text_chunk() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunk = StreamingChunk::Text("Hello, world!".to_string());
-        let result = callback(chunk.clone());
-
-        assert!(result, "Callback should return true on successful send");
-
-        // Verify the chunk was sent to the channel
-        let received = rx.try_recv();
-        assert!(received.is_ok(), "Should receive chunk from channel");
-        assert_eq!(received.unwrap(), chunk);
-    }
-
-    #[test]
-    fn channel_callback_with_thinking_chunk() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunk = StreamingChunk::Thinking("Analyzing the problem...".to_string());
-        let result = callback(chunk.clone());
-
-        assert!(result, "Callback should return true on successful send");
-
-        let received = rx.try_recv();
-        assert!(
-            received.is_ok(),
-            "Should receive thinking chunk from channel"
-        );
-        assert_eq!(received.unwrap(), chunk);
-    }
-
-    #[test]
-    fn channel_callback_with_tool_start_chunk() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunk = StreamingChunk::ToolStart {
-            name: "search".to_string(),
-            id: "tool_123".to_string(),
-            arguments: Some(serde_json::json!({ "query": "test" })),
-            diffs: Vec::new(),
-        };
-        let result = callback(chunk.clone());
-
-        assert!(result, "Callback should return true on successful send");
-
-        let received = rx.try_recv();
-        assert!(
-            received.is_ok(),
-            "Should receive tool start chunk from channel"
-        );
-        assert_eq!(received.unwrap(), chunk);
-    }
-
-    #[test]
-    fn channel_callback_with_tool_end_chunk() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunk = StreamingChunk::ToolEnd {
-            id: "tool_123".to_string(),
-            name: "Search".to_string(),
-            result: Some("Found 5 results".to_string()),
-            error: None,
-        };
-        let result = callback(chunk.clone());
-
-        assert!(result, "Callback should return true on successful send");
-
-        let received = rx.try_recv();
-        assert!(
-            received.is_ok(),
-            "Should receive tool end chunk from channel"
-        );
-        assert_eq!(received.unwrap(), chunk);
-    }
-
-    #[test]
-    fn channel_callback_with_tool_error() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunk = StreamingChunk::ToolEnd {
-            id: "tool_456".to_string(),
-            name: "Search".to_string(),
-            result: None,
-            error: Some("Tool execution failed".to_string()),
-        };
-        let result = callback(chunk.clone());
-
-        assert!(result, "Callback should return true on successful send");
-
-        let received = rx.try_recv();
-        assert!(
-            received.is_ok(),
-            "Should receive tool error chunk from channel"
-        );
-        assert_eq!(received.unwrap(), chunk);
-    }
-
-    #[test]
-    fn channel_callback_returns_false_when_receiver_dropped() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        // Drop the receiver to close the channel
-        drop(rx);
-
-        let chunk = StreamingChunk::Text("This should fail".to_string());
-        let result = callback(chunk);
-
-        assert!(
-            !result,
-            "Callback should return false when receiver is dropped"
-        );
-    }
-
-    #[test]
-    fn channel_callback_multiple_chunks() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut callback = channel_callback(tx);
-
-        let chunks = vec![
-            StreamingChunk::Text("Hello".to_string()),
-            StreamingChunk::Text(" ".to_string()),
-            StreamingChunk::Text("world".to_string()),
-        ];
-
-        for chunk in chunks.iter() {
-            let result = callback(chunk.clone());
-            assert!(result, "Each callback should succeed");
-        }
-
-        // Verify all chunks were received in order
-        for expected_chunk in chunks {
-            let received = rx.try_recv();
-            assert!(received.is_ok(), "Should receive chunk from channel");
-            assert_eq!(received.unwrap(), expected_chunk);
-        }
     }
 }

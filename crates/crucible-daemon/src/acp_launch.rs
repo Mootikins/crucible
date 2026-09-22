@@ -594,18 +594,18 @@ mod tests {
 
     /// `streaming_timeout_minutes` is the deadline of a whole turn, and the
     /// default is fifteen minutes. `timeout_ms` alone does not show that: the
-    /// client multiplies it by ten in `send_prompt_with_callback`. So this
-    /// runs a turn to its deadline with the config `build_client_config` made.
-    ///
-    /// The agent sends a chunk every 50 seconds, under the 300-second read
-    /// timeout, so only the whole-turn deadline can end the turn.
+    /// client multiplies it by ten in `prompt`. So this runs a turn to its
+    /// deadline with the config `build_client_config` made. The agent reads
+    /// the prompt and never answers it.
     #[tokio::test(start_paused = true)]
     async fn the_streaming_timeout_is_the_deadline_of_a_whole_turn() {
         use crate::acp::client::CrucibleAcpClient;
         use crate::acp::ClientError;
         use agent_client_protocol::schema::v1::{ContentBlock, PromptRequest, SessionId};
+        use agent_client_protocol::ByteStreams;
         use std::time::Duration;
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
         for (acp_config, deadline) in [
             (None, Duration::from_secs(15 * 60)),
@@ -627,43 +627,26 @@ mod tests {
 
             let (client_end, agent_end) = tokio::io::duplex(64 * 1024);
             let (client_read, client_write) = tokio::io::split(client_end);
-            let (agent_read, mut agent_write) = tokio::io::split(agent_end);
-            let mut client = CrucibleAcpClient::with_transport(
+            let (agent_read, _agent_write) = tokio::io::split(agent_end);
+            let client = CrucibleAcpClient::connect(
                 config,
-                Box::pin(client_write),
-                Box::pin(BufReader::new(client_read)),
-            );
+                ByteStreams::new(client_write.compat_write(), client_read.compat()),
+                "opencode",
+                None,
+            )
+            .await
+            .unwrap();
             let agent = tokio::spawn(async move {
                 let mut lines = BufReader::new(agent_read).lines();
-                let _prompt = lines.next_line().await;
-                let chunk = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "session/update",
-                    "params": {
-                        "sessionId": "s1",
-                        "update": {
-                            "sessionUpdate": "agent_message_chunk",
-                            "content": {"type": "text", "text": "."}
-                        }
-                    }
-                });
-                loop {
-                    tokio::time::sleep(Duration::from_secs(50)).await;
-                    if agent_write
-                        .write_all(format!("{chunk}\n").as_bytes())
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
+                while let Ok(Some(_)) = lines.next_line().await {}
             });
 
             let start = tokio::time::Instant::now();
+            let (out, _chunks) = tokio::sync::mpsc::unbounded_channel();
             let result = client
-                .send_prompt_with_callback(
+                .prompt(
                     PromptRequest::new(SessionId::from("s1"), vec![ContentBlock::from("hi")]),
-                    Box::new(|_| true),
+                    &out,
                 )
                 .await;
             agent.abort();

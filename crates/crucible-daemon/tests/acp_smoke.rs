@@ -211,6 +211,64 @@ async fn mock_acp_handshake_succeeds() {
     );
 }
 
+/// With `CRUCIBLE_ACP_RECORD_DIR` set, the client records every line of a
+/// spawned agent's stdio, in both directions, as a replay fixture.
+#[tokio::test]
+async fn the_wire_recorder_captures_both_directions_of_a_spawned_agent() {
+    use crucible_daemon::acp::client::replay::ReplayFixture;
+    use crucible_daemon::acp::client::{ClientConfig, Direction};
+    use crucible_daemon::acp::CrucibleAcpClient;
+
+    let record_dir = TempDir::new().expect("temp record dir");
+    let _record = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_ACP_RECORD_DIR",
+        record_dir.path().to_string_lossy().into_owned(),
+    );
+    let workspace = TempDir::new().expect("temp workspace");
+    let config = ClientConfig {
+        agent_path: mock_agent_path(),
+        working_dir: Some(workspace.path().to_path_buf()),
+        ..Default::default()
+    };
+
+    let mut client = CrucibleAcpClient::spawn(config, "mock", None)
+        .await
+        .expect("the mock agent starts");
+    timeout(Duration::from_secs(30), client.handshake(None, None))
+        .await
+        .expect("the handshake timed out")
+        .expect("the handshake failed");
+    drop(client);
+
+    let fixture = std::fs::read_dir(record_dir.path())
+        .expect("read the record dir")
+        .map(|entry| entry.expect("a record dir entry").path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+        .expect("the client wrote a fixture");
+    let fixture = ReplayFixture::load(&fixture).expect("the fixture parses");
+    let frames: Vec<(Direction, String)> = fixture
+        .records
+        .iter()
+        .map(|r| {
+            let label = r.frame["method"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| "response".to_string());
+            (r.dir, label)
+        })
+        .collect();
+    assert_eq!(
+        frames,
+        [
+            (Direction::Out, "initialize".to_string()),
+            (Direction::In, "response".to_string()),
+            (Direction::Out, "session/new".to_string()),
+            (Direction::In, "response".to_string()),
+        ],
+        "the fixture must hold each handshake frame in its direction"
+    );
+}
+
 #[tokio::test]
 async fn mock_acp_agent_returns_message_response() {
     const ANSWER: &str = "hello from the mock agent";
@@ -870,8 +928,8 @@ async fn dropping_a_turn_of_a_quiet_agent_sends_session_cancel_and_the_next_turn
 ///
 /// The test pauses the tokio clock after the agent receives the cancel. The
 /// runtime then moves the clock to the next timer when all tasks wait. The
-/// grace is the first timer: the per-read timeout is 300 s and the stream
-/// timeout is 900 s. Thus the test does not wait 30 s of real time.
+/// grace is the first timer: the stream timeout is 900 s. Thus the test
+/// does not wait 30 s of real time.
 #[tokio::test]
 async fn a_turn_after_a_cancel_that_the_agent_ignores_fails_after_the_grace() {
     let workspace = TempDir::new().expect("temp workspace");

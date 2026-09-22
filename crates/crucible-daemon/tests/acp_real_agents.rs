@@ -89,12 +89,14 @@ async fn assert_profile_completes_handshake(name: &str) {
         timeout_ms: Some(HANDSHAKE_TIMEOUT.as_millis() as u64),
     };
 
-    let mut client = CrucibleAcpClient::with_name(config, name.to_string());
+    let mut client = CrucibleAcpClient::spawn(config, name, None)
+        .await
+        .unwrap_or_else(|err| panic!("ACP profile `{name}` did not start: {err}"));
 
     // `None` selects the stdio MCP transport, which needs no host. The
     // choice between stdio and HTTP is negotiated elsewhere; this tier is
     // about whether the agent answers at all.
-    let session = timeout(HANDSHAKE_TIMEOUT, client.connect_with_best_mcp(None))
+    let session = timeout(HANDSHAKE_TIMEOUT, client.handshake(None, None))
         .await
         .unwrap_or_else(|_| {
             panic!(
@@ -111,21 +113,11 @@ async fn assert_profile_completes_handshake(name: &str) {
         "ACP profile `{name}` completed `session/new` but returned an empty session id"
     );
 
-    assert!(
-        client.is_connected(),
-        "ACP profile `{name}` finished the handshake but the client reports no connection"
-    );
-
     // Nothing downstream reads these here; the assertion is that reading them
     // does not panic on a real agent's capability block, which is the shape
     // the recorded fixtures freeze.
     let _ = client.agent_supports_http_mcp();
     let _ = client.agent_supports_session_close();
-
-    client
-        .disconnect(&session)
-        .await
-        .unwrap_or_else(|err| panic!("ACP profile `{name}` failed to disconnect: {err}"));
 }
 
 #[tokio::test]

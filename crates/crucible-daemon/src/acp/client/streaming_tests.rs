@@ -2,61 +2,9 @@
 //!
 //! Split out of `streaming.rs`, and attached
 //! with `#[path]` rather than moved into `tests/` because `describe_rpc_error`
-//! and `apply_session_update_with_callback` are crate-private.
+//! and `apply_update` are crate-private.
 
 use super::*;
-use crate::acp::client::ClientConfig;
-
-fn test_client() -> CrucibleAcpClient {
-    CrucibleAcpClient::new(ClientConfig {
-        agent_path: std::path::PathBuf::from("/nonexistent"),
-        agent_args: None,
-        ..Default::default()
-    })
-}
-
-#[test]
-fn cancel_notification_is_a_valid_jsonrpc_notification() {
-    let n = build_cancel_notification("sess-123");
-    assert_eq!(n["jsonrpc"], "2.0");
-    assert_eq!(n["method"], "session/cancel");
-    // The exact params object is the wire pin: no `_meta: null`, no extra
-    // key. An agent must see only what the spec requires.
-    assert_eq!(n["params"], serde_json::json!({ "sessionId": "sess-123" }));
-    // Notifications MUST NOT carry an id.
-    assert!(
-        n.get("id").is_none(),
-        "cancel is a notification, not a request"
-    );
-}
-
-#[test]
-fn streaming_callback_returning_false_marks_state_cancelled() {
-    use agent_client_protocol::schema::v1::SessionNotification;
-
-    let mut client = test_client();
-    let mut state = StreamingState::default();
-    // A callback that returns `false` models the daemon's turn stream being
-    // dropped (receiver gone) — i.e. the user cancelled. The read loop uses
-    // `state.cancelled` to decide to send `session/cancel`.
-    let mut cb: StreamingCallback = Box::new(|_chunk| false);
-
-    let notification: SessionNotification = serde_json::from_value(serde_json::json!({
-        "sessionId": "s1",
-        "update": {
-            "sessionUpdate": "agent_message_chunk",
-            "content": { "type": "text", "text": "partial answer" }
-        }
-    }))
-    .expect("valid agent_message_chunk notification");
-
-    client.apply_session_update_with_callback(notification, &mut state, &mut cb);
-
-    assert!(
-        state.cancelled,
-        "a false callback (dropped receiver) must mark the turn cancelled"
-    );
-}
 
 /// A thought must not enter the answer accumulator, and must not be able to
 /// mask a later answer chunk through `is_duplicate_resend`.
@@ -64,10 +12,8 @@ fn streaming_callback_returning_false_marks_state_cancelled() {
 fn thought_chunks_stay_out_of_the_answer_text() {
     use agent_client_protocol::schema::v1::SessionNotification;
 
-    let mut client = test_client();
     let mut state = StreamingState::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut cb = crate::acp::streaming::channel_callback(tx);
 
     let thought: SessionNotification = serde_json::from_value(serde_json::json!({
         "sessionId": "s1",
@@ -77,7 +23,7 @@ fn thought_chunks_stay_out_of_the_answer_text() {
         }
     }))
     .expect("valid agent_thought_chunk notification");
-    client.apply_session_update_with_callback(thought, &mut state, &mut cb);
+    apply_update(thought.update, &mut state, &tx);
 
     // The same words then arrive as the answer. If the thought had been
     // appended to `accumulated_text`, the resend guard would drop it.
@@ -89,8 +35,8 @@ fn thought_chunks_stay_out_of_the_answer_text() {
         }
     }))
     .expect("valid agent_message_chunk notification");
-    client.apply_session_update_with_callback(answer, &mut state, &mut cb);
-    drop(cb);
+    apply_update(answer.update, &mut state, &tx);
+    drop(tx);
 
     let mut chunks = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
@@ -123,10 +69,8 @@ fn thought_chunks_stay_out_of_the_answer_text() {
 fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
     use agent_client_protocol::schema::v1::SessionNotification;
 
-    let mut client = test_client();
     let mut state = StreamingState::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut cb = crate::acp::streaming::channel_callback(tx);
 
     let hostile = "a\u{9b}2Jb\u{7}c\rd\u{202E}e";
 
@@ -139,7 +83,7 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
             "update": { "sessionUpdate": kind, "content": { "type": "text", "text": text } }
         }))
         .expect("valid notification");
-        client.apply_session_update_with_callback(notification, &mut state, &mut cb);
+        apply_update(notification.update, &mut state, &tx);
     }
 
     let tool: SessionNotification = serde_json::from_value(serde_json::json!({
@@ -152,8 +96,8 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
         }
     }))
     .expect("valid tool_call notification");
-    client.apply_session_update_with_callback(tool, &mut state, &mut cb);
-    drop(cb);
+    apply_update(tool.update, &mut state, &tx);
+    drop(tx);
 
     let mut chunks = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
@@ -193,10 +137,8 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
 fn newlines_and_tabs_survive_sanitising_of_agent_prose() {
     use agent_client_protocol::schema::v1::SessionNotification;
 
-    let mut client = test_client();
     let mut state = StreamingState::default();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut cb = crate::acp::streaming::channel_callback(tx);
 
     let prose = "First:\n\n\tlet x = 1;\n\nDone.";
     let notification: SessionNotification = serde_json::from_value(serde_json::json!({
@@ -207,8 +149,8 @@ fn newlines_and_tabs_survive_sanitising_of_agent_prose() {
         }
     }))
     .expect("valid agent_message_chunk notification");
-    client.apply_session_update_with_callback(notification, &mut state, &mut cb);
-    drop(cb);
+    apply_update(notification.update, &mut state, &tx);
+    drop(tx);
 
     assert_eq!(
         rx.try_recv().ok(),
@@ -304,31 +246,6 @@ fn an_envelope_past_the_input_cap_is_not_unwrapped() {
     assert!(described.chars().count() <= MAX_DETAIL_CHARS + 24);
 }
 
-#[test]
-fn streaming_callback_returning_true_leaves_state_running() {
-    use agent_client_protocol::schema::v1::SessionNotification;
-
-    let mut client = test_client();
-    let mut state = StreamingState::default();
-    let mut cb: StreamingCallback = Box::new(|_chunk| true);
-
-    let notification: SessionNotification = serde_json::from_value(serde_json::json!({
-        "sessionId": "s1",
-        "update": {
-            "sessionUpdate": "agent_message_chunk",
-            "content": { "type": "text", "text": "still going" }
-        }
-    }))
-    .expect("valid agent_message_chunk notification");
-
-    client.apply_session_update_with_callback(notification, &mut state, &mut cb);
-
-    assert!(
-        !state.cancelled,
-        "an active receiver must not trigger cancellation"
-    );
-}
-
 /// A `config_option_update` that arrives mid-stream must move the model
 /// choice. The handle drains it after the turn, so `current_model` then
 /// reports the model the agent switched to.
@@ -336,9 +253,7 @@ fn streaming_callback_returning_true_leaves_state_running() {
 fn config_option_update_mid_stream_updates_the_model_choice() {
     use agent_client_protocol::schema::v1::SessionNotification;
 
-    let mut client = test_client();
-    let mut state = StreamingState::default();
-    let mut cb: StreamingCallback = Box::new(|_chunk| true);
+    let shared = std::sync::Mutex::new(super::super::Shared::default());
 
     let notification: SessionNotification = serde_json::from_value(serde_json::json!({
         "sessionId": "s1",
@@ -361,10 +276,11 @@ fn config_option_update_mid_stream_updates_the_model_choice() {
     }))
     .expect("valid config_option_update notification");
 
-    client.apply_session_update_with_callback(notification, &mut state, &mut cb);
+    super::super::route_update(&shared, notification.update);
 
-    let choice = client
-        .take_model_update()
+    let choice = super::super::lock(&shared)
+        .model_update
+        .take()
         .expect("the update must yield a model choice");
     assert_eq!(choice.current, "mock-opus");
     assert_eq!(

@@ -14,7 +14,7 @@
 //! let (client, _agent_handle) = ThreadedMockAgent::spawn_with_client(config).await;
 //!
 //! // Now use client normally - it's connected to the in-process mock agent
-//! let result = client.connect_with_best_mcp(None).await;
+//! let result = client.handshake(None, None).await;
 //! ```
 //!
 //! `acp_support` is `#[path]`-included by several test binaries and each uses
@@ -143,7 +143,7 @@ impl ThreadedMockAgent {
     ///
     /// A tuple of (client, agent_handle) where the client is already connected
     /// to the in-process mock agent.
-    pub fn spawn_with_client(
+    pub async fn spawn_with_client(
         config: MockStdioAgentConfig,
     ) -> (
         crucible_daemon::acp::CrucibleAcpClient,
@@ -159,12 +159,18 @@ impl ThreadedMockAgent {
             ..Default::default()
         };
 
-        // Use with_transport to inject the in-process reader/writer
-        let client = crucible_daemon::acp::CrucibleAcpClient::with_transport(
+        use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+        let client = crucible_daemon::acp::CrucibleAcpClient::connect(
             client_config,
-            Box::pin(transport.client_writer),
-            Box::pin(transport.client_reader),
-        );
+            agent_client_protocol::ByteStreams::new(
+                transport.client_writer.compat_write(),
+                transport.client_reader.compat(),
+            ),
+            "mock-threaded-agent",
+            None,
+        )
+        .await
+        .expect("the client connects");
 
         (client, handle)
     }

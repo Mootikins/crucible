@@ -24,9 +24,10 @@ use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
 use crate::acp::client::{CrucibleAcpClient, PermissionRequestHandler};
 use crate::acp::session::ModelChoice;
-use crate::acp::streaming::{channel_callback, StreamingChunk};
+use crate::acp::streaming::StreamingChunk;
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
+use agent_client_protocol::schema::v1::{SetSessionConfigOptionRequest, SetSessionModeRequest};
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::{AcpConfig, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
@@ -174,10 +175,6 @@ impl AcpAgentHandle {
             acp_config,
             sandbox_exec.as_ref(),
         )?;
-        let mut client = CrucibleAcpClient::with_name(client_config.clone(), agent_name.clone());
-        if let Some(ref handler) = permission_handler {
-            client = client.with_permission_handler(handler.clone());
-        }
         let delegation_context = match (
             parent_session_id,
             background_spawner.clone(),
@@ -240,11 +237,19 @@ impl AcpAgentHandle {
             "Selecting MCP transport for ACP agent"
         );
         let resume_id = resume_acp_session_id.as_deref();
-        let (session, mcp_host) = match client
-            .connect_with_best_mcp_resuming(mcp_url.as_deref(), resume_id)
-            .await
-        {
-            Ok(s) => (s, mcp_host),
+        let connect = |mcp_url: Option<String>| {
+            let client_config = client_config.clone();
+            let agent_name = agent_name.clone();
+            let permission_handler = permission_handler.clone();
+            async move {
+                let mut client =
+                    CrucibleAcpClient::spawn(client_config, agent_name, permission_handler).await?;
+                let session = client.handshake(mcp_url.as_deref(), resume_id).await?;
+                Ok::<_, crate::acp::ClientError>((client, session))
+            }
+        };
+        let (client, session, mcp_host) = match connect(mcp_url).await {
+            Ok((client, session)) => (client, session, mcp_host),
             Err(e) if mcp_host.is_some() => {
                 // HTTP MCP transport failed (e.g. agent rejects `type: "http"` at
                 // Zod level). Drop the HTTP server, create a fresh agent process,
@@ -255,17 +260,10 @@ impl AcpAgentHandle {
                     "HTTP MCP failed, retrying with stdio transport"
                 );
                 drop(mcp_host);
-                let mut retry_client =
-                    CrucibleAcpClient::with_name(client_config.clone(), agent_name.clone());
-                if let Some(ref handler) = permission_handler {
-                    retry_client = retry_client.with_permission_handler(handler.clone());
-                }
-                let session = retry_client
-                    .connect_with_best_mcp_resuming(None, resume_id)
+                let (client, session) = connect(None)
                     .await
                     .map_err(|e| AcpHandleError::Connection(e.to_string()))?;
-                client = retry_client;
-                (session, None)
+                (client, session, None)
             }
             Err(e) => return Err(AcpHandleError::Connection(e.to_string())),
         };
@@ -355,10 +353,10 @@ impl AgentHandle for AcpAgentHandle {
 
         if let Some(session_id) = &self.session_id {
             let session_id = session_id.clone();
-            let mut guard = self.client.lock().await;
-            if let Some(client) = guard.as_mut() {
+            let guard = self.client.lock().await;
+            if let Some(client) = guard.as_ref() {
                 client
-                    .set_session_mode(&session_id, mode_id)
+                    .request(SetSessionModeRequest::new(session_id, mode_id.to_string()))
                     .await
                     .map_err(|e| {
                         ChatError::ModeChange(format!(
@@ -398,7 +396,7 @@ impl AgentHandle for AcpAgentHandle {
 
     async fn cancel(&self) -> ChatResult<()> {
         // Cancellation is driven by the daemon dropping the turn stream, which
-        // the ACP client detects (callback returns false) and answers by
+        // the ACP client detects (the chunk channel closes) and answers by
         // sending `session/cancel` to the agent. This handle method is not on
         // that path — the daemon never calls it — so it is a no-op.
         debug!("Cancel requested for ACP agent (handled via stream drop)");
@@ -443,12 +441,16 @@ impl SessionKnobs for AcpAgentHandle {
         };
 
         let response = {
-            let mut guard = self.client.lock().await;
+            let guard = self.client.lock().await;
             let client = guard
-                .as_mut()
+                .as_ref()
                 .ok_or_else(|| ChatError::AgentUnavailable("ACP client is shut down".into()))?;
             client
-                .set_config_option(&session_id, id, value)
+                .request(SetSessionConfigOptionRequest::new(
+                    session_id,
+                    id.to_string(),
+                    value,
+                ))
                 .await
                 .map_err(|e| {
                     ChatError::ModeChange(format!("ACP agent rejected '{id}' = '{value}': {e}"))
@@ -484,12 +486,14 @@ impl SessionKnobs for AcpAgentHandle {
         };
 
         let response = {
-            let mut guard = self.client.lock().await;
+            let guard = self.client.lock().await;
             let client = guard
-                .as_mut()
+                .as_ref()
                 .ok_or_else(|| ChatError::AgentUnavailable("ACP client is shut down".into()))?;
             client
-                .set_config_option(&session_id, &config_id, model_id)
+                .request(SetSessionConfigOptionRequest::new(
+                    session_id, config_id, model_id,
+                ))
                 .await
                 .map_err(|e| {
                     ChatError::ModeChange(format!("ACP agent rejected model '{model_id}': {e}"))
@@ -620,14 +624,9 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 }
             };
 
-        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
         // The stream owns the receiver, so a closed channel means that the
         // daemon dropped the turn.
-        let dropped = {
-            let chunk_tx = chunk_tx.clone();
-            async move { chunk_tx.closed().await }
-        };
-        let callback = channel_callback(chunk_tx);
+        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
 
         tokio::spawn(async move {
@@ -638,16 +637,15 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 vec![ContentBlock::from(message)],
             );
 
-            let mut guard = guard;
             let client = guard
-                .as_mut()
+                .as_ref()
                 .expect("the lock was taken with a client in it");
-            let result = client
-                .send_prompt_until_cancelled(prompt_request, callback, dropped)
-                .await;
-            // Capture usage now while we still hold the client; stream code
-            // parsed it from the ACP PromptResponse and stashed it there.
-            let usage = client.take_last_usage();
+            let result = client.prompt(prompt_request, &chunk_tx).await;
+            drop(chunk_tx);
+            let usage = result
+                .as_ref()
+                .ok()
+                .and_then(|(_, response)| crate::acp::turn_usage(response));
             // Capture the model choice a mid-turn `config_option_update`
             // parked on the client, so `current_model` reports the switch.
             let model_update = client.take_model_update();
@@ -755,7 +753,7 @@ impl Drop for AcpAgentHandle {
         // is SIGKILLed via kill_on_drop (pipe close alone only sends EOF).
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                if let Some(mut client) = client_arc.lock().await.take() {
+                if let Some(client) = client_arc.lock().await.take() {
                     // Say goodbye first: `session/close` lets the agent free
                     // the session (plan W7, decision d). The timeout keeps a
                     // hung agent from delaying its own SIGKILL, which the
@@ -764,7 +762,7 @@ impl Drop for AcpAgentHandle {
                     if let (Some(id), true) =
                         (session_id.as_deref(), client.agent_supports_session_close())
                     {
-                        let close = client.close_session(id);
+                        let close = client.close(id);
                         match tokio::time::timeout(std::time::Duration::from_secs(2), close).await {
                             Ok(Ok(())) => debug!(agent = %agent, "session/close acknowledged"),
                             Ok(Err(e)) => {

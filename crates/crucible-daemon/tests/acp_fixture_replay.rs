@@ -47,8 +47,10 @@ use agent_client_protocol::schema::v1::{
     ContentBlock, InitializeRequest, McpServer, NewSessionRequest, PromptRequest, StopReason,
     TextContent,
 };
+use agent_client_protocol::ByteStreams;
 use crucible_daemon::acp::client::replay::{ReplayFixture, ReplayOutcome};
 use crucible_daemon::acp::{CrucibleAcpClient, StreamingChunk};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 // ---------------------------------------------------------------------------
 // Projection
@@ -458,11 +460,18 @@ async fn run_case(case: &FixtureCase) {
         timeout_ms: Some(5_000),
         ..Default::default()
     };
-    let mut client = CrucibleAcpClient::with_transport(config, writer, reader);
+    let client = CrucibleAcpClient::connect(
+        config,
+        ByteStreams::new(writer.compat_write(), reader.compat()),
+        agent,
+        None,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("[{agent}] connect: {e}"));
 
     // --- initialize ---------------------------------------------------------
     let init = client
-        .initialize(InitializeRequest::new(1u16.into()))
+        .request(InitializeRequest::new(1u16.into()))
         .await
         .unwrap_or_else(|e| panic!("[{agent}] initialize: {e}"));
     assert_eq!(
@@ -486,9 +495,7 @@ async fn run_case(case: &FixtureCase) {
 
     // --- session/new --------------------------------------------------------
     let session = client
-        .create_new_session(
-            NewSessionRequest::new(PathBuf::from(case.cwd)).mcp_servers(mcp_servers),
-        )
+        .request(NewSessionRequest::new(PathBuf::from(case.cwd)).mcp_servers(mcp_servers))
         .await
         .unwrap_or_else(|e| panic!("[{agent}] create session: {e}"));
     assert_eq!(
@@ -503,9 +510,7 @@ async fn run_case(case: &FixtureCase) {
         session.session_id.clone(),
         vec![ContentBlock::Text(TextContent::new(prompt_text))],
     );
-    let result = client
-        .send_prompt_with_callback(request, crucible_daemon::acp::channel_callback(tx))
-        .await;
+    let result = client.prompt(request, &tx).await;
 
     let mut shapes = Vec::new();
     let mut text = String::new();
@@ -604,7 +609,7 @@ async fn run_case(case: &FixtureCase) {
                 "[{agent}] context window reported by the agent"
             );
 
-            let usage = client.take_last_usage();
+            let usage = crucible_daemon::acp::turn_usage(&response);
             match (usage, expected_usage) {
                 (Some(actual), Some(expected)) => {
                     assert_eq!(
@@ -648,10 +653,6 @@ async fn run_case(case: &FixtureCase) {
                     "[{agent}] error should mention {needle:?}; got {rendered:?}"
                 );
             }
-            assert!(
-                client.take_last_usage().is_none(),
-                "[{agent}] a failed turn reports no usage"
-            );
         }
     }
 

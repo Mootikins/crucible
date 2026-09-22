@@ -1,6 +1,6 @@
 //! Transport negotiation tests for ACP capability-aware MCP transport selection.
 //!
-//! These tests verify that `connect_with_best_mcp()` correctly negotiates MCP
+//! These tests verify that `handshake()` correctly negotiates MCP
 //! transport based on agent-reported capabilities per the ACP specification:
 //!
 //! - `McpServer::Stdio` — All agents MUST support this transport
@@ -42,11 +42,11 @@ async fn offered_transport(config: MockStdioAgentConfig, mcp_url: Option<&str>) 
         request_log: Some(log.clone()),
         ..config
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
     let session = client
-        .connect_with_best_mcp(mcp_url)
+        .handshake(mcp_url, None)
         .await
-        .expect("connect_with_best_mcp should succeed");
+        .expect("the handshake should succeed");
     assert!(!session.id().is_empty(), "Session ID should be non-empty");
 
     let frames = log.lock().unwrap().clone();
@@ -84,7 +84,7 @@ fn assert_stdio(offered: &Offered, name: &str) {
 // Phase A: Capability storage tests
 // ---------------------------------------------------------------------------
 
-/// Test 4: Capabilities are stored after initialize()
+/// Test 4: Capabilities are stored after the handshake
 #[tokio::test]
 async fn capabilities_stored_after_initialize() {
     let config = MockStdioAgentConfig {
@@ -92,54 +92,34 @@ async fn capabilities_stored_after_initialize() {
         mcp_sse: true,
         ..MockStdioAgentConfig::opencode()
     };
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
-    // Before initialize, capabilities should default to false
+    // Before the handshake, capabilities should default to false
     assert!(
         !client.agent_supports_http_mcp(),
-        "HTTP MCP should be false before initialize"
-    );
-    assert!(
-        !client.agent_supports_sse_mcp(),
-        "SSE MCP should be false before initialize"
+        "HTTP MCP should be false before the handshake"
     );
 
-    // Perform initialize (but not full connect — just the init step)
-    use agent_client_protocol::schema::v1::InitializeRequest;
-    let init_request = InitializeRequest::new(1u16.into());
-    let init_response = client
-        .initialize(init_request)
+    client
+        .handshake(None, None)
         .await
-        .expect("initialize should succeed");
+        .expect("the handshake should succeed");
 
-    // Verify capabilities were stored
     assert!(
         client.agent_supports_http_mcp(),
-        "HTTP MCP should be true after initialize with mcp_http=true"
+        "HTTP MCP should be true after the handshake with mcp_http=true"
     );
-    assert!(
-        client.agent_supports_sse_mcp(),
-        "SSE MCP should be true after initialize with mcp_sse=true"
-    );
-
-    // Verify the response itself has correct capabilities
-    assert!(init_response.agent_capabilities.mcp_capabilities.http);
-    assert!(init_response.agent_capabilities.mcp_capabilities.sse);
 }
 
 /// Test 5: Capabilities default to false when not initialized
 #[tokio::test]
 async fn capabilities_default_false_when_not_initialized() {
     let config = MockStdioAgentConfig::opencode();
-    let (client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     assert!(
         !client.agent_supports_http_mcp(),
         "HTTP MCP should default to false"
-    );
-    assert!(
-        !client.agent_supports_sse_mcp(),
-        "SSE MCP should default to false"
     );
 }
 

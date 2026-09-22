@@ -16,9 +16,7 @@ pub use client::CrucibleAcpClient;
 pub use discovery::reset_agent_cache;
 pub use discovery::{discover_agent, is_agent_available, AgentInfo};
 pub use session::{AcpSession, TransportConfig};
-pub use streaming::{
-    channel_callback, humanize_tool_title, StreamingCallback, StreamingChunk, TurnSummary,
-};
+pub use streaming::{humanize_tool_title, turn_usage, StreamingChunk, TurnSummary};
 
 // Error types
 mod error;

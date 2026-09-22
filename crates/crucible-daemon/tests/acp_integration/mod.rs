@@ -20,8 +20,6 @@ mod concurrent_sessions;
 mod context_usage;
 mod display_parity;
 mod error_propagation;
-mod inbound_requests;
-mod interleaved_frames;
 mod mcp_server_frame;
 mod permission_flow;
 mod session_modes;

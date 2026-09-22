@@ -6,6 +6,7 @@
 //! 3. Agent sends final PromptResponse with stopReason
 //! 4. Client accumulates chunks and returns complete response
 
+use crate::scripted_agent::prompt_with;
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
 use crucible_daemon::acp::StreamingChunk;
 
@@ -17,10 +18,10 @@ use crucible_daemon::acp::StreamingChunk;
 async fn test_streaming_chat_with_mock_agent() {
     // Spawn threaded mock agent with OpenCode behavior
     let config = MockStdioAgentConfig::opencode();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     // Connect and perform handshake
-    let result = client.connect_with_best_mcp(None).await;
+    let result = client.handshake(None, None).await;
     assert!(
         result.is_ok(),
         "Should complete handshake: {:?}",
@@ -32,10 +33,6 @@ async fn test_streaming_chat_with_mock_agent() {
 
     // Verify handshake completed successfully
     assert!(!session.id().is_empty(), "Should have valid session ID");
-    assert!(
-        client.is_connected(),
-        "Client should be connected after handshake"
-    );
 }
 
 /// Build a PromptRequest for the given session.
@@ -55,16 +52,15 @@ fn prompt_request(session_id: &str) -> agent_client_protocol::schema::v1::Prompt
 async fn test_prompt_with_streaming_response() {
     let mut config = MockStdioAgentConfig::opencode();
     config.stream_chunks = vec!["The ".into(), "answer ".into(), "is 4".into()];
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("Should complete handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (summary, response) = client
-        .send_prompt_with_callback(prompt_request(session.id()), callback)
+    let (summary, response) = prompt_with(&client, prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
@@ -88,16 +84,15 @@ async fn test_prompt_with_streamed_tool_call() {
     let mut config = MockStdioAgentConfig::opencode();
     config.stream_chunks = vec!["Calculating…".into()];
     config.stream_tool_call = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("Should complete handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (summary, response) = client
-        .send_prompt_with_callback(prompt_request(session.id()), callback)
+    let (summary, response) = prompt_with(&client, prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
@@ -137,19 +132,18 @@ async fn test_cancel_mid_stream_reaches_agent() {
     let mut config = MockStdioAgentConfig::opencode();
     config.stream_chunks = vec!["partial ".into(), "answer".into()];
     config.hold_turn_until_cancel = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
 
     let session = client
-        .connect_with_best_mcp(None)
+        .handshake(None, None)
         .await
         .expect("Should complete handshake");
 
     // A callback that refuses the first chunk models the daemon's turn
     // stream being dropped — the user cancelled.
-    let callback: crucible_daemon::acp::StreamingCallback = Box::new(|_chunk| false);
+    let callback = |_chunk| false;
 
-    let (_summary, response) = client
-        .send_prompt_with_callback(prompt_request(session.id()), callback)
+    let (_summary, response) = prompt_with(&client, prompt_request(session.id()), callback)
         .await
         .expect("cancelled turn should still complete cleanly");
 

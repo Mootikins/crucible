@@ -8,12 +8,10 @@
 ///
 /// The reason is the only signal separating "the agent finished" from "the
 /// agent was stopped", and ACP puts it on the wire: an agent that has seen
-/// `session/cancel` MUST answer with `Cancelled`, so the response — not the
-/// client's own `StreamingState.cancelled` — is where a cancelled delegated
-/// turn becomes observable. (`StreamingState.cancelled` is set when a streaming
-/// callback returns `false`, which for this handle means `chunk_rx` was
-/// dropped; at that point the stream body that would yield this event is gone,
-/// so nothing could ever read a stop reason derived from it.)
+/// `session/cancel` MUST answer with `Cancelled`, so the response is where a
+/// cancelled delegated turn becomes observable. The client sends the cancel
+/// when `chunk_rx` drops, and then the stream body that would yield this
+/// event is gone, so a stop reason from the client side has no reader.
 ///
 /// `MaxTokens` and `Refusal` now have variants of their own, and the internal
 /// agent reports the same two from `genai_handle::turn_stop_reason`, so a
