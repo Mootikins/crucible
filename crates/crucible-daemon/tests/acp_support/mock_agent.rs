@@ -20,10 +20,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
-    AuthenticateRequest, AuthenticateResponse, CancelNotification, CloseSessionRequest,
-    CloseSessionResponse, ContentBlock, ContentChunk, Error, InitializeRequest, InitializeResponse,
-    NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, RequestPermissionRequest,
-    ResumeSessionRequest, ResumeSessionResponse, SessionId, SessionNotification, SessionUpdate,
+    CancelNotification, CloseSessionRequest, CloseSessionResponse, ContentBlock, ContentChunk,
+    Error, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
+    PromptRequest, PromptResponse, RequestPermissionRequest, ResumeSessionRequest,
+    ResumeSessionResponse, SessionId, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
     SetSessionModeResponse, StopReason,
 };
@@ -43,9 +43,6 @@ pub struct MockScript {
     pub name: String,
     pub mcp_http: bool,
     pub mcp_sse: bool,
-    /// Advertise an `api_key` auth method. Refuse `session/new` and
-    /// `session/resume` with `-32000` until `authenticate` arrives.
-    pub requires_auth: bool,
     /// Answer `initialize` with an error.
     pub fail_initialize: bool,
     /// Advertise and answer `session/close`. Off: `-32601`.
@@ -75,7 +72,6 @@ impl Default for MockScript {
             name: "mock-agent".to_string(),
             mcp_http: true,
             mcp_sse: false,
-            requires_auth: false,
             fail_initialize: false,
             session_close: false,
             session_resume: None,
@@ -212,7 +208,6 @@ pub async fn connect(
 
 struct State {
     script: MockScript,
-    authenticated: bool,
     mcp_url: Option<String>,
 }
 
@@ -244,10 +239,6 @@ fn log(shared: &Shared, method: &str, params: impl Serialize) {
 /// A typed answer from its JSON shape.
 fn answer<T: serde::de::DeserializeOwned>(value: Value) -> T {
     serde_json::from_value(value).expect("the mock builds a valid answer")
-}
-
-fn auth_required() -> Error {
-    Error::new(-32000, "Authentication required")
 }
 
 /// The model selector, in the shape claude-agent-acp sends.
@@ -303,7 +294,6 @@ fn mode_state(script: &MockScript) -> Value {
 pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'static) {
     let shared: Shared = Arc::new(Mutex::new(State {
         script,
-        authenticated: false,
         mcp_url: None,
     }));
     // The number of `session/cancel` notifications so far.
@@ -331,31 +321,15 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
                     if script.session_resume.is_some() {
                         session.insert("resume".into(), json!({}));
                     }
-                    let auth = if script.requires_auth {
-                        json!([{"id": "api_key", "name": "API Key"}])
-                    } else {
-                        json!([])
-                    };
                     responder.respond(answer::<InitializeResponse>(json!({
                         "protocolVersion": req.protocol_version,
                         "agentCapabilities": {
                             "mcpCapabilities": {"http": script.mcp_http, "sse": script.mcp_sse},
                             "sessionCapabilities": session
                         },
-                        "authMethods": auth,
+                        "authMethods": [],
                         "agentInfo": {"name": script.name, "version": "1.0.0"}
                     })))
-                }
-            },
-            on_receive_request!(),
-        )
-        .on_receive_request(
-            {
-                let shared = shared.clone();
-                async move |req: AuthenticateRequest, responder, _cx| {
-                    log(&shared, req.method(), &req);
-                    lock(&shared).authenticated = true;
-                    responder.respond(AuthenticateResponse::new())
                 }
             },
             on_receive_request!(),
@@ -366,9 +340,6 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
                 async move |req: NewSessionRequest, responder, _cx| {
                     log(&shared, req.method(), &req);
                     let mut state = lock(&shared);
-                    if state.script.requires_auth && !state.authenticated {
-                        return responder.respond_with_error(auth_required());
-                    }
                     state.mcp_url =
                         serde_json::to_value(&req.mcp_servers)
                             .ok()
@@ -408,9 +379,6 @@ pub async fn serve(script: MockScript, transport: impl ConnectTo<Agent> + 'stati
                     let state = lock(&shared);
                     match state.script.session_resume {
                         None => responder.respond_with_error(Error::method_not_found()),
-                        Some(_) if state.script.requires_auth && !state.authenticated => {
-                            responder.respond_with_error(auth_required())
-                        }
                         Some(Resume::Unknown) => responder.respond_with_error(Error::new(
                             -32002,
                             format!("Resource not found: {}", req.session_id),
