@@ -86,14 +86,22 @@ const LARGE_FILE_LINES = 400;
 const COLLAPSE: MergeCollapse = { margin: 3, minSize: 4 };
 
 /**
- * The change bar in the theme colors: green for an added line, red for a
- * removed one. In a split view the left editor is the removed side.
+ * The added and removed line counts, in the diff colors. A count of zero is
+ * left out, as a patch summary does.
  */
-const barTheme = EditorView.theme({
-  '.cm-changedLineGutter': { background: 'var(--color-ok)' },
-  '.cm-deletedLineGutter': { background: 'var(--color-error)' },
-  '&.cm-merge-a .cm-changedLineGutter': { background: 'var(--color-error)' },
-});
+function ChangeCounts(props: { added: number; removed: number; testId: string; class?: string }) {
+  return (
+    <span class={`text-floor font-mono ${props.class ?? ''}`} data-testid={props.testId}>
+      <Show when={props.added > 0}>
+        <span class="text-ok">+{props.added}</span>
+      </Show>
+      <Show when={props.added > 0 && props.removed > 0}> </Show>
+      <Show when={props.removed > 0}>
+        <span class="text-error">−{props.removed}</span>
+      </Show>
+    </span>
+  );
+}
 
 export interface DiffPanelProps {
   /** The tab metadata that `openDiff` writes. */
@@ -347,9 +355,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
           <span class="min-w-0 truncate text-xs font-mono text-shell-ink" data-testid="diff-source">
             {diffsetLabel(diffset.data?.source ?? props.source)}
           </span>
-          <span class="text-floor font-mono text-muted-dark" data-testid="diff-counts">
-            +{totals().added} −{totals().removed}
-          </span>
+          <ChangeCounts testId="diff-counts" added={totals().added} removed={totals().removed} />
         </div>
         <div class="mt-1 flex flex-wrap items-center gap-1.5">
           <div
@@ -525,9 +531,12 @@ const FileSection: Component<FileSectionProps> = (props) => {
         >
           <Copy class="w-3.5 h-3.5" />
         </button>
-        <span class="shrink-0 text-floor font-mono text-muted-dark" data-testid="diff-file-counts">
-          +{props.file.added} −{props.file.removed}
-        </span>
+        <ChangeCounts
+          testId="diff-file-counts"
+          class="shrink-0"
+          added={props.file.added}
+          removed={props.file.removed}
+        />
         <Show when={props.decide}>
           {(decide) => (
             <>
@@ -731,7 +740,7 @@ const FileEditor: Component<FileEditorProps> = (props) => {
     const current = props.text.current_text ?? '';
     const setup = { original, path: props.path, wrap: props.wrap, collapse: COLLAPSE };
     const hosts = untrack(() => props.hosts);
-    const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side]), barTheme];
+    const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side])];
     if (props.split) {
       const view = new MergeView({
         a: {

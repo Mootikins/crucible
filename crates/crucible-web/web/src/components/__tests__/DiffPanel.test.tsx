@@ -145,7 +145,7 @@ describe('DiffPanel', () => {
     await waitFor(() => expect(section('src/a.rs')).toBeInTheDocument());
     expect(screen.getAllByTestId(/^diff-file-\/repo:src\//)).toHaveLength(2);
     expect(within(section('src/a.rs')).getByTestId('diff-file-counts').textContent).toBe('+2 −1');
-    expect(within(section('src/b.rs')).getByTestId('diff-file-counts').textContent).toBe('+7 −0');
+    expect(within(section('src/b.rs')).getByTestId('diff-file-counts').textContent).toBe('+7');
     // The header sums the files and names the base the daemon resolved.
     expect(screen.getByTestId('diff-counts').textContent).toBe('+9 −1');
     expect(screen.getByTestId('diff-source').textContent).toContain('master');

@@ -43,9 +43,26 @@ describe('mergeViewExtensions', () => {
     expect(chunks?.chunks).toHaveLength(1);
     expect(v.state.readOnly).toBe(true);
     expect(v.dom.querySelectorAll('.cm-collapsedLines').length).toBe(2);
-    // The inline diff shows the base word as deleted text before the new one.
-    expect(v.dom.querySelector('.cm-deletedText')?.textContent).toBe('10');
+    // The removed line is a row of its own above the new line, as in a patch.
+    // The changed word is marked on each side.
+    expect(v.dom.querySelector('.cm-deletedChunk .cm-deletedLine')?.textContent).toBe('line 10');
+    expect(v.dom.querySelector('.cm-deletedChunk .cm-deletedText')?.textContent).toBe('10');
+    expect(v.dom.querySelector('.cm-changedLine')?.textContent).toBe('line ten');
     expect(v.dom.querySelector('.cm-changedText')?.textContent).toBe('ten');
+  });
+
+  it('marks the lines of a pure insertion, so that no word gets a tint', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    view = new EditorView({
+      state: EditorState.create({
+        doc: 'one\nnew line\ntwo\nline ten',
+        extensions: mergeViewExtensions({ original: 'one\ntwo\nline 10', path: 'a.md' }),
+      }),
+      parent,
+    });
+    const inserted = [...view.dom.querySelectorAll('.cm-insertOnly')].map((l) => l.textContent);
+    expect(inserted).toEqual(['new line']);
   });
 
   it('omits controls when none are given', () => {
