@@ -410,3 +410,170 @@ async fn setting_an_agent_option_reaches_the_agent() {
         "the refusal must name the option; got: {error}"
     );
 }
+
+/// The lines of the method log that the agent process of the LAST handshake
+/// received. Each `initialize` starts a new agent process.
+fn last_process_methods(log_path: &Path) -> Vec<String> {
+    let log: Vec<String> = std::fs::read_to_string(log_path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let start = log
+        .iter()
+        .rposition(|l| l.starts_with("initialize"))
+        .expect("at least one agent process started");
+    log[start..].to_vec()
+}
+
+/// Set the mode and the model on one manager, then rebuild the handle on a
+/// second manager over the same sessions: a daemon restart.
+///
+/// The session stores both values, and both front ends show them. The
+/// rebuilt handle must send both to the agent again. If it does not, the
+/// agent runs its default while the session shows the old value.
+///
+/// With `resume_unknown`, the agent answers `-32002` to `session/resume`
+/// and the connect opens a new session. A new session starts with the
+/// defaults of the agent, so the daemon must send each value again.
+async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
+    let temp = TempDir::new().expect("temp dir");
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).expect("kiln dir");
+    let log_path = temp.path().join("methods.log");
+    let mode_capture = temp.path().join("mode.capture");
+    let model_capture = log_path.with_extension("option");
+    let mode_capture_str = mode_capture.to_string_lossy().into_owned();
+
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
+    let (event_tx, _events) = broadcast::channel(256);
+    let hooks: Vec<(&str, &str)> = vec![
+        ("CRU_MOCK_ADVERTISE_MODELS", "1"),
+        ("CRU_MOCK_ADVERTISE_MODES", "default"),
+        ("CRU_MOCK_MODE_CAPTURE", &mode_capture_str),
+        ("CRU_MOCK_SESSION_RESUME", "1"),
+    ];
+    let manager = |extra: &[(&str, &str)]| {
+        let env: Vec<(&str, &str)> = hooks.iter().chain(extra).copied().collect();
+        Arc::new(AgentManager::new(acp_manager_params(
+            session_manager.clone(),
+            BTreeMap::from([(MOCK_PROFILE.to_string(), logging_profile(&log_path, &env))]),
+            &event_tx,
+        )))
+    };
+    let turn = |agent_manager: Arc<AgentManager>, session_id: String| {
+        let event_tx = event_tx.clone();
+        async move {
+            let (_id, done) = agent_manager
+                .send_message_notified(&session_id, "hello".to_string(), &event_tx, true, None)
+                .await
+                .expect("the turn is accepted");
+            completed_turn(done, TURN_TIMEOUT).await;
+        }
+    };
+
+    let session = session_manager
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .expect("session");
+    let id = session.id.as_str().to_string();
+
+    // Manager one: open the agent session, then set both values.
+    let first = manager(&[]);
+    first
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .expect("configure the agent");
+    turn(first.clone(), id.clone()).await;
+    // The configured model is the profile name, and the agent does not offer
+    // it. The session must then show the model that the agent runs.
+    assert_eq!(
+        session_manager
+            .get_session(&id)
+            .and_then(|s| s.agent)
+            .map(|a| a.model)
+            .as_deref(),
+        Some("mock-sonnet"),
+        "the session must show the model of the agent, not a model it does not offer"
+    );
+    first
+        .set_mode(&id, "plan", None)
+        .await
+        .expect("the agent declared `plan`");
+    first
+        .switch_model(&id, "mock-opus", None)
+        .await
+        .expect("the agent advertised mock-opus");
+    drop(first);
+
+    // Remove the captures of manager one, so that each capture below can
+    // only come from the rebuilt handle.
+    std::fs::remove_file(&mode_capture).expect("manager one sent the mode");
+    std::fs::remove_file(&model_capture).expect("manager one sent the model");
+
+    // Manager two: a cold handle cache, like a restarted daemon.
+    let second = if resume_unknown {
+        manager(&[("CRU_MOCK_RESUME_UNKNOWN", "1")])
+    } else {
+        manager(&[])
+    };
+    turn(second.clone(), id.clone()).await;
+
+    let methods = last_process_methods(&log_path);
+    let stored = session_manager
+        .get_session(&id)
+        .and_then(|s| s.agent)
+        .expect("the session keeps its agent");
+
+    // The mode.
+    assert_eq!(stored.mode.as_deref(), Some("plan"), "the stored mode");
+    assert_eq!(
+        second.session_modes(&id).current_mode_id.0.as_ref(),
+        "plan",
+        "the rebuilt handle must report the stored mode"
+    );
+    assert!(
+        methods.iter().any(|l| l.starts_with("session/set_mode")),
+        "the rebuilt handle must send the stored mode to the agent; methods: {methods:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&mode_capture)
+            .unwrap_or_default()
+            .trim(),
+        "plan",
+        "the agent must receive the stored mode"
+    );
+
+    // The model. A real resume keeps the model in the session of the agent.
+    // The mock does not send `configOptions` in its `session/resume` reply,
+    // so after a plain resume the handle has no model selector, and the
+    // daemon has nothing to send the model to. Only the fallback to
+    // `session/new` gives the handle a selector.
+    if resume_unknown {
+        assert_eq!(stored.model, "mock-opus", "the stored model");
+        assert!(
+            methods
+                .iter()
+                .any(|l| l.starts_with("session/set_config_option")),
+            "the rebuilt handle must send the stored model to the new agent \
+             session; methods: {methods:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&model_capture)
+                .unwrap_or_default()
+                .trim(),
+            "model=mock-opus",
+            "the agent must run the model that the session shows"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_mode_and_model_survive_a_handle_rebuild_that_resumes() {
+    knobs_survive_a_handle_rebuild(false).await;
+}
+
+#[tokio::test]
+async fn the_mode_and_model_survive_a_handle_rebuild_that_falls_back_to_a_new_session() {
+    knobs_survive_a_handle_rebuild(true).await;
+}

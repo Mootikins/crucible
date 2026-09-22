@@ -791,6 +791,36 @@ impl AgentManager {
             }
         }
 
+        // Re-apply the persisted model of an ACP session. A resume that fell
+        // back to `session/new` starts on the default model of the agent,
+        // while the session still shows the stored one. When the agent does
+        // not offer the stored model, the stored value takes the model of the
+        // agent, so that the session does not show a model that nothing runs.
+        if agent_config.agent_type == "acp" {
+            if let Some(current) = agent.current_model().map(str::to_string) {
+                if current != agent_config.model {
+                    let offered = agent.fetch_available_models().await;
+                    let applied = offered.contains(&agent_config.model)
+                        && agent.switch_model(&agent_config.model).await.is_ok();
+                    if !applied {
+                        let stored = self.session_manager.modify_session(session_id, |live| {
+                            match live.agent.as_mut() {
+                                Some(stored_agent) if stored_agent.model != current => {
+                                    stored_agent.model = current;
+                                    true
+                                }
+                                _ => false,
+                            }
+                        });
+                        if let Err(e) = stored.await {
+                            tracing::warn!(session_id = %session_id, error = %e,
+                                "The model of the ACP agent was not persisted");
+                        }
+                    }
+                }
+            }
+        }
+
         // What the agent declared about itself, read once here while nothing
         // holds the handle. An ACP agent sends this in the `session/new`
         // reply, so this is the first moment it exists; an internal agent
