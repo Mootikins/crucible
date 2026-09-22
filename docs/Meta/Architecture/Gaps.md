@@ -56,7 +56,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G12 | scope | The daemon `KilnRegistry` is the only door from a path to a kiln (4.2.1) | The CLI builds its own `KilnRegistry` over `crucible_home()` (`crucible-cli/src/kiln_attach.rs:112`); `KilnRegistryContext::for_daemon` reads `current_dir` and `home_dir` (`kiln_registry.rs:174`) | code-wrong | M |
 | G13 | scope | Containment never knows tool names (4.4) | File-tool name lists at `messaging/permission.rs:1073,1098` and `is_file_tool` (`permissions/engine.rs:193`) | code-wrong | S |
 | G14 | scope | Data-class trust is enforced on every delegation (4.14) | `enforce_child_isolation` skips silently when `session_lifecycle` is unbound (`delegation.rs:181`) | code-wrong | S |
-| G15 | scope | The gate order is one function with one test (4.11) | The order is statement order in `messaging/tool_call.rs`; `requires_permission_gate` holds `unreachable!` for `ToolPolicy::Deny` (`gate_decision.rs:341`) | code-wrong | S |
+| G15 | scope | The gate order is one function with one test (4.11) | The order is statement order in `messaging/tool_call.rs`. `decide_tool_gate` (`gate_decision.rs`) now owns the card/rules/exemption half and both callers share it; the remaining gates are still statement order | code-wrong | S |
 | G16 | scope | `AppConfig` reaches every subsystem by value at bind (S41) | `execution_roots::baseline` reads env vars and `settings.json` from disk (`execution_roots.rs`); `kiln_registry.rs:323` cites it as precedent | code-wrong | M |
 | G17 | scope | The web layer holds no policy beyond SSRF (4.27, 6.2) | The web holds a credential-directory deny list (`crucible-web/src/routes/project.rs:28-76`) and enclosing-root resolution twice (`routes/canvas.rs:195`, `routes/kiln.rs:363-437`) | code-wrong | M |
 | G18 | scope | `PatternStore` I/O is not on the async gate path (4.12) | `load_sync` and `save_sync` block inside the async gate (`messaging/permission.rs:732,1094`) | code-wrong | S |
@@ -271,9 +271,11 @@ unbound. First step: change the early `return` at `delegation.rs:181` to an
 error and fix the test that relied on it.
 
 **G15.** Target: `fn admit(call) -> Admission` in `gate_decision.rs` that runs
-the seven gates in order and one test that permutes them. First step: move the
-`ToolPolicy::Deny` check into `requires_permission_gate` so no arm is
-`unreachable!`.
+the seven gates in order and one test that permutes them. First step done:
+`decide_tool_gate` refuses a card `deny` itself, so no arm is `unreachable!`,
+and both the daemon's tool path and the ACP gate call it. Next step: fold the
+plan-mode bar, the active-tool set and the isolation gate into the same
+function.
 
 **G16, G99.** Target: `RpcContext` carries `config`, `config_home`, `cwd`,
 `home`; no daemon function calls `std::env`, `dirs`, or `current_dir`. First

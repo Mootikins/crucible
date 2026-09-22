@@ -105,7 +105,7 @@ Free functions: `session_containment` (`agent_manager/scope.rs:74`),
 (`kiln_registry.rs:74`), `forbidden_root_reason` and `resolve_registration_root`
 (`project_manager.rs:45,68`; plan T3-C2 replaced the latter with
 `crucible_core::config::expand_tilde`), `execution_roots::{record,baseline,all}`,
-`requires_permission_gate` (`messaging/gate_decision.rs:341`).
+`decide_tool_gate` (`messaging/gate_decision.rs`).
 
 **Traits.** `PermissionGate` (`crucible-core/src/traits/permission_gate.rs:13`):
 1 required, 0 defaulted, 1 impl, no test double, used as
@@ -126,9 +126,10 @@ before the permission gate; only statement order protects it.
 - `Arc<dyn PermissionGate>` has one impl and no test double
   (`messaging/permission.rs:210`, `permission_bridge.rs:56`). Neither `dyn`
   exemption applies.
-- `requires_permission_gate` holds `unreachable!("denied above")` for
-  `ToolPolicy::Deny` (`messaging/gate_decision.rs:341`); the invariant lives in
-  `messaging/tool_call.rs:308`. A new caller panics the daemon.
+- ~~`requires_permission_gate` holds `unreachable!("denied above")` for
+  `ToolPolicy::Deny`. A new caller panics the daemon.~~ Fixed:
+  `decide_tool_gate` (`messaging/gate_decision.rs`) refuses a card `deny`
+  itself, so every arm answers and no caller can panic.
 - `execute_permission_hooks_with_timeout` has no timeout; it runs the hooks and
   discards the result when elapsed time exceeds 1 s
   (`messaging/permission.rs:1108`).

@@ -348,8 +348,8 @@ fn restrictiveness(policy: Option<crate::agent::ToolPolicy>) -> u8 {
 /// Both directions matter, and the second is the common one. A parent's Deny
 /// must survive a card that allows the same tool. But a parent that names no
 /// policy at all is not unconstrained — its own non-read-only tools still face
-/// the gate — so a card's `allow`, which makes `requires_permission_gate`
-/// answer false and skips the mode stance, the mode rules, every Lua
+/// the gate — so a card's `allow`, which makes `decide_tool_gate` answer
+/// `Approve` and skips the mode stance, the mode rules, every Lua
 /// `on_request` hook and the saved patterns, must not stand either. That is
 /// the stock shape: an ACP-profile parent carries no policy, so this is what
 /// keeps a card written this turn from widening the child.

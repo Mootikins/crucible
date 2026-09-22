@@ -265,13 +265,19 @@ An agent card can declare a per-tool policy — `deny`, `ask`, or `allow` — se
   configured deny. A card-allowed call is marked auto-approved ("agent card
   policy") on its tool-call event.
 - **No policy** — the chain runs unless the tool is on the daemon's built-in
-  read-only list. An MCP server's `readOnlyHint` is deliberately not consulted
-  for this decision: a third-party server must not be able to annotate its way
-  past a mode's `default = "deny"`.
+  read-only list AND no `ask` rule names it. An `ask` rule you wrote about that
+  tool takes the read-only exemption away, because you asked to be asked. An
+  MCP server's `readOnlyHint` is deliberately not consulted for this decision:
+  a third-party server must not be able to annotate its way past a mode's
+  `default = "deny"`.
 
-The decision is `requires_permission_gate` in
-`crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`; the
-`deny` half is enforced earlier, in `tool_call.rs`.
+The decision is `decide_tool_gate` in
+`crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`. It is
+the one decision for every agent kind: the daemon's own tool path and the ACP
+permission gate both call it, so a card entry and a `[permissions]` rule mean
+the same thing whoever calls the tool. The card's `deny` half is ALSO enforced
+earlier, in `tool_call.rs`, so that a `pre_tool_call` handler cannot answer for
+a tool the card refuses.
 
 ### The plugin isolation gate
 
