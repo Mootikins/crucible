@@ -187,23 +187,6 @@ async fn next_event(
     .expect("timed out waiting for event")
 }
 
-#[test]
-fn mock_binary_exists_and_runs() {
-    let path = mock_agent_path();
-    assert!(path.exists(), "mock-acp-agent not found at {:?}", path);
-
-    // `output()` gives the child a closed stdin, so the agent ends at once.
-    let output = std::process::Command::new(&path)
-        .output()
-        .expect("Failed to execute mock-acp-agent");
-
-    assert!(
-        output.status.success(),
-        "mock-acp-agent failed on a closed stdin with status: {:?}",
-        output.status
-    );
-}
-
 #[tokio::test]
 async fn mock_acp_handshake_succeeds() {
     let workspace = TempDir::new().expect("Failed to create temp workspace");

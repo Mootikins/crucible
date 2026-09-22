@@ -256,11 +256,7 @@ mod tests {
 
     #[test]
     fn from_env_returns_none_without_env_var() {
-        // Ensure env var is unset for this test
-        // SAFETY: tests run in isolation per process by default in nextest;
-        // if running serially via cargo test, this could race. Acceptable for
-        // a smoke check.
-        std::env::remove_var("CRUCIBLE_ACP_RECORD_DIR");
+        let _unset = crucible_core::test_support::EnvVarGuard::remove("CRUCIBLE_ACP_RECORD_DIR");
         assert!(Recorder::from_env("any").is_none());
     }
 }

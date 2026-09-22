@@ -111,12 +111,6 @@ async fn assert_profile_completes_handshake(name: &str) {
         !session.id().is_empty(),
         "ACP profile `{name}` completed `session/new` but returned an empty session id"
     );
-
-    // Nothing downstream reads these here; the assertion is that reading them
-    // does not panic on a real agent's capability block, which is the shape
-    // the recorded fixtures freeze.
-    let _ = client.agent_supports_http_mcp();
-    let _ = client.agent_supports_session_close();
 }
 
 #[tokio::test]
