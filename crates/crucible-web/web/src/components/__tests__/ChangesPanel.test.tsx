@@ -7,7 +7,7 @@ import { proposalFixture, proposalRoutes } from '@/test-utils/proposals';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { Session } from '@/lib/types';
-import type { DiffComment, DiffFileEntry } from '@/lib/diffset';
+import type { DiffComment, DiffFileEntry, UnreadableRoot } from '@/lib/diffset';
 import type { Conflicted } from '@/lib/offline/outbox';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
@@ -94,11 +94,16 @@ const session = (id = 's1'): Session => ({
   event_count: 0,
 });
 
-const answer = (files: DiffFileEntry[], comments: DiffComment[] = []) => {
+const answer = (
+  files: DiffFileEntry[],
+  comments: DiffComment[] = [],
+  unreadable: UnreadableRoot[] = [],
+) => {
   getDiffset.mockImplementation(async (source: { session: string }) => ({
     id: `session-${source.session}`,
     source,
     files: structuredClone(files),
+    unreadable_roots: structuredClone(unreadable),
   }));
   getDiffComments.mockImplementation(async () =>
     structuredClone(comments).map((comment) => ({ comment, outdated: false })),
@@ -188,6 +193,38 @@ describe('ChangesPanel — the session record', () => {
     expect(screen.queryByTestId('changes-scope-turn')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
+
+  it('names each root that the daemon cannot read, above the files', async () => {
+    answer(
+      [file({ path: 'src/a.rs' })],
+      [],
+      [
+        { root: '/gone', reason: 'tracked root no longer exists' },
+        { root: '/old', reason: 'session base snapshot abc is no longer stored' },
+      ],
+    );
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+
+    const banner = await screen.findByTestId('diff-unreadable-roots');
+    expect(banner.textContent).toContain('This diff leaves out the files of these roots:');
+    const rows = within(banner).getAllByTestId('diff-unreadable-root');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      '/gone — tracked root no longer exists',
+      '/old — session base snapshot abc is no longer stored',
+    ]);
+    // The banner comes before the files of the readable root.
+    const listed = screen.getByTestId('changes-file-src/a.rs');
+    expect(banner.compareDocumentPosition(listed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('a record with no unreadable root shows no banner', async () => {
+    answer([file()]);
+    setCurrentSession(session());
+    render(() => <ChangesPanel />);
+    await waitFor(() => expect(screen.getByTestId('changes-file-src/a.rs')).toBeInTheDocument());
+    expect(screen.queryByTestId('diff-unreadable-roots')).toBeNull();
   });
 
   it('a session with no changes says so once the list has answered', async () => {

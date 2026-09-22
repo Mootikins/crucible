@@ -8,7 +8,7 @@
 use crate::formatting::SyntaxHighlighter;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::{truncate_to_chars, visible_width};
-use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
+use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus, UnreadableRoot};
 use crucible_core::types::acp::{FileDiff, MAX_DIFF_BYTES};
 use crucible_oil::node::{col, row, styled, text, Node};
 use crucible_oil::style::{Color, Style};
@@ -244,6 +244,23 @@ pub fn render_diffset_file(
 /// holds one space, and thus takes one row.
 pub fn blank_row() -> Node {
     text(" ")
+}
+
+/// The warning text for one root that a diffset leaves out.
+///
+/// `cru diff` and the `:diff` view both show it, with the words of the web
+/// banner, so that no surface lets the user read the list as complete.
+pub fn unreadable_root_text(unreadable: &UnreadableRoot) -> String {
+    format!(
+        "the diff leaves out {}: {}",
+        unreadable.root, unreadable.reason
+    )
+}
+
+/// The style of a warning row about an unreadable root.
+pub fn unreadable_root_style() -> Style {
+    let t = theme::active();
+    Style::new().fg(t.resolve_color(t.colors.warning))
 }
 
 /// The rows that the body shows.

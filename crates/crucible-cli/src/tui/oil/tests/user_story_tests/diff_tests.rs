@@ -118,3 +118,55 @@ fn a_branch_diff_reaches_the_frame() {
     assert!(!screen.contains("file 2/2"), "the view closed:\n{screen}");
     assert!(screen.contains("ASK"), "the prompt is back:\n{screen}");
 }
+
+/// A session record that leaves out a root names the root and the reason on
+/// the row below the header, in the warning color, before the first file.
+#[test]
+fn an_unreadable_root_reaches_the_frame_above_the_files() {
+    let source = DiffsetSource::SessionRecord {
+        session: crucible_core::session::SessionId::parse("chat-1").unwrap(),
+    };
+    let mut record = diffset();
+    record.id = source.id();
+    record.source = source;
+    record.unreadable_roots = vec![crucible_core::diff::UnreadableRoot {
+        root: PhysicalRoot::from_top_level("/gone"),
+        reason: "tracked root no longer exists".into(),
+    }];
+    let mut story = StoryRuntime::new(80, 24);
+    story.send(ChatAppMsg::DiffLoaded(Box::new(record)));
+
+    let screen = story.fresh_screen();
+    let lines: Vec<&str> = screen.lines().collect();
+    let header = lines
+        .iter()
+        .position(|line| line.contains("Diff: session chat-1"))
+        .unwrap_or_else(|| panic!("the header:\n{screen}"));
+    assert_eq!(
+        lines[header + 1].trim_end(),
+        " ⚠ the diff leaves out /gone: tracked root no longer exists",
+        "the warning row:\n{screen}"
+    );
+    assert!(
+        lines[header + 2].contains("src/new_name.rs"),
+        "the first file follows:\n{screen}"
+    );
+
+    let mut vt = crate::tui::oil::tests::vt100_runtime::Vt100TestRuntime::new(80, 24);
+    vt.render_frame(story.app());
+    let styled = vt.screen_contents_styled();
+    let t = crate::tui::oil::theme::active();
+    let crucible_oil::style::Color::Rgb(r, g, b) = t.resolve_color(t.colors.warning) else {
+        panic!("the warning color is not an RGB color");
+    };
+    // vt100 joins the attributes of a cell into one escape, so read the
+    // last escape before the row text.
+    let at = styled
+        .find(" ⚠ the diff leaves out /gone")
+        .unwrap_or_else(|| panic!("the warning row:\n{styled:?}"));
+    let escape = &styled[styled[..at].rfind('\u{1b}').unwrap()..at];
+    assert!(
+        escape.starts_with(&format!("\u{1b}[38;2;{r};{g};{b}")),
+        "the warning color, not {escape:?}"
+    );
+}

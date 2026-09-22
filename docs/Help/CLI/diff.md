@@ -42,6 +42,11 @@ and a file larger than 1 MiB show a line that says so. On a terminal, the output
 has colors and uses the side-by-side layout when the terminal is wide. In a pipe,
 the output is plain unified text.
 
+A diffset can leave out a root that the daemon cannot read. The output then
+prints one `warning:` line for each root, with the reason, below the summary.
+`-f json` gives the roots in `diffset.unreadable_roots`. Only a session record
+leaves out a root, so the list of a branch diff is empty.
+
 The daemon refuses a root that is not a registered project, the workspace of a
 session or a path inside a registered kiln. To register a repository, run
 `cru project register`. The root must also be the top level of its repository.

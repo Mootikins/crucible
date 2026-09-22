@@ -25,6 +25,7 @@ import { AlertTriangle, Check, RefreshCw } from '@/lib/icons';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
+import { UnreadableRoots } from './UnreadableRoots';
 
 /** Roots in first-seen order, each with its files. */
 function groupByRoot(files: DiffFileEntry[]): { root: string; files: DiffFileEntry[] }[] {
@@ -174,6 +175,8 @@ export const ChangesPanel: Component = () => {
               {state().error}
             </p>
           </Show>
+
+          <UnreadableRoots roots={state().unreadable_roots} />
 
           <Show when={state().loaded && state().files.length === 0}>
             <p class="p-3 text-xs text-muted-dark" data-testid="changes-empty">

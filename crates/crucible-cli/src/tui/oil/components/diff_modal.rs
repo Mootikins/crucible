@@ -15,7 +15,10 @@ use crucible_core::diff::{DiffFileText, Diffset, DiffsetId, DiffsetSource};
 use crucible_oil::node::{col, row, spacer, styled, Node};
 use crucible_oil::style::{Color, Style};
 
-use super::diff_view::{diff_row_count, diffset_file_diff, render_diffset_file, DiffOptions};
+use super::diff_view::{
+    diff_row_count, diffset_file_diff, render_diffset_file, unreadable_root_style,
+    unreadable_root_text, DiffOptions,
+};
 
 /// The rows that are not diff rows: the header, the footer, the file header
 /// of the body and the "more lines" row below a page.
@@ -222,7 +225,10 @@ impl DiffModal {
 
     pub fn view(&self, term_width: usize, term_height: usize) -> Node {
         let t = crate::tui::oil::theme::active();
-        let page = term_height.saturating_sub(CHROME_ROWS).max(1);
+        let warnings = self.unreadable_rows(term_width);
+        let page = term_height
+            .saturating_sub(CHROME_ROWS + warnings.len())
+            .max(1);
         self.page.set(page);
         self.width.set(term_width);
 
@@ -254,7 +260,28 @@ impl DiffModal {
         };
 
         let footer = self.footer(term_width, t.resolve_color(t.colors.background), t);
-        col([header, body, spacer(), footer])
+        let mut rows = vec![header];
+        rows.extend(warnings);
+        rows.extend([body, spacer(), footer]);
+        col(rows)
+    }
+
+    /// One warning row for each root that the diffset leaves out.
+    ///
+    /// A row is cut to the width, so that each root takes one row and the
+    /// page size stays correct.
+    fn unreadable_rows(&self, width: usize) -> Vec<Node> {
+        self.diffset
+            .unreadable_roots
+            .iter()
+            .map(|unreadable| {
+                let line = format!(" ⚠ {}", unreadable_root_text(unreadable));
+                styled(
+                    crucible_oil::utils::truncate_to_width(&line, width, true).into_owned(),
+                    unreadable_root_style(),
+                )
+            })
+            .collect()
     }
 
     /// The base that the diffset compares against.
@@ -410,6 +437,56 @@ mod tests {
         let other = DiffsetId::for_branch(&PhysicalRoot::from_top_level("/other"), "main", None);
         modal.set_text(&other, 0, long_text());
         assert_eq!(modal.row_count(), 0, "the text of another diffset");
+    }
+
+    fn unreadable() -> Vec<crucible_core::diff::UnreadableRoot> {
+        vec![
+            crucible_core::diff::UnreadableRoot {
+                root: PhysicalRoot::from_top_level("/gone"),
+                reason: "tracked root no longer exists".into(),
+            },
+            crucible_core::diff::UnreadableRoot {
+                root: PhysicalRoot::from_top_level("/old"),
+                reason: "session base snapshot abc is no longer stored".into(),
+            },
+        ]
+    }
+
+    /// Each unreadable root gets one warning row between the header and the
+    /// file, and the page gives those rows back.
+    #[test]
+    fn each_unreadable_root_shows_one_row_above_the_file() {
+        let mut diffset = diffset();
+        diffset.unreadable_roots = unreadable();
+        let mut modal = DiffModal::new(diffset);
+        let id = modal.id().clone();
+        modal.set_text(&id, 0, long_text());
+
+        let out = crucible_oil::render::render_to_plain_text(&modal.view(80, 14), 80);
+        let lines: Vec<&str> = out.lines().map(str::trim_end).collect();
+        assert!(lines[0].starts_with(" Diff: main...working tree"), "{out}");
+        assert_eq!(
+            lines[1], " ⚠ the diff leaves out /gone: tracked root no longer exists",
+            "{out}"
+        );
+        assert_eq!(
+            lines[2], " ⚠ the diff leaves out /old: session base snapshot abc is no longer stored",
+            "{out}"
+        );
+        assert!(lines[3].contains("a.rs"), "the file header follows:\n{out}");
+        assert_eq!(lines.len(), 14, "the frame keeps its height:\n{out}");
+
+        // A frame of 14 rows, less 4 rows of chrome and 2 warning rows,
+        // leaves a page of 8 diff rows.
+        modal.handle_key(key(KeyCode::PageDown));
+        assert_eq!(modal.first_line(), 8);
+    }
+
+    #[test]
+    fn a_diffset_with_no_unreadable_root_shows_no_warning_row() {
+        let out =
+            crucible_oil::render::render_to_plain_text(&DiffModal::new(diffset()).view(80, 14), 80);
+        assert!(!out.contains("leaves out"), "{out}");
     }
 
     #[test]

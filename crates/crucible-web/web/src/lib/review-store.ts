@@ -24,7 +24,7 @@ import { createStore, produce } from 'solid-js/store';
 import { createSingletonRoot } from '@solid-primitives/rootless';
 import { sessionEvents } from './query/sse';
 import type { ChatEvent } from './types';
-import type { DiffComment, DiffFileEntry } from './diffset';
+import type { DiffComment, DiffFileEntry, UnreadableRoot } from './diffset';
 import {
   invalidateReview,
   resolveReviewCommentOnce,
@@ -35,6 +35,8 @@ import {
 export interface ReviewSessionState {
   /** The files that differ between the session base and the disk. */
   files: DiffFileEntry[];
+  /** The roots that the record leaves out, because the daemon cannot read them. */
+  unreadable_roots: UnreadableRoot[];
   comments: DiffComment[];
   /** A list has succeeded at least once. Distinguishes "no changes" from
    * "we do not know yet". */
@@ -45,6 +47,7 @@ export interface ReviewSessionState {
 
 const EMPTY: ReviewSessionState = {
   files: [],
+  unreadable_roots: [],
   comments: [],
   loaded: false,
   loading: false,
@@ -95,6 +98,7 @@ function adoptListing(id: string, data: SessionRecordListing): void {
   setSessions(id, (s) => ({
     ...s,
     files: data.files,
+    unreadable_roots: data.unreadable_roots,
     comments: data.comments,
     loaded: true,
     loading: false,

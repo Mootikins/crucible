@@ -1,7 +1,7 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import { getDiffComments, getDiffset, resolveDiffComment } from '@/lib/diff-api';
-import type { DiffComment, DiffFileEntry, DiffsetSource } from '@/lib/diffset';
+import type { DiffComment, DiffFileEntry, DiffsetSource, UnreadableRoot } from '@/lib/diffset';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -21,6 +21,8 @@ import { keys } from './keys';
 /** The files of a session record and its comments. */
 export interface SessionRecordListing {
   files: DiffFileEntry[];
+  /** The roots that the record leaves out, because the daemon cannot read them. */
+  unreadable_roots: UnreadableRoot[];
   comments: DiffComment[];
 }
 
@@ -33,7 +35,11 @@ function sessionRecord(sessionId: string): DiffsetSource {
 async function listSessionRecord(sessionId: string): Promise<SessionRecordListing> {
   const source = sessionRecord(sessionId);
   const [diffset, comments] = await Promise.all([getDiffset(source), getDiffComments(source)]);
-  return { files: diffset.files, comments: comments.map((listed) => listed.comment) };
+  return {
+    files: diffset.files,
+    unreadable_roots: diffset.unreadable_roots,
+    comments: comments.map((listed) => listed.comment),
+  };
 }
 
 /** One session's record. */

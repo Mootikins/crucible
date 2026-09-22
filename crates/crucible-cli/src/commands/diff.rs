@@ -12,13 +12,14 @@ use crucible_core::diff::{quickfix_line, DiffFileText, Diffset, DiffsetSource};
 use crucible_core::session::{PhysicalRoot, SessionId};
 use crucible_daemon::diff::comments::ListedComment;
 use crucible_daemon::DaemonClient;
-use crucible_oil::node::{col, text, Node};
+use crucible_oil::node::{col, styled, text, Node};
 use crucible_oil::render::{render_to_plain_text, render_to_string};
 
 use crate::cli::{CommentFormat, DiffCommands};
 use crate::formatting::TextFormat;
 use crate::tui::oil::components::diff_view::{
-    blank_row, render_diffset_file, DiffLayout, DiffOptions,
+    blank_row, render_diffset_file, unreadable_root_style, unreadable_root_text, DiffLayout,
+    DiffOptions,
 };
 
 /// The width of the output when stdout is not a terminal.
@@ -197,7 +198,8 @@ pub(crate) fn print_node(node: &Node) {
     println!("{}", out.trim_end());
 }
 
-/// The summary line and each file of the diffset.
+/// The summary line, one warning line for each unreadable root, and each
+/// file of the diffset.
 fn diffset_view(diffset: &Diffset, texts: &[Option<DiffFileText>], opts: &DiffOptions) -> Node {
     let base = match &diffset.source {
         DiffsetSource::Branch { base, .. } => base.as_str(),
@@ -206,6 +208,12 @@ fn diffset_view(diffset: &Diffset, texts: &[Option<DiffFileText>], opts: &DiffOp
     let count = diffset.files.len();
     let noun = if count == 1 { "file" } else { "files" };
     let mut rows = vec![text(format!("{count} {noun} changed since {base}"))];
+    rows.extend(diffset.unreadable_roots.iter().map(|unreadable| {
+        styled(
+            format!("warning: {}", unreadable_root_text(unreadable)),
+            unreadable_root_style(),
+        )
+    }));
     for (index, entry) in diffset.files.iter().enumerate() {
         if !opts.collapsed {
             rows.push(blank_row());
@@ -426,6 +434,45 @@ mod tests {
                 "edit b.rs  +1 -1",
                 "-b",
                 "+B",
+            ],
+            "{out:?}"
+        );
+    }
+
+    /// A root that the daemon cannot read gets one warning line below the
+    /// summary, so that the user does not read the list as complete.
+    #[test]
+    fn each_unreadable_root_prints_one_warning_line() {
+        let source = DiffsetSource::SessionRecord {
+            session: SessionId::parse("chat-1").unwrap(),
+        };
+        let diffset = Diffset {
+            id: source.id(),
+            source,
+            files: vec![entry("a.rs")],
+            unreadable_roots: vec![
+                crucible_core::diff::UnreadableRoot {
+                    root: PhysicalRoot::from_top_level("/gone"),
+                    reason: "tracked root no longer exists".into(),
+                },
+                crucible_core::diff::UnreadableRoot {
+                    root: PhysicalRoot::from_top_level("/old"),
+                    reason: "session base snapshot abc is no longer stored".into(),
+                },
+            ],
+        };
+        let mut opts = DiffOptions::for_width(PIPE_WIDTH);
+        opts.collapsed = true;
+        let node = diffset_view(&diffset, &[None], &opts);
+        let out = render_to_plain_text(&node, PIPE_WIDTH);
+        let lines: Vec<&str> = out.lines().map(str::trim_end).collect();
+        assert_eq!(
+            lines,
+            [
+                "1 file changed since",
+                "warning: the diff leaves out /gone: tracked root no longer exists",
+                "warning: the diff leaves out /old: session base snapshot abc is no longer stored",
+                "edit a.rs  +1 -1",
             ],
             "{out:?}"
         );
