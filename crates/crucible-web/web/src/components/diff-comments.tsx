@@ -443,23 +443,26 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
-/** A tint of the primary colour, for the selected range. */
-const tint = (percent: number) =>
-  `color-mix(in srgb, var(--color-primary) ${percent}%, transparent)`;
+/**
+ * A tint of the info blue, for the selected range. The hue is far from the
+ * red of a removed row and the green of an added row, so a selection does
+ * not read as a change. The primary colour is a rust orange, too near red.
+ * The token is an `r, g, b` triple with a light and a dark value.
+ */
+const tint = (alpha: number) => `rgba(var(--cru-color-callout-info), ${alpha})`;
 
 const commentTheme = EditorView.theme({
   '.cm-diff-lines .cm-gutterElement': { cursor: 'pointer', userSelect: 'none' },
   '.cm-diff-line': { position: 'relative', paddingLeft: '1.25em' },
   '.cm-diff-base-lines': { cursor: 'default' },
-  // The selected range. The numbers carry the strong tint and a bar of the
-  // primary colour, so that the range does not read as a removed (red) row.
-  // The rows carry a light tint over their own, so a changed row stays green.
+  // The selected range. The numbers carry the strong tint and a bar. The
+  // rows carry a light tint over their own, so a changed row keeps its tint.
   '.cm-gutterElement.cm-diff-selected-number': {
-    backgroundColor: tint(24),
-    boxShadow: 'inset 2px 0 var(--color-primary)',
-    color: 'var(--color-primary)',
+    backgroundColor: tint(0.28),
+    boxShadow: `inset 2px 0 ${tint(1)}`,
+    color: 'var(--color-shell-ink)',
   },
-  '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-primary)', fontWeight: '600' },
+  '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-shell-ink)', fontWeight: '600' },
   '.cm-diff-comment-add': {
     position: 'absolute',
     left: '0',
@@ -471,7 +474,7 @@ const commentTheme = EditorView.theme({
     color: 'var(--color-on-primary)',
     textAlign: 'center',
   },
-  '.cm-line.cm-diff-selected': { backgroundImage: `linear-gradient(${tint(10)}, ${tint(10)})` },
+  '.cm-line.cm-diff-selected': { backgroundImage: `linear-gradient(${tint(0.14)}, ${tint(0.14)})` },
   '.cm-diff-comment, .cm-diff-comment-box': {
     margin: '4px 8px 4px 0',
     padding: '6px 8px',
