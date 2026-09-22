@@ -1,24 +1,10 @@
-//! Session management for ACP connections
-//!
-//! This module handles the lifecycle and state of individual agent sessions.
-//!
-//! ## Responsibilities
-//!
-//! - Session state management (active, idle, closed)
-//! - Message sending and receiving
-//! - Session-level error handling and recovery
-//! - Resource cleanup on session termination
-//!
-//! ## Design Principles
-//!
-//! - **Single Responsibility**: Focused on session lifecycle and message exchange
-//! - **Open/Closed**: Extensible through configuration without modification
+//! The agent session that the ACP handshake opens: its id, and what the
+//! agent advertised for it.
 
 use agent_client_protocol::schema::v1::{
     SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions, SessionModeState,
 };
-use serde::{Deserialize, Serialize};
 
 /// The model selector that an agent advertises in `configOptions`.
 ///
@@ -74,31 +60,6 @@ fn select_values(options: &SessionConfigSelectOptions) -> Vec<String> {
     }
 }
 
-/// ACP transport layer configuration.
-///
-/// Settings for the underlying ACP client transport (timeouts, message limits).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransportConfig {
-    /// Session timeout in milliseconds
-    pub timeout_ms: u64,
-
-    /// Maximum message size in bytes
-    pub max_message_size: usize,
-
-    /// Enable debug logging for this session
-    pub debug: bool,
-}
-
-impl Default for TransportConfig {
-    fn default() -> Self {
-        Self {
-            timeout_ms: 30000,                  // 30 seconds
-            max_message_size: 10 * 1024 * 1024, // 10 MB
-            debug: false,
-        }
-    }
-}
-
 /// How the connect flow obtained this session.
 ///
 /// The handle reads `FellBackToNew` to tell the event stream that the
@@ -115,77 +76,46 @@ pub enum ResumeDisposition {
     FellBackToNew,
 }
 
-/// Represents an active session with an agent
-///
-/// The session handles communication with a connected agent,
-/// including sending requests and receiving responses.
+/// The agent session that the handshake opened.
 #[derive(Debug)]
 pub struct AcpSession {
     session_id: String,
-    /// The model selector from the agent's `session/new` reply, when it
-    /// advertised one.
+    /// The model selector that the agent advertised, if any.
     model: Option<ModelChoice>,
-    /// The mode set from the agent's `session/new` reply, when it declared
-    /// one. The modes belong to the agent — Crucible's own set is a stand-in
-    /// for agents that declare none, not a default to merge with.
+    /// The mode set that the agent declared, if any. The modes belong to the
+    /// agent. Crucible's own set stands in for an agent that declares none;
+    /// it is not a default to merge with.
     modes: Option<SessionModeState>,
-    /// Every config option the agent advertised, in wire order.
-    ///
-    /// `model` is extracted above because Crucible has a typed model
-    /// selector to project it onto. The rest are kept as the agent sent
-    /// them: `thought_level` is the agent's own reasoning control, which
-    /// Crucible does not mirror, and `Other(_)` is whatever this particular
-    /// agent invented. A client renders them; the daemon does not interpret
-    /// them.
+    /// Every config option that the agent advertised, in wire order. The
+    /// model selector is also in `model`. A client renders the others; the
+    /// daemon does not interpret them.
     config_options: Vec<SessionConfigOption>,
     /// How the connect flow obtained this session.
     resume: ResumeDisposition,
 }
 
 impl AcpSession {
-    /// Create a new session with the given configuration
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Session configuration
-    /// * `session_id` - Unique identifier for this session
-    pub fn new(_config: TransportConfig, session_id: String) -> Self {
+    /// A session from what the agent answered to `session/new` or
+    /// `session/resume`.
+    pub(crate) fn new(
+        session_id: String,
+        modes: Option<SessionModeState>,
+        config_options: Option<Vec<SessionConfigOption>>,
+        resume: ResumeDisposition,
+    ) -> Self {
+        let config_options = config_options.unwrap_or_default();
         Self {
             session_id,
-            model: None,
-            modes: None,
-            config_options: Vec::new(),
-            resume: ResumeDisposition::NotAttempted,
+            model: ModelChoice::from_config_options(&config_options),
+            modes,
+            config_options,
+            resume,
         }
-    }
-
-    /// Attach the model selector the agent advertised.
-    pub fn with_model(mut self, model: Option<ModelChoice>) -> Self {
-        self.model = model;
-        self
-    }
-
-    /// Attach the mode set the agent declared.
-    pub fn with_modes(mut self, modes: Option<SessionModeState>) -> Self {
-        self.modes = modes;
-        self
-    }
-
-    /// Attach every config option the agent advertised.
-    pub fn with_config_options(mut self, options: Option<Vec<SessionConfigOption>>) -> Self {
-        self.config_options = options.unwrap_or_default();
-        self
     }
 
     /// The config options the agent advertised, in wire order.
     pub fn config_options(&self) -> &[SessionConfigOption] {
         &self.config_options
-    }
-
-    /// Record how the connect flow obtained this session.
-    pub fn with_resume(mut self, resume: ResumeDisposition) -> Self {
-        self.resume = resume;
-        self
     }
 
     /// Get the session ID
@@ -212,13 +142,6 @@ impl AcpSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_session_creation() {
-        let config = TransportConfig::default();
-        let session = AcpSession::new(config, "test-session-id".to_string());
-        assert_eq!(session.id(), "test-session-id");
-    }
 
     /// The `session/new` reply that claude-agent-acp writes, reduced to the
     /// fields this parser reads. The model selector carries category
@@ -290,13 +213,5 @@ mod tests {
             ModelChoice::from_config_options(&config_options(r#"{"sessionId": "sess-1"}"#)),
             None
         );
-    }
-
-    #[test]
-    fn test_default_config() {
-        let config = TransportConfig::default();
-        assert_eq!(config.timeout_ms, 30000);
-        assert_eq!(config.max_message_size, 10 * 1024 * 1024);
-        assert!(!config.debug);
     }
 }

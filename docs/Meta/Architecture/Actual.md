@@ -328,9 +328,8 @@ session live.
   (`server/session/mod.rs:126-131`).
 - `inject_context_impl` returns `Result<(), String>` and the handler classifies
   by `starts_with` (`server/session/messaging.rs:161-162`).
-- `StreamingChunk` (`acp/streaming.rs:23`, 7 variants) is a translation layer
-  over `TurnEvent`; the streaming loop exists twice and the non-callback path
-  has no production caller (`acp/client/streaming.rs:164,687,788` vs `266,386,461`).
+- `StreamingChunk` (`acp/streaming.rs`, 7 variants) is a translation layer
+  over `TurnEvent`.
 - `DEPTH_CAP_PROMPT` (`genai_handle.rs:1285`) is a second copy of
   `TOOL_DEPTH_LIMIT_FINAL_PROMPT` kept in sync by comment.
 - `post_llm_call` is emitted with two payloads under one name
@@ -712,8 +711,10 @@ mcp_client,gateway_executor}.rs`, `mcp_server.rs`, `mcp/`.
 `SessionStore` (`middleware/auth/session.rs:62`, 64 tokens, 30-day TTL),
 `ShellGateState` (`middleware/auth/shell.rs:99`), `Assets` (`assets.rs:34`).
 
-**ACP types.** `CrucibleAcpClient` (`acp/client/mod.rs:66`), `ClientConfig`
-(`acp/client/types.rs:12`), `StreamingChunk` (`acp/streaming.rs:21`),
+**ACP types.** `CrucibleAcpClient` (`acp/client/mod.rs`, a clone of the
+`agent_client_protocol` SDK connection to the agent, with the handshake, the
+permission bridge and the update translation), `ClientConfig`
+(`acp/client/types.rs`), `StreamingChunk` (`acp/streaming.rs:21`),
 `ToolCallTable` (`acp/client/tool_table.rs:142`, one upsert table per turn
 keyed by tool-call id; it names every `ToolEnd` and flushes at end of turn),
 `ModelChoice` (`acp/session.rs:29`, built from `configOptions` of category
@@ -742,14 +743,16 @@ by `tests/architecture_tests/wire_types.rs`, while 46 are client-only. Web:
 every `/api/*` route except `/health`, `/ready`, `/api/auth/*` sits behind
 `bearer_auth`; `host_guard` wraps the app; one reconnect after a connection
 error except `scm_clone` and the four `review.*` writes. ACP: child process
-stdio, one global `REQUEST_ID` (`acp/client/mod.rs:28`); `read_response_line`
-uses a 5-minute per-read floor (`acp/client/io.rs:107-112`); unhandled inbound
-requests get `-32601`; the client sends `session/resume` after a daemon
+stdio in a process group of its own, framed by the SDK connection, which runs
+on its own task and gives each request a UUID id. The SDK answers an unhandled
+inbound request with `-32601`. A permission request runs on its own task. A
+turn has one deadline and a handshake request has another; there is no
+per-read timeout. The client sends `session/resume` after a daemon
 restart (fall back: `session/new`), `session/set_config_option` for a model
 switch, and `session/close` at shutdown, and it tolerates a `-32601` reply
 to resume and close. MCP: `InProcessMcpHost` URL goes into
-`NewSessionRequest.mcp_servers`; `build_stdio_mcp_server` resolves `cru` beside
-`current_exe()` (`acp/protocol.rs:185`).
+`NewSessionRequest.mcp_servers`; `stdio_mcp_server` resolves `cru` beside
+`current_exe()` (`acp/client/connection.rs`).
 
 **Confirmed problems.**
 
@@ -810,12 +813,12 @@ to resume and close. MCP: `InProcessMcpHost` URL goes into
 - ACP: tool discovery and execution go through `InProcessMcpHost` and
   `CrucibleMcpServer`; the obsolete ten-tool facade is removed. `acp/mock_agent.rs:17`
   has a module-level `#![allow]`. `Recorder::from_env` reads env on every
-  `with_name` (`acp/client/recording.rs:71,81`); a test calls
-  `std::env::remove_var` (`recording.rs:263`). Timeout arithmetic is split
-  across `acp_launch.rs:63`, `client/io.rs:110`, `client/streaming.rs:194`.
-  The streaming API is `StreamingChunk` plus `channel_callback`; the unused
-  `StreamHandler`/`StreamConfig` formatting facade is removed.
-  `AcpAgentHandle.session_id` is `Option` and never `None`. `mcp_server.rs:77,113` opens the kiln twice.
+  `spawn` (`acp/client/recording.rs`); a test calls
+  `std::env::remove_var` (`recording.rs`). Timeout arithmetic is split
+  across `acp_launch.rs` and `client/streaming.rs`, which multiplies
+  `timeout_ms` by ten. The streaming API is `StreamingChunk` over a channel;
+  the unused `StreamHandler`/`StreamConfig` formatting facade is removed.
+  `mcp_server.rs:77,113` opens the kiln twice.
 - MCP: the gateway half of `ExtendedMcpServer` and `McpGatewayManager::start_reconnect_loop`
   have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`; since
   plan T3-A10 `server/mod.rs` starts the reconnect loop);
@@ -1432,10 +1435,6 @@ Production items that only tests use:
 - `genai_handle.rs` is about 3,200 lines.
 - Every daemon handler returns hand-spelled `serde_json::json!`; results have no
   shared type (`daemon-server-a` record).
-- `AcpAgentHandle::turn` keeps the client out of its `Arc<Mutex<Option>>` after
-  the consumer drops the stream; a second turn sees "busy" (`acp_handle.rs`).
-- `REQUEST_ID` is one process-global counter for every ACP client
-  (`crucible-daemon/src/acp/client/mod.rs:28`).
 - `ProjectManager::touch` rewrites the whole projects JSON synchronously from
   RPC handlers (`crucible-daemon/src/project_manager.rs:288-308`).
 - `FileEvent::new` calls `path.is_dir()` on the notify callback thread for

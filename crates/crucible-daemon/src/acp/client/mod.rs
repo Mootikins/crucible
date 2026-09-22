@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest,
+    AgentCapabilities, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, SessionUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectTo, ConnectionTo, JsonRpcRequest};
@@ -58,8 +58,6 @@ struct Turn {
 #[derive(Default)]
 struct Shared {
     turn: Option<Turn>,
-    /// The latest slash commands that the agent advertised.
-    commands: Vec<AvailableCommand>,
     /// The model choice from the latest `config_option_update`.
     model_update: Option<ModelChoice>,
 }
@@ -214,19 +212,6 @@ impl CrucibleAcpClient {
         lock(&self.shared).model_update.take()
     }
 
-    /// The latest slash commands that the agent advertised.
-    pub fn available_commands(&self) -> Vec<AvailableCommand> {
-        lock(&self.shared).commands.clone()
-    }
-
-    pub fn agent_name(&self) -> &str {
-        &self.agent_name
-    }
-
-    pub fn config(&self) -> &ClientConfig {
-        &self.config
-    }
-
     /// Whether the agent takes a Streamable HTTP MCP server. `false` before
     /// the handshake.
     pub fn agent_supports_http_mcp(&self) -> bool {
@@ -248,17 +233,10 @@ fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Keep the session-level updates. Send the others to the turn that runs.
+/// Keep the model choice. Send the other updates to the turn that runs.
 fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
     let mut shared = lock(shared);
     match update {
-        SessionUpdate::AvailableCommandsUpdate(update) => {
-            tracing::info!(
-                "Received {} available command(s) from agent",
-                update.available_commands.len()
-            );
-            shared.commands = update.available_commands;
-        }
         // The one option that Crucible tracks is the model selector. The
         // handle reads the choice with `take_model_update` after the turn.
         SessionUpdate::ConfigOptionUpdate(update) => {

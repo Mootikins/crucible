@@ -1179,6 +1179,7 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 - Operations: `discover()`, `spawn(profile, env) -> AcpHandle` where `AcpHandle: AgentHandle`; `session/new`, `session/prompt`, `session/cancel`, `session/set_config_option` (the model selector the agent lists in `configOptions`), `session/set_mode`; handle `session/request_permission` through InteractionBroker and PermissionEngine; map `session/update` frames to `SessionEvent` with `ToolSource::Acp(profile)`.
 - Transport for Crucible's tools to the agent: in-process MCP over HTTP/SSE when the agent supports it, else stdio.
 - The ACP wire types come from the `agent_client_protocol` crate. They never leave this subsystem.
+- The JSON-RPC connection is the SDK's `Client` role over the child stdio. AcpHost adds the handshake, the permission bridge and the translation of `session/update`; it does not frame JSON-RPC itself.
 - Must never know: the internal provider path, SQLite, kiln internals, the TUI. It reaches tools only through the in-process MCP host.
 
 ### 4.20 AcpAgentServer

@@ -14,7 +14,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use super::recording::{Direction, Recorder};
 use super::{CrucibleAcpClient, PermissionRequestHandler};
-use crate::acp::session::{AcpSession, ModelChoice, ResumeDisposition, TransportConfig};
+use crate::acp::session::{AcpSession, ResumeDisposition};
 use crate::acp::{ClientError, Result};
 
 impl CrucibleAcpClient {
@@ -135,18 +135,12 @@ impl CrucibleAcpClient {
             match self.handshake_call(request).await? {
                 Ok(response) => {
                     tracing::info!(agent = %self.agent_name, session_id = %prior, "ACP agent resumed its session");
-                    return Ok(
-                        AcpSession::new(TransportConfig::default(), prior.to_string())
-                            .with_model(
-                                response
-                                    .config_options
-                                    .as_deref()
-                                    .and_then(ModelChoice::from_config_options),
-                            )
-                            .with_modes(response.modes)
-                            .with_config_options(response.config_options)
-                            .with_resume(ResumeDisposition::Resumed),
-                    );
+                    return Ok(AcpSession::new(
+                        prior.to_string(),
+                        response.modes,
+                        response.config_options,
+                        ResumeDisposition::Resumed,
+                    ));
                 }
                 // `-32601`: the agent does not speak the method. `-32002`: it
                 // no longer knows the session; claude-agent-acp and codex-acp
@@ -169,18 +163,12 @@ impl CrucibleAcpClient {
             .handshake_request(NewSessionRequest::new(cwd).mcp_servers(vec![mcp_server]))
             .await?;
         tracing::info!(agent = %self.agent_name, session_id = %response.session_id, "ACP agent connected with session");
-        Ok(
-            AcpSession::new(TransportConfig::default(), response.session_id.to_string())
-                .with_model(
-                    response
-                        .config_options
-                        .as_deref()
-                        .and_then(ModelChoice::from_config_options),
-                )
-                .with_modes(response.modes)
-                .with_config_options(response.config_options)
-                .with_resume(resume),
-        )
+        Ok(AcpSession::new(
+            response.session_id.to_string(),
+            response.modes,
+            response.config_options,
+            resume,
+        ))
     }
 
     /// Send `session/close` so the agent frees the session. A `-32601`
