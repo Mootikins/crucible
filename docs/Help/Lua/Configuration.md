@@ -203,9 +203,10 @@ cru.config.set {
 }
 ```
 
-Modes are declared, not built in. `cru.modes.<name>` takes a tool set and a
-permission stance; the three shipped modes are declared this same way in the
-shipped defaults file, so yours are not second-class. `cru.modes.auto = nil`
+Modes are declared, not built in. `cru.modes.<name>` takes a tool set, a
+permission stance and an optional `writes` field. The shipped modes (`ask`,
+`plan`, `auto` and `propose`) are declared this same way in the shipped
+defaults file, so yours are not second-class. `cru.modes.auto = nil`
 removes one, because your file runs after it.
 
 ```lua
@@ -217,6 +218,11 @@ cru.modes.review = {
   },
 }
 ```
+
+The `writes` field sets the write mode of a note write. `"apply"`, the
+default, writes the file. `"propose"` adds the write to a proposal, and the
+file does not change until a person accepts it. An ACP agent writes with its
+own tools, so its session always applies.
 
 Declared modes appear in the TUI's `Shift+Tab` cycle and the web mode picker,
 and each gets its own slash command (`/review`). Use a declaration for a static
@@ -338,6 +344,8 @@ warning.
 | `sl.model{ max = 25, fallback = "…" }` | the active model, truncated |
 | `sl.context` | context-window usage |
 | `sl.cache` | prompt-cache hit rate, once one is known |
+| `sl.tasks` | the count of slow tools that still run, such as `⚙ 2`, or nothing at 0 |
+| `sl.proposals` | the count of proposals that wait for a decision, such as `3 proposals`, or nothing at 0 |
 | `sl.status` | the daemon's status text |
 | `sl.notification` | the active toast, or pending counts |
 | `sl.align` | an alignment split |

@@ -3,7 +3,7 @@ title: CONTEXT
 description: The glossary. One name per concept, and the names to avoid.
 type: reference
 status: living
-updated: 2026-09-14
+updated: 2026-09-21
 tags:
   - meta
   - glossary
@@ -42,8 +42,20 @@ _Avoid_: search path, plugin path, package.path
 ### Dispositions
 
 **Review**:
-The disposition of an agent's file edits and of a plugin pass's note writes, per hunk, per file, per turn or per session. The composed diff in `review/`. There is no second disposition.
-_Avoid_: proposal (for this meaning), approval
+The disposition of the file edits of one session in `apply` mode, per hunk, per file, per turn or per session. The composed diff in `review/`. A note write in `propose` mode is a proposal, not a review hunk.
+_Avoid_: approval, proposal (for this meaning)
+
+**Proposal**:
+A set of note writes that waits for a person. Each write holds its expected base and its new text, and the file on disk does not change until the person accepts. Daemon state under the data root, not kiln content. A proposal never expires: only accept, reject or dismiss removes it from the Inbox.
+_Avoid_: staged note, suggestion, pending write
+
+**Write mode**:
+What a session mode does with a note write: `apply` writes the file, `propose` adds the write to the turn's proposal. It belongs to the session mode. An ACP session always applies.
+_Avoid_: write policy, review policy (for this meaning)
+
+**Diffset**:
+A daemon value that lists the changed files of one source, with counts and no text: a branch, a session record or a proposal. The diff pane renders a diffset, and each comment names one.
+_Avoid_: changeset, patch, diff (for this meaning)
 
 **Scope**:
 Which hunks a review lists: the session's, or the current turn's.
@@ -110,7 +122,7 @@ The note text a note write was made from. The browser keeps it with the write, s
 _Avoid_: original, snapshot (for this meaning)
 
 **Conflict**:
-A note write the daemon refused as stale whose merge left regions. It waits in the outbox until the user resolves it.
+A note write the daemon refused as stale whose merge left regions. It waits in the outbox until the user resolves it. A conflict from a proposal accept waits in the proposal instead.
 _Avoid_: collision, conflict copy
 
 **Region**:
