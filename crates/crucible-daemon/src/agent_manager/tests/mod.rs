@@ -937,6 +937,7 @@ async fn start_mock_openai_models_server(
     (format!("http://{}", addr), handle)
 }
 
+mod acp_undo;
 mod active_tools;
 mod agent_tool_chain;
 mod build_race;

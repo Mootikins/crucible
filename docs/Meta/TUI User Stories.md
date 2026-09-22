@@ -243,8 +243,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-902: Undo a turn
 **As a user**, `/undo` (and `/undo 3`) reverts the last agent turn(s) — conversation and file changes — so mistakes are cheap.
-**Acceptance:** viewport reflects removed turns; workspace files restored (git and non-git); `/undo` with nothing to undo says so; undo depth reported.
-**Tests:** T1 `/undo`/`:undo [N]` dispatch in `chat_app/command_handling.rs`; T2/T3 UndoComplete toast, viewport truncation on daemon revert, and a frame-sequence snapshot in `user_story_tests/undo_tests.rs` (fixture `undo_flow.jsonl`). T4 optional.
+**Acceptance:** viewport reflects removed turns; workspace files restored (git and non-git); `/undo` with nothing to undo says so; undo depth reported; on a session that an external ACP agent runs, the daemon refuses and the warning shows its reason.
+**Tests:** T1 `/undo`/`:undo [N]` dispatch in `chat_app/command_handling.rs`; T2/T3 UndoComplete toast, viewport truncation on daemon revert, the refusal warning, and a frame-sequence snapshot in `user_story_tests/undo_tests.rs` (fixture `undo_flow.jsonl`). T4 optional.
 
 ### US-903: Resume with full history
 **As a user**, resuming a session rehydrates the viewport from daemon events with correct rendering of every historical element.

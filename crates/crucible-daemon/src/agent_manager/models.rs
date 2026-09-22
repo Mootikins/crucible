@@ -1,5 +1,28 @@
 use super::*;
 
+/// Why undo cannot run on a session with this `agent_type`, or `None`.
+///
+/// Undo rewinds the daemon's conversation tree. That is the whole operation
+/// for an internal agent, because the tree is the only history: the handle
+/// keeps none between turns.
+///
+/// An external ACP agent keeps its own history in its own process, and the
+/// protocol has no method that rewinds it. A rewind here therefore moves one
+/// of the two histories: the transcript loses the turn, the agent still
+/// answers from it, and the next reply contradicts what the user reads. The
+/// daemon reported success for that.
+///
+/// Refuse and name the reason, like `tools_bridge::active_set_refusal`, which
+/// refuses to narrow a tool list Crucible does not assemble.
+pub(crate) fn undo_refusal(agent_type: &str) -> Option<String> {
+    (agent_type == "acp").then(|| {
+        "this session is delegated to an external ACP agent, which keeps its own \
+         conversation history — Crucible cannot rewind that history, so an undo \
+         would leave the agent and the transcript disagreeing"
+            .to_string()
+    })
+}
+
 impl AgentManager {
     /// Resolve provider configuration from either config system.
     ///
@@ -708,13 +731,19 @@ impl AgentManager {
     /// scheduler-owned `ConversationTree` cursor. The agent handle
     /// holds no history between turns — the tree is the authoritative
     /// source — so this is a pure scheduler-side operation.
+    ///
+    /// That premise fails for an external agent, which is why
+    /// [`undo_refusal`] answers first.
     pub async fn undo(
         &self,
         session_id: &str,
         count: usize,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        let (session, _) = self.get_session_with_agent(session_id)?;
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
+        if let Some(reason) = undo_refusal(&agent_config.agent_type) {
+            return Err(AgentError::NotSupported(reason));
+        }
 
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
@@ -808,8 +837,15 @@ impl AgentManager {
     }
 
     /// Check whether a session has any turns that can be undone.
+    ///
+    /// A session [`undo`](Self::undo) refuses answers `false`. The tree still
+    /// holds turns, but none of them can be undone, and a client that enables
+    /// its undo control from this answer would offer a command that fails.
     pub async fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
-        let (session, _) = self.get_session_with_agent(session_id)?;
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
+        if undo_refusal(&agent_config.agent_type).is_some() {
+            return Ok(false);
+        }
         let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
@@ -822,8 +858,14 @@ impl AgentManager {
     }
 
     /// Return the number of turns that can be undone.
+    ///
+    /// Zero for a session [`undo`](Self::undo) refuses, for the reason
+    /// [`can_undo`](Self::can_undo) gives.
     pub async fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
-        let (session, _) = self.get_session_with_agent(session_id)?;
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
+        if undo_refusal(&agent_config.agent_type).is_some() {
+            return Ok(0);
+        }
         let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
@@ -838,11 +880,17 @@ impl AgentManager {
     /// Return one summary per undoable turn on the current path,
     /// oldest-to-newest. Each entry serialises to `{ messages_removed }`.
     /// Read-only — does not rewind the tree.
+    ///
+    /// Empty for a session [`undo`](Self::undo) refuses: the list names the
+    /// turns a caller may undo, and that caller may undo none of them.
     pub async fn undo_history(
         &self,
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
-        let (session, _) = self.get_session_with_agent(session_id)?;
+        let (session, agent_config) = self.get_session_with_agent(session_id)?;
+        if undo_refusal(&agent_config.agent_type).is_some() {
+            return Ok(Vec::new());
+        }
         let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)

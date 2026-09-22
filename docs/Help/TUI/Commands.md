@@ -29,7 +29,7 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:model` | Open model picker |
 | `:model <name>` | Switch to model |
 | `:clear` | Clear conversation |
-| `:undo [N]` | Undo the last N agent turns (default 1) |
+| `:undo [N]` | Undo the last N agent turns (default 1); refused on an external-agent session |
 | `:export <path>` | Export session to markdown |
 | `:messages` | Toggle the notification drawer (aliases: `:msgs`, `:notifications`) |
 | `:palette` | Open command palette (alias: `:commands`, key: `F1`) |

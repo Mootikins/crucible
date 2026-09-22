@@ -25,6 +25,13 @@ is a Keep a Changelog category.
 
 ### Fixed
 
+- **Undo is refused on a session an external agent runs.** The daemon rewound
+  its own conversation tree while the ACP agent kept its history, so the next
+  turn answered from turns the transcript no longer showed — and every entry
+  point reported success. `session.undo`, `:undo`, `/undo` and
+  `cru.session.undo` now refuse with the reason, and `can_undo`, `undo_depth`
+  and `undo_history` report nothing to undo.
+
 - **A session's `env_overrides` now beats the profile's `env`.** The profile
   environment was merged twice — once onto the session and once at launch —
   and the launch copy put the config value back, so a `session.create`

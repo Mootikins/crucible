@@ -99,3 +99,77 @@ fn undo_truncates_viewport_when_daemon_reverts() {
         "the surviving turn must still render:\n{after}"
     );
 }
+
+/// A handle whose daemon refuses every undo with the reason it gives for a
+/// session that an external ACP agent runs.
+struct UndoRefusingAgent;
+
+crucible_core::impl_noop_agent!(UndoRefusingAgent);
+crucible_core::impl_unsupported_session_knobs!(UndoRefusingAgent);
+
+#[async_trait::async_trait]
+impl crucible_core::traits::chat::AgentHandle for UndoRefusingAgent {
+    async fn send_message_fire_and_forget(
+        &mut self,
+        _message: String,
+    ) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
+    async fn set_mode_str(
+        &mut self,
+        _mode_id: &str,
+    ) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn undo(
+        &mut self,
+        _count: usize,
+    ) -> crucible_core::traits::chat::ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        Err(crucible_core::traits::chat::ChatError::Communication(
+            "Failed to undo: this session is delegated to an external ACP agent".into(),
+        ))
+    }
+}
+
+/// The daemon refuses `:undo` on an ACP session. The user must read that
+/// reason on screen, not a success toast and not only a log line.
+#[tokio::test]
+async fn a_refused_undo_shows_the_reason_of_the_daemon() {
+    let mut story = StoryRuntime::new(100, 24);
+    let action = story.text(":undo").enter();
+    assert!(
+        matches!(
+            action,
+            crate::tui::oil::app::Action::Send(ChatAppMsg::Undo(1))
+        ),
+        ":undo must send an undo of one turn"
+    );
+
+    let mut runner = crate::tui::oil::chat_runner::OilChatRunner::with_terminal(
+        crucible_oil::terminal::Terminal::with_size(100, 24),
+    );
+    let bridge = crate::chat::bridge::AgentEventBridge::new(std::sync::Arc::new(
+        crucible_core::events::EventRing::new(16),
+    ));
+    runner
+        .process_action_for_test(action, story.app(), &mut UndoRefusingAgent, &bridge)
+        .await
+        .expect("process_action should not fail");
+
+    story.app().show_messages();
+    let screen = story.screen();
+    assert!(
+        screen.contains("external ACP agent"),
+        "the refusal must reach the screen with its reason:\n{screen}"
+    );
+    assert!(
+        !screen.contains("Undid"),
+        "a refused undo must not show a success toast:\n{screen}"
+    );
+}
