@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { getChunks } from '@codemirror/merge';
+import { getChunks, MergeView } from '@codemirror/merge';
 import { hidesFinalNewline, mergeViewExtensions, type MergeViewSetup } from '../merge-view';
 
 // Twenty lines with one change in the middle. A margin of 3 leaves more
@@ -29,6 +29,20 @@ function mount(setup: Partial<MergeViewSetup> = {}): EditorView {
   return view;
 }
 
+function mountTexts(original: string, doc: string): EditorView {
+  const parent = document.createElement('div');
+  document.body.appendChild(parent);
+  view = new EditorView({
+    state: EditorState.create({ doc, extensions: mergeViewExtensions({ original, path: 'a.rs' }) }),
+    parent,
+  });
+  return view;
+}
+
+/** The text of each word mark on the changed side. */
+const marks = (v: EditorView) =>
+  [...v.dom.querySelectorAll('.cm-wordChange')].map((m) => m.textContent ?? '');
+
 afterEach(() => {
   view?.destroy();
   view = undefined;
@@ -48,21 +62,44 @@ describe('mergeViewExtensions', () => {
     expect(v.dom.querySelector('.cm-deletedChunk .cm-deletedLine')?.textContent).toBe('line 10');
     expect(v.dom.querySelector('.cm-deletedChunk .cm-deletedText')?.textContent).toBe('10');
     expect(v.dom.querySelector('.cm-changedLine')?.textContent).toBe('line ten');
-    expect(v.dom.querySelector('.cm-changedText')?.textContent).toBe('ten');
+    expect(marks(v)).toEqual(['ten']);
   });
 
-  it('marks the lines of a pure insertion, so that no word gets a tint', () => {
+  it('marks no word of a pure insertion', () => {
+    const v = mountTexts('one\ntwo\nline 10', 'one\nnew line\ntwo\nline ten');
+    expect(marks(v)).toEqual(['ten']);
+  });
+
+  it('marks no word of a new line inside a changed chunk', () => {
+    // `bar()` has no line in the base. Only its brackets match base text, and
+    // a bracket is not a word, so the line is new as a whole.
+    const v = mountTexts('one\n    foo(1)\ntwo', 'one\n    foo(2)\n    bar()\ntwo');
+    // The diff can pair `1` with `2)`, so check the words, not the exact marks.
+    const marked = marks(v).join(' ');
+    expect(marked).toContain('2');
+    expect(marked).not.toContain('bar');
+  });
+
+  it('marks no indentation', () => {
+    const v = mountTexts('a\nb(c).d\ne', 'a\nb(c)\n    .d\ne');
+    for (const text of marks(v)) expect(text.trim()).toBe(text);
+  });
+
+  it('marks the changed words on the changed side of a split view', () => {
     const parent = document.createElement('div');
     document.body.appendChild(parent);
-    view = new EditorView({
-      state: EditorState.create({
-        doc: 'one\nnew line\ntwo\nline ten',
-        extensions: mergeViewExtensions({ original: 'one\ntwo\nline 10', path: 'a.md' }),
-      }),
+    const setup = { original: ORIGINAL, path: 'src/a.rs', split: true };
+    const merge = new MergeView({
+      a: { doc: ORIGINAL, extensions: mergeViewExtensions(setup) },
+      b: { doc: CHANGED, extensions: mergeViewExtensions(setup) },
       parent,
     });
-    const inserted = [...view.dom.querySelectorAll('.cm-insertOnly')].map((l) => l.textContent);
-    expect(inserted).toEqual(['new line']);
+    try {
+      expect(marks(merge.b)).toEqual(['ten']);
+      expect(marks(merge.a)).toEqual([]);
+    } finally {
+      merge.destroy();
+    }
   });
 
   it('omits controls when none are given', () => {

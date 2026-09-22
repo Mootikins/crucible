@@ -8,7 +8,14 @@
  */
 import type { Extension } from '@codemirror/state';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
-import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+} from '@codemirror/view';
 import { getChunks, unifiedMergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '@/components/editor/CodeMirrorEditor';
 import { editorThemeExtension } from '@/components/editor/editor-theme';
@@ -65,10 +72,10 @@ const diffTheme = EditorView.theme({
   '&.cm-editor.cm-merge-a .cm-changedLine, &.cm-editor .cm-deletedChunk': {
     backgroundColor: tint('--color-error', 12),
   },
-  '&.cm-editor.cm-merge-b .cm-insertOnly .cm-changedText.cm-changedText': {
-    background: 'none',
-  },
-  '&.cm-editor.cm-merge-b .cm-changedText.cm-changedText': {
+  // The changed side draws its own word marks (`wordMarks`), so the library's
+  // marks on the changed side carry no tint.
+  '&.cm-editor.cm-merge-b .cm-changedText.cm-changedText': { background: 'none' },
+  '&.cm-editor .cm-wordChange': {
     background: tint('--color-ok', 32),
     borderRadius: 'var(--cru-radius-sm)',
   },
@@ -131,24 +138,83 @@ const finalNewline = EditorView.decorations.compute(['doc'], (state) => {
   return Decoration.set(noLine.range(end, end));
 });
 
-const insertOnlyLine = Decoration.line({ class: 'cm-insertOnly' });
+const wordChange = Decoration.mark({ class: 'cm-wordChange' });
+
+/** A character that makes a word. A bracket or a comma does not. */
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
 
 /**
- * Mark each line of a chunk that removes nothing. Every word of such a line is
- * new, so a word tint only repeats the row tint. The theme turns it off there.
+ * The changed words of the changed side, as marks.
+ *
+ * The library marks every changed character. That also marks the indentation
+ * of a line, and every character of a line that is new as a whole, where the
+ * row tint already says that it is new. These marks leave out both. A line is
+ * new as a whole when the text that it keeps from the base has no word
+ * character: only brackets, spaces or punctuation match.
  */
-const insertOnlyLines = EditorView.decorations.compute(['doc'], (state) => {
+function buildWordMarks(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
-  for (const chunk of getChunks(state)?.chunks ?? []) {
-    if (chunk.fromA !== chunk.toA) continue;
-    for (let pos = chunk.fromB; pos < chunk.toB && pos <= state.doc.length;) {
-      const line = state.doc.lineAt(pos);
-      builder.add(line.from, line.from, insertOnlyLine);
+  const doc = state.doc;
+  const chunks = getChunks(state);
+  // Only the changed side. The base side of a split view keeps the library's
+  // marks, which the theme tints red.
+  if (!chunks || chunks.side !== 'b') return Decoration.none;
+  for (const chunk of chunks.chunks) {
+    const end = Math.min(chunk.toB, doc.length);
+    for (let pos = chunk.fromB; pos < end;) {
+      const line = doc.lineAt(pos);
       pos = line.to + 1;
+      // The changed ranges of this line, in document positions.
+      const ranges = chunk.changes
+        .map((c) => [
+          Math.max(chunk.fromB + c.fromB, line.from),
+          Math.min(chunk.fromB + c.toB, line.to),
+        ])
+        .filter(([from, to]) => from < to);
+      if (ranges.length === 0) continue;
+      let kept = '';
+      let at = line.from;
+      for (const [from, to] of ranges) {
+        kept += doc.sliceString(at, from);
+        at = to;
+      }
+      kept += doc.sliceString(at, line.to);
+      if (!WORD_CHAR.test(kept)) continue;
+      for (const [from, to] of ranges) {
+        const text = doc.sliceString(from, to);
+        const start = from + (text.length - text.trimStart().length);
+        const stop = to - (text.length - text.trimEnd().length);
+        if (start < stop) builder.add(start, stop, wordChange);
+      }
     }
   }
   return builder.finish();
-});
+}
+
+/**
+ * The word marks, rebuilt when the chunks change. A split view gives its
+ * editors their chunks by an effect after they mount, so a decoration that
+ * follows only the document would miss them.
+ */
+const wordMarks = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    private chunks: unknown;
+
+    constructor(view: EditorView) {
+      this.chunks = getChunks(view.state)?.chunks;
+      this.decorations = buildWordMarks(view.state);
+    }
+
+    update(update: ViewUpdate) {
+      const chunks = getChunks(update.state)?.chunks;
+      if (!update.docChanged && chunks === this.chunks) return;
+      this.chunks = chunks;
+      this.decorations = buildWordMarks(update.state);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 /** The extensions of one read-only diff editor. */
 export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
@@ -160,6 +226,7 @@ export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
     getLanguageExtension(setup.path) ?? [],
     diffTheme,
     setup.hideFinalNewline ? finalNewline : [],
+    wordMarks,
   ];
   if (setup.split) return editor;
   return [
@@ -174,6 +241,5 @@ export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
       allowInlineDiffs: false,
       gutter: true,
     }),
-    insertOnlyLines,
   ];
 }
