@@ -52,6 +52,36 @@ Structural damage degrades a root: an unreadable `review.jsonl`, a tracked root 
 
 **The web console.** The Changes panel lists the files of the session record grouped root → file, with the status and the line counts of each file. A file opens the session record in the diff pane, which expands that file and scrolls to it. **Open diff** on an Edit or Write tool card does the same for the file of the call. The panel offers no decision. On a phone the panel opens from the More menu. The panel reads `GET /api/diff?session={id}` and `GET /api/diff/comments?session={id}`, and it resolves a comment with `POST /api/diff/comment/resolve`. There is no TUI review panel.
 
+**A comment reaches the agent.** The **Comment** button of the diff pane stores
+the comment and attaches it to the chat of the pane: a session record attaches
+to its own session, and another diffset attaches to the session of the caller
+that opened the pane, or to the session that was active then. The composer
+shows one chip for each attached comment, and the message carries the
+references only. In the TUI, name a comment with `@comment:<id>` in the message;
+`cru diff comments <diffset> -f json` lists the ids.
+
+The daemon builds the context of each comment and injects it before the user
+turn, so replay and fork keep it:
+
+```text
+<context kind="review-comment" id="review-comment:<id>">
+file: src/lib.rs
+range: L12 to L13 (before)
+section: Session changes
+comment:
+  why was this removed?
+diff:
+  @@ -12,2 +11,0 @@
+  -old line a
+  -old line b
+</context>
+```
+
+The range counts on the side of the comment: a base-side range keeps the old
+line numbers and says "(before)". A root that is not the workspace of the
+session gets a `root:` line. A message that names an unknown or a resolved
+comment is refused, and no turn starts.
+
 A diffset owns each comment, not a session. `diff.comment` and `diff.resolve_comment` name the diffset by its source, and the session record is one source. `diff.comments` lists the comments of a diffset. It moves the range of a comment when its quoted text moves, and marks the comment `outdated` when the text is gone. The web routes are `POST /api/diff/comment`, `POST /api/diff/comment/resolve` and `GET /api/diff/comments`.
 
 **A plugin pass's own session.** The [[Reflection Pass|reflection and consolidation passes]] write their kiln notes with `create_note` and `update_note` in a session of their own, in `propose` mode. In that mode a note write goes into a proposal, not into this record, and the note on disk does not change. The proposal waits in the Inbox until a person accepts, rejects or dismisses it. A pass in a mode that applies its writes still puts a hunk in its own record. The web sessions list carries a **Reflections** section, on the desktop shell and on the phone, so the transcript of a pass is reachable from either.

@@ -73,7 +73,11 @@ vim -q <(cru diff comments session-<id>)
   A second line of comment text has an indent of two spaces.
 - Vim reads the quickfix form with its default `errorformat`. The path is
   relative to the root of the comment, so run Vim in that root.
-- `-f json` prints each comment with all its fields.
+- `-f json` prints each comment with all its fields, with its `id`. Name that
+  id in a chat message with `@comment:<id>`: the daemon finds the comment and
+  gives the agent the file, the range, the text of the comment and the diff at
+  that range. It refuses a message that names an unknown or a resolved comment.
+  This is how the TUI attaches a comment, because the TUI has no comment box.
 
 In the web diff pane, each hunk has a header row with its patch range, for
 example `@@ -14,7 +14,7 @@`. A click on the header hides the hunk or shows it
@@ -81,11 +85,13 @@ again. **Collapse all** in the toolbar hides every hunk, and **Expand all**
 shows every hunk again. The chevron of a file hides the whole file.
 
 In the web diff pane, a drag over the line numbers selects a range, and the
-comment box opens under it. **Comment** stores the comment. It stays disabled
-until the box has text. **Copy comments** copies the same quickfix list, and
-**Send to chat** puts the reference `@path:start-end` into the composer.
-**Resolve** on a stored comment marks it resolved, and the pane then leaves it
-out of the open comments.
+comment box opens under it. **Comment** stores the comment and attaches it to
+the chat that the pane header names. It stays disabled until the box has text.
+The composer of that chat then shows a chip, for example `server.rs L17–19`,
+and the next message carries the comment to the agent. A pane with no chat
+stores the comment and says that no chat takes it. **Copy comments** copies the
+same quickfix list. **Resolve** on a stored comment marks it resolved, and the
+pane then leaves it out of the open comments.
 
 ## See also
 
