@@ -21,14 +21,18 @@ impl ReconnectingDaemon {
 
     forward_rpc! {
         Once ProposalAccept =>
-        proposal_accept(id: &ProposalId)
-        -> Proposal = proposal_accept(&id);
+        proposal_accept_paths(id: &ProposalId, paths: &[String] => paths.to_vec())
+        -> Proposal = proposal_accept_paths(&id, &paths);
     }
 
     forward_rpc! {
         Once ProposalReject =>
-        proposal_reject(id: &ProposalId, reason: Option<&str> => reason.map(str::to_owned))
-        -> Proposal = proposal_reject(&id, reason.as_deref());
+        proposal_reject_paths(
+            id: &ProposalId,
+            paths: &[String] => paths.to_vec(),
+            reason: Option<&str> => reason.map(str::to_owned),
+        )
+        -> Proposal = proposal_reject_paths(&id, &paths, reason.as_deref());
     }
 
     forward_rpc! {

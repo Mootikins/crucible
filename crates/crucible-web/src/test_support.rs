@@ -637,12 +637,20 @@ pub fn mock_proposal_for(
 #[cfg(any(test, feature = "test-utils"))]
 /// The mock daemon's answer to a `proposal.*` method.
 ///
-/// The answer echoes the id and the reason of the request, so a route test
-/// sees what the route sent.
+/// The answer echoes the id, the reason and the paths of the request, so a
+/// route test sees what the route sent. The title names the paths of a
+/// decision on some of the files.
 fn mock_proposal_response(method: &str, params: &Value) -> Value {
     use crucible_core::proposal::ProposalState;
     use crucible_daemon::rpc_client::{
-        ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
+        ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
+        ProposalResolveRequest,
+    };
+    let titled = |mut proposal: crucible_core::proposal::Proposal, paths: &[String]| {
+        if !paths.is_empty() {
+            proposal.title = format!("Change {}", paths.join(", "));
+        }
+        as_rpc_result(proposal)
     };
     let parse = |what: &str| -> ProposalIdRequest {
         serde_json::from_value(params.clone()).unwrap_or_else(|e| panic!("{what} params: {e}"))
@@ -662,7 +670,12 @@ fn mock_proposal_response(method: &str, params: &Value) -> Value {
         }
         "proposal.get" => as_rpc_result(mock_proposal_for(parse(method).id, ProposalState::Open)),
         "proposal.accept" => {
-            as_rpc_result(mock_proposal_for(parse(method).id, ProposalState::Accepted))
+            let request: ProposalAcceptRequest =
+                serde_json::from_value(params.clone()).expect("proposal.accept params");
+            titled(
+                mock_proposal_for(request.id, ProposalState::Accepted),
+                &request.paths,
+            )
         }
         "proposal.dismiss" => as_rpc_result(mock_proposal_for(
             parse(method).id,
@@ -671,12 +684,15 @@ fn mock_proposal_response(method: &str, params: &Value) -> Value {
         "proposal.reject" => {
             let request: ProposalRejectRequest =
                 serde_json::from_value(params.clone()).expect("proposal.reject params");
-            as_rpc_result(mock_proposal_for(
-                request.id,
-                ProposalState::Rejected {
-                    reason: request.reason,
-                },
-            ))
+            titled(
+                mock_proposal_for(
+                    request.id,
+                    ProposalState::Rejected {
+                        reason: request.reason,
+                    },
+                ),
+                &request.paths,
+            )
         }
         "proposal.resolve" => {
             let request: ProposalResolveRequest =

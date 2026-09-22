@@ -56,8 +56,6 @@ export function useDiffComments(source: Accessor<DiffsetSource>): UseQueryResult
     return {
       queryKey: keys.diffComments(diffsetKey(value)),
       queryFn: () => getDiffComments(value),
-      // The daemon does not serve the comments of a proposal yet.
-      enabled: value.kind !== 'proposal',
     };
   }, getQueryClient);
 }

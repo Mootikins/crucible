@@ -94,5 +94,6 @@ export const keys = {
   diffFile: (key: string, root: string, path: string, from?: string) =>
     ['diff', key, 'file', root, path, from] as const,
   diffComments: (key: string) => ['diff', key, 'comments'] as const,
+  proposal: (id: string) => ['proposal', id] as const,
   recents: () => ['recents'] as const,
 } as const;

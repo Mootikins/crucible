@@ -22,6 +22,9 @@ vi.mock('@/stores/notificationStore', () => ({
 }));
 
 const { ConflictView } = await import('../ConflictView');
+// The outbox cases run through the panel's reader, which gives the view its
+// regions and saves through the outbox.
+const { OutboxConflictView } = await import('../ConflictsPanel');
 const { __resetConflictStore } = await import('@/lib/conflicts');
 
 const PATH = '/kilns/notes/Note.md';
@@ -60,7 +63,7 @@ const WHOLE = conflict({
 
 async function open(row: Conflicted, props: Record<string, unknown> = {}) {
   pendingConflicts.mockResolvedValue([row]);
-  render(() => <ConflictView path={row.path} {...props} />);
+  render(() => <OutboxConflictView path={row.path} {...props} />);
   await waitFor(() => expect(screen.getByTestId('conflict-region-0')).toBeInTheDocument());
 }
 
@@ -220,5 +223,35 @@ describe('ConflictView', () => {
 
     await waitFor(() => expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)));
     expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  // A conflicted proposal is not in the outbox. The diff pane gives the view
+  // the regions of the daemon, and saves through the proposal route.
+  it('conflict view takes its regions from props', async () => {
+    const onSave = vi.fn(async (_text: string) => undefined);
+    const row = conflict({ regions: [conflict().regions[0]] });
+    render(() => (
+      <ConflictView
+        path={row.path}
+        mergedContent={row.mergedContent}
+        regions={row.regions}
+        baseHash="disk-1"
+        saveLabel="Accept resolution"
+        onSave={onSave}
+      />
+    ));
+    await waitFor(() => expect(screen.getByTestId('conflict-region-0')).toBeInTheDocument());
+    expect(screen.getByTestId('conflict-counter').textContent).toContain('0 of 1 region');
+    expect(pendingConflicts, 'the view reads no outbox').not.toHaveBeenCalled();
+    expect(screen.queryByTestId('conflict-close'), 'no Close without onClose').toBeNull();
+    expect(screen.getByTestId('conflict-save').textContent).toBe('Accept resolution');
+
+    fireEvent.click(screen.getByTestId('keep-theirs-0'));
+    await waitFor(() => expect(screen.getByTestId('conflict-save')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('conflict-save'));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toBe(['one', 'THEIRS1', 'three', 'MINE2', 'five', ''].join('\n'));
+    expect(resolveConflict, 'the view writes nothing itself').not.toHaveBeenCalled();
   });
 });

@@ -4,8 +4,9 @@
 //!
 //! The daemon admits the root, reads the files and stores the comments.
 //! These routes only turn the query into a `DiffsetSource`. A query names a
-//! branch source with `root`, or a session record source with `session`. A
-//! comment write carries the `DiffsetSource` in its JSON body.
+//! branch source with `root`, a session record source with `session`, or a
+//! proposal source with `proposal`. A comment write carries the
+//! `DiffsetSource` in its JSON body.
 
 use crate::routes::session::daemon_shape;
 use crate::routes::session::review::{CommentAuthorRow, CommentSideRow, ReviewCommentRow};
@@ -16,6 +17,7 @@ use axum::{
     Json,
 };
 use crucible_core::diff::{DiffFileText, Diffset, DiffsetId, DiffsetSource};
+use crucible_core::proposal::ProposalId;
 use crucible_core::session::{PhysicalRoot, SessionId};
 use crucible_daemon::rpc_client::{DiffCommentRequest, DiffFileRequest};
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,19 @@ fn session_record(
     Ok(DiffsetSource::SessionRecord { session })
 }
 
+/// The proposal source of `id`. A proposal has no branch either.
+fn proposal(id: &str, base: Option<&str>, head: Option<&str>) -> Result<DiffsetSource, WebError> {
+    if base.is_some() || head.is_some() {
+        return Err(WebError::Validation(
+            "a proposal takes no base and no head".into(),
+        ));
+    }
+    let id: ProposalId = id
+        .parse()
+        .map_err(|_| WebError::Validation(format!("not a proposal id: {id:?}")))?;
+    Ok(DiffsetSource::Proposal { id })
+}
+
 fn branch(root: String, base: Option<String>, head: Option<String>) -> DiffsetSource {
     DiffsetSource::Branch {
         // The daemon resolves the top level and refuses any other path.
@@ -62,11 +77,14 @@ fn branch(root: String, base: Option<String>, head: Option<String>) -> DiffsetSo
 #[into_params(parameter_in = Query)]
 struct DiffQuery {
     /// Absolute path of the top level of a git repository. Names a branch
-    /// source. Give `root` or `session`, not both.
+    /// source. Give exactly one of `root`, `session` and `proposal`.
     root: Option<String>,
     /// The id of a session. Names the record of the session: its session
     /// base, to the files on disk.
     session: Option<String>,
+    /// The id of a proposal. Names the proposal: the base of each write, to
+    /// its new text.
+    proposal: Option<String>,
     /// The branch to compare against. Absent takes the default branch.
     base: Option<String>,
     /// The other side. Absent takes the working tree.
@@ -75,20 +93,21 @@ struct DiffQuery {
 
 impl DiffQuery {
     fn source(self) -> Result<DiffsetSource, WebError> {
-        match (self.root, self.session) {
-            (Some(root), None) => Ok(branch(root, self.base, self.head)),
-            (None, Some(session)) => {
+        match (self.root, self.session, self.proposal) {
+            (Some(root), None, None) => Ok(branch(root, self.base, self.head)),
+            (None, Some(session), None) => {
                 session_record(&session, self.base.as_deref(), self.head.as_deref())
             }
-            (Some(_), Some(_)) | (None, None) => Err(WebError::Validation(
-                "give exactly one of root and session".into(),
+            (None, None, Some(id)) => proposal(&id, self.base.as_deref(), self.head.as_deref()),
+            _ => Err(WebError::Validation(
+                "give exactly one of root, session and proposal".into(),
             )),
         }
     }
 }
 
-/// `GET /api/diff` — the files of the branch diff of one root, or of the
-/// record of one session.
+/// `GET /api/diff` — the files of the branch diff of one root, of the record
+/// of one session, or of one proposal.
 ///
 /// The reply has the counts of each file and no text. For a branch, its
 /// `source` names the base branch that the daemon used. A session with no
@@ -115,12 +134,15 @@ async fn get_diff(
 #[into_params(parameter_in = Query)]
 struct FileQuery {
     /// Absolute path of the root of the file. For a branch source, the top
-    /// level of the git repository. For a session record, the `root` of the
-    /// file entry.
+    /// level of the git repository. For a session record or a proposal, the
+    /// `root` of the file entry.
     root: String,
     /// The id of a session. Names the record of the session instead of a
     /// branch.
     session: Option<String>,
+    /// The id of a proposal. Names the proposal instead of a branch. Give
+    /// `session` or `proposal`, not both.
+    proposal: Option<String>,
     /// The branch to compare against. Absent takes the default branch.
     base: Option<String>,
     /// The other side. Absent takes the working tree.
@@ -136,18 +158,28 @@ impl FileQuery {
         let FileQuery {
             root,
             session,
+            proposal: proposal_id,
             base,
             head,
             path,
             from,
         } = self;
-        let (source, root) = match session {
-            Some(session) => (
+        let (source, root) = match (session, proposal_id) {
+            (Some(session), None) => (
                 session_record(&session, base.as_deref(), head.as_deref())?,
                 Some(PhysicalRoot::from_top_level(root)),
             ),
+            (None, Some(id)) => (
+                proposal(&id, base.as_deref(), head.as_deref())?,
+                Some(PhysicalRoot::from_top_level(root)),
+            ),
             // The branch source names its own root.
-            None => (branch(root, base, head), None),
+            (None, None) => (branch(root, base, head), None),
+            (Some(_), Some(_)) => {
+                return Err(WebError::Validation(
+                    "give session or proposal, not both".into(),
+                ))
+            }
         };
         Ok(DiffFileRequest {
             source,
@@ -158,8 +190,8 @@ impl FileQuery {
     }
 }
 
-/// `GET /api/diff/file` — the two texts of one file of a branch diff or of a
-/// session record.
+/// `GET /api/diff/file` — the two texts of one file of a branch diff, of a
+/// session record or of a proposal.
 ///
 /// A side is `null` when the file is absent on it, binary or too large.
 #[utoipa::path(
@@ -191,9 +223,9 @@ async fn get_diff_file(
 struct CommentBody {
     /// The diffset of the file.
     source: DiffsetSource,
-    /// Absolute path of the root of the file. A session record needs it,
-    /// because a session can have more than one root. A branch source names
-    /// its own root.
+    /// Absolute path of the root of the file. A session record and a
+    /// proposal need it, because each can have more than one root. A branch
+    /// source names its own root.
     #[serde(default)]
     root: Option<String>,
     /// The path of the file relative to the root, on the current side.
@@ -332,8 +364,8 @@ async fn post_diff_resolve_comment(
     Ok(Json(reply_row(reply, "diff.resolve_comment")?))
 }
 
-/// `GET /api/diff/comments` — the comments of the branch diff of one root, or
-/// of the record of one session.
+/// `GET /api/diff/comments` — the comments of the branch diff of one root, of
+/// the record of one session, or of one proposal.
 ///
 /// The daemon finds the quoted text of each comment in the current text of
 /// its side. A moved text moves the range. A text that is gone makes the
@@ -515,12 +547,43 @@ mod tests {
         assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
     }
 
+    /// A `proposal` query reaches the daemon as a proposal source. The file
+    /// request carries the root of the file.
+    #[tokio::test]
+    async fn a_proposal_query_names_the_proposal() {
+        let id = crate::test_support::mock_proposal_id();
+        let source = DiffsetSource::Proposal { id };
+        let answered: Diffset = shape("GET", &format!("/api/diff?proposal={id}"), None).await;
+        assert_eq!(answered, mock_diffset_for(source.clone()));
+
+        let text: DiffFileText = shape(
+            "GET",
+            &format!("/api/diff/file?proposal={id}&root=/tmp/test-project&path=a.md"),
+            None,
+        )
+        .await;
+        let request = DiffFileRequest {
+            source: source.clone(),
+            path: "a.md".into(),
+            from: None,
+            root: Some(PhysicalRoot::from_top_level("/tmp/test-project")),
+        };
+        assert_eq!(text, mock_diff_file_text_for(&request));
+
+        let answered: DiffCommentsResponse =
+            shape("GET", &format!("/api/diff/comments?proposal={id}"), None).await;
+        assert_eq!(answered.diffset, source.id());
+    }
+
     #[tokio::test]
     async fn a_query_without_one_source_is_refused() {
         for uri in [
             "/api/diff",
             "/api/diff?root=/tmp/test-project&session=chat-1",
             "/api/diff?session=chat-1&base=main",
+            "/api/diff?session=chat-1&proposal=6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+            "/api/diff?proposal=not-a-uuid",
+            "/api/diff?proposal=6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f&head=topic",
             "/api/diff/file?session=chat-1&root=/tmp/test-project&path=a.md&head=topic",
         ] {
             let (status, _) = request_json("GET", uri, None).await;

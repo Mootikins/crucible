@@ -13,6 +13,11 @@
  * A line comment starts on the line numbers (`diff-comments.tsx`). The daemon
  * stores it, and lists it with an outdated flag. An outdated comment shows at
  * the end of its file, because its text is no longer in the file.
+ *
+ * A proposal adds its decisions: Accept all and Reject all in the header, and
+ * Accept and Reject on each file. A conflicted proposal shows a `ConflictView`
+ * for each conflicted file instead of the files, and **Accept resolution**
+ * gives the settled text to the daemon.
  */
 import {
   Component,
@@ -52,6 +57,11 @@ import {
   usePostDiffComment,
 } from '@/lib/query/diff';
 import { getBus } from '@/lib/bus';
+import { openDiff } from '@/lib/panel-actions';
+import { isPending, stateLabel, type FileConflict, type Proposal } from '@/lib/proposal-api';
+import { useProposal, useProposalDecision, type ProposalDecision } from '@/lib/query/proposals';
+import { notificationActions } from '@/stores/notificationStore';
+import { ConflictView } from './ConflictView';
 import { commentExtensions, setComments, spanLabel, type CommentHost, type LineSpan } from './diff-comments';
 import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
 import { hit } from '@/lib/touch';
@@ -95,13 +105,141 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         when={props.source}
         fallback={<p class="p-3 text-xs text-muted-dark">This tab names no diff.</p>}
       >
-        {(source) => <DiffsetView source={source()} />}
+        {(source) => (
+          <Show when={proposalSource(source())} fallback={<DiffsetView source={source()} />}>
+            {(proposal) => <ProposalDiffsetView source={proposal()} />}
+          </Show>
+        )}
       </Show>
     </PanelShell>
   );
 };
 
-const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
+type ProposalSource = Extract<DiffsetSource, { kind: 'proposal' }>;
+
+function proposalSource(source: DiffsetSource): ProposalSource | null {
+  return source.kind === 'proposal' ? source : null;
+}
+
+/** What the diffset view needs to show the decisions of a proposal. */
+interface ProposalControls {
+  proposal: () => Proposal | undefined;
+  /** Sends the decision. It tells the person of a failure, and never rejects. */
+  decide: (decision: ProposalDecision) => Promise<void>;
+  busy: () => boolean;
+}
+
+/**
+ * The key of the text that a conflict was merged against: a 32-bit FNV-1a
+ * hash. A new disk text is a new conflict, so the view builds it again.
+ */
+function textKey(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+const ProposalDiffsetView: Component<{ source: ProposalSource }> = (props) => {
+  const proposal = useProposal(() => props.source.id);
+  const decision = useProposalDecision(() => props.source.id);
+  const decide = (value: ProposalDecision): Promise<void> =>
+    decision
+      .mutateAsync(value)
+      .then((reply) => {
+        // A decision on some files moves them into a new proposal. A conflict
+        // there needs its own pane.
+        if (reply.id !== props.source.id && reply.state.kind === 'conflicted') {
+          openDiff({ kind: 'proposal', id: reply.id });
+        }
+      })
+      .catch((e: Error) => {
+        notificationActions.addNotification('error', e.message);
+      });
+  const controls: ProposalControls = {
+    proposal: () => proposal.data,
+    decide,
+    busy: () => decision.isPending,
+  };
+  return <DiffsetView source={props.source} proposal={controls} />;
+};
+
+/** Whether the files of the proposal take a decision now. */
+function decidable(proposal: Proposal | undefined): boolean {
+  return !!proposal && isPending(proposal.state) && proposal.state.kind !== 'conflicted';
+}
+
+/** The state and the decisions of a proposal, in the header. */
+const ProposalBar: Component<{ controls: ProposalControls }> = (props) => {
+  const proposal = () => props.controls.proposal();
+  // A superseded or conflicted proposal can still be rejected.
+  const rejectable = () => {
+    const state = proposal()?.state;
+    return !!state && (isPending(state) || state.kind === 'superseded');
+  };
+  return (
+    <div class="mt-1 flex flex-wrap items-center gap-1.5" data-testid="proposal-bar">
+      <span class="min-w-0 truncate text-xs text-shell-ink" data-testid="proposal-title">
+        {proposal()?.title}
+      </span>
+      <Show when={proposal()}>
+        {(value) => (
+          <span class="text-floor text-muted-dark" data-testid="proposal-state">
+            {stateLabel(value().state)}
+          </span>
+        )}
+      </Show>
+      <span class="ml-auto" />
+      <Show when={decidable(proposal())}>
+        <button
+          type="button"
+          title="Write every file of the proposal"
+          data-testid="proposal-accept-all"
+          disabled={props.controls.busy()}
+          onClick={() => void props.controls.decide({ kind: 'accept' })}
+          class={`${toolButton} text-shell-ink ${hit()}`}
+        >
+          Accept all
+        </button>
+      </Show>
+      <Show when={rejectable()}>
+        <button
+          type="button"
+          title="Reject every file of the proposal. No file changes."
+          data-testid="proposal-reject-all"
+          disabled={props.controls.busy()}
+          onClick={() => void props.controls.decide({ kind: 'reject' })}
+          class={`${toolButton} ${hit()}`}
+        >
+          Reject all
+        </button>
+      </Show>
+    </div>
+  );
+};
+
+/** One `ConflictView` for each conflicted file of a proposal. */
+const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalControls }> = (props) => (
+  <For each={props.files}>
+    {(file) => (
+      <section class="h-96 border-b border-hairline" data-testid={`proposal-conflict-${file.root}:${file.path}`}>
+        <ConflictView
+          path={file.path}
+          mergedContent={file.merged_text}
+          regions={file.regions}
+          baseHash={textKey(file.disk_text)}
+          saveLabel="Accept resolution"
+          hint="The proposed text is in the note. Choose what to keep where the note on disk says something else."
+          onSave={(text) => props.controls.decide({ kind: 'resolve', path: file.path, text })}
+        />
+      </section>
+    )}
+  </For>
+);
+
+const DiffsetView: Component<{ source: DiffsetSource; proposal?: ProposalControls }> = (props) => {
   const diffset = useDiffset(() => props.source);
   const comments = useDiffComments(() => props.source);
   const [split, setSplit] = createSignal(false);
@@ -129,6 +267,21 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
     (comments.data ?? []).filter((l) => !l.comment.resolved && fileKey(l.comment) === fileKey(file));
   const copyComments = () =>
     void navigator.clipboard?.writeText(quickfixList(openComments())).catch(() => undefined);
+
+  // The conflicted files of a proposal, or null for any other state.
+  const conflicts = () => {
+    const state = props.proposal?.proposal()?.state;
+    return state?.kind === 'conflicted' ? state.files : null;
+  };
+  // The decision on one file, while the proposal takes one.
+  const fileDecision = () => {
+    const controls = props.proposal;
+    if (!controls || !decidable(controls.proposal())) return undefined;
+    return {
+      busy: controls.busy(),
+      run: (kind: 'accept' | 'reject', file: DiffFileEntry) => void controls.decide({ kind, paths: [file.path] }),
+    };
+  };
 
   return (
     <>
@@ -201,6 +354,7 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
             <RefreshCw class={`w-3.5 h-3.5 ${diffset.isFetching ? 'animate-spin' : ''}`} />
           </button>
         </div>
+        <Show when={props.proposal}>{(controls) => <ProposalBar controls={controls()} />}</Show>
       </PanelHeader>
 
       <div class="flex-1 overflow-y-auto">
@@ -212,6 +366,9 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
           </Match>
           <Match when={diffset.isPending}>
             <p class="px-3 py-2 text-xs text-muted-dark">Loading the diff…</p>
+          </Match>
+          <Match when={conflicts()}>
+            {(files) => <ProposalConflicts files={files()} controls={props.proposal!} />}
           </Match>
           <Match when={files().length === 0}>
             <p class="px-3 py-2 text-xs text-muted-dark">No changes.</p>
@@ -227,6 +384,7 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
                   onToggle={() => toggle(file)}
                   split={split()}
                   wrap={wrap()}
+                  decide={fileDecision()}
                 />
               )}
             </For>
@@ -246,6 +404,13 @@ interface FileSectionProps {
   onToggle: () => void;
   split: boolean;
   wrap: boolean;
+  /** The Accept and Reject of this file, for a proposal that takes them. */
+  decide?: FileDecision;
+}
+
+interface FileDecision {
+  busy: boolean;
+  run: (kind: 'accept' | 'reject', file: DiffFileEntry) => void;
 }
 
 /** Why a file has no text, or null when it has text. */
@@ -292,6 +457,32 @@ const FileSection: Component<FileSectionProps> = (props) => {
         <span class="shrink-0 text-floor font-mono text-muted-dark" data-testid="diff-file-counts">
           +{props.file.added} −{props.file.removed}
         </span>
+        <Show when={props.decide}>
+          {(decide) => (
+            <>
+              <button
+                type="button"
+                title={`Write ${props.file.path}`}
+                data-testid="proposal-accept-file"
+                disabled={decide().busy}
+                onClick={() => decide().run('accept', props.file)}
+                class={`${toolButton} text-shell-ink ${hit()}`}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                title={`Reject ${props.file.path}. The file does not change.`}
+                data-testid="proposal-reject-file"
+                disabled={decide().busy}
+                onClick={() => decide().run('reject', props.file)}
+                class={`${toolButton} ${hit()}`}
+              >
+                Reject
+              </button>
+            </>
+          )}
+        </Show>
       </div>
       <Show when={props.expanded}>
         <Show
@@ -395,8 +586,9 @@ const FileBody: Component<FileBodyProps> = (props) => {
     const source = props.source;
     await post.mutateAsync({
       source,
-      // A branch source names its own root. A session record needs the root of the file.
-      ...(source.kind === 'session_record' ? { root: file.root } : {}),
+      // A branch source names its own root. A session record and a proposal
+      // need the root of the file.
+      ...(source.kind === 'branch' ? {} : { root: file.root }),
       path: file.path,
       ...(file.status.kind === 'renamed' ? { from: file.status.from } : {}),
       line_start: span.first,

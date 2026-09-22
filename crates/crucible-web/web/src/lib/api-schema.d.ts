@@ -182,8 +182,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/diff` — the files of the branch diff of one root, or of the
-         *     record of one session.
+         * `GET /api/diff` — the files of the branch diff of one root, of the record
+         *     of one session, or of one proposal.
          * @description The reply has the counts of each file and no text. For a branch, its
          *     `source` names the base branch that the daemon used. A session with no
          *     review ledger has no files.
@@ -245,8 +245,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/diff/comments` — the comments of the branch diff of one root, or
-         *     of the record of one session.
+         * `GET /api/diff/comments` — the comments of the branch diff of one root, of
+         *     the record of one session, or of one proposal.
          * @description The daemon finds the quoted text of each comment in the current text of
          *     its side. A moved text moves the range. A text that is gone makes the
          *     comment outdated.
@@ -268,8 +268,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * `GET /api/diff/file` — the two texts of one file of a branch diff or of a
-         *     session record.
+         * `GET /api/diff/file` — the two texts of one file of a branch diff, of a
+         *     session record or of a proposal.
          * @description A side is `null` when the file is absent on it, binary or too large.
          */
         get: operations["get_diff_file"];
@@ -1050,7 +1050,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** `POST /api/proposals/{id}/accept` — write every file of the proposal. */
+        /**
+         * `POST /api/proposals/{id}/accept` — write every file of the proposal, or
+         *     the files that the body names.
+         * @description The reply is the proposal that holds the written files.
+         */
         post: operations["accept_proposal"];
         delete?: never;
         options?: never;
@@ -1087,7 +1091,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** `POST /api/proposals/{id}/reject` — reject the proposal. No file changes. */
+        /**
+         * `POST /api/proposals/{id}/reject` — reject the proposal, or the files that
+         *     the body names. No file changes.
+         * @description The reply is the proposal that holds the rejected files.
+         */
         post: operations["reject_proposal"];
         delete?: never;
         options?: never;
@@ -2069,6 +2077,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description The body of an accept. */
+        AcceptProposalBody: {
+            /**
+             * @description The files to write, as the proposal names them. The daemon moves them
+             *     into a new proposal and accepts that one. Absent or empty means every
+             *     file.
+             */
+            paths?: string[];
+        };
         /**
          * @description The agent picker's list.
          *
@@ -2562,9 +2579,9 @@ export interface components {
             /** @description The path of the file relative to the root, on the current side. */
             path: string;
             /**
-             * @description Absolute path of the root of the file. A session record needs it,
-             *     because a session can have more than one root. A branch source names
-             *     its own root.
+             * @description Absolute path of the root of the file. A session record and a
+             *     proposal need it, because each can have more than one root. A branch
+             *     source names its own root.
              */
             root?: string | null;
             /** @description The side that the line numbers count on. */
@@ -4120,6 +4137,12 @@ export interface components {
         };
         /** @description The body of a reject. */
         RejectProposalBody: {
+            /**
+             * @description The files to reject, as the proposal names them. The daemon moves
+             *     them into a new proposal and rejects that one. Absent or empty means
+             *     every file.
+             */
+            paths?: string[];
             /** @description Why the user rejects the proposal. The proposal keeps it. */
             reason?: string | null;
         };
@@ -4999,6 +5022,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAcceptProposalBody = components['schemas']['AcceptProposalBody'];
 export type SchemaAgentListResponse = components['schemas']['AgentListResponse'];
 export type SchemaAgentOptionChoiceRow = components['schemas']['AgentOptionChoiceRow'];
 export type SchemaAgentOptionKindRow = components['schemas']['AgentOptionKindRow'];
@@ -5539,8 +5563,13 @@ export interface operations {
                 /** @description The other side. Absent takes the working tree. */
                 head?: string;
                 /**
+                 * @description The id of a proposal. Names the proposal: the base of each write, to
+                 *     its new text.
+                 */
+                proposal?: string;
+                /**
                  * @description Absolute path of the top level of a git repository. Names a branch
-                 *     source. Give `root` or `session`, not both.
+                 *     source. Give exactly one of `root`, `session` and `proposal`.
                  */
                 root?: string;
                 /**
@@ -5661,8 +5690,13 @@ export interface operations {
                 /** @description The other side. Absent takes the working tree. */
                 head?: string;
                 /**
+                 * @description The id of a proposal. Names the proposal: the base of each write, to
+                 *     its new text.
+                 */
+                proposal?: string;
+                /**
                  * @description Absolute path of the top level of a git repository. Names a branch
-                 *     source. Give `root` or `session`, not both.
+                 *     source. Give exactly one of `root`, `session` and `proposal`.
                  */
                 root?: string;
                 /**
@@ -5713,9 +5747,14 @@ export interface operations {
                 /** @description The path of the file relative to `root`, on the current side. */
                 path: string;
                 /**
+                 * @description The id of a proposal. Names the proposal instead of a branch. Give
+                 *     `session` or `proposal`, not both.
+                 */
+                proposal?: string;
+                /**
                  * @description Absolute path of the root of the file. For a branch source, the top
-                 *     level of the git repository. For a session record, the `root` of the
-                 *     file entry.
+                 *     level of the git repository. For a session record or a proposal, the
+                 *     `root` of the file entry.
                  */
                 root: string;
                 /**
@@ -7296,7 +7335,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptProposalBody"];
+            };
+        };
         responses: {
             200: {
                 headers: {

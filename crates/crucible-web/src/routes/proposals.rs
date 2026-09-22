@@ -81,11 +81,25 @@ async fn get_proposal(
     Ok(Json(proposal))
 }
 
-/// `POST /api/proposals/{id}/accept` — write every file of the proposal.
+/// The body of an accept.
+#[derive(Debug, Default, Deserialize, ToSchema)]
+pub struct AcceptProposalBody {
+    /// The files to write, as the proposal names them. The daemon moves them
+    /// into a new proposal and accepts that one. Absent or empty means every
+    /// file.
+    #[serde(default)]
+    pub paths: Vec<String>,
+}
+
+/// `POST /api/proposals/{id}/accept` — write every file of the proposal, or
+/// the files that the body names.
+///
+/// The reply is the proposal that holds the written files.
 #[utoipa::path(
     post,
     path = "/api/proposals/{id}/accept",
     params(("id" = String, Path, description = "The proposal")),
+    request_body = AcceptProposalBody,
     responses(
         (status = 200, body = Proposal),
         (status = 422, description = "No proposal has the id, or the proposal is already settled"),
@@ -95,9 +109,14 @@ async fn get_proposal(
 async fn accept_proposal(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Json(body): Json<AcceptProposalBody>,
 ) -> Result<Json<Proposal>, WebError> {
     let id = proposal_id(&id)?;
-    let proposal = state.daemon.proposal_accept(&id).await.daemon_err()?;
+    let proposal = state
+        .daemon
+        .proposal_accept_paths(&id, &body.paths)
+        .await
+        .daemon_err()?;
     Ok(Json(proposal))
 }
 
@@ -107,9 +126,17 @@ pub struct RejectProposalBody {
     /// Why the user rejects the proposal. The proposal keeps it.
     #[serde(default)]
     pub reason: Option<String>,
+    /// The files to reject, as the proposal names them. The daemon moves
+    /// them into a new proposal and rejects that one. Absent or empty means
+    /// every file.
+    #[serde(default)]
+    pub paths: Vec<String>,
 }
 
-/// `POST /api/proposals/{id}/reject` — reject the proposal. No file changes.
+/// `POST /api/proposals/{id}/reject` — reject the proposal, or the files that
+/// the body names. No file changes.
+///
+/// The reply is the proposal that holds the rejected files.
 #[utoipa::path(
     post,
     path = "/api/proposals/{id}/reject",
@@ -129,7 +156,7 @@ async fn reject_proposal(
     let id = proposal_id(&id)?;
     let proposal = state
         .daemon
-        .proposal_reject(&id, body.reason.as_deref())
+        .proposal_reject_paths(&id, &body.paths, body.reason.as_deref())
         .await
         .daemon_err()?;
     Ok(Json(proposal))
@@ -223,6 +250,21 @@ mod tests {
         )
         .await;
         assert_eq!(accepted, mock_proposal_for(id(), ProposalState::Accepted));
+        // A body with paths decides only those files.
+        let one: Proposal = shape(
+            "POST",
+            &format!("/api/proposals/{id_text}/accept"),
+            Some(json!({ "paths": ["notes/a.md"] })),
+        )
+        .await;
+        assert_eq!(one.title, "Change notes/a.md");
+        let one: Proposal = shape(
+            "POST",
+            &format!("/api/proposals/{id_text}/reject"),
+            Some(json!({ "paths": ["notes/b.md", "notes/c.md"] })),
+        )
+        .await;
+        assert_eq!(one.title, "Change notes/b.md, notes/c.md");
 
         let rejected: Proposal = shape(
             "POST",

@@ -84,12 +84,21 @@ describe('diff-api', () => {
     expect(sent.query.has('session')).toBe(false);
   });
 
-  it('refuses a proposal and sends nothing', async () => {
+  it('asks for a proposal by its id, and sends the root of each file', async () => {
     serve();
     const proposal: DiffsetSource = { kind: 'proposal', id: '00000000-0000-0000-0000-000000000000' };
-    await expect(getDiffset(proposal)).rejects.toThrow(/proposal/);
-    await expect(getDiffFile(proposal, entry('/work', 'a.md'))).rejects.toThrow(/proposal/);
-    expect(env.fetch.calls('GET /api/diff')).toBe(0);
-    expect(env.fetch.calls('GET /api/diff/file')).toBe(0);
+    await getDiffset(proposal);
+    await getDiffFile(proposal, entry('/kiln', 'a.md'));
+
+    const list = await env.fetch.sent(0);
+    expect(list.path).toBe('/api/diff');
+    expect(list.query.get('proposal')).toBe(proposal.id);
+    expect(list.query.has('root')).toBe(false);
+    const file = await env.fetch.sent(1);
+    expect(file.path).toBe('/api/diff/file');
+    expect(file.query.get('proposal')).toBe(proposal.id);
+    expect(file.query.get('root')).toBe('/kiln');
+    expect(file.query.get('path')).toBe('a.md');
+    expect(file.query.has('session')).toBe(false);
   });
 });

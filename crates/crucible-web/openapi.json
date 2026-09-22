@@ -317,14 +317,14 @@
     },
     "/api/diff": {
       "get": {
-        "summary": "`GET /api/diff` — the files of the branch diff of one root, or of the\nrecord of one session.",
+        "summary": "`GET /api/diff` — the files of the branch diff of one root, of the record\nof one session, or of one proposal.",
         "description": "The reply has the counts of each file and no text. For a branch, its\n`source` names the base branch that the daemon used. A session with no\nreview ledger has no files.",
         "operationId": "get_diff",
         "parameters": [
           {
             "name": "root",
             "in": "query",
-            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give `root` or `session`, not both.",
+            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give exactly one of `root`, `session` and `proposal`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -334,6 +334,15 @@
             "name": "session",
             "in": "query",
             "description": "The id of a session. Names the record of the session: its session\nbase, to the files on disk.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "proposal",
+            "in": "query",
+            "description": "The id of a proposal. Names the proposal: the base of each write, to\nits new text.",
             "required": false,
             "schema": {
               "type": "string"
@@ -449,14 +458,14 @@
     },
     "/api/diff/comments": {
       "get": {
-        "summary": "`GET /api/diff/comments` — the comments of the branch diff of one root, or\nof the record of one session.",
+        "summary": "`GET /api/diff/comments` — the comments of the branch diff of one root, of\nthe record of one session, or of one proposal.",
         "description": "The daemon finds the quoted text of each comment in the current text of\nits side. A moved text moves the range. A text that is gone makes the\ncomment outdated.",
         "operationId": "get_diff_comments",
         "parameters": [
           {
             "name": "root",
             "in": "query",
-            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give `root` or `session`, not both.",
+            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give exactly one of `root`, `session` and `proposal`.",
             "required": false,
             "schema": {
               "type": "string"
@@ -466,6 +475,15 @@
             "name": "session",
             "in": "query",
             "description": "The id of a session. Names the record of the session: its session\nbase, to the files on disk.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "proposal",
+            "in": "query",
+            "description": "The id of a proposal. Names the proposal: the base of each write, to\nits new text.",
             "required": false,
             "schema": {
               "type": "string"
@@ -512,14 +530,14 @@
     },
     "/api/diff/file": {
       "get": {
-        "summary": "`GET /api/diff/file` — the two texts of one file of a branch diff or of a\nsession record.",
+        "summary": "`GET /api/diff/file` — the two texts of one file of a branch diff, of a\nsession record or of a proposal.",
         "description": "A side is `null` when the file is absent on it, binary or too large.",
         "operationId": "get_diff_file",
         "parameters": [
           {
             "name": "root",
             "in": "query",
-            "description": "Absolute path of the root of the file. For a branch source, the top\nlevel of the git repository. For a session record, the `root` of the\nfile entry.",
+            "description": "Absolute path of the root of the file. For a branch source, the top\nlevel of the git repository. For a session record or a proposal, the\n`root` of the file entry.",
             "required": true,
             "schema": {
               "type": "string"
@@ -529,6 +547,15 @@
             "name": "session",
             "in": "query",
             "description": "The id of a session. Names the record of the session instead of a\nbranch.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "proposal",
+            "in": "query",
+            "description": "The id of a proposal. Names the proposal instead of a branch. Give\n`session` or `proposal`, not both.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2077,7 +2104,8 @@
     },
     "/api/proposals/{id}/accept": {
       "post": {
-        "summary": "`POST /api/proposals/{id}/accept` — write every file of the proposal.",
+        "summary": "`POST /api/proposals/{id}/accept` — write every file of the proposal, or\nthe files that the body names.",
+        "description": "The reply is the proposal that holds the written files.",
         "operationId": "accept_proposal",
         "parameters": [
           {
@@ -2090,6 +2118,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptProposalBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2147,7 +2185,8 @@
     },
     "/api/proposals/{id}/reject": {
       "post": {
-        "summary": "`POST /api/proposals/{id}/reject` — reject the proposal. No file changes.",
+        "summary": "`POST /api/proposals/{id}/reject` — reject the proposal, or the files that\nthe body names. No file changes.",
+        "description": "The reply is the proposal that holds the rejected files.",
         "operationId": "reject_proposal",
         "parameters": [
           {
@@ -4248,6 +4287,19 @@
   },
   "components": {
     "schemas": {
+      "AcceptProposalBody": {
+        "type": "object",
+        "description": "The body of an accept.",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The files to write, as the proposal names them. The daemon moves them\ninto a new proposal and accepts that one. Absent or empty means every\nfile."
+          }
+        }
+      },
       "AgentListResponse": {
         "type": "object",
         "description": "The agent picker's list.\n\nThe key is `agents`, where the daemon's own answer says `profiles`: this\nroute names the list after what the picker shows, and the ROW is the\ndaemon's, so a probed field cannot be dropped on the way through.",
@@ -5521,7 +5573,7 @@
               "string",
               "null"
             ],
-            "description": "Absolute path of the root of the file. A session record needs it,\nbecause a session can have more than one root. A branch source names\nits own root."
+            "description": "Absolute path of the root of the file. A session record and a\nproposal need it, because each can have more than one root. A branch\nsource names its own root."
           },
           "path": {
             "type": "string",
@@ -8626,6 +8678,13 @@
               "null"
             ],
             "description": "Why the user rejects the proposal. The proposal keeps it."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The files to reject, as the proposal names them. The daemon moves\nthem into a new proposal and rejects that one. Absent or empty means\nevery file."
           }
         }
       },

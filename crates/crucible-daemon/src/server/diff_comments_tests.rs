@@ -16,6 +16,7 @@ struct Daemon {
     kilns: Arc<KilnManager>,
     sessions: Arc<SessionManager>,
     review: Arc<ReviewLedgers>,
+    proposals: crate::proposals::ProposalStore,
     event_tx: broadcast::Sender<SessionEventMessage>,
     events: broadcast::Receiver<SessionEventMessage>,
     _store: TempDir,
@@ -32,6 +33,7 @@ impl Daemon {
                 crate::test_support::temp_session_storage(),
             )),
             review: Arc::new(ReviewLedgers::for_tests(store.path().join("snapshots"))),
+            proposals: crate::proposals::ProposalStore::new(store.path().join("proposals")),
             event_tx,
             events,
             _store: store,
@@ -44,6 +46,7 @@ impl Daemon {
             kilns: &self.kilns,
             sessions: &self.sessions,
             review: &self.review,
+            proposals: &self.proposals,
         }
     }
 
@@ -267,7 +270,7 @@ async fn a_comment_that_cannot_be_anchored_is_refused() {
         .await
         .unwrap_err();
     assert_eq!(error.code, INVALID_PARAMS);
-    // The daemon does not serve a proposal diffset yet.
+    // An unknown proposal has no diffset.
     let proposal = DiffsetSource::Proposal {
         id: "6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f".parse().unwrap(),
     };
@@ -275,7 +278,8 @@ async fn a_comment_that_cannot_be_anchored_is_refused() {
         .comment(request(&proposal, "a.md", CommentSide::Current, 1, 2))
         .await
         .unwrap_err();
-    assert!(error.message.contains("does not serve"), "{error:?}");
+    assert_eq!(error.code, INVALID_PARAMS);
+    assert!(error.message.contains("no proposal"), "{error:?}");
     // No refusal stored a comment.
     let listed = daemon.comments(&source).await.unwrap();
     assert!(listed.comments.is_empty(), "{listed:?}");
@@ -395,4 +399,63 @@ async fn a_session_record_lists_its_comments_with_or_without_a_ledger() {
     let listed = daemon.comments(&source).await.unwrap();
     assert_eq!(listed.comments[0].comment.line_range, comment.line_range);
     assert!(!listed.comments[0].outdated);
+}
+
+#[tokio::test]
+async fn a_proposal_holds_its_comments() {
+    use crucible_core::file_write::ExpectedBase;
+    use crucible_core::proposal::ProposalAuthor;
+
+    let daemon = Daemon::new();
+    let kiln = TempDir::new().unwrap();
+    let root = PhysicalRoot::from_top_level(kiln.path());
+    let proposal = daemon
+        .proposals
+        .record_write(
+            ProposalAuthor::Plugin {
+                name: "reflection".into(),
+            },
+            &SessionId::parse("aux-1").unwrap(),
+            root.clone(),
+            "a.md",
+            ExpectedBase::Absent,
+            "one\ntwo\n".into(),
+        )
+        .unwrap();
+    let source = DiffsetSource::Proposal { id: proposal.id };
+
+    // A proposal file needs its root, as a session record file does.
+    let error = daemon
+        .comment(request(&source, "a.md", CommentSide::Current, 2, 3))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, INVALID_PARAMS);
+    let error = daemon
+        .comment(DiffCommentRequest {
+            root: Some(root.clone()),
+            ..request(&source, "other.md", CommentSide::Current, 1, 2)
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, INVALID_PARAMS);
+
+    let reply = daemon
+        .comment(DiffCommentRequest {
+            root: Some(root.clone()),
+            ..request(&source, "a.md", CommentSide::Current, 2, 3)
+        })
+        .await
+        .unwrap();
+    assert_eq!(reply.diffset, source.id());
+    assert_eq!(reply.comment.anchor, CommentAnchor::Proposal(proposal.id));
+    assert_eq!(reply.comment.quoted, "two\n");
+
+    let listed = daemon.comments(&source).await.unwrap();
+    assert_eq!(listed.diffset, source.id());
+    assert_eq!(listed.comments.len(), 1);
+    assert!(!listed.comments[0].outdated);
+
+    daemon.resolve(&source, &reply.comment.id).await.unwrap();
+    let listed = daemon.comments(&source).await.unwrap();
+    assert!(listed.comments[0].comment.resolved);
 }

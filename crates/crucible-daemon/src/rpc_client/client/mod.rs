@@ -178,7 +178,8 @@ pub use plugin_requests::{
     PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, SurfaceRequest,
 };
 pub use proposals::{
-    ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
+    ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
+    ProposalResolveRequest,
 };
 pub use review::{
     ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest,

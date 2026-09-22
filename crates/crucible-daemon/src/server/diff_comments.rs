@@ -13,12 +13,14 @@ use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 use crucible_core::diff::{DiffFileText, DiffsetId, DiffsetSource, FileStatus};
+use crucible_core::proposal::ProposalId;
 use crucible_core::session::{
     Comment, CommentAnchor, CommentAuthor, CommentSide, LineRange, PhysicalRoot, SessionId,
 };
 
 use crate::diff::branch;
 use crate::diff::comments::{quoted_lines, ListedComment};
+use crate::proposals::{ProposalError, ProposalStore};
 use crate::protocol::{Request, Response, SessionEventMessage};
 use crate::review::{ReviewError, ReviewLedgers, ReviewResult};
 use crate::rpc_client::{
@@ -28,7 +30,7 @@ use crate::rpc_client::{
 use crate::rpc_helpers::typed_params;
 use crate::server::diff::{
     answer, branch_file_text, branch_sides, check_contained, check_path, internal_error,
-    params_error, unserved, Admission, BranchSides, Refusal,
+    params_error, proposal_file_root, proposal_refusal, Admission, BranchSides, Refusal,
 };
 use crate::server::session::review::emit_review_changed;
 
@@ -170,6 +172,7 @@ pub(crate) fn resolve_in(
 enum Served {
     Branch(BranchSides),
     SessionRecord(SessionId),
+    Proposal(ProposalId),
 }
 
 impl Served {
@@ -177,6 +180,15 @@ impl Served {
         match self {
             Served::Branch(sides) => sides.source().id(),
             Served::SessionRecord(session) => DiffsetId::for_session(session),
+            Served::Proposal(id) => DiffsetId::for_proposal(id),
+        }
+    }
+
+    /// The session to tell of a change, for a session record only.
+    fn session(&self) -> Option<&SessionId> {
+        match self {
+            Served::SessionRecord(session) => Some(session),
+            Served::Branch(_) | Served::Proposal(_) => None,
         }
     }
 }
@@ -189,7 +201,10 @@ async fn serve(admission: &Admission<'_>, source: &DiffsetSource) -> Result<Serv
             branch_sides(admission, root, base, head.as_deref()).await?,
         )),
         DiffsetSource::SessionRecord { session } => Ok(Served::SessionRecord(session.clone())),
-        DiffsetSource::Proposal { .. } => Err(unserved("proposal")),
+        DiffsetSource::Proposal { id } => {
+            admission.proposals.get(id).map_err(proposal_refusal)?;
+            Ok(Served::Proposal(*id))
+        }
     }
 }
 
@@ -243,6 +258,24 @@ async fn diff_comment(
                 .await
                 .map_err(review_refusal)?
         }
+        Served::Proposal(id) => {
+            let root = proposal_file_root(request.root.as_ref(), request.from.as_deref())?;
+            let texts = admission
+                .proposals
+                .diff_text(&id, root, &request.path)
+                .map_err(proposal_refusal)?;
+            let anchored = Anchored {
+                diffset: DiffsetId::for_proposal(&id),
+                anchor: CommentAnchor::Proposal(id),
+                root: root.clone(),
+            };
+            let comment = build(anchored, &spec, &texts).map_err(review_refusal)?;
+            admission
+                .review
+                .add_comment(&comment)
+                .map_err(review_refusal)?;
+            comment
+        }
     };
     Ok(DiffCommentReply {
         diffset: comment.diffset.clone(),
@@ -257,15 +290,11 @@ async fn diff_resolve_comment(
 ) -> Result<DiffResolveCommentReply, Refusal> {
     let served = serve(admission, &request.source).await?;
     let diffset = served.diffset();
-    let session = match &served {
-        Served::SessionRecord(session) => Some(session),
-        Served::Branch(_) => None,
-    };
     resolve_in(
         admission.review,
         event_tx,
         &diffset,
-        session,
+        served.session(),
         &request.comment_id,
     )
     .map_err(review_refusal)?;
@@ -379,6 +408,30 @@ async fn record_texts(
     Ok(Some(texts))
 }
 
+/// The current text of each side that a comment of a proposal counts on. A
+/// file that the proposal no longer writes has no text, so its comments are
+/// outdated.
+fn proposal_texts(
+    proposals: &ProposalStore,
+    id: &ProposalId,
+    comments: &[Comment],
+) -> Result<HashMap<SideKey, Option<String>>, Refusal> {
+    let mut texts = HashMap::new();
+    for comment in comments {
+        let key = side_key(comment);
+        if texts.contains_key(&key) {
+            continue;
+        }
+        let text = match proposals.diff_text(id, &comment.root, &comment.path) {
+            Ok(text) => side_text(&text, comment.side).map(str::to_string),
+            Err(ProposalError::NoWrite(..)) => None,
+            Err(e) => return Err(proposal_refusal(e)),
+        };
+        texts.insert(key, text);
+    }
+    Ok(texts)
+}
+
 async fn diff_comments(
     admission: &Admission<'_>,
     request: &DiffCommentsRequest,
@@ -390,6 +443,7 @@ async fn diff_comments(
     let texts = match &served {
         Served::Branch(sides) => Some(branch_texts(sides, &stored).await?),
         Served::SessionRecord(session) => record_texts(admission.review, session, &stored).await?,
+        Served::Proposal(id) => Some(proposal_texts(admission.proposals, id, &stored)?),
     };
     let comments = match texts {
         Some(texts) => store

@@ -6,6 +6,7 @@ import { registerPanels } from '@/lib/register-panels';
 import type { SentRequest } from '@/test-utils/mock-fetch';
 import { getBus } from '@/lib/bus';
 import type { DiffComment, DiffFileEntry, Diffset, DiffsetSource, ListedComment } from '@/lib/diffset';
+import type { Proposal, ProposalState } from '@/lib/proposal-api';
 
 const { DiffPanel } = await import('../DiffPanel');
 
@@ -333,5 +334,134 @@ describe('DiffPanel', () => {
     expect(editor.compareDocumentPosition(outdated) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The comment that is not outdated shows in the editor, under its line.
     await waitFor(() => expect(within(editor).getByTestId('diff-comment').textContent).toContain('still here'));
+  });
+
+  describe('a proposal', () => {
+    const ID = '7a1c2f3e-0000-4000-8000-000000000001';
+    const proposalSource: DiffsetSource = { kind: 'proposal', id: ID };
+    const ACCEPT = `/api/proposals/${ID}/accept`;
+
+    function proposal(state: ProposalState, over: Partial<Proposal> = {}): Proposal {
+      return {
+        id: ID,
+        author: { kind: 'plugin', name: 'reflection' },
+        title: 'Change 2 notes',
+        created_at: '2026-09-21T10:00:00Z',
+        state,
+        writes: [
+          { root: '/kiln', path: 'a.md', base: { kind: 'absent' }, new_text: 'a\n' },
+          { root: '/kiln', path: 'b.md', base: { kind: 'absent' }, new_text: 'b\n' },
+        ],
+        ...over,
+      } as Proposal;
+    }
+
+    /** The routes of one proposal in `state`. Each decision answers `reply`. */
+    function serveProposal(state: ProposalState, reply: Proposal = proposal({ kind: 'accepted' })): void {
+      env = createTestQueryEnv({
+        'GET /api/diff': {
+          body: {
+            id: `proposal-${ID}`,
+            source: proposalSource,
+            files: [entry('a.md', { root: '/kiln', status: { kind: 'added' } }), entry('b.md', { root: '/kiln' })],
+          },
+        },
+        'GET /api/diff/file': { body: { base_text: null, current_text: 'a\n' } },
+        'GET /api/diff/comments': { body: { diffset: `proposal-${ID}`, comments: [] } },
+        [`GET /api/proposals/${ID}`]: { body: proposal(state) },
+        [`POST ${ACCEPT}`]: { body: reply },
+        [`POST /api/proposals/${ID}/reject`]: { body: proposal({ kind: 'rejected' }) },
+        [`POST /api/proposals/${ID}/resolve`]: { body: proposal({ kind: 'accepted' }) },
+      });
+    }
+
+    it('proposal actions show only for a proposal', async () => {
+      serve([entry('src/a.rs')]);
+      render(() => <DiffPanel source={source} />);
+      await waitFor(() => expect(section('src/a.rs')).toBeInTheDocument());
+      expect(screen.queryByTestId('proposal-bar')).toBeNull();
+      expect(screen.queryByTestId('proposal-accept-all')).toBeNull();
+      expect(screen.queryByTestId('proposal-accept-file')).toBeNull();
+      cleanup();
+      env.restore();
+
+      serveProposal({ kind: 'open' });
+      render(() => <DiffPanel source={proposalSource} />);
+      await screen.findByTestId('proposal-accept-all');
+      expect(screen.getByTestId('proposal-reject-all')).toBeInTheDocument();
+      expect(screen.getByTestId('proposal-title').textContent).toBe('Change 2 notes');
+      await waitFor(() =>
+        expect(within(section('b.md', '/kiln')).getByTestId('proposal-accept-file')).toBeInTheDocument(),
+      );
+      expect(within(section('a.md', '/kiln')).getByTestId('proposal-reject-file')).toBeInTheDocument();
+      // The files of a proposal load by the proposal id and the root of the file.
+      const [list] = await sentTo('GET', '/api/diff');
+      expect(list.query.get('proposal')).toBe(ID);
+    });
+
+    it('a decided proposal shows no actions', async () => {
+      serveProposal({ kind: 'accepted' });
+      render(() => <DiffPanel source={proposalSource} />);
+      await waitFor(() => expect(screen.getByTestId('proposal-state').textContent).toBe('Accepted'));
+      await waitFor(() => expect(section('a.md', '/kiln')).toBeInTheDocument());
+      expect(screen.queryByTestId('proposal-accept-all')).toBeNull();
+      expect(screen.queryByTestId('proposal-reject-all')).toBeNull();
+      expect(screen.queryByTestId('proposal-accept-file')).toBeNull();
+    });
+
+    it('accept all calls the accept route', async () => {
+      serveProposal({ kind: 'open' });
+      render(() => <DiffPanel source={proposalSource} />);
+      fireEvent.click(await screen.findByTestId('proposal-accept-all'));
+
+      await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
+      const [sent] = await sentTo('POST', ACCEPT);
+      expect(sent.body, 'no paths: every file').toEqual({});
+      // The pane reads the proposal again, to show the new state.
+      await waitFor(() => expect(env.fetch.calls(`GET /api/proposals/${ID}`)).toBe(2));
+    });
+
+    it('accept on a file sends its path', async () => {
+      serveProposal({ kind: 'open' }, proposal({ kind: 'accepted' }, { id: 'other' }));
+      render(() => <DiffPanel source={proposalSource} />);
+      const accept = await waitFor(() => within(section('b.md', '/kiln')).getByTestId('proposal-accept-file'));
+      fireEvent.click(accept);
+
+      await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
+      const [sent] = await sentTo('POST', ACCEPT);
+      expect(sent.body).toEqual({ paths: ['b.md'] });
+    });
+
+    it('a conflicted proposal shows its regions', async () => {
+      serveProposal({
+        kind: 'conflicted',
+        files: [
+          {
+            root: '/kiln',
+            path: 'a.md',
+            disk_text: 'one\nDISK\n',
+            merged_text: 'one\nMINE\n',
+            regions: [{ start_line: 2, end_line: 3, base: 'two\n', ours: 'MINE\n', theirs: 'DISK\n' }],
+          },
+        ],
+      });
+      render(() => <DiffPanel source={proposalSource} />);
+
+      const conflict = await screen.findByTestId('proposal-conflict-/kiln:a.md');
+      await waitFor(() => expect(within(conflict).getByTestId('conflict-region-0')).toBeInTheDocument());
+      // The conflict view takes the place of the files and of Accept all.
+      expect(screen.queryByTestId('diff-file-/kiln:a.md')).toBeNull();
+      expect(screen.queryByTestId('proposal-accept-all')).toBeNull();
+      const save = within(conflict).getByTestId('conflict-save');
+      expect(save.textContent).toBe('Accept resolution');
+
+      fireEvent.click(within(conflict).getByTestId('keep-theirs-0'));
+      await waitFor(() => expect(save).not.toBeDisabled());
+      fireEvent.click(save);
+
+      await waitFor(() => expect(env.fetch.calls(`POST /api/proposals/${ID}/resolve`)).toBe(1));
+      const [sent] = await sentTo('POST', `/api/proposals/${ID}/resolve`);
+      expect(sent.body).toEqual({ path: 'a.md', text: 'one\nDISK\n' });
+    });
   });
 });

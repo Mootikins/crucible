@@ -16,10 +16,20 @@ pub struct ProposalListRequest {
     pub all: bool,
 }
 
-/// Request for `proposal.get`, `proposal.accept` and `proposal.dismiss`.
+/// Request for `proposal.get` and `proposal.dismiss`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProposalIdRequest {
     pub id: ProposalId,
+}
+
+/// Request for `proposal.accept`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposalAcceptRequest {
+    pub id: ProposalId,
+    /// The files to write, as the proposal names them. The daemon moves them
+    /// into a new proposal and accepts that one. Empty means every file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 /// Request for `proposal.reject`.
@@ -28,6 +38,10 @@ pub struct ProposalRejectRequest {
     pub id: ProposalId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// The files to reject, as the proposal names them. The daemon moves
+    /// them into a new proposal and rejects that one. Empty means every file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 /// Request for `proposal.resolve`: the text that the user settled for one
@@ -56,17 +70,45 @@ impl DaemonClient {
 
     /// `proposal.accept`: write every file of the proposal.
     pub async fn proposal_accept(&self, id: &ProposalId) -> Result<Proposal> {
-        self.typed_call("proposal.accept", ProposalIdRequest { id: *id })
-            .await
+        self.proposal_accept_paths(id, &[]).await
+    }
+
+    /// `proposal.accept` of the files `paths`. The answer is the proposal
+    /// that holds those files. Empty `paths` accepts every file.
+    pub async fn proposal_accept_paths(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+    ) -> Result<Proposal> {
+        self.typed_call(
+            "proposal.accept",
+            ProposalAcceptRequest {
+                id: *id,
+                paths: paths.to_vec(),
+            },
+        )
+        .await
     }
 
     /// `proposal.reject`: reject the proposal, with an optional reason.
     pub async fn proposal_reject(&self, id: &ProposalId, reason: Option<&str>) -> Result<Proposal> {
+        self.proposal_reject_paths(id, &[], reason).await
+    }
+
+    /// `proposal.reject` of the files `paths`. The answer is the proposal
+    /// that holds those files. Empty `paths` rejects every file.
+    pub async fn proposal_reject_paths(
+        &self,
+        id: &ProposalId,
+        paths: &[String],
+        reason: Option<&str>,
+    ) -> Result<Proposal> {
         self.typed_call(
             "proposal.reject",
             ProposalRejectRequest {
                 id: *id,
                 reason: reason.map(str::to_string),
+                paths: paths.to_vec(),
             },
         )
         .await

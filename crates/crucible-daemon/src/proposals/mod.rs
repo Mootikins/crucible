@@ -8,7 +8,9 @@
 //! See `docs/Meta/Analysis/Diff Review and Proposals.md`, sections 7.1 and 7.3.
 
 mod accept;
+mod diff;
 mod rpc;
+mod split;
 mod stale;
 mod store;
 
@@ -39,6 +41,9 @@ pub enum ProposalError {
     /// The proposal left the Inbox, so the user cannot decide on it again.
     #[error("proposal {0} is already {1}")]
     Settled(ProposalId, &'static str),
+    /// A request named a file that the proposal does not write.
+    #[error("proposal {0} does not write {1}")]
+    NoWrite(ProposalId, String),
     /// A resolve named a file that has no conflict in the proposal.
     #[error("proposal {0} has no conflict in {1}")]
     NoConflict(ProposalId, String),

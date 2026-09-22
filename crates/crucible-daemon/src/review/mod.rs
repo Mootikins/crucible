@@ -1458,7 +1458,7 @@ fn text_or_empty(text: &FileText) -> &str {
 }
 
 /// The lines that `after` adds and the lines that it removes, from `before`.
-fn line_counts(before: &str, after: &str) -> (u32, u32) {
+pub(crate) fn line_counts(before: &str, after: &str) -> (u32, u32) {
     let (mut added, mut removed) = (0usize, 0usize);
     for op in similar::TextDiff::from_lines(before, after).ops() {
         match *op {

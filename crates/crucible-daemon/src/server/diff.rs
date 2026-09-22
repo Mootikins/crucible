@@ -11,6 +11,9 @@
 //! be the top level of its git repository. A root below the top level is
 //! refused, because git would then list files outside the admitted root.
 //! Each check runs before git reads the repository.
+//!
+//! A proposal diffset needs no admission. The daemon reads the files of a
+//! proposal from its own store, not from a root that the client names.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +24,7 @@ use crucible_core::session::PhysicalRoot;
 use crate::diff::branch;
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
+use crate::proposals::{ProposalError, ProposalStore};
 use crate::protocol::{Request, RequestId, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::review::{ReviewError, ReviewLedgers};
 use crate::rpc_client::{DiffFileRequest, DiffGetRequest};
@@ -54,6 +58,8 @@ pub(crate) struct Admission<'a> {
     pub(crate) sessions: &'a Arc<SessionManager>,
     /// The review ledgers, which hold the base of each session record.
     pub(crate) review: &'a Arc<ReviewLedgers>,
+    /// The proposals, which hold the base and the new text of each write.
+    pub(crate) proposals: &'a ProposalStore,
 }
 
 impl Admission<'_> {
@@ -139,9 +145,31 @@ pub(crate) async fn branch_sides(
     })
 }
 
-/// The refusal for a source that a later change serves.
-pub(crate) fn unserved(kind: &str) -> Refusal {
-    params_error(format!("the daemon does not serve a {kind} diffset"))
+/// A proposal error as an RPC refusal. The caller can correct each variant
+/// except a store failure and a refused write.
+pub(crate) fn proposal_refusal(error: ProposalError) -> Refusal {
+    match error {
+        ProposalError::NotFound(_)
+        | ProposalError::Settled(..)
+        | ProposalError::NoWrite(..)
+        | ProposalError::NoConflict(..) => params_error(error.to_string()),
+        ProposalError::WriteFailed(_) | ProposalError::Store(_) => internal_error(error),
+    }
+}
+
+/// The root of a file of a proposal diffset. A proposal can write more than
+/// one root, and no write renames a file.
+pub(crate) fn proposal_file_root<'a>(
+    root: Option<&'a PhysicalRoot>,
+    from: Option<&str>,
+) -> Result<&'a PhysicalRoot, Refusal> {
+    let Some(root) = root else {
+        return Err(params_error("a proposal file needs its root"));
+    };
+    if from.is_some() {
+        return Err(params_error("a proposal has no renamed file"));
+    }
+    Ok(root)
 }
 
 async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<Diffset, Refusal> {
@@ -170,7 +198,14 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
                 files,
             })
         }
-        DiffsetSource::Proposal { .. } => Err(unserved("proposal")),
+        DiffsetSource::Proposal { id } => Ok(Diffset {
+            id: source.id(),
+            source: source.clone(),
+            files: admission
+                .proposals
+                .diff_files(id)
+                .map_err(proposal_refusal)?,
+        }),
     }
 }
 
@@ -261,7 +296,13 @@ async fn diff_file(
                     other => internal_error(other),
                 })
         }
-        DiffsetSource::Proposal { .. } => Err(unserved("proposal")),
+        DiffsetSource::Proposal { id } => {
+            let root = proposal_file_root(request.root.as_ref(), request.from.as_deref())?;
+            admission
+                .proposals
+                .diff_text(id, root, &request.path)
+                .map_err(proposal_refusal)
+        }
     }
 }
 
@@ -311,6 +352,7 @@ mod tests {
         kilns: Arc<KilnManager>,
         sessions: Arc<SessionManager>,
         review: Arc<ReviewLedgers>,
+        proposals: ProposalStore,
         _store: TempDir,
     }
 
@@ -324,6 +366,7 @@ mod tests {
                     crate::test_support::temp_session_storage(),
                 )),
                 review: Arc::new(ReviewLedgers::for_tests(store.path().join("snapshots"))),
+                proposals: ProposalStore::new(store.path().join("proposals")),
                 _store: store,
             }
         }
@@ -334,6 +377,7 @@ mod tests {
                 kilns: &self.kilns,
                 sessions: &self.sessions,
                 review: &self.review,
+                proposals: &self.proposals,
             }
         }
 
@@ -547,16 +591,106 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_proposal_source_is_refused() {
+    async fn diff_get_lists_the_files_of_a_proposal() {
+        use crucible_core::file_write::ExpectedBase;
+        use crucible_core::note_edit::disk_hash;
+        use crucible_core::proposal::ProposalAuthor;
+        use crucible_core::session::SessionId;
+
         let daemon = Daemon::new();
-        let source = DiffsetSource::Proposal {
+        let kiln = TempDir::new().unwrap();
+        fs::write(kiln.path().join("keep.md"), "one\n").unwrap();
+        let root = PhysicalRoot::from_top_level(kiln.path());
+        let author = ProposalAuthor::Plugin {
+            name: "reflection".into(),
+        };
+        let session = SessionId::parse("aux-1").unwrap();
+        let record = |path: &str, base: ExpectedBase, text: &str| {
+            daemon
+                .proposals
+                .record_write(
+                    author.clone(),
+                    &session,
+                    root.clone(),
+                    path,
+                    base,
+                    text.into(),
+                )
+                .unwrap()
+        };
+        record("new.md", ExpectedBase::Absent, "a\nb\n");
+        let proposal = record(
+            "keep.md",
+            ExpectedBase::Text {
+                text: "one\n".into(),
+                hash: disk_hash("one\n"),
+            },
+            "one\ntwo\n",
+        );
+
+        let source = DiffsetSource::Proposal { id: proposal.id };
+        let diffset = daemon.get(&source).await.unwrap();
+        assert_eq!(diffset.id, source.id());
+        assert_eq!(diffset.source, source);
+        let listed: Vec<_> = diffset
+            .files
+            .iter()
+            .map(|e| (e.path.as_str(), e.status.clone(), e.added, e.removed))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                ("new.md", FileStatus::Added, 2, 0),
+                ("keep.md", FileStatus::Modified, 1, 0),
+            ]
+        );
+        assert!(diffset.files.iter().all(|e| e.root == root));
+
+        // The base side is the text that the writer read. The current side is
+        // the new text. The disk does not change.
+        let text = daemon
+            .file_in(&source, Some(&root), "keep.md", None)
+            .await
+            .unwrap();
+        assert_eq!(
+            text,
+            DiffFileText {
+                base_text: Some("one\n".into()),
+                current_text: Some("one\ntwo\n".into()),
+            }
+        );
+        let added = daemon
+            .file_in(&source, Some(&root), "new.md", None)
+            .await
+            .unwrap();
+        assert_eq!(added.base_text, None);
+        assert_eq!(added.current_text.as_deref(), Some("a\nb\n"));
+        assert_eq!(
+            fs::read_to_string(kiln.path().join("keep.md")).unwrap(),
+            "one\n"
+        );
+
+        // The file request must name the root and a path that the proposal
+        // writes, and no old path.
+        let error = daemon.file(&source, "keep.md", None).await.unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        let error = daemon
+            .file_in(&source, Some(&root), "other.md", None)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+        let error = daemon
+            .file_in(&source, Some(&root), "keep.md", Some("old.md"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, INVALID_PARAMS);
+
+        // An unknown proposal is the caller's error.
+        let unknown = DiffsetSource::Proposal {
             id: "6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f".parse().unwrap(),
         };
-        let error = daemon.get(&source).await.unwrap_err();
+        let error = daemon.get(&unknown).await.unwrap_err();
         assert_eq!(error.code, INVALID_PARAMS);
-        assert!(error.message.contains("does not serve"), "{error:?}");
-        let error = daemon.file(&source, "a.md", None).await.unwrap_err();
-        assert!(error.message.contains("does not serve"), "{error:?}");
     }
 
     fn record(session: &str) -> DiffsetSource {

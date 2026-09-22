@@ -1154,6 +1154,7 @@ async fn review_comment_is_an_alias_for_the_session_record() {
         kilns: &kilns,
         sessions: &fx.sm,
         review: &fx.am.review,
+        proposals: fx.am.proposals(),
     };
     let source = DiffsetSource::SessionRecord { session };
     let listed = handle_diff_comments(

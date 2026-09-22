@@ -23,6 +23,76 @@ import { hit } from '@/lib/touch';
 /** The note's own name; the full path is the row's title. */
 const nameOf = (path: string) => path.split('/').pop() ?? path;
 
+export interface OutboxConflictViewProps {
+  /** The note whose outbox conflict this settles. */
+  path: string;
+  /** Told when the resolution is safe with the daemon, or queued for it. */
+  onResolved?: () => void;
+  /** Told when the person leaves. */
+  onClose?: () => void;
+}
+
+/**
+ * `ConflictView` over the outbox conflict of one note.
+ *
+ * The outbox holds the conflict (`lib/offline/outbox.ts`), so this reads it
+ * and gives its merged text and regions to the view. Save goes through
+ * `conflictActions.resolve`, the one door that knows the hash to write against.
+ */
+export const OutboxConflictView: Component<OutboxConflictViewProps> = (props) => {
+  onMount(() => {
+    void conflictActions
+      .refresh()
+      .catch((e: Error) => notificationActions.addNotification('error', e.message));
+  });
+
+  const conflict = () => conflictStore.get(props.path);
+
+  const save = async (text: string): Promise<void> => {
+    const name = nameOf(props.path);
+    const outcome = await conflictActions.resolve(props.path, text);
+    if (outcome.queued) {
+      notificationActions.addNotification('info', `${name} is settled. It goes out when the daemon answers.`);
+      props.onResolved?.();
+      return;
+    }
+    if (outcome.stale) {
+      // The note moved AGAIN between the merge and the choice. Nothing is
+      // settled, so the conflict stays where it is. The refresh gives the view
+      // the new conflict, with its new hash.
+      notificationActions.addNotification(
+        'warning',
+        `${name} changed again while you were choosing. Open it again to settle the new difference.`,
+      );
+      return;
+    }
+    notificationActions.addNotification('info', `Resolved ${name}.`);
+    props.onResolved?.();
+  };
+
+  return (
+    <Show
+      when={conflict()}
+      fallback={
+        <p class="p-3 text-xs text-muted-dark" data-testid="conflict-missing">
+          Nothing waits for this note.
+        </p>
+      }
+    >
+      {(row) => (
+        <ConflictView
+          path={row().path}
+          mergedContent={row().mergedContent}
+          regions={row().regions}
+          baseHash={row().currentHash}
+          onSave={save}
+          onClose={() => props.onClose?.()}
+        />
+      )}
+    </Show>
+  );
+};
+
 export const ConflictsPanel: Component = () => {
   onMount(() => {
     void conflictActions
@@ -92,7 +162,7 @@ export const ConflictsPanel: Component = () => {
           </>
         }
       >
-        <ConflictView path={conflictStore.selected()!} onResolved={back} onClose={back} />
+        <OutboxConflictView path={conflictStore.selected()!} onResolved={back} onClose={back} />
       </Show>
     </PanelShell>
   );

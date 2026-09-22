@@ -9,15 +9,16 @@ use crucible_core::session::PhysicalRoot;
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::rpc_client::{
-    ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
+    ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
+    ProposalResolveRequest,
 };
 
 use super::{ProposalError, ProposalResult, ProposalStore};
 
 /// The answer for a store result.
 ///
-/// An unknown id, a settled proposal and a resolve of a file with no conflict
-/// are the caller's to fix. A store failure and a refused write are the
+/// An unknown id, a settled proposal, a file that the proposal does not write
+/// and a resolve of a file with no conflict are the caller's to fix. A store failure and a refused write are the
 /// daemon's.
 fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Response {
     let id = req.id.clone();
@@ -28,6 +29,7 @@ fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Resp
         Err(
             e @ (ProposalError::NotFound(_)
             | ProposalError::Settled(..)
+            | ProposalError::NoWrite(..)
             | ProposalError::NoConflict(..)),
         ) => Response::error(id, INVALID_PARAMS, e.to_string()),
         Err(e @ ProposalError::WriteFailed(_)) => {
@@ -76,21 +78,27 @@ pub(crate) async fn handle_proposal_get(req: Request, store: &ProposalStore) -> 
     answer(&req, store.get(&params.id))
 }
 
-/// Handle `proposal.accept`.
+/// Handle `proposal.accept`. With `paths`, only those files.
 pub(crate) async fn handle_proposal_accept(
     req: Request,
     store: &ProposalStore,
     km: &KilnManager,
 ) -> Response {
-    let params = params!(req, ProposalIdRequest);
+    let params = params!(req, ProposalAcceptRequest);
     let kilns = write_roots(store, &params.id, km).await;
-    answer(&req, store.accept(&params.id, &kilns).await)
+    answer(
+        &req,
+        store.accept_paths(&params.id, &params.paths, &kilns).await,
+    )
 }
 
-/// Handle `proposal.reject`.
+/// Handle `proposal.reject`. With `paths`, only those files.
 pub(crate) async fn handle_proposal_reject(req: Request, store: &ProposalStore) -> Response {
     let params = params!(req, ProposalRejectRequest);
-    answer(&req, store.reject(&params.id, params.reason))
+    answer(
+        &req,
+        store.reject_paths(&params.id, &params.paths, params.reason),
+    )
 }
 
 /// Handle `proposal.dismiss`.

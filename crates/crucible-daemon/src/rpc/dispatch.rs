@@ -1325,6 +1325,7 @@ impl RpcDispatcher {
             kilns: &self.ctx.kiln,
             sessions: &self.ctx.sessions,
             review: &self.ctx.agents.review,
+            proposals: self.ctx.agents.proposals(),
         }
     }
 
