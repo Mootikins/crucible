@@ -244,6 +244,18 @@ describe("consolidation", function()
       expect.equal(99, call.timeout)
     end)
 
+    it("asks for the review in the configured mode", function()
+      plugin.run(nil)
+      expect.equal(1, #review_calls)
+      expect.equal("propose", review_calls[1].mode)
+
+      plugin.setup({ mode = "auto" })
+      cru.storage.delete("consolidation", "last_run")
+      plugin.run(nil)
+      expect.equal(2, #review_calls)
+      expect.equal("auto", review_calls[2].mode)
+    end)
+
     it("reviews an older session when it ends after a newer session was sampled", function()
       local older_ended = false
       cru.session.list = function()

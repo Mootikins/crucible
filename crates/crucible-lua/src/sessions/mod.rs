@@ -53,6 +53,7 @@ use std::pin::Pin;
 
 // `pub(crate)` so `session_api` can reach the shared `_op` bodies the handle
 // methods and the free functions both call.
+pub(crate) mod proposals;
 pub(crate) mod register;
 
 pub use register::{
@@ -433,6 +434,14 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
         comment_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+    /// The recent rejected proposals, newest first, at most `limit` rows.
+    /// Each row is `{ id, title, reason?, paths, created_at }`. The
+    /// reviewers of a plugin pass read them before they propose.
+    fn rejected_proposals(
+        &self,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
     /// Send a message and stream structured response parts.
     ///

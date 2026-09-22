@@ -101,6 +101,7 @@ default; without it the plugin skips every session.
 | `model` | none | The auxiliary model the reviewer runs on |
 | `provider` | none | A provider override for the auxiliary model |
 | `enabled` | `true` | The master switch |
+| `mode` | `"propose"` | The mode of the pass's own session; `propose` makes each note write a proposal |
 | `min_turns` | `3` | The fewest user turns a session needs before it is reviewed |
 | `timeout` | `120` | Seconds to wait for the reviewer |
 | `tool_result_chars` | `2000` | Characters kept from each tool result in the transcript |
@@ -126,6 +127,7 @@ cru.plugin.setup({
 | `kiln` | none | The kiln the pass reads and writes in |
 | `model` | none | The auxiliary model the reviewer runs on |
 | `provider` | none | A provider override for the auxiliary model |
+| `mode` | `"propose"` | The mode of the pass's own session; `propose` makes each note write a proposal |
 | `interval` | `21600` | Seconds between passes; read once, at load |
 | `max_problem` | `5` | The most sessions with a tool error or a rejected edit in one pass |
 | `max_clean` | `3` | The most clean sessions in one pass; `0` reviews problem sessions only |

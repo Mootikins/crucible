@@ -188,10 +188,11 @@ describe("reflection", function()
       config.reset()
     end)
 
-    it("puts the aux session in auto mode before it sends", function()
-      -- The reviewer writes its notes with the note tools. A non-interactive
-      -- turn in the default `ask` mode is denied (permission.rs), so the mode
-      -- has to change BEFORE the prompt goes out, not after.
+    it("puts the aux session in the configured mode", function()
+      -- The reviewer writes its notes with the note tools. The `propose`
+      -- mode makes each write a proposal and leaves the disk as it is. A
+      -- non-interactive turn in the default `ask` mode is denied
+      -- (permission.rs), so the mode changes BEFORE the prompt goes out.
       local mode_calls_at_send = -1
       local real_send = cru.session.send_and_collect
       ;(cru.session :: any).send_and_collect = function(id, prompt, opts)
@@ -204,8 +205,57 @@ describe("reflection", function()
       local moded = test_mocks.get_calls("session", "set_mode")
       expect.equal(1, #moded)
       expect.equal("mock-session-1", moded[1][1])
-      expect.equal("auto", moded[1][2])
+      expect.equal("propose", moded[1][2])
       expect.equal(1, mode_calls_at_send)
+
+      -- The operator can choose a different mode in the plugin's config.
+      plugin.setup({ mode = "auto" })
+      plugin.run({ id = "chat-1" })
+      moded = test_mocks.get_calls("session", "set_mode")
+      expect.equal(2, #moded)
+      expect.equal("auto", moded[2][2])
+    end)
+
+    it("tells the reviewer the recent rejected titles", function()
+      test_mocks.setup({
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
+        sessions = {
+          info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" } },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = { { type = "text", content = "Nothing to save" } },
+        },
+        proposals = {
+          -- The rows differ in shape: only one has a reason.
+          rejected = {
+            { id = "p1", title = "Change Socket.md", reason = "a duplicate", paths = { "Socket.md" } },
+            { id = "p2", title = "Change Tabs.md", paths = { "Tabs.md" } },
+          } :: { any },
+        },
+      })
+
+      plugin.run({ id = "chat-1" })
+
+      local asked = test_mocks.get_calls("proposals", "rejected")
+      expect.equal(1, #asked)
+      expect.equal(plugin.REJECTED_LIMIT, asked[1][1])
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      local prompt: any = sent[1][2]
+      expect.truthy(prompt:find("rejected", 1, true))
+      expect.truthy(prompt:find("- Change Socket.md (reason: a duplicate)", 1, true))
+      expect.truthy(prompt:find("- Change Tabs.md\n", 1, true))
+    end)
+
+    it("sends no rejected block when the user rejected nothing", function()
+      plugin.run({ id = "chat-1" })
+
+      local sent = test_mocks.get_calls("session", "send_and_collect")
+      expect.equal(1, #sent)
+      expect.is_nil(sent[1][2]:find("The user rejected", 1, true))
     end)
 
     it("gives the reviewer the note tools and stages nothing", function()

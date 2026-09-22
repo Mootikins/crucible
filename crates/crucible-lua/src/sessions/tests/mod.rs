@@ -9,6 +9,7 @@ mod handles;
 mod messages;
 mod messaging;
 mod namespace;
+mod proposals;
 mod subscription;
 mod ui;
 
@@ -47,6 +48,8 @@ pub(super) struct MockDaemonApi {
     /// `{"kind":"cancelled"}` — the no-answer case, which is what a mock with
     /// no client attached honestly is.
     interaction_answer: StdMutex<Option<serde_json::Value>>,
+    /// The limit of every `rejected_proposals` call, in order.
+    rejected_calls: StdMutex<Vec<usize>>,
 }
 
 impl MockDaemonApi {
@@ -66,6 +69,7 @@ impl MockDaemonApi {
             mode_refusal: StdMutex::new(None),
             interaction_calls: StdMutex::new(Vec::new()),
             interaction_answer: StdMutex::new(None),
+            rejected_calls: StdMutex::new(Vec::new()),
         }
     }
 
@@ -113,6 +117,11 @@ impl MockDaemonApi {
     /// Set what the next `request_interaction` answers with.
     pub(super) fn set_interaction_answer(&self, answer: serde_json::Value) {
         *self.interaction_answer.lock().unwrap() = Some(answer);
+    }
+
+    /// The limit of every `rejected_proposals` call, in order.
+    pub(super) fn rejected_calls(&self) -> Vec<usize> {
+        self.rejected_calls.lock().unwrap().clone()
     }
 
     /// Params object from the most recent `create_session`, or `None`.
@@ -179,6 +188,21 @@ impl DaemonSessionApi for MockDaemonApi {
         _: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         unimplemented!()
+    }
+
+    /// Answers two rejected rows, cut to `limit`.
+    fn rejected_proposals(
+        &self,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        self.rejected_calls.lock().unwrap().push(limit);
+        let rows: Vec<serde_json::Value> = vec![
+            serde_json::json!({ "id": "p2", "title": "Change b.md", "reason": "a duplicate",
+                                "paths": ["b.md"], "created_at": "2026-09-21T10:00:00Z" }),
+            serde_json::json!({ "id": "p1", "title": "Change a.md",
+                                "paths": ["a.md"], "created_at": "2026-09-20T10:00:00Z" }),
+        ];
+        Box::pin(async move { Ok(rows.into_iter().take(limit).collect()) })
     }
 
     /// Answers with the prompt it was given, so a test can assert what

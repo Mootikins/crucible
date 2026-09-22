@@ -6,9 +6,9 @@
 --- notes: one note per problem that recurs, or per strategy that worked more
 --- than once. It runs the review through the reflection plugin, so the
 --- reviewer writes each note with the note tools in the pass's own session,
---- in `auto` mode. Every note is a hunk in that session's review ledger, and
---- a human accepts or rejects it in the Changes panel; a reject reverts the
---- note on disk. The pass stages nothing.
+--- in the configured mode (`propose` by default). Each note write goes into
+--- a proposal, and the note on disk does not change. A human accepts or
+--- rejects the proposal in the Inbox. The pass stages nothing.
 ---
 --- The pass is off until a user turns it on: it spends model calls with
 --- no user present.
@@ -101,9 +101,8 @@ and write PATTERN notes: one note per problem that recurs or per strategy
 that worked more than once. Compare sessions. Find what the failing ones did
 that the clean ones did not.
 
-Every note you write is a proposal. It lands in the review queue of your own
-session, and a human accepts or rejects each one; a rejected note is reverted
-on disk. Your writes are live immediately and may be indexed before review; a rejection reverts them.
+Every note you write is a proposal. The note on disk does not change until a
+human accepts the proposal; a human can also reject it.
 Write nothing when nothing recurs.
 
 Each note MUST carry a one-sentence "description" in the form
@@ -129,11 +128,8 @@ when you wrote nothing. No JSON, no code fences, nothing else.
 ]==]
 
 --- Compose the reviewer's user message: the description rule, then one
---- section per sampled session.
----
---- The reviewer is told no rejection history. A rejected note is reverted and
---- leaves the composed diff, and the review journal records a hunk id, not a
---- title, so there is nothing to read back.
+--- section per sampled session. The reflection plugin's `review` puts the
+--- titles of the recent rejected proposals before this message.
 function M.build_prompt(samples: { any }): string
     local parts = {}
     parts[#parts + 1] = "Every description must read: problem; root cause; fix."
@@ -169,7 +165,8 @@ end
 
 --- One pass. Lists the sessions, picks the sample and asks the reviewer for
 --- pattern notes. The reviewer writes them with the note tools in its own
---- session, so each note is a hunk a human accepts or rejects. Answers with
+--- session, so each note goes into a proposal that a human accepts or
+--- rejects. Answers with
 --- the reviewer's one-line summary, or nil when the pass skipped or the
 --- review failed. `kiln` falls back to the `kiln` config key.
 function M.run(kiln: string?): string?
@@ -261,6 +258,7 @@ function M.run(kiln: string?): string?
         system_prompt = M.SYSTEM_PROMPT,
         prompt = prompt,
         timeout = config.get("timeout", 240),
+        mode = config.get("mode", "propose"),
         title = "Consolidation: " .. tostring(os.date("%Y-%m-%d")),
     })
     if output == nil then
@@ -269,7 +267,7 @@ function M.run(kiln: string?): string?
     end
 
     cru.log("info", string.format(
-        "consolidation: reviewed %d session(s); the notes wait in the review queue of the pass's session",
+        "consolidation: reviewed %d session(s); the notes wait in the Inbox as a proposal",
         #samples))
     -- Persist consumed versions only after the reviewer succeeds.
     write_cursor(seen)

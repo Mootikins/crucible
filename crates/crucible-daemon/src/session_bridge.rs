@@ -1025,6 +1025,43 @@ impl DaemonSessionApi for DaemonSessionBridge {
             .map_err(|e| e.to_string())
         })
     }
+
+    /// The rejected proposals, newest first. The store keeps no time of the
+    /// rejection, so the order is the creation time of each proposal.
+    fn rejected_proposals(&self, limit: usize) -> BoxFut<Vec<serde_json::Value>> {
+        use crucible_core::proposal::ProposalState;
+        bridge_async!(self.agent_manager, |am| async move {
+            let mut rejected: Vec<_> = am
+                .proposals()
+                .list(true)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter_map(|p| match &p.state {
+                    ProposalState::Rejected { reason } => Some((reason.clone(), p)),
+                    _ => None,
+                })
+                .collect();
+            rejected.sort_by(|(_, a), (_, b)| b.created_at.cmp(&a.created_at));
+            Ok(rejected
+                .into_iter()
+                .take(limit)
+                .map(|(reason, p)| {
+                    let mut row = serde_json::json!({
+                        "id": p.id.to_string(),
+                        "title": p.title,
+                        "paths": p.writes.iter().map(|w| w.path.as_str()).collect::<Vec<_>>(),
+                        "created_at": p.created_at.to_rfc3339(),
+                    });
+                    // An absent reason is an absent key: a JSON null reaches
+                    // Lua as a userdata, not as nil.
+                    if let Some(reason) = reason {
+                        row["reason"] = reason.into();
+                    }
+                    row
+                })
+                .collect())
+        })
+    }
 }
 
 /// Read a `cru.session.review_comment` spec as the wire request the RPC

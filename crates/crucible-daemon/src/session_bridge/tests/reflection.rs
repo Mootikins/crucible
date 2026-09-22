@@ -1,4 +1,5 @@
-//! The shipped plugin, not a replacement hook: end → provider → note → review.
+//! The shipped plugin, not a replacement hook: end → provider → proposal →
+//! rejection → the rejected title for the next pass.
 
 use super::*;
 use crate::daemon_plugins::DaemonPluginLoader;
@@ -11,7 +12,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
+async fn shipped_reflection_proposes_a_note_on_session_end() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     // The provider table is the one this test injects: the daemon's own
     // enumeration also reads the process environment's credentials, so a
@@ -170,7 +171,7 @@ async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
     assert_eq!(pass.kilns, source.kilns);
     let config = pass.agent.unwrap();
     assert_eq!(config.model, "reflection-fixture");
-    assert_eq!(config.mode.as_deref(), Some("auto"));
+    assert_eq!(config.mode.as_deref(), Some("propose"));
     assert!(config.mcp_servers.is_empty());
     let requests: Vec<serde_json::Value> = provider
         .received_requests()
@@ -184,14 +185,28 @@ async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
     while let Ok(event) = observed.try_recv() {
         seen.push(event);
     }
+    // The pass proposes: the note is in one proposal, and the disk does not
+    // change.
     assert!(
-        kiln.path().join("Remember.md").exists(),
-        "reviewer did not write its note; requests: {requests:?}; events: {seen:?}"
+        !kiln.path().join("Remember.md").exists(),
+        "a propose-mode pass changes no note on disk"
     );
+    let proposals = agents.proposals().list(false).unwrap();
     assert_eq!(
-        std::fs::read_to_string(kiln.path().join("Remember.md")).unwrap(),
-        note
+        proposals.len(),
+        1,
+        "the reviewer proposed one note; requests: {requests:?}; events: {seen:?}"
     );
+    let proposal = &proposals[0];
+    assert_eq!(
+        proposal.author,
+        crucible_core::proposal::ProposalAuthor::Plugin {
+            name: "reflection".into()
+        }
+    );
+    assert_eq!(proposal.writes.len(), 1);
+    assert_eq!(proposal.writes[0].path, "Remember.md");
+    assert_eq!(proposal.writes[0].new_text, note);
     assert_eq!(
         agents.active_tools().get(&pass.id),
         None,
@@ -225,21 +240,29 @@ async fn shipped_reflection_writes_a_reviewable_note_on_session_end() {
         "{tools:?}"
     );
 
-    // Ending releases the live ledger; the normal review surface restores its journal.
-    let hunks = bridge.review_list_hunks(pass.id.to_string()).await.unwrap();
-    assert_eq!(hunks.len(), 1, "the pass's note is one unreviewed proposal");
-    assert_eq!(hunks[0]["state"], "unreviewed");
-    bridge
-        .review_set_state(
-            pass.id.to_string(),
-            hunks[0]["id"].as_str().unwrap().into(),
-            "rejected".into(),
-        )
-        .await
-        .unwrap();
+    // A proposal writes no hunk in the pass's review ledger.
     assert!(
-        !kiln.path().join("Remember.md").exists(),
-        "rejecting a created note restores its absence"
+        bridge
+            .review_list_hunks(pass.id.to_string())
+            .await
+            .unwrap()
+            .is_empty(),
+        "the pass's note is a proposal, not a hunk"
+    );
+    // The next pass reads the rejected title through `cru.proposals`.
+    agents
+        .proposals()
+        .reject(&proposal.id, Some("a duplicate".into()))
+        .unwrap();
+    let rejected = bridge.rejected_proposals(20).await.unwrap();
+    assert_eq!(rejected.len(), 1, "{rejected:?}");
+    assert_eq!(rejected[0]["id"], proposal.id.to_string());
+    assert_eq!(rejected[0]["title"], "Change Remember.md");
+    assert_eq!(rejected[0]["reason"], "a duplicate");
+    assert_eq!(rejected[0]["paths"], json!(["Remember.md"]));
+    assert!(
+        bridge.rejected_proposals(0).await.unwrap().is_empty(),
+        "the limit caps the rows"
     );
     assert!(
         bridge

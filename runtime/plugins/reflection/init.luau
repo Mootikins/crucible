@@ -7,11 +7,12 @@
 --- the kiln notes that are worth keeping.
 ---
 --- The reviewer writes with the note tools, in its own `plugin` session, in
---- `auto` mode. Every write is bracketed, so each note is a hunk in that
---- session's review ledger. A human accepts or rejects each hunk in the
---- Changes panel; a reject reverts the note on disk. The pass therefore
---- proposes through the one review surface, and never through a staging
---- directory of its own.
+--- the configured mode (`propose` by default). In `propose` mode each write
+--- goes into a proposal, and the note on disk does not change. A human
+--- accepts or rejects the proposal in the Inbox. The pass therefore proposes
+--- through the one proposal store, and never through a staging directory of
+--- its own. The reviewer reads the titles of the recent rejected proposals
+--- before it proposes.
 ---
 --- Configure in init.lua; `model` is the one key with no default:
 ---
@@ -38,9 +39,8 @@ You are a reflection reviewer. You read a finished agent session and write the
 durable knowledge notes that are worth keeping in a personal knowledge base (a
 "kiln").
 
-Every note you write is a proposal. It lands in the review queue of your own
-session, and a human accepts or rejects each one; a rejected note is reverted
-on disk. Your writes are live immediately and may be indexed before review; a rejection reverts them.
+Every note you write is a proposal. The note on disk does not change until a
+human accepts the proposal; a human can also reject it.
 Be conservative: writing nothing is the correct answer for most sessions.
 
 Capture ONLY durable, reusable knowledge, such as:
@@ -274,6 +274,42 @@ function M.render_outcome(o: Outcome): string
     }, "\n")
 end
 
+--- The most rejected proposals the reviewer reads before it proposes.
+M.REJECTED_LIMIT = 20
+
+--- The recent rejected proposals, newest first, from
+--- `cru.proposals.rejected`. An empty list when the daemon has none or the
+--- call fails: the review still runs without them.
+function M.load_rejected(limit: number): { any }
+    local listed, rows = pcall(function()
+        local list, err = cru.proposals.rejected(limit)
+        if err then error(err) end
+        return list
+    end)
+    if listed and type(rows) == "table" then return rows end
+    cru.log("debug", "reflection: no rejected proposals: " .. tostring(rows))
+    return {}
+end
+
+--- Render the rejected proposals as a block for the reviewer's prompt, or
+--- nil when there is none. Each line is the title, and the reason when the
+--- user gave one.
+function M.render_rejected(rows: { any }): string?
+    local lines = {}
+    for _, row in ipairs(rows) do
+        if type(row) == "table" and type(row.title) == "string" then
+            local line = "- " .. row.title
+            if type(row.reason) == "string" and row.reason ~= "" then
+                line = line .. " (reason: " .. row.reason .. ")"
+            end
+            lines[#lines + 1] = line
+        end
+    end
+    if #lines == 0 then return nil end
+    table.insert(lines, 1, "The user rejected these recent proposals; do not propose them again:")
+    return table.concat(lines, "\n")
+end
+
 --- Compose the reviewer's user message from its parts. Every part is optional
 --- except the transcript, so the tests can exercise one block at a time.
 function M.build_prompt(parts: { transcript: string, injected: { string }?, outcome: string? }): string
@@ -331,10 +367,9 @@ end
 --- this set, and the daemon refuses every other name at dispatch. The names
 --- are the ones `tools/surface.rs` registers.
 ---
---- The write tools are in the set because the review disposes of what they
---- write: the aux session is in `auto` mode, every note lands as a hunk in
---- that session's ledger, and a human accepts or rejects each one. No
---- workspace tool is here — the reviewer reaches the kiln and nothing else.
+--- The write tools are in the set because the user disposes of what they
+--- write: the aux session is in `propose` mode, every note write goes into
+--- a proposal, and a human accepts or rejects it. No workspace tool is here — the reviewer reaches the kiln and nothing else.
 M.REVIEWER_TOOLS = {
     "semantic_search", "read_note", "list_notes", "grep_notes",
     "create_note", "update_note",
@@ -347,6 +382,8 @@ export type ReviewOpts = {
     system_prompt: string,
     prompt: string,
     timeout: number,
+    --- The mode of the aux session. Nil selects `propose`.
+    mode: string?,
     --- The title a human reads for the pass in the sessions list. Optional:
     --- a caller that names no title leaves the daemon's own.
     title: string?,
@@ -363,12 +400,15 @@ export type ReviewOpts = {
 --- covers the mode, the title, narrow, send and collect, so the
 --- aux session ends on every path before the result is read.
 ---
---- The mode goes to `auto` FIRST. `send_and_collect` runs a non-interactive
---- turn, and a non-interactive turn in the default `ask` mode is denied
---- (agent_manager/messaging/permission.rs), so every note write would fail.
---- `auto` also carries the `PostTurn` review policy (crucible-core mode.rs),
---- so a second write to one note is not parked at the review gate, which has
---- no timeout and nobody to answer it.
+--- The mode (`opts.mode`, else `propose`) is set FIRST. `send_and_collect`
+--- runs a non-interactive turn, and a non-interactive turn in the default
+--- `ask` mode is denied (agent_manager/messaging/permission.rs), so every
+--- note write would fail. `propose` allows every tool, and each note write
+--- goes into a proposal, so the disk does not change and no review gate
+--- holds the write.
+---
+--- The recent rejected proposals go before the prompt, so both passes that
+--- call this read them. They load before the aux session exists.
 ---
 --- The session's tool set is narrowed to `REVIEWER_TOOLS` before the prompt
 --- is sent. A daemon that refuses to narrow gets no prompt: a reviewer with
@@ -383,6 +423,10 @@ function M.review(opts: ReviewOpts): (string?, string?)
         mcp_servers = {},
     }
     if opts.provider then create_opts.provider = opts.provider end
+    local mode = opts.mode or "propose"
+    local prompt = opts.prompt
+    local rejected = M.render_rejected(M.load_rejected(M.REJECTED_LIMIT))
+    if rejected then prompt = rejected .. "\n\n" .. prompt end
 
     local aux, create_err = cru.session.create(create_opts)
     if create_err or not aux then
@@ -390,9 +434,9 @@ function M.review(opts: ReviewOpts): (string?, string?)
     end
 
     local ok, text, send_err = pcall(function(): (string?, string?)
-        local moded, mode_err = aux:set_mode("auto")
+        local moded, mode_err = aux:set_mode(mode)
         if not moded then
-            return nil, "could not put the reviewer in auto mode: " .. tostring(mode_err)
+            return nil, "could not put the reviewer in " .. mode .. " mode: " .. tostring(mode_err)
         end
         if opts.title then
             -- Cosmetic: a pass whose title did not take is still a correct
@@ -407,7 +451,7 @@ function M.review(opts: ReviewOpts): (string?, string?)
             return nil, "could not narrow the reviewer's tools: " .. tostring(narrow_err)
         end
         local iter, err = cru.session.send_and_collect(
-            aux.id, opts.prompt, { timeout = opts.timeout })
+            aux.id, prompt, { timeout = opts.timeout })
         if err then return nil, "review failed: " .. tostring(err) end
         return collect_text(iter), nil
     end)
@@ -418,7 +462,7 @@ end
 
 --- The on_session_end handler. Reviews the finished session; the reviewer
 --- writes whatever notes it earned with the note tools, in its own session,
---- so each note is a hunk a human accepts or rejects. Answers with the
+--- so each note goes into a proposal that a human accepts or rejects. Answers with the
 --- reviewer's one-line summary, or nil when the pass skipped the session or
 --- the review failed. Best-effort: any failure is logged, never raised (a
 --- reflection error must not disrupt session teardown).
@@ -486,7 +530,7 @@ function M.run(session: any): string?
     })
 
     -- The title carries the provenance a staged file used to carry in its
-    -- frontmatter: a reader of the Changes panel sees which session the pass
+    -- frontmatter: a reader of the proposal sees which session the pass
     -- read. The model is on the pass's own session record.
     local output, review_err = M.review({
         kiln = kiln,
@@ -495,6 +539,7 @@ function M.run(session: any): string?
         system_prompt = M.SYSTEM_PROMPT,
         prompt = prompt,
         timeout = config.get("timeout", 120),
+        mode = config.get("mode", "propose"),
         title = "Reflection: " .. tostring((info and info.title) or session_id),
     })
     if output == nil then
@@ -503,7 +548,7 @@ function M.run(session: any): string?
     end
 
     cru.log("info", string.format(
-        "reflection: reviewed %s; its notes wait in the review queue of the pass's session",
+        "reflection: reviewed %s; its notes wait in the Inbox as a proposal",
         tostring(session_id)))
     return output
 end
@@ -554,6 +599,9 @@ local plugin = {
     run = M.run,
     review = M.review,
     load_hunks = M.load_hunks,
+    load_rejected = M.load_rejected,
+    render_rejected = M.render_rejected,
+    REJECTED_LIMIT = M.REJECTED_LIMIT,
     count_user_turns = M.count_user_turns,
     build_transcript = M.build_transcript,
     build_prompt = M.build_prompt,

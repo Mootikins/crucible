@@ -26,6 +26,9 @@ local defaults = {
     enabled = true,
     model = nil,
     provider = nil,
+    -- The mode of the pass's own session. `propose` makes each note write
+    -- a proposal and leaves the disk as it is.
+    mode = "propose",
     min_turns = 3,
     timeout = 120,
     tool_result_chars = 2000,

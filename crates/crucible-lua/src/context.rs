@@ -339,6 +339,13 @@ mod tests {
             unimplemented!()
         }
 
+        fn rejected_proposals(
+            &self,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            unimplemented!()
+        }
+
         fn request_interaction(
             &self,
             _: String,

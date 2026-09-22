@@ -870,6 +870,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     gate_module_keys("session", &sessions, &session_fn_names())?;
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;
+    super::proposals::register_proposals_stub(lua)?;
 
     Ok(())
 }
@@ -1265,6 +1266,7 @@ fn register_sessions_inner(
 
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;
+    super::proposals::register_proposals_with_api(lua, api)?;
 
     Ok(())
 }

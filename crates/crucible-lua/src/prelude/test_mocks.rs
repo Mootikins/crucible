@@ -50,6 +50,9 @@ local function default_fixtures()
             -- a default population would make an empty-case test pass by luck.
             list = {},
         },
+        -- What `cru.proposals.rejected` answers, newest first. Empty by
+        -- default, as a daemon with no rejected proposal answers.
+        proposals = { rejected = {} },
     }
 end
 
@@ -335,6 +338,24 @@ local function create_session_mock(fixtures)
     }
 end
 
+--- `cru.proposals` — the proposal store, mocked to the shape of
+--- `sessions/proposals.rs`. `rejected(limit)` answers the first `limit` rows
+--- of `proposals.rejected` and records the limit.
+local function create_proposals_mock(fixtures)
+    local f = fixtures.proposals
+    return {
+        rejected = function(limit)
+            record_call("proposals", "rejected", limit)
+            local out = {}
+            for i, row in ipairs(f.rejected or {}) do
+                if limit ~= nil and i > limit then break end
+                out[#out + 1] = deep_copy(row)
+            end
+            return out, nil
+        end,
+    }
+end
+
 --- `cru.storage` — the per-plugin property store, mocked to the shape of
 --- `storage_api.rs`. The daemon registers it at boot and never leaves it
 --- nil, so a plugin carries no nil branch for it; the bare executor the
@@ -469,6 +490,7 @@ function test_mocks.setup(overrides)
     cru.fs = create_fs_mock(_fixtures)
     cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
+    cru.proposals = create_proposals_mock(_fixtures)
     -- The read-back table is exposed through `test_mocks`, never on
     -- `cru.surface`: that namespace has declared types, and an extra key on it
     -- would fail the Luau checker in every test file that touched it.

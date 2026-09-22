@@ -28,6 +28,9 @@ local defaults = {
     kiln = nil,
     model = nil,
     provider = nil,
+    -- The mode of the pass's own session. `propose` makes each note write
+    -- a proposal and leaves the disk as it is.
+    mode = "propose",
     interval = 21600,
     max_problem = 5,
     max_clean = 3,
