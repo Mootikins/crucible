@@ -568,6 +568,12 @@ impl OilChatRunner {
                                 .await
                             {
                                 tracing::warn!(error = %e, "send_message_fire_and_forget failed");
+                                // The daemon refuses a message that names an
+                                // unknown or resolved comment with
+                                // `@comment:<id>`. A log line only told the
+                                // user nothing, and the transcript kept a
+                                // turn that never ran.
+                                let _ = params.msg_tx.send(ChatAppMsg::Error(format!("send: {e}")));
                             }
                         }
                     }
