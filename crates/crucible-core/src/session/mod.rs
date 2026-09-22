@@ -28,8 +28,9 @@
 mod types;
 
 pub use types::{
-    ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, ContextStrategy, GateBlock, HunkId,
-    Integrity, Interval, InvalidSessionId, Ledger, LineRange, PhysicalRoot, RecordingMode,
-    ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, Session, SessionAgent, SessionId,
-    SessionState, SessionSummary, SessionType, Skip, SkipKind, SnapshotId, Verdict,
+    ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk,
+    ContextStrategy, GateBlock, HunkId, Integrity, Interval, InvalidSessionId, Ledger, LineRange,
+    PhysicalRoot, RecordingMode, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus,
+    Session, SessionAgent, SessionId, SessionState, SessionSummary, SessionType, Skip, SkipKind,
+    SnapshotId, Verdict,
 };

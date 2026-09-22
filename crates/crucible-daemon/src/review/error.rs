@@ -43,6 +43,11 @@ pub enum ReviewError {
     #[error("hunk {0} is external and cannot be reverted")]
     ExternalHunk(HunkId),
 
+    /// The session id is not a valid session id, so it names no session
+    /// record diffset.
+    #[error("{0}")]
+    InvalidSession(String),
+
     #[error("unknown comment {0}")]
     UnknownComment(String),
 

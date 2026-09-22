@@ -475,6 +475,9 @@ pub struct AgentManagerParams {
     /// A required field rather than an `Option` with a default: the default
     /// would be a path under the developer's real home, and every test manager
     /// would write there. See [`crate::review::ReviewLedgers::new`].
+    ///
+    /// The comment store is the sibling `diff-comments` directory. See
+    /// [`crate::diff::comments::root_beside_snapshots`].
     pub review_snapshot_root: PathBuf,
 }
 
@@ -524,7 +527,10 @@ impl AgentManager {
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             review: Arc::new(crate::review::ReviewLedgers::new(
-                params.review_snapshot_root,
+                params.review_snapshot_root.clone(),
+                crate::diff::comments::CommentStore::new(
+                    crate::diff::comments::root_beside_snapshots(&params.review_snapshot_root),
+                ),
             )),
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
@@ -1628,9 +1634,10 @@ impl AgentManager {
         // Keeping it would mean a recycled session id starts life with tools
         // some earlier session's plugin removed.
         self.active_tools.clear(session_id);
-        // The ledger, its review decisions and its comments all die with the
-        // session. Persisting them across a restart is `ReviewLedgers::restore`
-        // on the resume path, not a survival property of this map.
+        // The ledger and its review decisions die with the session.
+        // Persisting them across a restart is `ReviewLedgers::restore` on the
+        // resume path, not a survival property of this map. Comments belong
+        // to a diffset in the comment store, so they stay.
         //
         // A delegated child is the exception: `delegate_session` is
         // deliberately left unbracketed — a parent bracket would overlap every

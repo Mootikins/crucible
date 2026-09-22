@@ -55,42 +55,24 @@ async fn a_restart_keeps_the_session_base_the_attribution_and_the_decisions() {
     assert_eq!(after[0].state, ReviewState::Accepted);
 }
 
-/// Comments are session-scoped review state too, and a comment that evaporates
-/// on restart is a review someone wrote and nobody will read.
+/// A comment that evaporates on restart is a review someone wrote and nobody
+/// will read. The comment store keeps it, not the journal.
 #[tokio::test]
 async fn a_restart_keeps_comments_and_their_resolution() {
     let fx = Persisted::new("one\n").await;
     let root = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
         .root
         .clone();
-    let base_tree = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0]
-        .base_tree
-        .clone();
-    let open = Comment::new(
-        root.clone(),
-        "a.txt",
-        base_tree.clone(),
-        LineRange::new(1, 2),
-        "why this?",
-        CommentAuthor::Human,
-    );
-    let answered = Comment::new(
-        root,
-        "a.txt",
-        base_tree,
-        LineRange::new(1, 2),
-        "and this?",
-        CommentAuthor::Human,
-    );
-    fx.ledgers.add_comment(&fx.session, open.clone()).await;
-    fx.ledgers.add_comment(&fx.session, answered.clone()).await;
+    let open = record_comment(&fx.session, root.clone(), LineRange::new(1, 2), "why this?");
+    let answered = record_comment(&fx.session, root, LineRange::new(1, 2), "and this?");
+    fx.ledgers.add_comment(&open).unwrap();
+    fx.ledgers.add_comment(&answered).unwrap();
     fx.ledgers
         .resolve_comment(&fx.session, &answered.id)
-        .await
         .unwrap();
 
     let restarted = fx.restart().await;
-    let comments = restarted.comments(&fx.session);
+    let comments = restarted.comments(&fx.session).unwrap();
     assert_eq!(comments.len(), 2);
     assert!(!comments.iter().find(|c| c.id == open.id).unwrap().resolved);
     assert!(
@@ -99,7 +81,103 @@ async fn a_restart_keeps_comments_and_their_resolution() {
             .find(|c| c.id == answered.id)
             .unwrap()
             .resolved,
-        "the resolution did not replay, so an answered comment came back open"
+        "the resolution did not survive, so an answered comment came back open"
+    );
+}
+
+/// Write one comment and its resolution to the journal in the shape of a
+/// daemon before the comment store.
+async fn write_old_comment(fx: &Persisted, id: &str, range: LineRange, resolved: bool) {
+    let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0].clone();
+    let line = serde_json::json!({
+        "t": "comment",
+        "id": id,
+        "root": base.root,
+        "path": "a.txt",
+        "base_tree": base.base_tree,
+        "line_range": { "start": range.start, "end": range.end },
+        "body": "old review",
+        "author": "human",
+        "resolved": false,
+        "created_at": "2026-01-01T00:00:00Z",
+    });
+    let mut text = std::fs::read_to_string(fx.journal()).unwrap();
+    text.push_str(&format!("{line}\n"));
+    if resolved {
+        text.push_str(&format!(
+            "{}\n",
+            serde_json::json!({ "t": "comment_resolved", "comment": id })
+        ));
+    }
+    std::fs::write(fx.journal(), text).unwrap();
+}
+
+/// A journal from a daemon before the comment store still reads. Its
+/// comment keeps its anchor, and its resolution still applies.
+#[tokio::test]
+async fn an_old_journal_comment_still_reads() {
+    let fx = Persisted::new("one\ntwo\n").await;
+    let base = fx.ledgers.ledger(&fx.session).unwrap().session_base()[0].clone();
+    write_old_comment(&fx, "old-open", LineRange::new(1, 2), false).await;
+    write_old_comment(&fx, "old-resolved", LineRange::new(2, 3), true).await;
+
+    let restarted = fx.restart().await;
+    assert!(
+        restarted.integrity(&fx.session).is_intact(),
+        "an old comment record was skipped: {:?}",
+        restarted.integrity(&fx.session)
+    );
+    let comments = restarted.comments(&fx.session).unwrap();
+    assert_eq!(comments.len(), 2, "{comments:#?}");
+    let open = comments.iter().find(|c| c.id == "old-open").unwrap();
+    assert_eq!(open.anchor, CommentAnchor::Snapshot(base.base_tree));
+    assert!(!open.resolved);
+    assert!(
+        comments
+            .iter()
+            .find(|c| c.id == "old-resolved")
+            .unwrap()
+            .resolved,
+        "the old resolution did not apply"
+    );
+}
+
+/// The old comment moves to the session record diffset of its session. The
+/// file on disk gives its quoted text.
+#[tokio::test]
+async fn a_session_comment_migrates_to_its_session_record() {
+    let fx = Persisted::new("one\ntwo\nthree\n").await;
+    write_old_comment(&fx, "old", LineRange::new(2, 4), false).await;
+
+    let restarted = fx.restart().await;
+    let record = record_diffset(&fx.session).unwrap();
+    assert_eq!(record.as_str(), "session-sess");
+    let stored = restarted.comment_store().list(&record).unwrap();
+    assert_eq!(stored.len(), 1, "the comment is not keyed by its diffset");
+    let comment = &stored[0];
+    assert_eq!(comment.diffset, record);
+    assert_eq!(comment.side, CommentSide::Current);
+    assert_eq!(comment.line_range, LineRange::new(2, 4));
+    assert_eq!(comment.quoted, "two\nthree\n");
+    assert!(restarted.comment_store().is_migrated(&record).unwrap());
+}
+
+/// The migration copies a journal one time. A later restore does not copy
+/// the comment again, and does not open a comment that the store resolved.
+#[tokio::test]
+async fn the_migration_runs_once() {
+    let fx = Persisted::new("one\n").await;
+    write_old_comment(&fx, "old", LineRange::new(1, 2), false).await;
+
+    let first = fx.restart().await;
+    first.resolve_comment(&fx.session, "old").unwrap();
+
+    let second = fx.restart().await;
+    let comments = second.comments(&fx.session).unwrap();
+    assert_eq!(comments.len(), 1, "the migration ran again: {comments:#?}");
+    assert!(
+        comments[0].resolved,
+        "a second migration opened a comment that the store resolved"
     );
 }
 
@@ -149,7 +227,7 @@ async fn an_unreadable_journal_never_captures_a_fresh_base() {
     std::fs::remove_file(fx.journal()).unwrap();
     std::fs::create_dir(fx.journal()).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let err = ledgers
@@ -186,7 +264,7 @@ async fn an_unreadable_journal_holds_every_write_until_a_rebase() {
     std::fs::remove_file(fx.journal()).unwrap();
     std::fs::create_dir(fx.journal()).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let _ = ledgers
@@ -505,7 +583,7 @@ async fn a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_tree
     std::fs::write(repo_dir.path().join("uncommitted.txt"), "scratch\n").unwrap();
     let session_dir = TempDir::new().unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -525,7 +603,7 @@ async fn a_rebase_on_a_session_with_no_journal_still_persists_and_keeps_its_tree
 
     // ...and the whole thing replays, which is the only proof the append was
     // the right shape rather than merely present.
-    let restarted = Arc::new(ReviewLedgers::new(
+    let restarted = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     restarted
@@ -552,7 +630,7 @@ async fn a_root_a_rebase_could_not_recapture_stays_tracked() {
     let session_dir = TempDir::new().unwrap();
 
     let roots = vec![workspace.path().to_path_buf(), kiln.path().to_path_buf()];
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers

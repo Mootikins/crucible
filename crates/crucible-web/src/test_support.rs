@@ -357,15 +357,18 @@ fn param_value(msg: &Value, key: &str) -> Value {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// A `crucible_core::session::Comment` on the wire — all nine fields, so a
+/// A `crucible_core::session::Comment` on the wire — all twelve fields, so a
 /// route test sees what the frontend's `ReviewComment` will actually receive.
 fn review_comment_fixture(id: &str, body: &str) -> Value {
     json!({
         "id": id,
+        "diffset": "session-test-session-001",
         "root": "/tmp/test-project",
         "path": "src/a.rs",
-        "base_tree": "0000000000000000000000000000000000000000",
+        "anchor": { "kind": "snapshot", "id": "0000000000000000000000000000000000000000" },
+        "side": "current",
         "line_range": { "start": 1, "end": 2 },
+        "quoted": "a\n",
         "body": body,
         "author": "human",
         "resolved": false,

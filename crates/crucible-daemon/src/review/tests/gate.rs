@@ -122,7 +122,7 @@ async fn the_gate_query_matches_a_deleted_file_named_through_a_symlink() {
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -168,7 +168,7 @@ async fn opening_through_a_symlink_still_stores_the_physical_root() {
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -197,7 +197,7 @@ fn block(path: &str) -> GateBlock {
 
 #[tokio::test]
 async fn a_session_with_no_turn_parked_reports_no_gate_block() {
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     assert!(ledgers.gate_block("sess").is_none());
@@ -205,7 +205,7 @@ async fn a_session_with_no_turn_parked_reports_no_gate_block() {
 
 #[tokio::test]
 async fn a_held_gate_is_visible_for_as_long_as_the_hold_lives() {
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let hold = ledgers.hold_gate("sess", block("a.txt"));
@@ -225,7 +225,7 @@ async fn a_dropped_hold_clears_the_gate_slot() {
     use std::future::Future;
     use std::task::{Context, Waker};
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let parked = ledgers.clone();
@@ -254,7 +254,7 @@ async fn a_dropped_hold_clears_the_gate_slot() {
 /// Two sessions park independently; releasing one must not clear the other.
 #[tokio::test]
 async fn a_release_only_clears_its_own_session() {
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let one = ledgers.hold_gate("one", block("a.txt"));
@@ -270,7 +270,7 @@ async fn a_release_only_clears_its_own_session() {
 /// block from the session that used it before.
 #[tokio::test]
 async fn clearing_a_session_drops_its_gate_block() {
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     let _hold = ledgers.hold_gate("sess", block("a.txt"));
@@ -290,7 +290,7 @@ async fn a_kiln_relative_target_matches_a_hunk_in_the_kilns_own_repo() {
     let kiln = TempDir::new().unwrap();
     repo(kiln.path(), &[("Notes/x.md", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers

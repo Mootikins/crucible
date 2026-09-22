@@ -53,6 +53,9 @@ use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
 use crucible_core::types::acp::MAX_DIFF_BYTES;
 
 use crate::diff::branch::FileText;
+use crate::diff::comments::CommentStore;
+use crucible_core::diff::DiffsetId;
+use crucible_core::session::SessionId;
 
 pub use error::{ReviewError, ReviewResult};
 pub use persist::{drop_keep_refs, sweep_review_refs};
@@ -213,7 +216,9 @@ pub struct ReviewLedgers {
     /// Rebuilt from the journal on restore and capped at
     /// [`REJECT_STACK_DEPTH`] batches; see [`Self::undo_reject`].
     reject_stack: DashMap<String, Vec<RejectBatch>>,
-    comments: DashMap<String, Vec<Comment>>,
+    /// The comments of each diffset. A session keeps no comments of its
+    /// own: the comments of its record belong to its session record diffset.
+    comments: CommentStore,
     /// Capture brackets currently open per root, across all sessions.
     /// Overlap on a shared root is what makes bracketing unsound (§5), so it
     /// is tracked globally rather than per session — the concurrent writers
@@ -258,6 +263,19 @@ pub struct ReviewLedgers {
     next_handle: AtomicU64,
 }
 
+/// The session record diffset of `session_id`: the owner of the comments
+/// that the `review.*` methods make.
+pub(crate) fn record_diffset(session_id: &str) -> ReviewResult<DiffsetId> {
+    SessionId::parse(session_id)
+        .map(|session| DiffsetId::for_session(&session))
+        .map_err(|e| ReviewError::InvalidSession(e.to_string()))
+}
+
+/// A comment store failure is a daemon-side I/O fault.
+fn store_error(error: anyhow::Error) -> ReviewError {
+    ReviewError::Io(std::io::Error::other(format!("{error:#}")))
+}
+
 #[derive(Debug)]
 struct OpenBracket {
     id: u64,
@@ -265,18 +283,19 @@ struct OpenBracket {
 }
 
 impl ReviewLedgers {
-    /// Build the ledgers, storing plain-root snapshots under `plain_root`.
+    /// Build the ledgers, storing plain-root snapshots under `plain_root`
+    /// and comments in `comments`.
     ///
     /// The daemon passes `<data home>/review-snapshots`; a test passes a
     /// directory it owns. There is no `Default`: a review root outside git is
     /// snapshotted into this directory, and nothing may guess where it is.
-    pub fn new(plain_root: PathBuf) -> Self {
+    pub fn new(plain_root: PathBuf, comments: CommentStore) -> Self {
         Self {
             plain: plain_store::PlainStore::new(plain_root),
             ledgers: DashMap::new(),
             states: DashMap::new(),
             reject_stack: DashMap::new(),
-            comments: DashMap::new(),
+            comments,
             open: DashMap::new(),
             gate: DashMap::new(),
             journals: DashMap::new(),
@@ -285,6 +304,16 @@ impl ReviewLedgers {
             external: std::sync::OnceLock::new(),
             next_handle: AtomicU64::new(0),
         }
+    }
+
+    /// Build the ledgers for a test, with the comment store in `plain_root`.
+    ///
+    /// The plain snapshot store reads only its own names in `plain_root`, so
+    /// the `diff-comments` directory there does not disturb it.
+    #[cfg(test)]
+    pub(crate) fn for_tests(plain_root: PathBuf) -> Self {
+        let comments = CommentStore::new(plain_root.join("diff-comments"));
+        Self::new(plain_root, comments)
     }
 
     /// Open a ledger for a session over the roots it may write to, capturing
@@ -364,7 +393,6 @@ impl ReviewLedgers {
         self.ledgers.contains_key(session_id)
             || self.states.contains_key(session_id)
             || self.reject_stack.contains_key(session_id)
-            || self.comments.contains_key(session_id)
             || self.parents.contains_key(session_id)
             || self.gate.contains_key(session_id)
             || self.journals.contains_key(session_id)
@@ -432,7 +460,6 @@ impl ReviewLedgers {
         self.ledgers.remove(session_id);
         self.states.remove(session_id);
         self.reject_stack.remove(session_id);
-        self.comments.remove(session_id);
         self.parents.remove(session_id);
         // Belt to the `GateHold` braces: a session torn down while a turn is
         // parked must not leave a block behind for an id that may be reissued.
@@ -1309,44 +1336,38 @@ impl ReviewLedgers {
         })
     }
 
-    /// Store a range-anchored comment. Build it with [`Comment::new`].
-    pub async fn add_comment(&self, session_id: &str, comment: Comment) {
-        self.comments
-            .entry(session_id.to_string())
-            .or_default()
-            .push(comment.clone());
-        self.append(session_id, journal::Record::Comment(comment))
-            .await;
+    /// The store of the comments of every diffset.
+    pub fn comment_store(&self) -> &CommentStore {
+        &self.comments
     }
 
-    pub fn comments(&self, session_id: &str) -> Vec<Comment> {
-        self.comments
-            .get(session_id)
-            .map(|r| r.value().clone())
-            .unwrap_or_default()
+    /// Store a range-anchored comment under its diffset. Build it with
+    /// [`Comment::new`].
+    pub fn add_comment(&self, comment: &Comment) -> ReviewResult<()> {
+        self.comments.add(comment).map_err(store_error)
     }
 
-    /// Mark a comment resolved. Unknown ids are an error rather than a
-    /// silent success, so a stale client learns its view is out of date.
-    pub async fn resolve_comment(&self, session_id: &str, comment_id: &str) -> ReviewResult<()> {
+    /// The comments of the session record of `session_id`.
+    pub fn comments(&self, session_id: &str) -> ReviewResult<Vec<Comment>> {
+        self.comments
+            .list(&record_diffset(session_id)?)
+            .map_err(store_error)
+    }
+
+    /// Mark a comment of the session record resolved. Unknown ids are an
+    /// error rather than a silent success, so a stale client learns its view
+    /// is out of date.
+    pub fn resolve_comment(&self, session_id: &str, comment_id: &str) -> ReviewResult<()> {
+        let diffset = record_diffset(session_id)?;
+        if self
+            .comments
+            .resolve(&diffset, comment_id)
+            .map_err(store_error)?
         {
-            let mut comments = self
-                .comments
-                .get_mut(session_id)
-                .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
-            let Some(comment) = comments.iter_mut().find(|c| c.id == comment_id) else {
-                return Err(ReviewError::UnknownComment(comment_id.to_string()));
-            };
-            comment.resolved = true;
+            Ok(())
+        } else {
+            Err(ReviewError::UnknownComment(comment_id.to_string()))
         }
-        self.append(
-            session_id,
-            journal::Record::CommentResolved {
-                comment: comment_id.to_string(),
-            },
-        )
-        .await;
-        Ok(())
     }
 
     /// What the ledger could not read back for this session.

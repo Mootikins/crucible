@@ -18,11 +18,27 @@ mod retention;
 use std::path::{Path, PathBuf};
 
 use crucible_core::session::{
-    CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewState, SkipKind, Verdict,
+    CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, ReviewState,
+    SkipKind, Verdict,
 };
 use tempfile::TempDir;
 
 use super::*;
+
+/// A human comment on `a.txt` in the session record of `session`.
+fn record_comment(session: &str, root: PhysicalRoot, range: LineRange, body: &str) -> Comment {
+    Comment::new(
+        record_diffset(session).unwrap(),
+        CommentAnchor::Snapshot(SnapshotId::git("deadbeef")),
+        root,
+        "a.txt",
+        CommentSide::Current,
+        range,
+        "",
+        body,
+        CommentAuthor::Human,
+    )
+}
 use crate::test_support::{git, init_repo as repo};
 
 /// A git repo with one committed file, plus the ledger tracking it.
@@ -59,7 +75,7 @@ impl Fixture {
         git(dir.path(), &["commit", "-q", "-m", "init"]).await;
 
         let snaps = TempDir::new().unwrap();
-        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+        let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
         ledgers
             .open("sess", &[dir.path().to_path_buf()])
             .await
@@ -151,7 +167,7 @@ impl Persisted {
         let session_dir = TempDir::new().unwrap();
 
         let snaps = TempDir::new().unwrap();
-        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+        let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
         ledgers
             .open_or_restore("sess", session_dir.path(), &[repo_dir.path().to_path_buf()])
             .await
@@ -188,7 +204,7 @@ impl Persisted {
 
     /// What a daemon restart sees: a brand new manager, same journal.
     async fn restart(&self) -> Arc<ReviewLedgers> {
-        let ledgers = Arc::new(ReviewLedgers::new(self.snaps.path().to_path_buf()));
+        let ledgers = Arc::new(ReviewLedgers::for_tests(self.snaps.path().to_path_buf()));
         ledgers
             .open_or_restore(
                 &self.session,
@@ -238,7 +254,7 @@ impl PlainKiln {
 
         let session_dir = TempDir::new().unwrap();
         let snaps = TempDir::new().unwrap();
-        let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+        let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
         ledgers
             .open_or_restore("sess", session_dir.path(), &[root.path().to_path_buf()])
             .await
@@ -273,7 +289,7 @@ impl PlainKiln {
     /// What a daemon restart sees: a brand new manager, same journal, same
     /// snapshot store.
     async fn restart(&self) -> Arc<ReviewLedgers> {
-        let ledgers = Arc::new(ReviewLedgers::new(self.snaps.path().to_path_buf()));
+        let ledgers = Arc::new(ReviewLedgers::for_tests(self.snaps.path().to_path_buf()));
         ledgers
             .open_or_restore(
                 &self.session,

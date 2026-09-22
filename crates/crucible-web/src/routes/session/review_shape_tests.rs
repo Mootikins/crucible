@@ -21,9 +21,10 @@ use super::*;
 use crate::test_support::request_json;
 use axum::http::StatusCode;
 use chrono::{TimeZone, Utc};
+use crucible_core::diff::DiffsetId;
 use crucible_core::session::{
-    Comment, CommentAuthor, ComposedHunk, GateBlock, HunkId, Integrity, LineRange, PhysicalRoot,
-    ReviewState, RootStatus, Skip, SkipKind, SnapshotId,
+    Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, GateBlock, HunkId, Integrity,
+    LineRange, PhysicalRoot, ReviewState, RootStatus, SessionId, Skip, SkipKind, SnapshotId,
 };
 use serde_json::{json, Value};
 
@@ -166,9 +167,12 @@ fn the_hunks_reply_writes_back_the_object_review_list_hunks_sent() {
     let comment = Comment {
         id: "comment-1".to_string(),
         root: a_root(),
+        diffset: DiffsetId::for_session(&SessionId::parse("test-session-001").unwrap()),
         path: "src/a.rs".to_string(),
-        base_tree: SnapshotId::git("0".repeat(40)),
+        anchor: CommentAnchor::Snapshot(SnapshotId::git("0".repeat(40))),
+        side: CommentSide::Current,
         line_range: LineRange::new(1, 2),
+        quoted: "new\n".to_string(),
         body: "why this?".to_string(),
         author: CommentAuthor::Human,
         resolved: false,
@@ -247,9 +251,12 @@ fn the_comment_reply_writes_back_the_object_review_comment_sent() {
     let comment = Comment {
         id: "comment-2".to_string(),
         root: a_root(),
+        diffset: DiffsetId::for_session(&SessionId::parse("test-session-001").unwrap()),
         path: "src/a.rs".to_string(),
-        base_tree: SnapshotId::git("0".repeat(40)),
+        anchor: CommentAnchor::Commit("1".repeat(40)),
+        side: CommentSide::Base,
         line_range: LineRange::new(4, 9),
+        quoted: "old\n".to_string(),
         body: "needs a test".to_string(),
         author: CommentAuthor::Agent,
         resolved: true,

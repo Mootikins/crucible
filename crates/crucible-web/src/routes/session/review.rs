@@ -188,18 +188,44 @@ pub(super) enum CommentAuthorRow {
     Agent,
 }
 
+/// What a comment is anchored in. The web mirror of
+/// `crucible_core::session::CommentAnchor`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub(super) enum CommentAnchorRow {
+    /// The session base snapshot of a session record.
+    Snapshot(String),
+    /// The merge-base commit of a branch diff.
+    Commit(String),
+    /// One proposal id.
+    Proposal(String),
+}
+
+/// The side of a diff that a comment range counts its lines on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum CommentSideRow {
+    Base,
+    Current,
+}
+
 /// One review comment, anchored to a line range rather than to a hunk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub(super) struct ReviewCommentRow {
     id: String,
+    /// The diffset that owns the comment.
+    diffset: String,
     /// The repository top level.
     root: String,
     /// The path, relative to `root`.
     path: String,
-    /// The tree the range is anchored in. A range that no longer projects
-    /// forward from it is outdated.
-    base_tree: String,
+    /// What the diffset compares with when the comment was made.
+    anchor: CommentAnchorRow,
+    /// The side that `line_range` counts its lines on.
+    side: CommentSideRow,
     line_range: LineRangeRow,
+    /// The text of the range on `side` when the comment was made.
+    quoted: String,
     body: String,
     author: CommentAuthorRow,
     resolved: bool,

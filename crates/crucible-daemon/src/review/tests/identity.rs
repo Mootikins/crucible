@@ -92,7 +92,7 @@ async fn the_gate_query_matches_a_root_reached_through_a_symlink() {
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -130,7 +130,7 @@ async fn a_close_cancelled_between_roots_does_not_poison_them() {
     repo(&first, &[("a.txt", "one\n")]).await;
     repo(&second, &[("a.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -194,28 +194,21 @@ async fn a_close_cancelled_between_roots_does_not_poison_them() {
 #[tokio::test]
 async fn comments_are_stored_and_resolvable() {
     let fx = Fixture::new("one\n").await;
-    let comment = Comment::new(
+    let comment = record_comment(
+        &fx.session,
         PhysicalRoot::from_top_level(fx.dir.path()),
-        "a.txt",
-        SnapshotId::git("deadbeef"),
         LineRange::new(1, 2),
         "why this?",
-        CommentAuthor::Human,
     );
-    fx.ledgers.add_comment(&fx.session, comment.clone()).await;
+    fx.ledgers.add_comment(&comment).unwrap();
 
-    assert_eq!(fx.ledgers.comments(&fx.session).len(), 1);
+    assert_eq!(fx.ledgers.comments(&fx.session).unwrap().len(), 1);
     fx.ledgers
         .resolve_comment(&fx.session, &comment.id)
-        .await
         .unwrap();
-    assert!(fx.ledgers.comments(&fx.session)[0].resolved);
+    assert!(fx.ledgers.comments(&fx.session).unwrap()[0].resolved);
 
-    let err = fx
-        .ledgers
-        .resolve_comment(&fx.session, "nope")
-        .await
-        .unwrap_err();
+    let err = fx.ledgers.resolve_comment(&fx.session, "nope").unwrap_err();
     assert!(matches!(err, ReviewError::UnknownComment(_)), "{err:?}");
 }
 
@@ -263,7 +256,7 @@ async fn identical_changes_in_two_roots_are_independently_reviewable() {
     repo(&workspace, &[("a.txt", "one\n")]).await;
     repo(&kiln, &[("a.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers
@@ -329,7 +322,7 @@ async fn identical_hunks_in_two_files_get_distinct_identities() {
     let root = dir.path().join("repo");
     repo(&root, &[("a.txt", "one\n"), ("b.txt", "one\n")]).await;
 
-    let ledgers = Arc::new(ReviewLedgers::new(
+    let ledgers = Arc::new(ReviewLedgers::for_tests(
         crate::test_support::scratch_snapshot_root(),
     ));
     ledgers

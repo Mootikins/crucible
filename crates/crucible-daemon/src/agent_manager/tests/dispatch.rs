@@ -797,7 +797,6 @@ async fn cancel_drops_pending_permission_senders() {
 #[tokio::test]
 async fn cleanup_session_leaves_no_per_session_residue() {
     use crucible_core::interaction::PermRequest;
-    use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, SnapshotId};
 
     let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
@@ -851,22 +850,11 @@ async fn cleanup_session_leaves_no_per_session_residue() {
                 "bash",
                 serde_json::json!({"command": "ls"}),
             ));
-    // A comment is the cheapest review-ledger entry: no git repo needed, and
+    // An empty ledger is the cheapest review entry: no git repo needed, and
     // teardown for a session with no registered parent is synchronous.
     agent_manager
         .review
-        .add_comment(
-            session_id,
-            Comment::new(
-                PhysicalRoot::from_top_level("/repo"),
-                "a.txt",
-                SnapshotId::git("0".repeat(40)),
-                LineRange::new(1, 2),
-                "why this?",
-                CommentAuthor::Human,
-            ),
-        )
-        .await;
+        .restore(crucible_core::session::Ledger::new(session_id, Vec::new()));
     // A plugin's narrowed tool set, by the route `cru.tools.set_active` takes.
     agent_manager
         .active_tools()

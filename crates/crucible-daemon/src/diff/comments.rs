@@ -1,0 +1,236 @@
+//! The comment store: the comments of each diffset, one JSON file for each
+//! diffset under `<data_home>/diff-comments/`.
+//!
+//! A diffset owns its comments, not a session. A branch diff and a proposal
+//! have no session, so a store keyed by session cannot hold their comments.
+//!
+//! Each file is a [`RegistryStore`]: a sidecar lock, a read, a change and an
+//! atomic rename. Thus two writers cannot lose a comment, and a reader
+//! without the lock sees a complete file.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Result};
+use crucible_core::diff::DiffsetId;
+use crucible_core::session::{Comment, LineRange};
+use serde::{Deserialize, Serialize};
+
+use crate::registry_store::RegistryStore;
+
+/// The name of the store directory in the daemon data home.
+const DIR: &str = "diff-comments";
+
+/// Where a daemon with the data home `data_home` keeps its comments.
+pub fn comments_root(data_home: &Path) -> PathBuf {
+    data_home.join(DIR)
+}
+
+/// The comment store of the daemon whose review snapshots are in
+/// `snapshot_root`.
+///
+/// The daemon passes `<data_home>/review-snapshots` as the snapshot root (see
+/// [`crate::review::snapshot_root`]), so the store is
+/// `<data_home>/diff-comments`. A snapshot root with no parent keeps the
+/// store inside itself; the snapshot store does not read that name.
+pub fn root_beside_snapshots(snapshot_root: &Path) -> PathBuf {
+    match snapshot_root.parent() {
+        Some(data_home) => comments_root(data_home),
+        None => snapshot_root.join(DIR),
+    }
+}
+
+/// One file of the store: the comments of one diffset.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct DiffsetComments {
+    /// The daemon copied the comments of the session journal into this file.
+    /// Only a session record has a journal. See [`CommentStore::migrate`].
+    #[serde(default)]
+    journal_migrated: bool,
+    #[serde(default)]
+    comments: Vec<Comment>,
+}
+
+/// The comments of every diffset.
+#[derive(Debug, Clone)]
+pub struct CommentStore {
+    dir: PathBuf,
+}
+
+impl CommentStore {
+    /// A store over `dir`. The store creates `dir` at the first write.
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+
+    /// The comments of `diffset`, oldest first. A diffset with no file has
+    /// no comments.
+    pub fn list(&self, diffset: &DiffsetId) -> Result<Vec<Comment>> {
+        Ok(self.file(diffset)?.read()?.comments)
+    }
+
+    /// Store a new comment under its own diffset.
+    pub fn add(&self, comment: &Comment) -> Result<()> {
+        self.file(&comment.diffset)?.update(|file| {
+            if file.comments.iter().any(|c| c.id == comment.id) {
+                bail!("comment {} is already stored", comment.id);
+            }
+            file.comments.push(comment.clone());
+            Ok(())
+        })
+    }
+
+    /// Mark a comment of `diffset` resolved. The result is `false` when the
+    /// diffset has no comment with that id.
+    pub fn resolve(&self, diffset: &DiffsetId, comment_id: &str) -> Result<bool> {
+        self.file(diffset)?.update(|file| {
+            Ok(
+                match file.comments.iter_mut().find(|c| c.id == comment_id) {
+                    Some(comment) => {
+                        comment.resolved = true;
+                        true
+                    }
+                    None => false,
+                },
+            )
+        })
+    }
+
+    /// Whether the journal comments of `diffset` are already in the store.
+    pub fn is_migrated(&self, diffset: &DiffsetId) -> Result<bool> {
+        Ok(self.file(diffset)?.read()?.journal_migrated)
+    }
+
+    /// Copy the comments of a session journal into the file of `diffset`,
+    /// one time only.
+    ///
+    /// The result is `false` when an earlier call did the copy. Then the
+    /// store keeps its own comments: a comment that a user resolved after
+    /// the copy does not open again. A comment whose id is already stored is
+    /// not copied a second time.
+    pub fn migrate(&self, diffset: &DiffsetId, comments: Vec<Comment>) -> Result<bool> {
+        self.file(diffset)?.update(|file| {
+            if file.journal_migrated {
+                return Ok(false);
+            }
+            for comment in comments {
+                if !file.comments.iter().any(|c| c.id == comment.id) {
+                    file.comments.push(comment);
+                }
+            }
+            file.journal_migrated = true;
+            Ok(true)
+        })
+    }
+
+    /// The file of one diffset.
+    ///
+    /// A diffset id arrives from the wire, so the store refuses an id that
+    /// could name a file outside its directory.
+    fn file(&self, diffset: &DiffsetId) -> Result<RegistryStore<DiffsetComments>> {
+        let id = diffset.as_str();
+        let safe = !id.is_empty()
+            && !id.starts_with('.')
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+        if !safe {
+            bail!("diffset id {id:?} is not a valid file name");
+        }
+        Ok(RegistryStore::new(self.dir.join(format!("{id}.json"))))
+    }
+}
+
+/// The lines of `text` in `range`, with their line ends.
+///
+/// `range` is 1-based with an exclusive end. A range past the end of the
+/// text gives the lines that exist, or an empty string.
+pub fn quoted_lines(text: &str, range: LineRange) -> String {
+    text.split_inclusive('\n')
+        .skip(range.start.saturating_sub(1) as usize)
+        .take(range.len() as usize)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::session::{
+        CommentAnchor, CommentAuthor, CommentSide, PhysicalRoot, SessionId, SnapshotId,
+    };
+    use tempfile::TempDir;
+
+    fn session(id: &str) -> DiffsetId {
+        DiffsetId::for_session(&SessionId::parse(id).unwrap())
+    }
+
+    fn comment(diffset: &DiffsetId, body: &str) -> Comment {
+        Comment::new(
+            diffset.clone(),
+            CommentAnchor::Snapshot(SnapshotId::git("0".repeat(40))),
+            PhysicalRoot::from_top_level("/repo"),
+            "src/a.rs",
+            CommentSide::Current,
+            LineRange::new(1, 2),
+            "a\n",
+            body,
+            CommentAuthor::Human,
+        )
+    }
+
+    #[test]
+    fn a_comment_is_stored_by_diffset() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        let first = session("s-1");
+        let second = session("s-2");
+        let kept = comment(&first, "one");
+        store.add(&kept).unwrap();
+        store.add(&comment(&second, "two")).unwrap();
+
+        assert_eq!(store.list(&first).unwrap(), vec![kept.clone()]);
+        assert_eq!(store.list(&second).unwrap().len(), 1);
+        assert!(
+            dir.path().join(DIR).join("session-s-1.json").is_file(),
+            "the file is not named for the diffset"
+        );
+
+        // A second store over the same directory reads the same comments.
+        let reopened = CommentStore::new(dir.path().join(DIR));
+        assert!(reopened.resolve(&first, &kept.id).unwrap());
+        assert!(reopened.list(&first).unwrap()[0].resolved);
+        assert!(!reopened.resolve(&second, &kept.id).unwrap());
+    }
+
+    #[test]
+    fn quoted_lines_take_the_range_with_its_line_ends() {
+        let text = "a\nb\nc\nd";
+        assert_eq!(quoted_lines(text, LineRange::new(2, 4)), "b\nc\n");
+        assert_eq!(quoted_lines(text, LineRange::new(4, 5)), "d");
+        assert_eq!(quoted_lines(text, LineRange::new(3, 3)), "");
+        assert_eq!(quoted_lines(text, LineRange::new(9, 12)), "");
+    }
+
+    #[test]
+    fn a_diffset_id_that_leaves_the_store_is_refused() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        for id in ["../x", "a/b", ".hidden", ""] {
+            let diffset: DiffsetId = serde_json::from_value(serde_json::json!(id)).unwrap();
+            assert!(store.list(&diffset).is_err(), "{id:?} was accepted");
+        }
+    }
+
+    #[test]
+    fn the_store_migrates_a_diffset_once() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        let diffset = session("s-1");
+        let old = comment(&diffset, "old");
+
+        assert!(!store.is_migrated(&diffset).unwrap());
+        assert!(store.migrate(&diffset, vec![old.clone()]).unwrap());
+        assert!(store.is_migrated(&diffset).unwrap());
+        assert!(!store.migrate(&diffset, vec![old.clone()]).unwrap());
+        assert_eq!(store.list(&diffset).unwrap(), vec![old]);
+    }
+}

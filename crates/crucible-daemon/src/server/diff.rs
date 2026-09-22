@@ -310,7 +310,7 @@ mod tests {
                 sessions: Arc::new(SessionManager::with_storage(
                     crate::test_support::temp_session_storage(),
                 )),
-                review: Arc::new(ReviewLedgers::new(store.path().join("snapshots"))),
+                review: Arc::new(ReviewLedgers::for_tests(store.path().join("snapshots"))),
                 _store: store,
             }
         }

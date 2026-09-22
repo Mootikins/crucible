@@ -1,6 +1,8 @@
 //! The daemon side of the diffset: the code that computes the files of a
 //! [`crucible_core::diff::Diffset`] from its source.
 //!
-//! Each source has its own module. `branch` reads git.
+//! Each source has its own module. `branch` reads git. `comments` stores
+//! the comments of each diffset.
 
 pub mod branch;
+pub mod comments;

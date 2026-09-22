@@ -5037,6 +5037,71 @@
           }
         }
       },
+      "CommentAnchorRow": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The session base snapshot of a session record.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The session base snapshot of a session record."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "snapshot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The merge-base commit of a branch diff.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The merge-base commit of a branch diff."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "commit"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One proposal id.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "One proposal id."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proposal"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a comment is anchored in. The web mirror of\n`crucible_core::session::CommentAnchor`."
+      },
       "CommentAuthorRow": {
         "type": "string",
         "description": "Who wrote a comment.",
@@ -5089,6 +5154,14 @@
             ]
           }
         }
+      },
+      "CommentSideRow": {
+        "type": "string",
+        "description": "The side of a diff that a comment range counts its lines on.",
+        "enum": [
+          "base",
+          "current"
+        ]
       },
       "ConfigOriginRow": {
         "allOf": [
@@ -7745,10 +7818,13 @@
         "description": "One review comment, anchored to a line range rather than to a hunk.",
         "required": [
           "id",
+          "diffset",
           "root",
           "path",
-          "base_tree",
+          "anchor",
+          "side",
           "line_range",
+          "quoted",
           "body",
           "author",
           "resolved",
@@ -7758,6 +7834,10 @@
           "id": {
             "type": "string"
           },
+          "diffset": {
+            "type": "string",
+            "description": "The diffset that owns the comment."
+          },
           "root": {
             "type": "string",
             "description": "The repository top level."
@@ -7766,12 +7846,20 @@
             "type": "string",
             "description": "The path, relative to `root`."
           },
-          "base_tree": {
-            "type": "string",
-            "description": "The tree the range is anchored in. A range that no longer projects\nforward from it is outdated."
+          "anchor": {
+            "$ref": "#/components/schemas/CommentAnchorRow",
+            "description": "What the diffset compares with when the comment was made."
+          },
+          "side": {
+            "$ref": "#/components/schemas/CommentSideRow",
+            "description": "The side that `line_range` counts its lines on."
           },
           "line_range": {
             "$ref": "#/components/schemas/LineRangeRow"
+          },
+          "quoted": {
+            "type": "string",
+            "description": "The text of the range on `side` when the comment was made."
           },
           "body": {
             "type": "string"

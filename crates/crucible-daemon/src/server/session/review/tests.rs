@@ -1093,7 +1093,7 @@ async fn resolving_a_comment_marks_it_and_an_unknown_id_is_refused() {
     )
     .await;
     assert!(resp.error.is_none(), "{:?}", resp.error);
-    assert!(fx.am.review.comments(&fx.session)[0].resolved);
+    assert!(fx.am.review.comments(&fx.session).unwrap()[0].resolved);
     assert_eq!(fx.review_reasons(), vec!["comment_resolved".to_string()]);
 
     let unknown = handle_review_resolve_comment(
@@ -1414,6 +1414,7 @@ fn caller_recoverable_errors_map_to_invalid_params() {
         },
         ReviewError::ExternalHunk(HunkId::from("h".to_string())),
         ReviewError::UnknownComment("c".into()),
+        ReviewError::InvalidSession("bad id".into()),
         ReviewError::NotAGitRepo {
             path: PathBuf::from("/x"),
         },
@@ -1559,7 +1560,9 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
         }),
         plugin_loader: None,
         card_roots: Default::default(),
-        review_snapshot_root: snapshots.path().to_path_buf(),
+        // A subdirectory, so the comment store beside it is in this
+        // fixture and not in the shared temporary directory.
+        review_snapshot_root: snapshots.path().join("review-snapshots"),
     }));
     am.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {

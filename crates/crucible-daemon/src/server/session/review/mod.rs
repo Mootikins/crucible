@@ -34,11 +34,12 @@ use crate::rpc_helpers::typed_params;
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewScope, ReviewState, RootBase,
-    RootStatus,
+    Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange,
+    ReviewScope, ReviewState, RootBase, RootStatus,
 };
 
-use crate::review::{paths, BulkOutcome, ReviewError, ReviewResult};
+use crate::diff::comments::quoted_lines;
+use crate::review::{paths, record_diffset, BulkOutcome, ReviewError, ReviewResult};
 use crate::tools::containment::reject_non_normal;
 
 // ── Operations (shared with the Lua bridge) ─────────────────────────────────
@@ -366,15 +367,24 @@ pub(crate) async fn add_comment(
 
     let (base, relative) = resolve_root(ledger.session_base(), root, path)?;
 
+    let diffset = record_diffset(session_id)?;
+    // The range counts lines on the current text: the file on disk. An
+    // absent file quotes nothing.
+    let text = tokio::fs::read_to_string(base.root.join(&relative))
+        .await
+        .unwrap_or_default();
     let comment = Comment::new(
+        diffset,
+        CommentAnchor::Snapshot(base.base_tree.clone()),
         base.root.clone(),
         relative,
-        base.base_tree.clone(),
+        CommentSide::Current,
         line_range,
+        quoted_lines(&text, line_range),
         body,
         author,
     );
-    am.review.add_comment(session_id, comment.clone()).await;
+    am.review.add_comment(&comment)?;
     emit_review_changed(event_tx, session_id, "commented");
     Ok(comment)
 }
@@ -385,7 +395,7 @@ pub(crate) async fn resolve_comment(
     session_id: &str,
     comment_id: &str,
 ) -> ReviewResult<()> {
-    am.review.resolve_comment(session_id, comment_id).await?;
+    am.review.resolve_comment(session_id, comment_id)?;
     emit_review_changed(event_tx, session_id, "comment_resolved");
     Ok(())
 }
@@ -410,8 +420,15 @@ pub(crate) async fn handle_review_list_hunks(
     let scope = params.scope.unwrap_or_default();
     ensure_loaded(am, sm, session_id).await;
 
-    match list_hunks_with_status(am, session_id, scope).await {
-        Ok((hunks, roots)) => Response::success(
+    let listed = match list_hunks_with_status(am, session_id, scope).await {
+        Ok(listed) => am
+            .review
+            .comments(session_id)
+            .map(|comments| (listed, comments)),
+        Err(e) => Err(e),
+    };
+    match listed {
+        Ok(((hunks, roots), comments)) => Response::success(
             req.id,
             serde_json::json!({
                 "session_id": session_id,
@@ -419,7 +436,7 @@ pub(crate) async fn handle_review_list_hunks(
                 // in flight can tell which scope the answer describes.
                 "scope": scope,
                 "hunks": hunks,
-                "comments": am.review.comments(session_id),
+                "comments": comments,
                 // Only the roots that are actually broken. An empty array is
                 // the common case and the one a client should not have to
                 // filter for; a non-empty one means the gate is holding writes
@@ -693,6 +710,7 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
         | ReviewError::Stale { .. }
         | ReviewError::ExternalHunk(_)
         | ReviewError::UnknownComment(_)
+        | ReviewError::InvalidSession(_)
         | ReviewError::NotAGitRepo { .. }
         | ReviewError::AmbiguousPath { .. }
         | ReviewError::PathEscapesRoot { .. } => {

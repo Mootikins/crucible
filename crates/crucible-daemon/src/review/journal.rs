@@ -29,9 +29,10 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use crucible_core::diff::DiffsetId;
 use crucible_core::session::{
-    ChildLedgerRef, Comment, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewState, RootBase, Skip, SkipKind, SnapshotId,
+    ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, HunkId, Integrity,
+    Interval, Ledger, LineRange, PhysicalRoot, ReviewState, RootBase, Skip, SkipKind, SnapshotId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
@@ -80,7 +81,11 @@ pub(super) enum Record {
         state: ReviewState,
         alg: String,
     },
-    Comment(Comment),
+    /// A comment from a daemon before the comment store. The daemon no
+    /// longer writes this record. It reads the record one time and copies
+    /// the comment to the store; see `ReviewLedgers::migrate_comments`.
+    Comment(JournalComment),
+    /// The resolution of a [`Record::Comment`]. Also read only.
     CommentResolved {
         comment: String,
     },
@@ -96,13 +101,55 @@ pub(super) enum Record {
     Undone,
 }
 
+/// A comment as the journal wrote it, before a diffset owned comments.
+///
+/// The journal keeps this old shape, so that an old journal still reads.
+/// The anchor of the comment is the `base_tree` of its session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct JournalComment {
+    pub(super) id: String,
+    pub(super) root: PhysicalRoot,
+    pub(super) path: String,
+    pub(super) base_tree: SnapshotId,
+    pub(super) line_range: LineRange,
+    pub(super) body: String,
+    pub(super) author: CommentAuthor,
+    pub(super) resolved: bool,
+    pub(super) created_at: DateTime<Utc>,
+}
+
+impl JournalComment {
+    /// The comment in its new shape, owned by `diffset`.
+    ///
+    /// The review panel and the `review` plugin counted the range on the
+    /// current text: the panel sent the current range of a hunk. The side is
+    /// therefore `Current`, and `quoted` is the current text of the range.
+    pub(super) fn into_comment(self, diffset: DiffsetId, quoted: String) -> Comment {
+        Comment {
+            id: self.id,
+            diffset,
+            root: self.root,
+            path: self.path,
+            anchor: CommentAnchor::Snapshot(self.base_tree),
+            side: CommentSide::Current,
+            line_range: self.line_range,
+            quoted,
+            body: self.body,
+            author: self.author,
+            resolved: self.resolved,
+            created_at: self.created_at,
+        }
+    }
+}
+
 /// Everything one journal replays to.
 pub(super) struct Restored {
     pub(super) ledger: Ledger,
     pub(super) states: HashMap<HunkId, ReviewState>,
     /// Rejects an undo can still take back, oldest first.
     pub(super) reject_stack: Vec<RejectBatch>,
-    pub(super) comments: Vec<Comment>,
+    /// The old comments of the journal, with their resolution applied.
+    pub(super) comments: Vec<JournalComment>,
     pub(super) integrity: Integrity,
 }
 
@@ -145,7 +192,7 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     let mut children: Vec<ChildLedgerRef> = Vec::new();
     let mut states: HashMap<HunkId, ReviewState> = HashMap::new();
     let mut reject_stack: Vec<RejectBatch> = Vec::new();
-    let mut comments: Vec<Comment> = Vec::new();
+    let mut comments: Vec<JournalComment> = Vec::new();
     let mut integrity = Integrity::default();
 
     for (index, line) in text.lines().enumerate() {

@@ -505,10 +505,13 @@ describe('ChangesPanel — the queue', () => {
   it('lists open comments and resolves them', async () => {
     const comment: ReviewComment = {
       id: 'c1',
+      diffset: 'session-s1',
       root: '/repo',
       path: 'src/a.rs',
-      base_tree: 'abc',
+      anchor: { kind: 'snapshot', id: 'abc' },
+      side: 'current',
       line_range: { start: 3, end: 4 },
+      quoted: 'x\n',
       body: 'why?',
       author: 'human',
       resolved: false,

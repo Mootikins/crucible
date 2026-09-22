@@ -86,7 +86,7 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
     let sessions = home.path().join("sessions");
 
     let snaps = crate::test_support::scratch_snapshot_root();
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.clone()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.clone()));
     for id in ["live", "orphan"] {
         ledgers
             .open_or_restore(id, &sessions.join(id), &[repo_dir.path().to_path_buf()])
@@ -119,7 +119,7 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     let sessions = home.path().join("sessions");
 
     let snaps = crate::test_support::scratch_snapshot_root();
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.clone()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.clone()));
     // A surviving session keeps the repository in the sweep's view at all —
     // the sweep reaches a root only through a live session's journal, so a
     // repo whose every session is gone is unreachable to it by construction.
@@ -382,7 +382,7 @@ async fn the_plain_sweep_removes_snapshots_no_live_journal_names() {
     let home = TempDir::new().unwrap();
     let snaps = TempDir::new().unwrap();
     let sessions = home.path().join("sessions");
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
 
     let live_root = plain_root("live\n").await;
     let orphan_root = plain_root("orphan\n").await;
@@ -448,7 +448,7 @@ async fn dropping_a_sessions_claims_releases_its_plain_snapshots() {
     let home = TempDir::new().unwrap();
     let snaps = TempDir::new().unwrap();
     let sessions = home.path().join("sessions");
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
     let root = plain_root("one\n").await;
     ledgers
         .open_or_restore("sess", &sessions.join("sess"), &[root.path().to_path_buf()])
@@ -482,7 +482,7 @@ async fn a_sweep_that_cannot_see_the_sessions_root_removes_nothing() {
     let home = TempDir::new().unwrap();
     let snaps = TempDir::new().unwrap();
     let sessions = home.path().join("sessions");
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
     let root = plain_root("one\n").await;
     ledgers
         .open_or_restore("sess", &sessions.join("sess"), &[root.path().to_path_buf()])
@@ -511,7 +511,7 @@ async fn a_sweep_inside_a_bracket_keeps_the_snapshot_the_call_will_name() {
     let home = TempDir::new().unwrap();
     let snaps = TempDir::new().unwrap();
     let sessions = home.path().join("sessions");
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
 
     let root = plain_root("one\n").await;
     ledgers
@@ -559,7 +559,7 @@ async fn a_sweep_inside_a_bracket_keeps_the_blobs_that_snapshot_names() {
     let home = TempDir::new().unwrap();
     let snaps = TempDir::new().unwrap();
     let sessions = home.path().join("sessions");
-    let ledgers = Arc::new(ReviewLedgers::new(snaps.path().to_path_buf()));
+    let ledgers = Arc::new(ReviewLedgers::for_tests(snaps.path().to_path_buf()));
 
     let root = plain_root("one\n").await;
     ledgers

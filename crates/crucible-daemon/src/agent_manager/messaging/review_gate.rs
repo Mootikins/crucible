@@ -441,7 +441,7 @@ mod tests {
     /// parent's unreviewable work bypassable by delegating.
     #[tokio::test]
     async fn a_degraded_root_holds_a_delegation_the_way_it_holds_a_write() {
-        let ledgers = Arc::new(ReviewLedgers::new(
+        let ledgers = Arc::new(ReviewLedgers::for_tests(
             crate::test_support::scratch_snapshot_root(),
         ));
         // A root that has been moved or deleted: nothing to capture, nothing to
@@ -472,7 +472,7 @@ mod tests {
         // Present to `try_exists`, unreadable to `read_to_string`.
         std::fs::create_dir(&journal).unwrap();
 
-        let ledgers = Arc::new(ReviewLedgers::new(
+        let ledgers = Arc::new(ReviewLedgers::for_tests(
             crate::test_support::scratch_snapshot_root(),
         ));
         let _ = ledgers.restore_from_journal("sess", &journal).await;

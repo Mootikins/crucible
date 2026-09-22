@@ -17,6 +17,7 @@ use tracing::{debug, warn};
 use super::backend::RootBackend;
 use super::plain_store::PlainStore;
 use super::{git, journal, ReviewError, ReviewLedgers, ReviewResult};
+use crate::diff::comments::quoted_lines;
 
 impl ReviewLedgers {
     /// Open a session's ledger, restoring it from `review.jsonl` under `dir`
@@ -109,8 +110,7 @@ impl ReviewLedgers {
             .insert(session_id.to_string(), restored.states.clone());
         self.reject_stack
             .insert(session_id.to_string(), restored.reject_stack);
-        self.comments
-            .insert(session_id.to_string(), restored.comments.clone());
+        self.migrate_comments(session_id, restored.comments).await;
         self.integrity
             .insert(session_id.to_string(), restored.integrity);
         self.ledgers.insert(session_id.to_string(), restored.ledger);
@@ -119,6 +119,53 @@ impl ReviewLedgers {
         // them.
         self.refresh_keep_refs(session_id).await;
         Ok(())
+    }
+
+    /// Copy the old comments of a session journal to the comment store, one
+    /// time only, under the session record diffset of the session.
+    ///
+    /// A failure leaves the journal as it is and does not stop the restore.
+    /// The store has no mark then, so the next restore tries again.
+    async fn migrate_comments(&self, session_id: &str, old: Vec<journal::JournalComment>) {
+        if old.is_empty() {
+            return;
+        }
+        let diffset = match super::record_diffset(session_id) {
+            Ok(diffset) => diffset,
+            Err(e) => {
+                warn!(session_id, error = %e, "journal comments not migrated");
+                return;
+            }
+        };
+        match self.comments.is_migrated(&diffset) {
+            Ok(false) => {}
+            Ok(true) => return,
+            Err(e) => {
+                warn!(session_id, error = %format!("{e:#}"), "journal comments not migrated");
+                return;
+            }
+        }
+        let mut comments = Vec::with_capacity(old.len());
+        for comment in old {
+            // An absent or unreadable file quotes nothing. The comment
+            // still migrates, and the projection then finds it outdated.
+            let text = tokio::fs::read_to_string(comment.root.join(&comment.path))
+                .await
+                .unwrap_or_default();
+            let quoted = quoted_lines(&text, comment.line_range);
+            comments.push(comment.into_comment(diffset.clone(), quoted));
+        }
+        let count = comments.len();
+        match self.comments.migrate(&diffset, comments) {
+            Ok(true) => debug!(
+                session_id,
+                count, "journal comments migrated to the comment store"
+            ),
+            Ok(false) => {}
+            Err(e) => {
+                warn!(session_id, error = %format!("{e:#}"), "journal comments not migrated");
+            }
+        }
     }
 
     /// Register a session whose journal exists and could not be read at all.

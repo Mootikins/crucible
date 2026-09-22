@@ -447,3 +447,55 @@ fn a_child_ledger_ref_without_a_node_id_is_none_not_zero() {
     let child: ChildLedgerRef = serde_json::from_str(json).unwrap();
     assert_eq!(child.node_id, None);
 }
+
+/// A comment belongs to a diffset. Its anchor, its side and its quoted text
+/// are on the wire, and the old `base_tree` field is not.
+#[test]
+fn a_review_comment_carries_its_diffset_anchor_side_and_quote() {
+    use crate::diff::DiffsetId;
+    use crate::session::types::{Comment, CommentAnchor, CommentAuthor, CommentSide};
+    use crate::session::SessionId;
+
+    let session = SessionId::parse("s-1").unwrap();
+    let comment = Comment::new(
+        DiffsetId::for_session(&session),
+        CommentAnchor::Snapshot(SnapshotId::plain("abc")),
+        PhysicalRoot::from_top_level("/repo"),
+        "src/lib.rs",
+        CommentSide::Current,
+        LineRange::new(2, 4),
+        "b\nc\n",
+        "why?",
+        CommentAuthor::Human,
+    );
+
+    let wire = serde_json::to_value(&comment).unwrap();
+    assert_eq!(wire["diffset"], "session-s-1");
+    assert_eq!(
+        wire["anchor"],
+        serde_json::json!({ "kind": "snapshot", "id": "plain:abc" })
+    );
+    assert_eq!(wire["side"], "current");
+    assert_eq!(wire["quoted"], "b\nc\n");
+    assert!(wire.get("base_tree").is_none());
+
+    let back: Comment = serde_json::from_value(wire).unwrap();
+    assert_eq!(back, comment);
+}
+
+/// Each anchor kind keeps its kind through the wire.
+#[test]
+fn every_review_comment_anchor_round_trips() {
+    use crate::proposal::ProposalId;
+    use crate::session::types::CommentAnchor;
+
+    for anchor in [
+        CommentAnchor::Snapshot(SnapshotId::git("0".repeat(40))),
+        CommentAnchor::Commit("1".repeat(40)),
+        CommentAnchor::Proposal(ProposalId::generate()),
+    ] {
+        let text = serde_json::to_string(&anchor).unwrap();
+        let back: CommentAnchor = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, anchor, "{text}");
+    }
+}

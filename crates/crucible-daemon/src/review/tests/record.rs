@@ -95,7 +95,7 @@ async fn a_session_record_file_has_the_snapshot_text_as_base() {
 
 #[tokio::test]
 async fn a_session_with_no_ledger_has_an_empty_record() {
-    let ledgers = ReviewLedgers::new(crate::test_support::scratch_snapshot_root());
+    let ledgers = ReviewLedgers::for_tests(crate::test_support::scratch_snapshot_root());
     assert!(ledgers.record_files("nobody").await.unwrap().is_empty());
 
     let err = ledgers

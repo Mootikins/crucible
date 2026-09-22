@@ -2320,6 +2320,26 @@ export interface components {
             commands: components["schemas"]["SlashCommand"][];
         };
         /**
+         * @description What a comment is anchored in. The web mirror of
+         *     `crucible_core::session::CommentAnchor`.
+         */
+        CommentAnchorRow: {
+            /** @description The session base snapshot of a session record. */
+            id: string;
+            /** @enum {string} */
+            kind: "snapshot";
+        } | {
+            /** @description The merge-base commit of a branch diff. */
+            id: string;
+            /** @enum {string} */
+            kind: "commit";
+        } | {
+            /** @description One proposal id. */
+            id: string;
+            /** @enum {string} */
+            kind: "proposal";
+        };
+        /**
          * @description Who wrote a comment.
          * @enum {string}
          */
@@ -2352,6 +2372,11 @@ export interface components {
             path: string;
             root?: string | null;
         };
+        /**
+         * @description The side of a diff that a comment range counts its lines on.
+         * @enum {string}
+         */
+        CommentSideRow: "base" | "current";
         /**
          * @description One row of `config.origin`: a leaf, the value the store holds for it, and
          *     where that value came from.
@@ -3767,12 +3792,9 @@ export interface components {
         };
         /** @description One review comment, anchored to a line range rather than to a hunk. */
         ReviewCommentRow: {
+            /** @description What the diffset compares with when the comment was made. */
+            anchor: components["schemas"]["CommentAnchorRow"];
             author: components["schemas"]["CommentAuthorRow"];
-            /**
-             * @description The tree the range is anchored in. A range that no longer projects
-             *     forward from it is outdated.
-             */
-            base_tree: string;
             body: string;
             /**
              * Format: date-time
@@ -3783,13 +3805,19 @@ export interface components {
              *     precision the daemon sent.
              */
             created_at: string;
+            /** @description The diffset that owns the comment. */
+            diffset: string;
             id: string;
             line_range: components["schemas"]["LineRangeRow"];
             /** @description The path, relative to `root`. */
             path: string;
+            /** @description The text of the range on `side` when the comment was made. */
+            quoted: string;
             resolved: boolean;
             /** @description The repository top level. */
             root: string;
+            /** @description The side that `line_range` counts its lines on. */
+            side: components["schemas"]["CommentSideRow"];
         };
         /** @description One hunk a bulk decision refused, with the daemon's reason. */
         ReviewFailureRow: {
@@ -4576,8 +4604,10 @@ export type SchemaCommandEffectRow = components['schemas']['CommandEffectRow'];
 export type SchemaCommandRequest = components['schemas']['CommandRequest'];
 export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
+export type SchemaCommentAnchorRow = components['schemas']['CommentAnchorRow'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
 export type SchemaCommentRequest = components['schemas']['CommentRequest'];
+export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];

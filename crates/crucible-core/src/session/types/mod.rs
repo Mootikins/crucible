@@ -16,9 +16,9 @@ pub use config::ContextStrategy;
 pub use enums::{RecordingMode, SessionState, SessionType};
 pub use id::{InvalidSessionId, SessionId};
 pub use review::{
-    ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, GateBlock, HunkId, Integrity, Interval,
-    Ledger, LineRange, PhysicalRoot, ReviewScope, ReviewState, RootBase, RootInterval, RootStatus,
-    Skip, SkipKind, SnapshotId, Verdict,
+    ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, GateBlock,
+    HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot, ReviewScope, ReviewState,
+    RootBase, RootInterval, RootStatus, Skip, SkipKind, SnapshotId, Verdict,
 };
 pub use session::Session;
 pub use summary::SessionSummary;

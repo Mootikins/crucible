@@ -22,6 +22,9 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::diff::DiffsetId;
+use crate::proposal::ProposalId;
+
 /// A snapshot of one review root: a git tree, or a plain-store snapshot.
 ///
 /// The arm is the source of truth for which backend can read the snapshot.
@@ -794,22 +797,59 @@ pub enum CommentAuthor {
     Agent,
 }
 
+/// What a comment is anchored in: the snapshot, commit or proposal that its
+/// diffset compares with.
+///
+/// A [`SnapshotId`] cannot hold a merge-base commit or a proposal, so each
+/// source of a diffset has its own arm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum CommentAnchor {
+    /// The session base snapshot of a session record.
+    Snapshot(SnapshotId),
+    /// The merge-base commit of a branch diff.
+    Commit(String),
+    /// One proposal.
+    Proposal(ProposalId),
+}
+
+/// The side of a diff that a comment range counts its lines on.
+///
+/// This is not the canvas `Side`, which names the edges of a canvas node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommentSide {
+    /// The old text: the snapshot, the merge base or the expected base.
+    Base,
+    /// The new text: the disk, the branch head or the proposed text.
+    Current,
+}
+
 /// A review comment anchored to a line range.
 ///
 /// Ranges rather than hunks: a hunk comment is just a comment whose range
 /// equals a hunk, and ranges additionally allow commenting on unchanged code
 /// and on spans crossing several hunks.
+///
+/// A diffset owns the comment, not a session. `quoted` keeps the text of the
+/// range, so that a later listing can find the range again after the text
+/// moves.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Comment {
     pub id: String,
+    /// The diffset that owns the comment.
+    pub diffset: DiffsetId,
     /// Repository top level. See [`RootInterval::root`].
     pub root: PhysicalRoot,
     /// Path relative to [`Self::root`].
     pub path: String,
-    /// Tree the range is anchored in. Later diffs re-project the range
-    /// forward from here; a range that no longer projects is outdated.
-    pub base_tree: SnapshotId,
+    /// What the diffset compares with when the comment was made.
+    pub anchor: CommentAnchor,
+    /// The side that [`Self::line_range`] counts its lines on.
+    pub side: CommentSide,
     pub line_range: LineRange,
+    /// The text of the range on [`Self::side`] when the comment was made.
+    pub quoted: String,
     pub body: String,
     pub author: CommentAuthor,
     pub resolved: bool,
@@ -819,20 +859,27 @@ pub struct Comment {
 impl Comment {
     /// Anchor a new, unresolved comment. The id is minted here so every
     /// producer — RPC handler, Lua tool, agent — gets the same shape.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        diffset: DiffsetId,
+        anchor: CommentAnchor,
         root: PhysicalRoot,
         path: impl Into<String>,
-        base_tree: SnapshotId,
+        side: CommentSide,
         line_range: LineRange,
+        quoted: impl Into<String>,
         body: impl Into<String>,
         author: CommentAuthor,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            diffset,
             root,
             path: path.into(),
-            base_tree,
+            anchor,
+            side,
             line_range,
+            quoted: quoted.into(),
             body: body.into(),
             author,
             resolved: false,
