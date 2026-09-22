@@ -40,14 +40,18 @@ const ANSWER: &str = "tool call done";
 /// a second kiln that the session does not attach. The agent calls
 /// `read_note` with `path`. Return the reply that the agent process received.
 async fn agent_reads(temp: &TempDir, kiln: &Path, other: &Path, path: &str) -> String {
+    let args = serde_json::json!({ "path": path });
+    agent_calls(temp, kiln, other, &format!("read_note:{args}")).await
+}
+
+/// As `agent_reads`, but the agent makes the MCP call `call`
+/// (`<tool>:<json args>`).
+async fn agent_calls(temp: &TempDir, kiln: &Path, other: &Path, call: &str) -> String {
     let capture = temp.path().join("mcp-capture.json");
     let session_manager = temp_session_manager_with_kilns(&[("kiln", kiln), ("other-kiln", other)]);
     let (event_tx, _events) = broadcast::channel::<SessionEventMessage>(256);
     let profile = mock_profile(BTreeMap::from([
-        (
-            "CRU_MOCK_MCP_CALL".to_string(),
-            format!("read_note:{}", serde_json::json!({ "path": path })),
-        ),
+        ("CRU_MOCK_MCP_CALL".to_string(), call.to_string()),
         (
             "CRU_MOCK_MCP_CAPTURE".to_string(),
             capture.to_string_lossy().into_owned(),
@@ -134,5 +138,41 @@ async fn an_acp_agent_cannot_read_a_kiln_the_session_does_not_attach() {
     assert!(
         reply.get("error").is_some() || reply["result"]["isError"] == true,
         "the read must be refused: {reply}"
+    );
+}
+
+/// The agent writes a note into a tree that the daemon loads plugins from.
+/// The reply is a refusal and the file does not exist.
+///
+/// The session root set protects the trees the daemon executes. The name
+/// check that also applies to `RootSet::Ambient` does not know these trees,
+/// so this refusal depends on the session root set.
+#[tokio::test]
+async fn an_acp_agent_cannot_write_into_a_plugin_tree_inside_the_kiln() {
+    let temp = TempDir::new().expect("temp dir");
+    let (kiln, other) = kilns(&temp);
+    // The tree exists, as a real plugin tree does. Without it, the write
+    // fails because the directory is absent, and a gate break looks like
+    // a refusal.
+    let plugins = kiln.join("plugins");
+    std::fs::create_dir_all(&plugins).expect("plugin tree");
+    // The daemon reads this variable when it builds the session root set.
+    // nextest runs each test in its own process.
+    let _plugin_path = crucible_core::test_support::EnvVarGuard::set(
+        "CRUCIBLE_PLUGIN_PATH",
+        plugins.to_string_lossy().into_owned(),
+    );
+
+    let args = serde_json::json!({ "path": "plugins/evil.md", "content": "PLANTED" });
+    let reply = agent_calls(&temp, &kiln, &other, &format!("create_note:{args}")).await;
+    assert!(
+        !plugins.join("evil.md").exists(),
+        "the agent wrote into a tree that the daemon executes: {reply}"
+    );
+    let reply: serde_json::Value = serde_json::from_str(&reply)
+        .unwrap_or_else(|e| panic!("the capture must be a JSON-RPC reply ({e}): {reply}"));
+    assert!(
+        reply.to_string().contains("write-protected"),
+        "the write must be refused as a write to a protected tree: {reply}"
     );
 }
