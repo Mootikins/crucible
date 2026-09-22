@@ -4,8 +4,9 @@
  * The editor gets its own line-number gutter. A hover on a number shows a
  * `+` button. A press on a number starts a range, a drag over more numbers
  * extends it, and the release opens the comment box under the last line of
- * the range. The stored comments of the file show as blocks under their last
- * line.
+ * the range. The drag and the open box tint the selected rows and their
+ * numbers. The stored comments of the file show as blocks under their last
+ * line, each with a Resolve button.
  *
  * A removed row of the unified view has no line of its own in the editor. The
  * gutter numbers it with its line in the base text, as a patch does. A base
@@ -49,6 +50,8 @@ export interface CommentHost {
   comment(span: LineSpan, text: string): Promise<void>;
   /** Puts a reference to the range and the text into the chat composer. */
   sendToChat(span: LineSpan, text: string): void;
+  /** Marks a stored comment resolved. The promise rejects with the reason of a refusal. */
+  resolve(commentId: string): Promise<void>;
 }
 
 interface CommentUi {
@@ -103,6 +106,8 @@ class LineMarker extends GutterMarker {
     readonly chosen: boolean,
   ) {
     super();
+    // The tint of a selected number is on the whole gutter cell.
+    this.elementClass = chosen ? 'cm-diff-selected-number' : '';
   }
 
   eq(other: LineMarker): boolean {
@@ -289,9 +294,12 @@ const lineGutter = gutter({
   },
 });
 
-/** One stored comment, under the last line of its range. */
+/** One stored comment, under the last line of its range, with its Resolve button. */
 class CommentWidget extends WidgetType {
-  constructor(readonly comment: DiffComment) {
+  constructor(
+    readonly comment: DiffComment,
+    readonly host: CommentHost,
+  ) {
     super();
   }
 
@@ -302,7 +310,8 @@ class CommentWidget extends WidgetType {
       a.id === b.id &&
       a.body === b.body &&
       a.line_range.start === b.line_range.start &&
-      a.line_range.end === b.line_range.end
+      a.line_range.end === b.line_range.end &&
+      this.host === other.host
     );
   }
 
@@ -313,14 +322,33 @@ class CommentWidget extends WidgetType {
     el.dataset.testid = 'diff-comment';
     const head = document.createElement('div');
     head.className = 'cm-diff-comment-head';
-    head.textContent = `${comment.author === 'agent' ? 'Agent' : 'You'} · ${spanLabel({
+    const who = document.createElement('span');
+    who.textContent = `${comment.author === 'agent' ? 'Agent' : 'You'} · ${spanLabel({
       first: comment.line_range.start,
       last: comment.line_range.end - 1,
     })}`;
+    const resolve = document.createElement('button');
+    resolve.type = 'button';
+    resolve.className = 'cm-diff-comment-resolve';
+    resolve.dataset.testid = 'diff-comment-resolve';
+    resolve.textContent = 'Resolve';
+    resolve.title = 'Mark this comment resolved. It leaves the open comments.';
+    const error = document.createElement('div');
+    error.className = 'cm-diff-comment-error';
+    resolve.addEventListener('click', () => {
+      resolve.disabled = true;
+      error.textContent = '';
+      // A success removes the comment from the list, and this widget with it.
+      this.host.resolve(comment.id).catch((err: unknown) => {
+        error.textContent = err instanceof Error ? err.message : 'The comment was not resolved';
+        resolve.disabled = false;
+      });
+    });
+    head.append(who, resolve);
     const body = document.createElement('div');
     body.className = 'cm-diff-comment-body';
     body.textContent = comment.body;
-    el.append(head, body);
+    el.append(head, body, error);
     return el;
   }
 
@@ -401,7 +429,9 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
     const last = Math.min(lines, Math.max(1, comment.line_range.end - 1));
     const at = state.doc.line(last).to;
     ranges.push(
-      Decoration.widget({ widget: new CommentWidget(comment), block: true, side: 1 }).range(at),
+      Decoration.widget({ widget: new CommentWidget(comment, host), block: true, side: 1 }).range(
+        at,
+      ),
     );
   }
   if (ui.draft) {
@@ -413,11 +443,23 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
+/** A tint of the primary colour, for the selected range. */
+const tint = (percent: number) =>
+  `color-mix(in srgb, var(--color-primary) ${percent}%, transparent)`;
+
 const commentTheme = EditorView.theme({
   '.cm-diff-lines .cm-gutterElement': { cursor: 'pointer', userSelect: 'none' },
   '.cm-diff-line': { position: 'relative', paddingLeft: '1.25em' },
   '.cm-diff-base-lines': { cursor: 'default' },
-  '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-shell-ink)' },
+  // The selected range. The numbers carry the strong tint and a bar of the
+  // primary colour, so that the range does not read as a removed (red) row.
+  // The rows carry a light tint over their own, so a changed row stays green.
+  '.cm-gutterElement.cm-diff-selected-number': {
+    backgroundColor: tint(24),
+    boxShadow: 'inset 2px 0 var(--color-primary)',
+    color: 'var(--color-primary)',
+  },
+  '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-primary)', fontWeight: '600' },
   '.cm-diff-comment-add': {
     position: 'absolute',
     left: '0',
@@ -429,7 +471,7 @@ const commentTheme = EditorView.theme({
     color: 'var(--color-on-primary)',
     textAlign: 'center',
   },
-  '.cm-diff-selected': { background: 'var(--color-hover-wash)' },
+  '.cm-line.cm-diff-selected': { backgroundImage: `linear-gradient(${tint(10)}, ${tint(10)})` },
   '.cm-diff-comment, .cm-diff-comment-box': {
     margin: '4px 8px 4px 0',
     padding: '6px 8px',
@@ -439,7 +481,35 @@ const commentTheme = EditorView.theme({
     fontFamily: 'var(--font-sans, sans-serif)',
     whiteSpace: 'pre-wrap',
   },
-  '.cm-diff-comment-head': { color: 'var(--color-muted-dark)', marginBottom: '2px' },
+  '.cm-diff-comment-head': {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    color: 'var(--color-muted-dark)',
+    marginBottom: '2px',
+  },
+  '.cm-diff-comment-resolve': {
+    padding: '0 6px',
+    border: '1px solid var(--color-hairline)',
+    borderRadius: 'var(--cru-radius-sm)',
+    background: 'transparent',
+    color: 'var(--color-muted)',
+    font: 'inherit',
+    fontSize: 'var(--cru-font-floor)',
+    cursor: 'pointer',
+  },
+  '.cm-diff-comment-resolve:hover': {
+    background: 'var(--color-hover-wash)',
+    color: 'var(--color-shell-ink)',
+  },
+  '.cm-diff-comment-resolve:focus-visible': {
+    outline: '1px solid var(--color-focus-ring)',
+    outlineOffset: '1px',
+  },
+  '.cm-diff-comment-resolve:disabled': { opacity: '0.5', cursor: 'default' },
+  '.cm-diff-comment-error': { color: 'var(--color-error)' },
+  '.cm-diff-comment-error:empty': { display: 'none' },
 });
 
 /** The extensions of one diff editor that takes line comments. */
@@ -452,8 +522,11 @@ export function commentExtensions(host: CommentHost): Extension[] {
   ];
 }
 
-const boxButton =
-  'rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50';
+const boxButton = 'rounded border px-2 py-0.5 text-floor disabled:opacity-50 focus-ring';
+/** Comment: the primary action of the box. */
+const primaryButton = `${boxButton} border-primary bg-primary text-on-primary hover:bg-primary-hover hover:border-primary-hover disabled:hover:bg-primary disabled:hover:border-primary`;
+/** Send to chat and Cancel. */
+const secondaryButton = `${boxButton} border-hairline text-muted-dark hover:text-shell-ink hover:bg-hover-wash`;
 
 /** The box: a text field, then Comment, Send to chat and Cancel. */
 function CommentBox(props: {
@@ -511,7 +584,7 @@ function CommentBox(props: {
           data-testid="diff-comment-submit"
           disabled={busy() || !text().trim()}
           onClick={() => void comment()}
-          class={boxButton}
+          class={primaryButton}
         >
           Comment
         </button>
@@ -519,7 +592,7 @@ function CommentBox(props: {
           type="button"
           data-testid="diff-comment-send"
           onClick={() => props.onSend(text().trim())}
-          class={boxButton}
+          class={secondaryButton}
         >
           Send to chat
         </button>
@@ -527,7 +600,7 @@ function CommentBox(props: {
           type="button"
           data-testid="diff-comment-cancel"
           onClick={() => props.onCancel()}
-          class={boxButton}
+          class={secondaryButton}
         >
           Cancel
         </button>

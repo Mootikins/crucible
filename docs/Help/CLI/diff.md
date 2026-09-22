@@ -80,8 +80,12 @@ example `@@ -14,7 +14,7 @@`. A click on the header hides the hunk or shows it
 again. **Collapse all** in the toolbar hides every hunk, and **Expand all**
 shows every hunk again. The chevron of a file hides the whole file.
 
-In the web diff pane, **Copy comments** copies the same quickfix list, and
+In the web diff pane, a drag over the line numbers selects a range, and the
+comment box opens under it. **Comment** stores the comment. It stays disabled
+until the box has text. **Copy comments** copies the same quickfix list, and
 **Send to chat** puts the reference `@path:start-end` into the composer.
+**Resolve** on a stored comment marks it resolved, and the pane then leaves it
+out of the open comments.
 
 ## See also
 

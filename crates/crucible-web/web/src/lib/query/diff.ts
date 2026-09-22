@@ -15,7 +15,13 @@ import {
   type ListedComment,
   type NewDiffComment,
 } from '@/lib/diffset';
-import { getDiffComments, getDiffFile, getDiffset, postDiffComment } from '@/lib/diff-api';
+import {
+  getDiffComments,
+  getDiffFile,
+  getDiffset,
+  postDiffComment,
+  resolveDiffComment,
+} from '@/lib/diff-api';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -76,6 +82,37 @@ export function usePostDiffComment(): UseMutationResult<DiffComment, Error, NewD
         getQueryClient().invalidateQueries({
           queryKey: keys.diffComments(diffsetKey(body.source)),
         }),
+    }),
+    getQueryClient,
+  );
+}
+
+/** One comment to resolve, and the diffset that holds it. */
+export interface ResolveDiffComment {
+  source: DiffsetSource;
+  commentId: string;
+}
+
+/**
+ * Marks one comment resolved. The comments of its diffset then load again, and
+ * a session record also loads the listing of its Changes panel again.
+ */
+export function useResolveDiffComment(): UseMutationResult<
+  { comment_id: string },
+  Error,
+  ResolveDiffComment
+> {
+  return useMutation(
+    () => ({
+      mutationFn: ({ source, commentId }: ResolveDiffComment) =>
+        resolveDiffComment(source, commentId),
+      onSettled: (_reply, _error, { source }) =>
+        Promise.all([
+          getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
+          source.kind === 'session_record'
+            ? getQueryClient().invalidateQueries({ queryKey: keys.review(source.session) })
+            : undefined,
+        ]),
     }),
     getQueryClient,
   );

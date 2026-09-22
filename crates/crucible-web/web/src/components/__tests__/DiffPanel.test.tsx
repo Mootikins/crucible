@@ -520,6 +520,93 @@ describe('DiffPanel', () => {
     );
   });
 
+  it('the Comment button is the primary action, and waits for text', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await press('src/a.rs', 2);
+    await release('src/a.rs', 2);
+    const box = await within(section('src/a.rs')).findByTestId('diff-comment-box');
+    const submit = within(box).getByTestId('diff-comment-submit') as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    expect(submit.className).toContain('bg-primary');
+    expect(submit.className).toContain('text-on-primary');
+    // Send to chat and Cancel are secondary: they carry no primary fill.
+    for (const id of ['diff-comment-send', 'diff-comment-cancel']) {
+      expect(within(box).getByTestId(id).className).not.toContain('bg-primary');
+    }
+
+    const input = within(box).getByTestId('diff-comment-input');
+    fireEvent.input(input, { target: { value: '   ' } });
+    expect(submit.disabled).toBe(true);
+    fireEvent.input(input, { target: { value: 'a real comment' } });
+    expect(submit.disabled).toBe(false);
+  });
+
+  it('the selected lines carry the selection class on the rows and the numbers', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await press('src/a.rs', 1);
+    await over('src/a.rs', 2);
+    // During the drag.
+    await waitFor(() =>
+      expect(section('src/a.rs').querySelectorAll('.cm-line.cm-diff-selected')).toHaveLength(2),
+    );
+    await release('src/a.rs', 2);
+    await within(section('src/a.rs')).findByTestId('diff-comment-box');
+
+    // While the box is open.
+    const rowsOn = [...section('src/a.rs').querySelectorAll('.cm-line.cm-diff-selected')];
+    expect(rowsOn.map((row) => row.textContent)).toEqual(['one', '2']);
+    const numbers = [
+      ...section('src/a.rs').querySelectorAll('.cm-gutterElement.cm-diff-selected-number'),
+    ];
+    // The hovered number also holds the + button, so read the line it names.
+    expect(numbers.map((n) => n.querySelector<HTMLElement>('[data-line]')?.dataset.line)).toEqual([
+      '1',
+      '2',
+    ]);
+  });
+
+  it('Resolve on a saved comment resolves it, and the comment leaves the list', async () => {
+    let resolved = false;
+    const listed = () => [
+      { comment: comment('c1', { body: 'fix this', resolved }), outdated: false },
+    ];
+    env = createTestQueryEnv({
+      'GET /api/diff': { body: diffset([entry('src/a.rs')]) },
+      'GET /api/diff/file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
+      'GET /api/diff/comments': () => ({
+        diffset: 'branch-0123456789abcdef0123456789abcdef',
+        comments: listed(),
+      }),
+      'POST /api/diff/comment/resolve': () => {
+        resolved = true;
+        return {
+          diffset: 'branch-0123456789abcdef0123456789abcdef',
+          comment_id: 'c1',
+          resolved: true,
+        };
+      },
+    });
+    render(() => <DiffPanel source={source} />);
+
+    await lineNumber('src/a.rs', 1);
+    const saved = await within(section('src/a.rs')).findByTestId('diff-comment');
+    const resolve = within(saved).getByTestId('diff-comment-resolve');
+    expect(resolve.textContent).toBe('Resolve');
+    fireEvent.click(resolve);
+
+    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment/resolve')).toBe(1));
+    const sent = (await sentTo('POST', '/api/diff/comment/resolve'))[0];
+    expect(sent.body).toEqual({ source, comment_id: 'c1' });
+    await waitFor(() =>
+      expect(within(section('src/a.rs')).queryByTestId('diff-comment')).toBeNull(),
+    );
+    expect(screen.getByTestId('diff-copy-comments').hasAttribute('disabled')).toBe(true);
+  });
+
   it('send to chat inserts a reference', async () => {
     serve([entry('src/a.rs')]);
     const inserted = vi.fn();

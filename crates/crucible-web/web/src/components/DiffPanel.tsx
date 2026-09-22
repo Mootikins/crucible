@@ -19,7 +19,8 @@
  * editor for the file (a wrap or a layout change) keeps it too.
  *
  * A line comment starts on the line numbers (`diff-comments.tsx`). The daemon
- * stores it, and lists it with an outdated flag. An outdated comment shows at
+ * stores it, and lists it with an outdated flag. **Resolve** on a comment
+ * marks it resolved, and the open list then leaves it out. An outdated comment shows at
  * the end of its file, because its text is no longer in the file.
  *
  * A proposal adds its decisions: Accept all and Reject all in the header, and
@@ -70,6 +71,7 @@ import {
   useDiffFile,
   useDiffset,
   usePostDiffComment,
+  useResolveDiffComment,
 } from '@/lib/query/diff';
 import { getBus } from '@/lib/bus';
 import { openDiff } from '@/lib/panel-actions';
@@ -459,6 +461,10 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
     (comments.data ?? []).filter(
       (l) => !l.comment.resolved && fileKey(l.comment) === fileKey(file),
     );
+  const resolution = useResolveDiffComment();
+  // The widget shows the reason of a refusal, so the promise rejects with it.
+  const resolve = (commentId: string): Promise<void> =>
+    resolution.mutateAsync({ source: props.source, commentId }).then(() => undefined);
   const copyComments = () =>
     void navigator.clipboard?.writeText(quickfixList(openComments())).catch(() => undefined);
 
@@ -603,6 +609,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
                   source={props.source}
                   file={file}
                   comments={commentsOf(file)}
+                  onResolve={resolve}
                   expanded={isExpanded(file)}
                   onToggle={() => toggle(file)}
                   split={split()}
@@ -625,6 +632,8 @@ interface FileSectionProps {
   file: DiffFileEntry;
   /** The open comments of this file. */
   comments: ListedComment[];
+  /** Marks a comment resolved. It rejects with the reason of a refusal. */
+  onResolve: (commentId: string) => Promise<void>;
   expanded: boolean;
   onToggle: () => void;
   split: boolean;
@@ -760,6 +769,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
                 source={props.source}
                 file={props.file}
                 comments={props.comments}
+                onResolve={props.onResolve}
                 split={props.split}
                 wrap={props.wrap}
                 hunks={props.hunks}
@@ -770,7 +780,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
         >
           {(reason) => <p class="px-3 pb-2 text-xs text-muted-dark">{reason()}</p>}
         </Show>
-        <EndComments comments={props.comments} split={props.split} />
+        <EndComments comments={props.comments} split={props.split} onResolve={props.onResolve} />
       </Show>
     </section>
   );
@@ -810,7 +820,11 @@ const NearViewport: Component<{ children: JSX.Element }> = (props) => {
  * file: an outdated comment, and a comment on the base side in the unified
  * view, which shows only the line numbers of the current side.
  */
-const EndComments: Component<{ comments: ListedComment[]; split: boolean }> = (props) => {
+const EndComments: Component<{
+  comments: ListedComment[];
+  split: boolean;
+  onResolve: (commentId: string) => Promise<void>;
+}> = (props) => {
   const rows = () =>
     props.comments.filter((l) => l.outdated || (!props.split && l.comment.side === 'base'));
   return (
@@ -822,13 +836,16 @@ const EndComments: Component<{ comments: ListedComment[]; split: boolean }> = (p
               data-testid={listed.outdated ? 'diff-comment-outdated' : 'diff-comment-base'}
               class="rounded border border-hairline px-2 py-1 text-xs"
             >
-              <span class="text-floor text-muted-dark">
-                {listed.outdated ? 'Outdated' : 'Base side'} ·{' '}
-                {spanLabel({
-                  first: listed.comment.line_range.start,
-                  last: listed.comment.line_range.end - 1,
-                })}
-              </span>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-floor text-muted-dark">
+                  {listed.outdated ? 'Outdated' : 'Base side'} ·{' '}
+                  {spanLabel({
+                    first: listed.comment.line_range.start,
+                    last: listed.comment.line_range.end - 1,
+                  })}
+                </span>
+                <ResolveButton onResolve={() => props.onResolve(listed.comment.id)} />
+              </div>
               <p class="whitespace-pre-wrap text-shell-ink">{listed.comment.body}</p>
             </li>
           )}
@@ -838,10 +855,42 @@ const EndComments: Component<{ comments: ListedComment[]; split: boolean }> = (p
   );
 };
 
+/** Resolve on a comment at the end of a file. A refusal shows its reason. */
+const ResolveButton: Component<{ onResolve: () => Promise<void> }> = (props) => {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const run = () => {
+    setBusy(true);
+    setError(null);
+    props.onResolve().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : 'The comment was not resolved');
+      setBusy(false);
+    });
+  };
+  return (
+    <span class="flex shrink-0 items-center gap-2">
+      <Show when={error()}>
+        {(message) => <span class="text-floor text-error">{message()}</span>}
+      </Show>
+      <button
+        type="button"
+        data-testid="diff-comment-resolve"
+        title="Mark this comment resolved. It leaves the open comments."
+        disabled={busy()}
+        onClick={run}
+        class="rounded border border-hairline px-1.5 text-floor text-muted hover:bg-hover-wash hover:text-shell-ink disabled:opacity-50 focus-ring"
+      >
+        Resolve
+      </button>
+    </span>
+  );
+};
+
 interface FileBodyProps {
   source: DiffsetSource;
   file: DiffFileEntry;
   comments: ListedComment[];
+  onResolve: (commentId: string) => Promise<void>;
   split: boolean;
   wrap: boolean;
   hunks: HunkChoice;
@@ -879,6 +928,7 @@ const FileBody: Component<FileBodyProps> = (props) => {
     side,
     comment: (span, body) => comment(side, span, body),
     sendToChat,
+    resolve: (commentId) => props.onResolve(commentId),
   });
   const hosts = { base: host('base'), current: host('current') };
 
