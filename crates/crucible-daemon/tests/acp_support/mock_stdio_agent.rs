@@ -294,6 +294,88 @@ fn write_capture(path: &str, contents: &str) {
     }
 }
 
+/// Call one tool on the streamable HTTP MCP server at `url`. `call` is
+/// `<tool>:<json arguments>`. The result is the `tools/call` reply as JSON.
+///
+/// The mock is a blocking program, and the test binary has no blocking HTTP
+/// client, so this speaks HTTP/1.0 over `TcpStream`. With HTTP/1.0 the
+/// server closes the connection at the end of the body and sends no chunks.
+fn mcp_tool_call(url: &str, call: &str) -> Result<String, String> {
+    let (tool, args) = call.split_once(':').ok_or("expected <tool>:<json args>")?;
+    let args: Value = serde_json::from_str(args).map_err(|e| e.to_string())?;
+    let (_, session) = mcp_post(
+        url,
+        None,
+        &json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": { "name": "mock-acp-agent", "version": "0.1.0" }
+            }
+        }),
+    )?;
+    let session = session.ok_or("initialize returned no mcp-session-id")?;
+    let initialized = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+    mcp_post(url, Some(&session), &initialized)?;
+    let call = json!({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": { "name": tool, "arguments": args }
+    });
+    Ok(mcp_post(url, Some(&session), &call)?.0)
+}
+
+/// POST one JSON-RPC frame. Return the JSON-RPC payload of the reply (the
+/// first SSE `data:` line, or the whole body) and the `mcp-session-id` header.
+fn mcp_post(
+    url: &str,
+    session: Option<&str>,
+    body: &Value,
+) -> Result<(String, Option<String>), String> {
+    use std::io::Read;
+    let rest = url
+        .strip_prefix("http://")
+        .ok_or("expected an http:// URL")?;
+    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    let mut stream = std::net::TcpStream::connect(host).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .map_err(|e| e.to_string())?;
+    let body = body.to_string();
+    let session_header = session
+        .map(|id| format!("Mcp-Session-Id: {id}\r\n"))
+        .unwrap_or_default();
+    write!(
+        stream,
+        "POST {path} HTTP/1.0\r\nHost: {host}\r\nContent-Type: application/json\r\n\
+         Accept: application/json, text/event-stream\r\n{session_header}\
+         Content-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .map_err(|e| e.to_string())?;
+    let mut reply = String::new();
+    stream
+        .read_to_string(&mut reply)
+        .map_err(|e| e.to_string())?;
+    let (head, body) = reply.split_once("\r\n\r\n").ok_or("no HTTP header end")?;
+    if !head.starts_with("HTTP/1.1 2") && !head.starts_with("HTTP/1.0 2") {
+        return Err(format!(
+            "MCP status: {}",
+            head.lines().next().unwrap_or_default()
+        ));
+    }
+    let session = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("mcp-session-id")
+            .then(|| value.trim().to_string())
+    });
+    let payload = body
+        .lines()
+        .find_map(|line| line.strip_prefix("data: ").filter(|d| d.starts_with('{')))
+        .unwrap_or(body);
+    Ok((payload.to_string(), session))
+}
+
 /// Mock stdio-based ACP agent
 ///
 /// This agent reads JSON-RPC messages from stdin and writes responses to stdout,
@@ -307,6 +389,9 @@ pub struct MockStdioAgent {
     /// Whether the client sent `authenticate`. Read only when the config
     /// has `requires_auth`.
     pub authenticated: bool,
+    /// The URL of the HTTP MCP server that `session/new` offered, if any.
+    /// The `CRU_MOCK_MCP_CALL` hook calls a tool on this server.
+    pub mcp_url: Option<String>,
 }
 
 /// The ordered wire messages for one `session/prompt` turn.
@@ -327,6 +412,7 @@ impl MockStdioAgent {
             session_id: None,
             cancel_received: false,
             authenticated: false,
+            mcp_url: None,
         }
     }
 
@@ -852,6 +938,11 @@ impl MockStdioAgent {
         // Generate a session ID
         let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
         self.session_id = Some(session_id.clone());
+        self.mcp_url = request
+            .pointer("/params/mcpServers")
+            .and_then(Value::as_array)
+            .and_then(|servers| servers.iter().find_map(|s| s.get("url")?.as_str()))
+            .map(str::to_string);
 
         // Advertise a model selector in `configOptions` when asked, the way
         // claude-agent-acp does. Without the flag the reply carries no
@@ -940,6 +1031,23 @@ impl MockStdioAgent {
         }
 
         Self::append_method_log_file("session/prompt", request);
+        // Test hook: the agent calls one Crucible MCP tool, as a real agent
+        // does in a turn. The reply goes to `CRU_MOCK_MCP_CAPTURE`, so a test
+        // can see what a call from the agent process can reach.
+        if let (Ok(call), Ok(path)) = (
+            env::var("CRU_MOCK_MCP_CALL"),
+            env::var("CRU_MOCK_MCP_CAPTURE"),
+        ) {
+            let result = self
+                .mcp_url
+                .as_deref()
+                .ok_or_else(|| "session/new offered no HTTP MCP server".to_string())
+                .and_then(|url| mcp_tool_call(url, &call));
+            write_capture(
+                &path,
+                &result.unwrap_or_else(|e| format!("MOCK-MCP-ERROR: {e}")),
+            );
+        }
         let session_id = self.prompt_session_id(request);
 
         let update = |update: Value| {
