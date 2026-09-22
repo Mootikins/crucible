@@ -1844,6 +1844,236 @@
         }
       }
     },
+    "/api/proposals": {
+      "get": {
+        "summary": "`GET /api/proposals` — the proposals in the Inbox, oldest first.",
+        "operationId": "list_proposals",
+        "parameters": [
+          {
+            "name": "all",
+            "in": "query",
+            "description": "Also list the proposals that left the Inbox: accepted, rejected and\ndismissed.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Proposal"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The daemon could not read the proposals"
+          }
+        }
+      }
+    },
+    "/api/proposals/{id}": {
+      "get": {
+        "summary": "`GET /api/proposals/{id}` — one proposal, in any state.",
+        "operationId": "get_proposal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The proposal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No proposal has the id"
+          },
+          "502": {
+            "description": "The daemon could not read the proposal"
+          }
+        }
+      }
+    },
+    "/api/proposals/{id}/accept": {
+      "post": {
+        "summary": "`POST /api/proposals/{id}/accept` — write every file of the proposal.",
+        "operationId": "accept_proposal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The proposal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No proposal has the id, or the proposal is already settled"
+          },
+          "502": {
+            "description": "The daemon could not write the files"
+          }
+        }
+      }
+    },
+    "/api/proposals/{id}/dismiss": {
+      "post": {
+        "summary": "`POST /api/proposals/{id}/dismiss` — take the proposal out of the Inbox\nwith no decision. The daemon keeps its file.",
+        "operationId": "dismiss_proposal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The proposal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No proposal has the id, or the proposal is already settled"
+          },
+          "502": {
+            "description": "The daemon could not store the decision"
+          }
+        }
+      }
+    },
+    "/api/proposals/{id}/reject": {
+      "post": {
+        "summary": "`POST /api/proposals/{id}/reject` — reject the proposal. No file changes.",
+        "operationId": "reject_proposal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The proposal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectProposalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No proposal has the id, or the proposal is already settled"
+          },
+          "502": {
+            "description": "The daemon could not store the decision"
+          }
+        }
+      }
+    },
+    "/api/proposals/{id}/resolve": {
+      "post": {
+        "summary": "`POST /api/proposals/{id}/resolve` — write the settled text of one\nconflicted file.",
+        "operationId": "resolve_proposal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The proposal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveProposalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Proposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No proposal has the id, or the file has no conflict"
+          },
+          "502": {
+            "description": "The daemon could not write the file"
+          }
+        }
+      }
+    },
     "/api/providers": {
       "get": {
         "summary": "Served through the SWR catalog cache — provider probing takes ~0.7s and\nmust not gate every splash render. Shape: `{providers: [ProviderInfo]}`.",
@@ -5650,6 +5880,117 @@
           }
         }
       },
+      "ExpectedBase": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The write replaces the disk text with no check.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unchecked"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file must not exist. A file on disk is a conflict with an empty base.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "absent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The disk text must hash to `hash`. A stale base answers `current_hash`,\nbecause the writer has no text to merge from.",
+            "required": [
+              "hash",
+              "kind"
+            ],
+            "properties": {
+              "hash": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hash"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The disk text must be `text`. A stale base merges `text`, the new\ntext and the disk text.",
+            "required": [
+              "text",
+              "hash",
+              "kind"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "hash": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The disk state that a write expects to find before it writes.\n\nThe wire fields `base_hash` and `base_text` map to this type. The type\nkeeps an absent file and an empty file different: `Absent` expects no\nfile, and `Text` with an empty text expects an empty file."
+      },
+      "FileConflict": {
+        "type": "object",
+        "description": "A merge conflict in one file of a proposal.\n\nThe regions point into `merged_text`, so a client shows them with no\nsecond merge.",
+        "required": [
+          "root",
+          "path",
+          "disk_text",
+          "merged_text",
+          "regions"
+        ],
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "disk_text": {
+            "type": "string",
+            "description": "The disk text at the time of the merge."
+          },
+          "merged_text": {
+            "type": "string",
+            "description": "The text of the merge, with the proposed side in each region."
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeRegion"
+            },
+            "description": "Each cluster that the two sides changed differently."
+          }
+        }
+      },
       "FileEntryRow": {
         "type": "object",
         "description": "One entry of a kiln's file listing.",
@@ -7489,9 +7830,254 @@
           }
         }
       },
+      "Proposal": {
+        "type": "object",
+        "description": "A set of note writes that waits for the user.",
+        "required": [
+          "id",
+          "author",
+          "title",
+          "created_at",
+          "state",
+          "writes"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProposalId"
+          },
+          "author": {
+            "$ref": "#/components/schemas/ProposalAuthor"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session that made the proposal, for the transcript."
+          },
+          "title": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProposalState"
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposedWrite"
+            }
+          }
+        }
+      },
+      "ProposalAuthor": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A plugin pass, by the plugin name.",
+            "required": [
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plugin"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A user session or an agent session.",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "session"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The writer of a proposal.\n\nA plugin pass runs a new auxiliary session each time. Thus the daemon names\nthe plugin, not the session, so that a later pass supersedes the proposal\nof an earlier pass."
+      },
       "ProposalId": {
         "type": "string",
         "description": "The identity of one proposal.\n\nThe daemon stores each proposal as a file under `<data_root>/proposals/`\nand uses the id as the file name. A UUID has no path separator and no\nleading dot, so an id can never name a path outside that directory."
+      },
+      "ProposalState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "open"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The disk no longer matches a base. Accept merges.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stale"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An accept found a merge conflict and wrote nothing.",
+            "required": [
+              "files",
+              "kind"
+            ],
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FileConflict"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "conflicted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "accepted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The user rejected the proposal. The reason stays with it.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rejected"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A newer proposal of the same author writes the same path.",
+            "required": [
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/ProposalId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "superseded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The user took the proposal out of the Inbox with no decision.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dismissed"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where a proposal is in its life.\n\n`Open`, `Stale`, `Conflicted` and `Superseded` keep the proposal in the\nInbox. `Accepted`, `Rejected` and `Dismissed` take it out. No state change\nremoves a proposal file."
+      },
+      "ProposedWrite": {
+        "type": "object",
+        "description": "One file that a proposal creates or replaces.\n\nA proposal does not delete or rename a file.",
+        "required": [
+          "root",
+          "path",
+          "base",
+          "new_text"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "The kiln root."
+          },
+          "path": {
+            "type": "string",
+            "description": "The path relative to `root`."
+          },
+          "base": {
+            "$ref": "#/components/schemas/ExpectedBase",
+            "description": "The disk state that the writer read before it proposed the write."
+          },
+          "new_text": {
+            "type": "string",
+            "description": "The whole text that the write puts on disk."
+          }
+        }
       },
       "ProviderRow": {
         "type": "object",
@@ -7707,6 +8293,19 @@
           }
         }
       },
+      "RejectProposalBody": {
+        "type": "object",
+        "description": "The body of a reject.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the user rejects the proposal. The proposal keeps it."
+          }
+        }
+      },
       "RejectedRefDto": {
         "type": "object",
         "description": "A reference the read path refused, as the browser receives it.\n\nWeb-owned on purpose, and NOT a re-export of\n[`crucible_core::canvas::containment::RejectedRef`]. The core type carries\n`reference` — the offending path itself — and this reply deliberately drops\nit: a client that never learns the path cannot ask for it, which is what\nmakes redaction an enforcement rather than a warning. The node id is\n`nodeId` here because the canvas format is camelCase throughout, and the\nbrowser reads it beside `fromNode` and `toNode`.",
@@ -7754,6 +8353,24 @@
               "null"
             ],
             "description": "For worktrees: path to the main repository's .git directory"
+          }
+        }
+      },
+      "ResolveProposalBody": {
+        "type": "object",
+        "description": "The body of a resolve: the text that the user settled for one file.",
+        "required": [
+          "path",
+          "text"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The path relative to the kiln root, as the proposal names it."
+          },
+          "text": {
+            "type": "string",
+            "description": "The whole text to write."
           }
         }
       },

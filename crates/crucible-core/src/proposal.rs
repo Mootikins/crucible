@@ -1,13 +1,20 @@
 //! Proposals: writes that wait for the user to accept them.
 //!
-//! This module holds only the id type now. `DiffsetSource::Proposal` names a
-//! proposal, so the id comes before the rest of the proposal value.
+//! A note write in `propose` mode makes a proposal. The file on disk does not
+//! change until a person accepts the proposal. The daemon owns each proposal
+//! and keeps its file after it leaves the Inbox, so the rejection history
+//! survives.
 
 use std::fmt;
 use std::str::FromStr;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::file_write::ExpectedBase;
+use crate::note_merge::Region;
+use crate::session::{PhysicalRoot, SessionId};
 
 /// The identity of one proposal.
 ///
@@ -48,5 +55,166 @@ impl FromStr for ProposalId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Uuid::parse_str(s).map(Self)
+    }
+}
+
+/// The writer of a proposal.
+///
+/// A plugin pass runs a new auxiliary session each time. Thus the daemon names
+/// the plugin, not the session, so that a later pass supersedes the proposal
+/// of an earlier pass.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ProposalAuthor {
+    /// A plugin pass, by the plugin name.
+    Plugin { name: String },
+    /// A user session or an agent session.
+    Session {
+        #[cfg_attr(feature = "openapi", schema(value_type = String))]
+        id: SessionId,
+    },
+}
+
+/// One file that a proposal creates or replaces.
+///
+/// A proposal does not delete or rename a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProposedWrite {
+    /// The kiln root.
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub root: PhysicalRoot,
+    /// The path relative to `root`.
+    pub path: String,
+    /// The disk state that the writer read before it proposed the write.
+    pub base: ExpectedBase,
+    /// The whole text that the write puts on disk.
+    pub new_text: String,
+}
+
+/// A merge conflict in one file of a proposal.
+///
+/// The regions point into `merged_text`, so a client shows them with no
+/// second merge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct FileConflict {
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub root: PhysicalRoot,
+    pub path: String,
+    /// The disk text at the time of the merge.
+    pub disk_text: String,
+    /// The text of the merge, with the proposed side in each region.
+    pub merged_text: String,
+    /// Each cluster that the two sides changed differently.
+    pub regions: Vec<Region>,
+}
+
+/// Where a proposal is in its life.
+///
+/// `Open`, `Stale`, `Conflicted` and `Superseded` keep the proposal in the
+/// Inbox. `Accepted`, `Rejected` and `Dismissed` take it out. No state change
+/// removes a proposal file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ProposalState {
+    Open,
+    /// The disk no longer matches a base. Accept merges.
+    Stale,
+    /// An accept found a merge conflict and wrote nothing.
+    Conflicted {
+        files: Vec<FileConflict>,
+    },
+    Accepted,
+    /// The user rejected the proposal. The reason stays with it.
+    Rejected {
+        reason: Option<String>,
+    },
+    /// A newer proposal of the same author writes the same path.
+    Superseded {
+        by: ProposalId,
+    },
+    /// The user took the proposal out of the Inbox with no decision.
+    Dismissed,
+}
+
+impl ProposalState {
+    /// Whether the proposal waits for the user, and so stays in the Inbox.
+    pub fn is_listed(&self) -> bool {
+        match self {
+            Self::Open | Self::Stale | Self::Conflicted { .. } | Self::Superseded { .. } => true,
+            Self::Accepted | Self::Rejected { .. } | Self::Dismissed => false,
+        }
+    }
+
+    /// Whether a newer write can still replace the proposal: it is not
+    /// decided and no newer proposal replaces it.
+    pub fn is_pending(&self) -> bool {
+        match self {
+            Self::Open | Self::Stale | Self::Conflicted { .. } => true,
+            Self::Superseded { .. } | Self::Accepted | Self::Rejected { .. } | Self::Dismissed => {
+                false
+            }
+        }
+    }
+}
+
+/// A set of note writes that waits for the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Proposal {
+    pub id: ProposalId,
+    pub author: ProposalAuthor,
+    /// The session that made the proposal, for the transcript.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
+    pub session: Option<SessionId>,
+    pub title: String,
+    pub rationale: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub state: ProposalState,
+    pub writes: Vec<ProposedWrite>,
+}
+
+impl Proposal {
+    /// Whether the proposal writes `path` under `root`.
+    pub fn writes_path(&self, root: &PhysicalRoot, path: &str) -> bool {
+        self.writes
+            .iter()
+            .any(|w| w.root == *root && w.path == path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_proposal_state_carries_its_kind_on_the_wire() {
+        let by = ProposalId::generate();
+        let value = serde_json::to_value(ProposalState::Superseded { by }).unwrap();
+        assert_eq!(value["kind"], "superseded");
+        assert_eq!(value["by"], by.to_string());
+        let value = serde_json::to_value(ProposalState::Rejected { reason: None }).unwrap();
+        assert_eq!(value["kind"], "rejected");
+    }
+
+    #[test]
+    fn only_a_decided_or_dismissed_proposal_leaves_the_inbox() {
+        let by = ProposalId::generate();
+        let listed = [
+            ProposalState::Open,
+            ProposalState::Stale,
+            ProposalState::Conflicted { files: vec![] },
+            ProposalState::Superseded { by },
+        ];
+        let gone = [
+            ProposalState::Accepted,
+            ProposalState::Rejected { reason: None },
+            ProposalState::Dismissed,
+        ];
+        assert!(listed.iter().all(ProposalState::is_listed));
+        assert!(!gone.iter().any(ProposalState::is_listed));
     }
 }

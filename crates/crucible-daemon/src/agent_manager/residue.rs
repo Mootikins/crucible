@@ -30,6 +30,7 @@ impl AgentManager {
             snapshots,
             review,
             active_tools,
+            proposals,
 
             // Not per-session, or per-call rather than per-session. Each name
             // here is a decision, not an oversight.
@@ -78,6 +79,9 @@ impl AgentManager {
         }
         if review.has_session(session_id) {
             residue.push("review");
+        }
+        if proposals.has_turn(session_id) {
+            residue.push("proposals");
         }
         if active_tools.has_session(session_id) {
             residue.push("active_tools");

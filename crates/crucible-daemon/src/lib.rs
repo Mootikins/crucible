@@ -64,6 +64,7 @@ pub mod pipeline;
 pub mod plugin_ops;
 pub mod plugin_tools;
 pub mod project_manager;
+pub mod proposals;
 pub mod protocol;
 pub mod provider;
 pub mod recording;

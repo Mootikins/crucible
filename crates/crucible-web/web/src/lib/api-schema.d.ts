@@ -919,6 +919,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/proposals` — the proposals in the Inbox, oldest first. */
+        get: operations["list_proposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `GET /api/proposals/{id}` — one proposal, in any state. */
+        get: operations["get_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/proposals/{id}/accept` — write every file of the proposal. */
+        post: operations["accept_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/proposals/{id}/dismiss` — take the proposal out of the Inbox
+         *     with no decision. The daemon keeps its file.
+         */
+        post: operations["dismiss_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/proposals/{id}/reject` — reject the proposal. No file changes. */
+        post: operations["reject_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/proposals/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/proposals/{id}/resolve` — write the settled text of one
+         *     conflicted file.
+         */
+        post: operations["resolve_proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers": {
         parameters: {
             query?: never;
@@ -2591,6 +2699,45 @@ export interface components {
             /** @description The command line, with or without its leading slash. */
             command: string;
         };
+        /**
+         * @description The disk state that a write expects to find before it writes.
+         *
+         *     The wire fields `base_hash` and `base_text` map to this type. The type
+         *     keeps an absent file and an empty file different: `Absent` expects no
+         *     file, and `Text` with an empty text expects an empty file.
+         */
+        ExpectedBase: {
+            /** @enum {string} */
+            kind: "unchecked";
+        } | {
+            /** @enum {string} */
+            kind: "absent";
+        } | {
+            hash: string;
+            /** @enum {string} */
+            kind: "hash";
+        } | {
+            hash: string;
+            /** @enum {string} */
+            kind: "text";
+            text: string;
+        };
+        /**
+         * @description A merge conflict in one file of a proposal.
+         *
+         *     The regions point into `merged_text`, so a client shows them with no
+         *     second merge.
+         */
+        FileConflict: {
+            /** @description The disk text at the time of the merge. */
+            disk_text: string;
+            /** @description The text of the merge, with the proposed side in each region. */
+            merged_text: string;
+            path: string;
+            /** @description Each cluster that the two sides changed differently. */
+            regions: components["schemas"]["MergeRegion"][];
+            root: string;
+        };
         /** @description One entry of a kiln's file listing. */
         FileEntryRow: {
             /**
@@ -3597,6 +3744,35 @@ export interface components {
             /** @description Always true. A refusal is an error status, not a `false`. */
             ok: boolean;
         };
+        /** @description A set of note writes that waits for the user. */
+        Proposal: {
+            author: components["schemas"]["ProposalAuthor"];
+            /** Format: date-time */
+            created_at: string;
+            id: components["schemas"]["ProposalId"];
+            rationale?: string | null;
+            /** @description The session that made the proposal, for the transcript. */
+            session?: string | null;
+            state: components["schemas"]["ProposalState"];
+            title: string;
+            writes: components["schemas"]["ProposedWrite"][];
+        };
+        /**
+         * @description The writer of a proposal.
+         *
+         *     A plugin pass runs a new auxiliary session each time. Thus the daemon names
+         *     the plugin, not the session, so that a later pass supersedes the proposal
+         *     of an earlier pass.
+         */
+        ProposalAuthor: {
+            /** @enum {string} */
+            kind: "plugin";
+            name: string;
+        } | {
+            id: string;
+            /** @enum {string} */
+            kind: "session";
+        };
         /**
          * @description The identity of one proposal.
          *
@@ -3605,6 +3781,53 @@ export interface components {
          *     leading dot, so an id can never name a path outside that directory.
          */
         ProposalId: string;
+        /**
+         * @description Where a proposal is in its life.
+         *
+         *     `Open`, `Stale`, `Conflicted` and `Superseded` keep the proposal in the
+         *     Inbox. `Accepted`, `Rejected` and `Dismissed` take it out. No state change
+         *     removes a proposal file.
+         */
+        ProposalState: {
+            /** @enum {string} */
+            kind: "open";
+        } | {
+            /** @enum {string} */
+            kind: "stale";
+        } | {
+            files: components["schemas"]["FileConflict"][];
+            /** @enum {string} */
+            kind: "conflicted";
+        } | {
+            /** @enum {string} */
+            kind: "accepted";
+        } | {
+            /** @enum {string} */
+            kind: "rejected";
+            reason?: string | null;
+        } | {
+            by: components["schemas"]["ProposalId"];
+            /** @enum {string} */
+            kind: "superseded";
+        } | {
+            /** @enum {string} */
+            kind: "dismissed";
+        };
+        /**
+         * @description One file that a proposal creates or replaces.
+         *
+         *     A proposal does not delete or rename a file.
+         */
+        ProposedWrite: {
+            /** @description The disk state that the writer read before it proposed the write. */
+            base: components["schemas"]["ExpectedBase"];
+            /** @description The whole text that the write puts on disk. */
+            new_text: string;
+            /** @description The path relative to `root`. */
+            path: string;
+            /** @description The kiln root. */
+            root: string;
+        };
         /**
          * @description One LLM provider the daemon found.
          *
@@ -3731,6 +3954,11 @@ export interface components {
              */
             reason: string;
         };
+        /** @description The body of a reject. */
+        RejectProposalBody: {
+            /** @description Why the user rejects the proposal. The proposal keeps it. */
+            reason?: string | null;
+        };
         /** @description Information about the git repository containing this project. */
         RepositoryInfo: {
             /**
@@ -3759,6 +3987,13 @@ export interface components {
             path: string;
             /** @description The file stem, or `null` when the path has none. Always written. */
             title: string | null;
+        };
+        /** @description The body of a resolve: the text that the user settled for one file. */
+        ResolveProposalBody: {
+            /** @description The path relative to the kiln root, as the proposal names it. */
+            path: string;
+            /** @description The whole text to write. */
+            text: string;
         };
         /**
          * @description What `POST /api/session/{id}/resume` answers, which depends on the path
@@ -4621,6 +4856,8 @@ export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
 export type SchemaEditRefusal = components['schemas']['EditRefusal'];
 export type SchemaExecuteCommandRequest = components['schemas']['ExecuteCommandRequest'];
+export type SchemaExpectedBase = components['schemas']['ExpectedBase'];
+export type SchemaFileConflict = components['schemas']['FileConflict'];
 export type SchemaFileEntryRow = components['schemas']['FileEntryRow'];
 export type SchemaFileStatus = components['schemas']['FileStatus'];
 export type SchemaFileWriteConflict = components['schemas']['FileWriteConflict'];
@@ -4689,7 +4926,11 @@ export type SchemaProject = components['schemas']['Project'];
 export type SchemaProjectKiln = components['schemas']['ProjectKiln'];
 export type SchemaProjectPathRequest = components['schemas']['ProjectPathRequest'];
 export type SchemaProjectUnregisterResponse = components['schemas']['ProjectUnregisterResponse'];
+export type SchemaProposal = components['schemas']['Proposal'];
+export type SchemaProposalAuthor = components['schemas']['ProposalAuthor'];
 export type SchemaProposalId = components['schemas']['ProposalId'];
+export type SchemaProposalState = components['schemas']['ProposalState'];
+export type SchemaProposedWrite = components['schemas']['ProposedWrite'];
 export type SchemaProviderRow = components['schemas']['ProviderRow'];
 export type SchemaProvidersResponse = components['schemas']['ProvidersResponse'];
 export type SchemaPublicationChangedEvent = components['schemas']['PublicationChangedEvent'];
@@ -4700,8 +4941,10 @@ export type SchemaRecentFile = components['schemas']['RecentFile'];
 export type SchemaRecentsResponse = components['schemas']['RecentsResponse'];
 export type SchemaRecordRecentRequest = components['schemas']['RecordRecentRequest'];
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
+export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
+export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
@@ -6629,6 +6872,226 @@ export interface operations {
                 };
             };
             /** @description The daemon could not unregister the project */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_proposals: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Also list the proposals that left the Inbox: accepted, rejected and
+                 *     dismissed.
+                 */
+                all?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"][];
+                };
+            };
+            /** @description The daemon could not read the proposals */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description No proposal has the id */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not read the proposal */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    accept_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description No proposal has the id, or the proposal is already settled */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not write the files */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismiss_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description No proposal has the id, or the proposal is already settled */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the decision */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reject_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectProposalBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description No proposal has the id, or the proposal is already settled */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the decision */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolve_proposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveProposalBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description No proposal has the id, or the file has no conflict */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not write the file */
             502: {
                 headers: {
                     [name: string]: unknown;

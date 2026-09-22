@@ -437,6 +437,9 @@ pub struct AgentManager {
     /// to: the composed diff is derived from the worktree, so a restored turn
     /// simply stops producing hunks for its intervals to attribute.
     pub(crate) review: Arc<crate::review::ReviewLedgers>,
+    /// The proposals of the daemon: note writes that wait for the user. The
+    /// note tools record into it, and the `proposal.*` RPCs read it.
+    proposals: Arc<crate::proposals::ProposalStore>,
     /// Worktree watch behind the review ledger's external-change backstop.
     ///
     /// A `OnceLock` bound at daemon startup, like the plugin registries above
@@ -477,7 +480,8 @@ pub struct AgentManagerParams {
     /// would write there. See [`crate::review::ReviewLedgers::new`].
     ///
     /// The comment store is the sibling `diff-comments` directory. See
-    /// [`crate::diff::comments::root_beside_snapshots`].
+    /// [`crate::diff::comments::root_beside_snapshots`]. The proposal store
+    /// is the sibling `proposals` directory.
     pub review_snapshot_root: PathBuf,
 }
 
@@ -532,6 +536,9 @@ impl AgentManager {
                     crate::diff::comments::root_beside_snapshots(&params.review_snapshot_root),
                 ),
             )),
+            proposals: Arc::new(crate::proposals::ProposalStore::new(
+                crate::proposals::root_beside_snapshots(&params.review_snapshot_root),
+            )),
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
             activity: crate::activity::DaemonActivity::new(),
@@ -544,6 +551,11 @@ impl AgentManager {
     pub fn with_activity(mut self, activity: Arc<crate::activity::DaemonActivity>) -> Self {
         self.activity = activity;
         self
+    }
+
+    /// The proposal store of the daemon.
+    pub fn proposals(&self) -> &Arc<crate::proposals::ProposalStore> {
+        &self.proposals
     }
 
     /// The registry this manager reports turns into.
@@ -1634,6 +1646,9 @@ impl AgentManager {
         // Keeping it would mean a recycled session id starts life with tools
         // some earlier session's plugin removed.
         self.active_tools.clear(session_id);
+        // The turn proposal of the session ends with it. The proposal files
+        // stay: a proposal waits for the user, not for its session.
+        self.proposals.forget_session(session_id);
         // The ledger and its review decisions die with the session.
         // Persisting them across a restart is `ReviewLedgers::restore` on the
         // resume path, not a survival property of this map. Comments belong

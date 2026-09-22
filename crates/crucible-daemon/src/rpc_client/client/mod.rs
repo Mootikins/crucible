@@ -143,6 +143,7 @@ pub mod agent;
 pub mod lua;
 pub mod notifications;
 pub mod plugin_requests;
+pub mod proposals;
 pub mod review;
 pub mod session;
 pub mod storage;
@@ -175,6 +176,9 @@ pub use notifications::{NotificationDismissRequest, NotificationListRequest};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
     PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, SurfaceRequest,
+};
+pub use proposals::{
+    ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
 };
 pub use review::{
     ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest,

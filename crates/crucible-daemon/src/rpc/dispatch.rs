@@ -211,6 +211,12 @@ rpc_methods! {
     FsListDir = "fs.list_dir",
     DiffGet = "diff.get",
     DiffFile = "diff.file",
+    ProposalList = "proposal.list",
+    ProposalGet = "proposal.get",
+    ProposalAccept = "proposal.accept",
+    ProposalReject = "proposal.reject",
+    ProposalDismiss = "proposal.dismiss",
+    ProposalResolve = "proposal.resolve",
     FsWrite = "fs.write",
     FsMove = "fs.move",
     FsMkdir = "fs.mkdir",
@@ -1123,6 +1129,30 @@ impl RpcDispatcher {
             RpcMethod::DiffFile => forward!(
                 id,
                 crate::server::diff::handle_diff_file(req.clone(), self.diff_admission())
+            ),
+            RpcMethod::ProposalList => forward!(
+                id,
+                crate::proposals::handle_proposal_list(req.clone(), self.ctx.agents.proposals())
+            ),
+            RpcMethod::ProposalGet => forward!(
+                id,
+                crate::proposals::handle_proposal_get(req.clone(), self.ctx.agents.proposals())
+            ),
+            RpcMethod::ProposalAccept => forward!(
+                id,
+                crate::proposals::handle_proposal_accept(req.clone(), self.ctx.agents.proposals())
+            ),
+            RpcMethod::ProposalReject => forward!(
+                id,
+                crate::proposals::handle_proposal_reject(req.clone(), self.ctx.agents.proposals())
+            ),
+            RpcMethod::ProposalDismiss => forward!(
+                id,
+                crate::proposals::handle_proposal_dismiss(req.clone(), self.ctx.agents.proposals())
+            ),
+            RpcMethod::ProposalResolve => forward!(
+                id,
+                crate::proposals::handle_proposal_resolve(req.clone(), self.ctx.agents.proposals())
             ),
             RpcMethod::FsWrite => forward!(
                 id,

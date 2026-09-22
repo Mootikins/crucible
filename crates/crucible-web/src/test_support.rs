@@ -569,6 +569,95 @@ pub fn mock_diff_file_text_for(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// The id of the proposal that the mock daemon lists.
+pub fn mock_proposal_id() -> crucible_core::proposal::ProposalId {
+    "7a1c2f3e-0000-4000-8000-000000000001"
+        .parse()
+        .expect("a valid UUID")
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// A proposal of the mock daemon, with `id` and `state`: one new note.
+pub fn mock_proposal_for(
+    id: crucible_core::proposal::ProposalId,
+    state: crucible_core::proposal::ProposalState,
+) -> crucible_core::proposal::Proposal {
+    use crucible_core::file_write::ExpectedBase;
+    use crucible_core::proposal::{Proposal, ProposalAuthor, ProposedWrite};
+    use crucible_core::session::PhysicalRoot;
+    Proposal {
+        id,
+        author: ProposalAuthor::Plugin {
+            name: "reflection".to_string(),
+        },
+        session: None,
+        title: "Change notes/a.md".to_string(),
+        rationale: None,
+        created_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("a valid time"),
+        state,
+        writes: vec![ProposedWrite {
+            root: PhysicalRoot::from_top_level("/tmp/test-kiln"),
+            path: "notes/a.md".to_string(),
+            base: ExpectedBase::Absent,
+            new_text: "new\n".to_string(),
+        }],
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// The mock daemon's answer to a `proposal.*` method.
+///
+/// The answer echoes the id and the reason of the request, so a route test
+/// sees what the route sent.
+fn mock_proposal_response(method: &str, params: &Value) -> Value {
+    use crucible_core::proposal::ProposalState;
+    use crucible_daemon::rpc_client::{
+        ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
+    };
+    let parse = |what: &str| -> ProposalIdRequest {
+        serde_json::from_value(params.clone()).unwrap_or_else(|e| panic!("{what} params: {e}"))
+    };
+    match method {
+        "proposal.list" => {
+            let request: ProposalListRequest =
+                serde_json::from_value(params.clone()).expect("proposal.list params");
+            let mut listed = vec![mock_proposal_for(mock_proposal_id(), ProposalState::Open)];
+            if request.all {
+                listed.push(mock_proposal_for(
+                    crucible_core::proposal::ProposalId::generate(),
+                    ProposalState::Dismissed,
+                ));
+            }
+            as_rpc_result(listed)
+        }
+        "proposal.get" => as_rpc_result(mock_proposal_for(parse(method).id, ProposalState::Open)),
+        "proposal.accept" => {
+            as_rpc_result(mock_proposal_for(parse(method).id, ProposalState::Accepted))
+        }
+        "proposal.dismiss" => as_rpc_result(mock_proposal_for(
+            parse(method).id,
+            ProposalState::Dismissed,
+        )),
+        "proposal.reject" => {
+            let request: ProposalRejectRequest =
+                serde_json::from_value(params.clone()).expect("proposal.reject params");
+            as_rpc_result(mock_proposal_for(
+                request.id,
+                ProposalState::Rejected {
+                    reason: request.reason,
+                },
+            ))
+        }
+        "proposal.resolve" => {
+            let request: ProposalResolveRequest =
+                serde_json::from_value(params.clone()).expect("proposal.resolve params");
+            as_rpc_result(mock_proposal_for(request.id, ProposalState::Accepted))
+        }
+        other => panic!("the mock daemon has no proposal method {other}"),
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// A fixture as the mock daemon puts it on the wire.
 fn as_rpc_result<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).expect("a mock reply serialises")
@@ -961,6 +1050,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 serde_json::from_value(msg["params"].clone()).expect("diff.file params");
             as_rpc_result(mock_diff_file_text_for(&request))
         }
+        "proposal.list" | "proposal.get" | "proposal.accept" | "proposal.reject"
+        | "proposal.dismiss" | "proposal.resolve" => mock_proposal_response(method, &msg["params"]),
         "fs.list_dir" => as_rpc_result(mock_fs_listing()),
         "fs.move" => as_rpc_result(mock_fs_move_reply()),
         "fs.mkdir" => json!({"created": true}),
