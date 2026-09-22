@@ -1,3 +1,4 @@
+import { statusBarStore } from '@/stores/statusBarStore';
 import { windowStore } from '@/stores/windowStore';
 import { collectLeafGroupIds } from '@/windowing';
 import type { EdgePanelPosition } from '@/types/windowTypes';
@@ -207,6 +208,12 @@ export function openPanelTab(contentType: TabContentType, target?: PanelTarget):
   }
 }
 
+/** The chat of a new diff tab: the session of a record, else the caller's. */
+function chatOf(source: DiffsetSource, session?: string): string | undefined {
+  if (source.kind === 'session_record') return source.session;
+  return session ?? statusBarStore.activeSessionId() ?? undefined;
+}
+
 /** The last sequence number of a focus request. */
 let focusSeq = 0;
 
@@ -215,11 +222,22 @@ let focusSeq = 0;
  *
  * With a focus target, the pane scrolls to that file and expands it. An open
  * tab gets the new target in its metadata, and the mounted pane reads it.
+ *
+ * The pane names one chat, which takes the comments that the user writes in
+ * it. A session record names its own session. Any other diffset takes
+ * `session` from the caller that opened it from a chat, and else the session
+ * that is active now. The tab keeps that choice in its metadata, so the pane
+ * does not follow the focus of the user from chat to chat.
  */
-export function openDiff(source: DiffsetSource, focus?: DiffFocus): void {
+export function openDiff(source: DiffsetSource, focus?: DiffFocus, session?: string): void {
   const key = diffsetKey(source);
   const request: DiffFocusRequest | undefined = focus ? { ...focus, seq: ++focusSeq } : undefined;
-  const metadata = { source, ...(request ? { focus: request } : {}) };
+  const chat = chatOf(source, session);
+  const metadata = {
+    source,
+    ...(chat ? { session: chat } : {}),
+    ...(request ? { focus: request } : {}),
+  };
   if (request) {
     const host = tabHost();
     const existing = host.find((t) => t.id === targetTabId('diff', key));

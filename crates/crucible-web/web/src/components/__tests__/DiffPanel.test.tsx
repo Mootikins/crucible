@@ -6,7 +6,7 @@ import { installFakeEventSource } from '@/test-utils/sse';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { SentRequest } from '@/test-utils/mock-fetch';
-import { getBus } from '@/lib/bus';
+import { composerComments } from '@/stores/composerComments';
 import type {
   DiffComment,
   DiffFileEntry,
@@ -65,7 +65,11 @@ function comment(id: string, over: Partial<DiffComment> = {}): DiffComment {
 
 let env: TestQueryEnv;
 
-function serve(files: DiffFileEntry[], comments: ListedComment[] = []): void {
+function serve(
+  files: DiffFileEntry[],
+  comments: ListedComment[] = [],
+  extra: Record<string, unknown> = {},
+): void {
   env = createTestQueryEnv({
     'GET /api/diff': { body: diffset(files) },
     'GET /api/diff/file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
@@ -75,6 +79,7 @@ function serve(files: DiffFileEntry[], comments: ListedComment[] = []): void {
     'POST /api/diff/comment': {
       body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comment: comment('c-new') },
     },
+    ...extra,
   });
 }
 
@@ -88,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   env.restore();
+  composerComments.resetForTests();
 });
 
 /** The section of one file. */
@@ -531,10 +537,10 @@ describe('DiffPanel', () => {
     expect(submit.disabled).toBe(true);
     expect(submit.className).toContain('bg-primary');
     expect(submit.className).toContain('text-on-primary');
-    // Send to chat and Cancel are secondary: they carry no primary fill.
-    for (const id of ['diff-comment-send', 'diff-comment-cancel']) {
-      expect(within(box).getByTestId(id).className).not.toContain('bg-primary');
-    }
+    // Cancel is secondary: it carries no primary fill. There is no second
+    // action: Comment both stores the comment and attaches it to the chat.
+    expect(within(box).getByTestId('diff-comment-cancel').className).not.toContain('bg-primary');
+    expect(within(box).queryByTestId('diff-comment-send')).toBeNull();
 
     const input = within(box).getByTestId('diff-comment-input');
     fireEvent.input(input, { target: { value: '   ' } });
@@ -607,25 +613,65 @@ describe('DiffPanel', () => {
     expect(screen.getByTestId('diff-copy-comments').hasAttribute('disabled')).toBe(true);
   });
 
-  it('send to chat inserts a reference', async () => {
-    serve([entry('src/a.rs')]);
-    const inserted = vi.fn();
-    getBus().on('insertIntoComposer', inserted);
-    render(() => <DiffPanel source={source} />);
+  it('a comment attaches to the chat of the pane, and names it in the header', async () => {
+    serve([entry('src/a.rs')], [], {
+      'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
+    });
+    render(() => <DiffPanel source={source} session="s-7" />);
+
+    // The header names the chat that takes the comments of this pane.
+    await waitFor(() =>
+      expect(screen.getByTestId('diff-chat-target').textContent).toContain('Review the parser'),
+    );
 
     await press('src/a.rs', 1);
     await over('src/a.rs', 2);
     await release('src/a.rs', 2);
-    const input = await within(section('src/a.rs')).findByTestId('diff-comment-input');
-    fireEvent.input(input, { target: { value: 'why this?' } });
-    fireEvent.click(within(section('src/a.rs')).getByTestId('diff-comment-send'));
+    const box = await within(section('src/a.rs')).findByTestId('diff-comment-box');
+    // The box does not warn: this pane has a chat.
+    expect(within(box).queryByTestId('diff-comment-no-chat')).toBeNull();
+    fireEvent.input(within(box).getByTestId('diff-comment-input'), {
+      target: { value: 'why this?' },
+    });
+    fireEvent.click(within(box).getByTestId('diff-comment-submit'));
 
-    expect(inserted).toHaveBeenCalledWith({ text: '@src/a.rs:1-2 why this?' });
-    // Send to chat does not store a comment.
-    expect(env.fetch.calls('POST /api/diff/comment')).toBe(0);
+    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment')).toBe(1));
+    // The stored comment becomes a chip of that chat, as a reference.
+    await waitFor(() =>
+      expect(composerComments.of('s-7')).toEqual([
+        {
+          id: 'c-new',
+          source,
+          label: 'a.rs L2',
+          title: 'src/a.rs · why this?',
+        },
+      ]),
+    );
+    expect(composerComments.of('other')).toEqual([]);
+  });
+
+  it('with no chat, a comment is stored and the box says that no chat gets it', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    expect(screen.getByTestId('diff-chat-target').textContent).toContain('No chat');
+    await press('src/a.rs', 2);
+    await release('src/a.rs', 2);
+    const box = await within(section('src/a.rs')).findByTestId('diff-comment-box');
+    expect(within(box).getByTestId('diff-comment-no-chat').textContent).toContain(
+      'No chat takes this comment',
+    );
+    fireEvent.input(within(box).getByTestId('diff-comment-input'), {
+      target: { value: 'kept anyway' },
+    });
+    fireEvent.click(within(box).getByTestId('diff-comment-submit'));
+
+    // The comment is stored: nothing is lost. No chip goes anywhere.
+    await waitFor(() => expect(env.fetch.calls('POST /api/diff/comment')).toBe(1));
     await waitFor(() =>
       expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull(),
     );
+    expect(composerComments.of('s-7')).toEqual([]);
   });
 
   it('copy comments writes the quickfix form', async () => {

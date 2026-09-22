@@ -23,10 +23,7 @@ import {
   stripFrozenPrefix,
   estimateThinkingTokens,
 } from '@/lib/turn';
-import {
-  fetchPendingInteractionsOnce,
-  useRespondToInteraction,
-} from '@/lib/query/interactions';
+import { fetchPendingInteractionsOnce, useRespondToInteraction } from '@/lib/query/interactions';
 import { useCancelSession } from '@/lib/query/sessions';
 import {
   fetchSessionHistoryOnce,
@@ -36,6 +33,7 @@ import {
 import { useSessionModes, useSetSessionMode } from '@/lib/query/modes';
 import { consumePendingFirstMessage, peekPendingFirstMessage } from '@/lib/draft-session';
 import { getBus } from '@/lib/bus';
+import type { CommentRef } from '@/lib/diffset';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { notificationActions } from '@/stores/notificationStore';
 import { attentionActions } from '@/stores/attentionStore';
@@ -59,7 +57,6 @@ import {
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
 import { finalizeDanglingTool } from './chatEventReducer';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
-
 
 interface ChatProviderProps {
   sessionId: string;
@@ -160,30 +157,30 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     updateTranscriptMessages(props.sessionId, (prev) => prev.filter((m) => m.id !== id));
   };
 
-   const clearMessages = () => {
-     clearTranscript(props.sessionId);
-   };
+  const clearMessages = () => {
+    clearTranscript(props.sessionId);
+  };
 
-   /** UI-optimistic mode switch that also persists daemon-side. The daemon
-    * echoes a mode_changed SSE event; on failure the UI reverts and surfaces
-    * the error (plan mode that isn't enforced server-side must not look on). */
-   const switchMode = (mode: ChatMode) => {
-     const previous = transcript().chatMode;
-     patchTranscript(props.sessionId, { chatMode: mode });
-     // The mutation moves the cached `current_mode_id` and puts it back on a
-     // refusal, which is what the other readers of the list see. This pane
-     // holds its own chip, because the chip must answer the click whether or
-     // not the daemon has answered the list at all. The mutation also asks
-     // for the list again once it settles, so a mode the daemon rejects stops
-     // being offered.
-     void setMode.mutateAsync({ id: props.sessionId, mode }).catch((err) => {
-       patchTranscript(props.sessionId, { chatMode: previous });
-       notificationActions.addNotification(
-         'error',
-         err instanceof Error ? err.message : 'Failed to set session mode'
-       );
-     });
-   };
+  /** UI-optimistic mode switch that also persists daemon-side. The daemon
+   * echoes a mode_changed SSE event; on failure the UI reverts and surfaces
+   * the error (plan mode that isn't enforced server-side must not look on). */
+  const switchMode = (mode: ChatMode) => {
+    const previous = transcript().chatMode;
+    patchTranscript(props.sessionId, { chatMode: mode });
+    // The mutation moves the cached `current_mode_id` and puts it back on a
+    // refusal, which is what the other readers of the list see. This pane
+    // holds its own chip, because the chip must answer the click whether or
+    // not the daemon has answered the list at all. The mutation also asks
+    // for the list again once it settles, so a mode the daemon rejects stops
+    // being offered.
+    void setMode.mutateAsync({ id: props.sessionId, mode }).catch((err) => {
+      patchTranscript(props.sessionId, { chatMode: previous });
+      notificationActions.addNotification(
+        'error',
+        err instanceof Error ? err.message : 'Failed to set session mode',
+      );
+    });
+  };
 
   const addSystemMessage = (content: string) => {
     addMessage({
@@ -269,7 +266,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         const messageId = typeof data.message_id === 'string' ? data.message_id : undefined;
         pendingSegments.push(content);
         loadedMessages.push({
-          id: messageId ? turnSegmentId(messageId, index) : `assistant-seg-${loadedMessages.length}`,
+          id: messageId
+            ? turnSegmentId(messageId, index)
+            : `assistant-seg-${loadedMessages.length}`,
           role: 'assistant',
           content,
           timestamp: turnStart ?? synthetic(),
@@ -316,9 +315,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           if (evt.event === 'tool_call_args_update') {
             const args = data.args;
             const hasArgs =
-              args !== undefined
-              && args !== null
-              && !(typeof args === 'object' && Object.keys(args).length === 0);
+              args !== undefined &&
+              args !== null &&
+              !(typeof args === 'object' && Object.keys(args).length === 0);
             if (hasArgs) {
               target.toolCall = { ...target.toolCall, args: JSON.stringify(args) };
             }
@@ -334,8 +333,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           target.toolCall = {
             ...target.toolCall,
             status: evt.event === 'tool_result_error' ? 'error' : 'complete',
-            result: raw === undefined ? target.toolCall.result
-              : typeof raw === 'string' ? raw : JSON.stringify(raw),
+            result:
+              raw === undefined
+                ? target.toolCall.result
+                : typeof raw === 'string'
+                  ? raw
+                  : JSON.stringify(raw),
           };
         }
       } else if (evt.event === 'precognition_complete') {
@@ -356,8 +359,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             })
             .filter((n): n is { name: string; relevance: number } => n !== null);
           lastUser.precognition = {
-            notesCount:
-              typeof data.notes_count === 'number' ? data.notes_count : notes.length,
+            notesCount: typeof data.notes_count === 'number' ? data.notes_count : notes.length,
             notes,
           };
         }
@@ -371,20 +373,20 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         // uses). Skip an empty trailing bubble when segments covered the
         // whole turn — the live reducer adds none in that case either.
         const hadSegments = pendingSegments.length > 0;
-        const finalContent = stripFrozenPrefix(
-          data.full_response,
-          pendingSegments,
-        );
+        const finalContent = stripFrozenPrefix(data.full_response, pendingSegments);
         pendingSegments = [];
         // The turn's reasoning rides the answer bubble, the same place the
         // live reducer renders it; a turn whose segments covered everything
         // (no trailing bubble) pins it to the turn's last assistant bubble,
         // the same fallback the live reducer uses for token usage.
-        const thinking = pendingThinking === '' ? undefined : {
-          content: pendingThinking,
-          isStreaming: false,
-          tokenCount: estimateThinkingTokens(pendingThinking),
-        };
+        const thinking =
+          pendingThinking === ''
+            ? undefined
+            : {
+                content: pendingThinking,
+                isStreaming: false,
+                tokenCount: estimateThinkingTokens(pendingThinking),
+              };
         pendingThinking = '';
         if (finalContent !== '' || !hadSegments) {
           loadedMessages.push({
@@ -434,9 +436,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
       const isFallbackId = (id: string) => /^(?:user|assistant)-\d+$/.test(id);
       const hasFallback = loadedMessages.some((m) => isFallbackId(m.id));
       const merged = hasFallback
-        ? newer.filter((live) => !loadedMessages.some(
-            (h) => isFallbackId(h.id) && h.role === live.role && h.content === live.content,
-          ))
+        ? newer.filter(
+            (live) =>
+              !loadedMessages.some(
+                (h) => isFallbackId(h.id) && h.role === live.role && h.content === live.content,
+              ),
+          )
         : newer;
       return [...loadedMessages, ...merged];
     });
@@ -464,100 +469,105 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
    * a second time — the user saw their own turn twice. The reads inside are
    * deliberately untracked; only a new session id may bind again.
    */
-  createEffect(on(() => props.sessionId, (newSessionId) => {
-    // Supersede the bind before it: its remaining reads must write nothing.
-    if (bindAbortController) {
-      bindAbortController.abort();
-      bindAbortController = null;
-    }
-    // The transcript on screen belongs to the bind that is ending, so the new
-    // one folds its own document even when it names the same session.
-    foldedHistoryFingerprint = null;
-    // The transcript this pane was drawing belongs to the session it leaves;
-    // the keyed store hands this bind the transcript of ITS session, so there
-    // is nothing to clear — only the hold to give back. The last pane out
-    // frees the state, the same refcount the SSE root keeps on the source.
-    if (newSessionId !== previousSessionId && previousSessionId !== null) {
-      releaseTranscript(previousSessionId);
-      attentionActions.clear(previousSessionId);
-    }
-    previousSessionId = newSessionId;
-
-    if (!newSessionId) {
-      return;
-    }
-    retainTranscript(newSessionId);
-
-    const abortController = new AbortController();
-    bindAbortController = abortController;
-
-    const bootstrapPromise = bootstrapSessionWithFallback({
-      sessionId: newSessionId,
-      signal: abortController.signal,
-      setSessionTitle: (title) => patchTranscript(newSessionId, { sessionTitle: title }),
-      setChatMode: (mode) => patchTranscript(newSessionId, { chatMode: mode }),
-      // The one request `useSessionHistory` is making for this session, under
-      // the key it reads. The bind awaits the document, and the fold below
-      // puts it on screen.
-      loadHistory: (id) => fetchSessionHistoryOnce(id).then(() => undefined),
-    });
-
-    // The stream carries only NEW interaction requests. A request the daemon
-    // still holds from before a reload never arrives on it, so the composer
-    // showed no card while the daemon waited and every send answered 422. Ask
-    // the pending aggregate once on bind. A request that arrived on the stream
-    // in the meantime wins, so this never overwrites a live one.
-    // `Promise.resolve().then` keeps a synchronous throw (a test double with
-    // no such function) on the rejection path instead of inside the effect.
-    void Promise.resolve()
-      .then(() => fetchPendingInteractionsOnce())
-      .then((entries) => {
-        if (abortController.signal.aborted || props.sessionId !== newSessionId) return;
-        const held = entries.find((e) => e.session_id === newSessionId);
-        if (held && !transcript().pendingInteraction) {
-          setTranscriptPendingInteraction(newSessionId, held.request);
+  createEffect(
+    on(
+      () => props.sessionId,
+      (newSessionId) => {
+        // Supersede the bind before it: its remaining reads must write nothing.
+        if (bindAbortController) {
+          bindAbortController.abort();
+          bindAbortController = null;
         }
-      })
-      .catch(() => {
-        /* The aggregate is a courtesy; the stream still delivers new requests. */
-      });
+        // The transcript on screen belongs to the bind that is ending, so the new
+        // one folds its own document even when it names the same session.
+        foldedHistoryFingerprint = null;
+        // The transcript this pane was drawing belongs to the session it leaves;
+        // the keyed store hands this bind the transcript of ITS session, so there
+        // is nothing to clear — only the hold to give back. The last pane out
+        // frees the state, the same refcount the SSE root keeps on the source.
+        if (newSessionId !== previousSessionId && previousSessionId !== null) {
+          releaseTranscript(previousSessionId);
+          attentionActions.clear(previousSessionId);
+        }
+        previousSessionId = newSessionId;
 
-    // Resolves when the SSE stream is open (daemon subscribed). Sending
-    // before that drops the response's first tokens — the turn then looks
-    // frozen until message_complete backfills the full text. The stream
-    // belongs to the session's transcript, so the gate is the session's,
-    // shared with every pane that holds it.
-    const sseOpen = transcriptOpened(newSessionId);
+        if (!newSessionId) {
+          return;
+        }
+        retainTranscript(newSessionId);
 
-    // Lazy creation handoff: the draft surface staged the user's first
-    // message before opening this session. Send it only after (a) bootstrap
-    // — loadHistory replaces the whole message list, so sending earlier
-    // would let the (empty) history load wipe the optimistic message — and
-    // (b) the SSE stream is open, so the response streams from token one.
-    // The timeout keeps the message from being stuck if SSE can't connect.
-    // PEEK (non-destructive) so the optimistic turn renders on EVERY mount —
-    // the handoff can race a panel remount, and a destructive read here let a
-    // short-lived first mount swallow the message while the surviving mount
-    // showed an empty transcript for seconds. The destructive consume happens
-    // at dispatch time below: first dispatcher wins, any zombie sibling gets
-    // undefined and skips, so the message renders instantly everywhere and is
-    // sent exactly once.
-    const pendingFirstMessage = peekPendingFirstMessage(newSessionId);
-    if (pendingFirstMessage) {
-      // Show the user's message + working indicator IMMEDIATELY — only the
-      // POST waits for the gates below. The optimistic entries survive the
-      // history load because loadHistory merges by id instead of clobbering.
-      const temps = insertOptimisticTurn(pendingFirstMessage);
-      const sseOpenOrTimeout = Promise.race([
-        sseOpen,
-        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-      ]);
-      void Promise.all([bootstrapPromise.catch(() => {}), sseOpenOrTimeout]).then(() => {
-        const message = consumePendingFirstMessage(newSessionId);
-        if (message) void dispatchTurn(message, temps);
-      });
-    }
-  }));
+        const abortController = new AbortController();
+        bindAbortController = abortController;
+
+        const bootstrapPromise = bootstrapSessionWithFallback({
+          sessionId: newSessionId,
+          signal: abortController.signal,
+          setSessionTitle: (title) => patchTranscript(newSessionId, { sessionTitle: title }),
+          setChatMode: (mode) => patchTranscript(newSessionId, { chatMode: mode }),
+          // The one request `useSessionHistory` is making for this session, under
+          // the key it reads. The bind awaits the document, and the fold below
+          // puts it on screen.
+          loadHistory: (id) => fetchSessionHistoryOnce(id).then(() => undefined),
+        });
+
+        // The stream carries only NEW interaction requests. A request the daemon
+        // still holds from before a reload never arrives on it, so the composer
+        // showed no card while the daemon waited and every send answered 422. Ask
+        // the pending aggregate once on bind. A request that arrived on the stream
+        // in the meantime wins, so this never overwrites a live one.
+        // `Promise.resolve().then` keeps a synchronous throw (a test double with
+        // no such function) on the rejection path instead of inside the effect.
+        void Promise.resolve()
+          .then(() => fetchPendingInteractionsOnce())
+          .then((entries) => {
+            if (abortController.signal.aborted || props.sessionId !== newSessionId) return;
+            const held = entries.find((e) => e.session_id === newSessionId);
+            if (held && !transcript().pendingInteraction) {
+              setTranscriptPendingInteraction(newSessionId, held.request);
+            }
+          })
+          .catch(() => {
+            /* The aggregate is a courtesy; the stream still delivers new requests. */
+          });
+
+        // Resolves when the SSE stream is open (daemon subscribed). Sending
+        // before that drops the response's first tokens — the turn then looks
+        // frozen until message_complete backfills the full text. The stream
+        // belongs to the session's transcript, so the gate is the session's,
+        // shared with every pane that holds it.
+        const sseOpen = transcriptOpened(newSessionId);
+
+        // Lazy creation handoff: the draft surface staged the user's first
+        // message before opening this session. Send it only after (a) bootstrap
+        // — loadHistory replaces the whole message list, so sending earlier
+        // would let the (empty) history load wipe the optimistic message — and
+        // (b) the SSE stream is open, so the response streams from token one.
+        // The timeout keeps the message from being stuck if SSE can't connect.
+        // PEEK (non-destructive) so the optimistic turn renders on EVERY mount —
+        // the handoff can race a panel remount, and a destructive read here let a
+        // short-lived first mount swallow the message while the surviving mount
+        // showed an empty transcript for seconds. The destructive consume happens
+        // at dispatch time below: first dispatcher wins, any zombie sibling gets
+        // undefined and skips, so the message renders instantly everywhere and is
+        // sent exactly once.
+        const pendingFirstMessage = peekPendingFirstMessage(newSessionId);
+        if (pendingFirstMessage) {
+          // Show the user's message + working indicator IMMEDIATELY — only the
+          // POST waits for the gates below. The optimistic entries survive the
+          // history load because loadHistory merges by id instead of clobbering.
+          const temps = insertOptimisticTurn(pendingFirstMessage);
+          const sseOpenOrTimeout = Promise.race([
+            sseOpen,
+            new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+          ]);
+          void Promise.all([bootstrapPromise.catch(() => {}), sseOpenOrTimeout]).then(() => {
+            const message = consumePendingFirstMessage(newSessionId);
+            if (message) void dispatchTurn(message, temps);
+          });
+        }
+      },
+    ),
+  );
 
   /**
    * Puts the persisted transcript on screen, once for each bind.
@@ -623,7 +633,13 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     const tempUserId = generateMessageId();
     addMessage({ id: tempUserId, role: 'user', content: trimmed, timestamp: Date.now() });
     const tempResponseId = generateMessageId();
-    addMessage({ id: tempResponseId, role: 'assistant', content: '', timestamp: Date.now(), placeholder: true });
+    addMessage({
+      id: tempResponseId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      placeholder: true,
+    });
     patchTranscript(props.sessionId, { currentStreamingMessageId: tempResponseId });
     return { tempUserId, tempResponseId };
   };
@@ -637,10 +653,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
   const dispatchTurn = async (
     trimmed: string,
     { tempUserId, tempResponseId }: { tempUserId: string; tempResponseId: string },
+    comments?: CommentRef[],
   ) => {
     if (!props.sessionId) return;
     try {
-      const messageId = await send.mutateAsync({ id: props.sessionId, message: trimmed });
+      const messageId = await send.mutateAsync({ id: props.sessionId, message: trimmed, comments });
       const messages = () => transcriptMessages(props.sessionId);
 
       // Canonicalize the user entry — unless the SSE echo already added it.
@@ -680,7 +697,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
           patchTranscript(props.sessionId, { currentStreamingMessageId: null });
           setTranscriptStreaming(props.sessionId, false);
         }
-        queueTurn(props.sessionId, trimmed, tempUserId);
+        queueTurn(props.sessionId, trimmed, tempUserId, comments);
         return;
       }
       const errorMsg = err instanceof Error ? err.message : 'Failed to connect to server';
@@ -699,8 +716,9 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     }
   };
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || !props.sessionId) return;
+  const sendMessage = async (content: string, comments?: CommentRef[]) => {
+    const attached = comments?.length ? comments : undefined;
+    if ((!content.trim() && !attached) || !props.sessionId) return;
     const trimmed = content.trim();
     // A turn in flight holds the daemon's one request slot — posting now
     // would be refused as concurrent at best, and interleaved into the
@@ -708,10 +726,10 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     // the end of the streaming block immediately, and the flusher below
     // dispatches it as its own turn once the stream goes idle.
     if (transcript().isLoading || transcript().currentStreamingMessageId) {
-      queueTurn(props.sessionId, trimmed);
+      queueTurn(props.sessionId, trimmed, undefined, attached);
       return;
     }
-    await dispatchTurn(trimmed, insertOptimisticTurn(trimmed));
+    await dispatchTurn(trimmed, insertOptimisticTurn(trimmed), attached);
   };
 
   /**
@@ -736,7 +754,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     });
     patchTranscript(props.sessionId, { currentStreamingMessageId: tempResponseId });
     updateMessage(entry.tempId, { queued: false });
-    void dispatchTurn(entry.content, { tempUserId: entry.tempId, tempResponseId });
+    void dispatchTurn(entry.content, { tempUserId: entry.tempId, tempResponseId }, entry.comments);
   };
 
   // The queue's drain pump. Every idle moment with a non-empty queue starts
@@ -752,7 +770,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     if (entry) beginQueuedTurn(entry);
   });
 
-   const respondToInteraction = async (response: InteractionResponse) => {
+  const respondToInteraction = async (response: InteractionResponse) => {
     const request = transcript().pendingInteraction;
     if (!request || !props.sessionId) return;
 
@@ -826,11 +844,7 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     addSystemMessage,
   };
 
-  return (
-    <ChatContext.Provider value={value}>
-      {props.children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{props.children}</ChatContext.Provider>;
 };
 
 export function useChat(): ChatContextValue {

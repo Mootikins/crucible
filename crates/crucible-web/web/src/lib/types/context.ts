@@ -19,6 +19,7 @@ import type {
 } from '../types';
 import type { Accessor } from 'solid-js';
 import type { SessionScope } from '../types';
+import type { CommentRef } from '../diffset';
 
 // =============================================================================
 // Chat Context
@@ -46,7 +47,11 @@ export interface ChatContextValue {
   setChatMode: (mode: ChatMode) => void;
   /** Set the mode UI-side AND persist it daemon-side (POST /mode). */
   switchMode: (mode: ChatMode) => void;
-  sendMessage: (content: string) => Promise<void>;
+  /**
+   * Send a turn. `comments` are references to stored review comments; the
+   * daemon gives the agent the context of each one.
+   */
+  sendMessage: (content: string, comments?: CommentRef[]) => Promise<void>;
   respondToInteraction: (response: InteractionResponse) => Promise<void>;
   clearMessages: () => void;
   cancelStream: () => Promise<void>;

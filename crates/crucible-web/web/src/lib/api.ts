@@ -2,6 +2,7 @@ import type { components } from './api-schema';
 import { APP_CALLER, callerParam, client, decode, expectOk, type ApiError } from './api-client';
 import { getBus } from './bus';
 import type { CanvasDoc, CanvasResponse } from './canvas-types';
+import type { CommentRef } from './diffset';
 import { rawFileUrl } from './paths';
 import { assertStreamVersion } from './stream-version';
 import type {
@@ -171,10 +172,15 @@ function openJson<T>(value: unknown): T {
  * Returns the assigned message_id. Does NOT stream events —
  * subscribe to events separately via `subscribeToEvents`.
  */
-export async function sendChatMessage(sessionId: string, content: string): Promise<string> {
+export async function sendChatMessage(
+  sessionId: string,
+  content: string,
+  comments?: CommentRef[],
+): Promise<string> {
   return decode(
     await client.POST('/api/chat/send', {
-      body: { session_id: sessionId, content },
+      // The references only. The daemon builds the context of each comment.
+      body: { session_id: sessionId, content, ...(comments?.length ? { comments } : {}) },
     }),
     'Failed to send message',
     { notify: true },

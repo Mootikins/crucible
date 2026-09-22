@@ -2438,6 +2438,19 @@ export interface components {
             source: components["schemas"]["DiffsetSource"];
         };
         /**
+         * @description A reference to one stored comment that a client attaches to a chat
+         *     message.
+         *
+         *     The client sends only the reference. The daemon finds the comment in the
+         *     diffset of `source` and gives the agent the comment as context.
+         */
+        CommentRef: {
+            /** @description The id of the comment. */
+            id: string;
+            /** @description The source of the diffset that owns the comment. */
+            source: components["schemas"]["DiffsetSource"];
+        };
+        /**
          * @description The side of a diff that a comment range counts its lines on.
          * @enum {string}
          */
@@ -4123,6 +4136,11 @@ export interface components {
             snippet: string | null;
         };
         SendMessageRequest: {
+            /**
+             * @description Stored review comments that the message attaches. The daemon builds
+             *     the context of each one, and refuses an unknown or resolved comment.
+             */
+            comments?: components["schemas"]["CommentRef"][];
             content: string;
             session_id: string;
         };
@@ -4678,6 +4696,7 @@ export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaCommentAnchorRow = components['schemas']['CommentAnchorRow'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
 export type SchemaCommentBody = components['schemas']['CommentBody'];
+export type SchemaCommentRef = components['schemas']['CommentRef'];
 export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
@@ -5071,7 +5090,7 @@ export interface operations {
                     "application/json": components["schemas"]["SendMessageResponse"];
                 };
             };
-            /** @description The message is empty */
+            /** @description The message is empty and attaches no comment */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -4,7 +4,8 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import { nextChatMode } from './ChatModeControl';
 import { useSessionScopeChips } from './SessionScopeChips';
 import { SessionStatusChips } from './SessionStatusChips';
-import { ComposerCard } from '@/components/composer/ComposerCard';
+import { ComposerCard, type ComposerAttachment } from '@/components/composer/ComposerCard';
+import { composerComments } from '@/stores/composerComments';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
@@ -59,7 +60,7 @@ export const ChatInput: Component = () => {
   // is never a dead end.
   const canSend = () => {
     const s = session();
-    return !!s && input().trim().length > 0;
+    return !!s && (input().trim().length > 0 || attached().length > 0);
   };
 
   // Palette "Switch Model" opens the same picker as the chip below.
@@ -75,20 +76,26 @@ export const ChatInput: Component = () => {
     }
   });
 
-  // The diff pane sends a reference to a range with the text of the user.
-  // Only the composer of the focused chat takes it, so split panes do not
-  // all get a copy. The text goes after a draft, on its own line.
-  getBus().on('insertIntoComposer', ({ text }) => {
-    const active = statusBarStore.activeSessionId();
-    if (active && sessionId() !== active) return;
-    if (!session()) return;
-    setInput((draft) => (draft.trim() ? `${draft.replace(/\s+$/, '')}\n${text}` : text));
-  });
+  // The review comments that the diff pane attached to the next message of
+  // this session. The store is keyed by session, so the diff pane reaches a
+  // composer that is not focused, and a split pane of the same session shows
+  // the same chips.
+  const attached = () => composerComments.of(session()?.session_id);
+  const attachments = (): ComposerAttachment[] =>
+    attached().map((comment) => ({
+      key: comment.id,
+      label: comment.label,
+      title: comment.title,
+      onRemove: () => {
+        const id = session()?.session_id;
+        if (id) composerComments.remove(id, comment.id);
+      },
+    }));
 
   const handleSubmit = async (e?: Event) => {
     e?.preventDefault();
     const message = input().trim();
-    if (!message || !canSend()) return;
+    if (!canSend()) return;
 
     setInput('');
 
@@ -111,7 +118,19 @@ export const ChatInput: Component = () => {
       return;
     }
 
-    await sendMessage(message);
+    // The message takes the chips with it. The comments stay stored.
+    const comments = attached();
+    const id = session()?.session_id;
+    if (id && comments.length > 0) {
+      composerComments.take(
+        id,
+        comments.map((c) => c.id),
+      );
+    }
+    await sendMessage(
+      message,
+      comments.map(({ id, source }) => ({ id, source })),
+    );
   };
 
   // Shift+Tab cycles chat mode (Ask → Plan → Auto). Enter-to-send is the
@@ -277,6 +296,7 @@ export const ChatInput: Component = () => {
           onSubmit={() => void handleSubmit()}
           onKeyDown={handleKeyDown}
           chips={liveChips()}
+          attachments={attachments()}
           action={
             <Show
               when={isStreaming()}

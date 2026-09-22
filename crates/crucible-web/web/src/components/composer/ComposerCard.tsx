@@ -1,9 +1,25 @@
-import { Accessor, Component, JSX, Setter, Show, createEffect, createSignal } from 'solid-js';
+import { Accessor, Component, For, JSX, Setter, Show, createEffect, createSignal } from 'solid-js';
 import { MicButton } from '@/components/MicButton';
 import { AutocompletePopup } from '@/components/AutocompletePopup';
 import { useAutocomplete } from '@/hooks/useAutocomplete';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { ChipRow, type ComposerChip } from '@/components/composer/ChipRow';
+import { MessageSquareText, X } from '@/lib/icons';
+
+/**
+ * One thing that the next message attaches, such as a review comment. It is
+ * part of the message, so it sits on the prompt, not on the chip row of
+ * session settings.
+ */
+export interface ComposerAttachment {
+  key: string;
+  /** The chip text: "server.rs L17–19". */
+  label: string;
+  /** The full text, in the tooltip. */
+  title?: string;
+  /** Removes the attachment from the draft. */
+  onRemove: () => void;
+}
 
 /** Tallest the prompt grows before it scrolls inside itself. */
 const MAX_HEIGHT_PX = 160;
@@ -37,6 +53,8 @@ export interface ComposerCardProps {
    * lists model, mode, project, kiln and status. Same row, different list.
    */
   chips?: ComposerChip[];
+  /** What the next message attaches, as chips above the prompt text. */
+  attachments?: ComposerAttachment[];
   /** The commit button — send, or cancel mid-stream. */
   action: JSX.Element;
 }
@@ -167,10 +185,36 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
         // (see `refine-composer.css`). All of the radii live in
         // `refine-composer.css`, which is unlayered and therefore wins over
         // a Tailwind radius utility here.
-        class="composer-surface flex items-end gap-x-2 px-3.5 py-2"
-        data-lines={lines()}
+        class="composer-surface flex flex-wrap items-end gap-x-2 px-3.5 py-2"
+        data-lines={(props.attachments?.length ?? 0) > 0 ? 'many' : lines()}
         style={cardStyle()}
       >
+        <Show when={(props.attachments?.length ?? 0) > 0}>
+          <ul class="flex w-full flex-wrap gap-1 pb-1" aria-label="Attached to the next message">
+            <For each={props.attachments}>
+              {(attachment) => (
+                <li
+                  class="flex h-6 max-w-full items-center gap-1 rounded-full border border-hairline bg-control pl-2 pr-0.5 text-floor text-shell-ink"
+                  title={attachment.title ?? attachment.label}
+                  data-testid="composer-attachment"
+                >
+                  <MessageSquareText class="h-3 w-3 shrink-0 text-muted-dark" aria-hidden="true" />
+                  <span class="min-w-0 truncate font-mono">{attachment.label}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.label}`}
+                    title="Remove from this message. The comment stays stored."
+                    data-testid="composer-attachment-remove"
+                    onClick={() => attachment.onRemove()}
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-dark hover:bg-hover-wash hover:text-shell-ink focus-ring"
+                  >
+                    <X class="h-3 w-3" />
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
         <textarea
           ref={setTextareaRef}
           value={props.value()}

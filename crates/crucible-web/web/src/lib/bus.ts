@@ -25,11 +25,6 @@ export type BusEvents = {
   focusSearch: Record<string, never>;
   /** Focuses the session filter inside the sessions rail. */
   focusSessionSearch: Record<string, never>;
-  /**
-   * Adds text to the composer of the focused session. The diff pane sends a
-   * range of a file with it, as "@path:start-end" and the text of the user.
-   */
-  insertIntoComposer: { text: string };
   interactionResolved: { sessionId: string; requestId: string };
   /** Opens the export dialog for the session the status bar names. */
   exportSession: Record<string, never>;

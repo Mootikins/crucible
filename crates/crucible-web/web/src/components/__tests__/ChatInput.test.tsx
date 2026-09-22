@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@solidjs/testing-library';
-import { getBus } from '@/lib/bus';
+import { render, screen, cleanup, fireEvent, waitFor } from '@solidjs/testing-library';
+import { composerComments } from '@/stores/composerComments';
+import type { DiffsetSource } from '@/lib/diffset';
 import { installFakeEventSource } from '@/test-utils/sse';
 import { createSignal } from 'solid-js';
 import type { InteractionRequest } from '@/lib/types';
@@ -124,6 +125,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  composerComments.resetForTests();
   kilnEnv.restore();
   resetKilnsForTests();
   setPending(null);
@@ -159,16 +161,55 @@ describe('ChatInput', () => {
     expect(sendButton).toBeInTheDocument();
   });
 
-  it('a reference from the diff pane goes into the composer', async () => {
+  it('a comment of the diff pane becomes a chip, and rides the next message', async () => {
+    const source: DiffsetSource = { kind: 'branch', root: '/repo', base: '', head: null };
+    composerComments.attach('test-session', {
+      id: 'c1',
+      source,
+      label: 'a.rs L1–2',
+      title: 'src/a.rs · why this?',
+    });
+    composerComments.attach('other-session', {
+      id: 'c2',
+      source,
+      label: 'b.rs L4',
+      title: 'src/b.rs · and this?',
+    });
     render(() => <ChatInput />);
-    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
 
-    getBus().emit('insertIntoComposer', { text: '@src/a.rs:1-2 why this?' });
-    await waitFor(() => expect(textarea.value).toBe('@src/a.rs:1-2 why this?'));
+    // Only the chips of this session, and the send is live with no text.
+    const chips = () => screen.queryAllByTestId('composer-attachment');
+    await waitFor(() => expect(chips().map((c) => c.textContent)).toEqual(['a.rs L1–2']));
+    expect((screen.getByTestId('send-button') as HTMLButtonElement).disabled).toBe(false);
 
-    // A second reference goes after the draft, on its own line.
-    getBus().emit('insertIntoComposer', { text: '@src/b.rs:4-4' });
-    await waitFor(() => expect(textarea.value).toBe('@src/a.rs:1-2 why this?\n@src/b.rs:4-4'));
+    // The completion hook owns the text of the field, and this file mocks
+    // it. The message therefore goes with its chips and no text, which is a
+    // message the composer must send.
+    fireEvent.submit(screen.getByTestId('chat-input-form'));
+
+    // The message carries the reference, not the text of the comment.
+    await waitFor(() => expect(mockSendMessage.mock.calls).toEqual([['', [{ id: 'c1', source }]]]));
+    await waitFor(() => expect(chips()).toHaveLength(0));
+    expect(composerComments.of('other-session')).toHaveLength(1);
+  });
+
+  it('removing a chip drops the reference and keeps the stored comment', async () => {
+    composerComments.attach('test-session', {
+      id: 'c1',
+      source: { kind: 'session_record', session: 'test-session' },
+      label: 'a.rs L1',
+      title: 'src/a.rs · why this?',
+    });
+    render(() => <ChatInput />);
+
+    const remove = await screen.findByTestId('composer-attachment-remove');
+    expect(remove.getAttribute('aria-label')).toBe('Remove a.rs L1');
+    fireEvent.click(remove);
+
+    await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
+    expect(composerComments.of('test-session')).toEqual([]);
+    // Nothing went to the daemon: the comment stays stored.
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('disables send button when input is empty', () => {

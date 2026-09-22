@@ -20,6 +20,8 @@ export type DiffComment = Schemas['ReviewCommentRow'];
 export type ListedComment = Schemas['ListedCommentRow'];
 export type CommentSide = Schemas['CommentSideRow'];
 export type NewDiffComment = Schemas['CommentBody'];
+/** A reference to a stored comment that a chat message attaches. */
+export type CommentRef = Schemas['CommentRef'];
 
 /** Fails the compile when a new source variant has no branch here. */
 export function unreachable(source: never): never {
@@ -143,6 +145,20 @@ function span(first: number, last: number): string {
 export function referenceForm(path: string, start: number, end: number): string {
   const [first, last] = inclusiveLines(start, end);
   return `${path}:${span(first, last)}`;
+}
+
+/**
+ * The label of the composer chip of a comment: "server.rs L17–19", or
+ * "lib.rs L1 (before)" for a comment on the base side, whose numbers are
+ * the old line numbers.
+ */
+export function commentChipLabel(
+  comment: Pick<DiffComment, 'path' | 'line_range' | 'side'>,
+): string {
+  const name = comment.path.slice(comment.path.lastIndexOf('/') + 1);
+  const [first, last] = inclusiveLines(comment.line_range.start, comment.line_range.end);
+  const lines = last > first ? `L${first}–${last}` : `L${first}`;
+  return `${name} ${lines}${comment.side === 'base' ? ' (before)' : ''}`;
 }
 
 /** The lines of a text, as Rust `str::lines` gives them: no last empty line, no "\r". */

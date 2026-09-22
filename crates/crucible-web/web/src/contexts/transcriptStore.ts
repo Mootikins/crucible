@@ -11,6 +11,7 @@ import { advanceSessionCursor, sessionEvents } from '@/lib/query/sse';
 import { attentionActions } from '@/stores/attentionStore';
 import { tabHost } from '@/lib/tab-host';
 import { createChatEventReducer } from './chatEventReducer';
+import type { CommentRef } from '@/lib/diffset';
 
 /**
  * The live transcript of every session the shell shows, keyed by session id.
@@ -51,6 +52,8 @@ export interface QueuedTurn {
   /** The temp id of the queued user message (its transcript entry). */
   tempId: string;
   content: string;
+  /** The stored review comments that the turn attaches. */
+  comments?: CommentRef[];
 }
 
 function blankTranscript(): TranscriptState {
@@ -150,8 +153,7 @@ function ensureStream(sessionId: string): void {
     messages: () => stateOf(sessionId).messages,
     currentStreamingMessageId: () => stateOf(sessionId).currentStreamingMessageId,
     setCurrentStreamingMessageId: (id) => patch({ currentStreamingMessageId: id }),
-    addMessage: (message) =>
-      setTranscripts(sessionId, 'messages', (prev) => [...prev, message]),
+    addMessage: (message) => setTranscripts(sessionId, 'messages', (prev) => [...prev, message]),
     insertMessageAfter: (index, message) =>
       setTranscripts(sessionId, 'messages', (prev) => {
         const next = [...prev];
@@ -205,7 +207,9 @@ function ensureStream(sessionId: string): void {
       setTranscripts(
         sessionId,
         'subagentEvents',
-        typeof value === 'function' ? (value as (prev: SubagentEvent[]) => SubagentEvent[])(stateOf(sessionId).subagentEvents) : value,
+        typeof value === 'function'
+          ? (value as (prev: SubagentEvent[]) => SubagentEvent[])(stateOf(sessionId).subagentEvents)
+          : value,
       ),
     setChatMode: (mode) => patch({ chatMode: mode }),
     setPendingInteraction,
@@ -345,7 +349,10 @@ export function patchTranscript(sessionId: string, part: Partial<TranscriptState
 export function setTranscriptStreaming(sessionId: string, value: boolean): void {
   ensureState(sessionId);
   setTranscripts(sessionId, 'isStreaming', value);
-  attentionActions.report(sessionId, { isStreaming: value, title: stateOf(sessionId).sessionTitle });
+  attentionActions.report(sessionId, {
+    isStreaming: value,
+    title: stateOf(sessionId).sessionTitle,
+  });
 }
 
 /** Sets the session's pending request and reports it to the attention store. */
@@ -379,23 +386,26 @@ export function updateTranscriptMessages(
  * renders the prompt twice. Synchronous, so the pane that parks the entry is
  * the only pane that saw it — the flusher's shift below cannot double-park.
  */
-export function queueTurn(sessionId: string, content: string, existingTempId?: string): void {
+export function queueTurn(
+  sessionId: string,
+  content: string,
+  existingTempId?: string,
+  comments?: CommentRef[],
+): void {
   ensureState(sessionId);
-  const tempId = existingTempId ?? `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  setTranscripts(sessionId, 'queuedTurns', (prev) => [...prev, { tempId, content }]);
+  const tempId =
+    existingTempId ?? `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  setTranscripts(sessionId, 'queuedTurns', (prev) => [
+    ...prev,
+    { tempId, content, ...(comments?.length ? { comments } : {}) },
+  ]);
   if (existingTempId === undefined) {
     setTranscripts(sessionId, 'messages', (prev) => [
       ...prev,
       { id: tempId, role: 'user', content, timestamp: Date.now(), queued: true },
     ]);
   } else {
-    setTranscripts(
-      sessionId,
-      'messages',
-      (m) => m.id === existingTempId,
-      'queued',
-      true,
-    );
+    setTranscripts(sessionId, 'messages', (m) => m.id === existingTempId, 'queued', true);
   }
 }
 

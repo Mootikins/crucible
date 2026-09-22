@@ -27,6 +27,10 @@ pub fn chat_routes() -> OpenApiRouter<AppState> {
 struct SendMessageRequest {
     session_id: String,
     content: String,
+    /// Stored review comments that the message attaches. The daemon builds
+    /// the context of each one, and refuses an unknown or resolved comment.
+    #[serde(default)]
+    comments: Vec<crucible_core::diff::CommentRef>,
 }
 
 /// The identifier the daemon minted for the turn this request started.
@@ -45,7 +49,7 @@ struct SendMessageResponse {
     request_body = SendMessageRequest,
     responses(
         (status = 200, body = SendMessageResponse),
-        (status = 400, description = "The message is empty"),
+        (status = 400, description = "The message is empty and attaches no comment"),
         (status = 502, description = "The daemon could not accept the message"),
     )
 )]
@@ -53,13 +57,13 @@ async fn send_message(
     State(state): State<AppState>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, WebError> {
-    if req.content.trim().is_empty() {
+    if req.content.trim().is_empty() && req.comments.is_empty() {
         return Err(WebError::Chat("Message cannot be empty".to_string()));
     }
 
     let message_id = state
         .daemon
-        .session_send_message(&req.session_id, &req.content)
+        .session_send_message(&req.session_id, &req.content, &req.comments)
         .await
         .daemon_err()?;
 
@@ -380,6 +384,54 @@ mod tests {
         let parsed: SendMessageResponse =
             serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{e}: {json}"));
         assert_eq!(parsed.message_id, "msg-001");
+    }
+
+    /// The route forwards the comment references as the client sent them.
+    /// The daemon, not the route, builds their context.
+    #[tokio::test]
+    async fn send_message_forwards_the_attached_comments() {
+        use crate::test_support::{build_mock_state, build_test_app, start_mock_daemon};
+        use tower::ServiceExt;
+
+        let comments = serde_json::json!([{
+            "id": "c1",
+            "source": { "kind": "session_record", "session": "s-1" },
+        }]);
+        let (mock, client) = start_mock_daemon().await;
+        let app = build_test_app(build_mock_state(client));
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/chat/send")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "session_id": "s-1",
+                            "content": "",
+                            "comments": comments,
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::OK,
+            "a message with only a comment is not empty"
+        );
+        let params = mock.received_params("session.send_message").unwrap();
+        assert_eq!(params["comments"], comments);
+
+        let (status, _) = request_json(
+            "POST",
+            "/api/chat/send",
+            Some(serde_json::json!({ "session_id": "s-1", "content": " " })),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

@@ -103,7 +103,7 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
                 }
                 "session.send_message" => peer
                     .daemon
-                    .session_send_message("s", "hello")
+                    .session_send_message("s", "hello", &[])
                     .await
                     .map(|_| ()),
                 "diff.resolve_comment" => peer

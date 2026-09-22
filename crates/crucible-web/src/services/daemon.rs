@@ -455,8 +455,8 @@ impl ReconnectingDaemon {
 
     forward_rpc! {
         Once SessionSendMessage =>
-        session_send_message(session_id: &str, content: &str)
-        -> String = session_send_message(&session_id, &content, true);
+        session_send_message(session_id: &str, content: &str, comments: &[crucible_core::diff::CommentRef])
+        -> String = session_send_message_with_comments(&session_id, &content, &comments, true);
     }
 
     forward_rpc! {

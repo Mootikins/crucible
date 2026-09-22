@@ -340,6 +340,7 @@ describe('ChangesPanel — proposals', () => {
   const SUPERSEDED = '7a1c2f3e-0000-4000-8000-000000000004';
 
   it('lists stale and conflicted proposals', async () => {
+    setCurrentSession(session());
     env.restore();
     env = createTestQueryEnv(
       proposalRoutes([
@@ -365,8 +366,9 @@ describe('ChangesPanel — proposals', () => {
     expect(screen.queryByTestId(`changes-proposal-${OPEN}`)).toBeNull();
     expect(screen.queryByTestId(`changes-proposal-${SUPERSEDED}`)).toBeNull();
 
+    // The pane opens with the chat of this panel, which takes its comments.
     fireEvent.click(screen.getByTestId(`changes-proposal-open-${CONFLICTED}`));
-    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: CONFLICTED });
+    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: CONFLICTED }, undefined, 's1');
   });
 
   it('draws no proposal section when no proposal needs a merge', async () => {

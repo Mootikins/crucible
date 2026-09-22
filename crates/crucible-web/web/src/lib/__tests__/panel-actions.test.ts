@@ -223,6 +223,29 @@ describe('openDiff', () => {
     expect(two.seq).toBeGreaterThan(one.seq);
     expect(tab.metadata?.source).toEqual(branch('/repo/a'));
   });
+
+  // The pane names the chat that takes its comments. The tab keeps it, so
+  // the pane does not follow the user from chat to chat.
+  it('the tab names the chat that takes its comments', () => {
+    statusBarActions.setActiveSessionId('active-session');
+
+    // A session record belongs to its own session, whatever is active.
+    openDiff({ kind: 'session_record', session: 'recorded-session' });
+    expect(diffTabs()[0].metadata?.session).toBe('recorded-session');
+
+    // A caller that opens a diff from a chat names that chat.
+    openDiff(branch('/repo/a'), undefined, 'caller-session');
+    expect(diffTabs()[1].metadata?.session).toBe('caller-session');
+
+    // Any other diffset takes the session that is active now.
+    openDiff(branch('/repo/b'));
+    expect(diffTabs()[2].metadata?.session).toBe('active-session');
+
+    // With no active session, the pane names no chat.
+    statusBarActions.setActiveSessionId(null);
+    openDiff(branch('/repo/c'));
+    expect(diffTabs()[3].metadata?.session).toBeUndefined();
+  });
 });
 
 describe('findTabByContentType', () => {

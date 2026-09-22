@@ -237,7 +237,7 @@
             }
           },
           "400": {
-            "description": "The message is empty"
+            "description": "The message is empty and attaches no comment"
           },
           "502": {
             "description": "The daemon could not accept the message"
@@ -5322,6 +5322,24 @@
         },
         "additionalProperties": false
       },
+      "CommentRef": {
+        "type": "object",
+        "description": "A reference to one stored comment that a client attaches to a chat\nmessage.\n\nThe client sends only the reference. The daemon finds the comment in the\ndiffset of `source` and gives the agent the comment as context.",
+        "required": [
+          "id",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id of the comment."
+          },
+          "source": {
+            "$ref": "#/components/schemas/DiffsetSource",
+            "description": "The source of the diffset that owns the comment."
+          }
+        }
+      },
       "CommentSideRow": {
         "type": "string",
         "description": "The side of a diff that a comment range counts its lines on.",
@@ -8666,6 +8684,13 @@
           },
           "content": {
             "type": "string"
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommentRef"
+            },
+            "description": "Stored review comments that the message attaches. The daemon builds\nthe context of each one, and refuses an unknown or resolved comment."
           }
         }
       },

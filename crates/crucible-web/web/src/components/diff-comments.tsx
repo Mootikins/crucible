@@ -46,10 +46,13 @@ export interface LineSpan {
 export interface CommentHost {
   /** The side that the line numbers of this editor count on. */
   side: CommentSide;
-  /** Stores a comment. The promise rejects with the reason of a refusal. */
+  /**
+   * Stores a comment, and attaches it to the chat of the pane. The promise
+   * rejects with the reason of a refusal.
+   */
   comment(span: LineSpan, text: string): Promise<void>;
-  /** Puts a reference to the range and the text into the chat composer. */
-  sendToChat(span: LineSpan, text: string): void;
+  /** The chat that takes the comment, or null when the pane has none. */
+  chat(): string | null;
   /** Marks a stored comment resolved. The promise rejects with the reason of a refusal. */
   resolve(commentId: string): Promise<void>;
 }
@@ -389,10 +392,7 @@ class BoxWidget extends WidgetType {
             await this.host.comment(this.span, text);
             close();
           }}
-          onSend={(text) => {
-            this.host.sendToChat(this.span, text);
-            close();
-          }}
+          hasChat={this.host.chat() !== null}
           onCancel={close}
         />
       ),
@@ -528,14 +528,20 @@ export function commentExtensions(host: CommentHost): Extension[] {
 const boxButton = 'rounded border px-2 py-0.5 text-floor disabled:opacity-50 focus-ring';
 /** Comment: the primary action of the box. */
 const primaryButton = `${boxButton} border-primary bg-primary text-on-primary hover:bg-primary-hover hover:border-primary-hover disabled:hover:bg-primary disabled:hover:border-primary`;
-/** Send to chat and Cancel. */
+/** Cancel. */
 const secondaryButton = `${boxButton} border-hairline text-muted-dark hover:text-shell-ink hover:bg-hover-wash`;
 
-/** The box: a text field, then Comment, Send to chat and Cancel. */
+/**
+ * The box: a text field, then Comment and Cancel.
+ *
+ * **Comment** stores the comment and attaches it to the chat of the pane.
+ * A pane with no chat still stores it, and the box says that no chat gets it.
+ */
 function CommentBox(props: {
   label: string;
   onComment: (text: string) => Promise<void>;
-  onSend: (text: string) => void;
+  /** The pane has a chat that takes the comment. */
+  hasChat: boolean;
   onCancel: () => void;
 }) {
   const [text, setText] = createSignal('');
@@ -581,6 +587,11 @@ function CommentBox(props: {
       <Show when={error()}>
         {(message) => <span class="text-floor text-error">{message()}</span>}
       </Show>
+      <Show when={!props.hasChat}>
+        <span class="text-floor text-muted-dark" data-testid="diff-comment-no-chat">
+          No chat takes this comment. The diff pane stores it.
+        </span>
+      </Show>
       <div class="flex items-center gap-1.5">
         <button
           type="button"
@@ -590,14 +601,6 @@ function CommentBox(props: {
           class={primaryButton}
         >
           Comment
-        </button>
-        <button
-          type="button"
-          data-testid="diff-comment-send"
-          onClick={() => props.onSend(text().trim())}
-          class={secondaryButton}
-        >
-          Send to chat
         </button>
         <button
           type="button"

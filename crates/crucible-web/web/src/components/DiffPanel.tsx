@@ -23,6 +23,13 @@
  * marks it resolved, and the open list then leaves it out. An outdated comment shows at
  * the end of its file, because its text is no longer in the file.
  *
+ * **Comment** also attaches the comment to the composer of the chat of this
+ * pane: a session record belongs to its own session, and any other diffset
+ * takes the session that was active when the tab opened. The chip in the
+ * composer carries a reference, and the daemon builds the context of the
+ * comment when the message goes. A pane with no chat still stores the
+ * comment, and says that no chat receives it.
+ *
  * A proposal adds its decisions: Accept all and Reject all in the header, and
  * Accept and Reject on each file. A conflicted proposal shows a `ConflictView`
  * for each conflicted file instead of the files, and **Accept resolution**
@@ -53,10 +60,10 @@ import {
   type MergeCollapse,
 } from '@/lib/merge-view';
 import {
+  commentChipLabel,
   diffsetLabel,
   focusMatches,
   quickfixList,
-  referenceForm,
   type CommentSide,
   type DiffComment,
   type DiffFileEntry,
@@ -73,8 +80,9 @@ import {
   usePostDiffComment,
   useResolveDiffComment,
 } from '@/lib/query/diff';
-import { getBus } from '@/lib/bus';
 import { openDiff } from '@/lib/panel-actions';
+import { useSession } from '@/lib/query/sessions';
+import { composerComments } from '@/stores/composerComments';
 import { isPending, stateLabel, type FileConflict, type Proposal } from '@/lib/proposal-api';
 import { useProposal, useProposalDecision, type ProposalDecision } from '@/lib/query/proposals';
 import { notificationActions } from '@/stores/notificationStore';
@@ -132,6 +140,8 @@ export interface DiffPanelProps {
   source?: DiffsetSource;
   /** The file to scroll to and expand, from the tab metadata. */
   focus?: DiffFocusRequest;
+  /** The chat that a new comment attaches to, from the tab metadata. */
+  session?: string;
 }
 
 /**
@@ -236,6 +246,39 @@ const SourceLabel: Component<{ source: DiffsetSource; proposal?: Proposal }> = (
   </span>
 );
 
+/**
+ * The chat that a new comment of this pane attaches to.
+ *
+ * The name is the title of the session, else its short id. A pane with no
+ * chat says so, because a comment made there reaches no agent.
+ */
+const ChatTarget: Component<{ session?: string }> = (props) => {
+  const session = useSession(() => props.session ?? null);
+  return (
+    <span
+      class="flex min-w-0 shrink items-center gap-1 whitespace-nowrap text-floor text-muted-dark"
+      data-testid="diff-chat-target"
+      title={
+        props.session
+          ? 'A comment of this pane attaches to this chat'
+          : 'This pane has no chat. A comment is stored, and no chat receives it.'
+      }
+    >
+      <MessageSquareText class="h-3 w-3 shrink-0" aria-hidden="true" />
+      <span class="min-w-0 truncate">{chatTargetName(props.session, session.data?.title)}</span>
+    </span>
+  );
+};
+
+/** "No chat", or the title of the session, or its short id. */
+function chatTargetName(
+  session: string | undefined,
+  title: string | null | undefined,
+): string {
+  if (!session) return 'No chat';
+  return title?.trim() ? title : shortId(session);
+}
+
 export const DiffPanel: Component<DiffPanelProps> = (props) => {
   return (
     <PanelShell>
@@ -246,9 +289,15 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         {(source) => (
           <Show
             when={proposalSource(source())}
-            fallback={<DiffsetView source={source()} focus={props.focus} />}
+            fallback={<DiffsetView source={source()} focus={props.focus} session={props.session} />}
           >
-            {(proposal) => <ProposalDiffsetView source={proposal()} focus={props.focus} />}
+            {(proposal) => (
+              <ProposalDiffsetView
+                source={proposal()}
+                focus={props.focus}
+                session={props.session}
+              />
+            )}
           </Show>
         )}
       </Show>
@@ -283,9 +332,11 @@ function textKey(text: string): string {
   return `${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
-const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocusRequest }> = (
-  props,
-) => {
+const ProposalDiffsetView: Component<{
+  source: ProposalSource;
+  focus?: DiffFocusRequest;
+  session?: string;
+}> = (props) => {
   const proposal = useProposal(() => props.source.id);
   const decision = useProposalDecision(() => props.source.id);
   const decide = (value: ProposalDecision): Promise<void> =>
@@ -295,7 +346,7 @@ const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocus
         // A decision on some files moves them into a new proposal. A conflict
         // there needs its own pane.
         if (reply.id !== props.source.id && reply.state.kind === 'conflicted') {
-          openDiff({ kind: 'proposal', id: reply.id });
+          openDiff({ kind: 'proposal', id: reply.id }, undefined, props.session ?? undefined);
         }
       })
       .catch((e: Error) => {
@@ -306,7 +357,14 @@ const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocus
     decide,
     busy: () => decision.isPending,
   };
-  return <DiffsetView source={props.source} proposal={controls} focus={props.focus} />;
+  return (
+    <DiffsetView
+      source={props.source}
+      proposal={controls}
+      focus={props.focus}
+      session={props.session}
+    />
+  );
 };
 
 /** Whether the files of the proposal take a decision now. */
@@ -392,6 +450,8 @@ interface DiffsetViewProps {
   source: DiffsetSource;
   proposal?: ProposalControls;
   focus?: DiffFocusRequest;
+  /** The chat that a new comment attaches to. */
+  session?: string;
 }
 
 const DiffsetView: Component<DiffsetViewProps> = (props) => {
@@ -505,6 +565,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
             added={totals().added}
             removed={totals().removed}
           />
+          <ChatTarget session={props.session} />
         </div>
         <div class="ml-auto flex shrink-0 items-center gap-0.5">
           <div
@@ -607,6 +668,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
               {(file) => (
                 <FileSection
                   source={props.source}
+                  session={props.session}
                   file={file}
                   comments={commentsOf(file)}
                   onResolve={resolve}
@@ -629,6 +691,8 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
 
 interface FileSectionProps {
   source: DiffsetSource;
+  /** The chat that a new comment attaches to. */
+  session?: string;
   file: DiffFileEntry;
   /** The open comments of this file. */
   comments: ListedComment[];
@@ -767,6 +831,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
             <NearViewport>
               <FileBody
                 source={props.source}
+                session={props.session}
                 file={props.file}
                 comments={props.comments}
                 onResolve={props.onResolve}
@@ -888,6 +953,8 @@ const ResolveButton: Component<{ onResolve: () => Promise<void> }> = (props) => 
 
 interface FileBodyProps {
   source: DiffsetSource;
+  /** The chat that a new comment attaches to. */
+  session?: string;
   file: DiffFileEntry;
   comments: ListedComment[];
   onResolve: (commentId: string) => Promise<void>;
@@ -907,7 +974,7 @@ const FileBody: Component<FileBodyProps> = (props) => {
   const comment = async (side: CommentSide, span: LineSpan, body: string) => {
     const file = props.file;
     const source = props.source;
-    await post.mutateAsync({
+    const stored = await post.mutateAsync({
       source,
       // A branch source names its own root. A session record and a proposal
       // need the root of the file.
@@ -919,15 +986,22 @@ const FileBody: Component<FileBodyProps> = (props) => {
       side,
       body,
     });
-  };
-  const sendToChat = (span: LineSpan, body: string) => {
-    const reference = `@${referenceForm(props.file.path, span.first, span.last + 1)}`;
-    getBus().emit('insertIntoComposer', { text: body ? `${reference} ${body}` : reference });
+    // The comment is stored. The chat of this pane, when it has one, carries
+    // the reference until the user sends a message.
+    const session = props.session;
+    if (session) {
+      composerComments.attach(session, {
+        id: stored.id,
+        source,
+        label: commentChipLabel(stored),
+        title: `${file.path} · ${body}`,
+      });
+    }
   };
   const host = (side: CommentSide): CommentHost => ({
     side,
     comment: (span, body) => comment(side, span, body),
-    sendToChat,
+    chat: () => props.session ?? null,
     resolve: (commentId) => props.onResolve(commentId),
   });
   const hosts = { base: host('base'), current: host('current') };

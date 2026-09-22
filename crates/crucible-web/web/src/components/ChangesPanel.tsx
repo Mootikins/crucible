@@ -155,7 +155,13 @@ export const ChangesPanel: Component = () => {
                     type="button"
                     title={`Review ${proposal.title}`}
                     data-testid={`changes-proposal-open-${proposal.id}`}
-                    onClick={() => openDiff({ kind: 'proposal', id: proposal.id })}
+                    onClick={() =>
+                      openDiff(
+                        { kind: 'proposal', id: proposal.id },
+                        undefined,
+                        sessionId() ?? undefined,
+                      )
+                    }
                     class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
                   >
                     Open

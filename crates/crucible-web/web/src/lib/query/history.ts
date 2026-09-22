@@ -7,6 +7,7 @@ import {
 } from '@tanstack/solid-query';
 import { getSessionHistory, sendChatMessage } from '@/lib/api';
 import type { SessionHistoryResponse } from '@/lib/types';
+import type { CommentRef } from '@/lib/diffset';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -62,8 +63,7 @@ export function useSessionHistory(
       const sessionId = id();
       return {
         queryKey: keys.sessionHistory(sessionId ?? ''),
-        queryFn: ({ signal }: { signal: AbortSignal }) =>
-          fetchHistory(sessionId as string, signal),
+        queryFn: ({ signal }: { signal: AbortSignal }) => fetchHistory(sessionId as string, signal),
         enabled: sessionId !== null && sessionId !== '',
       };
     },
@@ -99,12 +99,19 @@ export function fetchSessionHistoryOnce(sessionId: string): Promise<SessionHisto
 export function useSendChatMessage(): UseMutationResult<
   string,
   Error,
-  { id: string; message: string }
+  { id: string; message: string; comments?: CommentRef[] }
 > {
   return useMutation(
     () => ({
-      mutationFn: ({ id, message }: { id: string; message: string }) =>
-        sendChatMessage(id, message),
+      mutationFn: ({
+        id,
+        message,
+        comments,
+      }: {
+        id: string;
+        message: string;
+        comments?: CommentRef[];
+      }) => sendChatMessage(id, message, comments),
     }),
     () => getQueryClient(),
   );
