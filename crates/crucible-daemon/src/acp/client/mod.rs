@@ -79,6 +79,9 @@ pub struct CrucibleAcpClient {
     agent_name: String,
     config: ClientConfig,
     shared: Arc<Mutex<Shared>>,
+    /// One turn at a time. [`Self::prompt`] holds it until the agent ends
+    /// the turn, so the next turn and the goodbye at drop wait for that end.
+    turn_gate: tokio::sync::Mutex<()>,
     /// The capabilities from `initialize`. The default until the handshake.
     caps: AgentCapabilities,
     /// A drop of this sender ends the SDK connection.
@@ -185,6 +188,7 @@ impl CrucibleAcpClient {
             agent_name,
             config,
             shared,
+            turn_gate: tokio::sync::Mutex::default(),
             caps: AgentCapabilities::default(),
             _stop: stop,
             _child: None,
@@ -355,8 +359,8 @@ async fn ask(
 /// and the SDK then makes an internal error with the data "response to
 /// `<method>` never received". The SDK gives no typed mark for that case,
 /// so the text is the signal. The tests that kill an agent mid-turn pin it.
-/// The text comes from `agent-client-protocol` 2.0.0. Check it again when
-/// the SDK version changes.
+/// The text comes from `agent-client-protocol` 2.2.0 (`jsonrpc.rs`, three
+/// sites). Check it again when the SDK version changes.
 fn connection_lost(error: &agent_client_protocol::Error) -> bool {
     let never_received = || {
         error

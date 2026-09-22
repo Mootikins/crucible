@@ -52,14 +52,6 @@ pub enum AcpHandleError {
     Config(String),
 }
 
-/// How long a new turn waits for the agent to end a dropped turn.
-///
-/// The agent ends a dropped turn when it answers `session/cancel`. A working
-/// agent answers in well under a second. An agent that does not answer in
-/// this time makes the new turn fail, not wait for the whole stream timeout.
-/// The goodbye at drop waits the same time for the last turn.
-const CANCELLED_TURN_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Daemon-side handle to an ACP agent process.
 ///
 /// Wraps the low-level ACP protocol client and implements `AgentHandle` so the
@@ -74,9 +66,6 @@ const CANCELLED_TURN_GRACE: std::time::Duration = std::time::Duration::from_secs
 /// - Routes through daemon's event system for multi-client consistency
 pub struct AcpAgentHandle {
     client: Arc<CrucibleAcpClient>,
-    /// The turn task holds this until the agent ends the turn. The next turn
-    /// and the goodbye at drop wait for it. A knob call does not.
-    turn_gate: Arc<tokio::sync::Mutex<()>>,
     _mcp_host: Option<InProcessMcpHost>,
     agent_name: String,
     mode_id: String,
@@ -321,7 +310,6 @@ impl AcpAgentHandle {
 
         Ok(Self {
             client: Arc::new(client),
-            turn_gate: Arc::default(),
             _mcp_host: mcp_host,
             agent_name,
             mode_id,
@@ -570,27 +558,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         // send the new turn's content plus any injected System-role blocks.
         let message = acp_prompt_text(&ctx.content, &ctx.injected);
 
-        // The turn task holds the gate until the agent ends the turn. A
-        // dropped turn keeps it until the agent answers `session/cancel`, so
-        // the next turn waits here for that end. It does not fail as busy.
-        let gate = match tokio::time::timeout(
-            CANCELLED_TURN_GRACE,
-            Arc::clone(&self.turn_gate).lock_owned(),
-        )
-        .await
-        {
-            Ok(gate) => gate,
-            Err(_) => {
-                let body = stream! {
-                    yield TurnEvent::Error(TurnError::AgentUnavailable(format!(
-                        "the ACP agent did not end the cancelled turn within {}s",
-                        CANCELLED_TURN_GRACE.as_secs()
-                    )));
-                };
-                return Ok(Box::pin(body));
-            }
-        };
-
         // The stream owns the receiver, so a closed channel means that the
         // daemon dropped the turn. That is the one cancel path.
         let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
@@ -613,7 +580,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             // A mid-turn `config_option_update` parks the model choice on the
             // client, so `current_model` reports the switch.
             let model_update = client.take_model_update();
-            drop(gate);
             let _ = result_tx
                 .send(result.map(|(summary, response)| (summary, response, usage, model_update)));
         });
@@ -709,7 +675,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
 impl Drop for AcpAgentHandle {
     fn drop(&mut self) {
         let client = Arc::clone(&self.client);
-        let gate = Arc::clone(&self.turn_gate);
         let agent = self.agent_name.clone();
         let session_id = self.session_id.clone();
         // Without a runtime (shutdown, sync context) the client drops here,
@@ -720,7 +685,7 @@ impl Drop for AcpAgentHandle {
                 // the agent free the session. The timeouts keep a hung agent
                 // from delaying its own kill, which the last client drop does.
                 // A refusal is only logged; the agent dies either way.
-                let _gate = tokio::time::timeout(CANCELLED_TURN_GRACE, gate.lock_owned()).await;
+                client.wait_for_turn_end().await;
                 if client.agent_supports_session_close() {
                     let close = client.close(&session_id);
                     match tokio::time::timeout(std::time::Duration::from_secs(2), close).await {

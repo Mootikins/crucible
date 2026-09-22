@@ -150,7 +150,20 @@ impl Drop for TurnSlot<'_> {
     }
 }
 
+/// How long a new turn waits for the agent to end a dropped turn.
+///
+/// The agent ends a dropped turn when it answers `session/cancel`. A working
+/// agent answers in well under a second. An agent that does not answer in
+/// this time makes the new turn fail, not wait for the whole stream timeout.
+/// The goodbye at drop waits the same time for the last turn.
+const CANCELLED_TURN_GRACE: Duration = Duration::from_secs(30);
+
 impl CrucibleAcpClient {
+    /// Wait until the running turn ends, for [`CANCELLED_TURN_GRACE`] at most.
+    pub async fn wait_for_turn_end(&self) {
+        let _ = tokio::time::timeout(CANCELLED_TURN_GRACE, self.turn_gate.lock()).await;
+    }
+
     /// Run one turn. Each chunk of the turn goes to `out`.
     ///
     /// A closed `out` is a cancel: the daemon dropped the turn. The client
@@ -167,6 +180,22 @@ impl CrucibleAcpClient {
         request: PromptRequest,
         out: &mpsc::UnboundedSender<StreamingChunk>,
     ) -> Result<(TurnSummary, PromptResponse)> {
+        // A dropped turn keeps the gate until the agent answers
+        // `session/cancel`, so this turn waits for that end. A turn that the
+        // daemon drops while it waits sends nothing to the agent.
+        let _turn = tokio::select! {
+            gate = tokio::time::timeout(CANCELLED_TURN_GRACE, self.turn_gate.lock()) => {
+                gate.map_err(|_| {
+                    ClientError::Session(format!(
+                        "the ACP agent did not end the cancelled turn within {}s",
+                        CANCELLED_TURN_GRACE.as_secs()
+                    ))
+                })?
+            }
+            () = out.closed() => {
+                return Err(ClientError::Session("the turn was dropped before it started".into()));
+            }
+        };
         let session_id = request.session_id.clone();
         let (updates_tx, mut updates) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
