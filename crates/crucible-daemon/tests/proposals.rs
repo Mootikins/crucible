@@ -220,3 +220,50 @@ async fn a_proposal_on_a_closed_kiln_goes_stale_at_list() {
     assert_eq!(got.state, ProposalState::Stale);
     daemon.stop().await;
 }
+
+#[tokio::test]
+async fn resolve_waits_for_every_settled_text() {
+    let daemon = Daemon::start(true).await;
+    write(&daemon.file("a.md"), BASE);
+    write(&daemon.file("b.md"), BASE);
+    let proposal = daemon.propose(&[("a.md", "uno\ntwo\nthree\n"), ("b.md", "uno\ntwo\nthree\n")]);
+    write(&daemon.file("a.md"), "eins\ntwo\nthree\n");
+    write(&daemon.file("b.md"), "eins\ntwo\nthree\n");
+    let conflicted = daemon.client.proposal_accept(&proposal.id).await.unwrap();
+    let ProposalState::Conflicted { files } = &conflicted.state else {
+        panic!("expected a conflict, got {:?}", conflicted.state);
+    };
+    assert_eq!(files.len(), 2, "{files:?}");
+    // Now `b.md` merges cleanly with its proposed text. The user did not
+    // settle it yet, so the first resolve must still write nothing.
+    write(&daemon.file("b.md"), "one\ntwo\nTHREE\n");
+
+    let first = daemon
+        .client
+        .proposal_resolve(&proposal.id, "a.md", "uno eins\ntwo\nthree\n")
+        .await
+        .unwrap();
+
+    // One file still waits for its settled text, so no file changes.
+    let ProposalState::Conflicted { files } = &first.state else {
+        panic!("expected a conflict, got {:?}", first.state);
+    };
+    assert_eq!(files.len(), 1, "{files:?}");
+    assert_eq!(files[0].path, "b.md");
+    assert_eq!(daemon.read("a.md"), "eins\ntwo\nthree\n");
+    assert_eq!(daemon.read("b.md"), "one\ntwo\nTHREE\n");
+    // The disk goes back to the text of the conflict, so the settled text
+    // writes with no merge.
+    write(&daemon.file("b.md"), "eins\ntwo\nthree\n");
+
+    let second = daemon
+        .client
+        .proposal_resolve(&proposal.id, "b.md", "uno zwei\ntwo\nthree\n")
+        .await
+        .unwrap();
+
+    assert_eq!(second.state, ProposalState::Accepted);
+    assert_eq!(daemon.read("a.md"), "uno eins\ntwo\nthree\n");
+    assert_eq!(daemon.read("b.md"), "uno zwei\ntwo\nthree\n");
+    daemon.stop().await;
+}
