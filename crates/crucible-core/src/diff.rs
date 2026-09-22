@@ -13,7 +13,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::proposal::ProposalId;
-use crate::session::{PhysicalRoot, SessionId};
+use crate::session::{LineRange, PhysicalRoot, SessionId};
 
 /// The identity of one diffset.
 ///
@@ -157,6 +157,45 @@ pub struct DiffFileText {
     pub current_text: Option<String>,
 }
 
+/// Where the text of a comment is in the current text of its side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Projection {
+    /// The text is at the stored range.
+    Kept,
+    /// The text is at this range, not at the stored range.
+    Moved(LineRange),
+    /// The current text does not contain the text.
+    Outdated,
+}
+
+/// Find the quoted text of a comment in the current text of its side.
+///
+/// The lines compare without their line ends. Thus a last line that gets a
+/// line end later still matches. When the text occurs more than once, the
+/// match nearest to the stored start wins. An empty quote matches at every
+/// line start.
+pub fn project(quoted: &str, stored: LineRange, current_text: &str) -> Projection {
+    let quote: Vec<&str> = quoted.lines().collect();
+    let lines: Vec<&str> = current_text.lines().collect();
+    let Some(count) = lines.len().checked_sub(quote.len()) else {
+        return Projection::Outdated;
+    };
+    // Line numbers are 1-based, so the match at index `i` starts at `i + 1`.
+    let nearest = (0..=count)
+        .filter(|&i| lines[i..i + quote.len()] == quote[..])
+        .map(|i| i as u32 + 1)
+        .min_by_key(|&start| start.abs_diff(stored.start));
+    let Some(start) = nearest else {
+        return Projection::Outdated;
+    };
+    let found = LineRange::new(start, start + quote.len() as u32);
+    if found == stored {
+        Projection::Kept
+    } else {
+        Projection::Moved(found)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +318,58 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<DiffFileText>(value).unwrap(),
             added
+        );
+    }
+
+    #[test]
+    fn a_range_that_did_not_move_is_kept() {
+        let text = "a\nb\nc\nd\n";
+        assert_eq!(
+            project("b\nc\n", LineRange::new(2, 4), text),
+            Projection::Kept
+        );
+        // The last line matches without its line end.
+        assert_eq!(project("d", LineRange::new(4, 5), text), Projection::Kept);
+    }
+
+    #[test]
+    fn a_range_moves_when_lines_are_added_above() {
+        let text = "new 1\nnew 2\na\nb\nc\n";
+        assert_eq!(
+            project("b\nc\n", LineRange::new(2, 4), text),
+            Projection::Moved(LineRange::new(4, 6))
+        );
+    }
+
+    #[test]
+    fn the_nearest_of_two_matches_wins() {
+        let text = "x\ny\nz\nz\nz\nx\ny\n";
+        // The matches start at lines 1 and 6. The stored start 5 is nearer to 6.
+        assert_eq!(
+            project("x\ny\n", LineRange::new(5, 7), text),
+            Projection::Moved(LineRange::new(6, 8))
+        );
+        assert_eq!(
+            project("x\ny\n", LineRange::new(2, 4), text),
+            Projection::Moved(LineRange::new(1, 3))
+        );
+    }
+
+    #[test]
+    fn a_range_whose_text_is_gone_is_outdated() {
+        let text = "a\nb changed\nc\n";
+        assert_eq!(
+            project("b\nc\n", LineRange::new(2, 4), text),
+            Projection::Outdated
+        );
+        // A quote longer than the text is outdated too.
+        assert_eq!(
+            project("a\nb\nc\nd\n", LineRange::new(1, 5), "a\n"),
+            Projection::Outdated
+        );
+        assert_eq!(
+            project("a\n", LineRange::new(1, 2), ""),
+            Projection::Outdated
         );
     }
 }

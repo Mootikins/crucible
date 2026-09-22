@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
-use crucible_core::diff::DiffsetId;
+use crucible_core::diff::{project, DiffsetId, Projection};
 use crucible_core::session::{Comment, LineRange};
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,16 @@ struct DiffsetComments {
     comments: Vec<Comment>,
 }
 
+/// A comment as the daemon lists it: its range follows its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedComment {
+    /// The stored comment. When its text moved, `line_range` is the new range.
+    pub comment: Comment,
+    /// The current text of the side does not contain the quoted text.
+    /// The pane shows an outdated comment at the end of its file.
+    pub outdated: bool,
+}
+
 /// The comments of every diffset.
 #[derive(Debug, Clone)]
 pub struct CommentStore {
@@ -66,6 +76,39 @@ impl CommentStore {
     /// no comments.
     pub fn list(&self, diffset: &DiffsetId) -> Result<Vec<Comment>> {
         Ok(self.file(diffset)?.read()?.comments)
+    }
+
+    /// The comments of `diffset`, oldest first, each projected onto the
+    /// current text of its side.
+    ///
+    /// `side_text` gives the current text of the side of a comment. `None`
+    /// means that the file is absent on that side, so the comment is
+    /// outdated. The store does not change: a later text can hold the
+    /// quoted text again.
+    pub fn list_projected(
+        &self,
+        diffset: &DiffsetId,
+        mut side_text: impl FnMut(&Comment) -> Option<String>,
+    ) -> Result<Vec<ListedComment>> {
+        Ok(self
+            .list(diffset)?
+            .into_iter()
+            .map(|mut comment| {
+                let projection = match side_text(&comment) {
+                    Some(text) => project(&comment.quoted, comment.line_range, &text),
+                    None => Projection::Outdated,
+                };
+                let outdated = match projection {
+                    Projection::Kept => false,
+                    Projection::Moved(range) => {
+                        comment.line_range = range;
+                        false
+                    }
+                    Projection::Outdated => true,
+                };
+                ListedComment { comment, outdated }
+            })
+            .collect())
     }
 
     /// Store a new comment under its own diffset.
@@ -232,5 +275,46 @@ mod tests {
         assert!(store.is_migrated(&diffset).unwrap());
         assert!(!store.migrate(&diffset, vec![old.clone()]).unwrap());
         assert_eq!(store.list(&diffset).unwrap(), vec![old]);
+    }
+
+    #[test]
+    fn listed_comments_follow_their_text() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        let diffset = session("s-1");
+        let kept = comment(&diffset, "kept");
+        let mut moved = comment(&diffset, "moved");
+        moved.path = "src/b.rs".into();
+        let mut gone = comment(&diffset, "gone");
+        gone.path = "src/gone.rs".into();
+        for c in [&kept, &moved, &gone] {
+            store.add(c).unwrap();
+        }
+
+        let listed = store
+            .list_projected(&diffset, |c| match c.path.as_str() {
+                "src/a.rs" => Some("a\nb\n".into()),
+                "src/b.rs" => Some("new\na\n".into()),
+                _ => None,
+            })
+            .unwrap();
+
+        let ranges: Vec<_> = listed
+            .iter()
+            .map(|l| (l.comment.body.as_str(), l.comment.line_range, l.outdated))
+            .collect();
+        assert_eq!(
+            ranges,
+            vec![
+                ("kept", LineRange::new(1, 2), false),
+                ("moved", LineRange::new(2, 3), false),
+                ("gone", LineRange::new(1, 2), true),
+            ]
+        );
+        // The projection does not write the moved range back.
+        assert_eq!(
+            store.list(&diffset).unwrap()[1].line_range,
+            LineRange::new(1, 2)
+        );
     }
 }
