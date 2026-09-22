@@ -689,7 +689,6 @@ pub enum ProjectError {
     Storage(String),
 }
 
-
 /// Whether `path` is the top level of a git working tree.
 ///
 /// `gix::discover` also finds a repository for a folder below the top level.
