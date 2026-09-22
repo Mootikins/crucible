@@ -1,6 +1,12 @@
 //! The `proposal.*` RPCs. Each handler reads its params, calls the store and
 //! answers the proposal.
 
+use std::path::PathBuf;
+
+use crucible_core::proposal::ProposalId;
+use crucible_core::session::PhysicalRoot;
+
+use crate::kiln_manager::KilnManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
 use crate::rpc_client::{
     ProposalIdRequest, ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest,
@@ -10,8 +16,9 @@ use super::{ProposalError, ProposalResult, ProposalStore};
 
 /// The answer for a store result.
 ///
-/// An unknown id, a settled proposal and an operation that the daemon does
-/// not serve yet are the caller's to fix. A store failure is the daemon's.
+/// An unknown id, a settled proposal and a resolve of a file with no conflict
+/// are the caller's to fix. A store failure and a refused write are the
+/// daemon's.
 fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Response {
     let id = req.id.clone();
     match result
@@ -21,8 +28,11 @@ fn answer<T: serde::Serialize>(req: &Request, result: ProposalResult<T>) -> Resp
         Err(
             e @ (ProposalError::NotFound(_)
             | ProposalError::Settled(..)
-            | ProposalError::NotServed(_)),
+            | ProposalError::NoConflict(..)),
         ) => Response::error(id, INVALID_PARAMS, e.to_string()),
+        Err(e @ ProposalError::WriteFailed(_)) => {
+            Response::error(id, INTERNAL_ERROR, e.to_string())
+        }
         Err(ProposalError::Store(e)) => Response::error(id, INTERNAL_ERROR, format!("{e:#}")),
     }
 }
@@ -36,10 +46,28 @@ macro_rules! params {
     };
 }
 
-/// Handle `proposal.list`.
+/// Handle `proposal.list`. The daemon does not watch a closed kiln, so the
+/// list runs the stale check first.
 pub(crate) async fn handle_proposal_list(req: Request, store: &ProposalStore) -> Response {
     let params = params!(req, ProposalListRequest);
-    answer(&req, store.list(params.all))
+    answer(
+        &req,
+        store.check_stale().and_then(|_| store.list(params.all)),
+    )
+}
+
+/// The kiln roots that the daemon admits for a write. The daemon also opens
+/// each kiln that `id` writes, so the watcher and the index see the write.
+async fn write_roots(store: &ProposalStore, id: &ProposalId, km: &KilnManager) -> Vec<PathBuf> {
+    if let Ok(proposal) = store.get(id) {
+        let mut roots: Vec<&PhysicalRoot> = proposal.writes.iter().map(|w| &w.root).collect();
+        roots.dedup();
+        for root in roots {
+            // A refusal here shows again as a refused write, with its path.
+            let _opened = km.admit_kiln_root(root.as_path()).await;
+        }
+    }
+    km.admissible_kiln_roots().await
 }
 
 /// Handle `proposal.get`.
@@ -49,9 +77,14 @@ pub(crate) async fn handle_proposal_get(req: Request, store: &ProposalStore) -> 
 }
 
 /// Handle `proposal.accept`.
-pub(crate) async fn handle_proposal_accept(req: Request, store: &ProposalStore) -> Response {
+pub(crate) async fn handle_proposal_accept(
+    req: Request,
+    store: &ProposalStore,
+    km: &KilnManager,
+) -> Response {
     let params = params!(req, ProposalIdRequest);
-    answer(&req, store.accept(&params.id))
+    let kilns = write_roots(store, &params.id, km).await;
+    answer(&req, store.accept(&params.id, &kilns).await)
 }
 
 /// Handle `proposal.reject`.
@@ -67,9 +100,19 @@ pub(crate) async fn handle_proposal_dismiss(req: Request, store: &ProposalStore)
 }
 
 /// Handle `proposal.resolve`.
-pub(crate) async fn handle_proposal_resolve(req: Request, store: &ProposalStore) -> Response {
+pub(crate) async fn handle_proposal_resolve(
+    req: Request,
+    store: &ProposalStore,
+    km: &KilnManager,
+) -> Response {
     let params = params!(req, ProposalResolveRequest);
-    answer(&req, store.resolve(&params.id, &params.path, &params.text))
+    let kilns = write_roots(store, &params.id, km).await;
+    answer(
+        &req,
+        store
+            .resolve(&params.id, &params.path, &params.text, &kilns)
+            .await,
+    )
 }
 
 #[cfg(test)]
@@ -138,8 +181,8 @@ mod tests {
             }
         );
 
-        // A settled proposal, an unknown id and a stub are the caller's error.
-        let again = handle_proposal_dismiss(request("proposal.dismiss", id.clone()), &store).await;
+        // A settled proposal and an unknown id are the caller's error.
+        let again = handle_proposal_dismiss(request("proposal.dismiss", id), &store).await;
         assert_eq!(again.error.unwrap().code, INVALID_PARAMS);
         let unknown = handle_proposal_get(
             request("proposal.get", json!({ "id": ProposalId::generate() })),
@@ -147,8 +190,6 @@ mod tests {
         )
         .await;
         assert_eq!(unknown.error.unwrap().code, INVALID_PARAMS);
-        let accept = handle_proposal_accept(request("proposal.accept", id), &store).await;
-        assert_eq!(accept.error.unwrap().code, INVALID_PARAMS);
         let bad =
             handle_proposal_get(request("proposal.get", json!({ "id": "../x" })), &store).await;
         assert_eq!(bad.error.unwrap().code, INVALID_PARAMS);

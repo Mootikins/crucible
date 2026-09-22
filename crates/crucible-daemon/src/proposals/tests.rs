@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 fn session(id: &str) -> SessionId {
@@ -277,4 +278,98 @@ fn a_supersede_emits_proposal_changed_for_both_proposals() {
     let mut expected = vec![older.id.to_string(), newer.id.to_string()];
     expected.sort();
     assert_eq!(changed, expected);
+}
+
+/// A kiln directory in the fixture, with `a.md` on disk, and a proposal
+/// that changes the first line of `a.md`.
+fn kiln_proposal(fx: &Fixture) -> (PathBuf, Proposal) {
+    let kiln = fx.dir.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let base = "one\ntwo\n";
+    std::fs::write(kiln.join("a.md"), base).unwrap();
+    let proposal = fx
+        .store
+        .record_write(
+            plugin("reflection"),
+            &session("aux-1"),
+            PhysicalRoot::from_top_level(&kiln),
+            "a.md",
+            ExpectedBase::Text {
+                text: base.into(),
+                hash: crucible_core::note_edit::disk_hash(base),
+            },
+            "uno\ntwo\n".into(),
+        )
+        .unwrap();
+    (kiln, proposal)
+}
+
+#[tokio::test]
+async fn accept_and_resolve_emit_proposal_changed() {
+    let fx = Fixture::new();
+    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    fx.store.set_events(tx);
+    let (kiln, made) = kiln_proposal(&fx);
+    std::fs::write(kiln.join("a.md"), "eins\ntwo\n").unwrap();
+    drain(&mut events);
+
+    let conflicted = fx
+        .store
+        .accept(&made.id, std::slice::from_ref(&kiln))
+        .await
+        .unwrap();
+
+    assert!(matches!(conflicted.state, ProposalState::Conflicted { .. }));
+    let changed: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
+    // The stale check at accept marks the proposal stale first.
+    assert_eq!(changed, vec![made.id.to_string(); 2]);
+
+    let resolved = fx
+        .store
+        .resolve(&made.id, "a.md", "uno\ntwo\n", std::slice::from_ref(&kiln))
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.state, ProposalState::Accepted);
+    let changed: Vec<_> = drain(&mut events).iter().map(changed_id).collect();
+    assert_eq!(changed, vec![made.id.to_string()]);
+    assert_eq!(
+        std::fs::read_to_string(kiln.join("a.md")).unwrap(),
+        "uno\ntwo\n"
+    );
+}
+
+#[tokio::test]
+async fn a_file_event_on_a_proposed_path_makes_the_proposal_stale() {
+    let fx = Fixture::new();
+    let (tx, mut events) = tokio::sync::broadcast::channel(16);
+    fx.store.set_events(tx.clone());
+    let (kiln, made) = kiln_proposal(&fx);
+    drain(&mut events);
+    let store = Arc::new(ProposalStore::new(proposals_root(fx.dir.path())));
+    store.set_events(tx.clone());
+    spawn_stale_watch(tx.subscribe(), store);
+
+    std::fs::write(kiln.join("a.md"), "one\ntwo\nthree\n").unwrap();
+    let event = crate::event_map::message_for(
+        &crucible_core::events::session_event::InternalSessionEvent::FileChanged {
+            path: kiln.join("a.md"),
+            kind: Default::default(),
+        },
+    )
+    .unwrap();
+    tx.send(event).unwrap();
+
+    // The watcher announces the change after it writes the state.
+    let announced = loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(10), events.recv())
+            .await
+            .expect("the watcher announces the stale proposal")
+            .unwrap();
+        if event.event == crucible_core::protocol::SystemPayload::PROPOSAL_CHANGED {
+            break event;
+        }
+    };
+    assert_eq!(changed_id(&announced), made.id.to_string());
+    assert_eq!(fx.store.get(&made.id).unwrap().state, ProposalState::Stale);
 }

@@ -7,7 +7,9 @@
 //!
 //! See `docs/Meta/Analysis/Diff Review and Proposals.md`, sections 7.1 and 7.3.
 
+mod accept;
 mod rpc;
+mod stale;
 mod store;
 
 use std::collections::HashMap;
@@ -25,6 +27,7 @@ pub(crate) use rpc::{
     handle_proposal_accept, handle_proposal_dismiss, handle_proposal_get, handle_proposal_list,
     handle_proposal_reject, handle_proposal_resolve,
 };
+pub use stale::spawn_stale_watch;
 pub use store::{proposals_root, root_beside_snapshots};
 
 /// Why a proposal operation failed.
@@ -36,9 +39,13 @@ pub enum ProposalError {
     /// The proposal left the Inbox, so the user cannot decide on it again.
     #[error("proposal {0} is already {1}")]
     Settled(ProposalId, &'static str),
-    /// A later change of the daemon serves this operation.
-    #[error("the daemon does not {0} a proposal yet")]
-    NotServed(&'static str),
+    /// A resolve named a file that has no conflict in the proposal.
+    #[error("proposal {0} has no conflict in {1}")]
+    NoConflict(ProposalId, String),
+    /// The checked write refused a file for a reason that is not a merge
+    /// conflict, such as a root that the daemon does not admit.
+    #[error("the daemon could not write the proposal: {0}")]
+    WriteFailed(String),
     /// The proposal files could not be read or written.
     #[error(transparent)]
     Store(#[from] anyhow::Error),
@@ -59,6 +66,9 @@ pub struct ProposalStore {
     /// One writer at a time. A write can change several files: the proposal
     /// of the turn and each older proposal that it supersedes.
     write: Mutex<()>,
+    /// One accept or resolve at a time. It stays locked across the file
+    /// writes, so two accepts of one proposal cannot both write.
+    settle: tokio::sync::Mutex<()>,
     /// The event bus of the daemon. The server sets it at bind. A store
     /// without a bus, as in a unit test, changes its files and sends nothing.
     events: OnceLock<broadcast::Sender<SessionEventMessage>>,
@@ -71,6 +81,7 @@ impl ProposalStore {
             files: store::ProposalFiles::new(dir),
             turns: Mutex::new(HashMap::new()),
             write: Mutex::new(()),
+            settle: tokio::sync::Mutex::new(()),
             events: OnceLock::new(),
         }
     }
@@ -199,19 +210,6 @@ impl ProposalStore {
     /// its file.
     pub fn dismiss(&self, id: &ProposalId) -> ProposalResult<Proposal> {
         self.settle(id, ProposalState::Dismissed)
-    }
-
-    /// Write every file of the proposal. A later change fills this in.
-    pub fn accept(&self, id: &ProposalId) -> ProposalResult<Proposal> {
-        self.get(id)?;
-        Err(ProposalError::NotServed("accept"))
-    }
-
-    /// Write the text that the user settled for one conflicted file. A later
-    /// change fills this in.
-    pub fn resolve(&self, id: &ProposalId, _path: &str, _text: &str) -> ProposalResult<Proposal> {
-        self.get(id)?;
-        Err(ProposalError::NotServed("resolve"))
     }
 
     /// The open proposal of the current turn of `session`, when it has the

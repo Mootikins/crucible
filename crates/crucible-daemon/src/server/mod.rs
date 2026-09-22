@@ -466,6 +466,11 @@ impl Server {
         if !agent_manager.proposals().set_events(event_tx.clone()) {
             warn!("the proposal store already has an event bus");
         }
+        // A proposal goes stale when a watched file moves from its base.
+        crate::proposals::spawn_stale_watch(
+            event_tx.subscribe(),
+            agent_manager.proposals().clone(),
+        );
         let subscription_manager = Arc::new(SubscriptionManager::new());
         // With the kiln registry, so a kiln root is never listed or
         // registered as a project — including by a session whose workspace

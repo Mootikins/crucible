@@ -1166,7 +1166,11 @@ impl RpcDispatcher {
             ),
             RpcMethod::ProposalAccept => forward!(
                 id,
-                crate::proposals::handle_proposal_accept(req.clone(), self.ctx.agents.proposals())
+                crate::proposals::handle_proposal_accept(
+                    req.clone(),
+                    self.ctx.agents.proposals(),
+                    &self.ctx.kiln
+                )
             ),
             RpcMethod::ProposalReject => forward!(
                 id,
@@ -1178,7 +1182,11 @@ impl RpcDispatcher {
             ),
             RpcMethod::ProposalResolve => forward!(
                 id,
-                crate::proposals::handle_proposal_resolve(req.clone(), self.ctx.agents.proposals())
+                crate::proposals::handle_proposal_resolve(
+                    req.clone(),
+                    self.ctx.agents.proposals(),
+                    &self.ctx.kiln
+                )
             ),
             RpcMethod::FsWrite => forward!(
                 id,
