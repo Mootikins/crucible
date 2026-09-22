@@ -267,9 +267,8 @@ export type ChatMode = string;
 /**
  * One mode a session may enter, as the daemon describes it.
  *
- * `review_policy` is part of the shape, not an extra: the daemon degrades it
- * per agent capability before sending it, so what arrives is what will
- * actually happen. `lib/review-types.ts` re-exports the policy values.
+ * The daemon degrades `writes` by what the agent can hold back before it
+ * sends the row, so the value is what a note write does in this session.
  */
 export type ModeDescriptor = Schemas['ModeRow'];
 

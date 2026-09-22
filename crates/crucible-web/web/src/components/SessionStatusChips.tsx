@@ -3,16 +3,13 @@ import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
 import { useSessionStatus } from '@/lib/query/session-config';
 import { reviewStore, useReviewSession } from '@/lib/review-store';
-import {
-  type ReviewAwareMode,
-  type ReviewPolicy,
-} from '@/lib/review-types';
+import type { ModeDescriptor } from '@/lib/types';
 
 /**
  * Read-only status strip for the current session: whatever keyed slots the
  * daemon's plugins published, rendered as chips, plus the two things about a
  * session that are not any plugin's to say — whether the agent is parked
- * waiting on review, and what the review policy actually is.
+ * waiting on review, and what a note write in the current mode does.
  *
  * The plugin half deliberately knows nothing about any particular plugin. A
  * slot arrives as `{key, plugin, text, level}`; this renders `text`, attributes
@@ -50,39 +47,31 @@ export const SessionStatusChips: Component = () => {
   const status = useSessionStatus(() => sessionId() ?? null);
   const slots = () => status.data ?? [];
 
-  // The EFFECTIVE review policy, straight from the daemon's mode descriptor.
+  // The EFFECTIVE write mode, from the mode descriptor of the daemon.
   //
-  // Never re-derived from the mode id here. The daemon degrades the configured
-  // policy by what the agent can actually enforce — an ACP agent runs its tools
-  // in its own process, so a pre-write gate on it is unenforceable and comes
-  // back as `post_turn`. A chip reading "gated" on a session that cannot gate
-  // is a lie about a safety property, and inferring it client-side is exactly
-  // how that lie gets told.
+  // This file never derives it from the mode id. The daemon degrades the
+  // configured value by what the agent can hold back: an ACP agent runs its
+  // tools in its own process, so its `propose` mode comes back as `apply`.
   //
-  // It reads the query rather than holding a copy, so a session with no answer
-  // yet — a new one, or one whose list failed — reports no policy instead of
-  // the policy of the session before it.
-  const policy = (): ReviewPolicy | null => {
+  // It reads the query and holds no copy, so a session with no answer yet (a
+  // new one, or one whose list failed) reports no write mode, and not the
+  // write mode of the session before it.
+  const writes = (): ModeDescriptor['writes'] | null => {
     const listed = modes.data;
     if (!listed) return null;
-    const current = (listed.modes as ReviewAwareMode[]).find(
-      (mode) => mode.id === listed.current_mode_id,
-    );
-    // Absent on daemons that predate the feature — no chip rather than a
-    // guessed one.
-    return current?.review_policy ?? null;
+    const current = listed.modes.find((mode) => mode.id === listed.current_mode_id);
+    return current?.writes ?? null;
   };
 
   const gate = () => reviewStore.session(sessionId()).gate;
   const blocked = () => gate()?.blocked === true;
-  // The review policy is no longer a chip: a reader did not know what
-  // "gated" meant, and the permission card already says when a write waits.
-  // It stays on the wrapper as data for tests and plugins.
-  const anything = () => slots().length > 0 || blocked() || policy() !== null;
+  // The write mode is not a chip, because the mode control already says
+  // "proposes". It stays on the wrapper as data for tests and plugins.
+  const anything = () => slots().length > 0 || blocked() || writes() !== null;
 
   return (
     <Show when={anything()}>
-      <div class="contents" data-testid="session-status" data-review-policy={policy() ?? undefined}>
+      <div class="contents" data-testid="session-status" data-writes={writes() ?? undefined}>
         {/* A blocked agent must never read as a stalled one. First chip,
             loudest tone, and it names what it is waiting on. */}
         <Show when={blocked()}>

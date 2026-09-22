@@ -73,7 +73,7 @@ pub(crate) struct AgentStreamConfig {
     /// not ACP, so it cannot distinguish "the daemon dispatches this agent's
     /// tools" from "it doesn't". That distinction decides whether a pre-write
     /// gate can be enforced at all. See
-    /// [`crucible_core::types::mode::ReviewPolicy::enforceable_by`].
+    /// [`crucible_core::types::mode::WriteMode::effective_for`].
     pub(crate) agent_type: String,
     /// The session's review ledgers, when the manager wired them in.
     ///

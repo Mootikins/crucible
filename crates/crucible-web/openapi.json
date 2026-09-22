@@ -7139,7 +7139,7 @@
       },
       "KnobRow": {
         "type": "object",
-        "description": "One setting and whether this session can change it.\n\nMirrors `crucible_core::types::KnobDescriptor`, for the reason\n[`ReviewPolicyRow`] gives.",
+        "description": "One setting and whether this session can change it.\n\nMirrors `crucible_core::types::KnobDescriptor`, for the reason\n[`WriteModeRow`] gives.",
         "required": [
           "id",
           "supported"
@@ -7344,11 +7344,10 @@
       },
       "ModeRow": {
         "type": "object",
-        "description": "One mode a session may enter.\n\nMirrors `crucible_core::types::mode::ModeDescriptor` field for field, for\nthe reason [`ReviewPolicyRow`] gives.",
+        "description": "One mode a session may enter.\n\nMirrors `crucible_core::types::mode::ModeDescriptor` field for field, for\nthe reason [`WriteModeRow`] gives.",
         "required": [
           "id",
           "name",
-          "review_policy",
           "writes"
         ],
         "properties": {
@@ -7379,10 +7378,6 @@
               "null"
             ],
             "description": "A hex colour."
-          },
-          "review_policy": {
-            "$ref": "#/components/schemas/ReviewPolicyRow",
-            "description": "The review this mode asks for, already degraded to what this session's\nagent can enforce."
           },
           "writes": {
             "$ref": "#/components/schemas/WriteModeRow",
@@ -9057,15 +9052,6 @@
           }
         }
       },
-      "ReviewPolicyRow": {
-        "type": "string",
-        "description": "How much review a mode asks for before the agent writes.\n\nMirrors `crucible_core::types::mode::ReviewPolicy`, which carries no\nschema: `crucible-core` takes no utoipa dependency, and a client that\nrenders a mode chip has to know the three values it can read.",
-        "enum": [
-          "none",
-          "post_turn",
-          "pre_write"
-        ]
-      },
       "ReviewRebaseResponse": {
         "type": "object",
         "description": "What `POST /api/session/{id}/review/rebase` answers.",
@@ -10578,7 +10564,7 @@
       },
       "WriteModeRow": {
         "type": "string",
-        "description": "What a note write in a mode does.\n\nMirrors `crucible_core::types::mode::WriteMode`, for the reason\n[`ReviewPolicyRow`] gives.",
+        "description": "What a note write in a mode does.\n\nMirrors `crucible_core::types::mode::WriteMode`, which carries no\nschema: `crucible-core` takes no utoipa dependency, and a client that\nshows a mode has to know the values it can read.",
         "enum": [
           "apply",
           "propose"

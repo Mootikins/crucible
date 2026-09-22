@@ -14,17 +14,12 @@ use crate::rpc_helpers::typed_params;
 /// A session with no agent configured still has modes — they come from the Lua
 /// registry, not the agent — so only `SessionNotFound` is an error here.
 ///
-/// Each descriptor carries the **effective** review policy, not the configured
-/// one: `min(mode_policy, agent_capability)`. An external ACP agent runs tools
-/// in its own process, so a pre-write gate arrives after the write and cannot
-/// block it; reporting `pre_write` for such a session would be a mode chip
-/// lying about a safety property. A session with no agent yet degrades the
-/// same way — `enforceable_by` treats anything but `"internal"` as
-/// post-turn — because promising enforcement we cannot yet vouch for is the
-/// failure that matters.
-///
-/// `writes` follows the same rule: the Lua declaration of the mode gives the
-/// value, and a session whose agent is not internal reads `apply`.
+/// Each descriptor carries the **effective** write mode, not the configured
+/// one. The Lua declaration of the mode gives the value. An external ACP
+/// agent runs its tools in its own process, so the daemon cannot hold its
+/// writes, and the session reads `apply`. A session with no agent yet also
+/// reads `apply`, because `WriteMode::effective_for` treats every agent type
+/// except `"internal"` so.
 pub(crate) async fn handle_session_list_modes(
     req: Request,
     am: &Arc<AgentManager>,

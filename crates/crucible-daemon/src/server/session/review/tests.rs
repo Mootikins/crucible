@@ -1707,7 +1707,7 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
     )
     .await
     .unwrap();
-    // What `aux:set_mode("auto")` does: `auto` carries `ReviewPolicy::PostTurn`,
+    // What `aux:set_mode("auto")` does: the gate does not hold an `auto` turn,
     // so the write is bracketed and queued rather than parked at the gate.
     am.set_mode(&session_id, "auto", None).await.unwrap();
 

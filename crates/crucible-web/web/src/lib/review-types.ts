@@ -42,27 +42,6 @@ export type ComposedHunk = Schemas['ReviewHunkRow'];
 export type ReviewComment = Schemas['ReviewCommentRow'];
 
 /**
- * Effective review policy for the session's current mode.
- *
- * The daemon degrades this per agent capability before sending it
- * (`ModeDescriptor::degraded_for`), so what arrives here is what will actually
- * happen — an ACP session in `normal` reports `post_turn`, not `pre_write`.
- * Rendering the configured policy instead would be a lie about a safety
- * property, so nothing on this side re-derives it from the mode id.
- */
-export type ReviewPolicy = Schemas['ReviewPolicyRow'];
-
-/**
- * A mode, named from the review surface.
- *
- * `review_policy` is now a required member of `ModeDescriptor` itself, because
- * the route declares it: the daemon always sends it. The alias stays so the
- * review components keep reading one name, and so the two files do not import
- * each other in a cycle.
- */
-export type ReviewAwareMode = Schemas['ModeRow'];
-
-/**
  * A hunk nobody's ledger claims: the user's own editor, an async formatter, a
  * plugin writing directly. Shown for context so the composed diff stays
  * honest, never rejectable — reverting one destroys the user's concurrent work

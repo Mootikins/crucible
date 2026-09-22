@@ -22,7 +22,6 @@ function modes(current: string, ...ids: string[]): SessionModes {
       description: null,
       icon: null,
       color: null,
-      review_policy: 'none' as const,
       writes: 'apply' as const,
     })),
   };

@@ -5,19 +5,16 @@
 //! so the rule — which calls are gated, on what — is a pure function with its
 //! own tests, and the call site is one line.
 //!
-//! # Why it does not `match` on the mode
+//! # Which turns it holds
 //!
-//! The mode is an open string id. Matching on it here is how
-//! `agent_factory.rs`'s `if mode == "plan"` came to exist and then had to be
-//! mirrored in three more places. The mode resolves to a [`ReviewPolicy`]
-//! once, at the top, and everything below reads the policy.
+//! [`holds_writes`] decides this once, at the top, and everything below
+//! reads its answer. The mode is an open string id, so that function asks
+//! [`BuiltinMode`] and does not compare string literals.
 //!
-//! That resolution knows the built-in modes only. A mode declared in Lua, in
-//! config, or advertised by an ACP agent takes the conservative default —
-//! `PreWrite` — so it fails closed, but it cannot yet declare a *weaker*
-//! policy for itself. Wiring that means carrying the mode's descriptor to the
-//! gate rather than its id; until then `session.list_modes` can report a
-//! policy weaker than what is enforced.
+//! `plan` writes nothing, and `auto` never waits. Every other mode, which
+//! includes a mode declared in Lua or advertised by an ACP agent, holds the
+//! write when the daemon can hold it: the agent is internal and the turn
+//! writes to the disk. A `propose` turn writes nothing to the disk.
 //!
 //! # Why it blocks rather than denies
 //!
@@ -35,7 +32,7 @@ use std::time::Duration;
 
 use crucible_core::session::{GateBlock, ReviewState};
 use crucible_core::types::acp::FileDiff;
-use crucible_core::types::mode::ReviewPolicy;
+use crucible_core::types::mode::{BuiltinMode, WriteMode};
 
 use super::super::*;
 use crate::review::GateHold;
@@ -60,18 +57,26 @@ pub(super) enum GateSubject {
     EarlierTurns,
 }
 
-/// Whether this call is gated, and on what.
+/// Whether the gate holds the writes of a turn at all.
+///
+/// The daemon dispatches the tools of an internal agent, so a gate before
+/// dispatch holds the write back. An ACP agent runs its tools in its own
+/// process and reports them after the write, so the gate cannot hold them.
+/// A `propose` turn writes nothing to the disk. Give the effective write
+/// mode, after [`WriteMode::effective_for`].
+pub(super) fn holds_writes(mode_id: &str, agent_type: &str, writes: WriteMode) -> bool {
+    let mode_holds = !matches!(
+        BuiltinMode::from_id(mode_id),
+        Some(BuiltinMode::Plan | BuiltinMode::Auto)
+    );
+    mode_holds && agent_type == "internal" && writes == WriteMode::Apply
+}
+
+/// On what the gate holds this call, when [`holds_writes`] is true.
 ///
 /// Pure, and separate from the ledger lookup around it, because this is the
 /// rule; finding the hunks is not what can be subtly wrong.
-pub(super) fn gate_subject(
-    policy: ReviewPolicy,
-    tool_name: &str,
-    write_targets: &[String],
-) -> GateSubject {
-    if policy != ReviewPolicy::PreWrite {
-        return GateSubject::Ungated;
-    }
+pub(super) fn gate_subject(tool_name: &str, write_targets: &[String]) -> GateSubject {
     match tool_name {
         // A delegation writes through a child session, so nothing in its
         // arguments names a file. Falling back to the whole session is the
@@ -171,18 +176,18 @@ pub(super) async fn hold_for_review(
     if !ledger.is_open(&stream_ctx.session_id) {
         return;
     }
-    // The slot holds the effective write mode of this turn. A `propose`
-    // turn writes nothing to the disk, so it has no write to hold.
-    let policy = ReviewPolicy::for_mode_id(&stream_ctx.session_mode)
-        .effective_for(&stream_ctx.agent_stream_config.agent_type)
-        .for_writes(stream_ctx.slot.write_mode().get());
-    // `gate_subject` re-checks this. The early return is what keeps a
-    // non-gating session from paying to work out what the call writes.
-    if policy != ReviewPolicy::PreWrite {
+    // The slot holds the effective write mode of this turn. The early return
+    // keeps a session that the gate does not hold from paying to work out
+    // what the call writes.
+    if !holds_writes(
+        &stream_ctx.session_mode,
+        &stream_ctx.agent_stream_config.agent_type,
+        stream_ctx.slot.write_mode().get(),
+    ) {
         return;
     }
 
-    let subject = gate_subject(policy, tool_name, &write_targets(tool_name, args, diffs));
+    let subject = gate_subject(tool_name, &write_targets(tool_name, args, diffs));
     if subject == GateSubject::Ungated {
         return;
     }
@@ -493,64 +498,55 @@ mod tests {
     #[test]
     fn a_write_to_a_named_file_is_gated_on_that_file() {
         assert_eq!(
-            gate_subject(
-                ReviewPolicy::PreWrite,
-                "edit_file",
-                &targets(&["src/foo.rs"])
-            ),
+            gate_subject("edit_file", &targets(&["src/foo.rs"])),
             GateSubject::Files(targets(&["src/foo.rs"]))
         );
     }
 
-    /// `plan` asks for no review and `auto` reviews at turn end; neither may
-    /// hold a call. Expressed as policies, not mode ids — the gate never sees
-    /// a mode.
+    /// `plan` writes nothing and `auto` never waits; neither may hold a call.
     #[test]
-    fn only_prewrite_gates_anything() {
-        for policy in [ReviewPolicy::None, ReviewPolicy::PostTurn] {
-            assert_eq!(
-                gate_subject(policy, "edit_file", &targets(&["src/foo.rs"])),
-                GateSubject::Ungated,
-                "{policy:?} must never hold a call"
-            );
-            assert_eq!(
-                gate_subject(policy, "delegate_session", &[]),
-                GateSubject::Ungated,
-                "{policy:?} must never hold a delegation"
+    fn plan_and_auto_hold_no_write() {
+        for mode in ["plan", "auto"] {
+            assert!(
+                !holds_writes(mode, "internal", WriteMode::Apply),
+                "{mode} must never hold a call"
             );
         }
     }
 
-    /// The ACP degradation, at the seam the gate actually reads: an external
-    /// agent has already run the tool, so the strongest thing that can be true
-    /// of it is PostTurn — and PostTurn gates nothing.
+    /// A mode that nobody declared can be anything, so the gate holds it.
+    /// A deleted declaration must not turn the gate off.
     #[test]
-    fn an_external_agents_write_is_never_held() {
-        let policy = ReviewPolicy::for_mode_id("ask").effective_for("acp");
-        assert_eq!(policy, ReviewPolicy::PostTurn);
-        assert_eq!(
-            gate_subject(policy, "edit_file", &targets(&["src/foo.rs"])),
-            GateSubject::Ungated
-        );
+    fn ask_and_an_undeclared_mode_hold_the_write_of_an_internal_agent() {
+        for mode in ["ask", "normal", "architect", ""] {
+            assert!(
+                holds_writes(mode, "internal", WriteMode::Apply),
+                "{mode:?} must hold the write"
+            );
+        }
     }
 
+    /// An external agent already ran the tool when the daemon hears about
+    /// it, so the gate cannot hold the write.
     #[test]
-    fn the_same_write_is_held_for_an_internal_agent() {
-        let policy = ReviewPolicy::for_mode_id("ask").effective_for("internal");
-        assert_eq!(
-            gate_subject(policy, "edit_file", &targets(&["src/foo.rs"])),
-            GateSubject::Files(targets(&["src/foo.rs"]))
-        );
+    fn an_external_agents_write_is_never_held() {
+        assert!(!holds_writes("ask", "acp", WriteMode::Apply));
+        assert!(!holds_writes("ask", "", WriteMode::Apply));
+    }
+
+    /// A `propose` turn writes nothing to the disk, so it has no write to
+    /// hold, and no person answers the gate for a plugin pass.
+    #[test]
+    fn a_propose_turn_is_never_held() {
+        assert!(!holds_writes("ask", "internal", WriteMode::Propose));
+        assert!(!holds_writes("propose", "internal", WriteMode::Propose));
     }
 
     /// Blocking bash on the session would block every turn on its own edits,
     /// because almost every turn ends in a build or test command.
     #[test]
     fn bash_never_takes_the_session_wide_fallback() {
-        assert_eq!(
-            gate_subject(ReviewPolicy::PreWrite, "bash", &[]),
-            GateSubject::Ungated
-        );
+        assert_eq!(gate_subject("bash", &[]), GateSubject::Ungated);
     }
 
     /// ...and not even when something upstream managed to name a file for it.
@@ -559,7 +555,7 @@ mod tests {
     #[test]
     fn bash_is_ungated_even_with_a_named_target() {
         assert_eq!(
-            gate_subject(ReviewPolicy::PreWrite, "bash", &targets(&["src/foo.rs"])),
+            gate_subject("bash", &targets(&["src/foo.rs"])),
             GateSubject::Ungated
         );
     }
@@ -567,17 +563,14 @@ mod tests {
     #[test]
     fn a_delegation_falls_back_to_earlier_turns() {
         assert_eq!(
-            gate_subject(ReviewPolicy::PreWrite, "delegate_session", &[]),
+            gate_subject("delegate_session", &[]),
             GateSubject::EarlierTurns
         );
     }
 
     #[test]
     fn a_read_only_call_is_ungated() {
-        assert_eq!(
-            gate_subject(ReviewPolicy::PreWrite, "read_file", &[]),
-            GateSubject::Ungated
-        );
+        assert_eq!(gate_subject("read_file", &[]), GateSubject::Ungated);
     }
 
     #[test]

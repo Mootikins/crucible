@@ -58,7 +58,6 @@ pub(crate) fn mode_descriptors(ids: &[&str]) -> Vec<crucible_core::types::mode::
             description: None,
             icon: None,
             color: None,
-            review_policy: Default::default(),
             writes: Default::default(),
         })
         .collect()

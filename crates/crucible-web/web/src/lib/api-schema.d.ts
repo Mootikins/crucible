@@ -3315,7 +3315,7 @@ export interface components {
          * @description One setting and whether this session can change it.
          *
          *     Mirrors `crucible_core::types::KnobDescriptor`, for the reason
-         *     [`ReviewPolicyRow`] gives.
+         *     [`WriteModeRow`] gives.
          */
         KnobRow: {
             /** @description The knob id, such as `context_strategy`. */
@@ -3452,7 +3452,7 @@ export interface components {
          * @description One mode a session may enter.
          *
          *     Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
-         *     the reason [`ReviewPolicyRow`] gives.
+         *     the reason [`WriteModeRow`] gives.
          */
         ModeRow: {
             /** @description A hex colour. */
@@ -3464,11 +3464,6 @@ export interface components {
             id: string;
             /** @description The label to draw. */
             name: string;
-            /**
-             * @description The review this mode asks for, already degraded to what this session's
-             *     agent can enforce.
-             */
-            review_policy: components["schemas"]["ReviewPolicyRow"];
             /**
              * @description What a note write in this mode does, already degraded to what this
              *     session's agent can hold back.
@@ -4323,15 +4318,6 @@ export interface components {
         ReviewIntegrityRow: {
             skips: components["schemas"]["ReviewSkipRow"][];
         };
-        /**
-         * @description How much review a mode asks for before the agent writes.
-         *
-         *     Mirrors `crucible_core::types::mode::ReviewPolicy`, which carries no
-         *     schema: `crucible-core` takes no utoipa dependency, and a client that
-         *     renders a mode chip has to know the three values it can read.
-         * @enum {string}
-         */
-        ReviewPolicyRow: "none" | "post_turn" | "pre_write";
         /** @description What `POST /api/session/{id}/review/rebase` answers. */
         ReviewRebaseResponse: {
             /**
@@ -5010,8 +4996,9 @@ export interface components {
         /**
          * @description What a note write in a mode does.
          *
-         *     Mirrors `crucible_core::types::mode::WriteMode`, for the reason
-         *     [`ReviewPolicyRow`] gives.
+         *     Mirrors `crucible_core::types::mode::WriteMode`, which carries no
+         *     schema: `crucible-core` takes no utoipa dependency, and a client that
+         *     shows a mode has to know the values it can read.
          * @enum {string}
          */
         WriteModeRow: "apply" | "propose";
@@ -5170,7 +5157,6 @@ export type SchemaReviewGateRow = components['schemas']['ReviewGateRow'];
 export type SchemaReviewHunkRow = components['schemas']['ReviewHunkRow'];
 export type SchemaReviewHunksResponse = components['schemas']['ReviewHunksResponse'];
 export type SchemaReviewIntegrityRow = components['schemas']['ReviewIntegrityRow'];
-export type SchemaReviewPolicyRow = components['schemas']['ReviewPolicyRow'];
 export type SchemaReviewRebaseResponse = components['schemas']['ReviewRebaseResponse'];
 export type SchemaReviewResolveCommentResponse = components['schemas']['ReviewResolveCommentResponse'];
 export type SchemaReviewRootRow = components['schemas']['ReviewRootRow'];

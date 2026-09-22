@@ -1160,37 +1160,11 @@ async fn list_models(
     Ok(Json(ModelsResponse { models }))
 }
 
-/// How much review a mode asks for before the agent writes.
-///
-/// Mirrors `crucible_core::types::mode::ReviewPolicy`, which carries no
-/// schema: `crucible-core` takes no utoipa dependency, and a client that
-/// renders a mode chip has to know the three values it can read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-enum ReviewPolicyRow {
-    /// No gate at all.
-    None,
-    /// The review queue surfaces at turn end; nothing ever blocks.
-    PostTurn,
-    /// A writing tool call waits while its target has unreviewed hunks.
-    PreWrite,
-}
-
-impl From<crucible_core::types::mode::ReviewPolicy> for ReviewPolicyRow {
-    fn from(policy: crucible_core::types::mode::ReviewPolicy) -> Self {
-        use crucible_core::types::mode::ReviewPolicy;
-        match policy {
-            ReviewPolicy::None => Self::None,
-            ReviewPolicy::PostTurn => Self::PostTurn,
-            ReviewPolicy::PreWrite => Self::PreWrite,
-        }
-    }
-}
-
 /// What a note write in a mode does.
 ///
-/// Mirrors `crucible_core::types::mode::WriteMode`, for the reason
-/// [`ReviewPolicyRow`] gives.
+/// Mirrors `crucible_core::types::mode::WriteMode`, which carries no
+/// schema: `crucible-core` takes no utoipa dependency, and a client that
+/// shows a mode has to know the values it can read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 enum WriteModeRow {
@@ -1213,7 +1187,7 @@ impl From<crucible_core::types::WriteMode> for WriteModeRow {
 /// One mode a session may enter.
 ///
 /// Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
-/// the reason [`ReviewPolicyRow`] gives.
+/// the reason [`WriteModeRow`] gives.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ModeRow {
     /// The mode id, such as `plan`.
@@ -1225,9 +1199,6 @@ struct ModeRow {
     icon: Option<String>,
     /// A hex colour.
     color: Option<String>,
-    /// The review this mode asks for, already degraded to what this session's
-    /// agent can enforce.
-    review_policy: ReviewPolicyRow,
     /// What a note write in this mode does, already degraded to what this
     /// session's agent can hold back.
     writes: WriteModeRow,
@@ -1241,7 +1212,6 @@ impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
             description: mode.description,
             icon: mode.icon,
             color: mode.color,
-            review_policy: mode.review_policy.into(),
             writes: mode.writes.into(),
         }
     }
@@ -1314,7 +1284,7 @@ async fn list_knobs(
 /// One setting and whether this session can change it.
 ///
 /// Mirrors `crucible_core::types::KnobDescriptor`, for the reason
-/// [`ReviewPolicyRow`] gives.
+/// [`WriteModeRow`] gives.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct KnobRow {
     /// The knob id, such as `context_strategy`.

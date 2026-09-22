@@ -120,7 +120,6 @@ impl SessionKnobs for FakeAcpAgent {
                 description: None,
                 icon: None,
                 color: None,
-                review_policy: Default::default(),
                 writes: Default::default(),
             })
             .collect()
