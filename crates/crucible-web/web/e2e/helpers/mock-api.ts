@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { CommentRef, DiffComment, DiffsetSource, NewDiffComment } from '@/lib/diffset';
 import { disableAnimations } from './geometry';
 import {
   MOCK_SESSION,
@@ -43,7 +44,38 @@ export interface MockOverrides {
   }>;
 }
 
-export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<void> {
+/** One body of `POST /api/chat/send`, as the browser sent it. */
+export interface SentMessage {
+  session_id: string;
+  content: string;
+  /** The references of the attached comments. The text of a comment is not here. */
+  comments?: CommentRef[];
+}
+
+/** What the mock recorded, for the assertions of a spec. */
+export interface MockApi {
+  /** The comments that `POST /api/diff/comment` stored, oldest first. */
+  comments: DiffComment[];
+  /** The messages that `POST /api/chat/send` took, oldest first. */
+  sent: SentMessage[];
+}
+
+/** The id of the diffset of one source, as the daemon derives it. */
+function diffsetId(source: DiffsetSource | undefined): string {
+  if (source?.kind === 'session_record') return `session-${source.session}`;
+  if (source?.kind === 'proposal') return `proposal-${source.id}`;
+  return 'branch-00000000000000000000000000000000';
+}
+
+/** What the daemon compared with, by the kind of the source. */
+function anchorOf(source: DiffsetSource | undefined): DiffComment['anchor'] {
+  if (source?.kind === 'session_record') return { kind: 'snapshot', id: `snap-${source.session}` };
+  if (source?.kind === 'proposal') return { kind: 'proposal', id: source.id };
+  return { kind: 'commit', id: 'mock-merge-base' };
+}
+
+export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<MockApi> {
+  const recorded: MockApi = { comments: [], sent: [] };
   // Animations off before anything renders — see disableAnimations().
   await disableAnimations(page);
 
@@ -179,9 +211,50 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     },
   );
 
-  // The comments of a diffset. The mock stores none.
-  await page.route('**/api/diff/comments**', (route) =>
-    route.fulfill({ json: { diffset: 'branch-00000000000000000000000000000000', comments: [] } }),
+  // The comment store of the daemon, in memory. A POST keeps the comment, so
+  // the listing that follows shows it under its lines, as the daemon does.
+  // The reply carries the id, which the composer chip then references.
+  await page.route(
+    (url) => url.pathname === '/api/diff/comment',
+    (route) => {
+      const body = route.request().postDataJSON() as NewDiffComment;
+      const comment: DiffComment = {
+        id: `c-${recorded.comments.length + 1}`,
+        diffset: diffsetId(body.source),
+        root: body.root ?? (body.source.kind === 'branch' ? body.source.root : ''),
+        path: body.path,
+        anchor: anchorOf(body.source),
+        side: body.side,
+        line_range: { start: body.line_start, end: body.line_end ?? body.line_start + 1 },
+        quoted: '',
+        body: body.body,
+        author: body.author ?? 'human',
+        resolved: false,
+        created_at: '2026-09-22T10:00:00Z',
+      };
+      recorded.comments.push(comment);
+      return route.fulfill({ json: { diffset: comment.diffset, comment } });
+    },
+  );
+
+  // The comments of a diffset: the ones this page stored. None is outdated,
+  // because the mock texts do not change under a comment.
+  await page.route(
+    (url) => url.pathname === '/api/diff/comments',
+    (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      const session = query.get('session');
+      const proposal = query.get('proposal');
+      const diffset = session
+        ? `session-${session}`
+        : proposal
+          ? `proposal-${proposal}`
+          : 'branch-00000000000000000000000000000000';
+      const comments = recorded.comments
+        .filter((c) => c.diffset === diffset && !c.resolved)
+        .map((comment) => ({ comment, outdated: false }));
+      return route.fulfill({ json: { diffset, comments } });
+    },
   );
 
   await page.route('**/api/diff/file**', (route) => {
@@ -237,8 +310,11 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     }
   });
 
+  // The send route keeps each body, so a spec can read what the composer
+  // carried: the content, and the references of the attached comments.
   await page.route('**/api/chat/send', async (route) => {
     if (route.request().method() === 'POST') {
+      recorded.sent.push(route.request().postDataJSON() as SentMessage);
       const override = overrides.chatMessage;
       if (typeof override === 'number') {
         route.fulfill({ status: override, body: 'Error' });
@@ -259,4 +335,6 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
   await page.route('**/api/session/*/models', (route) =>
     route.fulfill({ json: { models: ['llama3.2', 'mistral'] } }),
   );
+
+  return recorded;
 }
