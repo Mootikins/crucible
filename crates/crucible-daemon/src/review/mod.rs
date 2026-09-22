@@ -1358,10 +1358,18 @@ impl ReviewLedgers {
     /// error rather than a silent success, so a stale client learns its view
     /// is out of date.
     pub fn resolve_comment(&self, session_id: &str, comment_id: &str) -> ReviewResult<()> {
-        let diffset = record_diffset(session_id)?;
+        self.resolve_diffset_comment(&record_diffset(session_id)?, comment_id)
+    }
+
+    /// Mark a comment of `diffset` resolved. An unknown id is an error.
+    pub fn resolve_diffset_comment(
+        &self,
+        diffset: &DiffsetId,
+        comment_id: &str,
+    ) -> ReviewResult<()> {
         if self
             .comments
-            .resolve(&diffset, comment_id)
+            .resolve(diffset, comment_id)
             .map_err(store_error)?
         {
             Ok(())

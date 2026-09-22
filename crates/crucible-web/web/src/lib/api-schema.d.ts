@@ -197,6 +197,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diff/comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/diff/comment` — anchor a comment to a line range of one file of
+         *     a branch diff or of a session record.
+         * @description The daemon quotes the text of the range on the named side. A comment on a
+         *     session record also tells the clients of the session with
+         *     `review_changed`.
+         */
+        post: operations["post_diff_comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diff/comment/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** `POST /api/diff/comment/resolve` — mark one comment of a diffset resolved. */
+        post: operations["post_diff_resolve_comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diff/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/diff/comments` — the comments of the branch diff of one root, or
+         *     of the record of one session.
+         * @description The daemon finds the quoted text of each comment in the current text of
+         *     its side. A moved text moves the range. A text that is gone makes the
+         *     comment outdated.
+         */
+        get: operations["get_diff_comments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/diff/file": {
         parameters: {
             query?: never;
@@ -2453,6 +2516,38 @@ export interface components {
          */
         CommentAuthorRow: "human" | "agent";
         /**
+         * @description `POST /api/diff/comment` — anchor a comment to a line range of one file
+         *     of a diffset.
+         */
+        CommentBody: {
+            author?: null | components["schemas"]["CommentAuthorRow"];
+            body: string;
+            /** @description The old path of a renamed file. A base-side comment quotes this path. */
+            from?: string | null;
+            /**
+             * Format: int32
+             * @description One past the last line. Absent means one line.
+             */
+            line_end?: number | null;
+            /**
+             * Format: int32
+             * @description The first line, 1-based.
+             */
+            line_start: number;
+            /** @description The path of the file relative to the root, on the current side. */
+            path: string;
+            /**
+             * @description Absolute path of the root of the file. A session record needs it,
+             *     because a session can have more than one root. A branch source names
+             *     its own root.
+             */
+            root?: string | null;
+            /** @description The side that the line numbers count on. */
+            side: components["schemas"]["CommentSideRow"];
+            /** @description The diffset of the file. */
+            source: components["schemas"]["DiffsetSource"];
+        };
+        /**
          * @description `POST /review/comment` — anchor a comment to a line range.
          *
          *     Read into a typed body rather than forwarded as raw JSON, so the session
@@ -2611,6 +2706,19 @@ export interface components {
         DeleteResponse: {
             deleted: boolean;
         };
+        /** @description What `POST /api/diff/comment` answers. */
+        DiffCommentResponse: {
+            /** @description The comment as the daemon stored it, with its id and its quote. */
+            comment: components["schemas"]["ReviewCommentRow"];
+            /** @description The diffset that owns the comment. */
+            diffset: components["schemas"]["DiffsetId"];
+        };
+        /** @description What `GET /api/diff/comments` answers. */
+        DiffCommentsResponse: {
+            /** @description The comments, oldest first. */
+            comments: components["schemas"]["ListedCommentRow"][];
+            diffset: components["schemas"]["DiffsetId"];
+        };
         /** @description One file of a diffset, with its counts and no text. */
         DiffFileEntry: {
             /** Format: int32 */
@@ -2635,6 +2743,12 @@ export interface components {
             base_text?: string | null;
             /** @description `None` when the file is deleted. */
             current_text?: string | null;
+        };
+        /** @description What `POST /api/diff/comment/resolve` answers. */
+        DiffResolveCommentResponse: {
+            comment_id: string;
+            diffset: components["schemas"]["DiffsetId"];
+            resolved: boolean;
         };
         /** @description A set of file changes, without the text of the files. */
         Diffset: {
@@ -3208,6 +3322,19 @@ export interface components {
              * @description First line, 1-based, inclusive.
              */
             start: number;
+        };
+        /** @description One comment as `GET /api/diff/comments` lists it. */
+        ListedCommentRow: {
+            /**
+             * @description The comment. When its quoted text moved, `line_range` is the new
+             *     range.
+             */
+            comment: components["schemas"]["ReviewCommentRow"];
+            /**
+             * @description The current text of the side does not contain the quoted text. The
+             *     pane shows an outdated comment at the end of its file.
+             */
+            outdated: boolean;
         };
         /** @description The running arm of [`McpStatus`]. */
         McpRunning: {
@@ -3972,6 +4099,15 @@ export interface components {
             remote_url?: string | null;
             /** @description Path to the repository root (where .git is, or main repo for worktrees) */
             root: string;
+        };
+        /**
+         * @description `POST /api/diff/comment/resolve` — mark one comment of a diffset
+         *     resolved.
+         */
+        ResolveCommentBody: {
+            comment_id: string;
+            /** @description The diffset of the comment. */
+            source: components["schemas"]["DiffsetSource"];
         };
         /**
          * @description Where a wikilink target landed.
@@ -4841,6 +4977,7 @@ export type SchemaCommandResponse = components['schemas']['CommandResponse'];
 export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaCommentAnchorRow = components['schemas']['CommentAnchorRow'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
+export type SchemaCommentBody = components['schemas']['CommentBody'];
 export type SchemaCommentRequest = components['schemas']['CommentRequest'];
 export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
@@ -4849,8 +4986,11 @@ export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
+export type SchemaDiffCommentResponse = components['schemas']['DiffCommentResponse'];
+export type SchemaDiffCommentsResponse = components['schemas']['DiffCommentsResponse'];
 export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
 export type SchemaDiffFileText = components['schemas']['DiffFileText'];
+export type SchemaDiffResolveCommentResponse = components['schemas']['DiffResolveCommentResponse'];
 export type SchemaDiffset = components['schemas']['Diffset'];
 export type SchemaDiffsetId = components['schemas']['DiffsetId'];
 export type SchemaDiffsetSource = components['schemas']['DiffsetSource'];
@@ -4890,6 +5030,7 @@ export type SchemaKnobRow = components['schemas']['KnobRow'];
 export type SchemaLayoutWriteResponse = components['schemas']['LayoutWriteResponse'];
 export type SchemaLeafOrigin = components['schemas']['LeafOrigin'];
 export type SchemaLineRangeRow = components['schemas']['LineRangeRow'];
+export type SchemaListedCommentRow = components['schemas']['ListedCommentRow'];
 export type SchemaMcpRunning = components['schemas']['McpRunning'];
 export type SchemaMcpStatus = components['schemas']['McpStatus'];
 export type SchemaMcpStopped = components['schemas']['McpStopped'];
@@ -4943,6 +5084,7 @@ export type SchemaRecordRecentRequest = components['schemas']['RecordRecentReque
 export type SchemaRejectedRefDto = components['schemas']['RejectedRefDto'];
 export type SchemaRejectProposalBody = components['schemas']['RejectProposalBody'];
 export type SchemaRepositoryInfo = components['schemas']['RepositoryInfo'];
+export type SchemaResolveCommentBody = components['schemas']['ResolveCommentBody'];
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
@@ -5366,6 +5508,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Diffset"];
+                };
+            };
+            /** @description The query or the daemon refuses the source, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description git failed, or the daemon could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_diff_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffCommentResponse"];
+                };
+            };
+            /** @description The daemon refuses the source, the root, the path or the range, and says why */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not store the comment, or could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_diff_resolve_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveCommentBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffResolveCommentResponse"];
+                };
+            };
+            /** @description The diffset has no such comment, or the daemon refuses the source */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not resolve the comment, or could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_diff_comments: {
+        parameters: {
+            query?: {
+                /** @description The branch to compare against. Absent takes the default branch. */
+                base?: string;
+                /** @description The other side. Absent takes the working tree. */
+                head?: string;
+                /**
+                 * @description Absolute path of the top level of a git repository. Names a branch
+                 *     source. Give `root` or `session`, not both.
+                 */
+                root?: string;
+                /**
+                 * @description The id of a session. Names the record of the session: its session
+                 *     base, to the files on disk.
+                 */
+                session?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffCommentsResponse"];
                 };
             };
             /** @description The query or the daemon refuses the source, and says why */

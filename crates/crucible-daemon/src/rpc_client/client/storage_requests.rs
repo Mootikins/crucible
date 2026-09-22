@@ -339,6 +339,71 @@ pub struct DiffFileRequest {
     pub root: Option<crucible_core::session::PhysicalRoot>,
 }
 
+/// Request for `diff.comment`: anchor a comment to a line range of one file
+/// of the diffset of `source`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffCommentRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+    /// The root of the file. A session record needs it, as in
+    /// [`DiffFileRequest::root`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<crucible_core::session::PhysicalRoot>,
+    /// The path relative to the root, on the current side.
+    pub path: String,
+    /// The old path of a renamed file. A comment on the base side quotes
+    /// the text of this path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// The side that the line numbers count on.
+    pub side: crucible_core::session::CommentSide,
+    /// The first line, 1-based.
+    pub line_start: u32,
+    /// One past the last line. Absent means `line_start + 1`: one line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_end: Option<u32>,
+    pub body: String,
+    /// Absent means a human wrote the comment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<crucible_core::session::CommentAuthor>,
+}
+
+/// What `diff.comment` answers: the stored comment and its diffset.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffCommentReply {
+    pub diffset: crucible_core::diff::DiffsetId,
+    pub comment: crucible_core::session::Comment,
+}
+
+/// Request for `diff.resolve_comment`: mark one comment of the diffset of
+/// `source` resolved.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffResolveCommentRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+    pub comment_id: String,
+}
+
+/// What `diff.resolve_comment` answers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffResolveCommentReply {
+    pub diffset: crucible_core::diff::DiffsetId,
+    pub comment_id: String,
+    pub resolved: bool,
+}
+
+/// Request for `diff.comments`: the comments of the diffset of `source`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffCommentsRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+}
+
+/// What `diff.comments` answers: each comment, oldest first, with its range
+/// projected onto the current text of its side.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffCommentsReply {
+    pub diffset: crucible_core::diff::DiffsetId,
+    pub comments: Vec<crate::diff::comments::ListedComment>,
+}
+
 /// Request for `fs.move`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FsMoveRequest {

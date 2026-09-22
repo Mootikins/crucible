@@ -183,7 +183,7 @@ pub(super) struct ReviewHunkRow {
 /// Who wrote a comment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum CommentAuthorRow {
+pub(crate) enum CommentAuthorRow {
     Human,
     Agent,
 }
@@ -204,14 +204,32 @@ pub(super) enum CommentAnchorRow {
 /// The side of a diff that a comment range counts its lines on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum CommentSideRow {
+pub(crate) enum CommentSideRow {
     Base,
     Current,
 }
 
+impl From<CommentAuthorRow> for crucible_core::session::CommentAuthor {
+    fn from(row: CommentAuthorRow) -> Self {
+        match row {
+            CommentAuthorRow::Human => Self::Human,
+            CommentAuthorRow::Agent => Self::Agent,
+        }
+    }
+}
+
+impl From<CommentSideRow> for crucible_core::session::CommentSide {
+    fn from(row: CommentSideRow) -> Self {
+        match row {
+            CommentSideRow::Base => Self::Base,
+            CommentSideRow::Current => Self::Current,
+        }
+    }
+}
+
 /// One review comment, anchored to a line range rather than to a hunk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub(super) struct ReviewCommentRow {
+pub(crate) struct ReviewCommentRow {
     id: String,
     /// The diffset that owns the comment.
     diffset: String,

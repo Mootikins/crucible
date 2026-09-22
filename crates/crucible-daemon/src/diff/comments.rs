@@ -51,7 +51,7 @@ struct DiffsetComments {
 }
 
 /// A comment as the daemon lists it: its range follows its text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListedComment {
     /// The stored comment. When its text moved, `line_range` is the new range.
     pub comment: Comment,

@@ -49,6 +49,7 @@ mod accept;
 mod bind;
 mod core;
 pub mod diff;
+pub(crate) mod diff_comments;
 mod external_announce;
 mod file_event_hooks;
 pub mod fs;

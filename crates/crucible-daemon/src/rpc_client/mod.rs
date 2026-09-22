@@ -19,8 +19,9 @@ pub use agent::{strip_chat_error_prefix, DaemonAgentHandle};
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::NoteListRow;
 pub use client::{
-    first_per_note, AgentsListCardsRequest, DaemonCapabilities, DaemonClient, DiffFileRequest,
-    DiffGetRequest, EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, FsListDirRequest,
+    first_per_note, AgentsListCardsRequest, DaemonCapabilities, DaemonClient, DiffCommentReply,
+    DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest, DiffFileRequest, DiffGetRequest,
+    DiffResolveCommentReply, DiffResolveCommentRequest, EmbeddingCatalog, EmbeddingModelRow, EmbeddingModelsRequest, FsListDirRequest,
     FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest, KilnRegisterRequest,
     ListAllModelsRequest, ListProvidersRequest, LlmRegisterProviderRequest,
     LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaGenerateStubsRequest,

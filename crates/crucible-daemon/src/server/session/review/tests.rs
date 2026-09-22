@@ -1109,6 +1109,101 @@ async fn resolving_a_comment_marks_it_and_an_unknown_id_is_refused() {
     assert_eq!(unknown.error.expect("refused").code, INVALID_PARAMS);
 }
 
+/// `review.comment` and `review.resolve_comment` are aliases of the
+/// `diff.*` methods on the session record: a comment made through one name
+/// is the comment that the other name lists and resolves.
+#[tokio::test]
+async fn review_comment_is_an_alias_for_the_session_record() {
+    use crate::diff::comments::ListedComment;
+    use crate::kiln_manager::KilnManager;
+    use crate::project_manager::ProjectManager;
+    use crate::rpc_client::{DiffCommentsReply, DiffCommentsRequest, DiffResolveCommentRequest};
+    use crate::server::diff::Admission;
+    use crate::server::diff_comments::{handle_diff_comments, handle_diff_resolve_comment};
+    use crucible_core::diff::{DiffsetId, DiffsetSource};
+    use crucible_core::session::{CommentAnchor, CommentSide, SessionId};
+
+    let mut fx = Fixture::new("one\ntwo\n").await;
+    fx.open_ledger().await;
+    let created = handle_review_comment(
+        fx.request(
+            "review.comment",
+            serde_json::json!({ "path": "a.txt", "line_start": 2, "body": "x" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+    let comment: Comment =
+        serde_json::from_value(created.result.expect("success")["comment"].clone()).unwrap();
+    let session = SessionId::parse(&fx.session).unwrap();
+    let base = fx.am.review.ledger(&fx.session).unwrap().session_base()[0].clone();
+    assert_eq!(comment.diffset, DiffsetId::for_session(&session));
+    assert_eq!(comment.anchor, CommentAnchor::Snapshot(base.base_tree));
+    assert_eq!(comment.side, CommentSide::Current);
+    assert_eq!(comment.quoted, "two\n");
+    assert_eq!(fx.review_reasons(), vec!["commented".to_string()]);
+
+    // `diff.comments` on the session record lists the alias comment.
+    let store = TempDir::new().unwrap();
+    let projects = Arc::new(ProjectManager::new(store.path().join("projects.json")));
+    let kilns = Arc::new(KilnManager::new());
+    let admission = || Admission {
+        projects: &projects,
+        kilns: &kilns,
+        sessions: &fx.sm,
+        review: &fx.am.review,
+    };
+    let source = DiffsetSource::SessionRecord { session };
+    let listed = handle_diff_comments(
+        fx.request(
+            "diff.comments",
+            serde_json::to_value(DiffCommentsRequest {
+                source: source.clone(),
+            })
+            .unwrap(),
+        ),
+        admission(),
+    )
+    .await;
+    let listed: DiffCommentsReply = serde_json::from_value(listed.result.expect("listed")).unwrap();
+    assert_eq!(
+        listed.comments,
+        vec![ListedComment {
+            comment: comment.clone(),
+            outdated: false,
+        }]
+    );
+
+    // `diff.resolve_comment` resolves it, and `review.list_hunks` sees that.
+    let resolved = handle_diff_resolve_comment(
+        fx.request(
+            "diff.resolve_comment",
+            serde_json::to_value(DiffResolveCommentRequest {
+                source,
+                comment_id: comment.id.clone(),
+            })
+            .unwrap(),
+        ),
+        admission(),
+        &fx.event_tx,
+    )
+    .await;
+    assert!(resolved.error.is_none(), "{:?}", resolved.error);
+    assert_eq!(fx.review_reasons(), vec!["comment_resolved".to_string()]);
+    let hunks = handle_review_list_hunks(
+        fx.request("review.list_hunks", serde_json::json!({})),
+        &fx.am,
+        &fx.sm,
+    )
+    .await;
+    assert_eq!(
+        hunks.result.expect("success")["comments"][0]["resolved"],
+        serde_json::json!(true)
+    );
+}
+
 /// The rejection has to reach the agent as a *conversation* event, not
 /// only as a UI event, or the model re-applies the same edit next turn.
 /// Injection is best-effort by design: the revert already landed on disk,
@@ -1415,6 +1510,7 @@ fn caller_recoverable_errors_map_to_invalid_params() {
         ReviewError::ExternalHunk(HunkId::from("h".to_string())),
         ReviewError::UnknownComment("c".into()),
         ReviewError::InvalidSession("bad id".into()),
+        ReviewError::InvalidComment("bad range".into()),
         ReviewError::NotAGitRepo {
             path: PathBuf::from("/x"),
         },

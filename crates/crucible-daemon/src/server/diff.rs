@@ -21,8 +21,8 @@ use crucible_core::session::PhysicalRoot;
 use crate::diff::branch;
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
-use crate::review::{ReviewError, ReviewLedgers};
 use crate::protocol::{Request, RequestId, Response, INTERNAL_ERROR, INVALID_PARAMS};
+use crate::review::{ReviewError, ReviewLedgers};
 use crate::rpc_client::{DiffFileRequest, DiffGetRequest};
 use crate::scm::{run_git, GitOpts};
 use crate::server::fs::project_root;
@@ -37,13 +37,13 @@ pub(crate) const DIFF_ROOT_NOT_ADMITTED: &str =
 pub(crate) const NOT_A_REPOSITORY: &str = "root is not the top level of a git repository";
 
 /// An error code and its message.
-type Refusal = (i32, String);
+pub(crate) type Refusal = (i32, String);
 
-fn params_error(message: impl Into<String>) -> Refusal {
+pub(crate) fn params_error(message: impl Into<String>) -> Refusal {
     (INVALID_PARAMS, message.into())
 }
 
-fn internal_error(error: impl std::fmt::Display) -> Refusal {
+pub(crate) fn internal_error(error: impl std::fmt::Display) -> Refusal {
     (INTERNAL_ERROR, format!("{error:#}"))
 }
 
@@ -94,15 +94,15 @@ impl Admission<'_> {
 }
 
 /// The resolved sides of a branch diffset.
-struct BranchSides {
-    root: PhysicalRoot,
-    base: String,
-    head: Option<String>,
-    merge_base: String,
+pub(crate) struct BranchSides {
+    pub(crate) root: PhysicalRoot,
+    pub(crate) base: String,
+    pub(crate) head: Option<String>,
+    pub(crate) merge_base: String,
 }
 
 impl BranchSides {
-    fn source(&self) -> DiffsetSource {
+    pub(crate) fn source(&self) -> DiffsetSource {
         DiffsetSource::Branch {
             root: self.root.clone(),
             base: self.base.clone(),
@@ -114,7 +114,7 @@ impl BranchSides {
 /// Admit the root of a branch source and find its merge base.
 ///
 /// An empty `base` names the default branch of the repository.
-async fn branch_sides(
+pub(crate) async fn branch_sides(
     admission: &Admission<'_>,
     root: &Path,
     base: &str,
@@ -140,7 +140,7 @@ async fn branch_sides(
 }
 
 /// The refusal for a source that a later change serves.
-fn unserved(kind: &str) -> Refusal {
+pub(crate) fn unserved(kind: &str) -> Refusal {
     params_error(format!("the daemon does not serve a {kind} diffset"))
 }
 
@@ -174,8 +174,30 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
     }
 }
 
+/// The two texts of `path` in a branch diffset. The base text comes from
+/// `base_path`, the old path of a renamed file.
+pub(crate) async fn branch_file_text(
+    sides: &BranchSides,
+    path: &str,
+    base_path: &str,
+) -> Result<DiffFileText, Refusal> {
+    if sides.head.is_none() {
+        check_contained(&sides.root, path)?;
+    }
+    let base_text = branch::file_text(&sides.root, Some(&sides.merge_base), base_path)
+        .await
+        .map_err(internal_error)?;
+    let current_text = branch::file_text(&sides.root, sides.head.as_deref(), path)
+        .await
+        .map_err(internal_error)?;
+    Ok(DiffFileText {
+        base_text: base_text.into_shown(),
+        current_text: current_text.into_shown(),
+    })
+}
+
 /// Refuse a path that is not a plain relative path.
-fn check_path(path: &str) -> Result<(), Refusal> {
+pub(crate) fn check_path(path: &str) -> Result<(), Refusal> {
     let relative = Path::new(path);
     if path.is_empty() || relative.is_absolute() || path.contains('\0') {
         return Err(params_error(format!(
@@ -189,7 +211,7 @@ fn check_path(path: &str) -> Result<(), Refusal> {
 ///
 /// A symbolic link to a directory can put a plain path outside the root. The
 /// leaf itself is not resolved: a link as the leaf gives its target text.
-fn check_contained(root: &Path, path: &str) -> Result<(), Refusal> {
+pub(crate) fn check_contained(root: &Path, path: &str) -> Result<(), Refusal> {
     let Some(parent) = root.join(path).parent().map(Path::to_path_buf) else {
         return Ok(());
     };
@@ -217,19 +239,7 @@ async fn diff_file(
                     "the root of the request is not the root of the branch source",
                 ));
             }
-            if sides.head.is_none() {
-                check_contained(&sides.root, &request.path)?;
-            }
-            let base_text = branch::file_text(&sides.root, Some(&sides.merge_base), base_path)
-                .await
-                .map_err(internal_error)?;
-            let current_text = branch::file_text(&sides.root, sides.head.as_deref(), &request.path)
-                .await
-                .map_err(internal_error)?;
-            Ok(DiffFileText {
-                base_text: base_text.into_shown(),
-                current_text: current_text.into_shown(),
-            })
+            branch_file_text(&sides, &request.path, base_path).await
         }
         DiffsetSource::SessionRecord { session } => {
             let Some(root) = &request.root else {
@@ -255,7 +265,10 @@ async fn diff_file(
     }
 }
 
-fn answer<T: serde::Serialize>(id: Option<RequestId>, result: Result<T, Refusal>) -> Response {
+pub(crate) fn answer<T: serde::Serialize>(
+    id: Option<RequestId>,
+    result: Result<T, Refusal>,
+) -> Response {
     match result.and_then(|value| serde_json::to_value(value).map_err(internal_error)) {
         Ok(value) => Response::success(id, value),
         Err((code, message)) => Response::error(id, code, message),

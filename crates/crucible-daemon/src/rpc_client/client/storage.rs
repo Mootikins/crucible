@@ -817,6 +817,48 @@ impl DaemonClient {
         self.typed_call_with_retry("diff.file", request).await
     }
 
+    /// `diff.comment`: anchor a comment to a line range of one file.
+    ///
+    /// A write, so the client sends it once.
+    pub async fn diff_comment(&self, request: DiffCommentRequest) -> Result<DiffCommentReply> {
+        self.typed_call("diff.comment", request).await
+    }
+
+    /// `diff.resolve_comment`: mark one comment of a diffset resolved.
+    ///
+    /// A write, so the client sends it once.
+    pub async fn diff_resolve_comment(
+        &self,
+        source: &crucible_core::diff::DiffsetSource,
+        comment_id: &str,
+    ) -> Result<DiffResolveCommentReply> {
+        self.typed_call(
+            "diff.resolve_comment",
+            DiffResolveCommentRequest {
+                source: source.clone(),
+                comment_id: comment_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// `diff.comments`: the comments of a diffset, each projected onto the
+    /// current text of its side.
+    ///
+    /// A read, so the client retries it.
+    pub async fn diff_comments(
+        &self,
+        source: &crucible_core::diff::DiffsetSource,
+    ) -> Result<DiffCommentsReply> {
+        self.typed_call_with_retry(
+            "diff.comments",
+            DiffCommentsRequest {
+                source: source.clone(),
+            },
+        )
+        .await
+    }
+
     /// Move/rename a file or directory within a registered project or open
     /// kiln. All containment checks are daemon-side; overwrites are rejected.
     pub async fn fs_move(

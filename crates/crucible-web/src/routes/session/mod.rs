@@ -1660,7 +1660,7 @@ async fn list_providers(
     }))
 }
 
-mod review;
+pub(crate) mod review;
 
 #[cfg(test)]
 mod search_scope_tests;

@@ -51,6 +51,11 @@ pub enum ReviewError {
     #[error("unknown comment {0}")]
     UnknownComment(String),
 
+    /// The caller asked for a comment that the daemon cannot anchor, such
+    /// as a range that starts at line 0 or ends before it starts.
+    #[error("{0}")]
+    InvalidComment(String),
+
     #[error("{path} is not inside a git repository")]
     NotAGitRepo { path: PathBuf },
 

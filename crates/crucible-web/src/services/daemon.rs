@@ -648,6 +648,25 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Once DiffComment =>
+        diff_comment(request: &crucible_daemon::rpc_client::DiffCommentRequest)
+        -> crucible_daemon::rpc_client::DiffCommentReply = diff_comment(request.clone());
+    }
+
+    forward_rpc! {
+        Once DiffResolveComment =>
+        diff_resolve_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
+        -> crucible_daemon::rpc_client::DiffResolveCommentReply
+        = diff_resolve_comment(&source, &comment_id);
+    }
+
+    forward_rpc! {
+        Safe DiffComments =>
+        diff_comments(source: &crucible_core::diff::DiffsetSource)
+        -> crucible_daemon::rpc_client::DiffCommentsReply = diff_comments(&source);
+    }
+
+    forward_rpc! {
         Once FsWrite =>
         fs_write(request: &crucible_core::file_write::FileWriteRequest)
         -> serde_json::Value = fs_write(&request);

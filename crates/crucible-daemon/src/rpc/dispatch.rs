@@ -211,6 +211,9 @@ rpc_methods! {
     FsListDir = "fs.list_dir",
     DiffGet = "diff.get",
     DiffFile = "diff.file",
+    DiffComment = "diff.comment",
+    DiffResolveComment = "diff.resolve_comment",
+    DiffComments = "diff.comments",
     ProposalList = "proposal.list",
     ProposalGet = "proposal.get",
     ProposalAccept = "proposal.accept",
@@ -1129,6 +1132,29 @@ impl RpcDispatcher {
             RpcMethod::DiffFile => forward!(
                 id,
                 crate::server::diff::handle_diff_file(req.clone(), self.diff_admission())
+            ),
+            RpcMethod::DiffComment => forward!(
+                id,
+                crate::server::diff_comments::handle_diff_comment(
+                    req.clone(),
+                    self.diff_admission(),
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::DiffResolveComment => forward!(
+                id,
+                crate::server::diff_comments::handle_diff_resolve_comment(
+                    req.clone(),
+                    self.diff_admission(),
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::DiffComments => forward!(
+                id,
+                crate::server::diff_comments::handle_diff_comments(
+                    req.clone(),
+                    self.diff_admission()
+                )
             ),
             RpcMethod::ProposalList => forward!(
                 id,

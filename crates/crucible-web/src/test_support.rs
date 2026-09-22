@@ -569,6 +569,36 @@ pub fn mock_diff_file_text_for(
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// The comment `diff.comment` answers for `request`.
+///
+/// The mock echoes the request into the comment, so a route test sees the
+/// source, the side, the range and the author that the route sent.
+pub fn mock_diff_comment_for(
+    request: &crucible_daemon::rpc_client::DiffCommentRequest,
+) -> crucible_daemon::rpc_client::DiffCommentReply {
+    use crucible_core::session::{Comment, CommentAnchor, CommentAuthor, LineRange, PhysicalRoot};
+    let diffset = request.source.id();
+    let comment = Comment::new(
+        diffset.clone(),
+        CommentAnchor::Commit("0".repeat(40)),
+        request
+            .root
+            .clone()
+            .unwrap_or_else(|| PhysicalRoot::from_top_level("/tmp/test-project")),
+        request.path.clone(),
+        request.side,
+        LineRange::new(
+            request.line_start,
+            request.line_end.unwrap_or(request.line_start + 1),
+        ),
+        "quoted\n",
+        request.body.clone(),
+        request.author.unwrap_or(CommentAuthor::Human),
+    );
+    crucible_daemon::rpc_client::DiffCommentReply { diffset, comment }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// The id of the proposal that the mock daemon lists.
 pub fn mock_proposal_id() -> crucible_core::proposal::ProposalId {
     "7a1c2f3e-0000-4000-8000-000000000001"
@@ -1049,6 +1079,33 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             let request: crucible_daemon::rpc_client::DiffFileRequest =
                 serde_json::from_value(msg["params"].clone()).expect("diff.file params");
             as_rpc_result(mock_diff_file_text_for(&request))
+        }
+        "diff.comment" => {
+            let request: crucible_daemon::rpc_client::DiffCommentRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.comment params");
+            as_rpc_result(mock_diff_comment_for(&request))
+        }
+        "diff.resolve_comment" => {
+            let request: crucible_daemon::rpc_client::DiffResolveCommentRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.resolve_comment params");
+            json!({
+                "diffset": request.source.id(),
+                "comment_id": request.comment_id,
+                "resolved": true,
+            })
+        }
+        // One comment whose quoted text is gone: the `outdated` flag reaches
+        // the browser only if the route keeps it.
+        "diff.comments" => {
+            let request: crucible_daemon::rpc_client::DiffCommentsRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.comments params");
+            json!({
+                "diffset": request.source.id(),
+                "comments": [{
+                    "comment": review_comment_fixture("comment-1", "why this?"),
+                    "outdated": true,
+                }],
+            })
         }
         "proposal.list" | "proposal.get" | "proposal.accept" | "proposal.reject"
         | "proposal.dismiss" | "proposal.resolve" => mock_proposal_response(method, &msg["params"]),

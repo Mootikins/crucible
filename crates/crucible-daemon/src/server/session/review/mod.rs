@@ -34,11 +34,12 @@ use crate::rpc_helpers::typed_params;
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange,
+    Comment, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange,
     ReviewScope, ReviewState, RootBase, RootStatus,
 };
 
-use crate::diff::comments::quoted_lines;
+use crate::server::diff_comments::{record_comment, resolve_in, CommentSpec};
+use crucible_core::session::SessionId;
 use crate::review::{paths, record_diffset, BulkOutcome, ReviewError, ReviewResult};
 use crate::tools::containment::reject_non_normal;
 
@@ -366,38 +367,38 @@ pub(crate) async fn add_comment(
         .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
 
     let (base, relative) = resolve_root(ledger.session_base(), root, path)?;
-
-    let diffset = record_diffset(session_id)?;
-    // The range counts lines on the current text: the file on disk. An
-    // absent file quotes nothing.
-    let text = tokio::fs::read_to_string(base.root.join(&relative))
-        .await
-        .unwrap_or_default();
-    let comment = Comment::new(
-        diffset,
-        CommentAnchor::Snapshot(base.base_tree.clone()),
-        base.root.clone(),
-        relative,
-        CommentSide::Current,
-        line_range,
-        quoted_lines(&text, line_range),
+    let session =
+        SessionId::parse(session_id).map_err(|e| ReviewError::InvalidSession(e.to_string()))?;
+    // The alias of `diff.comment`: the range counts lines on the current
+    // side of the session record, which is the file on disk.
+    let spec = CommentSpec {
+        path: &relative,
+        side: CommentSide::Current,
+        range: line_range,
         body,
         author,
-    );
-    am.review.add_comment(&comment)?;
-    emit_review_changed(event_tx, session_id, "commented");
-    Ok(comment)
+    };
+    record_comment(&am.review, event_tx, &session, &base.root, &spec).await
 }
 
+/// Mark a comment of the session record resolved: the alias of
+/// `diff.resolve_comment`.
+///
+/// A session with no ledger answers [`ReviewError::NoLedger`], as the
+/// `review.*` methods did before the comments moved to the diffset store.
 pub(crate) async fn resolve_comment(
     am: &AgentManager,
     event_tx: &broadcast::Sender<SessionEventMessage>,
     session_id: &str,
     comment_id: &str,
 ) -> ReviewResult<()> {
-    am.review.resolve_comment(session_id, comment_id)?;
-    emit_review_changed(event_tx, session_id, "comment_resolved");
-    Ok(())
+    if am.review.ledger(session_id).is_none() {
+        return Err(ReviewError::NoLedger(session_id.to_string()));
+    }
+    let diffset = record_diffset(session_id)?;
+    let session =
+        SessionId::parse(session_id).map_err(|e| ReviewError::InvalidSession(e.to_string()))?;
+    resolve_in(&am.review, event_tx, &diffset, Some(&session), comment_id)
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
@@ -711,6 +712,7 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
         | ReviewError::ExternalHunk(_)
         | ReviewError::UnknownComment(_)
         | ReviewError::InvalidSession(_)
+        | ReviewError::InvalidComment(_)
         | ReviewError::NotAGitRepo { .. }
         | ReviewError::AmbiguousPath { .. }
         | ReviewError::PathEscapesRoot { .. } => {
@@ -729,7 +731,7 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
     }
 }
 
-fn emit_review_changed(
+pub(crate) fn emit_review_changed(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     session_id: &str,
     reason: &str,

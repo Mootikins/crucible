@@ -378,6 +378,138 @@
         }
       }
     },
+    "/api/diff/comment": {
+      "post": {
+        "summary": "`POST /api/diff/comment` — anchor a comment to a line range of one file of\na branch diff or of a session record.",
+        "description": "The daemon quotes the text of the range on the named side. A comment on a\nsession record also tells the clients of the session with\n`review_changed`.",
+        "operationId": "post_diff_comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffCommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The daemon refuses the source, the root, the path or the range, and says why"
+          },
+          "502": {
+            "description": "The daemon could not store the comment, or could not be reached"
+          }
+        }
+      }
+    },
+    "/api/diff/comment/resolve": {
+      "post": {
+        "summary": "`POST /api/diff/comment/resolve` — mark one comment of a diffset resolved.",
+        "operationId": "post_diff_resolve_comment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveCommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffResolveCommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The diffset has no such comment, or the daemon refuses the source"
+          },
+          "502": {
+            "description": "The daemon could not resolve the comment, or could not be reached"
+          }
+        }
+      }
+    },
+    "/api/diff/comments": {
+      "get": {
+        "summary": "`GET /api/diff/comments` — the comments of the branch diff of one root, or\nof the record of one session.",
+        "description": "The daemon finds the quoted text of each comment in the current text of\nits side. A moved text moves the range. A text that is gone makes the\ncomment outdated.",
+        "operationId": "get_diff_comments",
+        "parameters": [
+          {
+            "name": "root",
+            "in": "query",
+            "description": "Absolute path of the top level of a git repository. Names a branch\nsource. Give `root` or `session`, not both.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "description": "The id of a session. Names the record of the session: its session\nbase, to the files on disk.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "base",
+            "in": "query",
+            "description": "The branch to compare against. Absent takes the default branch.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "head",
+            "in": "query",
+            "description": "The other side. Absent takes the working tree.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffCommentsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The query or the daemon refuses the source, and says why"
+          },
+          "502": {
+            "description": "git failed, or the daemon could not be reached"
+          }
+        }
+      }
+    },
     "/api/diff/file": {
       "get": {
         "summary": "`GET /api/diff/file` — the two texts of one file of a branch diff or of a\nsession record.",
@@ -5340,6 +5472,75 @@
           "agent"
         ]
       },
+      "CommentBody": {
+        "type": "object",
+        "description": "`POST /api/diff/comment` — anchor a comment to a line range of one file\nof a diffset.",
+        "required": [
+          "source",
+          "path",
+          "side",
+          "line_start",
+          "body"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/DiffsetSource",
+            "description": "The diffset of the file."
+          },
+          "root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path of the root of the file. A session record needs it,\nbecause a session can have more than one root. A branch source names\nits own root."
+          },
+          "path": {
+            "type": "string",
+            "description": "The path of the file relative to the root, on the current side."
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The old path of a renamed file. A base-side comment quotes this path."
+          },
+          "side": {
+            "$ref": "#/components/schemas/CommentSideRow",
+            "description": "The side that the line numbers count on."
+          },
+          "line_start": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The first line, 1-based.",
+            "minimum": 0
+          },
+          "line_end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "One past the last line. Absent means one line.",
+            "minimum": 0
+          },
+          "body": {
+            "type": "string"
+          },
+          "author": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CommentAuthorRow",
+                "description": "Absent means a human."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CommentRequest": {
         "type": "object",
         "description": "`POST /review/comment` — anchor a comment to a line range.\n\nRead into a typed body rather than forwarded as raw JSON, so the session\nunder review can only ever be the one in the path: a `session_id` in the\nbody is an unknown field here. The handler copies the fields into a\n`ReviewCommentRequest` with the path's session id.",
@@ -5586,6 +5787,44 @@
           }
         }
       },
+      "DiffCommentResponse": {
+        "type": "object",
+        "description": "What `POST /api/diff/comment` answers.",
+        "required": [
+          "diffset",
+          "comment"
+        ],
+        "properties": {
+          "diffset": {
+            "$ref": "#/components/schemas/DiffsetId",
+            "description": "The diffset that owns the comment."
+          },
+          "comment": {
+            "$ref": "#/components/schemas/ReviewCommentRow",
+            "description": "The comment as the daemon stored it, with its id and its quote."
+          }
+        }
+      },
+      "DiffCommentsResponse": {
+        "type": "object",
+        "description": "What `GET /api/diff/comments` answers.",
+        "required": [
+          "diffset",
+          "comments"
+        ],
+        "properties": {
+          "diffset": {
+            "$ref": "#/components/schemas/DiffsetId"
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListedCommentRow"
+            },
+            "description": "The comments, oldest first."
+          }
+        }
+      },
       "DiffFileEntry": {
         "type": "object",
         "description": "One file of a diffset, with its counts and no text.",
@@ -5646,6 +5885,26 @@
               "null"
             ],
             "description": "`None` when the file is deleted."
+          }
+        }
+      },
+      "DiffResolveCommentResponse": {
+        "type": "object",
+        "description": "What `POST /api/diff/comment/resolve` answers.",
+        "required": [
+          "diffset",
+          "comment_id",
+          "resolved"
+        ],
+        "properties": {
+          "diffset": {
+            "$ref": "#/components/schemas/DiffsetId"
+          },
+          "comment_id": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "boolean"
           }
         }
       },
@@ -6868,6 +7127,24 @@
             "format": "int32",
             "description": "One past the last line, 1-based, exclusive.",
             "minimum": 0
+          }
+        }
+      },
+      "ListedCommentRow": {
+        "type": "object",
+        "description": "One comment as `GET /api/diff/comments` lists it.",
+        "required": [
+          "comment",
+          "outdated"
+        ],
+        "properties": {
+          "comment": {
+            "$ref": "#/components/schemas/ReviewCommentRow",
+            "description": "The comment. When its quoted text moved, `line_range` is the new\nrange."
+          },
+          "outdated": {
+            "type": "boolean",
+            "description": "The current text of the side does not contain the quoted text. The\npane shows an outdated comment at the end of its file."
           }
         }
       },
@@ -8355,6 +8632,24 @@
             "description": "For worktrees: path to the main repository's .git directory"
           }
         }
+      },
+      "ResolveCommentBody": {
+        "type": "object",
+        "description": "`POST /api/diff/comment/resolve` — mark one comment of a diffset\nresolved.",
+        "required": [
+          "source",
+          "comment_id"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/DiffsetSource",
+            "description": "The diffset of the comment."
+          },
+          "comment_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "ResolveProposalBody": {
         "type": "object",
