@@ -68,6 +68,8 @@ pub enum CruNamespace {
     /// `cru.permissions.on_request`, on the VM that runs Lua files.
     Permissions,
     Plugin,
+    /// Read the proposals that a person rejected: `cru.proposals.rejected`.
+    Proposals,
     Ratelimit,
     Retry,
     /// `cru.rtp.append/prepend/get` — sugar over a `runtimepath` write.
@@ -145,6 +147,7 @@ impl CruNamespace {
             | Self::Paths
             | Self::Permissions
             | Self::Plugin
+            | Self::Proposals
             | Self::Ratelimit
             | Self::Retry
             | Self::Rtp
