@@ -810,28 +810,6 @@ fn create_test_agent_manager_with_permissions(
     .into()
 }
 
-fn create_test_agent_manager_with_providers(
-    session_manager: Arc<SessionManager>,
-    llm_config: crucible_core::config::LlmConfig,
-) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        mcp_gateway: None,
-        llm_config: Some(llm_config),
-        acp_config: None,
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
-    })
-    .into()
-}
-
 fn create_test_agent_manager_with_enrichment(
     session_manager: Arc<SessionManager>,
     enrichment_config: crucible_core::config::EmbeddingProviderConfig,
@@ -959,28 +937,6 @@ async fn start_mock_openai_models_server(
     });
 
     (format!("http://{}", addr), handle)
-}
-
-fn create_test_agent_manager_with_both(
-    session_manager: Arc<SessionManager>,
-    llm_config: crucible_core::config::LlmConfig,
-) -> Arc<AgentManager> {
-    let (event_tx, _) = broadcast::channel(16);
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
-    AgentManager::new(AgentManagerParams {
-        kiln_manager: Arc::new(KilnManager::new()),
-        session_manager,
-        background_manager,
-        mcp_gateway: None,
-        llm_config: Some(llm_config),
-        acp_config: None,
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        card_roots: Default::default(),
-        review_snapshot_root: crate::test_support::scratch_snapshot_root(),
-    })
-    .into()
 }
 
 mod active_tools;

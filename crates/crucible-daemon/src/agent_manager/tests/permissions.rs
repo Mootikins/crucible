@@ -891,7 +891,7 @@ mod permission_channel_tests {
         };
 
         let agent_manager =
-            create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
+            create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
         agent_manager
             .configure_agent(&session.id, test_agent())

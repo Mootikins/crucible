@@ -342,6 +342,32 @@ async fn a_resumed_session_adopts_the_modes_the_agent_reports_on_resume() {
     );
 }
 
+/// Build a handle over `workspace` that asks the agent to resume the stored
+/// id `stored`. The agent answers `session/resume` as `resume` says.
+async fn connect_resuming(
+    workspace: &Path,
+    resume: Resume,
+    stored: &str,
+) -> Result<AcpAgentHandle, crucible_daemon::acp_handle::AcpHandleError> {
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config.env_overrides.extend([MockScript {
+        session_resume: Some(resume),
+        ..MockScript::default()
+    }
+    .env()]);
+
+    timeout(
+        TURN_TIMEOUT,
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            resume_acp_session_id: Some(stored.into()),
+            ..mock_handle_params(&agent_config, workspace)
+        }),
+    )
+    .await
+    .expect("the handshake finished inside the timeout")
+}
+
 /// `-32601` and a normal error mean different things, and the client must
 /// not conflate them. `-32601` says "I do not have this method" and falls
 /// back to `session/new` — and so does `-32002` "Resource not found"
@@ -353,26 +379,19 @@ async fn a_resumed_session_adopts_the_modes_the_agent_reports_on_resume() {
 /// outright. This test pins that third case, deliberately: a silent
 /// fallback would hide that the agent lost the conversation, and it must
 /// not widen without someone deciding to widen it.
+///
+/// `resume_fallback_is_announced_in_the_event_stream` in
+/// `acp_integration/agent_handshake_tests.rs` pins the `-32601` fallback on
+/// the same handle path.
 #[tokio::test]
 async fn a_resume_refused_with_a_normal_error_fails_the_connect() {
     let workspace = TempDir::new().expect("temp workspace");
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.extend([MockScript {
-        session_resume: Some(Resume::Reject),
-        ..MockScript::default()
-    }
-    .env()]);
-
-    let outcome = timeout(
-        TURN_TIMEOUT,
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            resume_acp_session_id: Some("a-session-the-agent-forgot".into()),
-            ..mock_handle_params(&agent_config, workspace.path())
-        }),
+    let outcome = connect_resuming(
+        workspace.path(),
+        Resume::Reject,
+        "a-session-the-agent-forgot",
     )
-    .await
-    .expect("the handshake finished inside the timeout");
+    .await;
 
     let error = outcome
         .err()
@@ -380,37 +399,6 @@ async fn a_resume_refused_with_a_normal_error_fails_the_connect() {
     assert!(
         error.to_string().contains("session/resume"),
         "the failure must name the method that refused, got: {error}"
-    );
-}
-
-/// The other half of the pair: `-32601` still falls back, so the two error
-/// replies are demonstrably handled differently by one running client. On
-/// its own the test above could be satisfied by a client that failed on
-/// every resume error, including the one it must tolerate.
-#[tokio::test]
-async fn a_resume_refused_with_method_not_found_still_falls_back_to_a_new_session() {
-    let workspace = TempDir::new().expect("temp workspace");
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    // The default script has no `session_resume`: the mock answers -32601.
-    let agent_config = mock_session_agent(&agent_path);
-
-    let handle = timeout(
-        TURN_TIMEOUT,
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            resume_acp_session_id: Some("a-session-this-agent-never-had".into()),
-            ..mock_handle_params(&agent_config, workspace.path())
-        }),
-    )
-    .await
-    .expect("the handshake finished inside the timeout")
-    .expect("a -32601 reply to session/resume falls back to session/new");
-
-    let id = handle
-        .acp_session_id()
-        .expect("the fallback session still has an id");
-    assert_ne!(
-        id, "a-session-this-agent-never-had",
-        "the fallback must open a NEW session, not pretend the old one resumed"
     );
 }
 
@@ -423,23 +411,12 @@ async fn a_resume_refused_with_method_not_found_still_falls_back_to_a_new_sessio
 #[tokio::test]
 async fn a_resume_answered_resource_not_found_falls_back_to_a_new_session() {
     let workspace = TempDir::new().expect("temp workspace");
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.extend([MockScript {
-        session_resume: Some(Resume::Unknown),
-        ..MockScript::default()
-    }
-    .env()]);
-
-    let handle = timeout(
-        TURN_TIMEOUT,
-        AcpAgentHandle::new(AcpAgentHandleParams {
-            resume_acp_session_id: Some("a-session-the-agent-forgot".into()),
-            ..mock_handle_params(&agent_config, workspace.path())
-        }),
+    let handle = connect_resuming(
+        workspace.path(),
+        Resume::Unknown,
+        "a-session-the-agent-forgot",
     )
     .await
-    .expect("the handshake finished inside the timeout")
     .expect("a -32002 reply to session/resume falls back to session/new");
 
     let id = handle

@@ -27,47 +27,6 @@ fn opencode_script() -> MockScript {
     }
 }
 
-/// Build a fresh config for the given agent kind. Used as a `test-case`
-/// argument so each test enumerates over both supported agent kinds.
-#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
-#[test_case(opencode_script as fn() -> MockScript; "opencode")]
-#[tokio::test]
-async fn handshake_completes(make_script: fn() -> MockScript) {
-    let (mut client, _agent) = connect(make_script(), None, None).await;
-
-    let result = client.handshake(None, None).await;
-
-    // The mock agents advertise no auth method, so the handshake succeeds
-    // for both agent kinds.
-    if let Err(ref e) = result {
-        eprintln!("Handshake failed with error: {:?}", e);
-    }
-    assert!(
-        result.is_ok(),
-        "Should complete handshake successfully: {:?}",
-        result.err()
-    );
-
-    let session = result.unwrap();
-    assert!(!session.id().is_empty(), "Should have valid session ID");
-}
-
-/// Initialization (the `initialize` request inside `handshake`)
-/// succeeds for every agent kind.
-#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
-#[test_case(opencode_script as fn() -> MockScript; "opencode")]
-#[tokio::test]
-async fn initialization_succeeds(make_script: fn() -> MockScript) {
-    let (mut client, _agent) = connect(make_script(), None, None).await;
-
-    let result = client.handshake(None, None).await;
-    assert!(
-        result.is_ok(),
-        "Initialization should succeed: {:?}",
-        result.err()
-    );
-}
-
 /// After a successful handshake, the session id carries the mock prefix.
 #[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
 #[test_case(opencode_script as fn() -> MockScript; "opencode")]

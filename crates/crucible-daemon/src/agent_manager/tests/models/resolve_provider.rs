@@ -57,7 +57,7 @@ async fn test_resolve_provider_config_from_providers_config() {
     };
 
     let agent_manager =
-        create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let resolved = agent_manager.resolve_provider_config("local");
     assert!(resolved.is_some(), "Should resolve from llm_config");
@@ -74,7 +74,7 @@ async fn test_resolve_provider_config_does_not_use_legacy_providers_config() {
     let session_manager = temp_session_manager();
 
     let llm_config = LlmConfig::default();
-    let agent_manager = create_test_agent_manager_with_providers(session_manager, llm_config);
+    let agent_manager = create_test_agent_manager_with_llm_config(session_manager, llm_config);
 
     let resolved = agent_manager.resolve_provider_config("legacy");
     assert!(
@@ -115,7 +115,8 @@ async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
         models: Default::default(),
     };
 
-    let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);
+    let agent_manager =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let resolved = agent_manager.resolve_provider_config("shared");
     assert!(resolved.is_some(), "Should resolve when in both configs");

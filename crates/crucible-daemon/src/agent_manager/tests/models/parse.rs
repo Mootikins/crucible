@@ -85,7 +85,8 @@ async fn test_parse_provider_model_legacy_takes_precedence() {
         models: Default::default(),
     };
 
-    let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);
+    let agent_manager =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let (provider_key, model_name) = agent_manager.parse_provider_model("local/llama3.2");
     assert_eq!(
@@ -132,7 +133,7 @@ async fn test_parse_provider_model_trailing_slash() {
     };
 
     let agent_manager =
-        create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let (provider_key, model_name) = agent_manager.parse_provider_model("provider/");
     assert_eq!(
@@ -166,7 +167,7 @@ async fn test_parse_provider_model_whitespace() {
     };
 
     let agent_manager =
-        create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let (provider_key, model_name) = agent_manager.parse_provider_model("  provider/model  ");
     assert_eq!(
@@ -199,7 +200,7 @@ async fn test_parse_provider_model_case_sensitivity() {
     };
 
     let agent_manager =
-        create_test_agent_manager_with_providers(session_manager.clone(), llm_config);
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     let (provider_key, model_name) = agent_manager.parse_provider_model("ollama/model");
     assert_eq!(

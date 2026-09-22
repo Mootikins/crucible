@@ -714,7 +714,8 @@ async fn test_list_models_both_configs() {
         models: Default::default(),
     };
 
-    let agent_manager = create_test_agent_manager_with_both(session_manager.clone(), llm_config);
+    let agent_manager =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), llm_config);
 
     agent_manager
         .configure_agent(&session.id, test_agent())
