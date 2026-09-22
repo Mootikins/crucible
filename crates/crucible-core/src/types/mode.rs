@@ -72,6 +72,18 @@ impl ReviewPolicy {
     pub fn effective_for(self, agent_type: &str) -> Self {
         self.min(Self::enforceable_by(agent_type))
     }
+
+    /// This policy for a turn whose effective write mode is `writes`.
+    ///
+    /// A `propose` turn writes nothing to the disk, so no review gate has a
+    /// write to hold. For a plugin pass, no person answers the gate. Give the
+    /// effective write mode, after [`WriteMode::effective_for`].
+    pub fn for_writes(self, writes: WriteMode) -> Self {
+        match writes {
+            WriteMode::Apply => self,
+            WriteMode::Propose => Self::None,
+        }
+    }
 }
 
 /// What a note write of a session in this mode does.
@@ -243,8 +255,11 @@ impl ModeDescriptor {
     /// about a safety property. That is why the wire carries one field holding
     /// the effective value rather than two fields a client has to reconcile.
     pub fn degraded_for(mut self, agent_type: &str) -> Self {
-        self.review_policy = self.review_policy.effective_for(agent_type);
         self.writes = self.writes.effective_for(agent_type);
+        self.review_policy = self
+            .review_policy
+            .effective_for(agent_type)
+            .for_writes(self.writes);
         self
     }
 }
@@ -535,6 +550,30 @@ mod tests {
         let mut descriptor = ModeDescriptor::from(&test_session_mode("propose", "Propose", None));
         descriptor.writes = WriteMode::Propose;
         assert_eq!(descriptor.degraded_for("acp").writes, WriteMode::Apply);
+    }
+
+    /// A `propose` mode writes nothing to the disk, so it asks for no review
+    /// gate. An ACP agent applies its writes, so its policy stays.
+    #[test]
+    fn a_propose_mode_asks_for_no_review_gate() {
+        assert_eq!(
+            ReviewPolicy::PreWrite.for_writes(WriteMode::Propose),
+            ReviewPolicy::None
+        );
+        assert_eq!(
+            ReviewPolicy::PreWrite.for_writes(WriteMode::Apply),
+            ReviewPolicy::PreWrite
+        );
+        let mut descriptor = ModeDescriptor::from(&test_session_mode("propose", "Propose", None));
+        descriptor.writes = WriteMode::Propose;
+        assert_eq!(
+            descriptor.clone().degraded_for("internal").review_policy,
+            ReviewPolicy::None
+        );
+        assert_eq!(
+            descriptor.degraded_for("acp").review_policy,
+            ReviewPolicy::PostTurn
+        );
     }
 
     /// A descriptor from a daemon older than the field reads as `apply`.

@@ -60,6 +60,20 @@ impl NoteWrites {
         self.mode.get()
     }
 
+    /// The text that the current turn already proposes for `root`/`path`,
+    /// or `None` when the turn proposes no write of that path.
+    pub(super) fn proposed_text(
+        &self,
+        root: &PhysicalRoot,
+        path: &str,
+    ) -> Result<Option<String>, rmcp::ErrorData> {
+        self.proposals
+            .turn_text(&self.author, &self.session, root, path)
+            .map_err(|e| {
+                rmcp::ErrorData::internal_error(format!("Failed to read the proposal: {e}"), None)
+            })
+    }
+
     /// Record one proposed write. The disk does not change.
     pub(super) fn propose(
         &self,

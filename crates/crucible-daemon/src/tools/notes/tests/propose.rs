@@ -174,3 +174,97 @@ async fn a_plugin_session_proposal_names_the_plugin() {
         }
     );
 }
+
+#[tokio::test]
+async fn a_second_update_in_one_turn_builds_on_the_proposed_text() {
+    let session = Session::new(SessionType::Chat, vec![]);
+    let f = fixture(&session);
+    let before = "# Old\n\nText.";
+    std::fs::write(f.kiln.path().join("note.md"), before).unwrap();
+
+    // The first call changes the frontmatter only. The second call changes
+    // the content only, so it must keep the frontmatter of the first call.
+    f.tools
+        .update_note(Parameters(UpdateNoteParams {
+            path: "note.md".to_string(),
+            content: None,
+            frontmatter: Some(serde_json::json!({ "status": "draft" })),
+        }))
+        .await
+        .unwrap();
+    f.tools
+        .update_note(Parameters(UpdateNoteParams {
+            path: "note.md".to_string(),
+            content: Some("# New\n\nText.".to_string()),
+            frontmatter: None,
+        }))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(f.kiln.path().join("note.md")).unwrap(),
+        before
+    );
+    let listed = f.store.list(false).unwrap();
+    assert_eq!(listed.len(), 1);
+    let writes = &listed[0].writes;
+    assert_eq!(writes.len(), 1);
+    let write = &writes[0];
+    assert!(
+        write.new_text.contains("status: draft"),
+        "the first edit is lost: {:?}",
+        write.new_text
+    );
+    assert!(
+        write.new_text.contains("# New"),
+        "the second edit is lost: {:?}",
+        write.new_text
+    );
+    assert_eq!(
+        write.base,
+        ExpectedBase::Text {
+            text: before.to_string(),
+            hash: disk_hash(before),
+        }
+    );
+}
+
+#[tokio::test]
+async fn an_update_after_a_proposed_create_builds_on_the_proposed_note() {
+    let session = Session::new(SessionType::Chat, vec![]);
+    let f = fixture(&session);
+
+    f.tools
+        .create_note(Parameters(CreateNoteParams {
+            path: "new.md".to_string(),
+            content: "# New".to_string(),
+            frontmatter: Some(serde_json::json!({ "status": "draft" })),
+        }))
+        .await
+        .unwrap();
+    // The file is not on the disk, but the turn proposes it, so the update
+    // finds it.
+    let result = f
+        .tools
+        .update_note(Parameters(UpdateNoteParams {
+            path: "new.md".to_string(),
+            content: Some("# Newer".to_string()),
+            frontmatter: None,
+        }))
+        .await
+        .unwrap();
+
+    assert_eq!(answer_status(result), "proposed");
+    assert!(!f.kiln.path().join("new.md").exists());
+    let listed = f.store.list(false).unwrap();
+    assert_eq!(listed.len(), 1);
+    let write = &listed[0].writes[0];
+    assert_eq!(listed[0].writes.len(), 1);
+    assert!(
+        write.new_text.contains("status: draft"),
+        "{:?}",
+        write.new_text
+    );
+    assert!(write.new_text.contains("# Newer"), "{:?}", write.new_text);
+    assert_eq!(write.base, ExpectedBase::Absent);
+}

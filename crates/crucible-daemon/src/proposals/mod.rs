@@ -163,6 +163,29 @@ impl ProposalStore {
         Ok(proposal)
     }
 
+    /// The new text that the open turn proposal of `session` holds for
+    /// `root`/`path`, or `None` when the turn proposes no write of that path.
+    ///
+    /// A second note write of the same path in one turn builds on this text,
+    /// because the disk does not hold the first write.
+    pub fn turn_text(
+        &self,
+        author: &ProposalAuthor,
+        session: &SessionId,
+        root: &PhysicalRoot,
+        path: &str,
+    ) -> ProposalResult<Option<String>> {
+        let Some(id) = self.turn_proposal(session, author)? else {
+            return Ok(None);
+        };
+        Ok(self.files.read(&id)?.and_then(|p| {
+            p.writes
+                .into_iter()
+                .find(|w| w.root == *root && w.path == path)
+                .map(|w| w.new_text)
+        }))
+    }
+
     /// Forget the proposal of the current turn of `session`. The next write
     /// of `session` starts a new proposal.
     pub fn end_turn(&self, session: &SessionId) {

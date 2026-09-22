@@ -86,6 +86,19 @@ impl NoteTools {
             .filter(|w| w.mode() == crucible_core::types::WriteMode::Propose)
     }
 
+    /// The root and the root-relative path that a proposal names for
+    /// `full_path`.
+    fn proposal_target(&self, full_path: &Path) -> (crucible_core::session::PhysicalRoot, String) {
+        let root =
+            crucible_core::session::PhysicalRoot::from_top_level(self.scope.canonical_anchor());
+        let relative = self
+            .scope
+            .relativize(full_path)
+            .to_string_lossy()
+            .to_string();
+        (root, relative)
+    }
+
     /// Record a proposed write of `full_path`, and build the tool answer.
     /// The file on disk does not change.
     fn propose(
@@ -96,13 +109,7 @@ impl NoteTools {
         base: ExpectedBase,
         text: String,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let root =
-            crucible_core::session::PhysicalRoot::from_top_level(self.scope.canonical_anchor());
-        let relative = self
-            .scope
-            .relativize(full_path)
-            .to_string_lossy()
-            .to_string();
+        let (root, relative) = self.proposal_target(full_path);
         let proposal = writes.propose(root, &relative, base, text)?;
         json_success(serde_json::json!({
             "path": path,
@@ -365,11 +372,27 @@ impl NoteTools {
         let full_path = resolve_note_write(&self.scope, &path)?;
         let _write = crate::file_write::lock(full_path.as_path()).await;
 
-        let (text, base, updated_fields) =
-            updated_note(full_path.as_path(), &path, new_frontmatter, new_content)?;
         if let Some(writes) = self.proposing() {
+            // The disk does not hold an earlier proposed write of this turn,
+            // so the update builds on the proposed text when there is one.
+            // The store keeps the base of the first write of the path, and
+            // it ignores the base of this write.
+            let (root, relative) = self.proposal_target(full_path.as_path());
+            let (text, base) = match writes.proposed_text(&root, &relative)? {
+                Some(proposed) => {
+                    let (text, _) = updated_text(&proposed, new_frontmatter, new_content)?;
+                    (text, ExpectedBase::Unchecked)
+                }
+                None => {
+                    let (text, base, _) =
+                        updated_note(full_path.as_path(), &path, new_frontmatter, new_content)?;
+                    (text, base)
+                }
+            };
             return self.propose(writes, &path, full_path.as_path(), base, text);
         }
+        let (text, base, updated_fields) =
+            updated_note(full_path.as_path(), &path, new_frontmatter, new_content)?;
         let answer = write_note(full_path.as_path(), text, base).await?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note update
@@ -485,9 +508,22 @@ fn updated_note(
         ));
     }
 
-    // Read existing file
     let existing_content = std::fs::read_to_string(full_path).mcp_err_ctx("Failed to read file")?;
+    let (final_file_content, updated_fields) =
+        updated_text(&existing_content, new_frontmatter, new_content)?;
+    let base = ExpectedBase::Text {
+        hash: disk_hash(&existing_content),
+        text: existing_content,
+    };
+    Ok((final_file_content, base, updated_fields))
+}
 
+/// Build the text that `update_note` writes from the `existing` note text.
+fn updated_text(
+    existing_content: &str,
+    new_frontmatter: Option<serde_json::Value>,
+    new_content: Option<String>,
+) -> Result<(String, Vec<&'static str>), rmcp::ErrorData> {
     // Track what fields are being updated
     let mut updated_fields = Vec::new();
 
@@ -502,13 +538,13 @@ fn updated_note(
         (Some(fm), None) => {
             // Update frontmatter only, preserve content
             updated_fields.push("frontmatter");
-            let content = extract_content_without_frontmatter(&existing_content);
+            let content = extract_content_without_frontmatter(existing_content);
             (Some(fm), content)
         }
         (None, Some(content)) => {
             // Update content only, preserve frontmatter
             updated_fields.push("content");
-            let fm = parse_yaml_frontmatter(&existing_content);
+            let fm = parse_yaml_frontmatter(existing_content);
             (fm, content)
         }
         (None, None) => {
@@ -527,12 +563,7 @@ fn updated_note(
     } else {
         final_content
     };
-
-    let base = ExpectedBase::Text {
-        hash: disk_hash(&existing_content),
-        text: existing_content,
-    };
-    Ok((final_file_content, base, updated_fields))
+    Ok((final_file_content, updated_fields))
 }
 
 /// Write `text` through the daemon's checked write. A conflict or a refusal

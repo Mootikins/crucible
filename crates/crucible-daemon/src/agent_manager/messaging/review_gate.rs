@@ -171,8 +171,11 @@ pub(super) async fn hold_for_review(
     if !ledger.is_open(&stream_ctx.session_id) {
         return;
     }
+    // The slot holds the effective write mode of this turn. A `propose`
+    // turn writes nothing to the disk, so it has no write to hold.
     let policy = ReviewPolicy::for_mode_id(&stream_ctx.session_mode)
-        .effective_for(&stream_ctx.agent_stream_config.agent_type);
+        .effective_for(&stream_ctx.agent_stream_config.agent_type)
+        .for_writes(stream_ctx.slot.write_mode().get());
     // `gate_subject` re-checks this. The early return is what keeps a
     // non-gating session from paying to work out what the call writes.
     if policy != ReviewPolicy::PreWrite {
