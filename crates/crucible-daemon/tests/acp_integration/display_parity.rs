@@ -20,10 +20,10 @@
 //! path as the example of a test whose name overclaims its layer.
 
 use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
+use crate::support::parity::capture_chunks;
 use crate::support::{connect, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
 
 /// A `tool_call` step whose `content` array carries one
 /// `ToolCallContent::Diff` entry — exercises the path that surfaces ACP
@@ -78,8 +78,7 @@ fn tool_call_update_with_diff(
 
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -96,16 +95,9 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     .await;
 
     let request = make_prompt_request("ses-tool-args", "search something");
-    let (summary, _response) = prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    let (summary, _response) = prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -134,8 +126,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
 
 #[tokio::test]
 async fn tool_start_without_arguments_has_none() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -148,16 +139,9 @@ async fn tool_start_without_arguments_has_none() {
     .await;
 
     let request = make_prompt_request("ses-no-args", "list models");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -178,8 +162,7 @@ async fn tool_start_without_arguments_has_none() {
 
 #[tokio::test]
 async fn tool_start_complex_arguments_preserved() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let complex_args = json!({
         "path": "/home/user/project/src/main.rs",
@@ -204,16 +187,9 @@ async fn tool_start_complex_arguments_preserved() {
     .await;
 
     let request = make_prompt_request("ses-complex", "read file");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -242,8 +218,7 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     // diff must surface on the live `StreamingChunk::ToolStart`
     // so the TUI can render it in scrollback as the call appears.
 
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -267,16 +242,9 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     .await;
 
     let request = make_prompt_request("ses-diff", "edit file");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_start = captured
@@ -306,8 +274,7 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     // post-stream replay in `acp_handle.rs` filters out tool ids that
     // were already announced via `ToolStart`.
 
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -338,16 +305,9 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     .await;
 
     let request = make_prompt_request("ses-late-diff", "edit late");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
 
@@ -390,8 +350,7 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_result_emits_chunk() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -411,16 +370,9 @@ async fn tool_end_with_result_emits_chunk() {
     .await;
 
     let request = make_prompt_request("ses-result", "read readme");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
 
@@ -452,8 +404,7 @@ async fn tool_end_with_result_emits_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_error_emits_error_field() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -477,16 +428,9 @@ async fn tool_end_with_error_emits_error_field() {
     .await;
 
     let request = make_prompt_request("ses-error", "write file");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_end = captured
@@ -509,8 +453,7 @@ async fn tool_end_with_error_emits_error_field() {
 
 #[tokio::test]
 async fn tool_end_failed_without_output_has_generic_error() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -526,16 +469,9 @@ async fn tool_end_failed_without_output_has_generic_error() {
     .await;
 
     let request = make_prompt_request("ses-fail-no-out", "try broken");
-    prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("streaming should complete");
+    prompt_with(&client, request, callback)
+        .await
+        .expect("streaming should complete");
 
     let captured = chunks.lock().unwrap();
     let tool_end = captured
@@ -572,7 +508,7 @@ async fn stream_without_usage_data_completes_gracefully() {
     .await;
 
     let request = make_prompt_request("ses-no-usage", "say hello");
-    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (chunks, callback) = capture_chunks();
     let (summary, response) = prompt_with(&client, request, callback)
         .await
         .expect("stream should complete without crash when no usage data");
@@ -594,7 +530,7 @@ async fn empty_stream_no_usage_no_chunks_completes() {
     let (client, _agent) = connect(MockScript::default(), Some(500), None).await;
 
     let request = make_prompt_request("ses-empty", "nothing");
-    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (chunks, callback) = capture_chunks();
     let (summary, _response) = prompt_with(&client, request, callback)
         .await
         .expect("empty stream should complete without crash");
@@ -606,8 +542,7 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
 #[tokio::test]
 async fn full_flow_text_tool_result_text_via_callback() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (client, _agent) = connect(
         MockScript {
@@ -633,16 +568,9 @@ async fn full_flow_text_tool_result_text_via_callback() {
     .await;
 
     let request = make_prompt_request("ses-full", "search async patterns");
-    let (summary, _response) = prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("full flow should complete");
+    let (summary, _response) = prompt_with(&client, request, callback)
+        .await
+        .expect("full flow should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();

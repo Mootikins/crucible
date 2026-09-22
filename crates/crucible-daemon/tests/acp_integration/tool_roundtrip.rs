@@ -4,17 +4,17 @@
 
 use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};
 use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
+use crate::support::parity::capture_chunks;
 use crate::support::{connect, logged, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Verifies the full tool round-trip: agent calls read_file, the client receives
 /// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_read_file() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let session_id = "ses-roundtrip-read";
 
@@ -46,16 +46,9 @@ async fn test_acp_tool_roundtrip_read_file() {
     .await;
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
-    let (_summary, response) = prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("tool roundtrip should complete");
+    let (_summary, response) = prompt_with(&client, request, callback)
+        .await
+        .expect("tool roundtrip should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     // Verify chunk ordering: text -> tool_start -> tool_end -> text
@@ -144,8 +137,7 @@ async fn test_acp_tool_roundtrip_read_file() {
 /// and arrive in the correct order.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_multiple_tools() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let session_id = "ses-roundtrip-multi";
 
@@ -187,16 +179,9 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     .await;
 
     let request = make_prompt_request(session_id, "search and read config");
-    let (summary, _response) = prompt_with(
-        &client,
-        request,
-        Box::new(move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        }),
-    )
-    .await
-    .expect("multi-tool roundtrip should complete");
+    let (summary, _response) = prompt_with(&client, request, callback)
+        .await
+        .expect("multi-tool roundtrip should complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();
@@ -306,7 +291,7 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
         .await
         .expect("the mock agent completes the handshake");
 
-    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (chunks, callback) = capture_chunks();
     let turn = prompt_with(
         &client,
         make_prompt_request(session.id(), "list my notes"),
@@ -393,7 +378,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
     .await;
 
     let request = make_prompt_request(session_id, "find main function");
-    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (chunks, callback) = capture_chunks();
     let (summary, _response) = prompt_with(&client, request, callback)
         .await
         .expect("content-after-tool roundtrip should complete");

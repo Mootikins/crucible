@@ -13,6 +13,7 @@
 //! client answered.
 
 use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
+use crate::support::parity::capture_chunks;
 use crate::support::{connect, logged, prompt_with, read_log, MockScript, Step};
 use agent_client_protocol::schema::v1::{
     PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
@@ -174,8 +175,7 @@ async fn acp_permission_handler_receives_correct_request_details() {
 async fn acp_safe_tool_no_permission_request_needed() {
     let (handler, recorded) = recording_handler();
 
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (turn, replies) = permission_turn(
         500,
@@ -194,10 +194,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
             ),
             Step::Text("Here is the file content.".into()),
         ],
-        move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        },
+        callback,
     )
     .await;
     let (summary, _response) = turn.expect("streaming should complete without permission request");
@@ -227,8 +224,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
 
 #[tokio::test]
 async fn acp_permission_approved_sends_selected_response_to_agent() {
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (turn, replies) = permission_turn(
         2000,
@@ -244,10 +240,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
             tool_call_update("tool-bash-1", "completed", Some(json!("hello\n"))),
             Step::Text("Command executed successfully.".into()),
         ],
-        move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        },
+        callback,
     )
     .await;
     let (summary, _response) = turn.expect("streaming should complete after permission approval");
@@ -322,8 +315,7 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
 async fn acp_multiple_permission_requests_in_single_turn() {
     let (handler, recorded) = recording_handler();
 
-    let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
-    let chunks_cb = Arc::clone(&chunks);
+    let (chunks, callback) = capture_chunks();
 
     let (turn, replies) = permission_turn(
         2000,
@@ -346,10 +338,7 @@ async fn acp_multiple_permission_requests_in_single_turn() {
             tool_call_update("tool-write-m1", "completed", Some(json!("Written 4 bytes"))),
             Step::Text("Both operations completed.".into()),
         ],
-        move |chunk| {
-            chunks_cb.lock().unwrap().push(chunk);
-            true
-        },
+        callback,
     )
     .await;
     let (summary, _response) =
