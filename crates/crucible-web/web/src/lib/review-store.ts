@@ -4,7 +4,6 @@
  *
  * Global rather than context-bound because its consumer, `ChangesPanel`,
  * renders in the RIGHT edge region, outside the per-chat-tab `ChatProvider`.
- * This follows `pendingDiffStore`'s shape for the same reason.
  *
  * Keyed by session id, not "the current session": several chat tabs can be
  * open at once and a delegated child record is addressed by the CHILD's

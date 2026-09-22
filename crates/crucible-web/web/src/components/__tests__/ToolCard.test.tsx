@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@solidjs/testing-library';
 import type { ToolCallDisplay } from '@/lib/types';
-import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 
 // ===== Mock topology =====
 // DiffViewer / MultiEditDiff are stubbed because their real implementations
@@ -23,50 +22,18 @@ vi.mock('../MultiEditDiff', () => ({
   ),
 }));
 
-// Open-in-editor mocks. Only the "Open in editor" describe block triggers
-// these; the other suites render ToolCards without clicking the button, so
-// these mocks are inert for them. vi.clearAllMocks runs between every test
-// via the global `clearMocks: true` in vite.config.ts.
-const CURRENT = 'top\nlet x = 1;\nbottom\n';
-const openFileWithDiffMock = vi.fn();
-const addNotificationMock = vi.fn();
-
-// `@/lib/api` is NOT mocked. The card reads the file through the shared cache
-// of `lib/query/fs.ts`, so the daemon's own route is what answers, and the
-// repeat-click case below counts the reads that reached it.
-let env: TestQueryEnv;
-/** The path of every read the daemon answered, in order. */
-let reads: string[] = [];
-/** How the daemon answers a read. Replaced by the cases that need a delay or a 404. */
-let answerRead: () => unknown = () => ({ content: CURRENT, content_hash: 'hash-1' });
-
-/** A daemon that does not have the file. */
-function missing(): Response {
-  return new Response(JSON.stringify({ error: { code: 404, message: 'no such file' } }), {
-    status: 404,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-beforeEach(() => {
-  reads = [];
-  answerRead = () => ({ content: CURRENT, content_hash: 'hash-1' });
-  env = createTestQueryEnv({
-    'GET /api/kiln/file': (request: Request) => {
-      reads.push(new URL(request.url).searchParams.get('path') ?? '');
-      return answerRead();
-    },
-  });
-});
-
-afterEach(() => {
-  env.restore();
-});
-vi.mock('@/lib/file-actions', () => ({
-  openFileWithDiff: (...a: unknown[]) => openFileWithDiffMock(...a),
+// Open-diff mocks. Only the "Open diff" describe block clicks the button;
+// the other suites render ToolCards without a click, so these mocks are inert
+// for them. vi.clearAllMocks runs between every test via the global
+// `clearMocks: true` in vite.config.ts.
+const openDiffMock = vi.fn();
+vi.mock('@/lib/panel-actions', () => ({
+  openDiff: (...a: unknown[]) => openDiffMock(...a),
 }));
-vi.mock('@/stores/notificationStore', () => ({
-  notificationActions: { addNotification: (...a: unknown[]) => addNotificationMock(...a) },
+// The card reads its session from the chat that holds it.
+const chat = vi.hoisted(() => ({ sessionId: undefined as string | undefined }));
+vi.mock('@/contexts/ChatContext', () => ({
+  useChatSafe: () => ({ sessionId: () => chat.sessionId }),
 }));
 
 import { ToolCard } from '../ToolCard';
@@ -556,87 +523,41 @@ describe('ToolCard — terminate badge', () => {
   });
 });
 
-describe('ToolCard — Open in editor', () => {
-  it('opens the file with the current content diffed against the applied edit', async () => {
-    render(() => <ToolCard toolCall={editTool()} />);
-    // Expand the card to reveal the diff section + the button.
-    fireEvent.click(screen.getByText('Edit'));
-
-    const btn = await screen.findByTestId('tool-open-in-editor');
-    fireEvent.click(btn);
-
-    await waitFor(() => expect(openFileWithDiffMock).toHaveBeenCalledTimes(1));
-    expect(reads).toEqual(['/proj/app.ts']);
-    // original = current file; proposed = current with the edit applied.
-    expect(openFileWithDiffMock).toHaveBeenCalledWith(
-      '/proj/app.ts',
-      CURRENT,
-      'top\nlet x = 42;\nbottom\n',
-      'app.ts',
-    );
+describe('ToolCard — Open diff', () => {
+  beforeEach(() => {
+    chat.sessionId = 's-1';
   });
 
-  it('has no Open-in-editor button for a non-diff tool', () => {
+  it('the tool card opens the session record in the diff pane', () => {
+    render(() => <ToolCard toolCall={editTool()} />);
+    fireEvent.click(screen.getByText('Edit'));
+
+    fireEvent.click(screen.getByTestId('tool-open-diff'));
+
+    // The pane shows the whole record, and focuses the file of this call.
+    expect(openDiffMock).toHaveBeenCalledTimes(1);
+    expect(openDiffMock).toHaveBeenCalledWith({ kind: 'session_record', session: 's-1' }, { path: '/proj/app.ts' });
+  });
+
+  it('has no Open diff button for a non-diff tool', () => {
     render(() => <ToolCard toolCall={{ id: 't', name: 'read_file', args: '{}', status: 'complete', result: 'ok' }} />);
     fireEvent.click(screen.getByText('read_file'));
-    expect(screen.queryByTestId('tool-open-in-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tool-open-diff')).not.toBeInTheDocument();
   });
 
-  it('offers Open-in-editor while the tool is still running (the diff is already known)', () => {
+  it('offers Open diff while the tool is still running (the diff is already known)', () => {
     render(() => <ToolCard toolCall={{ ...editTool(), status: 'running' }} />);
     fireEvent.click(screen.getByText('Edit'));
-    expect(screen.getByTestId('tool-open-in-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-open-diff')).toBeInTheDocument();
   });
 
-  // An unreadable path with an Edit means we have no baseline; applying the
-  // edit to '' would yield an EMPTY proposed document — a delete-everything
-  // diff the user could save over their file.
-  it('refuses to open an Edit diff when the file cannot be read', async () => {
-    answerRead = () => missing();
+  // A card outside a chat names no session, so it has no session record.
+  it('has no Open diff button outside a session', () => {
+    chat.sessionId = undefined;
     render(() => <ToolCard toolCall={editTool()} />);
     fireEvent.click(screen.getByText('Edit'));
-    fireEvent.click(await screen.findByTestId('tool-open-in-editor'));
-
-    await waitFor(() => expect(addNotificationMock).toHaveBeenCalledTimes(1));
-    expect(addNotificationMock.mock.calls[0][0]).toBe('warning');
-    expect(openFileWithDiffMock).not.toHaveBeenCalled();
-  });
-
-  // A Write carries the whole file, so an unreadable path is just a new file.
-  it('opens a Write diff against empty when the file does not exist yet', async () => {
-    answerRead = () => missing();
-    const writeTool: ToolCallDisplay = {
-      id: 'tc-2',
-      name: 'Write',
-      args: '',
-      status: 'complete',
-      diffs: [{ path: '/proj/new.ts', old_content: null, new_content: 'fresh\n' }],
-    };
-    render(() => <ToolCard toolCall={writeTool} />);
-    fireEvent.click(screen.getByText('Write'));
-    fireEvent.click(await screen.findByTestId('tool-open-in-editor'));
-
-    await waitFor(() => expect(openFileWithDiffMock).toHaveBeenCalledTimes(1));
-    expect(openFileWithDiffMock).toHaveBeenCalledWith('/proj/new.ts', '', 'fresh\n', 'new.ts');
-    expect(addNotificationMock).not.toHaveBeenCalled();
-  });
-
-  it('ignores repeat clicks while a diff is still being fetched', async () => {
-    let release!: () => void;
-    answerRead = () =>
-      new Promise((resolve) => {
-        release = () => resolve({ content: CURRENT, content_hash: 'hash-1' });
-      });
-    render(() => <ToolCard toolCall={editTool()} />);
-    fireEvent.click(screen.getByText('Edit'));
-
-    const btn = await screen.findByTestId('tool-open-in-editor');
-    fireEvent.click(btn);
-    fireEvent.click(btn);
-    release();
-
-    await waitFor(() => expect(openFileWithDiffMock).toHaveBeenCalledTimes(1));
-    expect(reads).toHaveLength(1);
+    expect(screen.queryByTestId('tool-open-diff')).not.toBeInTheDocument();
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
   });
 });
 

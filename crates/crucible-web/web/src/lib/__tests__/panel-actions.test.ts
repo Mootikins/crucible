@@ -170,6 +170,24 @@ describe('openDiff', () => {
     expect(diffTabs()).toHaveLength(1);
     expect(windowStore.tabGroups['center-group'].activeTabId).toBe(first.id);
   });
+
+  // The pane of a diffset can be open already. A click on a second file must
+  // move the focus of that pane, and a second click on one file must focus it
+  // again, so each request gets a new sequence number.
+  it('a focus target reaches the open tab of its diffset', () => {
+    openDiff(branch('/repo/a'), { root: '/repo/a', path: 'one.rs' });
+    const [first] = diffTabs();
+    const one = first.metadata?.focus as { path: string; seq: number };
+    expect(one).toMatchObject({ root: '/repo/a', path: 'one.rs' });
+
+    openDiff(branch('/repo/a'), { root: '/repo/a', path: 'two.rs' });
+    const [tab] = diffTabs();
+    expect(diffTabs()).toHaveLength(1);
+    const two = tab.metadata?.focus as { path: string; seq: number };
+    expect(two).toMatchObject({ root: '/repo/a', path: 'two.rs' });
+    expect(two.seq).toBeGreaterThan(one.seq);
+    expect(tab.metadata?.source).toEqual(branch('/repo/a'));
+  });
 });
 
 describe('findTabByContentType', () => {

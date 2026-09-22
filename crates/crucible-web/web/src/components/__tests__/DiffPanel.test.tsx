@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, within } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource } from '@/test-utils/sse';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
@@ -180,6 +181,65 @@ describe('DiffPanel', () => {
     // 400 changed lines is the limit. One more starts collapsed.
     expect(toggle('src/a.rs').getAttribute('aria-expanded')).toBe('true');
     expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  describe('the focus target', () => {
+    let scrolled: string[];
+    beforeEach(() => {
+      scrolled = [];
+      // jsdom does not scroll. The spy records the section that asked.
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this.getAttribute('data-testid') ?? '');
+      };
+    });
+    afterEach(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+
+    const files = () => [
+      entry('src/a.rs'),
+      entry('src/big.rs', { added: 300, removed: 101 }),
+      entry('src/big.rs', { root: '/other', added: 300, removed: 101 }),
+    ];
+
+    it('expands and scrolls to the file of a root and a path', async () => {
+      serve(files());
+      render(() => <DiffPanel source={source} focus={{ root: '/repo', path: 'src/big.rs', seq: 1 }} />);
+
+      await waitFor(() => expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('true'));
+      await waitFor(() => expect(scrolled).toEqual(['diff-file-/repo:src/big.rs']));
+      // The same path in another root keeps the size rule.
+      expect(within(section('src/big.rs', '/other')).getByTestId('diff-file-toggle').getAttribute('aria-expanded')).toBe(
+        'false',
+      );
+    });
+
+    // A tool call names its file by the absolute path.
+    it('finds the file of an absolute path', async () => {
+      serve(files());
+      render(() => <DiffPanel source={source} focus={{ path: '/other/src/big.rs', seq: 1 }} />);
+
+      await waitFor(() => expect(scrolled).toEqual(['diff-file-/other:src/big.rs']));
+      expect(within(section('src/big.rs', '/other')).getByTestId('diff-file-toggle').getAttribute('aria-expanded')).toBe(
+        'true',
+      );
+      expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('a new sequence number focuses the file again', async () => {
+      serve(files());
+      const [focus, setFocus] = createSignal({ root: '/repo', path: 'src/big.rs', seq: 1 });
+      render(() => <DiffPanel source={source} focus={focus()} />);
+
+      await waitFor(() => expect(scrolled).toHaveLength(1));
+      // The user collapses the file, and then asks for it again.
+      fireEvent.click(toggle('src/big.rs'));
+      expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('false');
+      setFocus({ root: '/repo', path: 'src/big.rs', seq: 2 });
+
+      await waitFor(() => expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('true'));
+      await waitFor(() => expect(scrolled).toHaveLength(2));
+    });
   });
 
   it('a binary file shows a line and no editor', async () => {

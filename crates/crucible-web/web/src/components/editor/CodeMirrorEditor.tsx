@@ -26,7 +26,6 @@ import { isMarkdownPath } from '@/lib/markdown-path';
 import { editorThemeExtension } from './editor-theme';
 import { theme } from '@/lib/theme';
 import { livePreview } from './live-preview';
-import { getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
 
 type LanguageSupport = ReturnType<typeof markdown>;
 
@@ -107,9 +106,6 @@ export const CodeMirrorEditor: Component<{
   hideFrontmatterGap?: boolean;
   /** Draw a hard-wrapped paragraph as one flowing line (default true). */
   reflowParagraphs?: boolean;
-  /** When set, `content` is a PROPOSED edit shown as an inline unified-merge
-   * diff against this original (on-disk) content — per-chunk accept/reject. */
-  diffOriginal?: string;
   /** Switch to the rendered preview (Mod-Shift-E). */
   onTogglePreview?: () => void;
   /** Hand the live EditorView to the parent (context-menu clipboard ops). */
@@ -149,23 +145,9 @@ export const CodeMirrorEditor: Component<{
     }
   };
 
-  /** The merge view's CURRENT original (chunks accepted so far), or null when
-   * no merge view is mounted — getOriginalDoc throws if its field is absent. */
-  const liveMergeOriginal = (): string | null => {
-    if (!view) return null;
-    try {
-      return getOriginalDoc(view.state).toString();
-    } catch {
-      return null;
-    }
-  };
-
   const createExtensions = (): Extension[] => {
     const isMarkdown = isMarkdownPath(props.path);
-    // A pending diff forces plain source (with the unified-merge overlay); live
-    // preview's markdown decorations would fight the merge chunk widgets.
-    const diffMode = props.diffOriginal != null;
-    const liveMode = !diffMode && !!props.livePreview && isMarkdown;
+    const liveMode = !!props.livePreview && isMarkdown;
     const extensions: Extension[] = [
       // vim() must precede other keymaps so modal keys win while active.
       ...(props.vimMode ? [vim()] : []),
@@ -266,25 +248,6 @@ export const CodeMirrorEditor: Component<{
       );
     }
 
-    // Inline diff overlay: show the current doc (the proposed content) diffed
-    // against `diffOriginal` (the on-disk baseline) — green additions, red
-    // deletions, per-chunk Accept/Reject in the gutter. `openFileWithDiff`
-    // seeds the doc with the proposed content and the original here.
-    //
-    // Accepting a chunk advances the merge view's OWN original, so a rebuild
-    // must carry that forward: reconfiguring from the prop (which any
-    // unrelated toggle — vim, live preview, line width — triggers) would
-    // resurrect every chunk the user already accepted.
-    if (diffMode) {
-      extensions.push(
-        unifiedMergeView({
-          original: liveMergeOriginal() ?? props.diffOriginal!,
-          mergeControls: true,
-          gutter: true,
-        }),
-      );
-    }
-
     return extensions;
   };
 
@@ -381,7 +344,6 @@ export const CodeMirrorEditor: Component<{
     props.renderDiagrams;
     props.hideFrontmatterGap;
     props.reflowParagraphs;
-    props.diffOriginal;
     // A syntax theme is a compiled StyleModule, not CSS custom properties, so
     // it cannot follow the light/dark attribute — rebuild on a theme switch.
     theme();

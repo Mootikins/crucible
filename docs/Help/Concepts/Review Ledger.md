@@ -50,7 +50,7 @@ Structural damage degrades a root: an unreadable `review.jsonl`, a tracked root 
 
 ## Where you meet it
 
-**The web console.** The Changes panel lists the files of the session record grouped root → file, with the status and the line counts of each file. A file opens the session record in the diff pane. The panel offers no decision. On a phone the panel opens from the More menu. The panel reads `GET /api/diff?session={id}` and `GET /api/diff/comments?session={id}`, and it talks to two session-scoped comment routes:
+**The web console.** The Changes panel lists the files of the session record grouped root → file, with the status and the line counts of each file. A file opens the session record in the diff pane, which expands that file and scrolls to it. **Open diff** on an Edit or Write tool card does the same for the file of the call. The panel offers no decision. On a phone the panel opens from the More menu. The panel reads `GET /api/diff?session={id}` and `GET /api/diff/comments?session={id}`, and it talks to two session-scoped comment routes:
 
 ```text
 POST /api/session/{id}/review/comment

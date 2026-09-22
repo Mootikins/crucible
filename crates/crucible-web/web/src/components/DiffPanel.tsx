@@ -10,6 +10,10 @@
  * prose features of the note editor stay off. The change bar is the 3 px
  * gutter of `@codemirror/merge`. The panel draws no chip.
  *
+ * A focus target in the tab metadata names one file. The panel expands that
+ * file and scrolls to it, so a click in the Changes panel or on a tool card
+ * shows the clicked file.
+ *
  * A line comment starts on the line numbers (`diff-comments.tsx`). The daemon
  * stores it, and lists it with an outdated flag. An outdated comment shows at
  * the end of its file, because its text is no longer in the file.
@@ -40,11 +44,13 @@ import { PanelHeader } from './PanelHeader';
 import { mergeViewExtensions, type MergeCollapse } from '@/lib/merge-view';
 import {
   diffsetLabel,
+  focusMatches,
   quickfixList,
   referenceForm,
   type CommentSide,
   type DiffComment,
   type DiffFileEntry,
+  type DiffFocusRequest,
   type DiffFileText,
   type DiffsetSource,
   type ListedComment,
@@ -85,6 +91,8 @@ const barTheme = EditorView.theme({
 export interface DiffPanelProps {
   /** The tab metadata that `openDiff` writes. */
   source?: DiffsetSource;
+  /** The file to scroll to and expand, from the tab metadata. */
+  focus?: DiffFocusRequest;
 }
 
 /**
@@ -106,8 +114,11 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
         fallback={<p class="p-3 text-xs text-muted-dark">This tab names no diff.</p>}
       >
         {(source) => (
-          <Show when={proposalSource(source())} fallback={<DiffsetView source={source()} />}>
-            {(proposal) => <ProposalDiffsetView source={proposal()} />}
+          <Show
+            when={proposalSource(source())}
+            fallback={<DiffsetView source={source()} focus={props.focus} />}
+          >
+            {(proposal) => <ProposalDiffsetView source={proposal()} focus={props.focus} />}
           </Show>
         )}
       </Show>
@@ -142,7 +153,7 @@ function textKey(text: string): string {
   return `${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
-const ProposalDiffsetView: Component<{ source: ProposalSource }> = (props) => {
+const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocusRequest }> = (props) => {
   const proposal = useProposal(() => props.source.id);
   const decision = useProposalDecision(() => props.source.id);
   const decide = (value: ProposalDecision): Promise<void> =>
@@ -163,7 +174,7 @@ const ProposalDiffsetView: Component<{ source: ProposalSource }> = (props) => {
     decide,
     busy: () => decision.isPending,
   };
-  return <DiffsetView source={props.source} proposal={controls} />;
+  return <DiffsetView source={props.source} proposal={controls} focus={props.focus} />;
 };
 
 /** Whether the files of the proposal take a decision now. */
@@ -239,7 +250,13 @@ const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalCo
   </For>
 );
 
-const DiffsetView: Component<{ source: DiffsetSource; proposal?: ProposalControls }> = (props) => {
+interface DiffsetViewProps {
+  source: DiffsetSource;
+  proposal?: ProposalControls;
+  focus?: DiffFocusRequest;
+}
+
+const DiffsetView: Component<DiffsetViewProps> = (props) => {
   const diffset = useDiffset(() => props.source);
   const comments = useDiffComments(() => props.source);
   const [split, setSplit] = createSignal(false);
@@ -261,6 +278,29 @@ const DiffsetView: Component<{ source: DiffsetSource; proposal?: ProposalControl
     setExpanded((prev) => ({ ...prev, [fileKey(file)]: !isExpanded(file) }));
   const collapseAll = () =>
     setExpanded(Object.fromEntries(files().map((f) => [fileKey(f), false])));
+
+  // The focus target: expand its file, then scroll to its section. Each
+  // request applies once, when the diffset lists the file, so a refresh does
+  // not scroll again. A target that the diffset does not list does nothing.
+  let body!: HTMLDivElement;
+  let focusedSeq: number | undefined;
+  createEffect(() => {
+    const focus = props.focus;
+    if (!focus || focus.seq === focusedSeq) return;
+    const file = files().find((f) => focusMatches(f, focus));
+    if (!file) return;
+    focusedSeq = focus.seq;
+    const key = fileKey(file);
+    setExpanded((prev) => ({ ...prev, [key]: true }));
+    // The section exists already. Scroll after the expansion renders, so the
+    // section is at the top with its body below it.
+    queueMicrotask(() => {
+      const section = [...body.querySelectorAll<HTMLElement>('section[data-file-key]')].find(
+        (el) => el.dataset.fileKey === key,
+      );
+      section?.scrollIntoView?.({ block: 'start' });
+    });
+  });
 
   const openComments = () => (comments.data ?? []).map((l) => l.comment).filter((c) => !c.resolved);
   const commentsOf = (file: DiffFileEntry) =>
@@ -357,7 +397,7 @@ const DiffsetView: Component<{ source: DiffsetSource; proposal?: ProposalControl
         <Show when={props.proposal}>{(controls) => <ProposalBar controls={controls()} />}</Show>
       </PanelHeader>
 
-      <div class="flex-1 overflow-y-auto">
+      <div ref={body} class="flex-1 overflow-y-auto">
         <Switch>
           <Match when={diffset.isError}>
             <p class="px-3 py-2 text-xs text-error" data-testid="diff-error">
@@ -425,7 +465,11 @@ const FileSection: Component<FileSectionProps> = (props) => {
   const copyPath = () => void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
 
   return (
-    <section class="border-b border-hairline" data-testid={`diff-file-${fileKey(props.file)}`}>
+    <section
+      class="border-b border-hairline"
+      data-testid={`diff-file-${fileKey(props.file)}`}
+      data-file-key={fileKey(props.file)}
+    >
       <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-shell-bg px-2 py-1">
         <button
           type="button"

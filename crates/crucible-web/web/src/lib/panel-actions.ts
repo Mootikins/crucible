@@ -6,7 +6,7 @@ import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
 import { terminalAllowed } from './terminal-availability';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
-import { diffsetKey, diffsetTitle, type DiffsetSource } from './diffset';
+import { diffsetKey, diffsetTitle, type DiffFocus, type DiffFocusRequest, type DiffsetSource } from './diffset';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
 export function findFirstCenterPaneGroupId(): string | null {
@@ -153,6 +153,11 @@ export interface PanelTarget {
   metadata?: Record<string, unknown>;
 }
 
+/** The tab id of one target of a panel. */
+function targetTabId(contentType: TabContentType, key: string): string {
+  return `tab-${contentType}-${key}`;
+}
+
 /**
  * Open a registered panel as a tab (command-palette / gear entry point).
  *
@@ -166,7 +171,7 @@ export interface PanelTarget {
  */
 export function openPanelTab(contentType: TabContentType, target?: PanelTarget): void {
   const host = tabHost();
-  const id = target ? `tab-${contentType}-${target.key}` : `tab-${contentType}`;
+  const id = target ? targetTabId(contentType, target.key) : `tab-${contentType}`;
   const existing = target
     ? host.find((t) => t.id === id)
     : host.find((t) => t.contentType === contentType);
@@ -194,11 +199,27 @@ export function openPanelTab(contentType: TabContentType, target?: PanelTarget):
   }
 }
 
-/** Open the diff pane of one diffset, or focus its tab when it is open. */
-export function openDiff(source: DiffsetSource): void {
-  openPanelTab('diff', {
-    key: diffsetKey(source),
-    title: diffsetTitle(source),
-    metadata: { source },
-  });
+/** The last sequence number of a focus request. */
+let focusSeq = 0;
+
+/**
+ * Open the diff pane of one diffset, or focus its tab when it is open.
+ *
+ * With a focus target, the pane scrolls to that file and expands it. An open
+ * tab gets the new target in its metadata, and the mounted pane reads it.
+ */
+export function openDiff(source: DiffsetSource, focus?: DiffFocus): void {
+  const key = diffsetKey(source);
+  const request: DiffFocusRequest | undefined = focus ? { ...focus, seq: ++focusSeq } : undefined;
+  const metadata = { source, ...(request ? { focus: request } : {}) };
+  if (request) {
+    const host = tabHost();
+    const existing = host.find((t) => t.id === targetTabId('diff', key));
+    if (existing) {
+      host.update(existing.id, { metadata: { ...existing.metadata, ...metadata } });
+      host.activate(existing.id);
+      return;
+    }
+  }
+  openPanelTab('diff', { key, title: diffsetTitle(source), metadata });
 }

@@ -46,6 +46,40 @@ export function diffsetKey(source: DiffsetSource): string {
   }
 }
 
+/**
+ * The file that a diff pane scrolls to and expands when it opens.
+ *
+ * The Changes panel knows the root and the relative path of a file. A tool
+ * call knows only the path that the tool got, which is usually absolute.
+ * Without a root, the path matches the root and the relative path joined, or
+ * the relative path alone.
+ */
+export interface DiffFocus {
+  path: string;
+  root?: string;
+}
+
+/**
+ * A focus target in the tab metadata. Each request gets a new `seq`, so a
+ * second click on one file focuses it again.
+ */
+export interface DiffFocusRequest extends DiffFocus {
+  seq: number;
+}
+
+/** A path without its last "/". */
+function trimSlash(path: string): string {
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+}
+
+/** Whether a focus target names this file. */
+export function focusMatches(file: Pick<DiffFileEntry, 'root' | 'path'>, focus: DiffFocus): boolean {
+  if (focus.root !== undefined) return trimSlash(file.root) === trimSlash(focus.root) && file.path === focus.path;
+  const root = trimSlash(file.root);
+  const joined = root.endsWith('/') ? `${root}${file.path}` : `${root}/${file.path}`;
+  return joined === focus.path || file.path === focus.path;
+}
+
 /** The last segment of a path. */
 function basename(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() || path;

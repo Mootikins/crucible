@@ -10,7 +10,6 @@ vi.mock('../DiffViewer', () => ({
 vi.mock('../MultiEditDiff', () => ({
   MultiEditDiff: () => <div data-testid="multi-edit-diff" />,
 }));
-vi.mock('@/lib/file-actions', () => ({ openFileWithDiff: vi.fn() }));
 vi.mock('@/stores/notificationStore', () => ({
   notificationActions: { addNotification: vi.fn() },
 }));

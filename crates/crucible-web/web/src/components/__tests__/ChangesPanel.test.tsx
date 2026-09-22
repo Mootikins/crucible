@@ -50,7 +50,7 @@ const openPanelTab = vi.fn();
 const openDiff = vi.fn();
 vi.mock('@/lib/panel-actions', () => ({
   openPanelTab: (id: string) => openPanelTab(id),
-  openDiff: (source: unknown) => openDiff(source),
+  openDiff: (...a: unknown[]) => openDiff(...a),
 }));
 
 // A refused resolve is reported in a toast.
@@ -219,7 +219,11 @@ describe('ChangesPanel — the session record', () => {
     await waitFor(() => expect(screen.getByTestId('changes-file-src/a.rs')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('changes-file-src/a.rs'));
-    expect(openDiff).toHaveBeenCalledWith({ kind: 'session_record', session: 's1' });
+    // The pane opens on the whole record, and the clicked file is its focus.
+    expect(openDiff).toHaveBeenCalledWith(
+      { kind: 'session_record', session: 's1' },
+      { root: '/repo', path: 'src/a.rs' },
+    );
   });
 
   it('lists open comments and resolves them', async () => {

@@ -3,7 +3,8 @@
  * need a merge.
  *
  * Roots → files over the session record diffset (`session_base` → disk). A
- * file opens the session record in the diff pane. No change has a decision:
+ * file opens the session record in the diff pane, focused on that file. No
+ * change has a decision:
  * the daemon keeps the attribution record, and the diff pane shows the text.
  *
  * Renders in the RIGHT edge region alongside Activity and Backlinks, which
@@ -197,7 +198,7 @@ export const ChangesPanel: Component = () => {
                       title={`Open the session record at ${file.path}`}
                       onClick={() => {
                         const id = sessionId();
-                        if (id) openDiff({ kind: 'session_record', session: id });
+                        if (id) openDiff({ kind: 'session_record', session: id }, { root: file.root, path: file.path });
                       }}
                       class="w-full min-w-0 flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-left hover:bg-hover-wash"
                     >

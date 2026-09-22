@@ -3,12 +3,11 @@ import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
 import { MultiEditDiff } from './MultiEditDiff';
-import { toolDiffsFromWire, applyToolDiff, type ToolDiff } from '@/lib/tool-diffs';
-import { openFileWithDiff } from '@/lib/file-actions';
-import { fetchFileContentOnce } from '@/lib/query/fs';
+import { toolDiffsFromWire } from '@/lib/tool-diffs';
+import { openDiff } from '@/lib/panel-actions';
+import { useChatSafe } from '@/contexts/ChatContext';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
-import { notificationActions } from '@/stores/notificationStore';
 import {
   ChevronRight,
   FileOutput,
@@ -113,39 +112,14 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   const diffs = createMemo(() => toolDiffsFromWire(props.toolCall?.diffs));
 
-  // Open the edited file in the real editor with this change overlaid as an
-  // inline diff: fetch the current content, apply the tool's edit to get the
-  // proposed content, and hand both to openFileWithDiff (opens or focuses the
-  // tab).
-  const [opening, setOpening] = createSignal(false);
-  const openInEditor = async (d: ToolDiff) => {
-    if (opening()) return;
-    setOpening(true);
-    try {
-      // A Write proposes the whole file, so an unreadable path just means a
-      // new file — diff against empty. An Edit NEEDS the real baseline: with
-      // an empty one its old_string can't match, and the "proposed" content
-      // would be an empty document, i.e. a delete-everything diff the user
-      // could save. Refuse instead.
-      const wholeFile = d.kind === 'single' && d.oldContent === '';
-      let original: string;
-      try {
-        original = await fetchFileContentOnce(d.fileName);
-      } catch {
-        if (!wholeFile) {
-          notificationActions.addNotification(
-            'warning',
-            `Can't open the diff — ${d.fileName} could not be read`,
-          );
-          return;
-        }
-        original = '';
-      }
-      const proposed = applyToolDiff(original, d);
-      openFileWithDiff(d.fileName, original, proposed, d.fileName.split('/').pop());
-    } finally {
-      setOpening(false);
-    }
+  // The session record of the chat holds every change of the session, this
+  // call's change too. The diff pane opens on the record, focused on the file.
+  // A card outside a chat names no session, so it offers no pane.
+  const chat = useChatSafe();
+  const sessionId = () => chat.sessionId?.();
+  const openInDiff = (fileName: string) => {
+    const session = sessionId();
+    if (session) openDiff({ kind: 'session_record', session }, { path: fileName });
   };
 
   // Results are often serialized JSON — pretty-print them instead of showing
@@ -275,20 +249,21 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
               {diffs().map((d) => (
                 <div class="mb-1.5 last:mb-0">
-                  {/* Review this change in the real editor (inline diff
-                      overlay) — one control per file. */}
-                  <div class="flex items-center justify-end mb-1">
-                    <button
-                      type="button"
-                      onClick={() => void openInEditor(d)}
-                      disabled={opening()}
-                      data-testid="tool-open-in-editor"
-                      class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
-                      title="Open the file in the editor with this change shown as an inline diff"
-                    >
-                      <FileOutput class="w-3.5 h-3.5" /> Open in editor
-                    </button>
-                  </div>
+                  {/* Review this change in the session record — one
+                      control per file. */}
+                  <Show when={sessionId()}>
+                    <div class="flex items-center justify-end mb-1">
+                      <button
+                        type="button"
+                        onClick={() => openInDiff(d.fileName)}
+                        data-testid="tool-open-diff"
+                        class="inline-flex items-center gap-1 rounded-md border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash"
+                        title="Open the session record in the diff pane, at this file"
+                      >
+                        <FileOutput class="w-3.5 h-3.5" /> Open diff
+                      </button>
+                    </div>
+                  </Show>
                   {d.kind === 'single'
                     ? (
                       <DiffViewer

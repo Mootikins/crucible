@@ -60,9 +60,6 @@ export const EditorWithPreview: Component<{
   /** Hide the blank lines between frontmatter and the first content line. */
   hideFrontmatterGap?: boolean;
   reflowParagraphs?: boolean;
-  /** Proposed-edit review: `content` is the proposed text shown as an inline
-   * diff against this original. Forces the source editor (not the reading view). */
-  diffOriginal?: string;
   /** Hand the live EditorView up (context-menu clipboard ops). */
   editorApiRef?: (view: import('@codemirror/view').EditorView) => void;
   /** Scroll to the first wikilink targeting this note key on open. */
@@ -169,7 +166,7 @@ export const EditorWithPreview: Component<{
         </div>
       </Show>
       <Show
-        when={mode() !== 'reading' || !isMarkdown() || props.diffOriginal != null}
+        when={mode() !== 'reading' || !isMarkdown()}
         fallback={
           <MarkdownPreview
             content={props.content}
@@ -185,7 +182,6 @@ export const EditorWithPreview: Component<{
           apiRef={props.editorApiRef}
           content={props.content}
           path={props.path}
-          diffOriginal={props.diffOriginal}
           onChange={props.onChange}
           onSave={props.onSave}
           onFollowLink={props.onFollowLink}
