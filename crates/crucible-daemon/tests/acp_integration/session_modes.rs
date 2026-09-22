@@ -17,7 +17,7 @@ use crucible_daemon::acp_handle::AcpAgentHandle;
 use tempfile::TempDir;
 use tokio::time::{timeout, Duration};
 
-use crate::support::{mock_agent_path, mock_handle_params, mock_session_agent};
+use crate::support::{mock_agent_path, mock_handle_params, mock_session_agent, MockScript};
 
 /// Enough for a cold spawn plus the handshake.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,11 +26,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// declare current. `None` means the agent declares no modes at all.
 async fn handle_with_modes(current: Option<&str>) -> (AcpAgentHandle, TempDir) {
     let mut agent = mock_session_agent(&mock_agent_path().to_string_lossy());
-    if let Some(current) = current {
-        agent
-            .env_overrides
-            .insert("CRU_MOCK_ADVERTISE_MODES".to_string(), current.to_string());
+    let (key, value) = MockScript {
+        mode: current.map(str::to_string),
+        ..MockScript::default()
     }
+    .env();
+    agent.env_overrides.insert(key, value);
 
     let workspace = TempDir::new().expect("create workspace temp dir");
     let handle = timeout(

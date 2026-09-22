@@ -27,8 +27,11 @@ use crucible_lua::{IsolationClaim, IsolationRegistry, SandboxEnv, SandboxExec};
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{MockScript, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_agent_path, mock_profile, profile_session_agent,
     MOCK_PROFILE,
@@ -66,10 +69,12 @@ async fn an_isolation_claim_launches_the_acp_agent_through_the_sandbox_prefix() 
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _events) = broadcast::channel::<SessionEventMessage>(256);
-    let profile = mock_profile(BTreeMap::from([(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        ANSWER.to_string(),
-    )]));
+    let script = MockScript {
+        turn: vec![Step::Text(ANSWER.to_string())],
+        ..MockScript::default()
+    };
+    let (key, value) = script.env();
+    let profile = mock_profile(BTreeMap::from([(key.clone(), value.clone())]));
     let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
         session_manager.clone(),
         BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
@@ -128,7 +133,7 @@ async fn an_isolation_claim_launches_the_acp_agent_through_the_sandbox_prefix() 
         "the launcher must receive the agent command as its last operand: {argv:?}"
     );
     assert!(
-        argv.contains(&format!("CRU_MOCK_STREAM_CHUNKS={ANSWER}").as_str()),
+        argv.contains(&format!("{key}={value}").as_str()),
         "the profile environment must travel on the launcher argv: {argv:?}"
     );
 }

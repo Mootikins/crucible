@@ -6,19 +6,16 @@
 //! 3. Agent sends final PromptResponse with stopReason
 //! 4. Client accumulates chunks and returns complete response
 
-use crate::scripted_agent::prompt_with;
-use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
+use crate::support::{connect, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
+use serde_json::json;
 
 /// Test that ChatSession properly handles streaming responses from agent
 ///
-/// Uses the OpenCode mock agent behavior for handshake testing.
-/// Now uses ThreadedMockAgent for in-process testing (no subprocess needed).
+/// The mock agent runs in process, over a pipe.
 #[tokio::test]
 async fn test_streaming_chat_with_mock_agent() {
-    // Spawn threaded mock agent with OpenCode behavior
-    let config = MockStdioAgentConfig::opencode();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let (mut client, _agent) = connect(MockScript::default(), None, None).await;
 
     // Connect and perform handshake
     let result = client.handshake(None, None).await;
@@ -50,9 +47,15 @@ fn prompt_request(session_id: &str) -> agent_client_protocol::schema::v1::Prompt
 /// final PromptResponse must end the turn.
 #[tokio::test]
 async fn test_prompt_with_streaming_response() {
-    let mut config = MockStdioAgentConfig::opencode();
-    config.stream_chunks = vec!["The ".into(), "answer ".into(), "is 4".into()];
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let script = MockScript {
+        turn: vec![
+            Step::Text("The ".into()),
+            Step::Text("answer ".into()),
+            Step::Text("is 4".into()),
+        ],
+        ..MockScript::default()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, None)
@@ -81,10 +84,26 @@ async fn test_prompt_with_streaming_response() {
 /// in the client's recorded tool calls alongside the text chunks.
 #[tokio::test]
 async fn test_prompt_with_streamed_tool_call() {
-    let mut config = MockStdioAgentConfig::opencode();
-    config.stream_chunks = vec!["Calculating…".into()];
-    config.stream_tool_call = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let script = MockScript {
+        turn: vec![
+            Step::Text("Calculating…".into()),
+            Step::Update(json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "mock-tool-call-1",
+                "title": "mock_tool",
+                "status": "pending",
+                "rawInput": {"query": "2+2"}
+            })),
+            Step::Update(json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-tool-call-1",
+                "status": "completed",
+                "rawOutput": {"result": "4"}
+            })),
+        ],
+        ..MockScript::default()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, None)
@@ -129,10 +148,18 @@ async fn test_prompt_with_streamed_tool_call() {
 /// into the client timeout (and fails) if the cancel is never sent.
 #[tokio::test]
 async fn test_cancel_mid_stream_reaches_agent() {
-    let mut config = MockStdioAgentConfig::opencode();
-    config.stream_chunks = vec!["partial ".into(), "answer".into()];
-    config.hold_turn_until_cancel = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let script = MockScript {
+        turn: vec![
+            Step::Text("partial ".into()),
+            Step::Text("answer".into()),
+            Step::Hold {
+                tick_ms: None,
+                ignore_cancel: false,
+            },
+        ],
+        ..MockScript::default()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, None)

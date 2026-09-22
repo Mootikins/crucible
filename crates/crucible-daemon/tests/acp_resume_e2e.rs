@@ -17,8 +17,8 @@
 //! must rebuild the handle from persisted state, which is exactly what a
 //! restarted daemon does.
 //!
-//! The agent processes write every method they receive to one appended file
-//! (`CRU_MOCK_METHOD_LOG`). Both agent processes append to it, so the file is
+//! The agent processes write every frame they receive to one appended file
+//! (the script's `log`). Both agent processes append to it, so the file is
 //! the complete record of what crossed both handshakes.
 
 use std::collections::BTreeMap;
@@ -26,7 +26,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::AgentProfile;
 use crucible_core::session::SessionType;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
@@ -37,8 +36,11 @@ use tempfile::TempDir;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{read_log, MockScript, Resume, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_agent_path, mock_handle_params, mock_profile,
     mock_session_agent, profile_session_agent, MOCK_PROFILE,
@@ -49,40 +51,47 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
 const ANSWER: &str = "the resumed agent answered";
 
-/// The profile both managers resolve `mock-acp` to. `log_path` is appended
-/// by every agent process the profile starts.
-fn resuming_profile(log_path: &Path) -> AgentProfile {
-    let mut env = BTreeMap::new();
-    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
-    // Answer `session/resume` rather than `-32601`.
-    env.insert("CRU_MOCK_SESSION_RESUME".to_string(), "1".to_string());
-    env.insert(
-        "CRU_MOCK_METHOD_LOG".to_string(),
-        log_path.to_string_lossy().into_owned(),
-    );
-    mock_profile(env)
+/// The script of the agent that both managers resolve `mock-acp` to. Every
+/// agent process that runs it appends to `log_path`.
+fn resuming_script(log_path: &Path) -> MockScript {
+    MockScript {
+        turn: vec![Step::Text(ANSWER.to_string())],
+        // Answer `session/resume` rather than `-32601`.
+        session_resume: Some(Resume::Adopt),
+        log: Some(log_path.to_path_buf()),
+        ..MockScript::default()
+    }
 }
 
 /// One `AgentManager` over an existing `SessionManager`. Called twice with
 /// the same session manager to model a daemon restart.
 fn manager(
     session_manager: Arc<SessionManager>,
-    profile: AgentProfile,
+    script: MockScript,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Arc<AgentManager> {
     Arc::new(AgentManager::new(acp_manager_params(
         session_manager,
-        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
+        BTreeMap::from([(
+            MOCK_PROFILE.to_string(),
+            mock_profile(BTreeMap::from([script.env()])),
+        )]),
         event_tx,
     )))
 }
 
-/// Every method line the agent processes recorded, in order.
+/// Every frame that the agent processes recorded, in order, as
+/// `<method> <sessionId>`. A frame without a session id shows `-`.
 fn method_log(path: &Path) -> Vec<String> {
-    std::fs::read_to_string(path)
-        .unwrap_or_default()
-        .lines()
-        .map(str::to_string)
+    read_log(path)
+        .iter()
+        .map(|frame| {
+            let session_id = frame["params"]["sessionId"].as_str().unwrap_or("-");
+            format!(
+                "{} {session_id}",
+                frame["method"].as_str().unwrap_or_default()
+            )
+        })
         .collect()
 }
 
@@ -106,7 +115,7 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
     // Turn one, on the first manager.
     let first = manager(
         session_manager.clone(),
-        resuming_profile(&log_path),
+        resuming_script(&log_path),
         &event_tx,
     );
     first
@@ -128,7 +137,7 @@ async fn a_rebuilt_handle_resumes_the_agent_session_the_first_turn_opened() {
     // Turn two, on a second manager: a cold handle cache, like a restart.
     let second = manager(
         session_manager.clone(),
-        resuming_profile(&log_path),
+        resuming_script(&log_path),
         &event_tx,
     );
     let (_id, done) = second
@@ -202,10 +211,10 @@ async fn a_resume_fallback_replaces_the_stale_stored_id_with_the_new_one() {
         .expect("session");
 
     // The profile of the first manager: the agent forgot every session.
-    let mut forgetting = resuming_profile(&log_path);
-    forgetting
-        .env
-        .insert("CRU_MOCK_RESUME_UNKNOWN".to_string(), "1".to_string());
+    let forgetting = MockScript {
+        session_resume: Some(Resume::Unknown),
+        ..resuming_script(&log_path)
+    };
     let first = manager(session_manager.clone(), forgetting, &event_tx);
     first
         .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
@@ -256,7 +265,7 @@ async fn a_resume_fallback_replaces_the_stale_stored_id_with_the_new_one() {
     // The second manager: the agent resumes what it is asked for.
     let second = manager(
         session_manager.clone(),
-        resuming_profile(&log_path),
+        resuming_script(&log_path),
         &event_tx,
     );
     let (_id, done) = second
@@ -291,12 +300,12 @@ async fn a_resumed_session_adopts_the_modes_the_agent_reports_on_resume() {
     let workspace = TempDir::new().expect("temp workspace");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_ADVERTISE_MODES".into(), "plan".into());
+    agent_config.env_overrides.extend([MockScript {
+        session_resume: Some(Resume::Adopt),
+        mode: Some("plan".into()),
+        ..MockScript::default()
+    }
+    .env()]);
 
     let handle = timeout(
         TURN_TIMEOUT,
@@ -349,12 +358,11 @@ async fn a_resume_refused_with_a_normal_error_fails_the_connect() {
     let workspace = TempDir::new().expect("temp workspace");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_RESUME_REJECT".into(), "1".into());
+    agent_config.env_overrides.extend([MockScript {
+        session_resume: Some(Resume::Reject),
+        ..MockScript::default()
+    }
+    .env()]);
 
     let outcome = timeout(
         TURN_TIMEOUT,
@@ -383,7 +391,7 @@ async fn a_resume_refused_with_a_normal_error_fails_the_connect() {
 async fn a_resume_refused_with_method_not_found_still_falls_back_to_a_new_session() {
     let workspace = TempDir::new().expect("temp workspace");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    // No CRU_MOCK_SESSION_RESUME: the mock answers -32601.
+    // The default script has no `session_resume`: the mock answers -32601.
     let agent_config = mock_session_agent(&agent_path);
 
     let handle = timeout(
@@ -417,12 +425,11 @@ async fn a_resume_answered_resource_not_found_falls_back_to_a_new_session() {
     let workspace = TempDir::new().expect("temp workspace");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_RESUME_UNKNOWN".into(), "1".into());
+    agent_config.env_overrides.extend([MockScript {
+        session_resume: Some(Resume::Unknown),
+        ..MockScript::default()
+    }
+    .env()]);
 
     let handle = timeout(
         TURN_TIMEOUT,

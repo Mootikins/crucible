@@ -4,8 +4,8 @@
 //! The daemon gives each ACP agent an in-process MCP server and offers its
 //! HTTP URL in `session/new`. `mcp_host.rs` tests that server directly. These
 //! tests make the AGENT PROCESS call the tool: the mock agent reads the URL it
-//! received, calls `read_note` over HTTP (`CRU_MOCK_MCP_CALL`), and writes the
-//! reply to a capture file. The session comes from `AgentManager`, so the
+//! received, calls `read_note` over HTTP (`Step::McpCall`), and logs the
+//! reply as `mcp/result`. The session comes from `AgentManager`, so the
 //! tool set is the one the daemon builds for a real kiln session.
 //!
 //! The mock advertises `mcpCapabilities.http`, so the daemon offers the HTTP
@@ -25,8 +25,11 @@ use crucible_daemon::AgentManager;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{logged, MockScript, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
 };
@@ -41,23 +44,32 @@ const ANSWER: &str = "tool call done";
 /// `read_note` with `path`. Return the reply that the agent process received.
 async fn agent_reads(temp: &TempDir, kiln: &Path, other: &Path, path: &str) -> String {
     let args = serde_json::json!({ "path": path });
-    agent_calls(temp, kiln, other, &format!("read_note:{args}")).await
+    agent_calls(temp, kiln, other, "read_note", args).await
 }
 
-/// As `agent_reads`, but the agent makes the MCP call `call`
-/// (`<tool>:<json args>`).
-async fn agent_calls(temp: &TempDir, kiln: &Path, other: &Path, call: &str) -> String {
-    let capture = temp.path().join("mcp-capture.json");
+/// As `agent_reads`, but the agent calls the MCP tool `tool` with `args`.
+async fn agent_calls(
+    temp: &TempDir,
+    kiln: &Path,
+    other: &Path,
+    tool: &str,
+    args: serde_json::Value,
+) -> String {
+    let log = temp.path().join("mock-agent.log");
     let session_manager = temp_session_manager_with_kilns(&[("kiln", kiln), ("other-kiln", other)]);
     let (event_tx, _events) = broadcast::channel::<SessionEventMessage>(256);
-    let profile = mock_profile(BTreeMap::from([
-        ("CRU_MOCK_MCP_CALL".to_string(), call.to_string()),
-        (
-            "CRU_MOCK_MCP_CAPTURE".to_string(),
-            capture.to_string_lossy().into_owned(),
-        ),
-        ("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string()),
-    ]));
+    let script = MockScript {
+        turn: vec![
+            Step::McpCall {
+                tool: tool.to_string(),
+                args,
+            },
+            Step::Text(ANSWER.to_string()),
+        ],
+        log: Some(log.clone()),
+        ..MockScript::default()
+    };
+    let profile = mock_profile(BTreeMap::from([script.env()]));
     let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
         session_manager.clone(),
         BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
@@ -76,17 +88,17 @@ async fn agent_calls(temp: &TempDir, kiln: &Path, other: &Path, call: &str) -> S
         .send_message_notified(&session.id, "read it".to_string(), &event_tx, true, None)
         .await
         .expect("the turn is accepted");
-    // The mock writes the capture before it answers the prompt, so a
-    // completed turn means the capture is complete.
+    // The mock logs the MCP reply before it answers the prompt, so a
+    // completed turn means the log holds the reply.
     let outcome = completed_turn(done, TURN_TIMEOUT).await;
     assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
-    std::fs::read_to_string(&capture).unwrap_or_else(|e| {
-        panic!(
-            "the agent wrote no MCP capture at {} ({e})",
-            capture.display()
-        )
-    })
+    let results = logged(&log, "mcp/result");
+    let reply = results
+        .first()
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("the agent logged no MCP reply at {}", log.display()));
+    reply.to_string()
 }
 
 /// Two kiln directories: the session's kiln with one note, and a second kiln
@@ -164,7 +176,7 @@ async fn an_acp_agent_cannot_write_into_a_plugin_tree_inside_the_kiln() {
     );
 
     let args = serde_json::json!({ "path": "plugins/evil.md", "content": "PLANTED" });
-    let reply = agent_calls(&temp, &kiln, &other, &format!("create_note:{args}")).await;
+    let reply = agent_calls(&temp, &kiln, &other, "create_note", args).await;
     assert!(
         !plugins.join("evil.md").exists(),
         "the agent wrote into a tree that the daemon executes: {reply}"

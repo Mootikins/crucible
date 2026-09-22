@@ -6,23 +6,39 @@
 //! coverage of the former `claude_acp_integration` and `opencode_integration`
 //! modules while sharing one assertion body per behavior.
 
-use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
+use crate::support::{connect, logged, MockScript, Resume};
 use crucible_daemon::acp::ClientError;
 use test_case::test_case;
 
+/// The Claude-ACP mock: HTTP and SSE MCP.
+fn claude_acp_script() -> MockScript {
+    MockScript {
+        name: "mock-claude-acp".into(),
+        mcp_sse: true,
+        ..MockScript::default()
+    }
+}
+
+/// The OpenCode mock: HTTP MCP only.
+fn opencode_script() -> MockScript {
+    MockScript {
+        name: "mock-opencode".into(),
+        ..MockScript::default()
+    }
+}
+
 /// Build a fresh config for the given agent kind. Used as a `test-case`
 /// argument so each test enumerates over both supported agent kinds.
-#[test_case(MockStdioAgentConfig::claude_acp as fn() -> MockStdioAgentConfig; "claude_acp")]
-#[test_case(MockStdioAgentConfig::opencode as fn() -> MockStdioAgentConfig; "opencode")]
+#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
+#[test_case(opencode_script as fn() -> MockScript; "opencode")]
 #[tokio::test]
-async fn handshake_completes(make_config: fn() -> MockStdioAgentConfig) {
-    let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+async fn handshake_completes(make_script: fn() -> MockScript) {
+    let (mut client, _agent) = connect(make_script(), None, None).await;
 
     let result = client.handshake(None, None).await;
 
-    // Mock agents advertise auth/methods but don't enforce them, so the
-    // handshake should always succeed for both agent kinds.
+    // The mock agents advertise no auth method, so the handshake succeeds
+    // for both agent kinds.
     if let Err(ref e) = result {
         eprintln!("Handshake failed with error: {:?}", e);
     }
@@ -38,12 +54,11 @@ async fn handshake_completes(make_config: fn() -> MockStdioAgentConfig) {
 
 /// Initialization (the `initialize` request inside `handshake`)
 /// succeeds for every agent kind.
-#[test_case(MockStdioAgentConfig::claude_acp as fn() -> MockStdioAgentConfig; "claude_acp")]
-#[test_case(MockStdioAgentConfig::opencode as fn() -> MockStdioAgentConfig; "opencode")]
+#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
+#[test_case(opencode_script as fn() -> MockScript; "opencode")]
 #[tokio::test]
-async fn initialization_succeeds(make_config: fn() -> MockStdioAgentConfig) {
-    let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+async fn initialization_succeeds(make_script: fn() -> MockScript) {
+    let (mut client, _agent) = connect(make_script(), None, None).await;
 
     let result = client.handshake(None, None).await;
     assert!(
@@ -54,12 +69,11 @@ async fn initialization_succeeds(make_config: fn() -> MockStdioAgentConfig) {
 }
 
 /// After a successful handshake, the session id carries the mock prefix.
-#[test_case(MockStdioAgentConfig::claude_acp as fn() -> MockStdioAgentConfig; "claude_acp")]
-#[test_case(MockStdioAgentConfig::opencode as fn() -> MockStdioAgentConfig; "opencode")]
+#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
+#[test_case(opencode_script as fn() -> MockScript; "opencode")]
 #[tokio::test]
-async fn session_id_has_mock_prefix(make_config: fn() -> MockStdioAgentConfig) {
-    let config = make_config();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+async fn session_id_has_mock_prefix(make_script: fn() -> MockScript) {
+    let (mut client, _agent) = connect(make_script(), None, None).await;
 
     let result = client.handshake(None, None).await;
     assert!(
@@ -76,17 +90,19 @@ async fn session_id_has_mock_prefix(make_config: fn() -> MockStdioAgentConfig) {
     );
 }
 
-/// When the mock agent is configured to inject errors, the handshake fails
+/// When the mock agent fails `initialize`, the handshake fails
 /// for every agent kind.
-#[test_case(MockStdioAgentConfig::claude_acp as fn() -> MockStdioAgentConfig; "claude_acp")]
-#[test_case(MockStdioAgentConfig::opencode as fn() -> MockStdioAgentConfig; "opencode")]
+#[test_case(claude_acp_script as fn() -> MockScript; "claude_acp")]
+#[test_case(opencode_script as fn() -> MockScript; "opencode")]
 #[tokio::test]
-async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConfig) {
-    let mut config = make_config();
-    config.inject_errors = true;
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+async fn error_injection_fails_handshake(make_script: fn() -> MockScript) {
+    let script = MockScript {
+        fail_initialize: true,
+        ..make_script()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
-    // The mock answers every request with a JSON-RPC error. The handshake
+    // The mock answers `initialize` with a JSON-RPC error. The handshake
     // must fail on that answer, promptly, and not by waiting out a timeout.
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -111,11 +127,14 @@ async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConf
 /// capability, and the agent answers it.
 #[tokio::test]
 async fn close_is_sent_when_the_agent_advertises_it() {
-    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut config = MockStdioAgentConfig::opencode();
-    config.supports_session_close = true;
-    config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let log = dir.path().join("log");
+    let script = MockScript {
+        session_close: true,
+        log: Some(log.clone()),
+        ..opencode_script()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, None)
@@ -130,10 +149,10 @@ async fn close_is_sent_when_the_agent_advertises_it() {
         .close(session.id())
         .await
         .expect("session/close succeeds");
-    assert!(
-        log.lock().unwrap().iter().any(|m| m == "session/close"),
-        "the agent received session/close, got: {:?}",
-        log.lock().unwrap()
+    assert_eq!(
+        logged(&log, "session/close").len(),
+        1,
+        "the agent received session/close"
     );
 }
 
@@ -141,8 +160,7 @@ async fn close_is_sent_when_the_agent_advertises_it() {
 /// normal shutdown, not an error (Hermes behaves this way).
 #[tokio::test]
 async fn a_method_not_found_reply_to_close_is_not_an_error() {
-    let config = MockStdioAgentConfig::opencode();
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let (mut client, _agent) = connect(opencode_script(), None, None).await;
 
     let session = client
         .handshake(None, None)
@@ -167,11 +185,14 @@ async fn a_method_not_found_reply_to_close_is_not_an_error() {
 async fn resume_reuses_the_agent_session_when_the_agent_answers_it() {
     use crucible_daemon::acp::session::ResumeDisposition;
 
-    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut config = MockStdioAgentConfig::opencode();
-    config.supports_session_resume = true;
-    config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let log = dir.path().join("log");
+    let script = MockScript {
+        session_resume: Some(Resume::Adopt),
+        log: Some(log.clone()),
+        ..opencode_script()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, Some("mock-session-prior"))
@@ -180,11 +201,10 @@ async fn resume_reuses_the_agent_session_when_the_agent_answers_it() {
 
     assert_eq!(session.id(), "mock-session-prior");
     assert_eq!(session.resume(), ResumeDisposition::Resumed);
-    let log = log.lock().unwrap();
-    assert!(log.iter().any(|m| m == "session/resume"), "log: {log:?}");
+    assert_eq!(logged(&log, "session/resume").len(), 1);
     assert!(
-        !log.iter().any(|m| m == "session/new"),
-        "a resumed session must not also open a new one, log: {log:?}"
+        logged(&log, "session/new").is_empty(),
+        "a resumed session must not also open a new one"
     );
 }
 
@@ -194,10 +214,13 @@ async fn resume_reuses_the_agent_session_when_the_agent_answers_it() {
 async fn resume_falls_back_to_session_new_on_method_not_found() {
     use crucible_daemon::acp::session::ResumeDisposition;
 
-    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut config = MockStdioAgentConfig::opencode();
-    config.method_log = Some(log.clone());
-    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config).await;
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let log = dir.path().join("log");
+    let script = MockScript {
+        log: Some(log.clone()),
+        ..opencode_script()
+    };
+    let (mut client, _agent) = connect(script, None, None).await;
 
     let session = client
         .handshake(None, Some("mock-session-prior"))
@@ -207,14 +230,13 @@ async fn resume_falls_back_to_session_new_on_method_not_found() {
     assert_ne!(session.id(), "mock-session-prior");
     assert!(session.id().starts_with("mock-session-"));
     assert_eq!(session.resume(), ResumeDisposition::FellBackToNew);
-    let log = log.lock().unwrap();
-    assert!(log.iter().any(|m| m == "session/resume"), "log: {log:?}");
-    assert!(log.iter().any(|m| m == "session/new"), "log: {log:?}");
+    assert_eq!(logged(&log, "session/resume").len(), 1);
+    assert_eq!(logged(&log, "session/new").len(), 1);
 }
 
 /// A handle built with a stored agent session id resumes that session, and
 /// reports the same id back for the daemon to persist again. The agent's
-/// method log proves the carried id crossed the wire on `session/resume`,
+/// frame log proves the carried id crossed the wire on `session/resume`,
 /// and that no `session/new` opened a second session.
 #[tokio::test]
 async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
@@ -226,14 +248,14 @@ async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
         .to_string_lossy()
         .into_owned();
     let mut agent_config = crate::support::mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
-    let method_log = workspace.path().join("method-log");
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_METHOD_LOG".into(),
-        method_log.to_string_lossy().into_owned(),
-    );
+    let log = workspace.path().join("log");
+    let (key, value) = MockScript {
+        session_resume: Some(Resume::Adopt),
+        log: Some(log.clone()),
+        ..MockScript::default()
+    }
+    .env();
+    agent_config.env_overrides.insert(key, value);
 
     let handle = AcpAgentHandle::new(AcpAgentHandleParams {
         resume_acp_session_id: Some("mock-session-carried".into()),
@@ -250,15 +272,16 @@ async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
 
     // The agent logs each request as it arrives, before it answers, so the
     // log is complete once the handshake returns.
-    let log = std::fs::read_to_string(&method_log).expect("the agent wrote its method log");
-    let lines: Vec<&str> = log.lines().collect();
+    let resumes = logged(&log, "session/resume");
     assert!(
-        lines.contains(&"session/resume mock-session-carried"),
-        "the carried id must reach the agent on session/resume, log: {lines:?}"
+        resumes
+            .iter()
+            .any(|params| params["sessionId"] == "mock-session-carried"),
+        "the carried id must reach the agent on session/resume, log: {resumes:?}"
     );
     assert!(
-        !lines.iter().any(|line| line.starts_with("session/new ")),
-        "a resumed session must not also open a new one, log: {lines:?}"
+        logged(&log, "session/new").is_empty(),
+        "a resumed session must not also open a new one"
     );
 }
 
@@ -273,7 +296,7 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
     let agent_path = crate::support::mock_agent_path()
         .to_string_lossy()
         .into_owned();
-    // No CRU_MOCK_SESSION_RESUME: the binary answers -32601.
+    // The default script sets no `session_resume`: the binary answers -32601.
     let agent_config = crate::support::mock_session_agent(&agent_path);
 
     let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(16);
@@ -299,25 +322,25 @@ async fn resume_fallback_is_announced_in_the_event_stream() {
 }
 
 /// When the handle drops, the daemon sends `session/close` before it kills
-/// the agent process. The spawned mock binary records the closed session id.
+/// the agent process. The spawned mock binary logs the closed session id.
 #[tokio::test]
 async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
     use crucible_core::traits::chat::AgentHandle;
     use crucible_daemon::acp_handle::AcpAgentHandle;
 
     let workspace = tempfile::TempDir::new().expect("temp workspace");
-    let capture = workspace.path().join("close-capture");
+    let log = workspace.path().join("log");
     let agent_path = crate::support::mock_agent_path()
         .to_string_lossy()
         .into_owned();
     let mut agent_config = crate::support::mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_SESSION_CLOSE".into(), "1".into());
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_CLOSE_CAPTURE".into(),
-        capture.to_string_lossy().into_owned(),
-    );
+    let (key, value) = MockScript {
+        session_close: true,
+        log: Some(log.clone()),
+        ..MockScript::default()
+    }
+    .env();
+    agent_config.env_overrides.insert(key, value);
 
     let handle = AcpAgentHandle::new(crate::support::mock_handle_params(
         &agent_config,
@@ -330,18 +353,16 @@ async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
         .expect("the handshake opened an agent session");
     drop(handle);
 
-    // The drop spawns the goodbye as a task; poll for the capture file. The
-    // agent may create the file before it writes the id, so an empty or
-    // partial read means "not yet", not an answer.
+    // The drop spawns the goodbye as a task, so poll the log.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let content = std::fs::read_to_string(&capture).unwrap_or_default();
-        if content == expected {
+        let closes = logged(&log, "session/close");
+        if closes.iter().any(|params| params["sessionId"] == expected) {
             break;
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "session/close never named the agent session {expected:?}; capture holds {content:?}"
+            "session/close never named the agent session {expected:?}; log holds {closes:?}"
         );
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }

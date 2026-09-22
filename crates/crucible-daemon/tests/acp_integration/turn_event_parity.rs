@@ -12,19 +12,27 @@
 
 use std::time::Duration;
 
-use crucible_core::session::SessionAgent;
 use crucible_core::turn::{Agent, StopReason, TurnContext};
 use crucible_daemon::acp_handle::AcpAgentHandle;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::time::timeout;
 
 use crate::support::parity::{coalesce, shapes, EventShape};
-use crate::support::{mock_agent_path, mock_handle_params, mock_session_agent};
+use crate::support::{mock_agent_path, mock_handle_params, mock_session_agent, MockScript, Step};
 
-/// Connect a handle to the mock agent binary and drain one turn into its
-/// rendering-relevant shape sequence.
-async fn acp_shapes(agent_config: SessionAgent) -> Vec<EventShape> {
+/// Connect a handle to the mock agent binary, run one turn with these steps,
+/// and drain the turn into its rendering-relevant shape sequence.
+async fn acp_shapes(turn: Vec<Step>) -> Vec<EventShape> {
     let workspace = TempDir::new().expect("temp workspace");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let mut agent_config = mock_session_agent(&agent_path);
+    let (key, value) = MockScript {
+        turn,
+        ..MockScript::default()
+    }
+    .env();
+    agent_config.env_overrides.insert(key, value);
 
     let mut handle = timeout(
         Duration::from_secs(30),
@@ -49,38 +57,28 @@ async fn acp_shapes(agent_config: SessionAgent) -> Vec<EventShape> {
 
 /// A turn in which the agent narrates, runs one tool, and answers.
 async fn acp_shapes_for_scripted_tool_call() -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "Calculating…".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_TOOL_CALL".to_string(), "1".into());
-
-    acp_shapes(agent_config).await
+    acp_shapes(vec![
+        Step::Text("Calculating…".into()),
+        Step::Update(json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "mock-tool-call-1",
+            "title": "mock_tool",
+            "status": "pending",
+            "rawInput": {"query": "2+2"}
+        })),
+        Step::Update(json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "mock-tool-call-1",
+            "status": "completed",
+            "rawOutput": {"result": "4"}
+        })),
+    ])
+    .await
 }
 
 /// The same turn with no tool call at all.
-///
-/// `tool_call` selects the value of the mock's `CRU_MOCK_STREAM_TOOL_CALL`
-/// hook: `None` leaves it unset, `Some("0")` sets it to an off value. Both
-/// must produce a text-only turn — the hook reads a value, not a presence, so
-/// `=0` cannot mean "on".
-async fn acp_shapes_for_text_only_turn(tool_call: Option<&str>) -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "The answer is 4".into(),
-    );
-    if let Some(value) = tool_call {
-        agent_config
-            .env_overrides
-            .insert("CRU_MOCK_STREAM_TOOL_CALL".to_string(), value.into());
-    }
-
-    acp_shapes(agent_config).await
+async fn acp_shapes_for_text_only_turn() -> Vec<EventShape> {
+    acp_shapes(vec![Step::Text("The answer is 4".into())]).await
 }
 
 /// A turn the agent ends with `stopReason: cancelled`.
@@ -88,96 +86,131 @@ async fn acp_shapes_for_text_only_turn(tool_call: Option<&str>) -> Vec<EventShap
 /// Per ACP an agent MUST end a cancelled turn this way, so this is the shape
 /// the daemon sees whenever cancellation actually lands.
 async fn acp_shapes_for_cancelled_turn() -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "Working on it".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STOP_REASON".to_string(), "cancelled".into());
-
-    acp_shapes(agent_config).await
+    acp_shapes(vec![
+        Step::Text("Working on it".into()),
+        Step::Stop(agent_client_protocol::schema::v1::StopReason::Cancelled),
+    ])
+    .await
 }
 
 /// A turn in which the agent reasons, narrates, then reasons again.
 ///
-/// `thoughts` is the mock's `CRU_MOCK_STREAM_THOUGHTS` script: `;`-separated
-/// thoughts, the first emitted before the text chunk and the rest after it. The
-/// hook reads a *value*, so an empty script must mean "no thoughts" rather than
-/// "thoughts on".
-async fn acp_shapes_for_thinking_turn(thoughts: &str) -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "The answer is 4".into(),
-    );
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_THOUGHTS".to_string(), thoughts.into());
-
-    acp_shapes(agent_config).await
+/// The agent sends the first thought before the text chunk and the rest
+/// after it.
+async fn acp_shapes_for_thinking_turn(thoughts: &[&str]) -> Vec<EventShape> {
+    let mut turn: Vec<Step> = thoughts
+        .iter()
+        .map(|text| Step::Thought((*text).into()))
+        .collect();
+    turn.insert(thoughts.len().min(1), Step::Text("The answer is 4".into()));
+    acp_shapes(turn).await
 }
 
 /// A turn in which the agent also reports its context window.
 ///
-/// `script` is the mock's `CRU_MOCK_USAGE_UPDATE` hook, `used/size`. `None`
-/// leaves it unset — an agent that never reports a window, which is what
-/// `cursor` and `gemini` do in the recorded fixtures.
-async fn acp_shapes_for_usage_update(script: Option<&str>) -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "The answer is 4".into(),
-    );
-    if let Some(value) = script {
-        agent_config
-            .env_overrides
-            .insert("CRU_MOCK_USAGE_UPDATE".to_string(), value.into());
+/// `window` is `(used, size)`. `None` gives an agent that never reports a
+/// window, which is what `cursor` and `gemini` do in the recorded fixtures.
+/// The agent sends the frame before the text, so the daemon learns the window
+/// while the turn still streams. Claude and opencode put it there too, in
+/// `tests/fixtures/acp/recorded/*/basic-chat.jsonl`.
+async fn acp_shapes_for_usage_update(window: Option<(u64, u64)>) -> Vec<EventShape> {
+    let mut turn = Vec::new();
+    if let Some((used, size)) = window {
+        turn.push(Step::Update(json!({
+            "sessionUpdate": "usage_update",
+            "used": used,
+            "size": size,
+            // Real agents attach a cost. Crucible does not read it. The frame
+            // has it so that the client gets the full wire shape.
+            "cost": {"amount": 0.14204, "currency": "USD"}
+        })));
     }
-
-    acp_shapes(agent_config).await
+    turn.push(Step::Text("The answer is 4".into()));
+    acp_shapes(turn).await
 }
 
 /// A turn that produces nothing at all: no text, no thinking, no tool calls.
 async fn acp_shapes_for_empty_turn() -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    acp_shapes(mock_session_agent(&agent_path)).await
+    acp_shapes(Vec::new()).await
 }
 
 /// A turn whose only output is a whitespace-only text chunk.
 async fn acp_shapes_for_blank_text_turn() -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "\n".into());
-
-    acp_shapes(agent_config).await
+    acp_shapes(vec![Step::Text("\n".into())]).await
 }
 
-/// A turn whose only tool traffic is a completed `tool_call_update` for an id
-/// that no `tool_call` ever introduced.
+/// A turn whose tool traffic a naive `tool_call` to `tool_call_update`
+/// pairing mishandles.
 ///
-/// `flavor` picks the mock's `CRU_MOCK_ORPHAN_TOOL_END` script: `"bare"` omits
-/// every field the client records a call from, so the name is unknowable;
-/// `"titled"` carries a title, so the client names the call from it;
-/// `"repeat"` completes a properly announced call twice; `"out_of_order"`
-/// completes a call before announcing it; `"never_completes"` announces a
-/// call and never completes it.
+/// `"bare"` sends a completed `tool_call_update` for an id that no
+/// `tool_call` introduced, and omits every field the client records a call
+/// from, so the name is unknowable. `"titled"` carries a title, so the client
+/// names the call from it. `"repeat"` completes a properly announced call
+/// twice. `"out_of_order"` completes a call before it announces it.
+/// `"never_completes"` announces a call and never completes it.
 async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
-    let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), "Done".into());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_ORPHAN_TOOL_END".to_string(), flavor.into());
-
-    acp_shapes(agent_config).await
+    let updates: Vec<Value> = match flavor {
+        "bare" => vec![json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "mock-orphan-1",
+            "status": "completed",
+            "rawOutput": {"result": "orphaned output"}
+        })],
+        "titled" => vec![json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "mock-orphan-1",
+            "status": "completed",
+            "title": "late_named_tool",
+            "rawOutput": {"result": "orphaned output"}
+        })],
+        "repeat" => vec![
+            json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "mock-repeat-1",
+                "title": "repeated_tool",
+                "status": "pending",
+                "rawInput": {"query": "2+2"}
+            }),
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-repeat-1",
+                "status": "completed",
+                "rawOutput": {"result": "PARTIAL"}
+            }),
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-repeat-1",
+                "status": "completed",
+                "rawOutput": {"result": "FINAL_ANSWER_4"}
+            }),
+        ],
+        "never_completes" => vec![json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "mock-open-1",
+            "title": "open_tool",
+            "status": "in_progress",
+            "rawInput": {"query": "2+2"}
+        })],
+        "out_of_order" => vec![
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "mock-late-1",
+                "status": "completed",
+                "rawOutput": {"result": "result before the call"}
+            }),
+            json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "mock-late-1",
+                "title": "late_call",
+                "status": "pending",
+                "rawInput": {"query": "2+2"}
+            }),
+        ],
+        other => panic!("unknown orphan flavor {other:?}"),
+    };
+    let mut turn = vec![Step::Text("Done".into())];
+    turn.extend(updates.into_iter().map(Step::Update));
+    acp_shapes(turn).await
 }
 
 /// C4: an ACP agent's reasoning must reach the turn stream.
@@ -203,7 +236,7 @@ async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
 /// link that was missing.
 #[tokio::test]
 async fn acp_thought_chunks_reach_the_turn_stream() {
-    let shapes = acp_shapes_for_thinking_turn("let me add them;that checks out").await;
+    let shapes = acp_shapes_for_thinking_turn(&["let me add them", "that checks out"]).await;
 
     assert!(
         shapes.iter().any(|s| matches!(s, EventShape::Thinking(_))),
@@ -220,25 +253,6 @@ async fn acp_thought_chunks_reach_the_turn_stream() {
         ],
         "delegated reasoning must interleave with the narration in wire order; \
          got {shapes:#?}"
-    );
-}
-
-/// The mock's thinking hook reads a *value*, not the variable's presence.
-///
-/// A presence check would make `CRU_MOCK_STREAM_THOUGHTS=` script a thought
-/// with empty text, which the harness drops as invisible — so the negative case
-/// would silently stop testing anything.
-#[tokio::test]
-async fn mock_thinking_hook_set_to_empty_scripts_no_thoughts() {
-    let shapes = acp_shapes_for_thinking_turn("").await;
-
-    assert_eq!(
-        shapes,
-        vec![
-            EventShape::Text("The answer is 4".into()),
-            EventShape::Done(StopReason::EndTurn),
-        ],
-        "CRU_MOCK_STREAM_THOUGHTS= must mean no thoughts; got {shapes:#?}"
     );
 }
 
@@ -265,7 +279,7 @@ async fn mock_thinking_hook_set_to_empty_scripts_no_thoughts() {
 #[tokio::test]
 async fn hostile_control_characters_are_stripped_from_delegated_reasoning() {
     let shapes =
-        acp_shapes_for_thinking_turn("plan\u{9b}2J\u{7}line\rone\ttab\nnewline\u{202E}exe.dcoc")
+        acp_shapes_for_thinking_turn(&["plan\u{9b}2J\u{7}line\rone\ttab\nnewline\u{202E}exe.dcoc"])
             .await;
 
     assert_eq!(
@@ -341,7 +355,7 @@ async fn acp_tool_batch_end_comes_after_every_tool_call_and_before_done() {
 /// tells a consumer that tools ran.
 #[tokio::test]
 async fn acp_text_only_turn_emits_no_tool_batch_end() {
-    let shapes = acp_shapes_for_text_only_turn(None).await;
+    let shapes = acp_shapes_for_text_only_turn().await;
 
     assert!(
         !shapes.contains(&EventShape::ToolBatchEnd),
@@ -353,25 +367,6 @@ async fn acp_text_only_turn_emits_no_tool_batch_end() {
             EventShape::Text("The answer is 4".into()),
             EventShape::Done(StopReason::EndTurn),
         ]
-    );
-}
-
-/// The mock's tool-call hook reads a *value*, not the variable's presence.
-///
-/// A presence check (`env::var(..).is_ok()`) makes
-/// `CRU_MOCK_STREAM_TOOL_CALL=0` turn the tool call *on*, which would quietly
-/// invert any future test that scripts the negative case through this hook.
-#[tokio::test]
-async fn mock_tool_call_hook_set_to_zero_scripts_no_tool_call() {
-    let shapes = acp_shapes_for_text_only_turn(Some("0")).await;
-
-    assert_eq!(
-        shapes,
-        vec![
-            EventShape::Text("The answer is 4".into()),
-            EventShape::Done(StopReason::EndTurn),
-        ],
-        "CRU_MOCK_STREAM_TOOL_CALL=0 must mean off; got {shapes:#?}"
     );
 }
 
@@ -644,7 +639,7 @@ async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
 /// `SessionUpdate::UsageUpdate`; this test keeps that arm reachable.
 #[tokio::test]
 async fn acp_usage_update_reaches_the_turn_stream() {
-    let shapes = acp_shapes_for_usage_update(Some("22700/1000000")).await;
+    let shapes = acp_shapes_for_usage_update(Some((22_700, 1_000_000))).await;
 
     assert!(
         shapes
@@ -689,24 +684,5 @@ async fn acp_turn_without_a_usage_update_reports_no_context_window() {
         ],
         "an agent that never reported its window still produced one; got \
          {shapes:#?}"
-    );
-}
-
-/// The mock's usage hook reads a *value*, not the variable's presence.
-///
-/// A presence check would make an unparseable script report a zeroed window,
-/// which is exactly the claim the test above pins as forbidden — so the
-/// negative case would silently stop testing anything.
-#[tokio::test]
-async fn mock_usage_hook_set_to_a_malformed_script_reports_no_window() {
-    let shapes = acp_shapes_for_usage_update(Some("not-a-window")).await;
-
-    assert_eq!(
-        shapes,
-        vec![
-            EventShape::Text("The answer is 4".into()),
-            EventShape::Done(StopReason::EndTurn),
-        ],
-        "CRU_MOCK_USAGE_UPDATE=not-a-window must mean no window; got {shapes:#?}"
     );
 }

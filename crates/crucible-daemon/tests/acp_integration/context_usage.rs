@@ -40,14 +40,15 @@ use tempfile::TempDir;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
-use crate::support::{mock_agent_path, mock_session_agent};
+use crate::support::{mock_agent_path, mock_session_agent, MockScript, Step};
 
-/// Run one delegated turn and return every event the daemon broadcast.
+/// Run one delegated turn with these steps and return every event the daemon
+/// broadcast.
 ///
-/// `env` is layered onto the session agent's `env_overrides`, which is how a
-/// spawned mock is scripted — the binary cannot be handed an in-process config,
-/// and mutating this process's environment would race the rest of the suite.
-async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage> {
+/// The script goes into the session agent's `env_overrides`. The spawned
+/// binary cannot get an in-process script, and a change to the environment of
+/// this process would race the rest of the suite.
+async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
     let temp = TempDir::new().expect("temp workspace");
     let session_manager = temp_session_manager();
     let (event_tx, mut event_rx) = broadcast::channel(256);
@@ -77,11 +78,12 @@ async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage>
         .expect("create session");
 
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
+    let script = MockScript {
+        turn,
+        ..MockScript::default()
+    };
     let agent = SessionAgent {
-        env_overrides: env
-            .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-            .collect::<HashMap<_, _>>(),
+        env_overrides: HashMap::from([script.env()]),
         ..mock_session_agent(&agent_path)
     };
     agent_manager
@@ -110,6 +112,16 @@ async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage>
         events.push(event);
     }
     events
+}
+
+/// A `usage_update` step: `used` of `size` tokens.
+fn usage_update(used: u64, size: u64) -> Step {
+    Step::Update(serde_json::json!({
+        "sessionUpdate": "usage_update",
+        "used": used,
+        "size": size,
+        "cost": {"amount": 0.14204, "currency": "USD"}
+    }))
 }
 
 /// Decode the payload of the one `context_limit_resolved` event, if any.
@@ -152,9 +164,9 @@ fn context_used(events: &[SessionEventMessage]) -> Option<u64> {
 /// session and the indicator drew its no-data path (US-205).
 #[tokio::test]
 async fn a_delegated_usage_update_resolves_the_session_context_limit() {
-    let events = delegated_turn_events(&[
-        ("CRU_MOCK_STREAM_CHUNKS", "The answer is 4"),
-        ("CRU_MOCK_USAGE_UPDATE", "22700/1000000"),
+    let events = delegated_turn_events(vec![
+        usage_update(22_700, 1_000_000),
+        Step::Text("The answer is 4".into()),
     ])
     .await;
 
@@ -181,9 +193,9 @@ async fn a_delegated_usage_update_resolves_the_session_context_limit() {
 /// The pair is the contract, so it is asserted as a pair.
 #[tokio::test]
 async fn a_delegated_turn_reports_both_context_operands() {
-    let events = delegated_turn_events(&[
-        ("CRU_MOCK_STREAM_CHUNKS", "The answer is 4"),
-        ("CRU_MOCK_USAGE_UPDATE", "22700/1000000"),
+    let events = delegated_turn_events(vec![
+        usage_update(22_700, 1_000_000),
+        Step::Text("The answer is 4".into()),
     ])
     .await;
 
@@ -213,7 +225,7 @@ async fn a_delegated_turn_reports_both_context_operands() {
 /// confident wrong answer where "— ctx" is the honest one.
 #[tokio::test]
 async fn a_delegated_turn_without_a_usage_update_resolves_no_limit() {
-    let events = delegated_turn_events(&[("CRU_MOCK_STREAM_CHUNKS", "The answer is 4")]).await;
+    let events = delegated_turn_events(vec![Step::Text("The answer is 4".into())]).await;
 
     assert!(
         context_limit(&events).is_none(),

@@ -115,7 +115,7 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ mock = {{ command = \"{}\", description = \"Mock ACP agent for CLI E2E tests\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply over stdio\" }} }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ mock = {{ command = \"{}\", description = \"Mock ACP agent for CLI E2E tests\", env = {{ CRU_MOCK_SCRIPT = '{{\"turn\":[{{\"text\":\"mock reply over stdio\"}}]}}' }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 
@@ -149,7 +149,7 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
         )));
 }
 
-/// Test 12: Mock agent with --mcp-http flag creates session successfully.
+/// Test 12: Mock agent with HTTP MCP support creates session successfully.
 ///
 /// Validates that an HTTP-capable mock agent can go through the full
 /// create → send → end lifecycle when using capability-aware transport.
@@ -164,7 +164,7 @@ fn session_acp_lifecycle_with_http_capable_mock() {
     );
 
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ [\"mock-http\"] = {{ command = \"{}\", args = {{ \"--mcp-http\" }}, description = \"Mock ACP agent with HTTP MCP support\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply with http mcp\" }} }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-http\"] = {{ command = \"{}\", description = \"Mock ACP agent with HTTP MCP support\", env = {{ CRU_MOCK_SCRIPT = '{{\"mcp_http\":true,\"turn\":[{{\"text\":\"mock reply with http mcp\"}}]}}' }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 
@@ -219,9 +219,9 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
         mock_path.display()
     );
 
-    // No --mcp-http flag: agent reports mcp_http=false
+    // The script sets `mcp_http` to false, so the agent does not advertise HTTP MCP.
     let daemon = TestDaemon::start_with_extra_config(&format!(
-        "cru.config.set({{ acp = {{ agents = {{ [\"mock-stdio\"] = {{ command = \"{}\", description = \"Mock ACP agent (stdio only)\", env = {{ CRU_MOCK_STREAM_CHUNKS = \"mock reply over stdio only\" }} }} }} }} }})\n",
+        "cru.config.set({{ acp = {{ agents = {{ [\"mock-stdio\"] = {{ command = \"{}\", description = \"Mock ACP agent (stdio only)\", env = {{ CRU_MOCK_SCRIPT = '{{\"mcp_http\":false,\"turn\":[{{\"text\":\"mock reply over stdio only\"}}]}}' }} }} }} }} }})\n",
         path_literal(&mock_path)
     ));
 

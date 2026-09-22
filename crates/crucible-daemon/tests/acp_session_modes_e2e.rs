@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::config::AgentProfile;
 use crucible_core::session::SessionType;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
@@ -30,8 +29,11 @@ use crucible_daemon::AgentManager;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{logged, MockScript, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
 };
@@ -49,26 +51,30 @@ const AGENT_MODE_IDS: [&str; 3] = ["default", "acceptEdits", "plan"];
 /// The mode the mock reports as current.
 const AGENT_CURRENT_MODE: &str = "acceptEdits";
 
-/// A profile that runs the mock agent. `modes` names the current mode the
-/// agent declares, or `None` for an agent that declares none. The agent
-/// writes any mode it is switched into to `mode_capture`.
-fn profile(modes: Option<&str>, mode_capture: &Path) -> AgentProfile {
-    let mut env = BTreeMap::new();
-    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
-    env.insert(
-        "CRU_MOCK_MODE_CAPTURE".to_string(),
-        mode_capture.to_string_lossy().into_owned(),
-    );
-    if let Some(current) = modes {
-        env.insert("CRU_MOCK_ADVERTISE_MODES".to_string(), current.to_string());
+/// A script for the mock agent. `modes` names the current mode the agent
+/// declares, or `None` for an agent that declares none.
+fn script(modes: Option<&str>) -> MockScript {
+    MockScript {
+        mode: modes.map(str::to_string),
+        turn: vec![Step::Text(ANSWER.to_string())],
+        ..MockScript::default()
     }
-    mock_profile(env)
+}
+
+/// The mode id of the last `session/set_mode` that the agent received.
+fn last_set_mode(log: &Path) -> String {
+    logged(log, "session/set_mode")
+        .last()
+        .expect("the agent process must have received a session/set_mode")["modeId"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
 }
 
 struct Harness {
     _temp: TempDir,
-    /// The file the agent process writes each `session/set_mode` id to.
-    mode_capture: PathBuf,
+    /// The frame log of the agent process.
+    log: PathBuf,
     agent_manager: Arc<AgentManager>,
     session_id: crucible_core::session::SessionId,
     event_tx: broadcast::Sender<SessionEventMessage>,
@@ -76,21 +82,28 @@ struct Harness {
 }
 
 async fn setup(modes: Option<&str>) -> Harness {
-    setup_with_profile(|mode_capture| profile(modes, mode_capture)).await
+    setup_with_script(script(modes)).await
 }
 
-/// `setup` for a profile the caller builds around the mode capture path.
-async fn setup_with_profile(make_profile: impl FnOnce(&Path) -> AgentProfile) -> Harness {
+/// `setup` for a script that the caller builds. The harness sets its log.
+async fn setup_with_script(script: MockScript) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
-    let mode_capture = temp.path().join("set_mode.txt");
+    let log = temp.path().join("frames.jsonl");
+    let script = MockScript {
+        log: Some(log.clone()),
+        ..script
+    };
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, events) = broadcast::channel(256);
 
     let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
         session_manager.clone(),
-        BTreeMap::from([(MOCK_PROFILE.to_string(), make_profile(&mode_capture))]),
+        BTreeMap::from([(
+            MOCK_PROFILE.to_string(),
+            mock_profile(BTreeMap::from([script.env()])),
+        )]),
         &event_tx,
     )));
 
@@ -105,7 +118,7 @@ async fn setup_with_profile(make_profile: impl FnOnce(&Path) -> AgentProfile) ->
 
     Harness {
         _temp: temp,
-        mode_capture,
+        log,
         agent_manager,
         session_id: session.id,
         event_tx,
@@ -214,9 +227,7 @@ async fn set_mode_accepts_a_mode_that_only_the_agent_declares() {
     // forward the daemon and the agent hold different modes and only the
     // agent's decides what the next turn may do.
     assert_eq!(
-        std::fs::read_to_string(&h.mode_capture)
-            .expect("the agent process must have received a session/set_mode")
-            .trim(),
+        last_set_mode(&h.log),
         "acceptEdits",
         "the switch must reach the agent over the ACP wire"
     );
@@ -314,7 +325,7 @@ async fn an_eviction_does_not_take_the_agents_modes_away() {
 /// declared.
 #[tokio::test]
 async fn a_current_mode_the_agent_does_not_offer_falls_back_to_one_it_does() {
-    // `CRU_MOCK_ADVERTISE_MODES` names the current mode without adding it to
+    // The script's `mode` names the current mode without adding it to
     // the declared list, which is exactly the malformed shape.
     let h = setup(Some("a-mode-not-in-the-list")).await;
     run_a_turn(&h).await;
@@ -334,12 +345,9 @@ async fn a_current_mode_the_agent_does_not_offer_falls_back_to_one_it_does() {
 /// means its own, and the session offers exactly what the agent declared.
 #[tokio::test]
 async fn an_agents_own_id_beats_a_crucible_rename_alias() {
-    let h = setup_with_profile(|mode_capture| {
-        let mut agent_profile = profile(Some("normal"), mode_capture);
-        agent_profile
-            .env
-            .insert("CRU_MOCK_MODE_IDS".to_string(), "normal,strict".to_string());
-        agent_profile
+    let h = setup_with_script(MockScript {
+        mode_ids: Some(vec!["normal".to_string(), "strict".to_string()]),
+        ..script(Some("normal"))
     })
     .await;
     run_a_turn(&h).await;
@@ -350,9 +358,7 @@ async fn an_agents_own_id_beats_a_crucible_rename_alias() {
         .expect("the agent's own `normal` must be selectable");
 
     assert_eq!(
-        std::fs::read_to_string(&h.mode_capture)
-            .expect("the agent received a session/set_mode")
-            .trim(),
+        last_set_mode(&h.log),
         "normal",
         "the agent must be told `normal`, not the mode Crucible renames it to"
     );

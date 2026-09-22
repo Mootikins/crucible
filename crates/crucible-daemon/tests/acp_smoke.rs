@@ -25,6 +25,7 @@ use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use futures::StreamExt;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -36,18 +37,34 @@ use tokio::time::{timeout, Duration};
 
 // Shared with the `acp_integration` binary, which drives the same spawned
 // mock agent through `AcpAgentHandle`.
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{logged, MockScript, Step};
 use mock_agent_bin::{mock_agent_path, mock_handle_params, mock_session_agent};
 
-fn delegation_enabled_agent(agent_path: &str) -> SessionAgent {
+/// A session agent that runs the mock binary with `script`.
+fn scripted_agent(agent_path: &str, script: MockScript) -> SessionAgent {
     let mut agent = mock_session_agent(agent_path);
-    // The scheduler rejects empty no-tool turns; have the mock binary stream
-    // a deterministic chunk (see CRU_MOCK_STREAM_CHUNKS hook).
-    agent.env_overrides.insert(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        "mock delegation output".to_string(),
-    );
+    agent.env_overrides.extend([script.env()]);
+    agent
+}
+
+/// A script whose turn streams `text` and then does `rest`.
+fn text_turn(text: &str, rest: impl IntoIterator<Item = Step>) -> MockScript {
+    MockScript {
+        turn: std::iter::once(Step::Text(text.to_string()))
+            .chain(rest)
+            .collect(),
+        ..MockScript::default()
+    }
+}
+
+fn delegation_enabled_agent(agent_path: &str) -> SessionAgent {
+    // The scheduler rejects empty no-tool turns. Thus the mock binary streams
+    // a fixed chunk.
+    let mut agent = scripted_agent(agent_path, text_turn("mock delegation output", []));
     agent.delegation_config = Some(DelegationConfig {
         enabled: true,
         max_depth: 2,
@@ -173,14 +190,14 @@ fn mock_binary_exists_and_runs() {
     let path = mock_agent_path();
     assert!(path.exists(), "mock-acp-agent not found at {:?}", path);
 
+    // `output()` gives the child a closed stdin, so the agent ends at once.
     let output = std::process::Command::new(&path)
-        .arg("--help")
         .output()
         .expect("Failed to execute mock-acp-agent");
 
     assert!(
         output.status.success(),
-        "mock-acp-agent --help failed with status: {:?}",
+        "mock-acp-agent failed on a closed stdin with status: {:?}",
         output.status
     );
 }
@@ -275,10 +292,7 @@ async fn mock_acp_agent_returns_message_response() {
     let workspace = TempDir::new().expect("Failed to create temp workspace");
     let agent_path = mock_agent_path();
     let agent_path = agent_path.to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
+    let agent_config = scripted_agent(&agent_path, text_turn(ANSWER, []));
 
     let mut handle = timeout(
         Duration::from_secs(30),
@@ -321,20 +335,22 @@ async fn mock_acp_agent_returns_message_response() {
 /// is forwarded into the ACP prompt. The ACP agent owns its history, so
 /// `turn()` sends only the new user content — but System-role blocks in
 /// `ctx.messages` represent knowledge the external agent has no other way to
-/// see and must be forwarded. The mock captures the exact prompt text it
-/// received over the wire (gated on `CRU_MOCK_PROMPT_CAPTURE`).
+/// see and must be forwarded. The mock logs the exact prompt that it
+/// received over the wire.
 #[tokio::test]
 async fn injected_system_context_reaches_acp_prompt() {
     use crucible_core::traits::ContextMessage;
 
     let workspace = TempDir::new().expect("Failed to create temp workspace");
-    let capture_path = workspace.path().join("captured_prompt.txt");
+    let log = workspace.path().join("frames.jsonl");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_PROMPT_CAPTURE".to_string(),
-        capture_path.to_string_lossy().into_owned(),
+    let agent_config = scripted_agent(
+        &agent_path,
+        MockScript {
+            log: Some(log.clone()),
+            ..MockScript::default()
+        },
     );
 
     let mut handle = timeout(
@@ -359,8 +375,16 @@ async fn injected_system_context_reaches_acp_prompt() {
     .await
     .expect("Streaming response timed out");
 
-    let captured = std::fs::read_to_string(&capture_path)
-        .expect("mock should have captured the prompt it received");
+    let prompts = logged(&log, "session/prompt");
+    let prompt = prompts
+        .last()
+        .expect("mock should have logged the prompt it received");
+    let captured: String = prompt["prompt"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["text"].as_str())
+        .collect();
 
     assert!(
         captured.contains("KNOWLEDGE: The capital of Testlandia is Fooville."),
@@ -376,20 +400,20 @@ async fn injected_system_context_reaches_acp_prompt() {
 /// The handle reads the `select` option with category `model` from the
 /// `session/new` reply, reports `model_switching`, exposes the current
 /// model, and `switch_model` sends `session/set_config_option` over the
-/// wire (captured by the mock) without a restart of the agent process.
+/// wire (logged by the mock) without a restart of the agent process.
 #[tokio::test]
 async fn acp_model_switching_sends_set_config_option() {
     let workspace = TempDir::new().expect("temp workspace");
-    let model_capture = workspace.path().join("set_config_option.txt");
+    let log = workspace.path().join("frames.jsonl");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_ADVERTISE_MODELS".to_string(), "1".to_string());
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_MODEL_CAPTURE".to_string(),
-        model_capture.to_string_lossy().into_owned(),
+    let agent_config = scripted_agent(
+        &agent_path,
+        MockScript {
+            models: true,
+            log: Some(log.clone()),
+            ..MockScript::default()
+        },
     );
 
     let mut handle = timeout(
@@ -418,7 +442,7 @@ async fn acp_model_switching_sends_set_config_option() {
         "expected ModeChange, got {err:?}"
     );
     assert!(
-        !model_capture.exists(),
+        logged(&log, "session/set_config_option").is_empty(),
         "a refused id must not reach the agent"
     );
 
@@ -427,11 +451,13 @@ async fn acp_model_switching_sends_set_config_option() {
         .expect("switch_model succeeds for a listed id");
     assert_eq!(SessionKnobs::current_model(&handle), Some("mock-opus"));
 
-    let captured = std::fs::read_to_string(&model_capture)
-        .expect("mock should have captured the set_config_option request");
+    let captured = logged(&log, "session/set_config_option");
+    let [captured] = captured.as_slice() else {
+        panic!("mock should have logged one set_config_option request: {captured:?}");
+    };
     assert_eq!(
-        captured.trim(),
-        "model=mock-opus",
+        (captured["configId"].as_str(), captured["value"].as_str()),
+        (Some("model"), Some("mock-opus")),
         "the selector id and the model id must reach the agent over the wire"
     );
 }
@@ -442,13 +468,15 @@ async fn acp_model_switching_sends_set_config_option() {
 #[tokio::test]
 async fn acp_session_new_without_config_options_reports_no_models() {
     let workspace = TempDir::new().expect("temp workspace");
-    let model_capture = workspace.path().join("set_config_option.txt");
+    let log = workspace.path().join("frames.jsonl");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config.env_overrides.insert(
-        "CRU_MOCK_MODEL_CAPTURE".to_string(),
-        model_capture.to_string_lossy().into_owned(),
+    let agent_config = scripted_agent(
+        &agent_path,
+        MockScript {
+            log: Some(log.clone()),
+            ..MockScript::default()
+        },
     );
 
     let mut handle = timeout(
@@ -471,7 +499,7 @@ async fn acp_session_new_without_config_options_reports_no_models() {
         "expected NotSupported, got {err:?}"
     );
     assert!(
-        !model_capture.exists(),
+        logged(&log, "session/set_config_option").is_empty(),
         "no session/set_config_option frame may reach the agent"
     );
 }
@@ -505,8 +533,13 @@ async fn inject_errors_causes_handshake_failure() {
     let agent_config = mock_session_agent(&agent_path);
 
     let mut acp_config = AcpConfig::default();
+    let script = MockScript {
+        fail_initialize: true,
+        ..MockScript::default()
+    };
     let profile = AgentProfile {
-        args: Some(vec!["--inject-errors".to_string()]),
+        command: Some(agent_path.clone()),
+        env: BTreeMap::from([script.env()]),
         ..Default::default()
     };
     acp_config.agents.insert(agent_path, profile);
@@ -771,16 +804,14 @@ async fn mock_acp_delegation_captured_in_recording() {
 // A turn that ends early: dropped by the daemon, or cut by the agent
 // ---------------------------------------------------------------------------
 
-/// Wait until the capture file at `path` holds a value, and return it. The
-/// mock replaces capture files in one rename, so a read never sees a half
-/// written value.
-async fn wait_for_capture(path: &Path, what: &str) -> String {
+/// Wait until the agent logs a `session/cancel` in `log`, and return the
+/// session id that it names. The agent process writes the log, so the test
+/// polls it.
+async fn wait_for_cancel(log: &Path, what: &str) -> String {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if !content.is_empty() {
-                return content;
-            }
+        if let Some(cancel) = logged(log, "session/cancel").first() {
+            return cancel["sessionId"].as_str().unwrap_or_default().to_string();
         }
         assert!(Instant::now() < deadline, "{what}");
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -804,27 +835,17 @@ async fn collect_turn(handle: &mut AcpAgentHandle, message: &str) -> Vec<TurnEve
 const HELD_ANSWER: &str = "first words";
 
 /// Connect to a mock agent that holds each turn until `session/cancel`.
-/// The agent writes the id of the cancelled session to `cancel_capture`.
-/// `extra_env` gives more mock hooks to the agent process.
-async fn connect_held_agent(
-    workspace: &Path,
-    cancel_capture: &Path,
-    extra_env: &[(&str, &str)],
-) -> AcpAgentHandle {
+/// The agent logs each frame that it receives to `log`. `hold` is the
+/// `Step::Hold` that the turn runs after its text.
+async fn connect_held_agent(workspace: &Path, log: &Path, hold: Step) -> AcpAgentHandle {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    for (key, value) in [
-        ("CRU_MOCK_STREAM_CHUNKS", HELD_ANSWER),
-        ("CRU_MOCK_HOLD_UNTIL_CANCEL", "1"),
-        ("CRU_MOCK_CANCEL_CAPTURE", &cancel_capture.to_string_lossy()),
-    ]
-    .iter()
-    .chain(extra_env)
-    {
-        agent_config
-            .env_overrides
-            .insert((*key).to_string(), (*value).to_string());
-    }
+    let agent_config = scripted_agent(
+        &agent_path,
+        MockScript {
+            log: Some(log.to_path_buf()),
+            ..text_turn(HELD_ANSWER, [hold])
+        },
+    );
 
     timeout(
         Duration::from_secs(30),
@@ -861,14 +882,14 @@ async fn start_and_drop_a_held_turn(handle: &mut AcpAgentHandle) {
 /// `tick_ms` makes the held turn stream a chunk per tick. Without it the
 /// agent is quiet, as in a long tool call, and the client must notice the
 /// drop without a chunk.
-async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
+async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<u64>) {
     let workspace = TempDir::new().expect("temp workspace");
-    let cancel_capture = workspace.path().join("cancel.txt");
-    let tick_env: Vec<(&str, &str)> = tick_ms
-        .map(|tick_ms| ("CRU_MOCK_HOLD_TICK_MS", tick_ms))
-        .into_iter()
-        .collect();
-    let mut handle = connect_held_agent(workspace.path(), &cancel_capture, &tick_env).await;
+    let log = workspace.path().join("frames.jsonl");
+    let hold = Step::Hold {
+        tick_ms,
+        ignore_cancel: false,
+    };
+    let mut handle = connect_held_agent(workspace.path(), &log, hold).await;
     let session_id = handle
         .acp_session_id()
         .expect("a connected handle has an agent session");
@@ -877,8 +898,8 @@ async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
 
     let events = collect_turn(&mut handle, "and now a normal turn").await;
 
-    let cancelled = wait_for_capture(
-        &cancel_capture,
+    let cancelled = wait_for_cancel(
+        &log,
         "the agent never received session/cancel after the turn was dropped",
     )
     .await;
@@ -912,7 +933,7 @@ async fn drop_a_held_turn_then_run_the_next(tick_ms: Option<&str>) {
 /// receiver.
 #[tokio::test]
 async fn dropping_a_turn_sends_session_cancel_and_the_next_turn_runs() {
-    drop_a_held_turn_then_run_the_next(Some("20")).await;
+    drop_a_held_turn_then_run_the_next(Some(20)).await;
 }
 
 /// The held turn sends nothing after its first chunk. No chunk finds the
@@ -933,19 +954,18 @@ async fn dropping_a_turn_of_a_quiet_agent_sends_session_cancel_and_the_next_turn
 #[tokio::test]
 async fn a_turn_after_a_cancel_that_the_agent_ignores_fails_after_the_grace() {
     let workspace = TempDir::new().expect("temp workspace");
-    let cancel_capture = workspace.path().join("cancel.txt");
-    let mut handle = connect_held_agent(
-        workspace.path(),
-        &cancel_capture,
-        &[("CRU_MOCK_IGNORE_CANCEL", "1")],
-    )
-    .await;
+    let log = workspace.path().join("frames.jsonl");
+    let hold = Step::Hold {
+        tick_ms: None,
+        ignore_cancel: true,
+    };
+    let mut handle = connect_held_agent(workspace.path(), &log, hold).await;
 
     start_and_drop_a_held_turn(&mut handle).await;
-    // The capture shows that the client sent `session/cancel`. The turn
+    // The log shows that the client sent `session/cancel`. The turn
     // task now waits for a reply that the agent never sends.
-    wait_for_capture(
-        &cancel_capture,
+    wait_for_cancel(
+        &log,
         "the agent never received session/cancel after the turn was dropped",
     )
     .await;
@@ -986,13 +1006,7 @@ async fn an_agent_that_exits_mid_turn_ends_the_turn_with_a_connection_error() {
     const PARTIAL: &str = "partial answer";
     let workspace = TempDir::new().expect("temp workspace");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
-    let mut agent_config = mock_session_agent(&agent_path);
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), PARTIAL.to_string());
-    agent_config
-        .env_overrides
-        .insert("CRU_MOCK_EXIT_MID_TURN".to_string(), "1".to_string());
+    let agent_config = scripted_agent(&agent_path, text_turn(PARTIAL, [Step::Exit]));
 
     let mut handle = timeout(
         Duration::from_secs(30),

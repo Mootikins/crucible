@@ -4,8 +4,8 @@
 //! `initialize` — `agent_supports_http_mcp()` — and that a session opened. It
 //! never reads the frame. Invert the http/stdio branch in
 //! `connection.rs::handshake` and every one of those
-//! tests still passes, because the mock accepts whatever `mcpServers` it is
-//! handed and records nothing about them.
+//! tests still passes, because they do not read what `mcpServers` the agent
+//! got. The tests here read it from the mock agent's frame log.
 //!
 //! The choice is not cosmetic. An agent given a stdio entry it cannot start
 //! reports the failure mid-turn (codex-acp announces it as a `session/update`
@@ -15,61 +15,35 @@
 //! `build_stdio_mcp_server` derives the path from `current_exe` and nothing
 //! else checks what it produced.
 
-use crate::scripted_agent::{client_with_custom_transport, read_frame, write_json_line};
-use serde_json::json;
+use crate::support::{connect, logged, MockScript};
 
-/// Run the handshake against a scripted agent and hand back the `mcpServers`
+/// Run the handshake against a mock agent and hand back the `mcpServers`
 /// array the client sent on `session/new`.
 ///
 /// `http_mcp` is what the agent advertises in `initialize`; `mcp_url` is what
 /// the daemon would pass when it has an in-process MCP host running.
 async fn mcp_servers_sent(http_mcp: bool, mcp_url: Option<&str>) -> Vec<serde_json::Value> {
-    let (mut client, mut agent_read, mut agent_write) =
-        client_with_custom_transport(Some(5_000)).await;
-
-    let agent = tokio::spawn(async move {
-        let init = read_frame(&mut agent_read).await;
-        assert_eq!(init["method"], "initialize");
-        write_json_line(
-            &mut agent_write,
-            json!({
-                "jsonrpc": "2.0",
-                "id": init["id"],
-                "result": {
-                    "protocolVersion": 1,
-                    "agentCapabilities": {
-                        "loadSession": true,
-                        "mcpCapabilities": {"http": http_mcp, "sse": false}
-                    },
-                    "authMethods": []
-                }
-            }),
-        )
-        .await;
-
-        let new_session = read_frame(&mut agent_read).await;
-        assert_eq!(new_session["method"], "session/new");
-        write_json_line(
-            &mut agent_write,
-            json!({
-                "jsonrpc": "2.0",
-                "id": new_session["id"],
-                "result": {"sessionId": "sess-mcp-frame"}
-            }),
-        )
-        .await;
-
-        (new_session, agent_write)
-    });
+    let log_dir = tempfile::TempDir::new().unwrap();
+    let log = log_dir.path().join("agent.jsonl");
+    let (mut client, _agent) = connect(
+        MockScript {
+            mcp_http: http_mcp,
+            log: Some(log.clone()),
+            ..MockScript::default()
+        },
+        Some(5_000),
+        None,
+    )
+    .await;
 
     client
         .handshake(mcp_url, None)
         .await
-        .expect("the scripted agent completes the handshake");
+        .expect("the mock agent completes the handshake");
 
-    let (new_session, _writer) = agent.await.expect("the scripted agent finished");
-
-    new_session["params"]["mcpServers"]
+    let new_session = logged(&log, "session/new");
+    assert_eq!(new_session.len(), 1, "one session/new: {new_session:?}");
+    new_session[0]["mcpServers"]
         .as_array()
         .cloned()
         .unwrap_or_default()

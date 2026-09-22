@@ -6,7 +6,7 @@
 //! wire in `mcp_server_frame.rs`. A tool result that crosses from this host
 //! through an ACP turn is asserted in `tool_roundtrip.rs`.
 
-use crate::scripted_agent::{mcp_http_open_session, mcp_http_request};
+use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};

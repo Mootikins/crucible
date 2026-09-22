@@ -19,35 +19,23 @@
 //! The name is kept because `Systems.md` and the branch plan both cite it by
 //! path as the example of a test whose name overclaims its layer.
 
-use crate::scripted_agent::prompt_with;
-use crate::scripted_agent::{
-    client_with_custom_transport, final_response, make_prompt_request, read_request_id, text_chunk,
-    tool_call_notification, tool_call_update, tool_call_update_completed, write_json_line,
-};
+use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
+use crate::support::{connect, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
-fn tool_call_update_failed(
-    session_id: &str,
-    tool_call_id: &str,
-    raw_output: Option<serde_json::Value>,
-) -> serde_json::Value {
-    tool_call_update(session_id, tool_call_id, "failed", raw_output)
-}
-
-/// Build a `tool_call` notification whose `content` array carries one
+/// A `tool_call` step whose `content` array carries one
 /// `ToolCallContent::Diff` entry — exercises the path that surfaces ACP
 /// file-mutation previews into the TUI scrollback.
-fn tool_call_notification_with_diff(
-    session_id: &str,
+fn tool_call_with_diff(
     tool_call_id: &str,
     title: &str,
     raw_input: Option<serde_json::Value>,
     diff_path: &str,
     old_text: Option<&str>,
     new_text: &str,
-) -> serde_json::Value {
+) -> Step {
     let mut update = json!({
         "sessionUpdate": "tool_call",
         "toolCallId": tool_call_id,
@@ -63,70 +51,49 @@ fn tool_call_notification_with_diff(
     if let Some(input) = raw_input {
         update["rawInput"] = input;
     }
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": update,
-        }
-    })
+    Step::Update(update)
 }
 
-/// Build a `tool_call_update` notification whose `content` array carries one
+/// A `tool_call_update` step whose `content` array carries one
 /// `ToolCallContent::Diff` entry — exercises the late-diff path where the
 /// ACP agent (e.g. Claude Code) defers diffs until after the initial
 /// `tool_call` frame.
 fn tool_call_update_with_diff(
-    session_id: &str,
     tool_call_id: &str,
     diff_path: &str,
     old_text: Option<&str>,
     new_text: &str,
-) -> serde_json::Value {
-    json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "tool_call_update",
-                "toolCallId": tool_call_id,
-                "content": [{
-                    "type": "diff",
-                    "path": diff_path,
-                    "oldText": old_text,
-                    "newText": new_text,
-                }],
-            },
-        }
-    })
+) -> Step {
+    Step::Update(json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": tool_call_id,
+        "content": [{
+            "type": "diff",
+            "path": diff_path,
+            "oldText": old_text,
+            "newText": new_text,
+        }],
+    }))
 }
 
 #[tokio::test]
 async fn tool_start_with_arguments_emits_chunk_with_args() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                "ses-tool-args",
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![tool_call(
                 "tool-42",
                 "mcp__crucible__semantic_search",
                 Some(json!({"query": "rust async patterns", "limit": 5})),
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+            )],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-tool-args", "search something");
     let (summary, _response) = prompt_with(
@@ -167,23 +134,18 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
 
 #[tokio::test]
 async fn tool_start_without_arguments_has_none() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification("ses-no-args", "tool-99", "list_models", None),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![tool_call("tool-99", "list_models", None)],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-no-args", "list models");
     prompt_with(
@@ -216,9 +178,6 @@ async fn tool_start_without_arguments_has_none() {
 
 #[tokio::test]
 async fn tool_start_complex_arguments_preserved() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
@@ -234,17 +193,15 @@ async fn tool_start_complex_arguments_preserved() {
     });
     let expected_args = complex_args.clone();
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification("ses-complex", "tool-c1", "read_file", Some(complex_args)),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![tool_call("tool-c1", "read_file", Some(complex_args))],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-complex", "read file");
     prompt_with(
@@ -284,19 +241,13 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     // `ToolCallContent::Diff` entry in its `content` array, the
     // diff must surface on the live `StreamingChunk::ToolStart`
     // so the TUI can render it in scrollback as the call appears.
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification_with_diff(
-                "ses-diff",
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![tool_call_with_diff(
                 "tool-d1",
                 "Edit",
                 Some(json!({
@@ -307,12 +258,13 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
                 "/tmp/foo.rs",
                 Some("fn old() {}\n"),
                 "fn new() {}\n",
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+            )],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-diff", "edit file");
     prompt_with(
@@ -353,46 +305,37 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
     // chunk — they were previously being silently dropped because the
     // post-stream replay in `acp_handle.rs` filters out tool ids that
     // were already announced via `ToolStart`.
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
 
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        // 1. Initial tool_call frame: NO diffs yet (mimics Claude Code).
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                "ses-late-diff",
-                "tool-ld1",
-                "Edit",
-                Some(json!({
-                    "file_path": "/tmp/late.rs",
-                    "old_string": "old",
-                    "new_string": "new",
-                })),
-            ),
-        )
-        .await;
-
-        // 2. Later tool_call_update frame carries the diff content.
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_with_diff(
-                "ses-late-diff",
-                "tool-ld1",
-                "/tmp/late.rs",
-                Some("fn old() {}\n"),
-                "fn new() {}\n",
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                // 1. Initial tool_call frame: NO diffs yet (mimics Claude Code).
+                tool_call(
+                    "tool-ld1",
+                    "Edit",
+                    Some(json!({
+                        "file_path": "/tmp/late.rs",
+                        "old_string": "old",
+                        "new_string": "new",
+                    })),
+                ),
+                // 2. Later tool_call_update frame carries the diff content.
+                tool_call_update_with_diff(
+                    "tool-ld1",
+                    "/tmp/late.rs",
+                    Some("fn old() {}\n"),
+                    "fn new() {}\n",
+                ),
+            ],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-late-diff", "edit late");
     prompt_with(
@@ -447,38 +390,25 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_result_emits_chunk() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                "ses-result",
-                "tool-r1",
-                "read_note",
-                Some(json!({"path": "README.md"})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                "ses-result",
-                "tool-r1",
-                Some(json!("# README\n\nThis is the readme content.")),
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                tool_call("tool-r1", "read_note", Some(json!({"path": "README.md"}))),
+                tool_call_update(
+                    "tool-r1",
+                    "completed",
+                    Some(json!("# README\n\nThis is the readme content.")),
+                ),
+            ],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-result", "read readme");
     prompt_with(
@@ -522,38 +452,29 @@ async fn tool_end_with_result_emits_chunk() {
 
 #[tokio::test]
 async fn tool_end_with_error_emits_error_field() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                "ses-error",
-                "tool-e1",
-                "write_file",
-                Some(json!({"path": "/protected/file.txt", "content": "test"})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_failed(
-                "ses-error",
-                "tool-e1",
-                Some(json!({"error": "permission denied: /protected/file.txt"})),
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                tool_call(
+                    "tool-e1",
+                    "write_file",
+                    Some(json!({"path": "/protected/file.txt", "content": "test"})),
+                ),
+                tool_call_update(
+                    "tool-e1",
+                    "failed",
+                    Some(json!({"error": "permission denied: /protected/file.txt"})),
+                ),
+            ],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-error", "write file");
     prompt_with(
@@ -588,29 +509,21 @@ async fn tool_end_with_error_emits_error_field() {
 
 #[tokio::test]
 async fn tool_end_failed_without_output_has_generic_error() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification("ses-fail-no-out", "tool-f1", "broken_tool", None),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_failed("ses-fail-no-out", "tool-f1", None),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                tool_call("tool-f1", "broken_tool", None),
+                tool_call_update("tool-f1", "failed", None),
+            ],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-fail-no-out", "try broken");
     prompt_with(
@@ -648,20 +561,15 @@ async fn tool_end_failed_without_output_has_generic_error() {
 
 #[tokio::test]
 async fn stream_without_usage_data_completes_gracefully() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            text_chunk("ses-no-usage", "Hello from agent"),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![Step::Text("Hello from agent".into())],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-no-usage", "say hello");
     let (chunks, callback) = crate::support::parity::capture_chunks();
@@ -683,14 +591,7 @@ async fn stream_without_usage_data_completes_gracefully() {
 
 #[tokio::test]
 async fn empty_stream_no_usage_no_chunks_completes() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(MockScript::default(), Some(500), None).await;
 
     let request = make_prompt_request("ses-empty", "nothing");
     let (chunks, callback) = crate::support::parity::capture_chunks();
@@ -705,50 +606,31 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
 #[tokio::test]
 async fn full_flow_text_tool_result_text_via_callback() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(500)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(
-            &mut agent_writer,
-            text_chunk("ses-full", "Let me search for that. "),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                "ses-full",
-                "tool-s1",
-                "mcp__crucible__semantic_search",
-                Some(json!({"query": "async patterns"})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                "ses-full",
-                "tool-s1",
-                Some(json!("Found 3 relevant notes about async patterns.")),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            text_chunk("ses-full", "Based on the results, here is your answer."),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                Step::Text("Let me search for that. ".into()),
+                tool_call(
+                    "tool-s1",
+                    "mcp__crucible__semantic_search",
+                    Some(json!({"query": "async patterns"})),
+                ),
+                tool_call_update(
+                    "tool-s1",
+                    "completed",
+                    Some(json!("Found 3 relevant notes about async patterns.")),
+                ),
+                Step::Text("Based on the results, here is your answer.".into()),
+            ],
+            ..MockScript::default()
+        },
+        Some(500),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request("ses-full", "search async patterns");
     let (summary, _response) = prompt_with(

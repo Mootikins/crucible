@@ -19,27 +19,31 @@
 //! through, so a block that never reaches the attachment seam is invisible to
 //! every in-process assertion.
 //!
-//! So these tests drive a real `mock-acp-agent` PROCESS and read the file it
-//! wrote (`CRU_MOCK_PROMPT_CAPTURE`). The assertions are on bytes that crossed
+//! So these tests drive a real `mock-acp-agent` PROCESS and read the frame log
+//! it wrote (`log` in the `MockScript`). The assertions are on bytes that crossed
 //! the process boundary. The whole chain runs through the daemon's own socket:
 //! `diff.comment` stores the comment, `session.send_message` carries the
 //! reference, and the refusals come back as JSON-RPC errors.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crucible_core::config::BackendType;
+use crucible_core::config::{AcpConfig, BackendType};
 use crucible_core::diff::{CommentRef, DiffsetSource};
 use crucible_core::session::{CommentSide, PhysicalRoot, SessionAgent};
 use crucible_daemon::rpc_client::{DiffCommentRequest, SessionCreateParams};
 use crucible_daemon::test_support::{git, init_repo, kiln_name};
-use crucible_daemon::{DaemonClient, Server, SessionEvent};
+use crucible_daemon::{BindWithPluginConfigParams, DaemonClient, Server, SessionEvent};
 use tempfile::TempDir;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent_bin::{mock_agent_path, mock_session_agent};
+use mock_agent::{logged, MockScript, Step};
+use mock_agent_bin::{mock_profile, mock_session_agent, profile_session_agent, MOCK_PROFILE};
 
 /// What the mock agent streams, so the turn ends with a real answer.
 const ANSWER: &str = "understood";
@@ -85,9 +89,23 @@ impl Fixture {
         std::fs::create_dir_all(&kiln).expect("kiln dir");
         let data = dir.path().join("data");
         let socket = dir.path().join("daemon.sock");
-        let server = Server::bind_with_data_home_and_kilns(&socket, data.clone(), &[(KILN, &kiln)])
-            .await
-            .expect("bind the daemon");
+        // The daemon runs an ACP agent only through a profile, so the mock
+        // binary gets one. The script travels in the session agent's env.
+        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams {
+            path: socket.clone(),
+            config_home: Some(data.join("config")),
+            data_home: Some(data.clone()),
+            app_config: Some(serde_json::json!({
+                "kilns": { KILN: kiln.to_string_lossy() }
+            })),
+            acp_config: Some(AcpConfig {
+                agents: [(MOCK_PROFILE.to_string(), mock_profile(BTreeMap::new()))].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("bind the daemon");
         let shutdown = server.shutdown_handle();
         let task = tokio::spawn(server.run());
 
@@ -239,18 +257,30 @@ impl Fixture {
     }
 }
 
-/// An ACP agent that runs the mock binary, streams `ANSWER` and writes each
-/// prompt it receives to `capture`.
+/// An ACP agent that runs the mock binary, streams `ANSWER` and logs each
+/// frame it receives to `capture`.
 fn acp_agent(capture: &Path) -> SessionAgent {
-    let mut agent = mock_session_agent(&mock_agent_path().to_string_lossy());
+    let mut agent = profile_session_agent(MOCK_PROFILE);
+    let script = MockScript {
+        turn: vec![Step::Text(ANSWER.to_string())],
+        log: Some(capture.to_path_buf()),
+        ..MockScript::default()
+    };
+    agent.env_overrides.extend([script.env()]);
     agent
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
-    agent.env_overrides.insert(
-        "CRU_MOCK_PROMPT_CAPTURE".to_string(),
-        capture.to_string_lossy().into_owned(),
-    );
-    agent
+}
+
+/// The text of the last prompt that the agent process logged, or `None`
+/// when it logged no prompt.
+fn last_prompt(capture: &Path) -> Option<String> {
+    logged(capture, "session/prompt").last().map(|prompt| {
+        prompt["prompt"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|block| block["text"].as_str())
+            .collect()
+    })
 }
 
 /// An internal agent whose provider endpoint the test owns.
@@ -311,8 +341,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
         .expect("the daemon accepts the message");
     fixture.wait_for(&session, "message_complete").await;
 
-    let prompt = std::fs::read_to_string(&capture)
-        .expect("the agent process must capture the prompt it received");
+    let prompt = last_prompt(&capture).expect("the agent process must log the prompt it received");
 
     for part in [
         format!(
@@ -371,7 +400,7 @@ async fn a_later_turn_without_a_reference_carries_no_block() {
         .expect("the daemon accepts the second message");
     fixture.wait_for(&session, "message_complete").await;
 
-    let prompt = std::fs::read_to_string(&capture).expect("the second prompt");
+    let prompt = last_prompt(&capture).expect("the second prompt");
     assert!(
         !prompt.contains("review-comment"),
         "a turn that attaches nothing must carry no block; the agent received: {prompt:?}"
@@ -411,7 +440,7 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
         )
         .await
         .expect("the daemon accepts the ACP message");
-    // The ACP turn has to finish: the agent process writes the capture file.
+    // The ACP turn has to finish: the agent process logs the prompt.
     fixture.wait_for(&acp, "message_complete").await;
 
     fixture
@@ -457,7 +486,7 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
     );
 
     // Both agents saw the same block; only their histories differ.
-    let prompt = std::fs::read_to_string(&capture).expect("the ACP prompt");
+    let prompt = last_prompt(&capture).expect("the ACP prompt");
     assert!(
         prompt.contains(COMMENT_BODY),
         "the ACP agent still receives the block in its prompt: {prompt:?}"
@@ -512,7 +541,7 @@ async fn an_unknown_comment_id_refuses_both_routes_alike() {
 
     // The refusal stops the turn: the agent process saw no prompt at all.
     assert!(
-        !capture.exists(),
+        last_prompt(&capture).is_none(),
         "a refused message must start no ACP turn"
     );
 

@@ -2,12 +2,9 @@
 //! flow correctly through the ACP streaming pipeline and that tool results
 //! are captured in the accumulated output.
 
-use crate::scripted_agent::prompt_with;
-use crate::scripted_agent::{
-    client_with_custom_transport, final_response, make_prompt_request, mcp_http_open_session,
-    mcp_http_request, read_frame, read_request_id, text_chunk, tool_call_notification,
-    tool_call_update_completed, write_json_line,
-};
+use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};
+use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
+use crate::support::{connect, logged, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -16,58 +13,37 @@ use std::sync::{Arc, Mutex};
 /// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_read_file() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
     let session_id = "ses-roundtrip-read";
 
-    tokio::spawn(async move {
-        // Agent reads the prompt request
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        // Agent emits initial text
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(session_id, "Let me read that file for you. "),
-        )
-        .await;
-
-        // Agent calls read_file tool
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                session_id,
-                "tc-read-1",
-                "read_file",
-                Some(json!({"path": "/tmp/test.md"})),
-            ),
-        )
-        .await;
-
-        // Tool completes with file content
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                session_id,
-                "tc-read-1",
-                Some(json!("# Test File\n\nThis is the content of the file.")),
-            ),
-        )
-        .await;
-
-        // Agent emits post-tool text
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(session_id, "The file contains a heading and a paragraph."),
-        )
-        .await;
-
-        // Final response
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                // Agent emits initial text
+                Step::Text("Let me read that file for you. ".into()),
+                // Agent calls read_file tool
+                tool_call(
+                    "tc-read-1",
+                    "read_file",
+                    Some(json!({"path": "/tmp/test.md"})),
+                ),
+                // Tool completes with file content
+                tool_call_update(
+                    "tc-read-1",
+                    "completed",
+                    Some(json!("# Test File\n\nThis is the content of the file.")),
+                ),
+                // Agent emits post-tool text
+                Step::Text("The file contains a heading and a paragraph.".into()),
+            ],
+            ..MockScript::default()
+        },
+        Some(5000),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
     let (_summary, response) = prompt_with(
@@ -168,77 +144,47 @@ async fn test_acp_tool_roundtrip_read_file() {
 /// and arrive in the correct order.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_multiple_tools() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000)).await;
-
     let chunks: Arc<Mutex<Vec<StreamingChunk>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
     let session_id = "ses-roundtrip-multi";
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        // First tool call: semantic_search
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                session_id,
-                "tc-search-1",
-                "mcp__crucible__semantic_search",
-                Some(json!({"query": "async patterns", "limit": 3})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                session_id,
-                "tc-search-1",
-                Some(json!("Found 3 notes about async patterns.")),
-            ),
-        )
-        .await;
-
-        // Text between tools
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(session_id, "Let me also check the config. "),
-        )
-        .await;
-
-        // Second tool call: read_file
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                session_id,
-                "tc-read-2",
-                "read_file",
-                Some(json!({"path": "/home/user/config.toml"})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                session_id,
-                "tc-read-2",
-                Some(json!("[settings]\ntheme = \"dark\"")),
-            ),
-        )
-        .await;
-
-        // Final text
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(session_id, "Done reviewing both sources."),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                // First tool call: semantic_search
+                tool_call(
+                    "tc-search-1",
+                    "mcp__crucible__semantic_search",
+                    Some(json!({"query": "async patterns", "limit": 3})),
+                ),
+                tool_call_update(
+                    "tc-search-1",
+                    "completed",
+                    Some(json!("Found 3 notes about async patterns.")),
+                ),
+                // Text between tools
+                Step::Text("Let me also check the config. ".into()),
+                // Second tool call: read_file
+                tool_call(
+                    "tc-read-2",
+                    "read_file",
+                    Some(json!({"path": "/home/user/config.toml"})),
+                ),
+                tool_call_update(
+                    "tc-read-2",
+                    "completed",
+                    Some(json!("[settings]\ntheme = \"dark\"")),
+                ),
+                // Final text
+                Step::Text("Done reviewing both sources.".into()),
+            ],
+            ..MockScript::default()
+        },
+        Some(5000),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request(session_id, "search and read config");
     let (summary, _response) = prompt_with(
@@ -284,11 +230,11 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     assert!(content.contains("Done reviewing"));
 }
 
-/// The scripted agent takes the MCP url from the `session/new` frame the
-/// client sent, calls `list_notes` on the real in-process MCP host, and
-/// relays the host's answer as the tool call's raw output. The `ToolEnd`
-/// chunk must carry exactly that answer, so the whole path is real except
-/// the agent's own decision to call the tool.
+/// The test first asks the real in-process MCP host for the `list_notes`
+/// answer. The mock agent then takes the MCP url from the `session/new`
+/// frame that the client sent, and calls `list_notes` on the host. It also
+/// sends the host's answer as the raw output of its tool call. The `ToolEnd`
+/// chunk must carry exactly that answer.
 #[tokio::test]
 async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     use crucible_core::enrichment::EmbeddingProvider;
@@ -318,98 +264,74 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     .await
     .expect("the in-process MCP host binds to localhost");
 
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000)).await;
-    let acp_session_id = "ses-mcp-roundtrip";
+    let url = host.mcp_url();
+    let http = reqwest::Client::new();
+    let mcp_session = mcp_http_open_session(&http, &url).await;
+    let reply = mcp_http_request(
+        &http,
+        &url,
+        &mcp_session,
+        2,
+        "tools/call",
+        json!({"name": "list_notes", "arguments": {}}),
+    )
+    .await;
+    let tool_output = reply["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("list_notes answered with no text: {reply}"))
+        .to_string();
 
-    let agent = tokio::spawn(async move {
-        let init = read_frame(&mut agent_reader).await;
-        assert_eq!(init["method"], "initialize");
-        write_json_line(
-            &mut agent_writer,
-            json!({
-                "jsonrpc": "2.0",
-                "id": init["id"],
-                "result": {
-                    "protocolVersion": 1,
-                    "agentCapabilities": {"mcpCapabilities": {"http": true, "sse": false}},
-                    "authMethods": []
-                }
-            }),
-        )
-        .await;
+    let log_dir = TempDir::new().unwrap();
+    let log = log_dir.path().join("agent.jsonl");
+    let (mut client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                tool_call("tc-list-1", "mcp__crucible__list_notes", Some(json!({}))),
+                Step::McpCall {
+                    tool: "list_notes".into(),
+                    args: json!({}),
+                },
+                tool_call_update("tc-list-1", "completed", Some(json!(tool_output))),
+            ],
+            log: Some(log.clone()),
+            ..MockScript::default()
+        },
+        Some(5000),
+        None,
+    )
+    .await;
 
-        let new_session = read_frame(&mut agent_reader).await;
-        assert_eq!(new_session["method"], "session/new");
-        let mcp_url = new_session["params"]["mcpServers"][0]["url"]
-            .as_str()
-            .unwrap_or_else(|| panic!("session/new offers no HTTP MCP url: {new_session}"))
-            .to_string();
-        write_json_line(
-            &mut agent_writer,
-            json!({
-                "jsonrpc": "2.0",
-                "id": new_session["id"],
-                "result": {"sessionId": acp_session_id}
-            }),
-        )
-        .await;
-
-        let prompt_request_id = read_request_id(&mut agent_reader).await;
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                acp_session_id,
-                "tc-list-1",
-                "mcp__crucible__list_notes",
-                Some(json!({})),
-            ),
-        )
-        .await;
-
-        let http = reqwest::Client::new();
-        let mcp_session = mcp_http_open_session(&http, &mcp_url).await;
-        let reply = mcp_http_request(
-            &http,
-            &mcp_url,
-            &mcp_session,
-            2,
-            "tools/call",
-            json!({"name": "list_notes", "arguments": {}}),
-        )
-        .await;
-        let tool_output = reply["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap_or_else(|| panic!("list_notes answered with no text: {reply}"))
-            .to_string();
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(acp_session_id, "tc-list-1", Some(json!(tool_output))),
-        )
-        .await;
-        write_json_line(&mut agent_writer, final_response(prompt_request_id)).await;
-        tool_output
-    });
-
-    client
-        .handshake(Some(&host.mcp_url()), None)
+    let session = client
+        .handshake(Some(&url), None)
         .await
-        .expect("the scripted agent completes the handshake");
+        .expect("the mock agent completes the handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
     let turn = prompt_with(
         &client,
-        make_prompt_request(acp_session_id, "list my notes"),
+        make_prompt_request(session.id(), "list my notes"),
         callback,
     )
     .await;
-    let tool_output = agent.await.expect("the scripted agent finished its turn");
     let (summary, _response) = turn.expect("MCP tool roundtrip should complete");
 
     assert!(
         tool_output.contains("test-note"),
         "the real MCP host lists the kiln's note, got: {tool_output}"
+    );
+
+    // The agent reached the host through the url that `session/new` offered,
+    // and the host gave it the same answer.
+    let agent_reply = logged(&log, "mcp/result");
+    let agent_reply: serde_json::Value = agent_reply
+        .first()
+        .and_then(serde_json::Value::as_str)
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or_else(|| panic!("the agent's MCP call failed: {agent_reply:?}"));
+    assert_eq!(
+        agent_reply["result"]["content"][0]["text"],
+        tool_output.as_str(),
+        "the agent's own MCP call must reach the same host"
     );
 
     let captured = chunks.lock().unwrap().clone();
@@ -444,48 +366,31 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
 /// appear in the final content string.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_content_after_tool() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(5000)).await;
-
     let session_id = "ses-roundtrip-after";
 
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        // Tool call with no preceding text
-        write_json_line(
-            &mut agent_writer,
-            tool_call_notification(
-                session_id,
-                "tc-grep-1",
-                "grep",
-                Some(json!({"pattern": "fn main", "path": "/src"})),
-            ),
-        )
-        .await;
-
-        write_json_line(
-            &mut agent_writer,
-            tool_call_update_completed(
-                session_id,
-                "tc-grep-1",
-                Some(json!("src/main.rs:1:fn main() {")),
-            ),
-        )
-        .await;
-
-        // Text referencing the tool result
-        write_json_line(
-            &mut agent_writer,
-            text_chunk(
-                session_id,
-                "The main function is defined at line 1 of src/main.rs.",
-            ),
-        )
-        .await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let (client, _agent) = connect(
+        MockScript {
+            turn: vec![
+                // Tool call with no preceding text
+                tool_call(
+                    "tc-grep-1",
+                    "grep",
+                    Some(json!({"pattern": "fn main", "path": "/src"})),
+                ),
+                tool_call_update(
+                    "tc-grep-1",
+                    "completed",
+                    Some(json!("src/main.rs:1:fn main() {")),
+                ),
+                // Text referencing the tool result
+                Step::Text("The main function is defined at line 1 of src/main.rs.".into()),
+            ],
+            ..MockScript::default()
+        },
+        Some(5000),
+        None,
+    )
+    .await;
 
     let request = make_prompt_request(session_id, "find main function");
     let (chunks, callback) = crate::support::parity::capture_chunks();

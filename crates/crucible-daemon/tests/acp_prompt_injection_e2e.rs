@@ -18,9 +18,9 @@
 //! handle is the one consumer that must re-linearize the message array
 //! instead of passing it through.
 //!
-//! These tests read the file the agent process wrote
-//! (`CRU_MOCK_PROMPT_CAPTURE`), so the assertions are on bytes that crossed
-//! a process boundary, not on a struct the test also built.
+//! These tests read the frame log that the agent process wrote (`log` in the
+//! `MockScript`), so the assertions are on bytes that crossed a process
+//! boundary, not on a struct the test also built.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -37,8 +37,11 @@ use crucible_lua::PluginSource;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{logged, MockScript, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
 };
@@ -63,15 +66,14 @@ const USER_MESSAGE: &str = "How do I set the tolerance?";
 /// The mock's embedding width, matching `EmbeddingProviderConfig::mock`.
 const EMBEDDING_DIMENSIONS: u32 = 384;
 
-/// The ACP profile the session runs, capturing its prompt to `capture`.
-fn capturing_profile(capture: &Path) -> AgentProfile {
-    let mut env = BTreeMap::new();
-    env.insert(
-        "CRU_MOCK_PROMPT_CAPTURE".to_string(),
-        capture.to_string_lossy().into_owned(),
-    );
-    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
-    mock_profile(env)
+/// The ACP profile the session runs. The agent logs its frames to `log`.
+fn capturing_profile(log: &Path) -> AgentProfile {
+    let script = MockScript {
+        turn: vec![Step::Text(ANSWER.to_string())],
+        log: Some(log.to_path_buf()),
+        ..MockScript::default()
+    };
+    mock_profile(BTreeMap::from([script.env()]))
 }
 
 fn acp_agent(precognition_enabled: bool) -> SessionAgent {
@@ -97,11 +99,11 @@ async fn load_plugin(root: &Path, init: &str) -> DaemonPluginLoader {
     loader
 }
 
-/// Everything a turn needs, plus the file the agent process writes its
-/// received prompt to.
+/// Everything a turn needs, plus the file the agent process logs its
+/// received frames to.
 struct Harness {
     _temp: TempDir,
-    capture_path: PathBuf,
+    log_path: PathBuf,
     agent_manager: Arc<AgentManager>,
     session_id: crucible_core::session::SessionId,
     event_tx: broadcast::Sender<SessionEventMessage>,
@@ -114,7 +116,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
     let kiln_path = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln_path).expect("kiln dir");
     std::fs::write(kiln_path.join(NOTE_FILE), NOTE_BODY).expect("write note");
-    let capture_path = temp.path().join("captured_prompt.txt");
+    let log_path = temp.path().join("mock-agent.log");
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
     let (event_tx, _event_rx) = broadcast::channel(256);
@@ -144,7 +146,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
         plugin_loader: Some(plugin_loader),
         ..acp_manager_params(
             session_manager.clone(),
-            BTreeMap::from([(MOCK_PROFILE.to_string(), capturing_profile(&capture_path))]),
+            BTreeMap::from([(MOCK_PROFILE.to_string(), capturing_profile(&log_path))]),
             &event_tx,
         )
     }));
@@ -191,7 +193,7 @@ async fn setup(precognition_enabled: bool, plugin_init: Option<&str>) -> Harness
 
     Harness {
         _temp: temp,
-        capture_path,
+        log_path,
         agent_manager,
         session_id: session.id,
         event_tx,
@@ -214,8 +216,16 @@ async fn prompt_seen_by_the_agent(h: &Harness) -> String {
     let outcome = completed_turn(done, TURN_TIMEOUT).await;
     assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
-    std::fs::read_to_string(&h.capture_path)
-        .expect("the agent process must have captured the prompt it received")
+    let prompts = logged(&h.log_path, "session/prompt");
+    let prompt = prompts
+        .last()
+        .expect("the agent process must have logged the prompt it received");
+    prompt["prompt"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block["text"].as_str())
+        .collect()
 }
 
 /// The headline: kiln context the daemon retrieved reaches the external

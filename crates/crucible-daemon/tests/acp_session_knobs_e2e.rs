@@ -29,11 +29,15 @@ use crucible_core::types::SessionKnob;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::AgentManager;
+use serde_json::Value;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{logged, read_log, MockScript, Resume, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
 };
@@ -43,36 +47,44 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 /// What the mock agent streams on every turn.
 const ANSWER: &str = "acknowledged";
 
-/// A profile that runs the mock agent and appends every method it receives to
-/// `log_path`. Resume is OFF: an agent that cannot resume is the one a killed
-/// process costs the most, so the test fails loudly rather than recovering.
-/// `extra_env` adds hooks on top, for an agent that advertises more.
-fn logging_profile(log_path: &Path, extra_env: &[(&str, &str)]) -> AgentProfile {
-    let mut env = BTreeMap::new();
-    // The agent advertises settings of its own, which Crucible has no knob
-    // for and passes through untouched.
-    env.insert(
-        "CRU_MOCK_ADVERTISE_AGENT_OPTIONS".to_string(),
-        "low".to_string(),
-    );
-    env.insert(
-        "CRU_MOCK_MODEL_CAPTURE".to_string(),
-        log_path
-            .with_extension("option")
-            .to_string_lossy()
-            .into_owned(),
-    );
-    env.insert("CRU_MOCK_STREAM_CHUNKS".to_string(), ANSWER.to_string());
-    env.insert(
-        "CRU_MOCK_METHOD_LOG".to_string(),
-        log_path.to_string_lossy().into_owned(),
-    );
-    env.extend(
-        extra_env
-            .iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string())),
-    );
-    mock_profile(env)
+/// The script of the mock agent. Resume is OFF: an agent that cannot resume
+/// is the one a killed process costs the most, so the test fails loudly
+/// rather than recovering. A caller adds fields for an agent that
+/// advertises more.
+fn script() -> MockScript {
+    MockScript {
+        // The agent advertises settings of its own, which Crucible has no
+        // knob for and passes through untouched.
+        agent_options: Some("low".to_string()),
+        turn: vec![Step::Text(ANSWER.to_string())],
+        ..MockScript::default()
+    }
+}
+
+/// A profile that runs the mock agent with `script`. The agent appends
+/// every frame it receives to `log_path`.
+fn logging_profile(log_path: &Path, script: MockScript) -> AgentProfile {
+    let script = MockScript {
+        log: Some(log_path.to_path_buf()),
+        ..script
+    };
+    mock_profile(BTreeMap::from([script.env()]))
+}
+
+/// Each `session/set_config_option` in `frames`, as `configId=value`.
+fn option_sets(frames: &[Value]) -> Vec<String> {
+    frames
+        .iter()
+        .filter(|frame| frame["method"] == "session/set_config_option")
+        .map(|frame| {
+            let params = &frame["params"];
+            format!(
+                "{}={}",
+                params["configId"].as_str().unwrap_or_default(),
+                params["value"].as_str().unwrap_or_default()
+            )
+        })
+        .collect()
 }
 
 struct Harness {
@@ -84,11 +96,11 @@ struct Harness {
 }
 
 async fn setup() -> Harness {
-    setup_with(&[]).await
+    setup_with(script()).await
 }
 
-/// `setup` with extra mock hooks on the agent profile.
-async fn setup_with(extra_env: &[(&str, &str)]) -> Harness {
+/// `setup` with a script that the caller builds.
+async fn setup_with(script: MockScript) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
@@ -99,10 +111,7 @@ async fn setup_with(extra_env: &[(&str, &str)]) -> Harness {
 
     let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
         session_manager.clone(),
-        BTreeMap::from([(
-            MOCK_PROFILE.to_string(),
-            logging_profile(&log_path, extra_env),
-        )]),
+        BTreeMap::from([(MOCK_PROFILE.to_string(), logging_profile(&log_path, script))]),
         &event_tx,
     )));
 
@@ -136,11 +145,7 @@ async fn run_a_turn(h: &Harness) {
 
 /// One `initialize` per agent process, so counting them counts processes.
 fn handshakes(h: &Harness) -> usize {
-    std::fs::read_to_string(&h.log_path)
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| l.starts_with("initialize"))
-        .count()
+    logged(&h.log_path, "initialize").len()
 }
 
 /// The headline: a knob change must not kill the agent.
@@ -176,10 +181,11 @@ async fn changing_a_knob_does_not_restart_the_agent_process() {
 /// cost the agent either.
 #[tokio::test]
 async fn no_knob_restarts_the_agent_process() {
-    let h = setup_with(&[
-        ("CRU_MOCK_ADVERTISE_MODELS", "1"),
-        ("CRU_MOCK_ADVERTISE_MODES", "default"),
-    ])
+    let h = setup_with(MockScript {
+        models: true,
+        mode: Some("default".to_string()),
+        ..script()
+    })
     .await;
     run_a_turn(&h).await;
 
@@ -207,10 +213,11 @@ async fn no_knob_restarts_the_agent_process() {
                     .await
                     .expect("the agent advertised mock-opus");
                 assert_eq!(
-                    std::fs::read_to_string(h.log_path.with_extension("option"))
-                        .expect("the switch reached the agent")
-                        .trim(),
-                    "model=mock-opus"
+                    option_sets(&read_log(&h.log_path))
+                        .last()
+                        .map(String::as_str),
+                    Some("model=mock-opus"),
+                    "the switch reached the agent"
                 );
             }
             SessionKnob::Mode => h
@@ -392,11 +399,10 @@ async fn setting_an_agent_option_reaches_the_agent() {
         .await
         .expect("the agent advertised this option");
 
-    let captured = std::fs::read_to_string(h.log_path.with_extension("option"))
-        .expect("the agent process must have received a session/set_config_option");
+    let captured = option_sets(&read_log(&h.log_path));
     assert_eq!(
-        captured.trim(),
-        "thought_level=high",
+        captured.last().map(String::as_str),
+        Some("thought_level=high"),
         "the option and its value must reach the agent unchanged"
     );
 
@@ -411,17 +417,13 @@ async fn setting_an_agent_option_reaches_the_agent() {
     );
 }
 
-/// The lines of the method log that the agent process of the LAST handshake
+/// The frames of the log that the agent process of the LAST handshake
 /// received. Each `initialize` starts a new agent process.
-fn last_process_methods(log_path: &Path) -> Vec<String> {
-    let log: Vec<String> = std::fs::read_to_string(log_path)
-        .unwrap_or_default()
-        .lines()
-        .map(str::to_string)
-        .collect();
+fn last_process_frames(log_path: &Path) -> Vec<Value> {
+    let log = read_log(log_path);
     let start = log
         .iter()
-        .rposition(|l| l.starts_with("initialize"))
+        .rposition(|frame| frame["method"] == "initialize")
         .expect("at least one agent process started");
     log[start..].to_vec()
 }
@@ -441,23 +443,19 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
     let log_path = temp.path().join("methods.log");
-    let mode_capture = temp.path().join("mode.capture");
-    let model_capture = log_path.with_extension("option");
-    let mode_capture_str = mode_capture.to_string_lossy().into_owned();
 
     let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _events) = broadcast::channel(256);
-    let hooks: Vec<(&str, &str)> = vec![
-        ("CRU_MOCK_ADVERTISE_MODELS", "1"),
-        ("CRU_MOCK_ADVERTISE_MODES", "default"),
-        ("CRU_MOCK_MODE_CAPTURE", &mode_capture_str),
-        ("CRU_MOCK_SESSION_RESUME", "1"),
-    ];
-    let manager = |extra: &[(&str, &str)]| {
-        let env: Vec<(&str, &str)> = hooks.iter().chain(extra).copied().collect();
+    let manager = |resume: Resume| {
+        let script = MockScript {
+            models: true,
+            mode: Some("default".to_string()),
+            session_resume: Some(resume),
+            ..script()
+        };
         Arc::new(AgentManager::new(acp_manager_params(
             session_manager.clone(),
-            BTreeMap::from([(MOCK_PROFILE.to_string(), logging_profile(&log_path, &env))]),
+            BTreeMap::from([(MOCK_PROFILE.to_string(), logging_profile(&log_path, script))]),
             &event_tx,
         )))
     };
@@ -479,7 +477,7 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
     let id = session.id.as_str().to_string();
 
     // Manager one: open the agent session, then set both values.
-    let first = manager(&[]);
+    let first = manager(Resume::Adopt);
     first
         .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
         .await
@@ -505,21 +503,28 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
         .await
         .expect("the agent advertised mock-opus");
     drop(first);
-
-    // Remove the captures of manager one, so that each capture below can
-    // only come from the rebuilt handle.
-    std::fs::remove_file(&mode_capture).expect("manager one sent the mode");
-    std::fs::remove_file(&model_capture).expect("manager one sent the model");
+    let first_frames = read_log(&log_path);
+    assert!(
+        first_frames
+            .iter()
+            .any(|frame| frame["method"] == "session/set_mode"),
+        "manager one sent the mode"
+    );
+    assert!(
+        !option_sets(&first_frames).is_empty(),
+        "manager one sent the model"
+    );
 
     // Manager two: a cold handle cache, like a restarted daemon.
-    let second = if resume_unknown {
-        manager(&[("CRU_MOCK_RESUME_UNKNOWN", "1")])
+    let second = manager(if resume_unknown {
+        Resume::Unknown
     } else {
-        manager(&[])
-    };
+        Resume::Adopt
+    });
     turn(second.clone(), id.clone()).await;
 
-    let methods = last_process_methods(&log_path);
+    // Only the frames of the rebuilt handle's process count below.
+    let methods = last_process_frames(&log_path);
     let stored = session_manager
         .get_session(&id)
         .and_then(|s| s.agent)
@@ -532,15 +537,18 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
         "plan",
         "the rebuilt handle must report the stored mode"
     );
+    let modes: Vec<&Value> = methods
+        .iter()
+        .filter(|frame| frame["method"] == "session/set_mode")
+        .map(|frame| &frame["params"]["modeId"])
+        .collect();
     assert!(
-        methods.iter().any(|l| l.starts_with("session/set_mode")),
+        !modes.is_empty(),
         "the rebuilt handle must send the stored mode to the agent; methods: {methods:?}"
     );
     assert_eq!(
-        std::fs::read_to_string(&mode_capture)
-            .unwrap_or_default()
-            .trim(),
-        "plan",
+        modes.last().and_then(|mode| mode.as_str()),
+        Some("plan"),
         "the agent must receive the stored mode"
     );
 
@@ -551,18 +559,15 @@ async fn knobs_survive_a_handle_rebuild(resume_unknown: bool) {
     // `session/new` gives the handle a selector.
     if resume_unknown {
         assert_eq!(stored.model, "mock-opus", "the stored model");
+        let options = option_sets(&methods);
         assert!(
-            methods
-                .iter()
-                .any(|l| l.starts_with("session/set_config_option")),
+            !options.is_empty(),
             "the rebuilt handle must send the stored model to the new agent \
              session; methods: {methods:?}"
         );
         assert_eq!(
-            std::fs::read_to_string(&model_capture)
-                .unwrap_or_default()
-                .trim(),
-            "model=mock-opus",
+            options.last().map(String::as_str),
+            Some("model=mock-opus"),
             "the agent must run the model that the session shows"
         );
     }

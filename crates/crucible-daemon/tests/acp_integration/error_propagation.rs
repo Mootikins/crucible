@@ -1,21 +1,34 @@
-use crate::scripted_agent::prompt_with;
-use crate::scripted_agent::{client_with_custom_transport, make_prompt_request};
-use crate::support::ThreadedMockAgent;
-use crucible_daemon::acp::ClientError;
+use crate::support::mock_agent::make_prompt_request;
+use crate::support::{connect, prompt_with, MockScript, Step};
+use crucible_daemon::acp::client::ClientConfig;
+use crucible_daemon::acp::{ClientError, CrucibleAcpClient};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 #[tokio::test]
 async fn test_error_connection_timeout_when_agent_never_responds() {
     tokio::time::pause();
 
-    let (mut client, mut agent_reader, _agent_writer) = client_with_custom_transport(Some(1)).await;
-
-    tokio::spawn(async move {
-        let mut request_line = String::new();
-        let _ = agent_reader.read_line(&mut request_line).await;
-        std::future::pending::<()>().await;
-    });
+    // Every mock agent answers `initialize`. An agent that never answers is a
+    // pipe that nobody reads, so this test uses a bare pipe.
+    let (client_end, _agent_end) = tokio::io::duplex(64 * 1024);
+    let (client_read, client_write) = tokio::io::split(client_end);
+    let mut client = {
+        use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+        CrucibleAcpClient::connect(
+            ClientConfig {
+                timeout_ms: Some(1),
+                ..Default::default()
+            },
+            agent_client_protocol::ByteStreams::new(
+                client_write.compat_write(),
+                client_read.compat(),
+            ),
+            "silent-agent",
+            None,
+        )
+        .await
+        .expect("the client connects")
+    };
 
     let connect_task = tokio::spawn(async move { client.handshake(None, None).await });
 
@@ -35,38 +48,25 @@ async fn test_error_connection_timeout_when_agent_never_responds() {
 async fn test_error_streaming_timeout_when_agent_stalls_after_first_chunk() {
     tokio::time::pause();
 
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(50)).await;
-
-    tokio::spawn(async move {
-        let mut request_line = String::new();
-        let _ = agent_reader.read_line(&mut request_line).await;
-
-        let update = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
-                "sessionId": "ses-timeout",
-                "update": {
-                    "sessionUpdate": "agent_message_chunk",
-                    "content": {"type": "text", "text": "partial"}
-                }
-            }
-        });
-
-        let _ = agent_writer
-            .write_all(format!("{}\n", update).as_bytes())
-            .await;
-        let _ = agent_writer.flush().await;
-
-        std::future::pending::<()>().await;
-    });
+    // The agent sends one chunk. Then it holds the turn open, also after a
+    // cancel.
+    let script = MockScript {
+        turn: vec![
+            Step::Text("partial".into()),
+            Step::Hold {
+                tick_ms: None,
+                ignore_cancel: true,
+            },
+        ],
+        ..MockScript::default()
+    };
+    let (client, _agent) = connect(script, Some(50), None).await;
 
     let stream_task = tokio::spawn(async move {
         prompt_with(
             &client,
             make_prompt_request("ses-timeout", "trigger streaming"),
-            Box::new(|_| true),
+            |_| true,
         )
         .await
     });
@@ -85,36 +85,16 @@ async fn test_error_streaming_timeout_when_agent_stalls_after_first_chunk() {
 
 #[tokio::test]
 async fn test_error_agent_crash_mid_stream_returns_connection_error() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(100)).await;
-
-    tokio::spawn(async move {
-        let mut request_line = String::new();
-        let _ = agent_reader.read_line(&mut request_line).await;
-
-        let update = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
-                "sessionId": "ses-crash",
-                "update": {
-                    "sessionUpdate": "agent_message_chunk",
-                    "content": {"type": "text", "text": "partial"}
-                }
-            }
-        });
-
-        let _ = agent_writer
-            .write_all(format!("{}\n", update).as_bytes())
-            .await;
-        let _ = agent_writer.flush().await;
-        drop(agent_writer);
-    });
+    let script = MockScript {
+        turn: vec![Step::Text("partial".into()), Step::Exit],
+        ..MockScript::default()
+    };
+    let (client, _agent) = connect(script, Some(100), None).await;
 
     let result = prompt_with(
         &client,
         make_prompt_request("ses-crash", "trigger streaming"),
-        Box::new(|_| true),
+        |_| true,
     )
     .await;
 
@@ -129,23 +109,22 @@ async fn test_error_agent_crash_mid_stream_returns_connection_error() {
 /// and promptly: a turn that waits out its timeout instead reports the wrong
 /// cause and holds the session for the whole timeout.
 #[tokio::test]
-async fn test_error_stream_abort_from_threaded_mock_agent_is_a_connection_error() {
-    let config = crate::support::MockStdioAgentConfig::opencode();
-    let (mut client, handle) = ThreadedMockAgent::spawn_with_client(config).await;
+async fn test_error_stream_abort_from_mock_agent_is_a_connection_error() {
+    let (mut client, agent) = connect(MockScript::default(), None, None).await;
 
     let _ = client
         .handshake(None, None)
         .await
         .expect("handshake should succeed before abort");
 
-    handle.abort();
+    agent.abort();
 
     let result = tokio::time::timeout(
         Duration::from_secs(5),
         prompt_with(
             &client,
             make_prompt_request("ses-abort", "trigger streaming"),
-            Box::new(|_| true),
+            |_| true,
         ),
     )
     .await

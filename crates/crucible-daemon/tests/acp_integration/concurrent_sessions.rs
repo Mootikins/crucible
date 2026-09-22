@@ -1,24 +1,17 @@
-use crate::scripted_agent::prompt_with;
-use crate::scripted_agent::{
-    client_with_custom_transport, final_response, make_prompt_request, read_request_id, text_chunk,
-    write_json_line,
-};
-use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
+use crate::support::mock_agent::make_prompt_request;
+use crate::support::{connect, prompt_with, MockScript, Step};
 use crucible_core::config::AcpConfig;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::acp::discovery::{discover_agent, reset_agent_cache};
 use crucible_daemon::acp::StreamingChunk;
 use tempfile::TempDir;
-use tokio::sync::Barrier;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 
 #[tokio::test]
 async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
-    let (mut client_a, _handle_a) =
-        ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode()).await;
-    let (mut client_b, _handle_b) =
-        ThreadedMockAgent::spawn_with_client(MockStdioAgentConfig::opencode()).await;
+    let (mut client_a, _agent_a) = connect(MockScript::default(), None, None).await;
+    let (mut client_b, _agent_b) = connect(MockScript::default(), None, None).await;
 
     let (session_a, session_b) = tokio::join!(
         client_a.handshake(None, None),
@@ -92,33 +85,12 @@ async fn discovery_cache_serves_a_removed_agent_until_it_is_reset() {
 
 #[tokio::test]
 async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams() {
-    let (mut client_a, mut agent_a_reader, mut agent_a_writer) =
-        client_with_custom_transport(Some(300)).await;
-    let (mut client_b, mut agent_b_reader, mut agent_b_writer) =
-        client_with_custom_transport(Some(300)).await;
-    let barrier = std::sync::Arc::new(Barrier::new(3));
-
-    let barrier_a = barrier.clone();
-    let agent_task_a = tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_a_reader).await;
-
-        barrier_a.wait().await;
-        for chunk in ["A-1", "A-2", "A-3"] {
-            write_json_line(&mut agent_a_writer, text_chunk("session-a", chunk)).await;
-        }
-        write_json_line(&mut agent_a_writer, final_response(request_id)).await;
-    });
-
-    let barrier_b = barrier.clone();
-    let agent_task_b = tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_b_reader).await;
-
-        barrier_b.wait().await;
-        for chunk in ["B-1", "B-2", "B-3"] {
-            write_json_line(&mut agent_b_writer, text_chunk("session-b", chunk)).await;
-        }
-        write_json_line(&mut agent_b_writer, final_response(request_id)).await;
-    });
+    let text = |chunks: [&str; 3]| MockScript {
+        turn: chunks.into_iter().map(|c| Step::Text(c.into())).collect(),
+        ..MockScript::default()
+    };
+    let (client_a, _agent_a) = connect(text(["A-1", "A-2", "A-3"]), Some(300), None).await;
+    let (client_b, _agent_b) = connect(text(["B-1", "B-2", "B-3"]), Some(300), None).await;
 
     let seen_a = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let seen_b = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -126,16 +98,12 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
     let seen_a_cb = seen_a.clone();
     let stream_a = tokio::spawn(async move {
         let request = make_prompt_request("session-a", "stream A");
-        prompt_with(
-            &client_a,
-            request,
-            Box::new(move |chunk| {
-                if let StreamingChunk::Text(text) = chunk {
-                    seen_a_cb.lock().unwrap().push(text);
-                }
-                true
-            }),
-        )
+        prompt_with(&client_a, request, move |chunk| {
+            if let StreamingChunk::Text(text) = chunk {
+                seen_a_cb.lock().unwrap().push(text);
+            }
+            true
+        })
         .await
         .unwrap();
     });
@@ -143,21 +111,15 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
     let seen_b_cb = seen_b.clone();
     let stream_b = tokio::spawn(async move {
         let request = make_prompt_request("session-b", "stream B");
-        prompt_with(
-            &client_b,
-            request,
-            Box::new(move |chunk| {
-                if let StreamingChunk::Text(text) = chunk {
-                    seen_b_cb.lock().unwrap().push(text);
-                }
-                true
-            }),
-        )
+        prompt_with(&client_b, request, move |chunk| {
+            if let StreamingChunk::Text(text) = chunk {
+                seen_b_cb.lock().unwrap().push(text);
+            }
+            true
+        })
         .await
         .unwrap();
     });
-
-    barrier.wait().await;
 
     let (turn_a, turn_b) = tokio::join!(stream_a, stream_b);
     turn_a.unwrap();
@@ -165,24 +127,17 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
 
     assert_eq!(&*seen_a.lock().unwrap(), &["A-1", "A-2", "A-3"]);
     assert_eq!(&*seen_b.lock().unwrap(), &["B-1", "B-2", "B-3"]);
-
-    let (_a, _b) = tokio::join!(agent_task_a, agent_task_b);
 }
 
 #[tokio::test]
 async fn stream_edge_large_response_near_max_output_is_accumulated() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(1_000)).await;
-
     let large_text = "x".repeat(MAX_SUBAGENT_OUTPUT - 4096);
     let expected_len = large_text.len();
-
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(&mut agent_writer, text_chunk("large-session", &large_text)).await;
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    let script = MockScript {
+        turn: vec![Step::Text(large_text)],
+        ..MockScript::default()
+    };
+    let (client, _agent) = connect(script, Some(1_000), None).await;
 
     let request = make_prompt_request("large-session", "big stream");
     let (chunks, callback) = crate::support::parity::capture_chunks();
@@ -199,14 +154,8 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
 
 #[tokio::test]
 async fn stream_edge_empty_response_returns_empty_content() {
-    let (mut client, mut agent_reader, mut agent_writer) =
-        client_with_custom_transport(Some(200)).await;
-
-    tokio::spawn(async move {
-        let request_id = read_request_id(&mut agent_reader).await;
-
-        write_json_line(&mut agent_writer, final_response(request_id)).await;
-    });
+    // The default script ends each turn with `end_turn` and sends no chunk.
+    let (client, _agent) = connect(MockScript::default(), Some(200), None).await;
 
     let request = make_prompt_request("empty-session", "respond with nothing");
     let (chunks, callback) = crate::support::parity::capture_chunks();

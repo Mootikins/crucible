@@ -28,8 +28,11 @@ use crucible_core::session::SessionAgent;
 use crucible_daemon::rpc_client::{DaemonClient, SessionCreateParams};
 use crucible_daemon::SessionEvent;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{MockScript, Step};
 use mock_agent_bin::{mock_agent_path, mock_session_agent};
 
 /// What the mock is told to stream, and therefore what the daemon must
@@ -40,12 +43,14 @@ const MOCK_ANSWER: &str = "the daemon relayed this";
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A `SessionAgent` that points the daemon at the mock binary and scripts
-/// the turn through the mock's env hooks.
+/// the turn through a `MockScript` in the agent's environment.
 fn acp_agent_streaming(answer: &str) -> SessionAgent {
     let mut agent = mock_session_agent(&mock_agent_path().to_string_lossy());
-    agent
-        .env_overrides
-        .insert("CRU_MOCK_STREAM_CHUNKS".to_string(), answer.to_string());
+    let script = MockScript {
+        turn: vec![Step::Text(answer.to_string())],
+        ..MockScript::default()
+    };
+    agent.env_overrides.extend([script.env()]);
     agent
 }
 

@@ -41,8 +41,11 @@ use crucible_lua::PluginSource;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+#[path = "acp_support/mock_agent.rs"]
+mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
+use mock_agent::{MockScript, Step};
 use mock_agent_bin::{acp_manager_params, mock_profile, profile_session_agent};
 
 /// A spawn, a handshake and a turn against a second process. Generous, so a
@@ -58,10 +61,11 @@ const SECOND_CHILD_ANSWER: &str = "answered by the second acp profile";
 
 /// An ACP profile that runs the mock agent binary and streams `answer`.
 fn mock_acp_profile(answer: &str) -> AgentProfile {
-    mock_profile(BTreeMap::from([(
-        "CRU_MOCK_STREAM_CHUNKS".to_string(),
-        answer.to_string(),
-    )]))
+    let script = MockScript {
+        turn: vec![Step::Text(answer.to_string())],
+        ..MockScript::default()
+    };
+    mock_profile(BTreeMap::from([script.env()]))
 }
 
 fn delegation_config(max_depth: u32) -> DelegationConfig {
