@@ -1,6 +1,6 @@
 //! The diffset routes: a thin proxy over the daemon's `diff.get`,
-//! `diff.file`, `diff.comment`, `diff.resolve_comment` and `diff.comments`
-//! RPCs.
+//! `diff.file`, `diff.comment`, `diff.resolve_comment`, `diff.delete_comment`
+//! and `diff.comments` RPCs.
 //!
 //! The daemon admits the root, reads the files and stores the comments.
 //! These routes only turn the query into a `DiffsetSource`. A query names a
@@ -30,6 +30,7 @@ pub fn diff_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(get_diff_file))
         .routes(routes!(post_diff_comment))
         .routes(routes!(post_diff_resolve_comment))
+        .routes(routes!(post_diff_delete_comment))
         .routes(routes!(get_diff_comments))
 }
 
@@ -289,6 +290,24 @@ struct DiffResolveCommentResponse {
     resolved: bool,
 }
 
+/// `POST /api/diff/comment/delete` — remove one comment of a diffset from
+/// the store.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+struct DeleteCommentBody {
+    /// The diffset of the comment.
+    source: DiffsetSource,
+    comment_id: String,
+}
+
+/// What `POST /api/diff/comment/delete` answers.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+struct DiffDeleteCommentResponse {
+    diffset: DiffsetId,
+    comment_id: String,
+    deleted: bool,
+}
+
 /// One comment as `GET /api/diff/comments` lists it.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 struct ListedCommentRow {
@@ -362,6 +381,33 @@ async fn post_diff_resolve_comment(
         .await
         .daemon_err()?;
     Ok(Json(reply_row(reply, "diff.resolve_comment")?))
+}
+
+/// `POST /api/diff/comment/delete` — remove one comment of a diffset.
+///
+/// Delete is not resolve. Resolve keeps a settled remark in the record;
+/// delete says that the author never wrote the remark, so the comment leaves
+/// the store.
+#[utoipa::path(
+    post,
+    path = "/api/diff/comment/delete",
+    request_body = DeleteCommentBody,
+    responses(
+        (status = 200, body = DiffDeleteCommentResponse),
+        (status = 422, description = "The diffset has no such comment, or the daemon refuses the source"),
+        (status = 502, description = "The daemon could not delete the comment, or could not be reached"),
+    )
+)]
+async fn post_diff_delete_comment(
+    State(state): State<AppState>,
+    Json(body): Json<DeleteCommentBody>,
+) -> Result<Json<DiffDeleteCommentResponse>, WebError> {
+    let reply = state
+        .daemon
+        .diff_delete_comment(&body.source, &body.comment_id)
+        .await
+        .daemon_err()?;
+    Ok(Json(reply_row(reply, "diff.delete_comment")?))
 }
 
 /// `GET /api/diff/comments` — the comments of the branch diff of one root, of
@@ -528,6 +574,24 @@ mod tests {
         assert_eq!(answered.diffset, source.id());
         assert_eq!(answered.comment_id, "comment-1");
         assert!(answered.resolved);
+    }
+
+    #[tokio::test]
+    async fn post_diff_delete_comment_answers_the_declared_shape() {
+        let source = DiffsetSource::Branch {
+            root: PhysicalRoot::from_top_level("/tmp/test-project"),
+            base: "main".into(),
+            head: None,
+        };
+        let answered: DiffDeleteCommentResponse = shape(
+            "POST",
+            "/api/diff/comment/delete",
+            Some(serde_json::json!({ "source": source, "comment_id": "comment-1" })),
+        )
+        .await;
+        assert_eq!(answered.diffset, source.id());
+        assert_eq!(answered.comment_id, "comment-1");
+        assert!(answered.deleted);
     }
 
     /// The query names the source as on `GET /api/diff`, and the

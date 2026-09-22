@@ -1,4 +1,5 @@
-//! The `diff.comment`, `diff.resolve_comment` and `diff.comments` RPCs.
+//! The `diff.comment`, `diff.resolve_comment`, `diff.delete_comment` and
+//! `diff.comments` RPCs.
 //!
 //! A diffset owns its comments. Each RPC names the diffset by its source, so
 //! the daemon admits a branch root before it reads or writes a comment of
@@ -25,7 +26,8 @@ use crate::protocol::{Request, Response, SessionEventMessage};
 use crate::review::{ReviewError, ReviewLedgers, ReviewResult};
 use crate::rpc_client::{
     DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffResolveCommentReply, DiffResolveCommentRequest,
+    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffResolveCommentReply,
+    DiffResolveCommentRequest,
 };
 use crate::rpc_helpers::typed_params;
 use crate::server::diff::{
@@ -161,6 +163,23 @@ pub(crate) fn resolve_in(
     review.resolve_diffset_comment(diffset, comment_id)?;
     if let Some(session) = session {
         emit_review_changed(event_tx, session.as_str(), "comment_resolved");
+    }
+    Ok(())
+}
+
+/// Remove a comment of the diffset `diffset` from the store.
+///
+/// For a session record, the daemon tells the clients of the session.
+pub(crate) fn delete_in(
+    review: &ReviewLedgers,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    diffset: &DiffsetId,
+    session: Option<&SessionId>,
+    comment_id: &str,
+) -> ReviewResult<()> {
+    review.delete_diffset_comment(diffset, comment_id)?;
+    if let Some(session) = session {
+        emit_review_changed(event_tx, session.as_str(), "comment_deleted");
     }
     Ok(())
 }
@@ -328,6 +347,28 @@ async fn diff_resolve_comment(
         diffset,
         comment_id: request.comment_id.clone(),
         resolved: true,
+    })
+}
+
+async fn diff_delete_comment(
+    admission: &Admission<'_>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    request: &DiffDeleteCommentRequest,
+) -> Result<DiffDeleteCommentReply, Refusal> {
+    let served = serve(admission, &request.source).await?;
+    let diffset = served.diffset();
+    delete_in(
+        admission.review,
+        event_tx,
+        &diffset,
+        served.session(),
+        &request.comment_id,
+    )
+    .map_err(review_refusal)?;
+    Ok(DiffDeleteCommentReply {
+        diffset,
+        comment_id: request.comment_id.clone(),
+        deleted: true,
     })
 }
 
@@ -513,6 +554,22 @@ pub(crate) async fn handle_diff_resolve_comment(
     answer(
         req.id,
         diff_resolve_comment(&admission, event_tx, &params).await,
+    )
+}
+
+/// Handle the `diff.delete_comment` RPC.
+pub(crate) async fn handle_diff_delete_comment(
+    req: Request,
+    admission: Admission<'_>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let params = match typed_params::<DiffDeleteCommentRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    answer(
+        req.id,
+        diff_delete_comment(&admission, event_tx, &params).await,
     )
 }
 

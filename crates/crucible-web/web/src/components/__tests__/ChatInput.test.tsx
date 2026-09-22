@@ -108,8 +108,11 @@ vi.mock('../AutocompletePopup', () => ({
 
 // The roster the scope chips read through the shared kiln query.
 let kilnEnv: TestQueryEnv;
+/** The daemon refuses the delete of the chip. */
+let deleteFails = false;
 
 beforeEach(() => {
+  deleteFails = false;
   localStorage.clear();
   resetKilnsForTests();
   installFakeEventSource();
@@ -120,6 +123,14 @@ beforeEach(() => {
     'GET /api/session/test-session/status': () => ({ status: [] }),
     // The docked permission card reads the file it is about to overwrite.
     'GET /api/kiln/file': () => ({ content: '' }),
+    // The `×` of a comment chip deletes the comment.
+    'POST /api/diff/comment/delete': () =>
+      deleteFails
+        ? new Response(
+            JSON.stringify({ error: { code: 422, message: 'the diffset has no such comment' } }),
+            { status: 422, headers: { 'Content-Type': 'application/json' } },
+          )
+        : { diffset: 'session-test-session', comment_id: 'c1', deleted: true },
   });
 });
 
@@ -193,10 +204,11 @@ describe('ChatInput', () => {
     expect(composerComments.of('other-session')).toHaveLength(1);
   });
 
-  it('removing a chip drops the reference and keeps the stored comment', async () => {
+  it('removing a chip deletes the stored comment', async () => {
+    const source: DiffsetSource = { kind: 'session_record', session: 'test-session' };
     composerComments.attach('test-session', {
       id: 'c1',
-      source: { kind: 'session_record', session: 'test-session' },
+      source,
       label: 'a.rs L1',
       title: 'src/a.rs · why this?',
     });
@@ -208,8 +220,46 @@ describe('ChatInput', () => {
 
     await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
     expect(composerComments.of('test-session')).toEqual([]);
-    // Nothing went to the daemon: the comment stays stored.
+    // The chip and the comment are one thing: the comment leaves the store.
+    await waitFor(() => expect(kilnEnv.fetch.calls('POST /api/diff/comment/delete')).toBe(1));
+    const sent = await kilnEnv.fetch.sent(kilnEnv.fetch.mock.calls.length - 1);
+    expect(sent.body).toEqual({ source, comment_id: 'c1' });
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('a refused delete puts the chip back', async () => {
+    deleteFails = true;
+    composerComments.attach('test-session', {
+      id: 'c1',
+      source: { kind: 'session_record', session: 'test-session' },
+      label: 'a.rs L1',
+      title: 'src/a.rs · why this?',
+    });
+    render(() => <ChatInput />);
+
+    fireEvent.click(await screen.findByTestId('composer-attachment-remove'));
+
+    // The pane still shows the comment, so the composer must show its chip.
+    await waitFor(() => expect(composerComments.of('test-session')).toHaveLength(1));
+    expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(1);
+  });
+
+  it('a comment that a message already took is never deleted', async () => {
+    const source: DiffsetSource = { kind: 'session_record', session: 'test-session' };
+    const chip = { id: 'c1', source, label: 'a.rs L1', title: 'src/a.rs · why this?' };
+    composerComments.attach('test-session', chip);
+    render(() => <ChatInput />);
+
+    // The message carries the comment. The agent now has it.
+    fireEvent.submit(screen.getByTestId('chat-input-form'));
+    await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
+
+    // The pane attaches it again. The `×` now only drops the chip.
+    composerComments.attach('test-session', chip);
+    fireEvent.click(await screen.findByTestId('composer-attachment-remove'));
+
+    await waitFor(() => expect(screen.queryAllByTestId('composer-attachment')).toHaveLength(0));
+    expect(kilnEnv.fetch.calls('POST /api/diff/comment/delete')).toBe(0);
   });
 
   it('disables send button when input is empty', () => {

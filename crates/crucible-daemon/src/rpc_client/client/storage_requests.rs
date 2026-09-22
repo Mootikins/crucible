@@ -390,6 +390,22 @@ pub struct DiffResolveCommentReply {
     pub resolved: bool,
 }
 
+/// Request for `diff.delete_comment`: remove one comment of the diffset of
+/// `source` from the store.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffDeleteCommentRequest {
+    pub source: crucible_core::diff::DiffsetSource,
+    pub comment_id: String,
+}
+
+/// What `diff.delete_comment` answers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffDeleteCommentReply {
+    pub diffset: crucible_core::diff::DiffsetId,
+    pub comment_id: String,
+    pub deleted: bool,
+}
+
 /// Request for `diff.comments`: the comments of the diffset of `source`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DiffCommentsRequest {

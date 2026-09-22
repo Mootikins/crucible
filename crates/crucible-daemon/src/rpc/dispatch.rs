@@ -206,6 +206,7 @@ rpc_methods! {
     DiffFile = "diff.file",
     DiffComment = "diff.comment",
     DiffResolveComment = "diff.resolve_comment",
+    DiffDeleteComment = "diff.delete_comment",
     DiffComments = "diff.comments",
     ProposalList = "proposal.list",
     ProposalGet = "proposal.get",
@@ -1058,6 +1059,14 @@ impl RpcDispatcher {
             RpcMethod::DiffResolveComment => forward!(
                 id,
                 crate::server::diff_comments::handle_diff_resolve_comment(
+                    req.clone(),
+                    self.diff_admission(),
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::DiffDeleteComment => forward!(
+                id,
+                crate::server::diff_comments::handle_diff_delete_comment(
                     req.clone(),
                     self.diff_admission(),
                     &self.ctx.event_tx

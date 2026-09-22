@@ -14,6 +14,12 @@ import { MOCK_PROJECT, MOCK_SESSION } from '../helpers/fixtures';
  * /api/chat/send` sends `{ id, source }` and never the text: the daemon
  * builds the context block.
  *
+ * The chip and the stored comment are one thing. The `×` of the chip deletes
+ * the comment through `POST /api/diff/comment/delete`, so the pane loses it
+ * too. **Attach** on a comment with no chip puts the chip back. A comment
+ * that a message already carried is the exception: the agent has it, so a
+ * later `×` only drops the chip.
+ *
  * The second story covers a pane with no chat: the comment still stores, and
  * the box says that no chat takes it.
  */
@@ -155,16 +161,21 @@ test.describe('A comment of the diff pane goes to the chat of the pane', () => {
     expect(api.comments).toHaveLength(1);
     expect(api.comments[0].line_range).toEqual({ start: 17, end: 20 });
 
-    // The chip is a draft of this client. Removing it keeps the comment.
+    // The chip and the comment are one thing: the `×` deletes the comment,
+    // so it leaves the pane as well.
     await page.getByTestId('composer-attachment-remove').click();
     await expect(chip).toHaveCount(0);
-    await expect(page.getByTestId(FILE).getByTestId('diff-comment')).toBeVisible();
-    await story.step(page, 'the chip goes and the stored comment stays');
+    await expect(page.getByTestId(FILE).getByTestId('diff-comment')).toHaveCount(0);
+    expect(api.comments).toHaveLength(0);
+    await story.step(page, 'the chip goes and the comment goes with it');
 
-    // A second comment attaches again, and the message takes it.
+    // A second comment attaches again, and the message takes it. The pane
+    // says that this comment is in the composer.
     await selectLines(page, 17, 17);
     await writeComment(page, 'Name the reason in a line of the doc comment.');
     await expect(chip).toHaveText(/server\.rs L17$/);
+    const saved = page.getByTestId(FILE).getByTestId('diff-comment');
+    await expect(saved.getByTestId('diff-comment-attached')).toBeVisible();
     await story.step(page, 'a second comment attaches its chip again');
 
     await page.getByTestId('chat-input').fill('Answer both comments, please.');
@@ -177,10 +188,21 @@ test.describe('A comment of the diff pane goes to the chat of the pane', () => {
     // reads the text of the comment from its own store.
     expect(sent.comments).toEqual([{ id: 'c-2', source: SOURCE }]);
     expect(JSON.stringify(sent)).not.toContain('Name the reason');
-    // The sent chip leaves the composer. The stored comments do not change.
+    // The sent chip leaves the composer. The stored comment does not change.
     await expect(chip).toHaveCount(0);
-    expect(api.comments).toHaveLength(2);
+    expect(api.comments).toHaveLength(1);
     await story.step(page, 'the message carries the reference and the composer clears');
+
+    // The pair works the other way: a comment with no chip attaches itself
+    // again. The agent already received this one, so the `×` of that chip
+    // only drops the chip.
+    await saved.getByTestId('diff-comment-attach').click();
+    await expect(chip).toHaveText(/server\.rs L17$/);
+    await page.getByTestId('composer-attachment-remove').click();
+    await expect(chip).toHaveCount(0);
+    await expect(saved).toBeVisible();
+    expect(api.comments).toHaveLength(1);
+    await story.step(page, 'a sent comment attaches again, and its chip never deletes it');
   });
 
   test('with no chat, the comment stores and the box says that no chat takes it', async ({

@@ -6,7 +6,8 @@
  * extends it, and the release opens the comment box under the last line of
  * the range. The drag and the open box tint the selected rows and their
  * numbers. The stored comments of the file show as blocks under their last
- * line, each with a Resolve button.
+ * line, each with a Resolve button and, where the pane has a chat, an Attach
+ * button that puts the comment back in the composer.
  *
  * A removed row of the unified view has no line of its own in the editor. The
  * gutter numbers it with its line in the base text, as a patch does. A base
@@ -55,6 +56,10 @@ export interface CommentHost {
   chat(): string | null;
   /** Marks a stored comment resolved. The promise rejects with the reason of a refusal. */
   resolve(commentId: string): Promise<void>;
+  /** True while the comment has a chip in the composer of the chat of the pane. */
+  attached(commentId: string): boolean;
+  /** Puts the comment back into the composer of the chat of the pane. */
+  attach(comment: DiffComment): void;
 }
 
 interface CommentUi {
@@ -297,7 +302,14 @@ const lineGutter = gutter({
   },
 });
 
-/** One stored comment, under the last line of its range, with its Resolve button. */
+/**
+ * One stored comment, under the last line of its range.
+ *
+ * **Resolve** settles the comment. **Attach** puts it back into the composer
+ * of the chat of the pane, which is the other half of the pair: the `×` of a
+ * chip deletes the comment. The body is a Solid root, because the chip of a
+ * comment can come and go while the widget stays.
+ */
 class CommentWidget extends WidgetType {
   constructor(
     readonly comment: DiffComment,
@@ -319,45 +331,87 @@ class CommentWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const { comment } = this;
     const el = document.createElement('div');
     el.className = 'cm-diff-comment';
     el.dataset.testid = 'diff-comment';
-    const head = document.createElement('div');
-    head.className = 'cm-diff-comment-head';
-    const who = document.createElement('span');
-    who.textContent = `${comment.author === 'agent' ? 'Agent' : 'You'} · ${spanLabel({
-      first: comment.line_range.start,
-      last: comment.line_range.end - 1,
-    })}`;
-    const resolve = document.createElement('button');
-    resolve.type = 'button';
-    resolve.className = 'cm-diff-comment-resolve';
-    resolve.dataset.testid = 'diff-comment-resolve';
-    resolve.textContent = 'Resolve';
-    resolve.title = 'Mark this comment resolved. It leaves the open comments.';
-    const error = document.createElement('div');
-    error.className = 'cm-diff-comment-error';
-    resolve.addEventListener('click', () => {
-      resolve.disabled = true;
-      error.textContent = '';
-      // A success removes the comment from the list, and this widget with it.
-      this.host.resolve(comment.id).catch((err: unknown) => {
-        error.textContent = err instanceof Error ? err.message : 'The comment was not resolved';
-        resolve.disabled = false;
-      });
-    });
-    head.append(who, resolve);
-    const body = document.createElement('div');
-    body.className = 'cm-diff-comment-body';
-    body.textContent = comment.body;
-    el.append(head, body, error);
+    disposers.set(
+      el,
+      render(() => <StoredComment comment={this.comment} host={this.host} />, el),
+    );
     return el;
+  }
+
+  destroy(dom: HTMLElement): void {
+    disposers.get(dom)?.();
+    disposers.delete(dom);
   }
 
   ignoreEvent(): boolean {
     return true;
   }
+}
+
+/** The head and the body of one stored comment. */
+function StoredComment(props: { comment: DiffComment; host: CommentHost }) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const who = () =>
+    `${props.comment.author === 'agent' ? 'Agent' : 'You'} · ${spanLabel({
+      first: props.comment.line_range.start,
+      last: props.comment.line_range.end - 1,
+    })}`;
+  const resolve = () => {
+    setBusy(true);
+    setError(null);
+    // A success removes the comment from the list, and this widget with it.
+    props.host.resolve(props.comment.id).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : 'The comment was not resolved');
+      setBusy(false);
+    });
+  };
+  return (
+    <>
+      <div class="cm-diff-comment-head">
+        <span>{who()}</span>
+        <span class="cm-diff-comment-actions">
+          <Show when={props.host.chat() !== null}>
+            <Show
+              when={!props.host.attached(props.comment.id)}
+              fallback={
+                <span class="cm-diff-comment-state" data-testid="diff-comment-attached">
+                  In the composer
+                </span>
+              }
+            >
+              <button
+                type="button"
+                class="cm-diff-comment-action"
+                data-testid="diff-comment-attach"
+                title="Put this comment in the composer of this chat again"
+                onClick={() => props.host.attach(props.comment)}
+              >
+                Attach
+              </button>
+            </Show>
+          </Show>
+          <button
+            type="button"
+            class="cm-diff-comment-action"
+            data-testid="diff-comment-resolve"
+            title="Mark this comment resolved. It leaves the open comments."
+            disabled={busy()}
+            onClick={resolve}
+          >
+            Resolve
+          </button>
+        </span>
+      </div>
+      <div class="cm-diff-comment-body">{props.comment.body}</div>
+      <Show when={error()}>
+        {(message) => <div class="cm-diff-comment-error">{message()}</div>}
+      </Show>
+    </>
+  );
 }
 
 /** The disposal of the Solid root of each open box, by its element. */
@@ -492,7 +546,8 @@ const commentTheme = EditorView.theme({
     color: 'var(--color-muted-dark)',
     marginBottom: '2px',
   },
-  '.cm-diff-comment-resolve': {
+  '.cm-diff-comment-actions': { display: 'flex', alignItems: 'center', gap: '6px' },
+  '.cm-diff-comment-action': {
     padding: '0 6px',
     border: '1px solid var(--color-hairline)',
     borderRadius: 'var(--cru-radius-sm)',
@@ -502,15 +557,17 @@ const commentTheme = EditorView.theme({
     fontSize: 'var(--cru-font-floor)',
     cursor: 'pointer',
   },
-  '.cm-diff-comment-resolve:hover': {
+  '.cm-diff-comment-action:hover': {
     background: 'var(--color-hover-wash)',
     color: 'var(--color-shell-ink)',
   },
-  '.cm-diff-comment-resolve:focus-visible': {
+  '.cm-diff-comment-action:focus-visible': {
     outline: '1px solid var(--color-focus-ring)',
     outlineOffset: '1px',
   },
-  '.cm-diff-comment-resolve:disabled': { opacity: '0.5', cursor: 'default' },
+  '.cm-diff-comment-action:disabled': { opacity: '0.5', cursor: 'default' },
+  // The comment already has a chip. This is a state, not a control.
+  '.cm-diff-comment-state': { fontSize: 'var(--cru-font-floor)' },
   '.cm-diff-comment-error': { color: 'var(--color-error)' },
   '.cm-diff-comment-error:empty': { display: 'none' },
 });

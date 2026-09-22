@@ -844,6 +844,26 @@ impl ReviewLedgers {
         }
     }
 
+    /// Remove a comment of `diffset` from the store. An unknown id is an error.
+    ///
+    /// Delete is not resolve: the comment leaves the store, so no listing and
+    /// no quickfix line holds it again.
+    pub fn delete_diffset_comment(
+        &self,
+        diffset: &DiffsetId,
+        comment_id: &str,
+    ) -> ReviewResult<()> {
+        if self
+            .comments
+            .delete(diffset, comment_id)
+            .map_err(store_error)?
+        {
+            Ok(())
+        } else {
+            Err(ReviewError::UnknownComment(comment_id.to_string()))
+        }
+    }
+
     /// What the ledger could not read back for this session.
     pub fn integrity(&self, session_id: &str) -> Integrity {
         self.integrity

@@ -842,6 +842,24 @@ impl DaemonClient {
         .await
     }
 
+    /// `diff.delete_comment`: remove one comment of a diffset from the store.
+    ///
+    /// A write, so the client sends it once.
+    pub async fn diff_delete_comment(
+        &self,
+        source: &crucible_core::diff::DiffsetSource,
+        comment_id: &str,
+    ) -> Result<DiffDeleteCommentReply> {
+        self.typed_call(
+            "diff.delete_comment",
+            DiffDeleteCommentRequest {
+                source: source.clone(),
+                comment_id: comment_id.to_string(),
+            },
+        )
+        .await
+    }
+
     /// `diff.comments`: the comments of a diffset, each projected onto the
     /// current text of its side.
     ///

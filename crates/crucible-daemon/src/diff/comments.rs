@@ -198,6 +198,20 @@ impl CommentStore {
         })
     }
 
+    /// Remove a comment of `diffset` from the store. The result is `false`
+    /// when the diffset has no comment with that id.
+    ///
+    /// Delete is not resolve. Resolve keeps the record of a settled remark;
+    /// delete says that the author never wrote the remark, so nothing of it
+    /// stays behind.
+    pub fn delete(&self, diffset: &DiffsetId, comment_id: &str) -> Result<bool> {
+        self.file(diffset)?.update(|file| {
+            let before = file.comments.len();
+            file.comments.retain(|c| c.id != comment_id);
+            Ok(file.comments.len() != before)
+        })
+    }
+
     /// Whether the journal comments of `diffset` are already in the store.
     pub fn is_migrated(&self, diffset: &DiffsetId) -> Result<bool> {
         Ok(self.file(diffset)?.read()?.journal_migrated)
@@ -302,6 +316,29 @@ mod tests {
         assert!(reopened.resolve(&first, &kept.id).unwrap());
         assert!(reopened.list(&first).unwrap()[0].resolved);
         assert!(!reopened.resolve(&second, &kept.id).unwrap());
+    }
+
+    #[test]
+    fn a_deleted_comment_leaves_the_store() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        let first = session("s-1");
+        let second = session("s-2");
+        let gone = comment(&first, "gone");
+        let kept = comment(&first, "kept");
+        store.add(&gone).unwrap();
+        store.add(&kept).unwrap();
+
+        // The comment of another diffset stays where it is.
+        assert!(!store.delete(&second, &gone.id).unwrap());
+        assert_eq!(store.list(&first).unwrap().len(), 2);
+
+        assert!(store.delete(&first, &gone.id).unwrap());
+        assert_eq!(store.list(&first).unwrap(), vec![kept]);
+        // A second delete of the same id finds nothing.
+        assert!(!store.delete(&first, &gone.id).unwrap());
+        // A deleted comment is not resolved: no listing holds it again.
+        assert!(!store.resolve(&first, &gone.id).unwrap());
     }
 
     #[test]

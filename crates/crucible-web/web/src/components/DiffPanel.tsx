@@ -30,6 +30,10 @@
  * comment when the message goes. A pane with no chat still stores the
  * comment, and says that no chat receives it.
  *
+ * The chip and the stored comment are one thing. **Attach** on a comment with
+ * no chip puts it back in the composer, and the `×` of a chip deletes the
+ * comment, so the pane and the composer always agree.
+ *
  * A proposal adds its decisions: Accept all and Reject all in the header, and
  * Accept and Reject on each file. A conflicted proposal shows a `ConflictView`
  * for each conflicted file instead of the files, and **Accept resolution**
@@ -271,10 +275,7 @@ const ChatTarget: Component<{ session?: string }> = (props) => {
 };
 
 /** "No chat", or the title of the session, or its short id. */
-function chatTargetName(
-  session: string | undefined,
-  title: string | null | undefined,
-): string {
+function chatTargetName(session: string | undefined, title: string | null | undefined): string {
   if (!session) return 'No chat';
   return title?.trim() ? title : shortId(session);
 }
@@ -446,6 +447,17 @@ interface HunkChoice {
   own: Readonly<Record<string, boolean>>;
 }
 
+/**
+ * What the pane does with the chip of one stored comment.
+ *
+ * The chip and the comment are one thing. A comment with no chip can attach
+ * itself again; the `×` of a chip deletes the comment.
+ */
+export interface ChipActions {
+  attached: (commentId: string) => boolean;
+  attach: (comment: DiffComment) => void;
+}
+
 interface DiffsetViewProps {
   source: DiffsetSource;
   proposal?: ProposalControls;
@@ -525,6 +537,21 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
   // The widget shows the reason of a refusal, so the promise rejects with it.
   const resolve = (commentId: string): Promise<void> =>
     resolution.mutateAsync({ source: props.source, commentId }).then(() => undefined);
+  // The chip of a comment in the composer of the chat of this pane. Attach
+  // puts it back; the `×` of the chip deletes the comment (`ChatInput`).
+  const chips: ChipActions = {
+    attached: (commentId) => composerComments.has(props.session, commentId),
+    attach: (comment) => {
+      const session = props.session;
+      if (!session) return;
+      composerComments.attach(session, {
+        id: comment.id,
+        source: props.source,
+        label: commentChipLabel(comment),
+        title: `${comment.path} · ${comment.body}`,
+      });
+    },
+  };
   const copyComments = () =>
     void navigator.clipboard?.writeText(quickfixList(openComments())).catch(() => undefined);
 
@@ -672,6 +699,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
                   file={file}
                   comments={commentsOf(file)}
                   onResolve={resolve}
+                  chips={chips}
                   expanded={isExpanded(file)}
                   onToggle={() => toggle(file)}
                   split={split()}
@@ -698,6 +726,8 @@ interface FileSectionProps {
   comments: ListedComment[];
   /** Marks a comment resolved. It rejects with the reason of a refusal. */
   onResolve: (commentId: string) => Promise<void>;
+  /** The chip of each stored comment in the composer of the chat of the pane. */
+  chips: ChipActions;
   expanded: boolean;
   onToggle: () => void;
   split: boolean;
@@ -835,6 +865,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
                 file={props.file}
                 comments={props.comments}
                 onResolve={props.onResolve}
+                chips={props.chips}
                 split={props.split}
                 wrap={props.wrap}
                 hunks={props.hunks}
@@ -845,7 +876,13 @@ const FileSection: Component<FileSectionProps> = (props) => {
         >
           {(reason) => <p class="px-3 pb-2 text-xs text-muted-dark">{reason()}</p>}
         </Show>
-        <EndComments comments={props.comments} split={props.split} onResolve={props.onResolve} />
+        <EndComments
+          comments={props.comments}
+          split={props.split}
+          onResolve={props.onResolve}
+          chips={props.chips}
+          hasChat={!!props.session}
+        />
       </Show>
     </section>
   );
@@ -889,6 +926,9 @@ const EndComments: Component<{
   comments: ListedComment[];
   split: boolean;
   onResolve: (commentId: string) => Promise<void>;
+  chips: ChipActions;
+  /** The pane has a chat, so a comment can take a chip. */
+  hasChat: boolean;
 }> = (props) => {
   const rows = () =>
     props.comments.filter((l) => l.outdated || (!props.split && l.comment.side === 'base'));
@@ -909,7 +949,32 @@ const EndComments: Component<{
                     last: listed.comment.line_range.end - 1,
                   })}
                 </span>
-                <ResolveButton onResolve={() => props.onResolve(listed.comment.id)} />
+                <span class="flex shrink-0 items-center gap-2">
+                  <Show when={props.hasChat}>
+                    <Show
+                      when={!props.chips.attached(listed.comment.id)}
+                      fallback={
+                        <span
+                          class="text-floor text-muted-dark"
+                          data-testid="diff-comment-attached"
+                        >
+                          In the composer
+                        </span>
+                      }
+                    >
+                      <button
+                        type="button"
+                        data-testid="diff-comment-attach"
+                        title="Put this comment in the composer of this chat again"
+                        onClick={() => props.chips.attach(listed.comment)}
+                        class={endCommentButton}
+                      >
+                        Attach
+                      </button>
+                    </Show>
+                  </Show>
+                  <ResolveButton onResolve={() => props.onResolve(listed.comment.id)} />
+                </span>
               </div>
               <p class="whitespace-pre-wrap text-shell-ink">{listed.comment.body}</p>
             </li>
@@ -919,6 +984,10 @@ const EndComments: Component<{
     </Show>
   );
 };
+
+/** A small control on a comment row at the end of a file. */
+const endCommentButton =
+  'rounded border border-hairline px-1.5 text-floor text-muted hover:bg-hover-wash hover:text-shell-ink disabled:opacity-50 focus-ring';
 
 /** Resolve on a comment at the end of a file. A refusal shows its reason. */
 const ResolveButton: Component<{ onResolve: () => Promise<void> }> = (props) => {
@@ -943,7 +1012,7 @@ const ResolveButton: Component<{ onResolve: () => Promise<void> }> = (props) => 
         title="Mark this comment resolved. It leaves the open comments."
         disabled={busy()}
         onClick={run}
-        class="rounded border border-hairline px-1.5 text-floor text-muted hover:bg-hover-wash hover:text-shell-ink disabled:opacity-50 focus-ring"
+        class={endCommentButton}
       >
         Resolve
       </button>
@@ -958,6 +1027,7 @@ interface FileBodyProps {
   file: DiffFileEntry;
   comments: ListedComment[];
   onResolve: (commentId: string) => Promise<void>;
+  chips: ChipActions;
   split: boolean;
   wrap: boolean;
   hunks: HunkChoice;
@@ -988,21 +1058,15 @@ const FileBody: Component<FileBodyProps> = (props) => {
     });
     // The comment is stored. The chat of this pane, when it has one, carries
     // the reference until the user sends a message.
-    const session = props.session;
-    if (session) {
-      composerComments.attach(session, {
-        id: stored.id,
-        source,
-        label: commentChipLabel(stored),
-        title: `${file.path} · ${body}`,
-      });
-    }
+    props.chips.attach(stored);
   };
   const host = (side: CommentSide): CommentHost => ({
     side,
     comment: (span, body) => comment(side, span, body),
     chat: () => props.session ?? null,
     resolve: (commentId) => props.onResolve(commentId),
+    attached: (commentId) => props.chips.attached(commentId),
+    attach: (stored) => props.chips.attach(stored),
   });
   const hosts = { base: host('base'), current: host('current') };
 

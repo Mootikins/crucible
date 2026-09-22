@@ -661,6 +661,13 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Once DiffDeleteComment =>
+        diff_delete_comment(source: &crucible_core::diff::DiffsetSource, comment_id: &str)
+        -> crucible_daemon::rpc_client::DiffDeleteCommentReply
+        = diff_delete_comment(&source, &comment_id);
+    }
+
+    forward_rpc! {
         Safe DiffComments =>
         diff_comments(source: &crucible_core::diff::DiffsetSource)
         -> crucible_daemon::rpc_client::DiffCommentsReply = diff_comments(&source);

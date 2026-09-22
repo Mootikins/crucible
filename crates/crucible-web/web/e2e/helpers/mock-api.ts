@@ -76,6 +76,9 @@ function anchorOf(source: DiffsetSource | undefined): DiffComment['anchor'] {
 
 export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<MockApi> {
   const recorded: MockApi = { comments: [], sent: [] };
+  // The id of each stored comment counts up on its own. A deleted comment
+  // must not give its id back, as the daemon's ids do not repeat.
+  let comments = 0;
   // Animations off before anything renders — see disableAnimations().
   await disableAnimations(page);
 
@@ -218,8 +221,9 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     (url) => url.pathname === '/api/diff/comment',
     (route) => {
       const body = route.request().postDataJSON() as NewDiffComment;
+      comments += 1;
       const comment: DiffComment = {
-        id: `c-${recorded.comments.length + 1}`,
+        id: `c-${comments}`,
         diffset: diffsetId(body.source),
         root: body.root ?? (body.source.kind === 'branch' ? body.source.root : ''),
         path: body.path,
@@ -234,6 +238,26 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
       };
       recorded.comments.push(comment);
       return route.fulfill({ json: { diffset: comment.diffset, comment } });
+    },
+  );
+
+  // The `×` of a composer chip deletes the comment, so the pane loses it
+  // too. Delete is not resolve: the comment leaves the store.
+  await page.route(
+    (url) => url.pathname === '/api/diff/comment/delete',
+    (route) => {
+      const body = route.request().postDataJSON() as { source: DiffsetSource; comment_id: string };
+      const at = recorded.comments.findIndex((c) => c.id === body.comment_id);
+      if (at < 0) {
+        return route.fulfill({
+          status: 422,
+          json: { error: { code: 422, message: `unknown comment ${body.comment_id}` } },
+        });
+      }
+      const [gone] = recorded.comments.splice(at, 1);
+      return route.fulfill({
+        json: { diffset: gone.diffset, comment_id: gone.id, deleted: true },
+      });
     },
   );
 

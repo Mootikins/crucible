@@ -220,6 +220,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diff/comment/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/diff/comment/delete` — remove one comment of a diffset.
+         * @description Delete is not resolve. Resolve keeps a settled remark in the record;
+         *     delete says that the author never wrote the remark, so the comment leaves
+         *     the store.
+         */
+        post: operations["post_diff_delete_comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/diff/comment/resolve": {
         parameters: {
             query?: never;
@@ -2577,6 +2599,15 @@ export interface components {
             session_type?: string;
             workspace?: string | null;
         };
+        /**
+         * @description `POST /api/diff/comment/delete` — remove one comment of a diffset from
+         *     the store.
+         */
+        DeleteCommentBody: {
+            comment_id: string;
+            /** @description The diffset of the comment. */
+            source: components["schemas"]["DiffsetSource"];
+        };
         /** @description Response for session deletion. */
         DeleteResponse: {
             deleted: boolean;
@@ -2592,6 +2623,12 @@ export interface components {
         DiffCommentsResponse: {
             /** @description The comments, oldest first. */
             comments: components["schemas"]["ListedCommentRow"][];
+            diffset: components["schemas"]["DiffsetId"];
+        };
+        /** @description What `POST /api/diff/comment/delete` answers. */
+        DiffDeleteCommentResponse: {
+            comment_id: string;
+            deleted: boolean;
             diffset: components["schemas"]["DiffsetId"];
         };
         /** @description One file of a diffset, with its counts and no text. */
@@ -4703,9 +4740,11 @@ export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
 export type SchemaConfigSaveReply = components['schemas']['ConfigSaveReply'];
 export type SchemaContextStrategyResponse = components['schemas']['ContextStrategyResponse'];
 export type SchemaCreateSessionRequest = components['schemas']['CreateSessionRequest'];
+export type SchemaDeleteCommentBody = components['schemas']['DeleteCommentBody'];
 export type SchemaDeleteResponse = components['schemas']['DeleteResponse'];
 export type SchemaDiffCommentResponse = components['schemas']['DiffCommentResponse'];
 export type SchemaDiffCommentsResponse = components['schemas']['DiffCommentsResponse'];
+export type SchemaDiffDeleteCommentResponse = components['schemas']['DiffDeleteCommentResponse'];
 export type SchemaDiffFileEntry = components['schemas']['DiffFileEntry'];
 export type SchemaDiffFileText = components['schemas']['DiffFileText'];
 export type SchemaDiffResolveCommentResponse = components['schemas']['DiffResolveCommentResponse'];
@@ -5263,6 +5302,43 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not store the comment, or could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_diff_delete_comment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteCommentBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiffDeleteCommentResponse"];
+                };
+            };
+            /** @description The diffset has no such comment, or the daemon refuses the source */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The daemon could not delete the comment, or could not be reached */
             502: {
                 headers: {
                     [name: string]: unknown;

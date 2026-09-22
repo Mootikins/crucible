@@ -152,3 +152,22 @@ export async function resolveDiffComment(
     'Failed to resolve the comment',
   );
 }
+
+/**
+ * Removes one comment of the diffset of `source` from the store.
+ *
+ * Delete is not resolve. Resolve keeps a settled remark in the record; delete
+ * says that the author never wrote the remark, so the comment leaves the
+ * diff pane and the quickfix list with it.
+ */
+export async function deleteDiffComment(
+  source: DiffsetSource,
+  commentId: string,
+): Promise<{ diffset: string; comment_id: string; deleted: boolean }> {
+  return decode(
+    await client.POST('/api/diff/comment/delete', {
+      body: { source, comment_id: commentId },
+    }),
+    'Failed to delete the comment',
+  );
+}

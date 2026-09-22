@@ -93,6 +93,13 @@ stores the comment and says that no chat takes it. **Copy comments** copies the
 same quickfix list. **Resolve** on a stored comment marks it resolved, and the
 pane then leaves it out of the open comments.
 
+The chip and the stored comment are one thing. The `×` on a chip deletes the
+comment, so the comment also leaves the diff pane; resolve keeps a settled
+remark, delete says that the author never wrote it. **Attach** on a stored
+comment with no chip puts the chip back. A comment that a message already
+carried is the exception: the agent has it, so a later `×` only drops the
+chip.
+
 ## See also
 
 - [[Help/CLI/project]] — register a repository

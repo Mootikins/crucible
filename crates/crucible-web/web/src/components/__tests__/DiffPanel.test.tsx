@@ -616,6 +616,13 @@ describe('DiffPanel', () => {
   it('a comment attaches to the chat of the pane, and names it in the header', async () => {
     serve([entry('src/a.rs')], [], {
       'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
+      // The chip carries the comment as the daemon stored it.
+      'POST /api/diff/comment': {
+        body: {
+          diffset: 'branch-0123456789abcdef0123456789abcdef',
+          comment: comment('c-new', { body: 'why this?' }),
+        },
+      },
     });
     render(() => <DiffPanel source={source} session="s-7" />);
 
@@ -648,6 +655,36 @@ describe('DiffPanel', () => {
       ]),
     );
     expect(composerComments.of('other')).toEqual([]);
+  });
+
+  it('a stored comment with no chip attaches itself again', async () => {
+    serve(
+      [entry('src/a.rs')],
+      [{ comment: comment('c1', { body: 'why this?' }), outdated: false }],
+      {
+        'GET /api/session/s-7': { body: { session_id: 's-7', title: 'Review the parser' } },
+      },
+    );
+    render(() => <DiffPanel source={source} session="s-7" />);
+
+    await lineNumber('src/a.rs', 1);
+    const saved = await within(section('src/a.rs')).findByTestId('diff-comment');
+    // The comment has no chip, so the pane offers to attach it.
+    expect(within(saved).queryByTestId('diff-comment-attached')).toBeNull();
+    fireEvent.click(within(saved).getByTestId('diff-comment-attach'));
+
+    await waitFor(() =>
+      expect(composerComments.of('s-7')).toEqual([
+        { id: 'c1', source, label: 'a.rs L2', title: 'src/a.rs · why this?' },
+      ]),
+    );
+    // The comment now says so, and offers no second attach.
+    await waitFor(() =>
+      expect(within(saved).getByTestId('diff-comment-attached').textContent).toBe(
+        'In the composer',
+      ),
+    );
+    expect(within(saved).queryByTestId('diff-comment-attach')).toBeNull();
   });
 
   it('with no chat, a comment is stored and the box says that no chat gets it', async () => {

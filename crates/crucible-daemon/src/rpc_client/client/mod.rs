@@ -189,10 +189,11 @@ pub use session::{
 };
 pub use storage_requests::{
     first_per_note, DiffCommentReply, DiffCommentRequest, DiffCommentsReply, DiffCommentsRequest,
-    DiffFileRequest, DiffGetRequest, DiffResolveCommentReply, DiffResolveCommentRequest,
-    FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
-    KilnRegisterRequest, LlmRegisterProviderRequest, McpStartRequest, NoteRenameRequest,
-    ProcessFileRequest, ScmCloneRequest, SearchVectorsRequest, VectorHit,
+    DiffDeleteCommentReply, DiffDeleteCommentRequest, DiffFileRequest, DiffGetRequest,
+    DiffResolveCommentReply, DiffResolveCommentRequest, FsListDirRequest, FsMoveRequest,
+    FsPathRequest, GrepSearchRequest, KilnOpenRequest, KilnRegisterRequest,
+    LlmRegisterProviderRequest, McpStartRequest, NoteRenameRequest, ProcessFileRequest,
+    ScmCloneRequest, SearchVectorsRequest, VectorHit,
 };
 pub use types::{
     AgentsListCardsRequest, DaemonCapabilities, NameRequest, PathRequest, SessionEvent,

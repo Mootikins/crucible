@@ -5,10 +5,11 @@ import { nextChatMode } from './ChatModeControl';
 import { useSessionScopeChips } from './SessionScopeChips';
 import { SessionStatusChips } from './SessionStatusChips';
 import { ComposerCard, type ComposerAttachment } from '@/components/composer/ComposerCard';
-import { composerComments } from '@/stores/composerComments';
+import { composerComments, type AttachedComment } from '@/stores/composerComments';
 import type { ComposerChip } from '@/components/composer/ChipRow';
 import { getBus } from '@/lib/bus';
 import { useExecuteCommand } from '@/lib/query/commands';
+import { useDeleteDiffComment } from '@/lib/query/diff';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { kilnPathOf } from '@/stores/kilnStore';
@@ -81,15 +82,26 @@ export const ChatInput: Component = () => {
   // composer that is not focused, and a split pane of the same session shows
   // the same chips.
   const attached = () => composerComments.of(session()?.session_id);
+  // The chip and the stored comment are one thing: the `×` deletes the
+  // comment, so the diff pane loses it too. A comment that a message already
+  // carried is the exception; the agent has it, so the `×` only drops the
+  // chip. A refusal puts the chip back, so the two views never disagree.
+  const removal = useDeleteDiffComment();
+  const removeChip = (comment: AttachedComment) => {
+    const id = session()?.session_id;
+    if (!id) return;
+    composerComments.detach(id, comment.id);
+    if (composerComments.wasSent(id, comment.id)) return;
+    removal
+      .mutateAsync({ source: comment.source, commentId: comment.id })
+      .catch(() => composerComments.attach(id, comment));
+  };
   const attachments = (): ComposerAttachment[] =>
     attached().map((comment) => ({
       key: comment.id,
       label: comment.label,
       title: comment.title,
-      onRemove: () => {
-        const id = session()?.session_id;
-        if (id) composerComments.remove(id, comment.id);
-      },
+      onRemove: () => removeChip(comment),
     }));
 
   const handleSubmit = async (e?: Event) => {
@@ -118,7 +130,8 @@ export const ChatInput: Component = () => {
       return;
     }
 
-    // The message takes the chips with it. The comments stay stored.
+    // The message takes the chips with it. The comments stay stored, and the
+    // store remembers that the agent received them.
     const comments = attached();
     const id = session()?.session_id;
     if (id && comments.length > 0) {

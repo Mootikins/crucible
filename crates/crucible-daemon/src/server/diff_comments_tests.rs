@@ -66,6 +66,9 @@ impl Daemon {
             "diff.resolve_comment" => {
                 handle_diff_resolve_comment(req, self.admission(), &self.event_tx).await
             }
+            "diff.delete_comment" => {
+                handle_diff_delete_comment(req, self.admission(), &self.event_tx).await
+            }
             "diff.comments" => handle_diff_comments(req, self.admission()).await,
             other => panic!("no handler for {other}"),
         };
@@ -97,6 +100,21 @@ impl Daemon {
         self.call(
             "diff.resolve_comment",
             DiffResolveCommentRequest {
+                source: source.clone(),
+                comment_id: comment_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    async fn delete(
+        &self,
+        source: &DiffsetSource,
+        comment_id: &str,
+    ) -> Result<DiffDeleteCommentReply, RpcError> {
+        self.call(
+            "diff.delete_comment",
+            DiffDeleteCommentRequest {
                 source: source.clone(),
                 comment_id: comment_id.to_string(),
             },
@@ -313,6 +331,88 @@ async fn resolving_an_unknown_comment_is_an_error() {
     assert!(reply.resolved);
     let listed = daemon.comments(&source).await.unwrap();
     assert!(listed.comments[0].comment.resolved);
+}
+
+/// Delete removes the comment. Resolve keeps it; the two are not the same
+/// operation, and a deleted comment never comes back.
+#[tokio::test]
+async fn deleting_a_comment_removes_it_from_the_store() {
+    let mut daemon = Daemon::new();
+    let (_tmp, root) = repo(&daemon, &[("a.md", "one\ntwo\n")]).await;
+    let source = working_tree(&root);
+    let first = daemon
+        .comment(request(&source, "a.md", CommentSide::Current, 1, 2))
+        .await
+        .unwrap()
+        .comment;
+    let second = daemon
+        .comment(request(&source, "a.md", CommentSide::Current, 2, 3))
+        .await
+        .unwrap()
+        .comment;
+
+    // An unknown id, and the id of a comment of another diffset, are errors.
+    let error = daemon.delete(&source, "nope").await.unwrap_err();
+    assert_eq!(error.code, INVALID_PARAMS);
+    assert_eq!(error.message, "unknown comment nope");
+    let error = daemon
+        .delete(&record("chat-1"), &first.id)
+        .await
+        .unwrap_err();
+    assert_eq!(error.message, format!("unknown comment {}", first.id));
+
+    let reply = daemon.delete(&source, &first.id).await.unwrap();
+    assert_eq!(reply.diffset, first.diffset);
+    assert!(reply.deleted);
+    // The listing holds only the comment that stays, resolved or not.
+    let listed = daemon.comments(&source).await.unwrap();
+    let ids: Vec<_> = listed
+        .comments
+        .iter()
+        .map(|l| l.comment.id.as_str())
+        .collect();
+    assert_eq!(ids, vec![second.id.as_str()]);
+    // A second delete finds nothing, and resolve cannot bring the comment back.
+    assert_eq!(
+        daemon.delete(&source, &first.id).await.unwrap_err().message,
+        format!("unknown comment {}", first.id)
+    );
+    assert_eq!(
+        daemon
+            .resolve(&source, &first.id)
+            .await
+            .unwrap_err()
+            .message,
+        format!("unknown comment {}", first.id)
+    );
+    assert!(
+        daemon.review_reasons().is_empty(),
+        "a branch comment has no session to tell"
+    );
+}
+
+/// A session record tells its clients that a comment went away, so the
+/// Changes panel and the diff pane agree.
+#[tokio::test]
+async fn deleting_a_record_comment_tells_the_session() {
+    let mut daemon = Daemon::new();
+    let session = TempDir::new().unwrap();
+    init_repo(session.path(), &[("b.md", "base\n")]).await;
+    daemon
+        .review
+        .open("chat-1", &[session.path().to_path_buf()])
+        .await
+        .unwrap();
+    let base = daemon.review.ledger("chat-1").unwrap().session_base()[0].clone();
+    let source = record("chat-1");
+    let mut on_record = request(&source, "b.md", CommentSide::Current, 1, 2);
+    on_record.root = Some(base.root.clone());
+    let comment = daemon.comment(on_record).await.unwrap().comment;
+    assert_eq!(daemon.review_reasons(), vec!["commented"]);
+
+    daemon.delete(&source, &comment.id).await.unwrap();
+    assert_eq!(daemon.review_reasons(), vec!["comment_deleted"]);
+    assert!(daemon.comments(&source).await.unwrap().comments.is_empty());
 }
 
 #[tokio::test]

@@ -16,6 +16,7 @@ import {
   type NewDiffComment,
 } from '@/lib/diffset';
 import {
+  deleteDiffComment,
   getDiffComments,
   getDiffFile,
   getDiffset,
@@ -87,8 +88,8 @@ export function usePostDiffComment(): UseMutationResult<DiffComment, Error, NewD
   );
 }
 
-/** One comment to resolve, and the diffset that holds it. */
-export interface ResolveDiffComment {
+/** One comment, named by its id and by the diffset that holds it. */
+export interface DiffCommentRef {
   source: DiffsetSource;
   commentId: string;
 }
@@ -100,12 +101,38 @@ export interface ResolveDiffComment {
 export function useResolveDiffComment(): UseMutationResult<
   { comment_id: string },
   Error,
-  ResolveDiffComment
+  DiffCommentRef
 > {
   return useMutation(
     () => ({
-      mutationFn: ({ source, commentId }: ResolveDiffComment) =>
-        resolveDiffComment(source, commentId),
+      mutationFn: ({ source, commentId }: DiffCommentRef) => resolveDiffComment(source, commentId),
+      onSettled: (_reply, _error, { source }) =>
+        Promise.all([
+          getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
+          source.kind === 'session_record'
+            ? getQueryClient().invalidateQueries({ queryKey: keys.review(source.session) })
+            : undefined,
+        ]),
+    }),
+    getQueryClient,
+  );
+}
+
+/**
+ * Removes one comment. The comments of its diffset then load again, and a
+ * session record also loads the listing of its Changes panel again.
+ *
+ * The chip in the composer and the comment in the pane are one thing: the
+ * `×` of the chip calls this, and the comment leaves the pane.
+ */
+export function useDeleteDiffComment(): UseMutationResult<
+  { comment_id: string },
+  Error,
+  DiffCommentRef
+> {
+  return useMutation(
+    () => ({
+      mutationFn: ({ source, commentId }: DiffCommentRef) => deleteDiffComment(source, commentId),
       onSettled: (_reply, _error, { source }) =>
         Promise.all([
           getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),

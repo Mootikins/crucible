@@ -1103,6 +1103,15 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 "resolved": true,
             })
         }
+        "diff.delete_comment" => {
+            let request: crucible_daemon::rpc_client::DiffDeleteCommentRequest =
+                serde_json::from_value(msg["params"].clone()).expect("diff.delete_comment params");
+            json!({
+                "diffset": request.source.id(),
+                "comment_id": request.comment_id,
+                "deleted": true,
+            })
+        }
         // One comment whose quoted text is gone: the `outdated` flag reaches
         // the browser only if the route keeps it.
         "diff.comments" => {
