@@ -134,9 +134,10 @@ Built-in agents (auto-discovered if installed):
 | codex | `npx @agentclientprotocol/codex-acp` | `npm install -g @agentclientprotocol/codex-acp` |
 | cursor | `cursor-agent acp` | `curl https://cursor.com/install -fsS \| bash` |
 | hermes | `hermes acp` | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` |
+| antigravity | `agy_acp_server.par --uid=` (Linux) | download from `https://dl.google.com/agy-extensions/releases/` |
 
 `claude` and `codex` are bridges — they need the corresponding vendor CLI installed as well.
-`opencode`, `gemini`, `cursor` and `hermes` speak ACP from their own CLI. If none are
+`opencode`, `gemini`, `cursor`, `hermes` and `antigravity` speak ACP from their own CLI. If none are
 installed, `cru chat -a <agent>` prints the install command for each.
 
 Agents can delegate tasks to each other. An ACP agent like Claude can hand off work to Cursor or OpenCode mid-conversation using the `delegate_session` tool, then incorporate the results. Delegation works both directions: internal agents can delegate to ACP agents, and ACP agents can delegate to other ACP agents.

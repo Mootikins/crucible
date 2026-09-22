@@ -12,6 +12,15 @@ is a Keep a Changelog category.
 
 ## [Unreleased]
 
+### Added
+
+- **Antigravity is a built-in ACP agent** (`cru chat --acp antigravity`). The
+  command and the arguments come from the ACP registry entry `antigravity-acp`
+  and Crucible passes them unchanged, as Zed and acpx do. On Linux that
+  includes the empty `--uid=`: without it the binary defaults to
+  `--uid=nobody` and aborts on Debian and Ubuntu. Install it from the archive
+  at `https://dl.google.com/agy-extensions/releases/`.
+
 ## [0.31.0] - 2026-09-20
 
 ### Added

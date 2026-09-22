@@ -42,7 +42,8 @@ models routinely go quiet for minutes at a time mid-turn.
 
 ## `acp.agents.<name>` — agent profiles
 
-A profile either extends a built-in (`opencode`, `claude`, `gemini`, `codex`, `cursor`) or
+A profile either extends a built-in (`opencode`, `claude`, `gemini`, `codex`, `cursor`,
+`hermes`, `antigravity`) or
 defines its own command. The profile name is what you pass to `cru chat -a <name>`.
 
 | Field | Type | Default | Description |

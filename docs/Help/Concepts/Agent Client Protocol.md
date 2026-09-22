@@ -125,12 +125,16 @@ Crucible ships with profiles for common ACP-compatible agents:
 | `codex` | `npx @agentclientprotocol/codex-acp` | `npm install -g @agentclientprotocol/codex-acp` (bridges to the OpenAI Codex CLI) |
 | `cursor` | `cursor-agent acp` | `curl https://cursor.com/install -fsS \| bash` |
 | `hermes` | `hermes acp` | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` |
+| `antigravity` | `agy_acp_server.par --uid=` (Linux; `agy_acp_server.par` on macOS, `agy_acp_server.exe` on Windows) | download the archive for your platform from `https://dl.google.com/agy-extensions/releases/`, then put the server on PATH |
 
-`opencode`, `gemini`, `cursor` and `hermes` speak ACP directly; `claude` and `codex` are
-bridges that also need the underlying vendor CLI installed. The `@agentclientprotocol/*`
+`opencode`, `gemini`, `cursor`, `hermes` and `antigravity` speak ACP directly; `claude` and
+`codex` are bridges that also need the underlying vendor CLI installed. The `@agentclientprotocol/*`
 packages are the renamed `@zed-industries/*` ones — npm warns and stops updating the old
 names. The Cursor bridge `cursor-acp` on npm is an unrelated third-party package abandoned
-at 0.1.0; `cursor-agent acp` is Cursor's own ACP server. Hermes notes: a polished tool's result arrives in
+at 0.1.0; `cursor-agent acp` is Cursor's own ACP server. The empty value of the Antigravity
+`--uid=` argument is deliberate: without the argument the binary defaults to `--uid=nobody`
+and aborts on Debian and Ubuntu. Crucible passes the ACP registry arguments unchanged, as
+Zed and acpx do. Hermes notes: a polished tool's result arrives in
 `content` text blocks with no `rawOutput`; permission requests carry a fresh `perm-check-N`
 id that matches no announced tool call; `session/close` and `ping` answer `-32601`, which is
 not an error. `cru` prints the same install lines when no agent is

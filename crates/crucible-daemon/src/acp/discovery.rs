@@ -49,6 +49,27 @@ struct BuiltinAgent {
     install: &'static str,
 }
 
+/// The Antigravity ACP server executable, per platform.
+///
+/// The names come from the ACP registry entry `antigravity-acp`
+/// (github.com/agentclientprotocol/registry). Windows ships a `.exe`; Linux
+/// and macOS ship the same `.par` file.
+#[cfg(windows)]
+const ANTIGRAVITY_COMMAND: &str = "agy_acp_server.exe";
+#[cfg(not(windows))]
+const ANTIGRAVITY_COMMAND: &str = "agy_acp_server.par";
+
+/// The arguments of the Antigravity ACP server, per platform.
+///
+/// The empty value of `--uid=` is deliberate. Without the argument the
+/// binary's InitGoogle start-up code defaults to `--uid=nobody` and aborts on
+/// Debian and Ubuntu (registry issue #607). The registry declares the argument
+/// for Linux only. Zed and acpx pass the list unchanged.
+#[cfg(target_os = "linux")]
+const ANTIGRAVITY_ARGS: &[&str] = &["--uid="];
+#[cfg(not(target_os = "linux"))]
+const ANTIGRAVITY_ARGS: &[&str] = &[];
+
 const BUILTIN_AGENTS: &[BuiltinAgent] = &[
     BuiltinAgent {
         name: "opencode",
@@ -105,6 +126,18 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         // github.com/NousResearch/hermes-agent.
         requires: None,
         install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+    },
+    BuiltinAgent {
+        name: "antigravity",
+        command: ANTIGRAVITY_COMMAND,
+        args: ANTIGRAVITY_ARGS,
+        description: "Google Antigravity ACP server, speaks ACP directly",
+        // The server ships inside the Antigravity extension archive, so the
+        // agent is standalone.
+        requires: None,
+        install: "download the archive for your platform from \
+                  https://dl.google.com/agy-extensions/releases/ , then put \
+                  the server on PATH (ACP registry entry: antigravity-acp)",
     },
 ];
 
@@ -749,7 +782,15 @@ mod tests {
     fn test_default_agent_profiles_include_all_builtin_agents() {
         let profiles = default_agent_profiles();
 
-        for name in ["opencode", "claude", "gemini", "codex", "cursor", "hermes"] {
+        for name in [
+            "opencode",
+            "claude",
+            "gemini",
+            "codex",
+            "cursor",
+            "hermes",
+            "antigravity",
+        ] {
             assert!(profiles.contains_key(name), "missing profile: {}", name);
         }
     }
@@ -758,7 +799,15 @@ mod tests {
     fn test_default_agent_profiles_have_command_args_and_description() {
         let profiles = default_agent_profiles();
 
-        for name in ["opencode", "claude", "gemini", "codex", "cursor", "hermes"] {
+        for name in [
+            "opencode",
+            "claude",
+            "gemini",
+            "codex",
+            "cursor",
+            "hermes",
+            "antigravity",
+        ] {
             let profile = profiles.get(name).expect("profile should exist");
             assert!(
                 profile.command.as_ref().is_some_and(|v| !v.is_empty()),
@@ -838,6 +887,28 @@ mod tests {
 
         assert!(message.contains("definitely-unknown"));
         assert!(message.contains("known agent"));
+    }
+
+    /// The `antigravity` built-in must launch what the ACP registry entry
+    /// `antigravity-acp` declares for this platform, argument for argument.
+    /// Zed and acpx pass the same list.
+    #[test]
+    fn the_antigravity_builtin_matches_the_registry_entry() {
+        let agent = resolve_agent_from_config("antigravity", &AcpConfig::default())
+            .expect("antigravity is a built-in");
+
+        #[cfg(windows)]
+        assert_eq!(agent.command, "agy_acp_server.exe");
+        #[cfg(not(windows))]
+        assert_eq!(agent.command, "agy_acp_server.par");
+
+        // On Linux the value is empty ON PURPOSE. Without the argument the
+        // binary's InitGoogle start-up defaults to `--uid=nobody` and aborts
+        // on Debian and Ubuntu (registry issue #607).
+        #[cfg(target_os = "linux")]
+        assert_eq!(agent.args, vec!["--uid=".to_string()]);
+        #[cfg(not(target_os = "linux"))]
+        assert!(agent.args.is_empty());
     }
 
     #[tokio::test]
