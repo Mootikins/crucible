@@ -1779,9 +1779,21 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} must be listed: {listed}"))["git"]
                 .clone()
         };
-        assert_eq!(git_of("repo"), true, "the top level is a git root: {listed}");
-        assert_eq!(git_of("below"), false, "a folder below the top level is not: {listed}");
-        assert_eq!(git_of("plain"), false, "a folder outside git is not: {listed}");
+        assert_eq!(
+            git_of("repo"),
+            true,
+            "the top level is a git root: {listed}"
+        );
+        assert_eq!(
+            git_of("below"),
+            false,
+            "a folder below the top level is not: {listed}"
+        );
+        assert_eq!(
+            git_of("plain"),
+            false,
+            "a folder outside git is not: {listed}"
+        );
     }
 
     /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts

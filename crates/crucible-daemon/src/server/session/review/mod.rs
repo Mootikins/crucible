@@ -34,14 +34,14 @@ use crate::rpc_helpers::typed_params;
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange,
-    ReviewScope, ReviewState, RootBase, RootStatus,
+    Comment, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, ReviewScope, ReviewState,
+    RootBase, RootStatus,
 };
 
-use crate::server::diff_comments::{record_comment, resolve_in, CommentSpec};
-use crucible_core::session::SessionId;
 use crate::review::{paths, record_diffset, BulkOutcome, ReviewError, ReviewResult};
+use crate::server::diff_comments::{record_comment, resolve_in, CommentSpec};
 use crate::tools::containment::reject_non_normal;
+use crucible_core::session::SessionId;
 
 // ── Operations (shared with the Lua bridge) ─────────────────────────────────
 
