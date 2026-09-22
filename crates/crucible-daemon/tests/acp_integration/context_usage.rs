@@ -33,10 +33,7 @@ use crucible_core::protocol::session_events::{ContextLimitResolvedPayload, Conte
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
-use tempfile::TempDir;
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
@@ -49,7 +46,6 @@ use crate::support::{mock_agent_path, mock_path_acp_config, mock_session_agent, 
 /// binary cannot get an in-process script, and a change to the environment of
 /// this process would race the rest of the suite.
 async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
-    let temp = TempDir::new().expect("temp workspace");
     let session_manager = temp_session_manager();
     let (event_tx, mut event_rx) = broadcast::channel(256);
 

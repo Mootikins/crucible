@@ -4,8 +4,6 @@
 //! over a pipe. Some spawn the `mock-acp-agent` binary. No test needs a real
 //! agent binary.
 
-#![allow(unused)]
-
 // Test support utilities
 #[path = "../acp_support/mod.rs"]
 mod support;
