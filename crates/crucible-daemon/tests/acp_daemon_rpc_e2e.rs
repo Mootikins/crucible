@@ -45,7 +45,10 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 /// A `SessionAgent` that points the daemon at the mock binary and scripts
 /// the turn through a `MockScript` in the agent's environment.
 fn acp_agent_streaming(answer: &str) -> SessionAgent {
-    let mut agent = mock_session_agent(&mock_agent_path().to_string_lossy());
+    // The daemon finds the binary through its profile. This call only fails
+    // the test with the build command when the binary is missing.
+    mock_agent_path();
+    let mut agent = mock_session_agent(common::MOCK_ACP_PROFILE);
     let script = MockScript {
         turn: vec![Step::Text(answer.to_string())],
         ..MockScript::default()

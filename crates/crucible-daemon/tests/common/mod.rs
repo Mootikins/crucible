@@ -155,6 +155,10 @@ pub struct TestDaemon {
 /// How long a fixture gives its daemon to accept a connection.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The ACP profile name of the mock agent in the spawned daemon's config.
+#[allow(dead_code)] // Only the ACP e2e tests name the mock agent.
+pub const MOCK_ACP_PROFILE: &str = "mock-acp-agent";
+
 /// The daemon never accepted a connection inside the readiness window.
 ///
 /// It carries the pid the fixture spawned. A test that proves the fixture
@@ -217,11 +221,13 @@ fn write_daemon_config(home: &Path) -> Result<()> {
     let config_dir = home.join(".config").join("crucible");
     std::fs::create_dir_all(&config_dir)?;
     // The daemon launches an ACP agent by profile name, so a test that
-    // spawns the mock binary needs a profile for it. The path is the name.
+    // spawns the mock binary needs a profile for it. The name is not the
+    // path: the config store splits a key at each `.`, and a checkout path
+    // can hold one (`.claude/worktrees/...`).
     // The variable is absent when the mock binary is not built; a test that
     // needs the mock then fails on its own missing-binary message.
     let mock_profile = option_env!("CARGO_BIN_EXE_mock-acp-agent")
-        .map(|mock| format!(", acp = {{ agents = {{ [{mock:?}] = {{ command = {mock:?} }} }} }}",))
+        .map(|mock| format!(", acp = {{ agents = {{ [{MOCK_ACP_PROFILE:?}] = {{ command = {mock:?} }} }} }}",))
         .unwrap_or_default();
     std::fs::write(
         config_dir.join("init.lua"),
