@@ -275,6 +275,8 @@ async fn ask(
 /// and the SDK then makes an internal error with the data "response to
 /// `<method>` never received". The SDK gives no typed mark for that case,
 /// so the text is the signal. The tests that kill an agent mid-turn pin it.
+/// The text comes from `agent-client-protocol` 2.0.0. Check it again when
+/// the SDK version changes.
 fn connection_lost(error: &agent_client_protocol::Error) -> bool {
     let never_received = || {
         error
