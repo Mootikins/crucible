@@ -1,9 +1,9 @@
 //! A `proposal_changed` event starts a read of the proposal list.
 //!
-//! The event reaches the app through the message channel. The drain loop
-//! gives each message to the reducer, and the follow-up of the reducer
-//! re-enters the reducer, not `process_action`. So the drain loop itself
-//! must start the read, or the status line count never changes.
+//! The event reaches the app through the message channel. The reducer
+//! answers with `FetchProposals`, and the drain loop gives that follow-up to
+//! `process_action`, which starts the read. If the follow-up stops there,
+//! the status line count never changes.
 
 use std::sync::Arc;
 
@@ -43,7 +43,8 @@ async fn reads_after_a_change(is_replay: bool) -> usize {
     let mut deadline = None;
     runner
         .drain_pending_messages(&mut params, &mut deadline)
-        .await;
+        .await
+        .expect("the drain does not fail");
 
     // The test runtime runs one thread, and the drain did not yield, so the
     // read never reaches a daemon before this abort.

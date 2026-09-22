@@ -17,7 +17,9 @@ use crucible_oil::render::{render_to_plain_text, render_to_string};
 
 use crate::cli::{CommentFormat, DiffCommands};
 use crate::formatting::TextFormat;
-use crate::tui::oil::components::diff_view::{render_diffset_file, DiffLayout, DiffOptions};
+use crate::tui::oil::components::diff_view::{
+    blank_row, render_diffset_file, DiffLayout, DiffOptions,
+};
 
 /// The width of the output when stdout is not a terminal.
 const PIPE_WIDTH: usize = 100;
@@ -206,7 +208,7 @@ fn diffset_view(diffset: &Diffset, texts: &[Option<DiffFileText>], opts: &DiffOp
     let mut rows = vec![text(format!("{count} {noun} changed since {base}"))];
     for (index, entry) in diffset.files.iter().enumerate() {
         if !opts.collapsed {
-            rows.push(text(""));
+            rows.push(blank_row());
         }
         let text = texts.get(index).and_then(Option::as_ref);
         rows.push(render_diffset_file(entry, text, opts));
@@ -371,6 +373,60 @@ mod tests {
         assert!(comments_target("session-chat-1", Path::new("/"), Some("main"), None).is_err());
         assert!(
             comments_target("session-chat-1", Path::new("/"), None, Some("HEAD".into())).is_err()
+        );
+    }
+
+    fn entry(path: &str) -> crucible_core::diff::DiffFileEntry {
+        crucible_core::diff::DiffFileEntry {
+            root: PhysicalRoot::from_top_level("/repo"),
+            path: path.into(),
+            status: crucible_core::diff::FileStatus::Modified,
+            added: 1,
+            removed: 1,
+            binary: false,
+            too_large: false,
+        }
+    }
+
+    /// A blank row divides two files. A text node with no text has no
+    /// height, so the files used to touch.
+    #[test]
+    fn a_blank_row_divides_the_files() {
+        let source = DiffsetSource::Branch {
+            root: PhysicalRoot::from_top_level("/repo"),
+            base: "main".into(),
+            head: None,
+        };
+        let diffset = Diffset {
+            id: source.id(),
+            source,
+            files: vec![entry("a.rs"), entry("b.rs")],
+        };
+        let texts = |old: &str, new: &str| {
+            Some(DiffFileText {
+                base_text: Some(old.into()),
+                current_text: Some(new.into()),
+            })
+        };
+        let mut opts = DiffOptions::for_width(PIPE_WIDTH);
+        opts.layout = Some(DiffLayout::Unified);
+        let node = diffset_view(&diffset, &[texts("a\n", "A\n"), texts("b\n", "B\n")], &opts);
+        let out = render_to_plain_text(&node, PIPE_WIDTH);
+        let lines: Vec<&str> = out.lines().map(str::trim_end).collect();
+        assert_eq!(
+            lines,
+            [
+                "2 files changed since main",
+                "",
+                "edit a.rs  +1 -1",
+                "-a",
+                "+A",
+                "",
+                "edit b.rs  +1 -1",
+                "-b",
+                "+B",
+            ],
+            "{out:?}"
         );
     }
 

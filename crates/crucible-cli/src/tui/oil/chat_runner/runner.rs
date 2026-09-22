@@ -355,7 +355,7 @@ impl OilChatRunner {
 
             match self
                 .drain_phase_outcome(&mut params, &mut replay_auto_exit_deadline)
-                .await
+                .await?
             {
                 DrainPhaseOutcome::Quit => return Ok(()),
                 DrainPhaseOutcome::Continue => continue,
@@ -425,19 +425,19 @@ impl OilChatRunner {
         &mut self,
         params: &mut EventLoopParams<'_, A>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
-    ) -> DrainPhaseOutcome {
+    ) -> Result<DrainPhaseOutcome> {
         let drain_outcome = self
             .drain_pending_messages(params, replay_auto_exit_deadline)
-            .await;
+            .await?;
 
         if drain_outcome == DrainMessagesOutcome::Quit {
-            return DrainPhaseOutcome::Quit;
+            return Ok(DrainPhaseOutcome::Quit);
         }
         if !Self::should_wait_for_event(drain_outcome) {
-            return DrainPhaseOutcome::Continue;
+            return Ok(DrainPhaseOutcome::Continue);
         }
 
-        DrainPhaseOutcome::Wait
+        Ok(DrainPhaseOutcome::Wait)
     }
 
     async fn handle_selected_event<A: AgentHandle>(

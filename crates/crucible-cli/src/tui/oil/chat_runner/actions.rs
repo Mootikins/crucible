@@ -223,25 +223,6 @@ impl OilChatRunner {
         }));
     }
 
-    /// Start the daemon read that a drained message asks for.
-    ///
-    /// A message from the channel reaches the reducer, and a follow-up of the
-    /// reducer re-enters it, not `process_action`. Thus a read that an
-    /// event starts must begin here, or nothing runs it.
-    fn start_drained_read(
-        &self,
-        msg: &ChatAppMsg,
-        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
-        background_tasks: &mut Vec<JoinHandle<()>>,
-    ) {
-        if self.is_replay {
-            return;
-        }
-        if let ChatAppMsg::FetchProposals { open } = msg {
-            Self::spawn_proposal_fetch(*open, msg_tx, background_tasks);
-        }
-    }
-
     /// Route a `ChatAppMsg` to the app reducer, and — in live mode — kick
     /// off any side-effects (e.g. sending a user message via RPC).
     ///
@@ -277,7 +258,7 @@ impl OilChatRunner {
         &mut self,
         params: &mut EventLoopParams<'_, A>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
-    ) -> DrainMessagesOutcome {
+    ) -> io::Result<DrainMessagesOutcome> {
         let app: &mut OilChatApp = params.app;
         let agent: &mut A = params.agent;
         let bridge: &AgentEventBridge = params.bridge;
@@ -298,34 +279,35 @@ impl OilChatRunner {
                 }
             }
 
-            // Unified message processing for all paths.
-            // In replay mode, process_message skips the RPC send so the
-            // recorded events drive the UI without hitting the daemon.
+            // The drained message itself goes to the reducer only. It is an
+            // event or a replay record, so it must not start its own effect
+            // again (a resume would send every old prompt once more).
             //
-            // CAUTION: follow-up Sends re-enter process_message, NOT
-            // process_action — side effects that only exist in
-            // process_action arms (daemon RPCs, spawns) are dropped here.
-            // A reducer that returns Action::Send for a side-effectful
-            // variant must not rely on this loop to execute it (this is
-            // how the FetchModels prefetch and --set startup overrides
-            // silently broke; both now run their effects directly).
-            self.start_drained_read(&msg, msg_tx, background_tasks);
-            let mut action = Self::process_message(&msg, app, agent, bridge, self.is_replay).await;
-            while let Action::Send(follow_up) = action {
-                self.start_drained_read(&follow_up, msg_tx, background_tasks);
-                action =
-                    Self::process_message(&follow_up, app, agent, bridge, self.is_replay).await;
-            }
-            if action.is_quit() {
-                return DrainMessagesOutcome::Quit;
+            // The follow-up of the reducer is new intent, as a key press is.
+            // Thus it goes to `process_action`, which starts its daemon read
+            // and then gives it to the reducer. The replay gates of
+            // `process_action` keep a replay away from the daemon.
+            let action = Self::process_message(&msg, app, agent, bridge, self.is_replay).await;
+            let quit = self
+                .process_action(ProcessActionParams {
+                    action,
+                    app: &mut *app,
+                    agent: &mut *agent,
+                    bridge,
+                    msg_tx,
+                    background_tasks: &mut *background_tasks,
+                })
+                .await?;
+            if quit {
+                return Ok(DrainMessagesOutcome::Quit);
             }
         }
 
-        if processed_any {
+        Ok(if processed_any {
             DrainMessagesOutcome::Processed
         } else {
             DrainMessagesOutcome::Idle
-        }
+        })
     }
 
     pub(super) fn should_wait_for_event(outcome: DrainMessagesOutcome) -> bool {

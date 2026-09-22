@@ -10,7 +10,7 @@ use crate::tui::oil::theme;
 use crate::tui::oil::utils::{truncate_to_chars, visible_width};
 use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
 use crucible_core::types::acp::{FileDiff, MAX_DIFF_BYTES};
-use crucible_oil::node::{col, row, styled, Node};
+use crucible_oil::node::{col, row, styled, text, Node};
 use crucible_oil::style::{Color, Style};
 use similar::{ChangeTag, TextDiff};
 use std::path::Path;
@@ -236,6 +236,14 @@ pub fn render_diffset_file(
         Style::new().fg(t.resolve_color(t.colors.text_dim)).dim(),
     );
     col([header, line])
+}
+
+/// An empty row between the parts of a diff.
+///
+/// A text node with no text has no height, so it prints nothing. This row
+/// holds one space, and thus takes one row.
+pub fn blank_row() -> Node {
+    text(" ")
 }
 
 /// The rows that the body shows.

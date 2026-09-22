@@ -18,7 +18,9 @@ use crucible_oil::node::{col, text, Node};
 use super::diff::{print_node, stdout_diff_options};
 use crate::cli::ProposalCommands;
 use crate::formatting::TextFormat;
-use crate::tui::oil::components::diff_view::{count_changes, render_diffset_file, DiffOptions};
+use crate::tui::oil::components::diff_view::{
+    blank_row, count_changes, render_diffset_file, DiffOptions,
+};
 
 /// The marker line above the proposed side of a conflict.
 pub(crate) const OURS_MARKER: &str = "<<<<<<< proposal";
@@ -315,12 +317,6 @@ fn conflict_text_of(proposal: &Proposal, path: &str) -> Result<String> {
     Ok(conflict_text(conflict))
 }
 
-/// An empty row. A text node with no text has no height, so the row holds
-/// one space.
-fn blank_line() -> Node {
-    text(" ")
-}
-
 /// The summary of a proposal, the diff of each file and, for a conflicted
 /// proposal, each conflicted file with its markers.
 pub(crate) fn show_view(proposal: &Proposal, opts: &DiffOptions) -> Node {
@@ -351,12 +347,12 @@ pub(crate) fn show_view(proposal: &Proposal, opts: &DiffOptions) -> Node {
 
     let (diffset, texts) = proposal_diffset(proposal);
     for (entry, file_text) in diffset.files.iter().zip(&texts) {
-        rows.push(blank_line());
+        rows.push(blank_row());
         rows.push(render_diffset_file(entry, file_text.as_ref(), opts));
     }
 
     if let ProposalState::Conflicted { files } = &proposal.state {
-        rows.push(blank_line());
+        rows.push(blank_row());
         rows.push(text(format!(
             "{} with the disk. Settle each one, then run:",
             count_noun(files.len(), "file conflicts", "files conflict"),
@@ -366,7 +362,7 @@ pub(crate) fn show_view(proposal: &Proposal, opts: &DiffOptions) -> Node {
             proposal.id
         )));
         for conflict in files {
-            rows.push(blank_line());
+            rows.push(blank_row());
             rows.push(text(format!("conflict: {}", conflict.path)));
             rows.extend(
                 conflict_text(conflict)

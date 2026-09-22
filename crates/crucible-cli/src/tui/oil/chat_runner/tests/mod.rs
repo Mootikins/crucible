@@ -1,4 +1,5 @@
 mod builders;
+mod diff_fetch;
 mod initial_sets;
 mod knob_rpc;
 mod model_prefetch;
