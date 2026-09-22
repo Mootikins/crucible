@@ -6,8 +6,8 @@
  * consumer opened its own `EventSource`, so two panes on one session held two
  * streams and `review-store.ts` carried a hand-written refcount to stop a
  * third. Here every consumer of a stream shares one source: the first
- * `subscribe` opens it, the last unsubscribe closes it, and a later
- * `subscribe` opens a fresh one.
+ * `subscribe` opens it, the last unsubscribe closes it one microtask later,
+ * and a `subscribe` after that close opens a fresh one.
  *
  * The root also carries ONE hook point per stream, the "route". A route turns
  * an event into a cache write (`setQueryData`, `invalidateQueries`) or a bus
@@ -47,7 +47,8 @@ import { getQueryClient } from './client';
 export interface SseStream<E> {
   /**
    * Adds a handler, and opens the stream when it is the first one. The answer
-   * removes that handler again, and closes the stream when it was the last.
+   * removes that handler again. When it was the last, the stream closes one
+   * microtask later, unless a new subscriber joins before then.
    *
    * `onOpen` fires once, the first time this subscriber sees an open stream.
    * A consumer that joins a stream that is open already gets it at once. A
@@ -191,8 +192,10 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
   const [latest, setLatest] = createSignal<E | undefined>(undefined);
   let close: (() => void) | null = null;
   let open = false;
+  let disposed = false;
 
   onCleanup(() => {
+    disposed = true;
     close?.();
     close = null;
     open = false;
@@ -227,6 +230,21 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
     }
   }
 
+  /**
+   * Closes the stream one microtask later, if no subscriber came back.
+   *
+   * A split of a pane unmounts its chat and mounts it again in one
+   * synchronous batch. The only subscriber leaves and comes back in that
+   * batch. A close at once would drop the source, and the new subscriber
+   * would open a second request with `?after=`. The wait lets the stream
+   * outlive that batch; `createSingletonRoot` uses the same microtask.
+   */
+  function closeWhenStillUnused(): void {
+    queueMicrotask(() => {
+      if (!disposed && subscribers.size === 0) dispose();
+    });
+  }
+
   function announceOpen(): void {
     open = true;
     for (const subscriber of [...subscribers]) deliverOpen(subscriber);
@@ -247,7 +265,7 @@ function createStream<E>(spec: StreamSpec<E>, dispose: () => void): SseStream<E>
         if (!live) return;
         live = false;
         subscribers.delete(subscriber);
-        if (subscribers.size === 0) dispose();
+        if (subscribers.size === 0) closeWhenStillUnused();
       };
     },
 

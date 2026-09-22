@@ -147,6 +147,7 @@ const NON_REQUEST: Record<string, string> = {
   'GET /api/fs/events': 'server-sent event stream: the body never ends',
   'GET /api/plugins/events': 'server-sent event stream: the body never ends',
   'GET /api/surfaces/events': 'server-sent event stream: the body never ends',
+  'GET /api/events/system': 'server-sent event stream: the body never ends',
   'GET /api/terminal/ws': 'websocket upgrade: the document answers 101, not a body',
 };
 

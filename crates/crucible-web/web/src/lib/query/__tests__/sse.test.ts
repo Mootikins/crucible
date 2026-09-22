@@ -23,6 +23,14 @@ import {
   onlyEventSource as onlySource,
 } from '@/test-utils/sse';
 
+/**
+ * Runs the microtasks that are in the queue now. The stream closes one
+ * microtask after its last subscriber leaves.
+ */
+async function settle(): Promise<void> {
+  await Promise.resolve();
+}
+
 beforeEach(() => {
   installFakeEventSource();
   setQueryClientForTests(new QueryClient());
@@ -57,16 +65,34 @@ describe('sessionEvents', () => {
     expect(second).toHaveBeenCalledWith({ type: 'token', content: 'hi' });
   });
 
-  it('holds the stream open until the last subscriber leaves', () => {
+  it('holds the stream open until the last subscriber leaves', async () => {
     const stopFirst = sessionEvents('s1').subscribe(vi.fn());
     const stopSecond = sessionEvents('s1').subscribe(vi.fn());
     const source = onlySource();
 
     stopFirst();
+    await settle();
     expect(source.closed).toBe(false);
 
     stopSecond();
+    await settle();
     expect(source.closed).toBe(true);
+  });
+
+  it('keeps the source when the last subscriber leaves and a new one joins in the same task', async () => {
+    // A split of a pane unmounts the chat and mounts it again in one batch.
+    // The stream must not close and open again with `?after=` for that.
+    const stop = sessionEvents('s1').subscribe(vi.fn());
+    onlySource().open();
+
+    stop();
+    const joined = vi.fn();
+    sessionEvents('s1').subscribe(vi.fn(), joined);
+    await settle();
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(onlySource().closed).toBe(false);
+    expect(joined).toHaveBeenCalledTimes(1);
   });
 
   it('builds a second EventSource for a second session', () => {
@@ -91,9 +117,10 @@ describe('sessionEvents', () => {
     expect(second).not.toHaveBeenCalled();
   });
 
-  it('opens a new stream after the old one closed', () => {
+  it('opens a new stream after the old one closed', async () => {
     const stop = sessionEvents('s1').subscribe(vi.fn());
     stop();
+    await settle();
 
     sessionEvents('s1').subscribe(vi.fn());
 
@@ -236,14 +263,16 @@ describe('surfaceEvents', () => {
     expect(second).toHaveBeenCalledWith({ plugin: 'board', name: 'tasks', version: 2, withdrawn: true });
   });
 
-  it('closes the stream when the last subscriber leaves', () => {
+  it('closes the stream when the last subscriber leaves', async () => {
     const stopFirst = surfaceEvents().subscribe(vi.fn());
     const stopSecond = surfaceEvents().subscribe(vi.fn());
     const source = onlySource();
 
     stopFirst();
+    await settle();
     expect(source.closed).toBe(false);
     stopSecond();
+    await settle();
     expect(source.closed).toBe(true);
   });
 
@@ -275,11 +304,12 @@ describe('fsEvents', () => {
     expect(second).toHaveBeenCalledWith({ type: 'changed', path: '/k/a.md', kind: 'modified' });
   });
 
-  it('closes the stream when the last subscriber leaves', () => {
+  it('closes the stream when the last subscriber leaves', async () => {
     const stop = fsEvents().subscribe(vi.fn());
     const source = onlySource();
 
     stop();
+    await settle();
 
     expect(source.closed).toBe(true);
   });
@@ -344,14 +374,16 @@ describe('pluginEvents', () => {
     expect(second).toHaveBeenCalledWith('board', 'rows');
   });
 
-  it('closes the stream when the last subscriber leaves', () => {
+  it('closes the stream when the last subscriber leaves', async () => {
     const stopFirst = pluginEvents().subscribe(vi.fn());
     const stopSecond = pluginEvents().subscribe(vi.fn());
     const source = onlySource();
 
     stopFirst();
+    await settle();
     expect(source.closed).toBe(false);
     stopSecond();
+    await settle();
     expect(source.closed).toBe(true);
   });
 
@@ -435,12 +467,13 @@ describe('reconnect', () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
-  it('closes the last source when the last subscriber leaves after it', () => {
+  it('closes the last source when the last subscriber leaves after it', async () => {
     const stream = sessionEvents('s1');
     const stop = stream.subscribe(vi.fn());
     stream.reconnect();
 
     stop();
+    await settle();
 
     expect(FakeEventSource.instances.every((s) => s.closed)).toBe(true);
   });
