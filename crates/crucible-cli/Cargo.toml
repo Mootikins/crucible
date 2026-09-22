@@ -59,7 +59,7 @@ crucible-oil = { path = "../crucible-oil", default-features = false }
 # ACP agent mode: `cru acp` serves the internal agent over the Agent Client
 # Protocol on stdio. Feature-matched to crucible-daemon's host-side dependency
 # so cargo unifies to one build of the crate.
-agent-client-protocol = "2.0.0"
+agent-client-protocol = "2.2.0"
 
 # Web UI server (`cru web`), optional behind the `web` feature
 crucible-web = { workspace = true, optional = true }

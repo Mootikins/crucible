@@ -34,11 +34,12 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 rand = { workspace = true }
 
 # ACP schema types for mode/command definitions
-# Pinned by agent-client-protocol 2.0.0, which requires =1.5.0. Bumping this
-# alone does not compile: the pin moves when the ACP crate moves, and 2.0.0 is
-# the latest. 1.6.0 adds the unstable_tool_call_name builders and 1.7.0 the
-# v2 routing types; we use neither.
-agent-client-protocol-schema = "=1.5.0"
+# Pinned by agent-client-protocol 2.2.0, which requires =1.9.1. Bumping this
+# alone does not compile: the pin moves when the ACP crate moves.
+# 1.9.1 makes `ToolCall.name` a stable field, which the permission gate keys
+# on. Earlier lines put the name behind `unstable_tool_call_name` (1.6.0) or
+# had no name at all (1.5.0).
+agent-client-protocol-schema = "=1.9.1"
 
 # Markdown parsing
 markdown-it = { workspace = true }
