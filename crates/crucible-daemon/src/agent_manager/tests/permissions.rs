@@ -1,6 +1,113 @@
 use super::*;
 use crate::test_support::{kiln_name, temp_session_manager};
 
+/// The one tool policy, driven through the daemon's own turn loop.
+///
+/// The unit tests of `decide_tool_gate` pin the decision. These pin that the
+/// daemon's tool path acts on it — a call that `decide_tool_gate` refuses
+/// must never dispatch, and a call it approves must carry the marker that
+/// says which layer granted it.
+mod the_tool_gate_in_a_turn {
+    use super::*;
+
+    /// Run one tool call through a turn; return the `tool_result` payload the
+    /// model reads.
+    async fn dispatch(h: &mut ReactorTestHarness, tool: &str) -> serde_json::Value {
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", tool, serde_json::json!({})),
+            script::text("done"),
+            script::done(),
+        ]);
+        h.send("run tool").await;
+        let result = h.wait_for("tool_result").await;
+        assert_eq!(result.data["tool"], tool, "wrong tool reported");
+        h.wait_for("message_complete").await;
+        result.data["result"].clone()
+    }
+
+    /// An operator `deny` refuses a read-only tool, which never reaches the
+    /// prompt at all.
+    ///
+    /// `get_kiln_info` is on the built-in safe list, so it takes the
+    /// read-only exemption and skips the gate. The operator's rule is the
+    /// only thing left that can refuse it, and it must.
+    #[tokio::test]
+    async fn an_operator_deny_refuses_a_read_only_tool() {
+        let config = PermissionConfig {
+            deny: vec!["get_kiln_info:*".to_string()],
+            ..Default::default()
+        };
+        let mut h = ReactorTestHarness::with_permissions(Some(config)).await;
+
+        let payload = dispatch(&mut h, "get_kiln_info").await;
+        let error = payload["error"].as_str().unwrap_or_default();
+        assert!(
+            error.contains("denied by permissions config"),
+            "`deny = [\"get_kiln_info:*\"]` must refuse a read-only tool, got: {payload:?}"
+        );
+
+        // The counterfactual: with no rule the same call answers. Without it
+        // this test would pass on a tool that simply never worked.
+        let mut h = ReactorTestHarness::new().await;
+        let payload = dispatch(&mut h, "get_kiln_info").await;
+        assert!(
+            payload.get("error").is_none(),
+            "the same call must answer with no rule against it, got: {payload:?}"
+        );
+    }
+
+    /// A card `allow` runs the tool and says so.
+    ///
+    /// The marker is the user's only sight of a grant they never saw made, so
+    /// it rides on the `tool_call` event rather than arriving later.
+    #[tokio::test]
+    async fn a_card_allow_marks_the_call_it_granted() {
+        let mut h = ReactorTestHarness::new().await;
+        let mut agent = test_agent();
+        agent.tool_policy = Some(HashMap::from([(
+            "get_kiln_info".to_string(),
+            crucible_core::agent::ToolPolicy::Allow,
+        )]));
+        h.reconfigure(agent).await;
+
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", "get_kiln_info", serde_json::json!({})),
+            script::text("done"),
+            script::done(),
+        ]);
+        h.send("run tool").await;
+        let call = h.wait_for("tool_call").await;
+        assert_eq!(
+            call.data["auto_approved"], "agent card policy",
+            "a card grant must name itself on the call it granted"
+        );
+        h.wait_for("message_complete").await;
+    }
+
+    /// A read-only tool nobody granted anything to carries no marker.
+    ///
+    /// Nothing was granted, because nothing was needed. A marker here would
+    /// tell the user a permission decision happened when none did.
+    #[tokio::test]
+    async fn a_read_only_tool_carries_no_marker() {
+        let mut h = ReactorTestHarness::new().await;
+
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", "get_kiln_info", serde_json::json!({})),
+            script::text("done"),
+            script::done(),
+        ]);
+        h.send("run tool").await;
+        let call = h.wait_for("tool_call").await;
+        assert!(
+            call.data["auto_approved"].is_null(),
+            "a read-only tool was granted nothing, got: {:?}",
+            call.data
+        );
+        h.wait_for("message_complete").await;
+    }
+}
+
 mod is_safe_tests {
     use super::*;
     use test_case::test_case;

@@ -352,10 +352,12 @@ impl AgentManager {
         // reordering it would change every plugin's contract. So does the
         // isolation gate, deliberately: there, a handler taking the call over
         // *is* the sandbox.
-        // Asked of `decide_tool_gate` with no engine, so the rule that
+        //
+        // `decide_tool_gate` is asked with NO engine, so the rule that
         // outranks interception is not written a second time here: with no
-        // rules to read, the only refusal that function can give is the
-        // card's own deny.
+        // rules to read, the only refusal that function can give is the card's
+        // own deny. The operator's rules are read below the loop, where a
+        // handler that rewrote the arguments has already run.
         let card_policy = stream_ctx
             .agent_stream_config
             .tool_policy

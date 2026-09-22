@@ -253,7 +253,6 @@ fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Keep the model choice. Send the other updates to the turn that runs.
 /// The tool id and name a session update announces, when it names one.
 ///
 /// `name` is the ACP field, stable since schema 1.9.1. An agent that sends
@@ -264,21 +263,23 @@ fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
 /// `title` is never read as a name. It is prose for a person, and a name
 /// taken from prose matches no rule.
 fn announced_tool_name(update: &SessionUpdate) -> Option<(ToolCallId, String)> {
-    let (id, name, raw_input) = match update {
-        SessionUpdate::ToolCall(call) => (&call.tool_call_id, &call.name, &call.raw_input),
-        SessionUpdate::ToolCallUpdate(update) => (
-            &update.tool_call_id,
-            &update.fields.name,
-            &update.fields.raw_input,
-        ),
-        _ => return None,
-    };
-
-    let name = match name {
-        Some(name) => name.clone(),
-        None => mcp_tool_name(raw_input.as_ref()?)?,
-    };
-    Some((id.clone(), name))
+    match update {
+        // The first frame of a tool call, which states what the tool is.
+        SessionUpdate::ToolCall(call) => {
+            let name = match &call.name {
+                Some(name) => name.clone(),
+                None => mcp_tool_name(call.raw_input.as_ref()?)?,
+            };
+            Some((call.tool_call_id.clone(), name))
+        }
+        // A refinement. An absent `name` means "unchanged", so only a name
+        // this frame states is read: a name derived from a later frame's raw
+        // input would be a guess that overwrites what the agent said.
+        SessionUpdate::ToolCallUpdate(update) => {
+            Some((update.tool_call_id.clone(), update.fields.name.clone()?))
+        }
+        _ => None,
+    }
 }
 
 /// The `mcp.<server>.<tool>` name an MCP call's raw input carries.
@@ -288,6 +289,8 @@ fn mcp_tool_name(raw_input: &serde_json::Value) -> Option<String> {
     Some(format!("mcp.{server}.{tool}"))
 }
 
+/// Keep the tool names and the model choice. Send the other updates to the
+/// turn that runs.
 fn route_update(shared: &Mutex<Shared>, update: SessionUpdate) {
     let mut shared = lock(shared);
 

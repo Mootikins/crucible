@@ -79,8 +79,9 @@ pub(crate) fn decide_tool_gate(
         Some(PermissionDecision::Allow | PermissionDecision::Ask { .. }) | None => {
             ToolGate::Approve(match card_policy {
                 // A card `allow` is a grant the user never saw, so it gets a
-                // marker. The read-only exemption below does not: nothing was
-                // granted, because nothing was needed.
+                // marker. A call that came here through the read-only
+                // exemption gets none: nothing was granted, because nothing
+                // was needed.
                 Some(ToolPolicy::Allow) => Some("agent card policy".to_string()),
                 Some(ToolPolicy::Ask | ToolPolicy::Deny) | None => None,
             })

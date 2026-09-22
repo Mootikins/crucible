@@ -146,12 +146,16 @@ Permission values:
 
 Tools not listed use the default behavior (safe read-only tools run freely; mutating tools go through the permission gate). Note: delegated child sessions run non-interactively — for them, `ask` is effectively `deny` unless a permission pattern or Lua hook answers the prompt.
 
+**One policy, one key.** The same entry decides the tool for Crucible's own agents and for an external ACP agent such as `claude` or `codex`. An ACP agent sends the tool name when it asks for permission, and the policy keys on that name. A Crucible tool loses the MCP prefix the agent's client adds, so `mcp__crucible__read_note` and `mcp.crucible.read_note` both key on `read_note` — write the internal name. Another MCP server's tool keeps its whole name, so write that name exactly as the agent sends it, for example `mcp__github__create_pr`.
+
+**A call the agent never asks about is the agent's decision.** An ACP agent runs its own tools in its own process, and it asks only about the calls its own policy does not already allow. Crucible decides what it is asked and nothing more. To bound what such an agent can reach, use the session's isolation and trust settings, not this table.
+
 **Trust note:** `allow` skips the interactive prompt, so only install cards from sources you trust — a kiln-shipped card granting `bash: allow` runs shell commands unattended when delegated to. The operator's `permissions` deny rules are still evaluated for a card-allowed tool, so a card cannot sidestep them: `deny = ["bash:*"]` in your permissions config outranks any card.
 
 It outranks cards, not everything. Three things sit outside it, and a `deny` rule is a backstop only against what it can actually see:
 
 - **`--permissions allow` discards the rule lists entirely**, deny included, for the session launched with it. Only the hardcoded denies survive. If you rely on a `deny` line, do not pair it with that flag.
-- **A rule names one tool.** `bash:*` covers calls checked under the name `bash` — and, for external ACP agents, the `bash` execute *kind*. It says nothing about an MCP or plugin tool that shells out under its own name; gate those by their own names as `cru tools` lists them.
+- **A rule names one tool.** `bash:*` covers calls checked under the name `bash`. It says nothing about an MCP or plugin tool that shells out under its own name; gate those by their own names as `cru tools` lists them. An external ACP agent sends its own tool name, so a rule about its shell tool must use that name — `Bash` for `claude`, `exec_command` for `codex`. Only an agent that names no tool falls back to the coarse `bash` execute *kind*.
 - **A command pattern like `bash:rm *` is matched per statement**, which is stronger than it looks but not airtight. [[Help/Concepts/Permission Precedence]] states exactly what the split guarantees and the three edges it does not reach. `bash:*` is unaffected — it matches every statement whatever the line does.
 
 ## Delegating to a Card

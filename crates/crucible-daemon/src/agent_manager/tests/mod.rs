@@ -427,6 +427,14 @@ struct LifecycleBinding {
 
 impl ReactorTestHarness {
     async fn new() -> Self {
+        Self::with_permissions(None).await
+    }
+
+    /// A harness whose daemon carries an operator `[permissions]` config.
+    ///
+    /// That config is what `StreamContext::permission_engine` reads, so it is
+    /// the only way a test reaches the rules the tool gate evaluates.
+    async fn with_permissions(permissions: Option<PermissionConfig>) -> Self {
         let tmp = TempDir::new().unwrap();
         let session_manager = temp_session_manager_with_kilns(&[("kiln", tmp.path())]);
         let session = session_manager
@@ -442,7 +450,8 @@ impl ReactorTestHarness {
             )
             .await
             .unwrap();
-        let agent_manager = create_test_agent_manager(session_manager.clone());
+        let agent_manager =
+            create_test_agent_manager_with_permissions(session_manager.clone(), permissions);
         agent_manager
             .configure_agent(&session.id, test_agent())
             .await
@@ -776,6 +785,13 @@ pub(super) fn configure_provider_endpoint(am: &AgentManager, endpoint: &str) {
 pub(in crate::agent_manager) fn create_test_agent_manager(
     session_manager: Arc<SessionManager>,
 ) -> AgentManager {
+    create_test_agent_manager_with_permissions(session_manager, None)
+}
+
+fn create_test_agent_manager_with_permissions(
+    session_manager: Arc<SessionManager>,
+    permission_config: Option<PermissionConfig>,
+) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     AgentManager::new(AgentManagerParams {
@@ -786,7 +802,7 @@ pub(in crate::agent_manager) fn create_test_agent_manager(
         llm_config: None,
         acp_config: None,
         context_config: None,
-        permission_config: None,
+        permission_config,
         plugin_loader: None,
         card_roots: Default::default(),
         review_snapshot_root: crate::test_support::scratch_snapshot_root(),

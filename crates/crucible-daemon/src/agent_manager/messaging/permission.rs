@@ -35,6 +35,12 @@ const CRUCIBLE_MCP_PREFIXES: &[&str] = &[
 /// name: Crucible does not own that name, and stripping the prefix would let
 /// `mcp__evil__read_note` take a rule written about Crucible's `read_note`.
 ///
+/// The name IS grounds for the read-only exemption, unlike the `kind` below:
+/// keyed by its internal name, Crucible's `read_note` is the same tool the
+/// daemon's own agents run, and it skips the prompt for the same reason. An
+/// agent that mislabels a call buys nothing by it — it runs its own tools in
+/// its own process, so it would simply not ask.
+///
 /// The fallbacks, in order:
 ///
 /// 1. the `name` the agent sent, less a Crucible MCP prefix;

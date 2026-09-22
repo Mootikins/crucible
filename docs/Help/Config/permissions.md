@@ -76,12 +76,12 @@ cru.config.set({
 })
 ```
 
-**These profiles gate by ACP tool *kind*, not by command or path.** An external agent's
-native tool calls reach Crucible labeled only with a kind (`read`, `execute`, …), which
-the engine sees under a fixed name — see the kind vocabulary under Rule Format below.
-Command- and path-level patterns (`bash:rm *`, `read_file:*`) never match on this path,
-so a per-agent deny written that way is silently inert; gate by kind (`deny = ["bash:*"]`)
-or rely on the interactive prompt.
+**These profiles gate by the tool name the agent sends, not by command or path.** An
+external agent names the tool when it asks for permission — see "External ACP agents"
+under Rule Format below for the name to write. Command- and path-level patterns
+(`bash:rm *`, `read_file:*`) never match on this path, because the input is the raw
+JSON arguments; a per-agent deny written that way is silently inert. Gate by tool name
+(`deny = ["Bash:*"]`) or rely on the interactive prompt.
 
 ### Resolution Order
 
@@ -141,13 +141,30 @@ prefixed names (`gh_search_code`), and so on.
   invocation of this tool) the reliable pattern, and path-shaped patterns unreliable.
 
 **External ACP agents** (sessions gated by `acp.agents.<name>.permissions`, or by the
-global config as their fallback) are checked differently: the agent's native tool calls
-arrive labeled only with an ACP tool *kind*, and the engine sees the kind's fixed name —
-`read`, `edit`, `delete`, `write` (a move), `search`, `bash` (execute), `fetch`,
-`think`, `switch_mode`, or `acp_tool` (any call whose kind is unset or unrecognized).
-The input is the raw JSON arguments even for `bash`, so this path can gate by kind
-(`read:*`, `bash:*`) but **not** by command or path — `bash:cargo *` and `read_file:*`
-never match here. A per-agent `deny = ["bash:rm *"]` is silently inert.
+global config as their fallback) are checked under **the tool name the agent sends**.
+One rule decides a tool whether an external agent or Crucible's own agent calls it.
+Three cases, in this order:
+
+1. **A Crucible tool.** The agent's MCP client adds a prefix to it —
+   `mcp__crucible__read_note`, or `mcp.crucible.read_note` — and Crucible strips that
+   prefix. Write the internal name: `read_note:*`.
+2. **Another MCP server's tool, or the agent's own tool.** The whole name stands, so
+   write it as the agent sends it: `mcp__github__create_pr:*`, `Bash:*` for `claude`,
+   `exec_command:*` for `codex`. Run the agent once and read the tool name off the
+   permission prompt if you are unsure.
+3. **A call the agent does not name.** Only then does the coarse ACP *kind* stand in,
+   under a fixed name — `read`, `edit`, `delete`, `write` (a move), `search`, `bash`
+   (execute), `fetch`, `think`, `switch_mode`, or `acp_tool` (any call whose kind is
+   unset or unrecognized).
+
+The input is the raw JSON arguments even for a shell tool, so this path gates by tool
+name (`read_note:*`, `Bash:*`) but **not** by command or path — `bash:cargo *` and
+`read_file:*` never match here. A per-agent `deny = ["bash:rm *"]` is silently inert.
+
+**A call the agent never asks about is the agent's decision.** An external agent runs
+its own tools in its own process and asks only about the calls its own policy does not
+already allow. Crucible decides what it is asked, and nothing more. To bound what such
+an agent can reach at all, use the session's isolation and kiln trust, not these rules.
 
 | Rule | Matches |
 |------|---------|
@@ -157,15 +174,18 @@ never match here. A per-agent `deny = ["bash:rm *"]` is silently inert.
 | `write_file:*` | Any `write_file` call by an internal agent or Lua |
 | `edit_file:*` | Any `edit_file` call by an internal agent or Lua |
 | `gh_search_code:*` | The MCP gateway tool of that (prefixed) name |
-| `read:*` | Any read-kind call by an external ACP agent |
-| `bash:*` | Any `bash` call (internal) or execute-kind call (ACP) |
+| `read_note:*` | Crucible's `read_note`, called by an internal agent OR through an external agent's MCP client |
+| `Bash:*` | The `Bash` tool of an external agent that sends that name |
+| `read:*` | A read-kind call an external ACP agent did not name |
+| `bash:*` | Any `bash` call (internal) or an unnamed execute-kind call (ACP) |
 | `plugin:<server>:<pattern>` | Parsed but matches nothing on today's call paths — see below |
 | `*:*` | Any tool (use carefully) |
 
 Path-shaped patterns like `write:src/**` belong to a structured request vocabulary the
 daemon's permission gate understands (a `read`/`write` grant on a bare path), but no
 current code path submits requests in that shape — today `read:*`/`write:*` fire only
-as ACP kind rules, matching JSON input, where only `*` is dependable.
+as ACP kind rules for a call the agent did not name, matching JSON input, where only
+`*` is dependable.
 
 The three-part forms `mcp:<server>:<pattern>` and `plugin:<server>:<pattern>` parse and
 compile: the server name is compared exactly, and the pattern is globbed against the
