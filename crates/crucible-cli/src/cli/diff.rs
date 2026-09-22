@@ -32,4 +32,39 @@ pub enum DiffCommands {
         #[arg(short = 'f', long, default_value_t)]
         format: TextFormat,
     },
+
+    /// Print the open comments of a diffset, one quickfix entry for each
+    #[command(
+        long_about = "Print the open comments of a diffset.\n\nThe quickfix form gives one entry for each comment: `path:start: [start-end] text`. Vim reads it with its default errorformat. The path is relative to the root of the comment, so run Vim in that root.\n\nThe diffset is `session-<id>` for the record of a session, or `branch` for the branch diff that --root, --base and --head name. A `branch-<hex>` id also works when those flags give the same id.\n\nExamples:\n  # Open each comment of a session record in Vim\n  vim -q <(cru diff comments session-<id>)\n\n  # The comments of this branch diff, as JSON\n  cru diff comments branch --format json"
+    )]
+    Comments {
+        /// The diffset: `session-<id>`, `proposal-<uuid>`, `branch` or `branch-<hex>`
+        #[arg(value_name = "DIFFSET")]
+        diffset: String,
+
+        /// The base branch of a branch diffset. The default branch when omitted
+        #[arg(long, value_name = "REF")]
+        base: Option<String>,
+
+        /// The new side of a branch diffset. The working tree when omitted
+        #[arg(long, value_name = "REF")]
+        head: Option<String>,
+
+        /// The repository of a branch diffset. The git top level above the working directory when omitted
+        #[arg(long, value_name = "PATH")]
+        root: Option<PathBuf>,
+
+        /// Output format
+        #[arg(short = 'f', long, value_enum, default_value = "quickfix")]
+        format: CommentFormat,
+    },
+}
+
+/// The output format of `cru diff comments`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CommentFormat {
+    /// One `path:line: [start-end] text` entry for each comment, for `vim -q`.
+    Quickfix,
+    /// The listed comments as JSON, with the `outdated` flag.
+    Json,
 }

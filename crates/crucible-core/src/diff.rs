@@ -13,7 +13,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::proposal::ProposalId;
-use crate::session::{LineRange, PhysicalRoot, SessionId};
+use crate::session::{Comment, LineRange, PhysicalRoot, SessionId};
 
 /// The identity of one diffset.
 ///
@@ -196,9 +196,44 @@ pub fn project(quoted: &str, stored: LineRange, current_text: &str) -> Projectio
     }
 }
 
+/// The first and the last line of a range, both inclusive.
+///
+/// `LineRange` has an exclusive end. The text forms show an inclusive end,
+/// because a reader counts the last line that the comment covers.
+fn inclusive_lines(range: LineRange) -> (u32, u32) {
+    (range.start, range.end.saturating_sub(1).max(range.start))
+}
+
+/// The reference form of a comment: `path:start-end`, with an inclusive end.
+///
+/// A chat mention `@path:start-end` attaches the same lines.
+pub fn reference(comment: &Comment) -> String {
+    let (start, end) = inclusive_lines(comment.line_range);
+    format!("{}:{start}-{end}", comment.path)
+}
+
+/// The quickfix form of a comment: `path:start: [start-end] text`.
+///
+/// The Vim default `errorformat` `%f:%l:%m` needs a `:` after the line
+/// number, so the first line names only the start line. The range goes at
+/// the start of the message. Each further line of the text gets an indent of
+/// two spaces, so that it does not look like a new entry.
+pub fn quickfix_line(comment: &Comment) -> String {
+    let (start, end) = inclusive_lines(comment.line_range);
+    let mut lines = comment.body.lines();
+    let first = lines.next().unwrap_or_default();
+    let mut out = format!("{}:{start}: [{start}-{end}] {first}", comment.path);
+    for line in lines {
+        out.push_str("\n  ");
+        out.push_str(line);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::{CommentAnchor, CommentAuthor, CommentSide};
     use serde_json::json;
     use strum::IntoEnumIterator;
 
@@ -370,6 +405,78 @@ mod tests {
         assert_eq!(
             project("a\n", LineRange::new(1, 2), ""),
             Projection::Outdated
+        );
+    }
+
+    fn comment(range: LineRange, body: &str) -> Comment {
+        Comment::new(
+            DiffsetId::for_session(&SessionId::parse("chat-1").unwrap()),
+            CommentAnchor::Commit("abc".into()),
+            root(),
+            "crates/a/src/lib.rs",
+            CommentSide::Current,
+            range,
+            "",
+            body,
+            CommentAuthor::Human,
+        )
+    }
+
+    /// The Vim default `errorformat` `%f:%l:%m` needs this shape.
+    fn assert_errorformat(line: &str) {
+        let pattern = regex::Regex::new(r"^[^:]+:\d+:.*$").unwrap();
+        assert!(pattern.is_match(line), "{line:?} does not match %f:%l:%m");
+    }
+
+    #[test]
+    fn one_line_comment_matches_errorformat() {
+        let line = quickfix_line(&comment(LineRange::new(626, 627), "needs a test"));
+        assert_eq!(line, "crates/a/src/lib.rs:626: [626-626] needs a test");
+        assert_errorformat(&line);
+    }
+
+    #[test]
+    fn range_comment_matches_errorformat() {
+        let line = quickfix_line(&comment(
+            LineRange::new(626, 629),
+            "this deny path needs a test",
+        ));
+        assert_eq!(
+            line,
+            "crates/a/src/lib.rs:626: [626-628] this deny path needs a test"
+        );
+        assert_errorformat(&line);
+    }
+
+    #[test]
+    fn a_second_line_is_indented() {
+        let text = quickfix_line(&comment(LineRange::new(3, 5), "first\nsecond\n\nfourth"));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                "crates/a/src/lib.rs:3: [3-4] first",
+                "  second",
+                "  ",
+                "  fourth"
+            ]
+        );
+        assert_errorformat(lines[0]);
+        // Only the first line names a file, so Vim makes one entry.
+        for line in &lines[1..] {
+            assert!(line.starts_with("  "), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_reference_form_is_inclusive() {
+        assert_eq!(
+            reference(&comment(LineRange::new(626, 629), "x")),
+            "crates/a/src/lib.rs:626-628"
+        );
+        assert_eq!(
+            reference(&comment(LineRange::new(12, 13), "x")),
+            "crates/a/src/lib.rs:12-12"
         );
     }
 }

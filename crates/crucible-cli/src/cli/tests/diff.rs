@@ -1,5 +1,5 @@
 use super::parse;
-use crate::cli::{Commands, DiffCommands};
+use crate::cli::{Commands, CommentFormat, DiffCommands};
 use crate::formatting::TextFormat;
 use clap::Parser;
 use std::path::PathBuf;
@@ -56,4 +56,55 @@ fn diff_branch_parses_every_flag() {
 #[test]
 fn diff_needs_a_subcommand() {
     assert!(crate::cli::Cli::try_parse_from(["cru", "diff"]).is_err());
+}
+
+#[test]
+fn diff_comments_prints_quickfix_by_default() {
+    match parse(&["cru", "diff", "comments", "session-chat-1"]) {
+        Commands::Diff {
+            command:
+                DiffCommands::Comments {
+                    diffset,
+                    base,
+                    head,
+                    root,
+                    format,
+                },
+        } => {
+            assert_eq!(diffset, "session-chat-1");
+            assert_eq!((base, head, root), (None, None, None));
+            assert_eq!(format, CommentFormat::Quickfix);
+        }
+        _ => panic!("expected `diff comments`"),
+    }
+}
+
+#[test]
+fn diff_comments_parses_every_flag() {
+    match parse(&[
+        "cru", "diff", "comments", "branch", "--base", "develop", "--head", "HEAD", "--root",
+        "/repo", "--format", "json",
+    ]) {
+        Commands::Diff {
+            command:
+                DiffCommands::Comments {
+                    diffset,
+                    base,
+                    head,
+                    root,
+                    format,
+                },
+        } => {
+            assert_eq!(diffset, "branch");
+            assert_eq!(base.as_deref(), Some("develop"));
+            assert_eq!(head.as_deref(), Some("HEAD"));
+            assert_eq!(root, Some(PathBuf::from("/repo")));
+            assert_eq!(format, CommentFormat::Json);
+        }
+        _ => panic!("expected `diff comments`"),
+    }
+    assert!(
+        crate::cli::Cli::try_parse_from(["cru", "diff", "comments"]).is_err(),
+        "the diffset is required"
+    );
 }

@@ -22,7 +22,7 @@ mod tests;
 pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
-pub use diff::DiffCommands;
+pub use diff::{CommentFormat, DiffCommands};
 pub use eval::EvalCommands;
 pub use kiln::KilnCommands;
 pub use models::{EmbeddingsCommands, ModelsCommands};
@@ -233,9 +233,9 @@ pub enum Commands {
         command: ProjectCommands,
     },
 
-    /// Show a diffset the daemon computes (the changes of a branch)
+    /// Show a diffset the daemon computes (the changes of a branch) and its comments
     #[command(
-        long_about = "Show a diffset: a set of file changes that the daemon computes.\n\nExamples:\n  # The changes of this branch against the default branch\n  cru diff branch\n\n  # Against a named base\n  cru diff branch --base develop"
+        long_about = "Show a diffset: a set of file changes that the daemon computes.\n\nExamples:\n  # The changes of this branch against the default branch\n  cru diff branch\n\n  # Against a named base\n  cru diff branch --base develop\n\n  # The open comments of a session record, in Vim\n  vim -q <(cru diff comments session-<id>)"
     )]
     Diff {
         #[command(subcommand)]

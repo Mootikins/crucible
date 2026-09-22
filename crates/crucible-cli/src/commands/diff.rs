@@ -8,13 +8,14 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use crucible_core::diff::{DiffFileText, Diffset, DiffsetSource};
-use crucible_core::session::PhysicalRoot;
+use crucible_core::diff::{quickfix_line, DiffFileText, Diffset, DiffsetSource};
+use crucible_core::session::{PhysicalRoot, SessionId};
+use crucible_daemon::diff::comments::ListedComment;
 use crucible_daemon::DaemonClient;
 use crucible_oil::node::{col, text, Node};
 use crucible_oil::render::{render_to_plain_text, render_to_string};
 
-use crate::cli::DiffCommands;
+use crate::cli::{CommentFormat, DiffCommands};
 use crate::formatting::TextFormat;
 use crate::tui::oil::components::diff_view::{render_diffset_file, DiffLayout, DiffOptions};
 
@@ -54,6 +55,41 @@ pub async fn handle(cmd: DiffCommands) -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&value)?);
                 }
                 TextFormat::Text => print_diffset(&diffset, &texts, stat),
+            }
+            Ok(())
+        }
+        DiffCommands::Comments {
+            diffset,
+            base,
+            head,
+            root,
+            format,
+        } => {
+            let start = match root {
+                Some(root) => std::path::absolute(root)?,
+                None => std::env::current_dir()?,
+            };
+            let target = comments_target(&diffset, &start, base.as_deref(), head)?;
+            let client = crate::common::daemon_client().await?;
+            let reply = client
+                .diff_comments(&target.source)
+                .await
+                .with_context(|| format!("listing the comments of {diffset}"))?;
+            if let Some(expected) = &target.expected {
+                anyhow::ensure!(
+                    reply.diffset.as_str() == expected,
+                    "{expected} is not the branch diffset of {} (that is {}). \
+                     Give the root, base and head of the diffset with --root, --base and --head",
+                    start.display(),
+                    reply.diffset
+                );
+            }
+            match format {
+                CommentFormat::Quickfix => print!("{}", quickfix_list(&reply.comments)),
+                CommentFormat::Json => {
+                    let open: Vec<&ListedComment> = open_comments(&reply.comments);
+                    println!("{}", serde_json::to_string_pretty(&open)?);
+                }
             }
             Ok(())
         }
@@ -160,4 +196,199 @@ fn diffset_view(diffset: &Diffset, texts: &[Option<DiffFileText>], opts: &DiffOp
         rows.push(render_diffset_file(entry, text, opts));
     }
     col(rows)
+}
+
+/// What `cru diff comments` asks the daemon for.
+#[derive(Debug, PartialEq)]
+pub(crate) struct CommentsTarget {
+    pub(crate) source: DiffsetSource,
+    /// The id that the user gave for a branch diffset. A branch id is a hash,
+    /// so the command compares it with the id of the source in the reply.
+    pub(crate) expected: Option<String>,
+}
+
+pub(crate) fn comments_target(
+    diffset: &str,
+    start: &Path,
+    base: Option<&str>,
+    head: Option<String>,
+) -> Result<CommentsTarget> {
+    if let Some(session) = diffset.strip_prefix("session-") {
+        ensure_no_branch_flags(diffset, base, head.as_deref())?;
+        let session = SessionId::parse(session)
+            .with_context(|| format!("{diffset} does not name a session"))?;
+        return Ok(CommentsTarget {
+            source: DiffsetSource::SessionRecord { session },
+            expected: None,
+        });
+    }
+    if let Some(id) = diffset.strip_prefix("proposal-") {
+        ensure_no_branch_flags(diffset, base, head.as_deref())?;
+        let id = id
+            .parse()
+            .with_context(|| format!("{diffset} does not name a proposal"))?;
+        return Ok(CommentsTarget {
+            source: DiffsetSource::Proposal { id },
+            expected: None,
+        });
+    }
+    let expected = match diffset {
+        "branch" => None,
+        id if id.starts_with("branch-") => Some(id.to_string()),
+        _ => anyhow::bail!(
+            "{diffset:?} is not a diffset. Give `session-<id>`, `proposal-<uuid>`, `branch` or `branch-<hex>`"
+        ),
+    };
+    Ok(CommentsTarget {
+        source: branch_source(start, base, head),
+        expected,
+    })
+}
+
+/// Refuse `--base` and `--head` for a diffset that is not a branch diff.
+///
+/// The flags change nothing there, so a user who gives them expects a
+/// different diffset.
+fn ensure_no_branch_flags(diffset: &str, base: Option<&str>, head: Option<&str>) -> Result<()> {
+    anyhow::ensure!(
+        base.is_none() && head.is_none(),
+        "--base and --head apply only to a branch diffset, not to {diffset}"
+    );
+    Ok(())
+}
+
+/// The comments that are not resolved, in the order of root, path and line.
+///
+/// Vim steps through a quickfix list in its order, so the list follows the
+/// files and the lines, not the time of each comment.
+fn open_comments(comments: &[ListedComment]) -> Vec<&ListedComment> {
+    let mut open: Vec<&ListedComment> = comments.iter().filter(|c| !c.comment.resolved).collect();
+    open.sort_by(|a, b| {
+        let key = |c: &ListedComment| {
+            (
+                c.comment.root.to_path_buf(),
+                c.comment.path.clone(),
+                c.comment.line_range.start,
+            )
+        };
+        key(a).cmp(&key(b))
+    });
+    open
+}
+
+/// The open comments in the quickfix form, each entry ends with a line end.
+pub(crate) fn quickfix_list(comments: &[ListedComment]) -> String {
+    open_comments(comments)
+        .into_iter()
+        .map(|listed| quickfix_line(&listed.comment) + "\n")
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::diff::DiffsetId;
+    use crucible_core::session::{Comment, CommentAnchor, CommentAuthor, CommentSide, LineRange};
+
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_session_id_names_the_session_record() {
+        let target = comments_target("session-chat-1", Path::new("/"), None, None).unwrap();
+        assert_eq!(
+            target,
+            CommentsTarget {
+                source: DiffsetSource::SessionRecord {
+                    session: SessionId::parse("chat-1").unwrap(),
+                },
+                expected: None,
+            }
+        );
+    }
+
+    #[test]
+    fn a_proposal_id_names_the_proposal() {
+        let id = "6f1c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f";
+        let target =
+            comments_target(&format!("proposal-{id}"), Path::new("/"), None, None).unwrap();
+        assert_eq!(
+            target.source,
+            DiffsetSource::Proposal {
+                id: id.parse().unwrap()
+            }
+        );
+        assert!(comments_target("proposal-nope", Path::new("/"), None, None).is_err());
+    }
+
+    #[test]
+    fn branch_names_the_branch_diff_of_the_flags() {
+        let repo = repo();
+        let sub = repo.path().join("src");
+        std::fs::create_dir(&sub).unwrap();
+        let target = comments_target("branch", &sub, Some("develop"), Some("HEAD".into())).unwrap();
+        assert_eq!(
+            target.source,
+            branch_source(&sub, Some("develop"), Some("HEAD".into()))
+        );
+        assert_eq!(target.expected, None);
+
+        // A branch id keeps the id, so the command can compare it with the reply.
+        let id = "branch-0123456789abcdef0123456789abcdef";
+        let target = comments_target(id, &sub, None, None).unwrap();
+        assert_eq!(target.source, branch_source(&sub, None, None));
+        assert_eq!(target.expected.as_deref(), Some(id));
+    }
+
+    #[test]
+    fn a_diffset_that_names_nothing_is_refused() {
+        for diffset in ["", "session-", "session-a/b", "tree-1", "branchy"] {
+            assert!(
+                comments_target(diffset, Path::new("/"), None, None).is_err(),
+                "{diffset:?}"
+            );
+        }
+        // The branch flags apply only to a branch diffset.
+        assert!(comments_target("session-chat-1", Path::new("/"), Some("main"), None).is_err());
+        assert!(
+            comments_target("session-chat-1", Path::new("/"), None, Some("HEAD".into())).is_err()
+        );
+    }
+
+    fn listed(path: &str, start: u32, body: &str, resolved: bool) -> ListedComment {
+        let mut comment = Comment::new(
+            DiffsetId::for_session(&SessionId::parse("chat-1").unwrap()),
+            CommentAnchor::Commit("abc".into()),
+            PhysicalRoot::from_top_level("/repo"),
+            path,
+            CommentSide::Current,
+            LineRange::new(start, start + 2),
+            "",
+            body,
+            CommentAuthor::Human,
+        );
+        comment.resolved = resolved;
+        ListedComment {
+            comment,
+            outdated: false,
+        }
+    }
+
+    #[test]
+    fn the_quickfix_list_holds_the_open_comments_in_file_order() {
+        let comments = [
+            listed("b.rs", 9, "later file", false),
+            listed("a.rs", 20, "second\nmore", false),
+            listed("a.rs", 3, "done", true),
+            listed("a.rs", 4, "first", false),
+        ];
+        assert_eq!(
+            quickfix_list(&comments),
+            "a.rs:4: [4-5] first\na.rs:20: [20-21] second\n  more\nb.rs:9: [9-10] later file\n"
+        );
+        assert_eq!(quickfix_list(&[]), "");
+    }
 }
