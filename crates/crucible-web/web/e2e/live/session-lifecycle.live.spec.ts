@@ -1,6 +1,7 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 import { appReady, openSessionsList } from '../helpers/nav';
 import { readState } from './_state';
+import { resetStoredLayout } from './_panes';
 
 /**
  * Session lifecycle, against the real daemon.
@@ -49,6 +50,19 @@ async function sessionIds(api: APIRequestContext, includeArchived = false): Prom
 
 test.describe('live session lifecycle', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
+
+  // The shell saves its layout. Without this reset, the chat tabs of an
+  // earlier spec come back when the page loads, and a locator that expects one
+  // tab finds two. The saved layout lands only when its save wins a race with
+  // the page close, so the failure comes and goes.
+  test.beforeEach(async () => {
+    await resetStoredLayout(state.baseURL!);
+  });
+
+  // And leave the profile as it was found, for the spec that runs next.
+  test.afterAll(async () => {
+    if (!state.skip) await resetStoredLayout(state.baseURL!);
+  });
 
   test('a resumed session shows the turn it actually had', async ({ page }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });

@@ -2,6 +2,7 @@ import { test, expect, request as playwrightRequest, type Page, type APIRequestC
 import { execFileSync } from 'node:child_process';
 import { appReady } from '../helpers/nav';
 import { readState } from './_state';
+import { resetStoredLayout } from './_panes';
 import { busEmit } from '../helpers/bus';
 
 /**
@@ -131,6 +132,19 @@ async function openSessionFromRail(page: Page, sessionId: string): Promise<void>
 
 test.describe('the live session path', () => {
   test.skip(state.skip, `live tier unavailable: ${state.reason ?? ''}`);
+
+  // The shell saves its layout. Without this reset, the chat tabs of an
+  // earlier spec come back when the page loads, and a locator that expects one
+  // tab finds two. The saved layout lands only when its save wins a race with
+  // the page close, so the failure comes and goes.
+  test.beforeEach(async () => {
+    await resetStoredLayout(state.baseURL!);
+  });
+
+  // And leave the profile as it was found, for the spec that runs next.
+  test.afterAll(async () => {
+    if (!state.skip) await resetStoredLayout(state.baseURL!);
+  });
 
   test('a session created from the draft answers, and lists its own folder', async ({ page }) => {
     const failures = watchApiFailures(page);
