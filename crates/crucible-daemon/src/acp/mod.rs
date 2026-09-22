@@ -12,9 +12,7 @@ pub mod streaming;
 
 // Public exports
 pub use client::CrucibleAcpClient;
-#[cfg(any(test, feature = "test-utils"))]
-pub use discovery::reset_agent_cache;
-pub use discovery::{discover_agent, is_agent_available, AgentInfo};
+pub use discovery::is_agent_available;
 pub use session::AcpSession;
 pub use streaming::{humanize_tool_title, turn_usage, StreamingChunk, TurnSummary};
 

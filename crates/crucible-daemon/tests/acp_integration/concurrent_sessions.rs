@@ -1,10 +1,6 @@
 use crate::support::mock_agent::make_prompt_request;
 use crate::support::{connect, prompt_with, MockScript, Step};
-use crucible_core::config::AcpConfig;
-use crucible_core::test_support::EnvVarGuard;
-use crucible_daemon::acp::discovery::{discover_agent, reset_agent_cache};
 use crucible_daemon::acp::StreamingChunk;
-use tempfile::TempDir;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 
@@ -24,63 +20,6 @@ async fn concurrent_dual_sessions_isolated_no_cross_contamination() {
     assert_ne!(session_a.id(), session_b.id(), "sessions must be distinct");
     assert!(session_a.id().starts_with("mock-session-"));
     assert!(session_b.id().starts_with("mock-session-"));
-}
-
-/// The process-wide discovery cache answers without probing until it is
-/// reset, and a reset forces the next call to probe again.
-///
-/// The agent binary is removed between the calls, so a cache hit and a fresh
-/// probe give different answers: a hit still names the removed agent, and a
-/// probe finds nothing. `PATH` holds only the fake agent and `which`, so no
-/// agent installed on the host can answer the probe.
-#[tokio::test]
-async fn discovery_cache_serves_a_removed_agent_until_it_is_reset() {
-    reset_agent_cache();
-
-    let agent_dir = TempDir::new().expect("temp dir for the fake agent");
-    let fake_agent_path = agent_dir.path().join("opencode");
-    std::fs::write(
-        &fake_agent_path,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo fake-opencode-1.0\n  exit 0\nfi\nexit 0\n",
-    )
-    .expect("write fake agent script");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&fake_agent_path, std::fs::Permissions::from_mode(0o755))
-            .expect("make the fake agent executable");
-    }
-
-    // Discovery probes with `which`, so `PATH` must still reach it.
-    let tool_dir = TempDir::new().expect("temp dir for which");
-    let which = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-        .map(|dir| dir.join("which"))
-        .find(|candidate| candidate.is_file())
-        .expect("`which` is on the test host's PATH");
-    std::os::unix::fs::symlink(&which, tool_dir.path().join("which")).expect("link which");
-
-    let path = std::env::join_paths([agent_dir.path(), tool_dir.path()]).expect("join PATH");
-    let _path_guard = EnvVarGuard::set("PATH", path.to_string_lossy().into_owned());
-
-    let config = AcpConfig::default();
-    let discovered = discover_agent(None, &config)
-        .await
-        .expect("discovery finds the fake agent on PATH");
-    assert_eq!(discovered.name, "opencode");
-    assert_eq!(discovered.command, "opencode");
-
-    std::fs::remove_file(&fake_agent_path).expect("remove the fake agent");
-
-    let cached = discover_agent(None, &config)
-        .await
-        .expect("a cache hit does not probe, so the removed agent is still served");
-    assert_eq!(cached.name, "opencode");
-
-    reset_agent_cache();
-    let after_reset = discover_agent(None, &config).await;
-    assert!(
-        after_reset.is_err(),
-        "after a reset the probe must run again and find no agent, got: {after_reset:?}"
-    );
 }
 
 #[tokio::test]

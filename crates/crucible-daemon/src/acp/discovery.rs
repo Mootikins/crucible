@@ -1,42 +1,20 @@
-//! Agent Discovery and Management
+//! Agent profiles
 //!
-//! Handles discovering and spawning ACP-compatible agents.
-//! Uses parallel probing for fast agent discovery.
+//! Resolves the name of an ACP agent to the profile that launches it, and
+//! reports whether the command of a profile is on this host.
 
 use anyhow::{anyhow, Result};
 use crucible_core::config::{AcpConfig, AgentProfile};
-use futures::future::join_all;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use tokio::process::Command;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, warn};
 
 /// Timeout for agent availability checks (ms)
 const PROBE_TIMEOUT_MS: u64 = 2000;
 
-/// Cache for discovered agent to avoid repeated probing on subsequent calls
-// KNOWN LIMITATION: AGENT_CACHE global still exists as a process-wide cache.
-// Config-driven discovery (via AcpConfig) is an overlay on top of this cache, not a replacement.
-// The cache is cleared between tests but persists across discovery calls in production.
-// Future versions could make caching configurable or use session-scoped discovery caches.
-static AGENT_CACHE: Lazy<Mutex<Option<AgentInfo>>> = Lazy::new(|| Mutex::new(None));
-
-/// Information about a discovered agent
-#[derive(Debug, Clone)]
-pub struct AgentInfo {
-    pub name: String,
-    pub command: String,
-    pub args: Vec<String>,
-    /// Environment variables to pass to the agent process
-    pub env_vars: HashMap<String, String>,
-}
-
 /// A built-in agent: everything Crucible knows about it, in one place.
 ///
-/// Single source of truth for the default profiles, the discovery priority
-/// order (array order), and the install instructions rendered by the "no agent
-/// found" error. It used to be three parallel tables,
+/// Single source of truth for the default profiles and for the order in which
+/// `cru agents list` shows them (array order). It used to be parallel tables,
 /// which is how `opencode` spent several releases pointing at an unrelated
 /// project and how two different descriptions of the same agent drifted apart.
 struct BuiltinAgent {
@@ -44,9 +22,6 @@ struct BuiltinAgent {
     command: &'static str,
     args: &'static [&'static str],
     description: &'static str,
-    /// Base CLI this agent bridges to, or `None` if it is standalone.
-    requires: Option<&'static str>,
-    install: &'static str,
 }
 
 /// The Antigravity ACP server executable, per platform.
@@ -76,16 +51,12 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         command: "opencode",
         args: &["acp"],
         description: "Standalone ACP agent — https://opencode.ai",
-        requires: None,
-        install: "npm install -g opencode-ai@latest",
     },
     BuiltinAgent {
         name: "claude",
         command: "npx",
         args: &["@agentclientprotocol/claude-agent-acp"],
         description: "Bridge to Claude Code",
-        requires: Some("Claude Code CLI"),
-        install: "npm install -g @agentclientprotocol/claude-agent-acp",
     },
     BuiltinAgent {
         name: "gemini",
@@ -94,16 +65,12 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         // answers `initialize`. `--experimental-acp` is the deprecated name.
         args: &["--acp"],
         description: "Google's Gemini CLI, speaks ACP directly",
-        requires: None,
-        install: "npm install -g @google/gemini-cli",
     },
     BuiltinAgent {
         name: "codex",
         command: "npx",
         args: &["@agentclientprotocol/codex-acp"],
         description: "Bridge to OpenAI Codex",
-        requires: Some("OpenAI Codex CLI"),
-        install: "npm install -g @agentclientprotocol/codex-acp",
     },
     BuiltinAgent {
         name: "cursor",
@@ -113,8 +80,6 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         // `cursor-agent acp` is a subcommand of the Cursor CLI, so the agent
         // is standalone. The npm package `cursor-acp` this used to name is an
         // unrelated third-party bridge, abandoned at 0.1.0.
-        requires: None,
-        install: "curl https://cursor.com/install -fsS | bash",
     },
     BuiltinAgent {
         name: "hermes",
@@ -124,8 +89,6 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         // The `acp` subcommand ships inside the Hermes CLI, so the agent
         // is standalone. The install line comes from the Hermes README at
         // github.com/NousResearch/hermes-agent.
-        requires: None,
-        install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
     },
     BuiltinAgent {
         name: "antigravity",
@@ -134,10 +97,6 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         description: "Google Antigravity ACP server, speaks ACP directly",
         // The server ships inside the Antigravity extension archive, so the
         // agent is standalone.
-        requires: None,
-        install: "download the archive for your platform from \
-                  https://dl.google.com/agy-extensions/releases/ , then put \
-                  the server on PATH (ACP registry entry: antigravity-acp)",
     },
 ];
 
@@ -277,150 +236,6 @@ pub fn profiles(config: &AcpConfig) -> Vec<(String, AgentProfile)> {
         .collect()
 }
 
-fn profile_to_agent_info(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
-    let command = profile.command.clone().ok_or_else(|| {
-        anyhow!(
-            "Agent profile '{}' must define `command` (directly or via built-in default)",
-            name
-        )
-    })?;
-
-    Ok(AgentInfo {
-        name: name.to_string(),
-        command,
-        args: profile.args.clone().unwrap_or_default(),
-        env_vars: profile.env.clone().into_iter().collect(),
-    })
-}
-
-/// Discover an available ACP agent using parallel probing
-///
-/// This function probes all known agents concurrently for faster discovery.
-/// Results are cached to avoid repeated probing on subsequent calls.
-///
-/// # Arguments
-/// * `preferred` - Optional preferred agent name to try first
-///
-/// # Returns
-/// AgentInfo for the discovered agent
-///
-/// # Errors
-/// Returns error if no compatible agent is found
-pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> Result<AgentInfo> {
-    // Check cache first (unless a specific agent is preferred)
-    if preferred.is_none() {
-        if let Some(cached) = AGENT_CACHE
-            .lock()
-            .expect("AGENT_CACHE: poisoned while reading cached agent")
-            .clone()
-        {
-            trace!("Using cached agent: {}", cached.name);
-            return Ok(cached);
-        }
-    }
-
-    let agent = discover_agent_uncached(preferred, acp_config).await?;
-    *AGENT_CACHE
-        .lock()
-        .expect("AGENT_CACHE: poisoned while caching discovered agent") = Some(agent.clone());
-    Ok(agent)
-}
-
-/// Cache-free discovery core: resolves profiles, probes availability, and returns
-/// the first available agent in priority order. Unlike [`discover_agent`] it does
-/// NOT read or write the process-global `AGENT_CACHE`, so parallel tests can call
-/// it without cross-test state bleeding.
-pub async fn discover_agent_uncached(
-    preferred: Option<&str>,
-    acp_config: &AcpConfig,
-) -> Result<AgentInfo> {
-    let resolved = profiles(acp_config);
-
-    // If a preferred agent is specified, check it first (single probe)
-    if let Some(agent_name) = preferred {
-        debug!("Trying preferred agent: {}", agent_name);
-        if let Some((_, profile)) = resolved.iter().find(|(name, _)| name == agent_name) {
-            if let Some(cmd) = profile.command.as_deref() {
-                if is_agent_available(cmd).await {
-                    info!("Using preferred agent: {}", agent_name);
-                    return profile_to_agent_info(agent_name, profile);
-                }
-            }
-        }
-        warn!(
-            "Preferred agent '{}' not found, trying fallbacks",
-            agent_name
-        );
-    }
-
-    // Parallel probe: check all agents concurrently
-    debug!("Probing {} agents in parallel", resolved.len());
-    let start = std::time::Instant::now();
-
-    let futures: Vec<_> = resolved
-        .iter()
-        .filter_map(|(name, profile)| {
-            profile.command.as_ref().map(|command| {
-                let name = name.clone();
-                let profile = profile.clone();
-                let command = command.clone();
-                async move {
-                    let available = is_agent_available(&command).await;
-                    (name, profile, available)
-                }
-            })
-        })
-        .collect();
-
-    let results = join_all(futures).await;
-    debug!("Parallel probe completed in {:?}", start.elapsed());
-
-    // Find first available agent (maintaining priority order)
-    for (name, profile, available) in results {
-        if available {
-            info!("Discovered agent: {}", name);
-            return profile_to_agent_info(&name, &profile);
-        }
-    }
-
-    // None found - provide helpful error message
-    Err(anyhow!(
-        "No compatible ACP agent found.\n\
-         \n\
-         Standalone agents:\n\
-         {}\
-         \n\
-         Bridge agents (require the base CLI as well):\n\
-         {}\
-         \n\
-         After installation, use with:\n\
-         cru chat --agent <agent> \"your message\"\n\
-         \n\
-         For another agent, define `[acp.agents.<name>]` with a `command`, \
-         then pass that name.",
-        install_lines(|agent| agent.requires.is_none()),
-        install_lines(|agent| agent.requires.is_some()),
-    ))
-}
-
-/// Render `• <name>: <install>` lines for the agents matching `keep`.
-fn install_lines(keep: impl Fn(&BuiltinAgent) -> bool) -> String {
-    BUILTIN_AGENTS
-        .iter()
-        .filter(|agent| keep(agent))
-        .map(|agent| format!("• {}: {}\n", agent.name, agent.install))
-        .collect()
-}
-
-/// Clear the agent cache to prevent state bleeding across tests.
-/// Call this in test teardown to reset the global AGENT_CACHE.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn reset_agent_cache() {
-    *AGENT_CACHE
-        .lock()
-        .expect("AGENT_CACHE: poisoned while clearing agent cache") = None;
-}
-
 /// Commands that should trust PATH lookup without --version verification.
 /// These are either:
 /// - Package managers (npx) that handle resolution themselves
@@ -499,24 +314,15 @@ pub async fn is_agent_available(command: &str) -> bool {
     }
 }
 
-/// The command, arguments and environment of the agent `name`.
-///
-/// A thin wrapper over [`profile`] for the callers that want the launch shape
-/// rather than the profile. An unknown name is an error, never a command.
-pub fn resolve_agent_from_config(name: &str, config: &AcpConfig) -> Result<AgentInfo> {
-    match profile(name, config)? {
-        Some(resolved) => profile_to_agent_info(name, &resolved),
-        None => Err(unknown_agent(name, config)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
-    fn empty_config() -> AcpConfig {
-        AcpConfig::default()
+    /// The resolved profile of a known agent.
+    fn resolved(name: &str, config: &AcpConfig) -> AgentProfile {
+        profile(name, config)
+            .expect("the profile resolves")
+            .expect("the agent is known")
     }
 
     #[tokio::test]
@@ -545,121 +351,6 @@ mod tests {
         assert!(result, "Command 'cargo' should be available");
     }
 
-    // Touches the process-global AGENT_CACHE; serialized so it can't race the
-    // other cache test.
-    #[tokio::test]
-    #[serial(agent_cache)]
-    async fn test_agent_cache_operations() {
-        // Clear cache first
-        reset_agent_cache();
-        assert!(AGENT_CACHE.lock().unwrap().is_none());
-
-        // Manually populate cache
-        *AGENT_CACHE.lock().unwrap() = Some(AgentInfo {
-            name: "test".to_string(),
-            command: "test-cmd".to_string(),
-            args: vec!["arg1".to_string()],
-            env_vars: HashMap::new(),
-        });
-
-        // Cache should now have the agent
-        let cached = AGENT_CACHE.lock().unwrap().clone();
-        assert!(cached.is_some());
-        assert_eq!(cached.unwrap().name, "test");
-
-        // Clear and verify
-        reset_agent_cache();
-        assert!(AGENT_CACHE.lock().unwrap().is_none());
-    }
-
-    // Touches the process-global AGENT_CACHE; serialized so the cached value
-    // can't be cleared by a concurrent cache test.
-    #[tokio::test]
-    #[serial(agent_cache)]
-    async fn test_discover_agent_uses_cache() {
-        // Pre-populate cache with a fake agent
-        reset_agent_cache();
-        *AGENT_CACHE.lock().unwrap() = Some(AgentInfo {
-            name: "cached-agent".to_string(),
-            command: "cached-cmd".to_string(),
-            args: vec![],
-            env_vars: HashMap::new(),
-        });
-
-        // Discovery with no preference must return the cached agent without probing.
-        let start = std::time::Instant::now();
-        let config = empty_config();
-        let agent = discover_agent(None, &config)
-            .await
-            .expect("cached agent should be returned");
-        let elapsed = start.elapsed();
-
-        assert_eq!(agent.name, "cached-agent", "should return the cached agent");
-        assert!(
-            elapsed.as_millis() < 50,
-            "cache lookup took too long: {:?}",
-            elapsed
-        );
-
-        // Clean up
-        reset_agent_cache();
-    }
-
-    #[tokio::test]
-    async fn test_discover_agent_parallel_probe_is_fast() {
-        // Parallel probe should complete quickly even with multiple agents
-        // because non-existent commands fail fast via `which`. Uses the
-        // cache-free core so it neither reads nor writes the global cache.
-        let start = std::time::Instant::now();
-        let config = empty_config();
-        let _result = discover_agent_uncached(None, &config).await;
-        let elapsed = start.elapsed();
-
-        // Should complete within timeout + some margin
-        // Even in worst case (all agents timeout), should be < PROBE_TIMEOUT_MS + overhead
-        // since probes run in parallel
-        assert!(
-            elapsed.as_millis() < (PROBE_TIMEOUT_MS as u128) + 500,
-            "Parallel probe took too long: {:?}",
-            elapsed
-        );
-    }
-
-    #[test]
-    fn test_agent_info_has_env_vars() {
-        // AgentInfo should support environment variables
-        let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert(
-            "LOCAL_ENDPOINT".to_string(),
-            "http://localhost:11434".to_string(),
-        );
-
-        let agent = AgentInfo {
-            name: "opencode".to_string(),
-            command: "opencode".to_string(),
-            args: vec!["acp".to_string()],
-            env_vars,
-        };
-
-        assert_eq!(
-            agent.env_vars.get("LOCAL_ENDPOINT"),
-            Some(&"http://localhost:11434".to_string())
-        );
-    }
-
-    #[test]
-    fn test_agent_info_default_empty_env_vars() {
-        // Default AgentInfo should have empty env_vars
-        let agent = AgentInfo {
-            name: "test".to_string(),
-            command: "test".to_string(),
-            args: vec![],
-            env_vars: std::collections::HashMap::new(),
-        };
-
-        assert!(agent.env_vars.is_empty());
-    }
-
     /// A profile named after a built-in lays its own fields over that
     /// built-in. This is the only way to reach a built-in's command.
     #[test]
@@ -683,13 +374,12 @@ mod tests {
             ..Default::default()
         };
 
-        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
+        let agent = resolved("opencode", &config);
 
-        assert_eq!(agent.name, "opencode");
-        assert_eq!(agent.command, "opencode");
-        assert_eq!(agent.args, vec!["acp".to_string()]);
+        assert_eq!(agent.command.as_deref(), Some("opencode"));
+        assert_eq!(agent.args, Some(vec!["acp".to_string()]));
         assert_eq!(
-            agent.env_vars.get("LOCAL_ENDPOINT"),
+            agent.env.get("LOCAL_ENDPOINT"),
             Some(&"http://localhost:11434/v1".to_string())
         );
     }
@@ -779,11 +469,13 @@ mod tests {
             ..Default::default()
         };
 
-        let agent = resolve_agent_from_config("my-agent", &config).expect("should resolve");
+        let agent = resolved("my-agent", &config);
 
-        assert_eq!(agent.name, "my-agent");
-        assert_eq!(agent.command, "/usr/local/bin/my-agent");
-        assert_eq!(agent.args, vec!["--mode".to_string(), "acp".to_string()]);
+        assert_eq!(agent.command.as_deref(), Some("/usr/local/bin/my-agent"));
+        assert_eq!(
+            agent.args,
+            Some(vec!["--mode".to_string(), "acp".to_string()])
+        );
     }
 
     #[test]
@@ -793,12 +485,11 @@ mod tests {
         let config = AcpConfig::default();
 
         // Resolving a built-in agent name should work
-        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
+        let agent = resolved("opencode", &config);
 
-        assert_eq!(agent.name, "opencode");
-        assert_eq!(agent.command, "opencode");
-        assert_eq!(agent.args, vec!["acp".to_string()]);
-        assert!(agent.env_vars.is_empty());
+        assert_eq!(agent.command.as_deref(), Some("opencode"));
+        assert_eq!(agent.args, Some(vec!["acp".to_string()]));
+        assert!(agent.env.is_empty());
     }
 
     #[test]
@@ -807,9 +498,9 @@ mod tests {
 
         let config = AcpConfig::default();
 
-        // Unknown agent should fail
-        let result = resolve_agent_from_config("unknown-agent", &config);
-        assert!(result.is_err());
+        // An unknown agent has no profile.
+        let result = profile("unknown-agent", &config).expect("an unknown name is not an error");
+        assert!(result.is_none());
     }
 
     #[test]
@@ -831,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_default_agent_profiles_have_command_args_and_description() {
-        let profiles: HashMap<String, AgentProfile> =
+        let profiles: std::collections::HashMap<String, AgentProfile> =
             profiles(&AcpConfig::default()).into_iter().collect();
 
         for name in [
@@ -875,17 +566,16 @@ mod tests {
             ..Default::default()
         };
 
-        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
-        assert_eq!(agent.command, "cargo");
-        assert_eq!(agent.args, vec!["acp".to_string()]);
+        let agent = resolved("opencode", &config);
+        assert_eq!(agent.command.as_deref(), Some("cargo"));
+        assert_eq!(agent.args, Some(vec!["acp".to_string()]));
     }
 
     #[test]
     fn test_unknown_agent_error_is_helpful() {
         let config = AcpConfig::default();
 
-        let err = resolve_agent_from_config("definitely-unknown", &config).unwrap_err();
-        let message = err.to_string();
+        let message = unknown_agent("definitely-unknown", &config).to_string();
 
         assert!(message.contains("definitely-unknown"));
         assert!(message.contains("Known agents"));
@@ -896,21 +586,21 @@ mod tests {
     /// Zed and acpx pass the same list.
     #[test]
     fn the_antigravity_builtin_matches_the_registry_entry() {
-        let agent = resolve_agent_from_config("antigravity", &AcpConfig::default())
-            .expect("antigravity is a built-in");
+        let agent = resolved("antigravity", &AcpConfig::default());
+        let command = agent.command.as_deref().expect("a built-in has a command");
 
         #[cfg(windows)]
-        assert_eq!(agent.command, "agy_acp_server.exe");
+        assert_eq!(command, "agy_acp_server.exe");
         #[cfg(not(windows))]
-        assert_eq!(agent.command, "agy_acp_server.par");
+        assert_eq!(command, "agy_acp_server.par");
 
         // On Linux the value is empty ON PURPOSE. Without the argument the
         // binary's InitGoogle start-up defaults to `--uid=nobody` and aborts
         // on Debian and Ubuntu (registry issue #607).
         #[cfg(target_os = "linux")]
-        assert_eq!(agent.args, vec!["--uid=".to_string()]);
+        assert_eq!(agent.args, Some(vec!["--uid=".to_string()]));
         #[cfg(not(target_os = "linux"))]
-        assert!(agent.args.is_empty());
+        assert_eq!(agent.args, Some(vec![]));
     }
 
     /// The Antigravity server is available when it is on PATH.
@@ -924,72 +614,12 @@ mod tests {
     /// the command breaks here.
     #[test]
     fn the_antigravity_command_skips_the_version_probe() {
-        let agent = resolve_agent_from_config("antigravity", &AcpConfig::default())
-            .expect("antigravity is a built-in");
+        let agent = resolved("antigravity", &AcpConfig::default());
+        let command = agent.command.as_deref().expect("a built-in has a command");
 
         assert!(
-            TRUST_PATH_COMMANDS.contains(&agent.command.as_str()),
-            "`{}` must skip the --version probe, got the trust list {TRUST_PATH_COMMANDS:?}",
-            agent.command
+            TRUST_PATH_COMMANDS.contains(&command),
+            "`{command}` must skip the --version probe, got the trust list              {TRUST_PATH_COMMANDS:?}",
         );
-    }
-
-    #[tokio::test]
-    async fn test_discover_agent_preferred_uses_merged_profile_command() {
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
-            "opencode".to_string(),
-            AgentProfile {
-                command: Some("cargo".to_string()),
-                args: Some(vec!["--version".to_string()]),
-                description: Some("Overridden".to_string()),
-                ..Default::default()
-            },
-        );
-
-        let config = AcpConfig {
-            agents,
-            ..Default::default()
-        };
-
-        let agent = discover_agent_uncached(Some("opencode"), &config)
-            .await
-            .expect("preferred profile should resolve");
-
-        assert_eq!(agent.name, "opencode");
-        assert_eq!(agent.command, "cargo");
-        assert_eq!(agent.args, vec!["--version".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn test_discover_agent_without_preferred_can_use_config_only_profile() {
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
-            "cargo-agent".to_string(),
-            AgentProfile {
-                command: Some("cargo".to_string()),
-                args: Some(vec!["--version".to_string()]),
-                description: Some("Cargo-backed profile".to_string()),
-                ..Default::default()
-            },
-        );
-
-        let config = AcpConfig {
-            agents,
-            ..Default::default()
-        };
-
-        let agent = discover_agent_uncached(None, &config)
-            .await
-            .expect("should discover from merged profiles");
-        assert!([
-            "cargo-agent",
-            "opencode",
-            "claude",
-            "gemini",
-            "codex",
-            "cursor"
-        ]
-        .contains(&agent.name.as_str()));
     }
 }

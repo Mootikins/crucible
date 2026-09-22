@@ -113,7 +113,6 @@ which = "8.0"
 proptest = { workspace = true }
 # Absorbed from crucible-llm dev-deps
 criterion = { workspace = true, features = ["html_reports"] }
-serial_test = "3.3"
 toon-format = "0.5"
 futures-util = { workspace = true }
 # `EnumIter` over `tools::surface::BuiltinTool`, so the security tests that
