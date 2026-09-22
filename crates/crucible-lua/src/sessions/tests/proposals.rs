@@ -61,3 +61,86 @@ async fn the_rejected_proposals_stub_answers_no_daemon() {
     assert!(rows.is_nil(), "the stub answers no rows: {rows:?}");
     assert_eq!(err.as_deref(), Some("no daemon connected"));
 }
+
+#[tokio::test]
+async fn list_passes_the_session_and_all() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = mock.clone();
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let (id, session): (String, String) = lua
+        .load(
+            r#"
+            local rows, err = cru.proposals.list({ session = "child-1", all = true })
+            assert(err == nil, "unexpected error: " .. tostring(err))
+            return rows[1].id, rows[1].session
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+    assert_eq!((id.as_str(), session.as_str()), ("p1", "child-1"));
+
+    let _: mlua::Value = lua
+        .load("return cru.proposals.list()")
+        .eval_async()
+        .await
+        .unwrap();
+    assert_eq!(
+        mock.list_calls(),
+        vec![(Some("child-1".to_string()), true), (None, false)]
+    );
+}
+
+#[tokio::test]
+async fn accept_and_reject_pass_their_params_to_the_decision() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let api: Arc<dyn DaemonSessionApi> = mock.clone();
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let (accepted, rejected): (String, String) = lua
+        .load(
+            r#"
+            local a = assert(cru.proposals.accept({ id = "p1", paths = { "a.md" } }))
+            local r = assert(cru.proposals.reject({ id = "p2", reason = "a duplicate" }))
+            return a.state.kind, r.state.kind
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        (accepted.as_str(), rejected.as_str()),
+        ("accepted", "rejected")
+    );
+    assert_eq!(
+        mock.decisions(),
+        vec![
+            (
+                ProposalDecision::Accept,
+                serde_json::json!({ "id": "p1", "paths": ["a.md"] })
+            ),
+            (
+                ProposalDecision::Reject,
+                serde_json::json!({ "id": "p2", "reason": "a duplicate" })
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_decision_stubs_answer_no_daemon() {
+    let lua = mlua::Lua::new();
+    register_sessions_module(&lua).expect("stub module");
+
+    for call in [
+        r#"return cru.proposals.list()"#,
+        r#"return cru.proposals.accept({ id = "p1" })"#,
+        r#"return cru.proposals.reject({ id = "p1" })"#,
+    ] {
+        let (rows, err): (mlua::Value, Option<String>) = lua.load(call).eval_async().await.unwrap();
+        assert!(rows.is_nil(), "{call}: the stub answers nothing: {rows:?}");
+        assert_eq!(err.as_deref(), Some("no daemon connected"), "{call}");
+    }
+}

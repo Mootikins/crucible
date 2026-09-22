@@ -50,20 +50,13 @@ Structural damage degrades a root: an unreadable `review.jsonl`, a tracked root 
 
 ## Where you meet it
 
-**The web console.** The Changes panel lists the files of the session record grouped root → file, with the status and the line counts of each file. A file opens the session record in the diff pane, which expands that file and scrolls to it. **Open diff** on an Edit or Write tool card does the same for the file of the call. The panel offers no decision. On a phone the panel opens from the More menu. The panel reads `GET /api/diff?session={id}` and `GET /api/diff/comments?session={id}`, and it talks to two session-scoped comment routes:
+**The web console.** The Changes panel lists the files of the session record grouped root → file, with the status and the line counts of each file. A file opens the session record in the diff pane, which expands that file and scrolls to it. **Open diff** on an Edit or Write tool card does the same for the file of the call. The panel offers no decision. On a phone the panel opens from the More menu. The panel reads `GET /api/diff?session={id}` and `GET /api/diff/comments?session={id}`, and it resolves a comment with `POST /api/diff/comment/resolve`. There is no TUI review panel.
 
-```text
-POST /api/session/{id}/review/comment
-POST /api/session/{id}/review/comment/{comment_id}/resolve
-```
-
-These forward to the daemon's `review.comment` and `review.resolve_comment` RPC methods. There is no TUI review panel.
-
-A diffset owns each comment, not a session. `review.comment` and `review.resolve_comment` are aliases of `diff.comment` and `diff.resolve_comment` on the session record of the session. `diff.comments` lists the comments of a diffset. It moves the range of a comment when its quoted text moves, and marks the comment `outdated` when the text is gone. The web routes are `POST /api/diff/comment`, `POST /api/diff/comment/resolve` and `GET /api/diff/comments`.
+A diffset owns each comment, not a session. `diff.comment` and `diff.resolve_comment` name the diffset by its source, and the session record is one source. `diff.comments` lists the comments of a diffset. It moves the range of a comment when its quoted text moves, and marks the comment `outdated` when the text is gone. The web routes are `POST /api/diff/comment`, `POST /api/diff/comment/resolve` and `GET /api/diff/comments`.
 
 **A plugin pass's own session.** The [[Reflection Pass|reflection and consolidation passes]] write their kiln notes with `create_note` and `update_note` in a session of their own, in `propose` mode. In that mode a note write goes into a proposal, not into this record, and the note on disk does not change. The proposal waits in the Inbox until a person accepts, rejects or dismisses it. A pass in a mode that applies its writes still puts a hunk in its own record. The web sessions list carries a **Reflections** section, on the desktop shell and on the phone, so the transcript of a pass is reachable from either.
 
-**The bundled `review` plugin** (`runtime/plugins/review/`) exposes the record as agent-callable tools: `review_list_hunks` (the attributed hunks, through `cru.session.review_list_hunks`), `review_comment`, `review_resolve_comment`. Every tool takes an explicit `session_id` because the session under review is usually not the caller's own: a delegating agent gets `child_session_id` from `delegate_session`'s result and reads the child's diff. Hunk bodies are truncated at 2000 characters — an agent reading a long hunk should open the file.
+**The bundled `review` plugin** (`runtime/plugins/review/`) gives an agent tools over the change of another session: `review_changes` (the files and their line counts), `review_file` (the two texts of one file), `review_comment`, `review_comments`, `review_resolve_comment`, `review_proposals`, `review_accept_proposal` and `review_reject_proposal`. Every tool takes an explicit `session_id` because the session under review is usually not the caller's own: a delegating agent gets `child_session_id` from `delegate_session`'s result. A tool reads the session record of the child by default. With `branch_root` (and `base`), it reads the branch of a child that works in a worktree. With `proposal_id`, it reads one proposal of a child in `propose` mode. The accept and reject tools decide only on an open proposal of that session, and `paths` decides only those files. The tools call `cru.diff.*` and `cru.proposals.*` (see [[Help/Plugins/Lua Runtime API|Lua Runtime API]]). File texts are truncated at 2000 characters — an agent reading a long file should open the file.
 
 ## Delegation
 

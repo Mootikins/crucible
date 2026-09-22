@@ -2,6 +2,7 @@ mod agents;
 mod auth;
 mod canvas;
 mod chat;
+mod comment_rows;
 mod config;
 mod diff;
 mod events;

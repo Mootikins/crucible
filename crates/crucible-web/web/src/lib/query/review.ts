@@ -2,11 +2,7 @@ import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
 import { getDiffComments, getDiffset } from '@/lib/diff-api';
 import type { DiffFileEntry, DiffsetSource } from '@/lib/diffset';
-import {
-  addReviewComment,
-  resolveReviewComment,
-  type NewComment,
-} from '@/lib/review-api';
+import { resolveReviewComment } from '@/lib/review-api';
 import type { ReviewComment } from '@/lib/review-types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
@@ -70,14 +66,6 @@ function writing<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
   // `finally`, not `then`: a refused write can still leave the listing
   // stale, and a re-list costs one request.
   return run().finally(() => invalidateReview(sessionId));
-}
-
-/** Leave a comment on a range of one file. */
-export function addReviewCommentOnce(
-  sessionId: string,
-  comment: NewComment,
-): Promise<{ comment: ReviewComment }> {
-  return writing(sessionId, () => addReviewComment(sessionId, comment));
 }
 
 /** Mark one comment resolved. */

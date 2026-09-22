@@ -36,6 +36,8 @@ pub enum CruNamespace {
     Colorscheme,
     Config,
     Context,
+    /// The diffsets of the daemon: `cru.diff.get`, `file` and the comments.
+    Diff,
     /// The kiln's own embedding provider: `cru.embed(kiln, text)`.
     Embed,
     Emitter,
@@ -68,7 +70,8 @@ pub enum CruNamespace {
     /// `cru.permissions.on_request`, on the VM that runs Lua files.
     Permissions,
     Plugin,
-    /// Read the proposals that a person rejected: `cru.proposals.rejected`.
+    /// The proposal store: `cru.proposals.rejected`, `list`, `accept` and
+    /// `reject`.
     Proposals,
     Ratelimit,
     Retry,
@@ -123,6 +126,7 @@ impl CruNamespace {
             | Self::Colorscheme
             | Self::Config
             | Self::Context
+            | Self::Diff
             | Self::Embed
             | Self::Emitter
             | Self::Errors

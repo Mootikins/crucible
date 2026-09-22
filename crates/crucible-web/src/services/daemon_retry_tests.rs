@@ -86,7 +86,7 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
         "plugin.run_command",
         "plugin.option_execute",
         "session.send_message",
-        "review.resolve_comment",
+        "diff.resolve_comment",
     ] {
         let peer = Peer::losing_first_reply(method).await;
         let result = timeout(Duration::from_secs(2), async {
@@ -106,9 +106,14 @@ async fn mutations_are_not_replayed_when_the_reply_is_lost() {
                     .session_send_message("s", "hello")
                     .await
                     .map(|_| ()),
-                "review.resolve_comment" => peer
+                "diff.resolve_comment" => peer
                     .daemon
-                    .review_resolve_comment("s", "c")
+                    .diff_resolve_comment(
+                        &crucible_core::diff::DiffsetSource::SessionRecord {
+                            session: crucible_core::session::SessionId::parse("s").unwrap(),
+                        },
+                        "c",
+                    )
                     .await
                     .map(|_| ()),
                 _ => unreachable!(),

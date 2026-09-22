@@ -1,13 +1,13 @@
 //! The shipped `review` plugin, loaded through the real daemon plugin runtime.
 //!
-//! Review has two surfaces over one engine: `review.*` JSON-RPC for the web
-//! panel, and these tools for an agent. The agent half is the one the design
+//! Review has two surfaces over one engine: the `diff.*` and `proposal.*`
+//! JSON-RPC methods for the clients, and these tools for an agent. The agent half is the one the design
 //! actually requires — a delegating agent reviewing the sub-session it
 //! spawned cannot speak JSON-RPC — and it is also the half that fails
 //! silently: a plugin whose spec does not parse is simply absent, and the
 //! agent is never told the tools it was promised do not exist.
 //!
-//! So this asserts from where the agent stands: the five tools are on the
+//! So this asserts from where the agent stands: the eight tools are on the
 //! registry, and every one of them takes the `session_id` that makes
 //! reviewing *someone else's* session expressible.
 
@@ -48,6 +48,18 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// Every tool that the plugin offers.
+const REVIEW_TOOLS: [&str; 8] = [
+    "review_changes",
+    "review_file",
+    "review_comment",
+    "review_comments",
+    "review_resolve_comment",
+    "review_proposals",
+    "review_accept_proposal",
+    "review_reject_proposal",
+];
+
 async fn load_review(tmp: &Path) -> DaemonPluginLoader {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
@@ -63,11 +75,7 @@ async fn the_review_plugin_offers_every_review_operation_as_a_tool() {
     let loader = load_review(tmp.path()).await;
     let names = loader.plugin_registry().tool_names();
 
-    for tool in [
-        "review_list_hunks",
-        "review_comment",
-        "review_resolve_comment",
-    ] {
+    for tool in REVIEW_TOOLS {
         assert!(names.contains(tool), "missing tool {tool}; got {names:?}");
     }
 }
@@ -87,7 +95,7 @@ async fn every_review_tool_takes_the_session_it_reviews() {
         .collect();
     assert_eq!(
         review.len(),
-        3,
+        REVIEW_TOOLS.len(),
         "expected every review tool: {:?}",
         review.iter().map(|d| &d.name).collect::<Vec<_>>()
     );

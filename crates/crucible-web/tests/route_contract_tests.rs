@@ -13,6 +13,8 @@ mod chat;
 mod commands;
 #[path = "route_contract_tests/daemon_errors.rs"]
 mod daemon_errors;
+#[path = "route_contract_tests/diff_comments.rs"]
+mod diff_comments;
 #[path = "route_contract_tests/errors.rs"]
 mod errors;
 #[path = "route_contract_tests/fs.rs"]
@@ -25,8 +27,6 @@ mod kilns;
 mod plugins;
 #[path = "route_contract_tests/projects.rs"]
 mod projects;
-#[path = "route_contract_tests/review.rs"]
-mod review;
 #[path = "route_contract_tests/router.rs"]
 mod router;
 #[path = "route_contract_tests/session_config.rs"]

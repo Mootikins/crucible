@@ -2,14 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
 import { getBus } from '@/lib/bus';
 import { resetAuthThrottleForTests } from '../api-client';
-import { addReviewComment, resolveReviewComment } from '../review-api';
+import { resolveReviewComment } from '../review-api';
 
 /**
- * These URLs and bodies ARE the contract with the axum layer in
- * `crucible-web/src/routes/session/` — the browser never speaks raw JSON-RPC,
- * so a route that does not match one of these is a review surface that cannot
- * be reached. Asserting them here is the only place that contract is written
- * down on this side.
+ * The Changes panel resolves a comment of a session record through the
+ * diff route `POST /api/diff/comment/resolve`. The body names the session
+ * record source, because a comment belongs to a diffset and not to a
+ * session route.
  */
 
 const originalFetch = global.fetch;
@@ -30,44 +29,21 @@ afterEach(() => {
 });
 
 describe('review REST surface', () => {
-  it('encodes a session id with characters a path would eat', async () => {
-    const mockFetch = serve('POST /api/session/a%2Fb/review/comment', { comment: {} });
-    await addReviewComment('a/b', { path: 'src/a.rs', line_start: 3, body: 'why' });
-
-    expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/review/comment');
-  });
-
-  it('comments on a range, passing only what the caller gave', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/comment', { comment: {} });
-    await addReviewComment('s1', { path: 'src/a.rs', line_start: 3, body: 'why' });
+  it('resolves a comment of the session record through the diff route', async () => {
+    const mockFetch = serve('POST /api/diff/comment/resolve', {
+      diffset: 'session-a/b',
+      comment_id: 'c 1',
+      resolved: true,
+    });
+    await resolveReviewComment('a/b', 'c 1');
 
     const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/comment');
-    // `line_end` is deliberately absent: the daemon defaults it to
-    // `line_start + 1`, and sending a guess here would fight that.
-    expect(sent.body).toEqual({ path: 'src/a.rs', line_start: 3, body: 'why' });
-  });
-
-  it('resolves a comment by id', async () => {
-    const mockFetch = serve('POST /api/session/s1/review/comment/c%201/resolve', {
+    expect(sent.path).toBe('/api/diff/comment/resolve');
+    expect(sent.headers.get('Content-Type')).toBe('application/json');
+    expect(sent.body).toEqual({
+      source: { kind: 'session_record', session: 'a/b' },
       comment_id: 'c 1',
     });
-    await resolveReviewComment('s1', 'c 1');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/comment/c%201/resolve');
-    expect(sent.headers.get('Content-Type')).toBe('application/json');
-  });
-
-  it('surfaces the daemon message on failure, not a bare status', async () => {
-    // An INVALID_PARAMS case means "read again and try again", and the body
-    // says why.
-    global.fetch = createMockFetch({
-      'POST /api/session/s1/review/comment': { status: 400, body: 'no such session' },
-    });
-    await expect(
-      addReviewComment('s1', { path: 'src/a.rs', line_start: 3, body: 'why' }),
-    ).rejects.toThrow('no such session');
   });
 
   it('unwraps the error envelope instead of throwing the JSON at the user', async () => {
@@ -75,7 +51,7 @@ describe('review REST surface', () => {
     // `{"error": {code, message}}`. Throwing the body raw puts that blob in a
     // toast where the server had already written a sentence.
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/comment/c1/resolve': apiError(422, 'unknown comment c1'),
+      'POST /api/diff/comment/resolve': apiError(422, 'unknown comment c1'),
     });
 
     const error = await resolveReviewComment('s1', 'c1').then(
@@ -94,7 +70,7 @@ describe('review REST surface', () => {
     const prompted = vi.fn();
     const stopListening = getBus().on('authRequired', prompted);
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/comment/c1/resolve': { status: 401 },
+      'POST /api/diff/comment/resolve': { status: 401 },
     });
 
     await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow();
@@ -105,7 +81,7 @@ describe('review REST surface', () => {
 
   it('falls back to the status when the body is empty', async () => {
     global.fetch = createMockFetch({
-      'POST /api/session/s1/review/comment/c1/resolve': { status: 500 },
+      'POST /api/diff/comment/resolve': { status: 500 },
     });
     await expect(resolveReviewComment('s1', 'c1')).rejects.toThrow('HTTP 500');
   });

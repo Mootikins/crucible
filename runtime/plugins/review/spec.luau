@@ -2,6 +2,6 @@
 return {
   name = "review",
   version = "0.1.0",
-  description = "Review the attributed diff of a session — including one you delegated to",
+  description = "Review the changes and the proposals of a session that you delegated to",
   license = "MIT",
 }

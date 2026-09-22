@@ -409,12 +409,6 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         // handlers: the group belongs with the knobs it serves, and has no
         // reason to be spelled out here.
         .merge(super::session_config::config_routes())
-        // Review lives inside this group, not beside it: bearer auth, the host
-        // guard, the CORS allowlist, the body limit and the security headers
-        // are applied to the session router, and a separate group is how the
-        // review surface would quietly stop inheriting them.
-        .routes(routes!(review::comment))
-        .routes(routes!(review::resolve_comment))
         .routes(routes!(export_session))
         .routes(routes!(execute_command))
         // Session-independent: the command set is static, so the composer can
@@ -1651,8 +1645,6 @@ async fn list_providers(
         providers: daemon_shape(providers, "providers.list")?,
     }))
 }
-
-pub(crate) mod review;
 
 #[cfg(test)]
 mod search_scope_tests;

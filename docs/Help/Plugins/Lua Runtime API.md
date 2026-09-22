@@ -361,8 +361,7 @@ field the old plain table exposed (`session.id`, `session.state`,
   `configure_agent`, `send_message`, `cancel`, `pause`, `resume`,
   `end_session`, `set_mode`, `set_title`, `interaction_respond`, `subscribe`, `unsubscribe`,
   `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
-  `undo`, `can_undo`, `undo_depth`, `undo_history`,
-  `review_list_hunks`, `review_comment`, `review_resolve_comment`.
+  `undo`, `can_undo`, `undo_depth`, `undo_history`, `review_list_hunks`.
 - On the *current session's* handle (`cru.session.current()`), the live config
   `s:get_variable(k)`. These need the per-session RPC binding; on a handle
   from `create`/`get`/`list` they report not-connected, and config changes go
@@ -733,6 +732,39 @@ end
 pcall(cru.session.unsubscribe, session_id)
 local response = table.concat(parts)
 ```
+
+## Diffsets and Proposals
+
+A delegating agent reads the change of a child session and decides on it. The bundled `review` plugin uses these functions. Each function answers `(result, nil)` or `(nil, err)`.
+
+`cru.diff.*` takes the params object of the `diff.*` RPC of the same name, and answers its result. The daemon runs the same handler as for a client, so the admission of a root is the same. A `source` table selects the diffset by its `kind`:
+
+| `kind` | Fields | Diffset |
+|---|---|---|
+| `session_record` | `session` | each file that differs between the text before the first tool call of the session and the disk |
+| `branch` | `root`, `base` (empty means the default branch), `head`? | the merge base of the branch, to the working tree or to `head` |
+| `proposal` | `id` | the files that one proposal writes |
+
+| Function | Params | Result |
+|---|---|---|
+| `cru.diff.get(p)` | `{ source }` | `{ id, source, files }`: each file with `root`, `path`, `status`, `added`, `removed` |
+| `cru.diff.file(p)` | `{ source, path, root?, from? }` | `{ base_text?, current_text? }`; an absent text is nil |
+| `cru.diff.comment(p)` | `{ source, path, root?, line_start, line_end?, side?, body, author? }` | `{ diffset, comment }` |
+| `cru.diff.resolve_comment(p)` | `{ source, comment_id }` | `{ diffset, comment_id, resolved }` |
+| `cru.diff.comments(p)` | `{ source }` | `{ diffset, comments }`: each `{ comment, outdated }` |
+
+A comment from Lua is an `agent` comment on the `current` side, unless the params say otherwise. A session record file needs its `root`, because a session can have more than one root.
+
+`cru.proposals.*` reads and decides the proposals:
+
+| Function | Result |
+|---|---|
+| `cru.proposals.list({ session?, all? })` | the proposals in the Inbox, oldest first; `session` keeps the proposals of one session, and `all` adds the settled ones |
+| `cru.proposals.accept({ id, paths? })` | the accepted proposal; the daemon writes its files, or only `paths` |
+| `cru.proposals.reject({ id, reason?, paths? })` | the rejected proposal; the daemon writes nothing |
+| `cru.proposals.rejected(limit?)` | the recent rejected proposals, newest first |
+
+Do not send an empty `paths` table: Lua sends `{}` as a JSON object, and the daemon reads a list. Leave `paths` out to decide every file.
 
 ## Calling Tools
 

@@ -263,7 +263,8 @@ pub use session_api::{
 pub use session_start_scope::{SessionStartScope, SessionStartScopeRpc, SessionStartValues};
 pub use sessions::{
     register_sessions_module, register_sessions_module_with_api,
-    register_sessions_module_with_api_and_current, DaemonSessionApi, ResponsePart,
+    register_sessions_module_with_api_and_current, DaemonSessionApi, DiffOp, ProposalDecision,
+    ResponsePart,
 };
 pub use signature::{LuaType, Param as SignatureParam, Signature, TypeError};
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};

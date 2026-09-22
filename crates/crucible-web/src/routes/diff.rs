@@ -8,8 +8,8 @@
 //! proposal source with `proposal`. A comment write carries the
 //! `DiffsetSource` in its JSON body.
 
+use crate::routes::comment_rows::{CommentAuthorRow, CommentSideRow, ReviewCommentRow};
 use crate::routes::session::daemon_shape;
-use crate::routes::session::review::{CommentAuthorRow, CommentSideRow, ReviewCommentRow};
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{

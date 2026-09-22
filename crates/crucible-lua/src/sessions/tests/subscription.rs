@@ -139,20 +139,27 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
         unimplemented!()
     }
-
-    fn review_comment(
+    fn diff(
         &self,
-        _: String,
+        _: DiffOp,
         _: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
         unimplemented!()
     }
 
-    fn review_resolve_comment(
+    fn list_proposals(
         &self,
-        _: String,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        _: Option<String>,
+        _: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn decide_proposal(
+        &self,
+        _: ProposalDecision,
+        _: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
         unimplemented!()
     }
 

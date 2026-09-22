@@ -4,9 +4,9 @@
 //! the daemon admits a branch root before it reads or writes a comment of
 //! that branch. The comment store keys each comment by the diffset id.
 //!
-//! `review.comment` and `review.resolve_comment` are aliases: they name the
-//! session record of their session and call [`record_comment`] and
-//! [`resolve_in`]. Phase 4 of the diff review plan removes the aliases.
+//! The Lua bridge calls the same handlers for `cru.diff.comment` and
+//! `cru.diff.resolve_comment`, so an agent comment and a person's comment
+//! take one path.
 
 use std::collections::HashMap;
 

@@ -203,6 +203,19 @@ fn fold_locations(
 }
 
 impl RpcContext {
+    /// The daemon state that admits the root of a diffset. The dispatcher
+    /// and the Lua session bridge both read it, so a plugin and a client
+    /// see one admission.
+    pub(crate) fn diff_admission(&self) -> crate::server::diff::Admission<'_> {
+        crate::server::diff::Admission {
+            projects: &self.project_manager,
+            kilns: &self.kiln,
+            sessions: &self.sessions,
+            review: &self.agents.review,
+            proposals: self.agents.proposals(),
+        }
+    }
+
     pub fn new(params: RpcContextParams) -> Self {
         let RpcContextParams {
             kiln,

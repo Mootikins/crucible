@@ -1,6 +1,6 @@
 //! The four app-config RPCs `/api/config` forwards to.
 //!
-//! Split from `daemon.rs` alongside `daemon_plugins` and `daemon_review`: each
+//! Split from `daemon.rs` alongside `daemon_plugins`: each
 //! holds the RPCs the web forwards to one daemon surface, and this one is the
 //! app config.
 //!

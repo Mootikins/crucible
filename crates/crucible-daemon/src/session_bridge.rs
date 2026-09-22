@@ -5,14 +5,13 @@
 
 use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
+use crate::protocol::{Request, Response};
 use crate::rpc::RpcContext;
-use crate::rpc_client::ReviewCommentRequest;
+use crate::rpc::RpcMethod;
 use crate::session_manager::SessionManager;
-use crucible_core::session::{CommentAuthor, LineRange};
 use crucible_core::traits::context_ops::Range;
-use crucible_lua::{DaemonSessionApi, ResponsePart};
+use crucible_lua::{DaemonSessionApi, DiffOp, ProposalDecision, ResponsePart};
 use std::future::Future;
-use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -912,16 +911,16 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
-    // The review methods delegate to the same free functions the `review.*`
-    // RPC handlers call, so a plugin tool and a client cannot drift on what a
-    // comment does.
+    // The review methods call the `diff.*` and `proposal.*` RPC handlers, so a
+    // plugin tool and a client cannot drift on what a comment or a decision
+    // does.
     //
-    // Every one of them opens with `ensure_loaded`, exactly as every handler
-    // does, and for the reason `ensure_loaded` exists: a review call can be the
-    // *first* thing that touches a session after a daemon restart. Without it a
-    // delegating agent asking for a resumed session's hunks is answered `[]`
-    // with no error — "the child changed nothing" — while a client reading
-    // the same session record gets it restored from `review.jsonl`.
+    // `review_list_hunks` opens with `ensure_loaded`, as the `diff.*`
+    // handlers do: a review call can be the *first* thing that touches a
+    // session after a daemon restart. Without it a delegating agent asking
+    // for a resumed session's hunks is answered `[]` with no error — "the
+    // child changed nothing" — while a client reading the same session
+    // record gets it restored from `review.jsonl`.
 
     fn review_list_hunks(&self, session_id: String) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(
@@ -940,60 +939,85 @@ impl DaemonSessionApi for DaemonSessionBridge {
         )
     }
 
-    fn review_comment(
-        &self,
-        session_id: String,
-        spec: serde_json::Value,
-    ) -> BoxFut<serde_json::Value> {
-        let agent_manager = Arc::clone(&self.agent_manager);
-        let session_manager = Arc::clone(&self.session_manager);
-        let event_tx = self.event_tx.clone();
+    /// The `diff.*` handler of `op`, with the admission of the dispatcher.
+    ///
+    /// A comment from a plugin tool is an agent comment unless the params
+    /// say otherwise, and it counts lines on the current side unless the
+    /// params name a side: the caller is an agent that reads the new text.
+    fn diff(&self, op: DiffOp, mut params: serde_json::Value) -> BoxFut<serde_json::Value> {
+        use crate::server::{diff, diff_comments};
+        let ctx = Arc::clone(&self.ctx);
         Box::pin(async move {
-            let (spec, author) = parse_comment_spec(session_id.clone(), spec)?;
-            crate::server::session::review::ensure_loaded(
-                &agent_manager,
-                &session_manager,
-                &session_id,
-            )
-            .await;
-            let comment = crate::server::session::review::add_comment(
-                &agent_manager,
-                &event_tx,
-                &session_id,
-                spec.root.as_deref().map(Path::new),
-                Path::new(&spec.path),
-                LineRange::new(
-                    spec.line_start,
-                    spec.line_end.unwrap_or(spec.line_start + 1),
-                ),
-                &spec.body,
-                author,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            serde_json::to_value(comment).map_err(|e| e.to_string())
+            let method = match op {
+                DiffOp::Get => RpcMethod::DiffGet,
+                DiffOp::File => RpcMethod::DiffFile,
+                DiffOp::Comment => RpcMethod::DiffComment,
+                DiffOp::ResolveComment => RpcMethod::DiffResolveComment,
+                DiffOp::Comments => RpcMethod::DiffComments,
+            };
+            if op == DiffOp::Comment {
+                let obj = params
+                    .as_object_mut()
+                    .ok_or_else(|| "diff.comment params must be a table".to_string())?;
+                obj.entry("author").or_insert_with(|| "agent".into());
+                obj.entry("side").or_insert_with(|| "current".into());
+            }
+            let req = bridge_request(method, params);
+            let admission = ctx.diff_admission();
+            let response = match op {
+                DiffOp::Get => diff::handle_diff_get(req, admission).await,
+                DiffOp::File => diff::handle_diff_file(req, admission).await,
+                DiffOp::Comment => {
+                    diff_comments::handle_diff_comment(req, admission, &ctx.event_tx).await
+                }
+                DiffOp::ResolveComment => {
+                    diff_comments::handle_diff_resolve_comment(req, admission, &ctx.event_tx).await
+                }
+                DiffOp::Comments => diff_comments::handle_diff_comments(req, admission).await,
+            };
+            response_result(response)
         })
     }
 
-    fn review_resolve_comment(&self, session_id: String, comment_id: String) -> BoxFut<()> {
-        let agent_manager = Arc::clone(&self.agent_manager);
-        let session_manager = Arc::clone(&self.session_manager);
-        let event_tx = self.event_tx.clone();
+    /// The proposals, after the stale check that `proposal.list` runs too.
+    fn list_proposals(&self, session: Option<String>, all: bool) -> BoxFut<Vec<serde_json::Value>> {
+        bridge_async!(self.agent_manager, |am| async move {
+            let store = am.proposals();
+            store.check_stale().map_err(|e| e.to_string())?;
+            store
+                .list(all)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter(|p| {
+                    session
+                        .as_deref()
+                        .is_none_or(|id| p.session.as_ref().is_some_and(|s| s.as_str() == id))
+                })
+                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                .collect()
+        })
+    }
+
+    /// The `proposal.accept` or `proposal.reject` handler.
+    fn decide_proposal(
+        &self,
+        decision: ProposalDecision,
+        params: serde_json::Value,
+    ) -> BoxFut<serde_json::Value> {
+        let ctx = Arc::clone(&self.ctx);
         Box::pin(async move {
-            crate::server::session::review::ensure_loaded(
-                &agent_manager,
-                &session_manager,
-                &session_id,
-            )
-            .await;
-            crate::server::session::review::resolve_comment(
-                &agent_manager,
-                &event_tx,
-                &session_id,
-                &comment_id,
-            )
-            .await
-            .map_err(|e| e.to_string())
+            let store = ctx.agents.proposals();
+            let response = match decision {
+                ProposalDecision::Accept => {
+                    let req = bridge_request(RpcMethod::ProposalAccept, params);
+                    crate::proposals::handle_proposal_accept(req, store, &ctx.kiln).await
+                }
+                ProposalDecision::Reject => {
+                    let req = bridge_request(RpcMethod::ProposalReject, params);
+                    crate::proposals::handle_proposal_reject(req, store).await
+                }
+            };
+            response_result(response)
         })
     }
 
@@ -1012,7 +1036,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                     _ => None,
                 })
                 .collect();
-            rejected.sort_by(|(_, a), (_, b)| b.created_at.cmp(&a.created_at));
+            rejected.sort_by_key(|(_, p)| std::cmp::Reverse(p.created_at));
             Ok(rejected
                 .into_iter()
                 .take(limit)
@@ -1035,26 +1059,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 }
 
-/// Read a `cru.session.review_comment` spec as the wire request the RPC
-/// handler reads, so the two entry points share one set of field names.
-///
-/// The Lua caller passes `session_id` as its own argument, so this merges
-/// it into the spec. An agent that comments through a plugin tool is the
-/// §6 case, so `author` defaults to `agent` here. The RPC handler, whose
-/// caller is a person at a panel, defaults the other way.
-fn parse_comment_spec(
-    session_id: String,
-    mut spec: serde_json::Value,
-) -> Result<(ReviewCommentRequest, CommentAuthor), String> {
-    let obj = spec
-        .as_object_mut()
-        .ok_or_else(|| "comment spec must be a table".to_string())?;
-    obj.insert("session_id".into(), serde_json::Value::String(session_id));
-    let req: ReviewCommentRequest = serde_json::from_value(spec).map_err(|e| e.to_string())?;
-    let author_str = req.author.as_deref().unwrap_or("agent");
-    let author = serde_json::from_value(serde_json::Value::String(author_str.to_owned()))
-        .map_err(|_| format!("unknown comment author: {author_str}"))?;
-    Ok((req, author))
+/// A request for a handler that the bridge calls as the dispatcher does.
+fn bridge_request(method: RpcMethod, params: serde_json::Value) -> Request {
+    Request {
+        jsonrpc: "2.0".to_string(),
+        id: None,
+        method: method.as_str().to_string(),
+        params,
+    }
+}
+
+/// The result of a handler, or the message of its error.
+fn response_result(response: Response) -> Result<serde_json::Value, String> {
+    match response.error {
+        Some(error) => Err(error.message),
+        None => Ok(response.result.unwrap_or(serde_json::Value::Null)),
+    }
 }
 
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {

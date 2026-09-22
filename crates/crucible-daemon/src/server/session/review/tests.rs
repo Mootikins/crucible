@@ -1,11 +1,8 @@
 use super::*;
 use crate::test_support::temp_session_manager;
-use crucible_core::protocol::rpc::INTERNAL_ERROR;
-use crucible_core::protocol::RequestId;
-use crucible_core::session::{PhysicalRoot, SnapshotId};
 use tempfile::TempDir;
 
-// ── End-to-end fixture: real git worktree, real ledger, real handlers ───
+// ── End-to-end fixture: real git worktree, real ledger ──
 
 /// A session whose ledger tracks a one-file git repo, plus the managers
 /// the handlers need. Held together because `TempDir` must outlive the
@@ -15,8 +12,6 @@ struct Fixture {
     am: Arc<AgentManager>,
     sm: Arc<SessionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    events: broadcast::Receiver<SessionEventMessage>,
-    session: String,
 }
 
 use crate::test_support::git;
@@ -35,7 +30,7 @@ impl Fixture {
         git(dir.path(), &["add", "."]).await;
         git(dir.path(), &["commit", "-q", "-m", "init"]).await;
 
-        let (event_tx, events) = broadcast::channel(64);
+        let (event_tx, _) = broadcast::channel(64);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = temp_session_manager();
         let am = Arc::new(AgentManager::new(AgentManagerParams {
@@ -57,273 +52,8 @@ impl Fixture {
             am,
             sm: session_manager,
             event_tx,
-            events,
-            session: "sess".to_string(),
         }
     }
-
-    /// Open the ledger the way a turn would.
-    async fn open_ledger(&self) {
-        self.am
-            .review
-            .open(&self.session, &[self.dir.path().to_path_buf()])
-            .await
-            .unwrap();
-    }
-
-    fn request(&self, method: &str, mut params: serde_json::Value) -> Request {
-        params["session_id"] = serde_json::json!(self.session);
-        Request {
-            jsonrpc: "2.0".to_string(),
-            id: Some(RequestId::Number(1)),
-            method: method.to_string(),
-            params,
-        }
-    }
-
-    /// Drain the event channel and report which `review_changed` reasons
-    /// arrived.
-    fn review_reasons(&mut self) -> Vec<String> {
-        let mut reasons = Vec::new();
-        while let Ok(evt) = self.events.try_recv() {
-            if evt.event == "review_changed" {
-                reasons.push(evt.data["reason"].as_str().unwrap_or_default().to_string());
-            }
-        }
-        reasons
-    }
-}
-
-#[tokio::test]
-async fn a_comment_anchors_to_the_root_and_is_stored_on_the_record() {
-    let mut fx = Fixture::new("one\n").await;
-    fx.open_ledger().await;
-
-    let resp = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({
-                "path": "a.txt",
-                "line_start": 1,
-                "body": "name this better",
-            }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    let comment: Comment =
-        serde_json::from_value(resp.result.expect("success")["comment"].clone()).unwrap();
-    assert_eq!(comment.path, "a.txt");
-    assert_eq!(comment.author, CommentAuthor::Human);
-    // Half-open: naming only a start line means that one line.
-    assert_eq!(comment.line_range, LineRange::new(1, 2));
-    assert!(!comment.resolved);
-    assert_eq!(fx.review_reasons(), vec!["commented".to_string()]);
-    assert_eq!(fx.am.review.comments(&fx.session).unwrap(), vec![comment]);
-}
-
-/// `line_end`, `root` and `author` are the optional half of
-/// [`ReviewCommentRequest`], and a struct field that never reaches the
-/// operation is invisible to every other check.
-#[tokio::test]
-async fn the_optional_comment_fields_reach_the_operation() {
-    let fx = Fixture::new("one\n").await;
-    fx.open_ledger().await;
-
-    let resp = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({
-                "path": "a.txt",
-                "line_start": 2,
-                "line_end": 5,
-                "body": "this whole block",
-                "author": "agent",
-            }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-
-    let comment: Comment =
-        serde_json::from_value(resp.result.expect("success")["comment"].clone()).unwrap();
-    assert_eq!(comment.line_range, LineRange::new(2, 5));
-    assert_eq!(comment.author, CommentAuthor::Agent);
-}
-
-/// A caller that omits a required field is told which one. The old
-/// `require_param!` named it; the request struct has to keep naming it.
-#[tokio::test]
-async fn a_comment_without_a_body_names_the_field_it_wants() {
-    let fx = Fixture::new("one\n").await;
-    fx.open_ledger().await;
-
-    let resp = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({ "path": "a.txt", "line_start": 1 }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-
-    let err = resp.error.expect("a comment with no body must be refused");
-    assert_eq!(err.code, INVALID_PARAMS);
-    assert!(err.message.contains("body"), "{}", err.message);
-}
-
-#[tokio::test]
-async fn commenting_without_a_ledger_is_refused() {
-    let fx = Fixture::new("one\n").await;
-    let resp = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({ "path": "a.txt", "line_start": 1, "body": "x" }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    assert_eq!(resp.error.expect("refused").code, INVALID_PARAMS);
-}
-
-#[tokio::test]
-async fn resolving_a_comment_marks_it_and_an_unknown_id_is_refused() {
-    let mut fx = Fixture::new("one\n").await;
-    fx.open_ledger().await;
-    let created = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({ "path": "a.txt", "line_start": 1, "body": "x" }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    let comment: Comment =
-        serde_json::from_value(created.result.expect("success")["comment"].clone()).unwrap();
-    let _ = fx.review_reasons();
-
-    let resp = handle_review_resolve_comment(
-        fx.request(
-            "review.resolve_comment",
-            serde_json::json!({ "comment_id": comment.id }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    assert!(resp.error.is_none(), "{:?}", resp.error);
-    assert!(fx.am.review.comments(&fx.session).unwrap()[0].resolved);
-    assert_eq!(fx.review_reasons(), vec!["comment_resolved".to_string()]);
-
-    let unknown = handle_review_resolve_comment(
-        fx.request(
-            "review.resolve_comment",
-            serde_json::json!({ "comment_id": "nope" }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    assert_eq!(unknown.error.expect("refused").code, INVALID_PARAMS);
-}
-
-/// `review.comment` and `review.resolve_comment` are aliases of the
-/// `diff.*` methods on the session record: a comment made through one name
-/// is the comment that the other name lists and resolves.
-#[tokio::test]
-async fn review_comment_is_an_alias_for_the_session_record() {
-    use crate::diff::comments::ListedComment;
-    use crate::kiln_manager::KilnManager;
-    use crate::project_manager::ProjectManager;
-    use crate::rpc_client::{DiffCommentsReply, DiffCommentsRequest, DiffResolveCommentRequest};
-    use crate::server::diff::Admission;
-    use crate::server::diff_comments::{handle_diff_comments, handle_diff_resolve_comment};
-    use crucible_core::diff::{DiffsetId, DiffsetSource};
-    use crucible_core::session::{CommentAnchor, CommentSide, SessionId};
-
-    let mut fx = Fixture::new("one\ntwo\n").await;
-    fx.open_ledger().await;
-    let created = handle_review_comment(
-        fx.request(
-            "review.comment",
-            serde_json::json!({ "path": "a.txt", "line_start": 2, "body": "x" }),
-        ),
-        &fx.am,
-        &fx.sm,
-        &fx.event_tx,
-    )
-    .await;
-    let comment: Comment =
-        serde_json::from_value(created.result.expect("success")["comment"].clone()).unwrap();
-    let session = SessionId::parse(&fx.session).unwrap();
-    let base = fx.am.review.ledger(&fx.session).unwrap().session_base()[0].clone();
-    assert_eq!(comment.diffset, DiffsetId::for_session(&session));
-    assert_eq!(comment.anchor, CommentAnchor::Snapshot(base.base_tree));
-    assert_eq!(comment.side, CommentSide::Current);
-    assert_eq!(comment.quoted, "two\n");
-    assert_eq!(fx.review_reasons(), vec!["commented".to_string()]);
-
-    // `diff.comments` on the session record lists the alias comment.
-    let store = TempDir::new().unwrap();
-    let projects = Arc::new(ProjectManager::new(store.path().join("projects.json")));
-    let kilns = Arc::new(KilnManager::new());
-    let admission = || Admission {
-        projects: &projects,
-        kilns: &kilns,
-        sessions: &fx.sm,
-        review: &fx.am.review,
-        proposals: fx.am.proposals(),
-    };
-    let source = DiffsetSource::SessionRecord { session };
-    let listed = handle_diff_comments(
-        fx.request(
-            "diff.comments",
-            serde_json::to_value(DiffCommentsRequest {
-                source: source.clone(),
-            })
-            .unwrap(),
-        ),
-        admission(),
-    )
-    .await;
-    let listed: DiffCommentsReply = serde_json::from_value(listed.result.expect("listed")).unwrap();
-    assert_eq!(
-        listed.comments,
-        vec![ListedComment {
-            comment: comment.clone(),
-            outdated: false,
-        }]
-    );
-
-    // `diff.resolve_comment` resolves it, and the session record sees that.
-    let resolved = handle_diff_resolve_comment(
-        fx.request(
-            "diff.resolve_comment",
-            serde_json::to_value(DiffResolveCommentRequest {
-                source,
-                comment_id: comment.id.clone(),
-            })
-            .unwrap(),
-        ),
-        admission(),
-        &fx.event_tx,
-    )
-    .await;
-    assert!(resolved.error.is_none(), "{:?}", resolved.error);
-    assert_eq!(fx.review_reasons(), vec!["comment_resolved".to_string()]);
-    assert!(fx.am.review.comments(&fx.session).unwrap()[0].resolved);
 }
 
 /// The Lua/plugin review surface and the RPC handlers are backed by the same
@@ -332,6 +62,9 @@ async fn review_comment_is_an_alias_for_the_session_record() {
 /// — so a delegating agent asking a resumed session for its hunks was answered
 /// `[]` with no error ("the child changed nothing") while a browser hitting the
 /// same session got the record restored from `review.jsonl`.
+///
+/// `cru.diff.get` on the session record goes through the `diff.get` handler,
+/// so it restores the record too.
 #[tokio::test]
 async fn the_lua_bridge_restores_a_resumed_sessions_record_like_the_handler_does() {
     use crucible_core::session::{Session, SessionType};
@@ -380,181 +113,19 @@ async fn the_lua_bridge_restores_a_resumed_sessions_record_like_the_handler_does
         "the plugin surface read a resumed session as having changed nothing"
     );
     assert_eq!(through_lua[0]["tool_call_ids"][0], "call-1");
-}
 
-// ── Pure helpers ───────────────────────────────────────────────────────
-
-fn base(root: &str) -> RootBase {
-    RootBase {
-        root: PhysicalRoot::from_top_level(root),
-        base_tree: SnapshotId::git("deadbeef"),
-    }
-}
-
-#[test]
-fn absolute_path_resolves_to_its_root() {
-    let bases = [base("/repo")];
-    let (root, rel) = resolve_root(&bases, None, Path::new("/repo/src/foo.rs")).unwrap();
-    assert_eq!(*root.root, *Path::new("/repo"));
-    assert_eq!(rel, "src/foo.rs");
-}
-
-/// A kiln checked out inside the workspace repo is its own root. The
-/// shorter prefix also matches, and taking it would anchor the comment in
-/// the wrong repository's base tree.
-#[test]
-fn absolute_path_prefers_the_longest_matching_root() {
-    let bases = [base("/repo"), base("/repo/kiln")];
-    let (root, rel) = resolve_root(&bases, None, Path::new("/repo/kiln/note.md")).unwrap();
-    assert_eq!(*root.root, *Path::new("/repo/kiln"));
-    assert_eq!(rel, "note.md");
-}
-
-#[test]
-fn absolute_path_outside_every_root_does_not_resolve() {
-    let bases = [base("/repo")];
-    assert!(resolve_root(&bases, None, Path::new("/elsewhere/foo.rs")).is_err());
-}
-
-#[test]
-fn relative_path_resolves_against_the_only_root() {
-    let bases = [base("/repo")];
-    let (root, rel) = resolve_root(&bases, None, Path::new("src/foo.rs")).unwrap();
-    assert_eq!(*root.root, *Path::new("/repo"));
-    assert_eq!(rel, "src/foo.rs");
-}
-
-/// Guessing here would anchor the comment against the wrong base tree and
-/// silently comment on a different file that happens to share a name.
-#[test]
-fn relative_path_with_several_roots_is_ambiguous() {
-    let bases = [base("/repo"), base("/kiln")];
-    assert!(resolve_root(&bases, None, Path::new("src/foo.rs")).is_err());
-}
-
-#[test]
-fn explicit_root_wins_and_accepts_an_absolute_path() {
-    let bases = [base("/repo"), base("/kiln")];
-    let (root, rel) =
-        resolve_root(&bases, Some(Path::new("/kiln")), Path::new("/kiln/note.md")).unwrap();
-    assert_eq!(*root.root, *Path::new("/kiln"));
-    assert_eq!(rel, "note.md");
-}
-
-#[test]
-fn explicit_root_that_the_session_does_not_track_does_not_resolve() {
-    let bases = [base("/repo")];
-    assert!(resolve_root(&bases, Some(Path::new("/elsewhere")), Path::new("a.rs")).is_err());
-}
-
-/// The relative arm used to be taken verbatim, so `../../etc/passwd`
-/// landed on a stored `Comment` and was later handed to the
-/// editor-opening path — network-reachable once the web bridge lands.
-#[test]
-fn a_relative_path_escaping_its_root_is_refused() {
-    let dir = TempDir::new().unwrap();
-    let bases = [RootBase {
-        root: PhysicalRoot::from_top_level(std::fs::canonicalize(dir.path()).unwrap()),
-        base_tree: SnapshotId::git("deadbeef"),
-    }];
-    assert!(resolve_root(&bases, None, Path::new("../../etc/passwd")).is_err());
-    assert!(resolve_root(&bases, None, Path::new("sub/../../escaped.txt")).is_err());
-}
-
-/// A `..` whose prefix does not exist cannot be resolved by
-/// `canonicalize`, and `strip_prefix` is component-wise, so it comes back
-/// out as a relative path that still escapes. The containment check is
-/// what refuses it.
-#[test]
-fn an_unresolvable_dot_dot_is_refused_rather_than_stripped() {
-    let bases = [base("/repo")];
-    assert!(resolve_root(&bases, None, Path::new("/repo/../etc/passwd")).is_err());
-    assert!(resolve_root(&bases, None, Path::new("../etc/passwd")).is_err());
-}
-
-/// A `..` that stays inside the root is not an escape and must still
-/// resolve, or a legitimate `src/../src/foo.rs` is refused.
-#[test]
-fn a_dot_dot_that_stays_inside_the_root_resolves() {
-    let dir = TempDir::new().unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
-    std::fs::create_dir(root.join("src")).unwrap();
-    let bases = [RootBase {
-        root: PhysicalRoot::from_top_level(root.clone()),
-        base_tree: SnapshotId::git("deadbeef"),
-    }];
-    let (resolved, rel) = resolve_root(&bases, None, Path::new("src/../a.rs")).unwrap();
-    assert_eq!(*resolved.root, *root);
-    assert_eq!(rel, "a.rs");
-}
-
-/// Roots are stored as `git rev-parse --show-toplevel` printed them, but a
-/// client names the workspace as the session registered it. Comparing the
-/// two spellings raw resolves nothing.
-#[test]
-fn a_path_through_a_symlinked_root_resolves_to_the_tracked_root() {
-    let dir = TempDir::new().unwrap();
-    let real = dir.path().join("real");
-    std::fs::create_dir(&real).unwrap();
-    let link = dir.path().join("link");
-    std::os::unix::fs::symlink(&real, &link).unwrap();
-    let physical = std::fs::canonicalize(&real).unwrap();
-
-    let bases = [RootBase {
-        root: PhysicalRoot::from_top_level(physical.clone()),
-        base_tree: SnapshotId::git("deadbeef"),
-    }];
-    let (root, rel) = resolve_root(&bases, None, &link.join("note.md")).unwrap();
-    assert_eq!(*root.root, *physical);
-    assert_eq!(rel, "note.md");
-
-    // ...and naming the root by its symlinked spelling picks the same one.
-    let (root, rel) = resolve_root(&bases, Some(&link), &link.join("note.md")).unwrap();
-    assert_eq!(*root.root, *physical);
-    assert_eq!(rel, "note.md");
-}
-
-#[test]
-fn author_strings_are_the_wire_contract() {
+    fx.am.review.clear_session(&id);
+    let record = bridge
+        .diff(
+            crucible_lua::DiffOp::Get,
+            serde_json::json!({ "source": { "kind": "session_record", "session": id.to_string() } }),
+        )
+        .await
+        .unwrap();
     assert_eq!(
-        parse_wire::<CommentAuthor>("human"),
-        Some(CommentAuthor::Human)
+        record["files"][0]["path"], "a.txt",
+        "cru.diff.get read a resumed session record as empty: {record}"
     );
-    assert_eq!(
-        parse_wire::<CommentAuthor>("agent"),
-        Some(CommentAuthor::Agent)
-    );
-    assert_eq!(parse_wire::<CommentAuthor>("bot"), None);
-}
-
-/// A caller that asked for something the ledger cannot answer must be told
-/// so, not that the daemon is broken.
-#[test]
-fn caller_recoverable_errors_map_to_invalid_params() {
-    for err in [
-        ReviewError::NoLedger("s".into()),
-        ReviewError::NoTrackableRoots("s".into()),
-        ReviewError::UnknownComment("c".into()),
-        ReviewError::InvalidSession("bad id".into()),
-        ReviewError::InvalidComment("bad range".into()),
-        ReviewError::NotAGitRepo {
-            path: PathBuf::from("/x"),
-        },
-    ] {
-        let resp = review_error_to_response(None, err);
-        assert_eq!(resp.error.expect("error").code, INVALID_PARAMS);
-    }
-}
-
-#[test]
-fn git_and_io_failures_map_to_internal_error() {
-    for err in [
-        ReviewError::Git("write-tree failed".into()),
-        ReviewError::Io(std::io::Error::other("disk")),
-    ] {
-        let resp = review_error_to_response(None, err);
-        assert_eq!(resp.error.expect("error").code, INTERNAL_ERROR);
-    }
 }
 
 // ── The crossing: a plugin session's own writes are its own review record ───

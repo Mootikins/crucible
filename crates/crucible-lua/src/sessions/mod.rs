@@ -53,6 +53,7 @@ use std::pin::Pin;
 
 // `pub(crate)` so `session_api` can reach the shared `_op` bodies the handle
 // methods and the free functions both call.
+pub(crate) mod diff;
 pub(crate) mod proposals;
 pub(crate) mod register;
 
@@ -95,6 +96,40 @@ pub enum ResponsePart {
         tool: String,
         description: String,
     },
+}
+
+/// One `diff.*` RPC that a plugin can call through `cru.diff`. The Lua name
+/// of each function is the snake-case name of its variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum DiffOp {
+    /// `diff.get`: the files of a diffset, with counts and no text.
+    Get,
+    /// `diff.file`: the two texts of one file.
+    File,
+    /// `diff.comment`: a comment on a line range of one file.
+    Comment,
+    /// `diff.resolve_comment`: mark one comment resolved.
+    ResolveComment,
+    /// `diff.comments`: the comments of a diffset.
+    Comments,
+}
+
+impl DiffOp {
+    /// The Lua name in `cru.diff`.
+    pub fn name(self) -> &'static str {
+        self.into()
+    }
+}
+
+/// A decision on a proposal, through `cru.proposals.accept` or
+/// `cru.proposals.reject`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalDecision {
+    /// `proposal.accept`: write the files.
+    Accept,
+    /// `proposal.reject`: write nothing and keep the reason.
+    Reject,
 }
 
 /// Trait abstracting daemon session operations for Lua plugins.
@@ -394,12 +429,11 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
-    // ── Attributed-diff review ──────────────────────────────────────────
+    // ── Review: the session record, diffsets and proposals ─────────────
     //
-    // These take a `session_id` like everything else here, and that is the
-    // whole point: a delegating agent reviews the session it delegated to,
-    // not itself. An RPC-only review surface could not express that from
-    // inside a plugin tool.
+    // A delegating agent reviews the session that it delegated to, not
+    // itself. So each of these names the session or the diffset in its
+    // arguments, and none reads an implicit current session.
 
     /// The session's composed diff: one JSON object per hunk, shaped like
     /// `ComposedHunk`. A session that never ran a turn has an empty queue,
@@ -409,21 +443,33 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
-    /// Anchor a comment to a line range. `spec` carries
-    /// `{ path, line_start, line_end?, body, root?, author? }`; the stored
-    /// comment (including its minted id) comes back.
-    fn review_comment(
+    /// One `diff.*` operation. `params` is the params object of the RPC
+    /// that `op` names, and the answer is the result of that RPC. The
+    /// daemon runs the same handler as for a client, so the admission of a
+    /// root and the refusals are the same.
+    fn diff(
         &self,
-        session_id: String,
-        spec: serde_json::Value,
+        op: DiffOp,
+        params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
-    /// Mark a comment answered.
-    fn review_resolve_comment(
+    /// The stored proposals, oldest first. `session` keeps only the
+    /// proposals that session made. Without `all`, only the proposals in
+    /// the Inbox.
+    fn list_proposals(
         &self,
-        session_id: String,
-        comment_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+        session: Option<String>,
+        all: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
+
+    /// Accept or reject one proposal. `params` is the params object of
+    /// `proposal.accept` or `proposal.reject`: `{ id, paths?, reason? }`.
+    /// The answer is the proposal that the daemon decided.
+    fn decide_proposal(
+        &self,
+        decision: ProposalDecision,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// The recent rejected proposals, newest first, at most `limit` rows.
     /// Each row is `{ id, title, reason?, paths, created_at }`. The

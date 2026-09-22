@@ -1644,50 +1644,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/review/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** `POST /api/session/{id}/review/comment` */
-        post: operations["comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/session/{id}/review/comment/{comment_id}/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * `POST /api/session/{id}/review/comment/{comment_id}/resolve`
-         * @description The client sends a `{}` body this handler never reads, and that is
-         *     deliberate — see the note on `resolveReviewComment` in `review-api.ts`.
-         *     The empty object forces `Content-Type: application/json`, which puts the
-         *     request outside the CORS simple-request set and makes the browser preflight
-         *     it against an allowlist that refuses cross-origin callers. It is the second
-         *     layer behind the `SameSite=Strict` auth cookie, not a redundant one: an
-         *     "optimisation" that drops the body drops the header, and every review write
-         *     becomes something a foreign page can fire blind.
-         */
-        post: operations["resolve_comment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/status": {
         parameters: {
             query?: never;
@@ -2480,34 +2436,6 @@ export interface components {
             side: components["schemas"]["CommentSideRow"];
             /** @description The diffset of the file. */
             source: components["schemas"]["DiffsetSource"];
-        };
-        /**
-         * @description `POST /review/comment` — anchor a comment to a line range.
-         *
-         *     Read into a typed body rather than forwarded as raw JSON, so the session
-         *     under review can only ever be the one in the path: a `session_id` in the
-         *     body is an unknown field here. The handler copies the fields into a
-         *     `ReviewCommentRequest` with the path's session id.
-         */
-        CommentRequest: {
-            author?: string | null;
-            body: string;
-            /**
-             * Format: int32
-             * @description 1-based, exclusive. Absent means `line_start + 1`, which the daemon
-             *     applies — hence `skip_serializing_if`. Sending an explicit `null`
-             *     defeats the daemon's `optional_param!` default and is not the same
-             *     request.
-             */
-            line_end?: number | null;
-            /**
-             * Format: int32
-             * @description 1-based.
-             */
-            line_start: number;
-            /** @description Absolute, or relative to the session's tracked root. */
-            path: string;
-            root?: string | null;
         };
         /**
          * @description The side of a diff that a comment range counts its lines on.
@@ -4099,15 +4027,6 @@ export interface components {
          *     daemon added would turn an extension into a 502 on three healthy routes.
          */
         ResumeSessionResponse: components["schemas"]["SessionHistoryResponse"] | components["schemas"]["SessionLifecycleResponse"];
-        /** @description What `POST /api/session/{id}/review/comment` answers. */
-        ReviewCommentResponse: {
-            /**
-             * @description The comment as it was stored, with the id and the time the daemon
-             *     minted.
-             */
-            comment: components["schemas"]["ReviewCommentRow"];
-            session_id: string;
-        };
         /** @description One review comment, anchored to a line range rather than to a hunk. */
         ReviewCommentRow: {
             /** @description What the diffset compares with when the comment was made. */
@@ -4136,12 +4055,6 @@ export interface components {
             root: string;
             /** @description The side that `line_range` counts its lines on. */
             side: components["schemas"]["CommentSideRow"];
-        };
-        /** @description What `POST /api/session/{id}/review/comment/{comment_id}/resolve` answers. */
-        ReviewResolveCommentResponse: {
-            comment_id: string;
-            resolved: boolean;
-            session_id: string;
         };
         /**
          * @description The values one save carries, in the shape `config.save` takes.
@@ -4746,7 +4659,6 @@ export type SchemaCommandsResponse = components['schemas']['CommandsResponse'];
 export type SchemaCommentAnchorRow = components['schemas']['CommentAnchorRow'];
 export type SchemaCommentAuthorRow = components['schemas']['CommentAuthorRow'];
 export type SchemaCommentBody = components['schemas']['CommentBody'];
-export type SchemaCommentRequest = components['schemas']['CommentRequest'];
 export type SchemaCommentSideRow = components['schemas']['CommentSideRow'];
 export type SchemaConfigOriginRow = components['schemas']['ConfigOriginRow'];
 export type SchemaConfigResponse = components['schemas']['ConfigResponse'];
@@ -4857,9 +4769,7 @@ export type SchemaResolveCommentBody = components['schemas']['ResolveCommentBody
 export type SchemaResolvedNoteResponse = components['schemas']['ResolvedNoteResponse'];
 export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBody'];
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
-export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
-export type SchemaReviewResolveCommentResponse = components['schemas']['ReviewResolveCommentResponse'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
@@ -8221,84 +8131,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not resume the session */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    comment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The session under review */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommentRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewCommentResponse"];
-                };
-            };
-            /** @description The path names no tracked root, or the author is neither `human` nor `agent` */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not store the comment */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    resolve_comment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The comment to mark answered */
-                comment_id: string;
-                /** @description The session under review */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewResolveCommentResponse"];
-                };
-            };
-            /** @description The daemon knows no such comment */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not resolve the comment */
             502: {
                 headers: {
                     [name: string]: unknown;

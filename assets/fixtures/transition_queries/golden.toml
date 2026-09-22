@@ -432,7 +432,7 @@ expect_note = "Session Replay"
 question = "are edits I make by hand in my editor attributed to the agent?"
 expect_note = "Review Ledger"
 
-# CONTROL Help/Concepts/Review Ledger.md — "**The bundled `review` plugin**" — "review_list_hunks, review_comment"
+# CONTROL Help/Concepts/Review Ledger.md — "**The bundled `review` plugin**" — "review_changes, review_comment"
 [[queries]]
 question = "which tools let an agent review another session's diff?"
 expect_note = "Review Ledger"

@@ -161,8 +161,6 @@ rpc_methods! {
     SessionUndo = "session.undo",
     SessionCanUndo = "session.can_undo",
     SessionUndoDepth = "session.undo_depth",
-    ReviewComment = "review.comment",
-    ReviewResolveComment = "review.resolve_comment",
     PluginReload = "plugin.reload",
     PluginList = "plugin.list",
     PluginCommands = "plugin.commands",
@@ -726,31 +724,6 @@ impl RpcDispatcher {
                 )
             ),
 
-            // Comment aliases of the session record. Session-scoped like the
-            // handlers above, but namespaced `review.*` rather than
-            // `session.*`: a delegating agent reviewing a child session
-            // addresses that child's id, not its own.
-            RpcMethod::ReviewComment => forward!(
-                id,
-                crate::server::session::handle_review_comment(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions,
-                    &self.ctx.event_tx
-                )
-            ),
-            RpcMethod::ReviewResolveComment => {
-                forward!(
-                    id,
-                    crate::server::session::handle_review_resolve_comment(
-                        req.clone(),
-                        &self.ctx.agents,
-                        &self.ctx.sessions,
-                        &self.ctx.event_tx
-                    )
-                )
-            }
-
             RpcMethod::SessionListModels => forward!(
                 id,
                 crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents)
@@ -1260,13 +1233,7 @@ impl RpcDispatcher {
 
     /// The daemon state that admits the root of a diffset.
     fn diff_admission(&self) -> crate::server::diff::Admission<'_> {
-        crate::server::diff::Admission {
-            projects: &self.ctx.project_manager,
-            kilns: &self.ctx.kiln,
-            sessions: &self.ctx.sessions,
-            review: &self.ctx.agents.review,
-            proposals: self.ctx.agents.proposals(),
-        }
+        self.ctx.diff_admission()
     }
 
     fn handle_ping(&self) -> RpcResult<serde_json::Value> {

@@ -3480,96 +3480,6 @@
         }
       }
     },
-    "/api/session/{id}/review/comment": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/comment`",
-        "operationId": "comment",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session under review",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewCommentResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The path names no tracked root, or the author is neither `human` nor `agent`"
-          },
-          "502": {
-            "description": "The daemon could not store the comment"
-          }
-        }
-      }
-    },
-    "/api/session/{id}/review/comment/{comment_id}/resolve": {
-      "post": {
-        "summary": "`POST /api/session/{id}/review/comment/{comment_id}/resolve`",
-        "description": "The client sends a `{}` body this handler never reads, and that is\ndeliberate — see the note on `resolveReviewComment` in `review-api.ts`.\nThe empty object forces `Content-Type: application/json`, which puts the\nrequest outside the CORS simple-request set and makes the browser preflight\nit against an allowlist that refuses cross-origin callers. It is the second\nlayer behind the `SameSite=Strict` auth cookie, not a redundant one: an\n\"optimisation\" that drops the body drops the header, and every review write\nbecomes something a foreign page can fire blind.",
-        "operationId": "resolve_comment",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "The session under review",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "comment_id",
-            "in": "path",
-            "description": "The comment to mark answered",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReviewResolveCommentResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The daemon knows no such comment"
-          },
-          "502": {
-            "description": "The daemon could not resolve the comment"
-          }
-        }
-      }
-    },
     "/api/session/{id}/status": {
       "get": {
         "summary": "Proxy `session.status` verbatim.",
@@ -5411,51 +5321,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "CommentRequest": {
-        "type": "object",
-        "description": "`POST /review/comment` — anchor a comment to a line range.\n\nRead into a typed body rather than forwarded as raw JSON, so the session\nunder review can only ever be the one in the path: a `session_id` in the\nbody is an unknown field here. The handler copies the fields into a\n`ReviewCommentRequest` with the path's session id.",
-        "required": [
-          "path",
-          "line_start",
-          "body"
-        ],
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Absolute, or relative to the session's tracked root."
-          },
-          "line_start": {
-            "type": "integer",
-            "format": "int32",
-            "description": "1-based.",
-            "minimum": 0
-          },
-          "line_end": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "1-based, exclusive. Absent means `line_start + 1`, which the daemon\napplies — hence `skip_serializing_if`. Sending an explicit `null`\ndefeats the daemon's `optional_param!` default and is not the same\nrequest.",
-            "minimum": 0
-          },
-          "body": {
-            "type": "string"
-          },
-          "root": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "author": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
       },
       "CommentSideRow": {
         "type": "string",
@@ -8598,23 +8463,6 @@
         ],
         "description": "What `POST /api/session/{id}/resume` answers, which depends on the path\nthat resumed the session.\n\nThe warm path answers the state change. The cold path reloads the session\nfrom the store and answers its history, because that call is also what\n`GET /api/session/{id}/history` serves.\n\n**`Restored` must stay first.** The daemon sends no tag, so the variants\nare told apart by their fields, and `Live`'s required fields\n(`session_id`, `state`) are a subset of `Restored`'s. An untagged enum\ntakes the first variant that fits, so with the order reversed every\nrestored history would read back as a bare state change and every event\nwould be dropped without an error. `a_restored_payload_does_not_read_as_a_live_one`\nholds the order.\n\n`deny_unknown_fields` would be the other way to separate them, and it is\nnot used here: these are daemon replies, and refusing a field a newer\ndaemon added would turn an extension into a 502 on three healthy routes."
       },
-      "ReviewCommentResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/comment` answers.",
-        "required": [
-          "session_id",
-          "comment"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "comment": {
-            "$ref": "#/components/schemas/ReviewCommentRow",
-            "description": "The comment as it was stored, with the id and the time the daemon\nminted."
-          }
-        }
-      },
       "ReviewCommentRow": {
         "type": "object",
         "description": "One review comment, anchored to a line range rather than to a hunk.",
@@ -8676,26 +8524,6 @@
             "type": "string",
             "format": "date-time",
             "description": "When the comment was written, RFC 3339.\n\nA string rather than a date type: the daemon's spelling reaches the\nbrowser unchanged, and a parse and a reformat here could only lose\nprecision the daemon sent."
-          }
-        }
-      },
-      "ReviewResolveCommentResponse": {
-        "type": "object",
-        "description": "What `POST /api/session/{id}/review/comment/{comment_id}/resolve` answers.",
-        "required": [
-          "session_id",
-          "comment_id",
-          "resolved"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "comment_id": {
-            "type": "string"
-          },
-          "resolved": {
-            "type": "boolean"
           }
         }
       },

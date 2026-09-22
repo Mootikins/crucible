@@ -33,15 +33,14 @@ pub use client::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
     PluginRemoveRequest, PluginRunCommandRequest, PluginSpecRow, PluginTestFailure,
     PluginTestLoadFailure, ProcessFileRequest, ProposalAcceptRequest, ProposalIdRequest,
-    ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest, ReviewCommentRequest,
-    ReviewResolveCommentRequest, ScmCloneRequest, SearchVectorsRequest, SessionAgentSpec,
-    SessionConfigureAgentRequest, SessionCreateParams, SessionCreateRequest,
-    SessionDismissNotificationRequest, SessionEvent, SessionEventsAfterRequest,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
-    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
-    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
-    SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
-    SurfaceRequest, VectorHit, VersionCheck,
+    ProposalListRequest, ProposalRejectRequest, ProposalResolveRequest, ScmCloneRequest,
+    SearchVectorsRequest, SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams,
+    SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
+    SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest, SessionIdRequest,
+    SessionInjectContextRequest, SessionInteractionRespondRequest, SessionRenderMarkdownRequest,
+    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionSwitchModelRequest, SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest,
+    SkillsSearchRequest, SurfaceRequest, VectorHit, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 // `DaemonClient::fts_search` returns this type, so callers of the client

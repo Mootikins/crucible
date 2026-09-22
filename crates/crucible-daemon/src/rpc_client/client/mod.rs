@@ -144,7 +144,6 @@ pub mod lua;
 pub mod notifications;
 pub mod plugin_requests;
 pub mod proposals;
-pub mod review;
 pub mod session;
 pub mod storage;
 pub use storage::NoteListRow;
@@ -181,7 +180,6 @@ pub use proposals::{
     ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
     ProposalResolveRequest,
 };
-pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest};
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionDismissNotificationRequest,
     SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest, SessionIdRequest,

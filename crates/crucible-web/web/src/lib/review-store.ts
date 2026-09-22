@@ -24,10 +24,8 @@ import { createStore, produce } from 'solid-js/store';
 import { createSingletonRoot } from '@solid-primitives/rootless';
 import { sessionEvents } from './query/sse';
 import type { ChatEvent } from './types';
-import type { NewComment } from './review-api';
 import type { DiffFileEntry } from './diffset';
 import {
-  addReviewCommentOnce,
   invalidateReview,
   resolveReviewCommentOnce,
   useSessionRecord,
@@ -143,10 +141,6 @@ export const reviewActions = {
     ensureSlot(id);
     if (sessions[id]) setSessions(id, 'loading', true);
     await invalidateReview(id);
-  },
-
-  async comment(id: string, comment: NewComment): Promise<void> {
-    await addReviewCommentOnce(id, comment);
   },
 
   async resolveComment(id: string, commentId: string): Promise<void> {

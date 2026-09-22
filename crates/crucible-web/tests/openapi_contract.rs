@@ -954,9 +954,9 @@ fn every_route_the_router_serves_is_in_the_document() {
 
 /// The TypeScript modules that name `/api` paths as literals.
 ///
-/// `review-api.ts` is here because the regex scan this test replaces never
-/// read it, and its paths went unchecked.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/review-api.ts", 2)];
+/// `diff-api.ts` is here because the regex scan that this test replaces never
+/// read a module beside `api.ts`, and those paths went unchecked.
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/diff-api.ts", 5)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.
@@ -1150,7 +1150,7 @@ fn client_paths_outside(served: &BTreeSet<String>) -> Vec<String> {
 ///
 /// This runs the direction the deleted regex scan ran, and fixes what it
 /// missed: it compares against the generated document rather than a second
-/// regex scan of the same Rust, and it reads `review-api.ts`.
+/// regex scan of the same Rust, and it reads `diff-api.ts`.
 #[test]
 fn every_api_path_the_client_calls_is_in_the_document() {
     let missing = undescribed_client_paths();

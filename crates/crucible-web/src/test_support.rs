@@ -1474,21 +1474,6 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "kept_dir": Value::Null,
             "purged_dir": Value::Null,
         }),
-        // ── review.* ───────────────────────────────────────────────────────
-        // Shaped from the daemon's real handlers in
-        // `crucible-daemon/src/server/session/review.rs`, echoing the same
-        // params back, because the web layer's whole contract for these
-        // is "forward it untouched in both directions" — a hand-simplified
-        // stub could not fail when that stopped being true.
-        "review.comment" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "comment": review_comment_fixture("comment-2", param_str(msg, "body")),
-        }),
-        "review.resolve_comment" => json!({
-            "session_id": param_str(msg, "session_id"),
-            "comment_id": param_str(msg, "comment_id"),
-            "resolved": true,
-        }),
         "skills.list" => as_rpc_result(crucible_daemon::SkillsReply {
             skills: vec![crucible_daemon::SkillSummary {
                 name: "test-skill".to_string(),

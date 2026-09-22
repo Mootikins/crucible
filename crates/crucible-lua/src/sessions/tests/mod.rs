@@ -4,6 +4,7 @@ use std::sync::Mutex as StdMutex;
 mod completion;
 mod crud;
 mod delegate;
+mod diff;
 mod graph;
 mod handles;
 mod messages;
@@ -50,6 +51,12 @@ pub(super) struct MockDaemonApi {
     interaction_answer: StdMutex<Option<serde_json::Value>>,
     /// The limit of every `rejected_proposals` call, in order.
     rejected_calls: StdMutex<Vec<usize>>,
+    /// Every `diff` call, as `(op, params)`.
+    diff_calls: StdMutex<Vec<(DiffOp, serde_json::Value)>>,
+    /// Every `list_proposals` call, as `(session, all)`.
+    list_calls: StdMutex<Vec<(Option<String>, bool)>>,
+    /// Every `decide_proposal` call, as `(decision, params)`.
+    decisions: StdMutex<Vec<(ProposalDecision, serde_json::Value)>>,
 }
 
 impl MockDaemonApi {
@@ -70,6 +77,9 @@ impl MockDaemonApi {
             interaction_calls: StdMutex::new(Vec::new()),
             interaction_answer: StdMutex::new(None),
             rejected_calls: StdMutex::new(Vec::new()),
+            diff_calls: StdMutex::new(Vec::new()),
+            list_calls: StdMutex::new(Vec::new()),
+            decisions: StdMutex::new(Vec::new()),
         }
     }
 
@@ -124,6 +134,21 @@ impl MockDaemonApi {
         self.rejected_calls.lock().unwrap().clone()
     }
 
+    /// Every `diff` call this mock saw, in order.
+    pub(super) fn diff_calls(&self) -> Vec<(DiffOp, serde_json::Value)> {
+        self.diff_calls.lock().unwrap().clone()
+    }
+
+    /// Every `list_proposals` call this mock saw, in order.
+    pub(super) fn list_calls(&self) -> Vec<(Option<String>, bool)> {
+        self.list_calls.lock().unwrap().clone()
+    }
+
+    /// Every `decide_proposal` call this mock saw, in order.
+    pub(super) fn decisions(&self) -> Vec<(ProposalDecision, serde_json::Value)> {
+        self.decisions.lock().unwrap().clone()
+    }
+
     /// Params object from the most recent `create_session`, or `None`.
     pub(super) fn last_create_params(&self) -> Option<serde_json::Value> {
         self.last_create_params.lock().unwrap().clone()
@@ -165,20 +190,46 @@ impl DaemonSessionApi for MockDaemonApi {
         Box::pin(async { Ok(vec![]) })
     }
 
-    fn review_comment(
+    /// Answers the name of the operation, and a null text as `diff.file`
+    /// does for an added file.
+    fn diff(
         &self,
-        _: String,
-        _: serde_json::Value,
+        op: DiffOp,
+        params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
-        unimplemented!()
+        self.diff_calls.lock().unwrap().push((op, params));
+        let reply =
+            serde_json::json!({ "op": op.name(), "base_text": null, "current_text": "new" });
+        Box::pin(async move { Ok(reply) })
     }
 
-    fn review_resolve_comment(
+    /// Answers one proposal of the session it was asked for.
+    fn list_proposals(
         &self,
-        _: String,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        unimplemented!()
+        session: Option<String>,
+        all: bool,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        self.list_calls.lock().unwrap().push((session.clone(), all));
+        let row = serde_json::json!({ "id": "p1", "title": "Change a.md", "session": session });
+        Box::pin(async move { Ok(vec![row]) })
+    }
+
+    /// Answers the id it was given, in the state of the decision.
+    fn decide_proposal(
+        &self,
+        decision: ProposalDecision,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        self.decisions
+            .lock()
+            .unwrap()
+            .push((decision, params.clone()));
+        let state = match decision {
+            ProposalDecision::Accept => "accepted",
+            ProposalDecision::Reject => "rejected",
+        };
+        let reply = serde_json::json!({ "id": params["id"], "state": { "kind": state } });
+        Box::pin(async move { Ok(reply) })
     }
 
     /// Answers two rejected rows, cut to `limit`.

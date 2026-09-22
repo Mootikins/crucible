@@ -26,7 +26,6 @@ mod compose;
 mod error;
 pub(crate) mod git;
 mod journal;
-pub(crate) mod paths;
 mod persist;
 mod plain_store;
 

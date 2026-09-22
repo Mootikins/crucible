@@ -136,3 +136,19 @@ export async function postDiffComment(body: NewDiffComment): Promise<DiffComment
   );
   return reply.comment;
 }
+
+/**
+ * Marks one comment of the diffset of `source` resolved. The reply names the
+ * diffset and the comment.
+ */
+export async function resolveDiffComment(
+  source: DiffsetSource,
+  commentId: string,
+): Promise<{ diffset: string; comment_id: string; resolved: boolean }> {
+  return decode(
+    await client.POST('/api/diff/comment/resolve', {
+      body: { source, comment_id: commentId },
+    }),
+    'Failed to resolve the comment',
+  );
+}

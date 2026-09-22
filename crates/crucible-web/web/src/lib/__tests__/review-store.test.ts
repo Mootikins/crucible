@@ -108,9 +108,6 @@ function reviewRoutes() {
     const session = new URL(request.url).searchParams.get('session') ?? '';
     return { diffset: `session-${session}`, comments: [] };
   };
-  // `comment/{id}/resolve` declares no request body, so the
-  // client sends none — the JSON content type rides alone to force the
-  // preflight. A write that sends nothing records an empty body.
   const write = (name: string) => async (request: Request) => {
     const text = await request.text();
     wrote.push({ name, body: text ? (JSON.parse(text) as Record<string, unknown>) : {} });
@@ -121,11 +118,7 @@ function reviewRoutes() {
     'GET /api/diff': listing,
     'GET /api/diff/comments': comments,
   };
-  for (const session of ['s1', 's2']) {
-    const base = `/api/session/${session}/review`;
-    routes[`POST ${base}/comment`] = write('comment');
-    routes[`POST ${base}/comment/c1/resolve`] = write('resolve');
-  }
+  routes['POST /api/diff/comment/resolve'] = write('resolve');
   return routes as Parameters<typeof createTestQueryEnv>[0];
 }
 
@@ -215,17 +208,17 @@ describe('refresh', () => {
 
 describe('mutations', () => {
 
-  it('commenting and resolving both re-list', async () => {
+  it('resolving a comment re-lists', async () => {
     const dispose = await bound('s1');
-    writeAnswers.set('comment', () => ({ comment: {} }));
     writeAnswers.set('resolve', () => ({ comment_id: 'c1' }));
 
-    await reviewActions.comment('s1', { path: 'src/a.rs', line_start: 3, body: 'change this' });
-    await waitFor(() => expect(countOf('s1')).toBe(2));
-
     await reviewActions.resolveComment('s1', 'c1');
-    await waitFor(() => expect(countOf('s1')).toBe(3));
+    await waitFor(() => expect(countOf('s1')).toBe(2));
     expect(writeCount('resolve')).toBe(1);
+    expect(wrote[0].body).toEqual({
+      source: { kind: 'session_record', session: 's1' },
+      comment_id: 'c1',
+    });
     dispose();
   });
 });

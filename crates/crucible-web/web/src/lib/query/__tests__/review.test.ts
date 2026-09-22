@@ -4,7 +4,6 @@ import { waitFor } from '@solidjs/testing-library';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { keys } from '../keys';
 import {
-  addReviewCommentOnce,
   resolveReviewCommentOnce,
   useSessionRecord,
 } from '../review';
@@ -64,8 +63,7 @@ function reviewRoutes() {
       commentsListed.push(session);
       return { diffset: `session-${session}`, comments: [] };
     },
-    'POST /api/session/s1/review/comment': record('comment'),
-    'POST /api/session/s1/review/comment/c1/resolve': record('resolve'),
+    'POST /api/diff/comment/resolve': record('resolve'),
   };
 }
 
@@ -140,10 +138,6 @@ describe('the writes', () => {
    * and not a patch the browser can compute from the reply.
    */
   const writes: [string, (id: string) => Promise<unknown>][] = [
-    [
-      'addReviewCommentOnce',
-      (id) => addReviewCommentOnce(id, { path: 'a.rs', line_start: 1, body: 'x' }),
-    ],
     ['resolveReviewCommentOnce', (id) => resolveReviewCommentOnce(id, 'c1')],
   ];
 

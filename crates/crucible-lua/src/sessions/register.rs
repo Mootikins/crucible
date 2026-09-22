@@ -139,17 +139,6 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "review_list_hunks",
         "(session_id: string) -> ({ any }?, string?)",
     ),
-    // The spec deserializes into the daemon's `ReviewCommentRequest`, minus
-    // the `session_id` the bridge stamps, so these are its fields exactly.
-    (
-        "review_comment",
-        "(session_id: string, spec: { path: string, body: string, line_start: number, \
-         line_end: number?, root: string?, author: string? }) -> (any, string?)",
-    ),
-    (
-        "review_resolve_comment",
-        "(session_id: string, comment_id: string) -> (boolean?, string?)",
-    ),
 ];
 
 /// The names in [`SESSION_FNS`], in registration order.
@@ -756,43 +745,6 @@ pub(crate) async fn review_list_hunks_op(
     }
 }
 
-/// review_comment(session_id, { path, line_start, line_end?, body, root?,
-/// author? }) -> (comment, nil) | (nil, err)
-pub(crate) async fn review_comment_op(
-    lua: &Lua,
-    api: &Arc<dyn DaemonSessionApi>,
-    sid: &str,
-    spec: Value,
-) -> mlua::Result<(Value, Value)> {
-    let spec: serde_json::Value = match lua.from_value(spec) {
-        Ok(v) => v,
-        Err(e) => {
-            let err = lua.create_string(format!("invalid comment spec: {e}"))?;
-            return Ok((Value::Nil, Value::String(err)));
-        }
-    };
-    match api.review_comment(sid.to_string(), spec).await {
-        Ok(comment) => Ok((lua.to_value(&comment)?, Value::Nil)),
-        Err(e) => err_pair(lua, e),
-    }
-}
-
-/// review_resolve_comment(session_id, comment_id) -> (true, nil) | (nil, err)
-pub(crate) async fn review_resolve_comment_op(
-    lua: &Lua,
-    api: &Arc<dyn DaemonSessionApi>,
-    sid: &str,
-    comment_id: String,
-) -> mlua::Result<(Value, Value)> {
-    match api
-        .review_resolve_comment(sid.to_string(), comment_id)
-        .await
-    {
-        Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
-        Err(e) => err_pair(lua, e),
-    }
-}
-
 /// Register the sessions module with stub functions.
 ///
 /// Creates the `cru.session` namespace with functions that return
@@ -843,14 +795,13 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("undo_depth", String);
     stub_async!("undo_history", String);
     stub_async!("review_list_hunks", String);
-    stub_async!("review_comment", (String, Value));
-    stub_async!("review_resolve_comment", (String, String));
 
     // Two-way: a name added to SESSION_FNS and forgotten above fails here,
     // and so does a stub with no entry there.
     gate_module_keys("session", &sessions, &session_fn_names())?;
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;
+    super::diff::register_diff_stub(lua)?;
     super::proposals::register_proposals_stub(lua)?;
 
     Ok(())
@@ -1213,30 +1164,11 @@ fn register_sessions_inner(
         },
     )?;
 
-    let a = Arc::clone(&api);
-    ns.async_func(
-        "review_comment",
-        decl("review_comment")?,
-        move |lua, (sid, spec): (String, Value)| {
-            let a = Arc::clone(&a);
-            async move { review_comment_op(&lua, &a, &sid, spec).await }
-        },
-    )?;
-
-    let a = Arc::clone(&api);
-    ns.async_func(
-        "review_resolve_comment",
-        decl("review_resolve_comment")?,
-        move |lua, (sid, comment_id): (String, String)| {
-            let a = Arc::clone(&a);
-            async move { review_resolve_comment_op(&lua, &a, &sid, comment_id).await }
-        },
-    )?;
-
     gate_module_keys("session", &sessions, &session_fn_names())?;
 
     merge_session_fns(lua, &sessions)?;
     install_sessions_alias(lua)?;
+    super::diff::register_diff_with_api(lua, Arc::clone(&api))?;
     super::proposals::register_proposals_with_api(lua, api)?;
 
     Ok(())

@@ -3,17 +3,19 @@
 //! S3 of the despaghettification plan proposed to resolve the session once, at
 //! the routing step, and hand each handler a resolved value. This table is the
 //! measurement that says a single resolver cannot ship without changing the
-//! wire contract: **the routed methods give eight different answers to "that
+//! wire contract: **the routed methods give seven different answers to "that
 //! session is not here", and six of them answer with success.**
 //!
-//! The eight, as recorded below:
+//! The seven, as recorded below:
 //!
 //! 1. `INVALID_PARAMS` + `Session not found: {id}` — 31 methods.
 //! 2. `INVALID_PARAMS` + `Operation '{op}' not allowed in current state` — the
 //!    nine lifecycle methods. The message never names the session: an unknown
 //!    id and a paused session that cannot pause again are one answer.
-//! 3. `INVALID_PARAMS` + `session {id} has no review ledger` — the review
-//!    family, which owns a ledger keyed by session and not the session.
+//! 3. The review family answered `session {id} has no review ledger`. That
+//!    family is gone: the comments moved to `diff.comment` and
+//!    `diff.resolve_comment`, which name a diffset source and not a session
+//!    id, so no row of this table covers them.
 //! 4. `INVALID_PARAMS` + a *wrapped* `Session not found` — `session.set_title`
 //!    and `session.generate_title` prefix it with their own failure text.
 //! 5. success, reporting the work was not done — `session.cancel` →
@@ -27,8 +29,8 @@
 //! Groups 5 through 8 are the ones that matter. A resolver at the routing step
 //! that refuses an unknown session turns six successes into errors; one that
 //! does not refuse leaves every handler its own second check and buys nothing.
-//! Preserving all eight from one place means the layer carries an
-//! eight-way per-method policy table, which is the match arm it was meant to
+//! Preserving all seven from one place means the layer carries a
+//! seven-way per-method policy table, which is the match arm it was meant to
 //! delete, moved one file over.
 //!
 //! So this file is the contract, not a step toward one. Change an answer here
@@ -113,11 +115,6 @@ macro_rules! bad_state {
             "' not allowed in current state"
         ))
     };
-}
-
-/// `session ghost-session-0000 has no review ledger`.
-fn no_ledger() -> Answer {
-    Answer::Refuses("session ghost-session-0000 has no review ledger")
 }
 
 fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)> {
@@ -212,17 +209,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.unarchive", json!({}), bad_state!("unarchive")),
         ("session.delete", json!({}), bad_state!("delete")),
         ("session.compact", json!({}), bad_state!("compact")),
-        // ── 3. refuses, naming the LEDGER ───────────────────────────────────
-        (
-            "review.comment",
-            json!({"path": "p", "body": "b", "line_start": 1}),
-            no_ledger(),
-        ),
-        (
-            "review.resolve_comment",
-            json!({"comment_id": "c"}),
-            no_ledger(),
-        ),
         // ── 4. refuses, WRAPPING the not-found text in its own ──────────────
         (
             "session.set_title",
