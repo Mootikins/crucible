@@ -428,6 +428,12 @@ pub fn reset_agent_cache() {
 const TRUST_PATH_COMMANDS: &[&str] = &[
     "npx",    // Package manager, verifies packages at runtime
     "gemini", // ACP server, no --version support
+    // The Antigravity server comes from the ACP registry archive and its
+    // flags are not documented, so nobody knows whether it answers
+    // `--version`. A server that does not would be on PATH and still report
+    // as unavailable, which hides the agent from `cru agents list` and from
+    // discovery. Trusting the PATH lookup costs a failed spawn at worst.
+    ANTIGRAVITY_COMMAND,
 ];
 
 /// Check if an agent command is available (async, non-blocking)
@@ -905,6 +911,27 @@ mod tests {
         assert_eq!(agent.args, vec!["--uid=".to_string()]);
         #[cfg(not(target_os = "linux"))]
         assert!(agent.args.is_empty());
+    }
+
+    /// The Antigravity server is available when it is on PATH.
+    ///
+    /// The binary comes from the ACP registry archive and its flags are not
+    /// documented, so nobody knows whether it answers `--version`. A server
+    /// that does not would pass the PATH lookup, fail the version probe, and
+    /// disappear from `cru agents list` and from discovery. The command the
+    /// built-in declares must therefore stay in `TRUST_PATH_COMMANDS`, and
+    /// this reads the built-in rather than the literal name so that renaming
+    /// the command breaks here.
+    #[test]
+    fn the_antigravity_command_skips_the_version_probe() {
+        let agent = resolve_agent_from_config("antigravity", &AcpConfig::default())
+            .expect("antigravity is a built-in");
+
+        assert!(
+            TRUST_PATH_COMMANDS.contains(&agent.command.as_str()),
+            "`{}` must skip the --version probe, got the trust list {TRUST_PATH_COMMANDS:?}",
+            agent.command
+        );
     }
 
     #[tokio::test]
