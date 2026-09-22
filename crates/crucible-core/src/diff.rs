@@ -204,25 +204,38 @@ fn inclusive_lines(range: LineRange) -> (u32, u32) {
     (range.start, range.end.saturating_sub(1).max(range.start))
 }
 
-/// The reference form of a comment: `path:start-end`, with an inclusive end.
+/// The lines of a range in text: `start` for one line, else `start-end`.
+fn line_span(range: LineRange) -> String {
+    match inclusive_lines(range) {
+        (start, end) if start == end => start.to_string(),
+        (start, end) => format!("{start}-{end}"),
+    }
+}
+
+/// The reference form of a comment: `path:line` for one line, else
+/// `path:start-end` with an inclusive end.
 ///
 /// A chat mention `@path:start-end` attaches the same lines.
 pub fn reference(comment: &Comment) -> String {
-    let (start, end) = inclusive_lines(comment.line_range);
-    format!("{}:{start}-{end}", comment.path)
+    format!("{}:{}", comment.path, line_span(comment.line_range))
 }
 
-/// The quickfix form of a comment: `path:start: [start-end] text`.
+/// The quickfix form of a comment: `path:line: text` for one line, else
+/// `path:start: [start-end] text`.
 ///
 /// The Vim default `errorformat` `%f:%l:%m` needs a `:` after the line
-/// number, so the first line names only the start line. The range goes at
+/// number, so the first line names only the start line. A range goes at
 /// the start of the message. Each further line of the text gets an indent of
 /// two spaces, so that it does not look like a new entry.
 pub fn quickfix_line(comment: &Comment) -> String {
     let (start, end) = inclusive_lines(comment.line_range);
     let mut lines = comment.body.lines();
     let first = lines.next().unwrap_or_default();
-    let mut out = format!("{}:{start}: [{start}-{end}] {first}", comment.path);
+    let mut out = if start == end {
+        format!("{}:{start}: {first}", comment.path)
+    } else {
+        format!("{}:{start}: [{start}-{end}] {first}", comment.path)
+    };
     for line in lines {
         out.push_str("\n  ");
         out.push_str(line);
@@ -431,7 +444,7 @@ mod tests {
     #[test]
     fn one_line_comment_matches_errorformat() {
         let line = quickfix_line(&comment(LineRange::new(626, 627), "needs a test"));
-        assert_eq!(line, "crates/a/src/lib.rs:626: [626-626] needs a test");
+        assert_eq!(line, "crates/a/src/lib.rs:626: needs a test");
         assert_errorformat(&line);
     }
 
@@ -476,7 +489,7 @@ mod tests {
         );
         assert_eq!(
             reference(&comment(LineRange::new(12, 13), "x")),
-            "crates/a/src/lib.rs:12-12"
+            "crates/a/src/lib.rs:12"
         );
     }
 }
