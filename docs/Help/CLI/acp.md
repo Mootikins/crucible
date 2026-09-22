@@ -59,7 +59,7 @@ before attaching it, if you would rather not take the derived one.
 | `session/new` | Creates a daemon chat session (workspace = the host's `cwd`) and configures the internal agent from your config |
 | `session/prompt` | Forwards the prompt via `session.send_message`, streams the turn as `session/update` notifications, and answers when the whole turn is over (see "How a turn ends" below) |
 | `session/cancel` | Cancels the in-flight turn (best-effort) |
-| `session/load` | Resumes an existing daemon session by ID; history is **not** replayed as `session/update` — the host keeps its own transcript |
+| `session/load` | Resumes an existing daemon session by ID and replays its recorded conversation as `session/update` notifications, before the response |
 | `session/close` | Cancels any in-flight turn and drops the session's daemon connection |
 
 In the other direction the agent sends `session/update` notifications and round-trips
