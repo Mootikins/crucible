@@ -14,7 +14,6 @@ mod concurrent_sessions;
 mod context_usage;
 mod display_parity;
 mod error_propagation;
-mod mcp_server_frame;
 mod permission_flow;
 mod session_modes;
 mod streaming_chat;

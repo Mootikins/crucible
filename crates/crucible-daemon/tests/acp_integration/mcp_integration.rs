@@ -3,7 +3,7 @@
 //! list.
 //!
 //! What the client puts in `session/new`'s `mcpServers` is asserted on the
-//! wire in `mcp_server_frame.rs`. A tool result that crosses from this host
+//! wire in `acp_transport_negotiation.rs`. A tool result that crosses from this host
 //! through an ACP turn is asserted in `tool_roundtrip.rs`.
 
 use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};

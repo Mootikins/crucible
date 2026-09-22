@@ -10,7 +10,8 @@
 //!
 //! The selection tests read the `session/new` frame the mock agent received,
 //! so they fail when the client sends the wrong server, not only when the
-//! mock advertises the wrong capability.
+//! mock advertises the wrong capability. For stdio they also check the exact
+//! argv, because `build_stdio_mcp_server` derives it and nothing else reads it.
 
 #[path = "acp_support/mock_agent.rs"]
 mod mock_agent;
@@ -85,7 +86,14 @@ async fn offered_transport(script: MockScript, mcp_url: Option<&str>) -> Offered
     match server.get("type").and_then(Value::as_str) {
         Some("http") => Offered::Http(text("url")),
         Some("sse") => Offered::Sse(text("url")),
-        None => Offered::Stdio(text("command")),
+        None => {
+            assert_eq!(
+                server["args"],
+                serde_json::json!(["mcp", "--stdio", "--standalone"]),
+                "the stdio server runs `cru mcp --stdio --standalone`: {server}"
+            );
+            Offered::Stdio(text("command"))
+        }
         Some(other) => panic!("unknown MCP transport {other:?}: {server}"),
     }
 }
@@ -142,28 +150,6 @@ async fn capabilities_default_false_when_not_initialized() {
 // Transport selection, asserted on the `session/new` the agent received
 // ---------------------------------------------------------------------------
 
-/// An agent that reports HTTP support and a URL: the agent gets that URL
-/// over Streamable HTTP.
-#[tokio::test]
-async fn agent_reporting_http_support_gets_http_transport() {
-    assert_eq!(
-        offered_transport(script(true, false), Some(MCP_URL)).await,
-        Offered::Http(MCP_URL.to_string())
-    );
-}
-
-/// An agent without HTTP support gets stdio even when a URL exists.
-#[tokio::test]
-async fn agent_without_http_support_falls_back_to_stdio() {
-    assert_stdio(&offered_transport(gemini(), Some(MCP_URL)).await, "gemini");
-}
-
-/// No MCP URL: stdio, even for an agent that supports HTTP.
-#[tokio::test]
-async fn agent_with_no_mcp_url_always_gets_stdio() {
-    assert_stdio(&offered_transport(opencode(), None).await, "opencode");
-}
-
 /// Each built-in profile gets the transport its advertisement earns when a
 /// URL is available: HTTP where the profile reports HTTP, stdio otherwise.
 /// No profile ever gets legacy SSE, because the daemon does not serve it.
@@ -192,15 +178,6 @@ async fn agent_with_sse_only_gets_stdio_fallback() {
     assert_stdio(
         &offered_transport(script(false, true), Some(MCP_URL)).await,
         "sse-only",
-    );
-}
-
-/// An agent with both gets Streamable HTTP, not legacy SSE.
-#[tokio::test]
-async fn agent_with_both_http_and_sse_gets_http_not_sse() {
-    assert_eq!(
-        offered_transport(claude_acp(), Some(MCP_URL)).await,
-        Offered::Http(MCP_URL.to_string())
     );
 }
 
