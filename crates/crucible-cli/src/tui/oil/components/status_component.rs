@@ -13,6 +13,8 @@ pub struct StatusComponent<'a> {
     /// the empty string, which `mode_label` renders as a blank badge — every
     /// live construction goes through `.mode(...)`.
     pub mode: &'a str,
+    /// Whether a note write in the mode becomes a proposal.
+    pub proposes: bool,
     pub model: &'a str,
     pub context_used: usize,
     pub context_total: usize,
@@ -35,6 +37,11 @@ impl<'a> StatusComponent<'a> {
     }
     pub fn mode(mut self, mode: &'a str) -> Self {
         self.mode = mode;
+        self
+    }
+
+    pub fn proposes(mut self, proposes: bool) -> Self {
+        self.proposes = proposes;
         self
     }
 
@@ -90,6 +97,7 @@ impl<'a> StatusComponent<'a> {
     fn bar(&self) -> StatusBar {
         let mut bar = StatusBar::new()
             .mode(self.mode)
+            .proposes(self.proposes)
             .model(self.model)
             .context(self.context_used, self.context_total)
             .status(self.status)

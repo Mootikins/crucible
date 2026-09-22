@@ -1187,6 +1187,29 @@ impl From<crucible_core::types::mode::ReviewPolicy> for ReviewPolicyRow {
     }
 }
 
+/// What a note write in a mode does.
+///
+/// Mirrors `crucible_core::types::mode::WriteMode`, for the reason
+/// [`ReviewPolicyRow`] gives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum WriteModeRow {
+    /// The note tools write the file.
+    Apply,
+    /// The note tools record a proposal, and the file does not change.
+    Propose,
+}
+
+impl From<crucible_core::types::WriteMode> for WriteModeRow {
+    fn from(writes: crucible_core::types::WriteMode) -> Self {
+        use crucible_core::types::WriteMode;
+        match writes {
+            WriteMode::Apply => Self::Apply,
+            WriteMode::Propose => Self::Propose,
+        }
+    }
+}
+
 /// One mode a session may enter.
 ///
 /// Mirrors `crucible_core::types::mode::ModeDescriptor` field for field, for
@@ -1205,6 +1228,9 @@ struct ModeRow {
     /// The review this mode asks for, already degraded to what this session's
     /// agent can enforce.
     review_policy: ReviewPolicyRow,
+    /// What a note write in this mode does, already degraded to what this
+    /// session's agent can hold back.
+    writes: WriteModeRow,
 }
 
 impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
@@ -1216,6 +1242,7 @@ impl From<crucible_core::types::mode::ModeDescriptor> for ModeRow {
             icon: mode.icon,
             color: mode.color,
             review_policy: mode.review_policy.into(),
+            writes: mode.writes.into(),
         }
     }
 }

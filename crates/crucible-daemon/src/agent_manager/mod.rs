@@ -950,6 +950,14 @@ impl AgentManager {
         self
     }
 
+    /// The write mode that the mode `mode_id` declares, before the agent
+    /// degrades it. A mode with no Lua declaration applies its writes.
+    pub fn mode_writes(&self, mode_id: &str) -> crucible_core::types::WriteMode {
+        self.modes
+            .get(mode_id)
+            .map_or(crucible_core::types::WriteMode::Apply, |m| m.writes)
+    }
+
     /// Modes available to `session_id`, as the ACP-facing state.
     ///
     /// Built from the Lua registry; falls back to the shipped Rust definitions
@@ -1377,7 +1385,14 @@ impl AgentManager {
                 }))
                 // `get_kiln_info` answers the model with this, or with no name
                 // at all — never with the anchor directory's basename.
-                .with_kiln_name(session.default_kiln().cloned()),
+                .with_kiln_name(session.default_kiln().cloned())
+                // The slot holds the write mode of the turn, so a rebuilt
+                // dispatcher reads the same value as the one it replaces.
+                .with_note_writes(crate::tools::notes::NoteWrites::new(
+                    slot.write_mode().clone(),
+                    self.proposals.clone(),
+                    session,
+                )),
             );
 
             // The project's `[security.shell]` policy applies to bash the same

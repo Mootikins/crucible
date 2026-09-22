@@ -353,16 +353,42 @@ fn a_lua_declared_mode_reaches_the_statusline() {
     use crate::tui::oil::tests::helpers::vt_render;
 
     let mut app = OilChatApp::default();
-    app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "ask".to_string(),
-        "review".to_string(),
-    ]));
+    app.on_message(ChatAppMsg::ModesLoaded(
+        crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "review"]),
+    ));
     app.on_message(ChatAppMsg::ModeSynced("review".into()));
 
     let frame = vt_render(&mut app);
     assert!(
         frame.contains("REVIEW"),
         "the statusline must render the mode the session is actually in; got:\n{frame}"
+    );
+}
+
+/// A mode whose note writes become proposals says so in the badge, so a user
+/// knows that the notes on disk do not change. The note follows the mode: a
+/// mode change to an applying mode removes it.
+#[test]
+fn a_proposing_mode_says_so_in_the_statusline() {
+    use crate::tui::oil::tests::helpers::vt_render;
+
+    let mut modes = crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "review"]);
+    modes[1].writes = crucible_core::types::WriteMode::Propose;
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::ModesLoaded(modes));
+
+    app.on_message(ChatAppMsg::ModeSynced("review".into()));
+    let frame = vt_render(&mut app);
+    assert!(
+        frame.contains("REVIEW · PROPOSES"),
+        "a proposing mode must say so; got:\n{frame}"
+    );
+
+    app.on_message(ChatAppMsg::ModeSynced("ask".into()));
+    let frame = vt_render(&mut app);
+    assert!(
+        frame.contains("ASK") && !frame.contains("PROPOSES"),
+        "an applying mode has no note; got:\n{frame}"
     );
 }
 

@@ -946,6 +946,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                  "icon": null, "color": null},
                 {"id": "plan", "name": "Plan", "description": "Read-only exploration mode",
                  "icon": null, "color": null},
+                {"id": "propose", "name": "Propose", "description": "Propose note changes for review",
+                 "icon": null, "color": null, "review_policy": "pre_write", "writes": "propose"},
             ],
         }),
         "session.set_title" => json!(null),

@@ -29,6 +29,7 @@
 //! real policy often isn't. Same split as `chat.system_prompt` (a value)
 //! versus `cru.on_session_start` (a decision).
 
+use crucible_core::types::WriteMode;
 use mlua::{Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};
 
@@ -149,6 +150,9 @@ pub struct ModeDefinition {
     pub description: Option<String>,
     pub tools: ToolSelector,
     pub permissions: ModePermissions,
+    /// What a note write in this mode does. The declaration field `writes`
+    /// is optional, and its absence means `apply`.
+    pub writes: WriteMode,
 }
 
 impl ModeDefinition {
@@ -334,12 +338,27 @@ fn definition_from_lua(name: &str, table: &Table) -> LuaResult<ModeDefinition> {
         }
     };
 
+    let writes = match table.get::<Option<String>>("writes") {
+        Ok(None) => WriteMode::Apply,
+        Ok(Some(s)) => WriteMode::parse(&s).ok_or_else(|| {
+            mlua::Error::runtime(format!(
+                "cru.modes.{name}.writes must be \"apply\" or \"propose\", got {s:?}"
+            ))
+        })?,
+        Err(_) => {
+            return Err(mlua::Error::runtime(format!(
+                "cru.modes.{name}.writes must be \"apply\" or \"propose\""
+            )))
+        }
+    };
+
     Ok(ModeDefinition {
         name: name.to_string(),
         label: table.get::<Option<String>>("label")?,
         description: table.get::<Option<String>>("description")?,
         tools,
         permissions,
+        writes,
     })
 }
 
@@ -371,6 +390,7 @@ impl UserData for ModeRegistry {
             } else {
                 t.set("permissions", mode.permissions.default.as_str())?;
             }
+            t.set("writes", mode.writes.as_str())?;
             Ok(Value::Table(t))
         });
 
@@ -409,7 +429,8 @@ const MODE: &str = "{ \
     name: string?, \
     description: string?, \
     tools: (string | { string })?, \
-    permissions: (string | { default: string?, allow: { string }?, deny: { string }?, ask: { string }? })? \
+    permissions: (string | { default: string?, allow: { string }?, deny: { string }?, ask: { string }? })?, \
+    writes: string? \
 }";
 
 /// Register `cru.modes` on `lua`.
@@ -483,6 +504,31 @@ mod tests {
     /// state its label; anything else is derived, because an id with a word
     /// boundary in it makes a poor label and the old derivation — upper-case
     /// the first letter — produced "AcceptEdits" and "Read-only".
+    /// A mode declares that its note writes become proposals. A mode that
+    /// says nothing applies its writes, and a typo is an error, not `apply`.
+    #[test]
+    fn a_mode_declares_writes_propose() {
+        let (lua, registry) = lua_with_modes();
+        lua.load(
+            r#"cru.modes.propose = { tools = "*", permissions = "allow", writes = "propose" }
+               cru.modes.auto = { tools = "*", permissions = "allow" }"#,
+        )
+        .exec()
+        .unwrap();
+
+        assert_eq!(registry.get("propose").unwrap().writes, WriteMode::Propose);
+        assert_eq!(registry.get("auto").unwrap().writes, WriteMode::Apply);
+        let read: String = lua.load("return cru.modes.propose.writes").eval().unwrap();
+        assert_eq!(read, "propose");
+
+        let err = lua
+            .load(r#"cru.modes.bad = { writes = "proposal" }"#)
+            .exec()
+            .unwrap_err();
+        assert!(err.to_string().contains("writes"), "{err}");
+        assert!(registry.get("bad").is_none());
+    }
+
     #[test]
     fn a_mode_id_without_a_label_is_humanized_into_one() {
         // The shipped ids were the only shape the old derivation handled.

@@ -231,6 +231,12 @@ impl FsScope {
         &self.anchor
     }
 
+    /// The anchor with every symlink resolved. A proposal names its root by
+    /// this form, so two spellings of one kiln give one root.
+    pub(crate) fn canonical_anchor(&self) -> &Path {
+        self.anchor_resolved.canonical()
+    }
+
     /// Whether this scope imposes no boundary beyond its anchor.
     pub(crate) fn is_ambient(&self) -> bool {
         self.session.is_ambient() && self.anchor_roots.is_none()

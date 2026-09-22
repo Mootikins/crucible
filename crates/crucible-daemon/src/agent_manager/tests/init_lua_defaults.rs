@@ -429,7 +429,7 @@ async fn the_shipped_modes_are_declared_in_lua() {
 
     assert_eq!(
         ids,
-        vec!["ask", "plan", "auto"],
+        vec!["ask", "plan", "auto", "propose"],
         "the built-ins now come from runtime/defaults/init.lua, in declaration order"
     );
 }
@@ -612,7 +612,7 @@ async fn a_shipped_mode_can_be_removed() {
         .iter()
         .map(|m| m.id.0.to_string())
         .collect();
-    assert_eq!(ids, vec!["ask", "plan"]);
+    assert_eq!(ids, vec!["ask", "plan", "propose"]);
 }
 
 /// The stance replaces the hand-written auto/plan permission hooks.

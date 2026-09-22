@@ -199,12 +199,13 @@ pub trait SessionKnobs: Send + Sync {
     /// discovery.
     async fn fetch_available_models(&mut self) -> Vec<String>;
 
-    /// The mode ids this session may enter, in declaration order.
+    /// The modes this session may enter, in declaration order.
     ///
     /// Modes are declared in Lua, so a client cannot know them at compile
     /// time. Empty means "ask nobody": the caller keeps the list it already
-    /// had rather than dropping to zero modes.
-    async fn fetch_available_modes(&mut self) -> Vec<String>;
+    /// had rather than dropping to zero modes. Each descriptor carries the
+    /// effective values, such as `writes`, so a client shows what happens.
+    async fn fetch_available_modes(&mut self) -> Vec<crate::types::mode::ModeDescriptor>;
 
     /// The system prompt the handle was built with.
     ///
@@ -256,7 +257,7 @@ macro_rules! impl_unsupported_session_knobs {
             async fn fetch_available_models(&mut self) -> Vec<String> {
                 Vec::new()
             }
-            async fn fetch_available_modes(&mut self) -> Vec<String> {
+            async fn fetch_available_modes(&mut self) -> Vec<$crate::types::mode::ModeDescriptor> {
                 Vec::new()
             }
             async fn set_context_strategy(
@@ -483,7 +484,7 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
         (**self).fetch_available_models().await
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crate::types::mode::ModeDescriptor> {
         (**self).fetch_available_modes().await
     }
 

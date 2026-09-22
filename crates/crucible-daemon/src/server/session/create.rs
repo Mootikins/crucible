@@ -270,8 +270,15 @@ impl RpcContext {
         // back off disk. A second write rather than a `create_session`
         // argument keeps the isolation opt-in out of ~90 unrelated call sites,
         // and only happens when the caller asked for it.
-        if let Some(isolation) = isolation {
-            session.isolation = Some(isolation);
+        // The plugin name only means something on a plugin session. On
+        // another type it would make a proposal claim a plugin as its author.
+        let plugin = params
+            .plugin
+            .clone()
+            .filter(|_| session_type == SessionType::Plugin);
+        if isolation.is_some() || plugin.is_some() {
+            session.isolation = isolation;
+            session.plugin = plugin;
             self.sessions
                 .update_session(&session)
                 .await

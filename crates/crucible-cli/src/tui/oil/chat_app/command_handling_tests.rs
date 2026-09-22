@@ -602,10 +602,9 @@ fn undo_count_floors_at_one() {
 #[test]
 fn a_lua_declared_mode_is_selectable_and_cyclable() {
     let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "ask".to_string(),
-        "review".to_string(),
-    ]));
+    app.on_message(ChatAppMsg::ModesLoaded(
+        crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "review"]),
+    ));
 
     app.handle_slash_command("/review");
     assert_eq!(
@@ -633,7 +632,9 @@ fn a_lua_declared_mode_is_selectable_and_cyclable() {
 #[test]
 fn a_mode_the_daemon_no_longer_offers_cycles_nowhere() {
     let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(vec!["ask".to_string()]));
+    app.on_message(ChatAppMsg::ModesLoaded(
+        crate::tui::oil::chat_app::state::mode_descriptors(&["ask"]),
+    ));
     app.handle_slash_command("/mode");
     assert_eq!(app.mode(), "ask");
 
@@ -652,11 +653,9 @@ fn a_mode_the_daemon_no_longer_offers_cycles_nowhere() {
 #[test]
 fn a_mode_named_after_a_builtin_does_not_shadow_it() {
     let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "ask".to_string(),
-        "undo".to_string(),
-        "help".to_string(),
-    ]));
+    app.on_message(ChatAppMsg::ModesLoaded(
+        crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "undo", "help"]),
+    ));
 
     let action = app.handle_slash_command("/undo 2");
     assert!(
@@ -671,10 +670,9 @@ fn a_mode_named_after_a_builtin_does_not_shadow_it() {
 #[test]
 fn a_mode_id_matches_case_insensitively() {
     let mut app = app();
-    app.on_message(ChatAppMsg::ModesLoaded(vec![
-        "ask".to_string(),
-        "Review".to_string(),
-    ]));
+    app.on_message(ChatAppMsg::ModesLoaded(
+        crate::tui::oil::chat_app::state::mode_descriptors(&["ask", "Review"]),
+    ));
 
     app.handle_slash_command("/review");
     assert_eq!(

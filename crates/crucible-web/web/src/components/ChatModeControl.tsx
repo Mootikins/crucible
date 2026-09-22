@@ -26,9 +26,9 @@ type IconComponent = Component<{ class?: string }>;
  * offers no way to change mode at all.
  */
 export const FALLBACK_MODES: ModeDescriptor[] = [
-  { id: 'ask', name: 'Ask', description: null, icon: null, color: null, review_policy: 'none' },
-  { id: 'plan', name: 'Plan', description: null, icon: null, color: null, review_policy: 'none' },
-  { id: 'auto', name: 'Auto', description: null, icon: null, color: null, review_policy: 'none' },
+  { id: 'ask', name: 'Ask', description: null, icon: null, color: null, review_policy: 'none', writes: 'apply' },
+  { id: 'plan', name: 'Plan', description: null, icon: null, color: null, review_policy: 'none', writes: 'apply' },
+  { id: 'auto', name: 'Auto', description: null, icon: null, color: null, review_policy: 'none', writes: 'apply' },
 ];
 
 /**
@@ -71,6 +71,13 @@ const iconFor = (mode: ModeDescriptor | undefined): IconComponent | undefined =>
 
 const descriptionFor = (mode: ModeDescriptor): string | undefined =>
   mode.description ?? BUILTIN_MODES[mode.id]?.description;
+
+/**
+ * Whether a note write in this mode becomes a proposal. The daemon sends the
+ * effective value, so a session whose agent writes with its own tools
+ * never reads `propose` here.
+ */
+const proposes = (mode: ModeDescriptor | undefined): boolean => mode?.writes === 'propose';
 
 /** Cycle to the next mode in the daemon's list, wrapping (Shift+Tab).
  *
@@ -121,6 +128,10 @@ export const ChatModeControl: Component = () => {
   const modes = () => availableModes();
   const current = () => modes().find((m) => m.id === chatMode());
   const currentName = () => current()?.name ?? chatMode();
+  const triggerName = () =>
+    proposes(current())
+      ? `Mode: ${currentName()} · note changes wait for review`
+      : `Mode: ${currentName()}`;
   const CurrentIcon = () => iconFor(current());
 
   const positionPanel = () => {
@@ -219,8 +230,8 @@ export const ChatModeControl: Component = () => {
           type="button"
           onMouseEnter={openList}
           onMouseLeave={scheduleClose}
-          aria-label={`Mode: ${currentName()}`}
-          title={`Mode: ${currentName()}`}
+          aria-label={triggerName()}
+          title={triggerName()}
           aria-haspopup="listbox"
           aria-expanded={open()}
           data-testid="chat-mode"
@@ -296,7 +307,18 @@ export const ChatModeControl: Component = () => {
                         {(Glyph) => <Glyph class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-dark" aria-hidden="true" />}
                       </Show>
                       <span class="flex min-w-0 flex-1 flex-col">
-                        <span class="truncate">{mode.name}</span>
+                        <span class="flex items-center gap-1.5">
+                          <span class="truncate">{mode.name}</span>
+                          <Show when={proposes(mode)}>
+                            <span
+                              class="shrink-0 rounded px-1 text-floor leading-snug text-muted-dark border border-hairline-strong"
+                              data-testid={`mode-writes-${mode.id}`}
+                              title="A note change in this mode waits for your review"
+                            >
+                              proposes
+                            </span>
+                          </Show>
+                        </span>
                         <Show when={description}>
                           <span class="text-floor leading-snug text-muted-dark">{description}</span>
                         </Show>

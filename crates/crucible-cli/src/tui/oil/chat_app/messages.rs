@@ -163,8 +163,9 @@ pub enum ChatAppMsg {
     FetchModes,
     /// **Event** (daemon → TUI): Mode ids the session may enter. Replaces the
     /// built-in three the TUI starts with, which is how a Lua-declared mode
-    /// becomes cyclable and gets its own slash command.
-    ModesLoaded(Vec<String>),
+    /// becomes cyclable and gets its own slash command. Each descriptor also
+    /// says whether a note write in the mode becomes a proposal.
+    ModesLoaded(Vec<crucible_core::types::mode::ModeDescriptor>),
     /// **Event** (daemon → TUI): Plugin status loaded.
     PluginStatusLoaded(Vec<PluginStatusEntry>),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.

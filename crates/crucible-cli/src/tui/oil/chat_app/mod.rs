@@ -36,7 +36,7 @@ pub use messages::ChatAppMsg;
 pub use model_state::{KilnSummary, McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState};
 use state::MessageQueueState;
-pub use state::{mode_label, mode_style, next_mode, DEFAULT_MODE, DEFAULT_MODES};
+pub use state::{mode_badge, mode_label, mode_style, next_mode, DEFAULT_MODE, DEFAULT_MODES};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
 
@@ -53,6 +53,9 @@ pub struct OilChatApp {
     /// `session.list_modes`; empty until that lands, which is why `/mode`
     /// cycling falls back to leaving the mode alone.
     pub(crate) available_modes: Vec<String>,
+    /// The ids in `available_modes` whose note writes become proposals. The
+    /// daemon sends the effective value, so an ACP session has none.
+    pub(crate) proposing_modes: Vec<String>,
     /// Display name of the active LLM model
     model: String,
     /// Status text from the daemon (e.g. "Thinking…")
@@ -286,6 +289,13 @@ impl OilChatApp {
             .any(|m| m.eq_ignore_ascii_case(id))
     }
 
+    /// Whether a note write in the current mode becomes a proposal.
+    pub(crate) fn mode_proposes(&self) -> bool {
+        self.proposing_modes
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case(&self.mode))
+    }
+
     pub(crate) fn set_mode(&mut self, mode: impl Into<std::sync::Arc<str>>) {
         self.mode = mode.into();
     }
@@ -430,6 +440,7 @@ impl OilChatApp {
     fn build_status_component(&self) -> StatusComponent<'_> {
         let mut status = StatusComponent::new()
             .mode(&self.mode)
+            .proposes(self.mode_proposes())
             .model(&self.model)
             .context(self.context_used, self.context_total)
             .cache_hit_rate(self.cache_hit_rate)

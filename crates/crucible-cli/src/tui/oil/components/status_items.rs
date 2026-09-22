@@ -314,7 +314,7 @@ fn mode_style(ctx: &ItemContext<'_>) -> Style {
 }
 
 fn mode_label(ctx: &ItemContext<'_>) -> String {
-    crate::tui::oil::chat_app::mode_label(&ctx.data.mode)
+    crate::tui::oil::chat_app::mode_badge(&ctx.data.mode, ctx.data.proposes)
 }
 
 fn context_label(ctx: &ItemContext<'_>) -> String {
@@ -343,6 +343,7 @@ mod tests {
     fn data() -> StatusBar {
         StatusBar {
             mode: "ask".into(),
+            proposes: false,
             model: "claude-opus-5".to_string(),
             context_used: 5_000,
             context_total: 10_000,

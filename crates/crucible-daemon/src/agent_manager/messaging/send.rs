@@ -359,6 +359,16 @@ impl AgentManager {
             }
             guard.get_mode_id().to_string()
         };
+        // The note tools read the write mode of this turn from the slot. It
+        // follows the mode snapshot above, so a mode change during the turn
+        // changes the next turn only. An ACP agent always applies its writes.
+        self.slot(session_id).write_mode().set(
+            self.mode_writes(&session_mode)
+                .effective_for(&agent_config.agent_type),
+        );
+        // The turn proposal ends with the turn, on every exit path below.
+        let proposals = self.proposals.clone();
+        let proposal_session = session.id.clone();
         // Snapshot the plugin tool names for the plan-mode dispatch guard —
         // resolved per turn, so tools from a plugin loaded mid-session are
         // still covered.
@@ -447,6 +457,10 @@ impl AgentManager {
                 }
                 outcome = stream_future => outcome_to_status(outcome),
             };
+
+            // The next turn starts a new proposal. The store forgets the turn
+            // proposal before an awaiter sees the outcome and sends again.
+            proposals.end_turn(&proposal_session);
 
             // Single convergence point for ALL exit paths — this send must
             // happen before the request_state slot is released so an awaiter

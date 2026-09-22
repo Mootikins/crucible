@@ -82,7 +82,7 @@ impl SessionKnobs for KnobRecordingAgent {
         Vec::new()
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
         Vec::new()
     }
 
@@ -248,9 +248,10 @@ impl SessionKnobs for ModeListingAgent {
         None
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
         *self.fetches.lock().unwrap() += 1;
-        self.modes.clone()
+        let ids: Vec<&str> = self.modes.iter().map(String::as_str).collect();
+        crate::tui::oil::chat_app::state::mode_descriptors(&ids)
     }
 
     async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {

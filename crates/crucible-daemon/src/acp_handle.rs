@@ -519,7 +519,7 @@ impl SessionKnobs for AcpAgentHandle {
             .unwrap_or_default()
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
         Vec::new()
     }
 

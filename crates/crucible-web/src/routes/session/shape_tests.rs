@@ -209,6 +209,9 @@ async fn list_modes_answers_the_declared_shape() {
     // The daemon's descriptor carries a review policy the browser's own type
     // never declared; the document now does.
     assert_eq!(modes.modes[0].review_policy, ReviewPolicyRow::PreWrite);
+    // A descriptor with no `writes` reads as `apply`; a propose mode says so.
+    assert_eq!(modes.modes[0].writes, WriteModeRow::Apply);
+    assert_eq!(modes.modes[2].writes, WriteModeRow::Propose);
 }
 
 #[tokio::test]

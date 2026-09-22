@@ -63,6 +63,7 @@ const mode = (
   icon: null,
   color: null,
   review_policy,
+  writes: 'apply',
 });
 
 beforeEach(() => {

@@ -43,6 +43,15 @@ fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
     assert_eq!(mode_label("review"), " REVIEW ");
 }
 
+#[test]
+fn a_proposing_mode_badge_names_the_proposal_once() {
+    use crate::tui::oil::chat_app::mode_badge;
+    assert_eq!(mode_badge("review", true), " REVIEW · PROPOSES ");
+    assert_eq!(mode_badge("review", false), " REVIEW ");
+    // The shipped mode already says it in its name.
+    assert_eq!(mode_badge("propose", true), " PROPOSE ");
+}
+
 /// The mode ids an ACP agent declares are its own, not Crucible's. Since
 /// `get_modes` reports the agent's set, a delegated session's statusline and
 /// mode cycle are driven by ids this crate has never seen — camelCase from

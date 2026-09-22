@@ -106,6 +106,12 @@ pub struct SessionCreateRequest {
     /// `Some([])` disables configured MCP servers for this session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<String>>,
+    /// The plugin that creates a `plugin` session. The Lua binding of
+    /// `cru.session.create` writes it from the running plugin and removes a
+    /// value that the Lua caller supplies. A proposal of the session names
+    /// this plugin as its author. The daemon ignores it for another type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -200,6 +206,8 @@ pub(super) fn build_create_request(
         env_overrides: agent.env_overrides,
         system_prompt: agent.system_prompt,
         mcp_servers: agent.mcp_servers,
+        // No Rust client creates a plugin session.
+        plugin: None,
     }
 }
 

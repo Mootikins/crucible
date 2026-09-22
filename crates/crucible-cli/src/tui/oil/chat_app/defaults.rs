@@ -19,6 +19,7 @@ impl Default for OilChatApp {
             container_list: ContainerList::new(),
             mode: DEFAULT_MODE.into(),
             available_modes: DEFAULT_MODES.iter().map(|m| m.to_string()).collect(),
+            proposing_modes: Vec::new(),
             model: String::new(),
             status: String::new(),
             context_used: 0,

@@ -158,6 +158,18 @@ cru.modes.auto = {
   permissions = "allow",
 }
 
+-- Propose runs like auto, but a note write does not change the file. The
+-- daemon records each write as a proposal, and the user accepts or rejects it
+-- later. A plugin pass needs `allow`, because no one answers a prompt in it.
+-- An ACP agent writes with its own tools, so this mode applies its writes.
+cru.modes.propose = {
+  label = "Propose",
+  description = "Propose note changes for review",
+  tools = "*",
+  permissions = "allow",
+  writes = "propose",
+}
+
 -- Plan mode denies anything that could mutate
 --
 -- `request.is_safe` is the daemon's own read-only classification. Read-only

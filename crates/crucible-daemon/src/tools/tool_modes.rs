@@ -101,6 +101,7 @@ mod plugin_admission_tests {
             description: None,
             tools: selector,
             permissions: ModePermissions::default(),
+            writes: crucible_core::types::WriteMode::Apply,
         });
         reg
     }

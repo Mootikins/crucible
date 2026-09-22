@@ -1018,5 +1018,8 @@ async fn list_modes_returns_the_daemon_s_modes_and_current_mode() {
         .iter()
         .map(|m| m["id"].as_str().expect("mode id"))
         .collect();
-    assert_eq!(ids, vec!["ask", "plan"]);
+    assert_eq!(ids, vec!["ask", "plan", "propose"]);
+    // The route passes `writes` through; a descriptor without it reads `apply`.
+    assert_eq!(json["modes"][0]["writes"], "apply");
+    assert_eq!(json["modes"][2]["writes"], "propose");
 }

@@ -60,6 +60,11 @@ pub(crate) struct SessionSlot {
     /// dispatch path *drains* this (take, not read) at the start of the next
     /// turn; `set_mode` is its only writer.
     pending_mode: Mutex<Option<String>>,
+    /// The write mode of the turn that runs now. The turn start sets it from
+    /// the mode of the turn, and the note tools of the session read it. The
+    /// cell lives here, not in the dispatcher, because a dispatcher rebuild
+    /// must not reset it in the middle of a turn.
+    write_mode: crate::tools::notes::TurnWriteMode,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -324,6 +329,11 @@ impl SessionSlot {
     /// onto a later turn and silently revert the live mode.
     pub(crate) fn clear_pending_mode(&self) {
         *self.lock_pending_mode() = None;
+    }
+
+    /// The write mode of the current turn, shared with the note tools.
+    pub(crate) fn write_mode(&self) -> &crate::tools::notes::TurnWriteMode {
+        &self.write_mode
     }
 
     /// Read the staged mode change without consuming it. Tests only: the

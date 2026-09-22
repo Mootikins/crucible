@@ -158,6 +158,16 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub variables: BTreeMap<String, serde_json::Value>,
 
+    /// The plugin that created this session, for a session of type
+    /// [`SessionType::Plugin`]. The Lua binding of `cru.session.create`
+    /// writes it from the running plugin, and a plugin cannot name another.
+    ///
+    /// `None` for every other session, and for a plugin session that a
+    /// socket client or an older daemon created. A proposal of that session
+    /// names the session as its author, not a plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+
     /// The kiln set as it appears on disk: paths, in all three spellings a
     /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
@@ -232,6 +242,7 @@ impl Session {
             last_activity: Some(Utc::now()),
             isolation: None,
             variables: BTreeMap::new(),
+            plugin: None,
         }
     }
 
@@ -250,6 +261,13 @@ impl Session {
     /// to remember the distinction — see the field docs.
     pub fn set_workspace(&mut self, workspace: Option<PathBuf>) {
         self.workspace = workspace.filter(|w| !w.as_os_str().is_empty());
+    }
+
+    /// Set the plugin that created the session (see [`Session::plugin`]).
+    #[must_use]
+    pub fn with_plugin(mut self, plugin: Option<String>) -> Self {
+        self.plugin = plugin;
+        self
     }
 
     /// Set the per-session isolation override (see [`Session::isolation`]).

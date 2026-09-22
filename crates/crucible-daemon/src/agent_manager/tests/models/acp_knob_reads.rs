@@ -111,8 +111,19 @@ impl SessionKnobs for FakeAcpAgent {
         vec!["mock-sonnet".to_string(), "mock-opus".to_string()]
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
-        MODES.iter().map(|(id, _)| id.to_string()).collect()
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
+        MODES
+            .iter()
+            .map(|(id, name)| crucible_core::types::mode::ModeDescriptor {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: None,
+                icon: None,
+                color: None,
+                review_policy: Default::default(),
+                writes: Default::default(),
+            })
+            .collect()
     }
 
     async fn set_context_strategy(

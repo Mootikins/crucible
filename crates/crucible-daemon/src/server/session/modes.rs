@@ -22,6 +22,9 @@ use crate::rpc_helpers::typed_params;
 /// same way — `enforceable_by` treats anything but `"internal"` as
 /// post-turn — because promising enforcement we cannot yet vouch for is the
 /// failure that matters.
+///
+/// `writes` follows the same rule: the Lua declaration of the mode gives the
+/// value, and a session whose agent is not internal reads `apply`.
 pub(crate) async fn handle_session_list_modes(
     req: Request,
     am: &Arc<AgentManager>,
@@ -51,6 +54,13 @@ pub(crate) async fn handle_session_list_modes(
         .available_modes
         .iter()
         .map(crucible_core::types::mode::ModeDescriptor::from)
+        // The ACP mode has no `writes` field, so the Lua declaration gives
+        // it. The degrade below then sets `apply` for an agent that runs its
+        // own tools.
+        .map(|mut d| {
+            d.writes = am.mode_writes(&d.id);
+            d
+        })
         .map(|d| d.degraded_for(&agent_type))
         .collect();
 
@@ -299,5 +309,126 @@ mod stored_session_tests {
         let resp = super::super::list::handle_session_get(request("session.get", &id), &sm).await;
         assert!(resp.error.is_none(), "{resp:?}");
         assert_eq!(resp.result.unwrap()["session_id"], id);
+    }
+}
+
+#[cfg(test)]
+mod writes_tests {
+    //! `writes` follows the mode of the session: a mode change and a resume
+    //! both reach the descriptor of the current mode. The mode is already a
+    //! session knob, so `writes` needs no knob of its own.
+    use super::*;
+    use crate::session_manager::SessionManager;
+    use crate::session_storage::FileSessionStorage;
+    use crucible_core::session::{Session, SessionType};
+    use crucible_core::types::WriteMode;
+
+    fn storage(tmp: &tempfile::TempDir) -> Arc<FileSessionStorage> {
+        Arc::new(FileSessionStorage::new(FileSessionStorage::root_for(
+            tmp.path(),
+        )))
+    }
+
+    /// A session with an internal agent, live in a manager that writes it
+    /// to storage.
+    async fn live(tmp: &tempfile::TempDir) -> (String, Arc<SessionManager>) {
+        let sm = Arc::new(SessionManager::with_storage(storage(tmp)));
+        let mut session = Session::new(SessionType::Chat, vec![]);
+        session.agent = Some(crate::test_fixtures::test_session_agent());
+        sm.update_session(&session).await.unwrap();
+        (session.id.to_string(), sm)
+    }
+
+    fn registry() -> crucible_lua::ModeRegistry {
+        let lua = mlua::Lua::new();
+        let registry = crucible_lua::ModeRegistry::new();
+        crucible_lua::register_modes(&lua, registry.clone()).unwrap();
+        lua.load(
+            r#"cru.modes.ask = { permissions = "ask" }
+               cru.modes.propose = { permissions = "allow", writes = "propose" }"#,
+        )
+        .exec()
+        .unwrap();
+        registry
+    }
+
+    fn manager(sm: Arc<crate::session_manager::SessionManager>) -> Arc<AgentManager> {
+        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let am = crate::test_fixtures::test_agent_manager(
+            Arc::new(crate::kiln_manager::KilnManager::new()),
+            sm,
+            event_tx,
+            None,
+        );
+        Arc::new(
+            Arc::try_unwrap(am)
+                .ok()
+                .expect("a new manager has one owner")
+                .with_modes(Some(registry())),
+        )
+    }
+
+    /// The `writes` value of the current mode, as `session.list_modes` answers.
+    async fn current_writes(am: &Arc<AgentManager>, id: &str) -> (String, WriteMode) {
+        let (event_tx, _) = tokio::sync::broadcast::channel(8);
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.list_modes",
+            "params": { "session_id": id },
+        }))
+        .unwrap();
+        let resp = handle_session_list_modes(req, am, &event_tx).await;
+        let result = resp.result.expect("list_modes answers");
+        let current = result["current_mode_id"].as_str().unwrap().to_string();
+        let modes: Vec<crucible_core::types::mode::ModeDescriptor> =
+            serde_json::from_value(result["modes"].clone()).unwrap();
+        let writes = modes
+            .iter()
+            .find(|m| m.id == current)
+            .expect("the current mode is listed")
+            .writes;
+        (current, writes)
+    }
+
+    #[tokio::test]
+    async fn writes_follows_a_mode_change() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (id, sm) = live(&tmp).await;
+        let am = manager(sm);
+
+        assert_eq!(
+            current_writes(&am, &id).await,
+            ("ask".to_string(), WriteMode::Apply)
+        );
+        am.set_mode(&id, "propose", None).await.unwrap();
+        assert_eq!(
+            current_writes(&am, &id).await,
+            ("propose".to_string(), WriteMode::Propose)
+        );
+        am.set_mode(&id, "ask", None).await.unwrap();
+        assert_eq!(
+            current_writes(&am, &id).await,
+            ("ask".to_string(), WriteMode::Apply)
+        );
+    }
+
+    #[tokio::test]
+    async fn writes_survives_resume() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (id, sm) = live(&tmp).await;
+        manager(sm).set_mode(&id, "propose", None).await.unwrap();
+
+        // A second manager over the same storage, as a restarted daemon that
+        // resumes the session.
+        let sm = Arc::new(SessionManager::with_storage(storage(&tmp)));
+        sm.resume_session_from_storage(&crucible_core::session::SessionId::parse(&id).unwrap())
+            .await
+            .unwrap();
+        let resumed = manager(sm);
+        assert_eq!(
+            current_writes(&resumed, &id).await,
+            ("propose".to_string(), WriteMode::Propose)
+        );
     }
 }

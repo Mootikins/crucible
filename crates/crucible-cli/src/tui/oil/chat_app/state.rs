@@ -30,7 +30,38 @@ pub const DEFAULT_MODES: [&str; 3] = ["ask", "plan", "auto"];
 /// badge; upper-casing them raw read as ` ACCEPTEDITS `. A single-word id is
 /// unaffected, which is why no snapshot moves.
 pub fn mode_label(mode: &str) -> String {
-    format!(" {} ", crucible_lua::humanize_mode_id(mode).to_uppercase())
+    mode_badge(mode, false)
+}
+
+/// The statusline badge for a mode, with a note when its note writes become
+/// proposals: ` REVIEW · PROPOSES `.
+///
+/// A badge whose name already says "propose" gets no note, so the shipped
+/// `propose` mode reads ` PROPOSE `.
+pub fn mode_badge(mode: &str, proposes: bool) -> String {
+    let label = crucible_lua::humanize_mode_id(mode).to_uppercase();
+    if proposes && !label.contains("PROPOSE") {
+        format!(" {label} · PROPOSES ")
+    } else {
+        format!(" {label} ")
+    }
+}
+
+/// Descriptors for `ids`, for a test that feeds `ModesLoaded`. Every mode
+/// applies its writes.
+#[cfg(test)]
+pub(crate) fn mode_descriptors(ids: &[&str]) -> Vec<crucible_core::types::mode::ModeDescriptor> {
+    ids.iter()
+        .map(|id| crucible_core::types::mode::ModeDescriptor {
+            id: (*id).to_string(),
+            name: crucible_lua::humanize_mode_id(id),
+            description: None,
+            icon: None,
+            color: None,
+            review_policy: Default::default(),
+            writes: Default::default(),
+        })
+        .collect()
 }
 
 /// The badge's colours.

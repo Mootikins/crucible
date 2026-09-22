@@ -1510,7 +1510,7 @@ impl SessionKnobs for GenaiAgentHandle {
         Vec::new()
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
         Vec::new()
     }
 
@@ -2285,6 +2285,7 @@ mod tests {
             description: Some("Read-only review".to_string()),
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
+            writes: crucible_core::types::WriteMode::Apply,
         });
 
         let mut handle = test_handle_with_tools(Vec::new()).with_modes(registry);
@@ -2318,6 +2319,7 @@ mod tests {
             description: None,
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
+            writes: crucible_core::types::WriteMode::Apply,
         });
 
         let mut handle =
@@ -2386,6 +2388,7 @@ mod tests {
             description: None,
             tools: crucible_lua::ToolSelector::Patterns(vec!["read_*".to_string()]),
             permissions: crucible_lua::ModePermissions::default(),
+            writes: crucible_core::types::WriteMode::Apply,
         });
 
         // `gh_create_pr` is the case the first version of this test missed:
@@ -3058,6 +3061,7 @@ mod tests {
                     description: None,
                     tools: sel,
                     permissions: ModePermissions::default(),
+                    writes: crucible_core::types::WriteMode::Apply,
                 });
             }
             r

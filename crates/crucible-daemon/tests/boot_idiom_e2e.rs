@@ -190,7 +190,7 @@ async fn a_shipped_mode_can_be_removed_from_the_users_init_lua() {
         .collect();
     assert_eq!(
         ids,
-        vec!["ask", "plan"],
+        vec!["ask", "plan", "propose"],
         "the user's file runs after the defaults file, so its removal stands: {modes}"
     );
 }

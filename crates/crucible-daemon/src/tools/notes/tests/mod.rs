@@ -4,6 +4,7 @@ mod crud;
 mod indexed;
 mod list;
 mod path_safety;
+mod propose;
 
 use std::fs;
 use std::sync::Arc;

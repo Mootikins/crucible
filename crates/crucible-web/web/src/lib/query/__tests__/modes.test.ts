@@ -23,6 +23,7 @@ function modes(current: string, ...ids: string[]): SessionModes {
       icon: null,
       color: null,
       review_policy: 'none' as const,
+      writes: 'apply' as const,
     })),
   };
 }

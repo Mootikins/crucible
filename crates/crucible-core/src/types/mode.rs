@@ -74,6 +74,53 @@ impl ReviewPolicy {
     }
 }
 
+/// What a note write of a session in this mode does.
+///
+/// `Apply` writes the file. `Propose` records the write as a proposal and
+/// leaves the disk unchanged, so the user accepts or rejects it later.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteMode {
+    /// The note tools write the file.
+    #[default]
+    Apply,
+    /// The note tools record a proposal. The file on disk does not change.
+    Propose,
+}
+
+impl WriteMode {
+    /// The write mode that an agent of `agent_type` can keep.
+    ///
+    /// The daemon runs the note tools of an internal agent, so it can hold
+    /// their writes. An ACP agent writes with its own tools in its own
+    /// process, so the daemon cannot hold the write. For that agent the
+    /// effective value is always `Apply`, and the daemon attributes the write.
+    pub fn effective_for(self, agent_type: &str) -> Self {
+        if agent_type == "internal" {
+            self
+        } else {
+            Self::Apply
+        }
+    }
+
+    /// The wire name of the write mode.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Apply => "apply",
+            Self::Propose => "propose",
+        }
+    }
+
+    /// The write mode with the wire name `s`, or `None` for another name.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "apply" => Some(Self::Apply),
+            "propose" => Some(Self::Propose),
+            _ => None,
+        }
+    }
+}
+
 /// The modes the daemon ships.
 ///
 /// *Not* the set of valid modes — those are open string ids, and a mode
@@ -178,6 +225,13 @@ pub struct ModeDescriptor {
     /// the default is the conservative [`ReviewPolicy::PreWrite`].
     #[serde(default)]
     pub review_policy: ReviewPolicy,
+    /// What a note write in this mode does.
+    ///
+    /// Carries the *effective* value, as `review_policy` does. The default is
+    /// [`WriteMode::Apply`], so a descriptor from an older daemon reads as
+    /// the behavior that the older daemon has.
+    #[serde(default)]
+    pub writes: WriteMode,
 }
 
 impl ModeDescriptor {
@@ -190,6 +244,7 @@ impl ModeDescriptor {
     /// the effective value rather than two fields a client has to reconcile.
     pub fn degraded_for(mut self, agent_type: &str) -> Self {
         self.review_policy = self.review_policy.effective_for(agent_type);
+        self.writes = self.writes.effective_for(agent_type);
         self
     }
 }
@@ -229,6 +284,10 @@ impl From<&SessionMode> for ModeDescriptor {
             // client through `session.list_modes` would report the default and
             // the chip would be wrong for `plan` and `auto`.
             review_policy: ReviewPolicy::for_mode_id(&mode.id.0),
+            // ACP's `SessionMode` has no field for this either. The Lua mode
+            // declaration holds it, so `session.list_modes` sets it from the
+            // mode registry after this conversion.
+            writes: WriteMode::Apply,
         }
     }
 }
@@ -320,6 +379,7 @@ mod tests {
             icon: Some("⚡".to_string()),
             color: Some("#000".to_string()),
             review_policy: ReviewPolicy::for_mode_id("ask"),
+            writes: WriteMode::Propose,
         };
 
         let json = serde_json::to_string(&mode).unwrap();
@@ -460,6 +520,45 @@ mod tests {
         .expect("descriptor without review_policy must deserialise");
 
         assert_eq!(restored.review_policy, ReviewPolicy::PreWrite);
+    }
+
+    /// An ACP agent writes with its own tools, so the daemon cannot hold the
+    /// write for a proposal.
+    #[test]
+    fn write_mode_is_apply_for_acp() {
+        assert_eq!(WriteMode::Propose.effective_for("acp"), WriteMode::Apply);
+        assert_eq!(WriteMode::Apply.effective_for("acp"), WriteMode::Apply);
+        assert_eq!(
+            WriteMode::Propose.effective_for("internal"),
+            WriteMode::Propose
+        );
+        let mut descriptor = ModeDescriptor::from(&test_session_mode("propose", "Propose", None));
+        descriptor.writes = WriteMode::Propose;
+        assert_eq!(descriptor.degraded_for("acp").writes, WriteMode::Apply);
+    }
+
+    /// A descriptor from a daemon older than the field reads as `apply`.
+    #[test]
+    fn a_descriptor_without_writes_reads_as_apply() {
+        let restored: ModeDescriptor = serde_json::from_value(json!({
+            "id": "ask",
+            "name": "Ask",
+            "description": null,
+            "icon": null,
+            "color": null,
+            "review_policy": "pre_write",
+        }))
+        .expect("descriptor without writes must deserialise");
+
+        assert_eq!(restored.writes, WriteMode::Apply);
+        assert_eq!(
+            serde_json::to_value(WriteMode::Propose).unwrap(),
+            json!("propose")
+        );
+        for mode in [WriteMode::Apply, WriteMode::Propose] {
+            assert_eq!(WriteMode::parse(mode.as_str()), Some(mode));
+            assert_eq!(serde_json::to_value(mode).unwrap(), json!(mode.as_str()));
+        }
     }
 
     #[test]

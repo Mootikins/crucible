@@ -36,6 +36,8 @@ impl NotificationToastKind {
 pub struct StatusBar {
     /// Mode id, not an enum: see `chat_app::state::DEFAULT_MODE`.
     pub mode: String,
+    /// Whether a note write in the mode becomes a proposal. The badge says so.
+    pub proposes: bool,
     pub model: String,
     pub context_used: usize,
     pub context_total: usize,
@@ -64,6 +66,11 @@ impl StatusBar {
 
     pub fn mode(mut self, mode: impl Into<String>) -> Self {
         self.mode = mode.into();
+        self
+    }
+
+    pub fn proposes(mut self, proposes: bool) -> Self {
+        self.proposes = proposes;
         self
     }
 
@@ -98,7 +105,7 @@ impl StatusBar {
     }
 
     fn mode_label(&self) -> String {
-        crate::tui::oil::chat_app::mode_label(&self.mode)
+        crate::tui::oil::chat_app::mode_badge(&self.mode, self.proposes)
     }
 
     fn context_display(&self) -> String {

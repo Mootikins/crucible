@@ -11,6 +11,7 @@
 mod helpers;
 mod list;
 mod params;
+mod propose;
 
 #[cfg(test)]
 mod tests;
@@ -34,6 +35,8 @@ use rmcp::{model::CallToolResult, tool, tool_router};
 use std::path::Path;
 use std::sync::Arc;
 
+pub use propose::{author_of, NoteWrites, TurnWriteMode};
+
 pub use params::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
     UpdateNoteParams,
@@ -51,6 +54,9 @@ pub struct NoteTools {
     /// The kiln's index. Required, not optional: a session without a kiln
     /// gets a repository that knows no notes, and every read goes to disk.
     index: Arc<dyn KnowledgeRepository>,
+    /// Where a note write goes. `None` for a tool set with no session, such
+    /// as the daemon-global one: every write applies to the disk.
+    writes: Option<NoteWrites>,
 }
 
 impl NoteTools {
@@ -60,7 +66,50 @@ impl NoteTools {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             index,
+            writes: None,
         }
+    }
+
+    /// Send the note writes of the session to `writes`. In a turn whose
+    /// write mode is `propose`, a write becomes a proposal.
+    #[must_use]
+    pub fn with_writes(mut self, writes: NoteWrites) -> Self {
+        self.writes = Some(writes);
+        self
+    }
+
+    /// The proposal target of the current turn, or `None` when the write
+    /// applies to the disk.
+    fn proposing(&self) -> Option<&NoteWrites> {
+        self.writes
+            .as_ref()
+            .filter(|w| w.mode() == crucible_core::types::WriteMode::Propose)
+    }
+
+    /// Record a proposed write of `full_path`, and build the tool answer.
+    /// The file on disk does not change.
+    fn propose(
+        &self,
+        writes: &NoteWrites,
+        path: &str,
+        full_path: &Path,
+        base: ExpectedBase,
+        text: String,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let root =
+            crucible_core::session::PhysicalRoot::from_top_level(self.scope.canonical_anchor());
+        let relative = self
+            .scope
+            .relativize(full_path)
+            .to_string_lossy()
+            .to_string();
+        let proposal = writes.propose(root, &relative, base, text)?;
+        json_success(serde_json::json!({
+            "path": path,
+            "status": "proposed",
+            "proposal": proposal.id,
+            "message": "The note on disk did not change. The user accepts or rejects the proposal later."
+        }))
     }
 
     /// The index row for a kiln-relative path, or `None` when the index has
@@ -147,6 +196,18 @@ impl NoteTools {
         } else {
             content
         };
+
+        // In `propose` mode the base is `Absent`: accept must not replace a
+        // file that another writer created after this proposal.
+        if let Some(writes) = self.proposing() {
+            return self.propose(
+                writes,
+                &path,
+                full_path.as_path(),
+                ExpectedBase::Absent,
+                final_content,
+            );
+        }
 
         // `create_note` replaces an existing file with no check, as it did
         // before the checked write.
@@ -306,6 +367,9 @@ impl NoteTools {
 
         let (text, base, updated_fields) =
             updated_note(full_path.as_path(), &path, new_frontmatter, new_content)?;
+        if let Some(writes) = self.proposing() {
+            return self.propose(writes, &path, full_path.as_path(), base, text);
+        }
         let answer = write_note(full_path.as_path(), text, base).await?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note update

@@ -186,7 +186,12 @@ impl OilChatApp {
                 // the built-ins beats leaving the session with no mode to
                 // cycle to.
                 if !modes.is_empty() {
-                    self.available_modes = modes.clone();
+                    self.available_modes = modes.iter().map(|m| m.id.clone()).collect();
+                    self.proposing_modes = modes
+                        .iter()
+                        .filter(|m| m.writes == crucible_core::types::WriteMode::Propose)
+                        .map(|m| m.id.clone())
+                        .collect();
                 }
             }
             ChatAppMsg::ModelsFetchFailed(ref err) => {

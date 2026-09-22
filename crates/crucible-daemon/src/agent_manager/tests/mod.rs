@@ -965,6 +965,7 @@ mod notifications;
 mod parity_capture;
 mod permissions;
 mod precognition;
+mod propose_turn;
 mod providers_concurrency;
 mod reactor;
 mod review_capture;

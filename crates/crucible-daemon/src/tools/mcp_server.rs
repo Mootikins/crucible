@@ -219,6 +219,13 @@ impl CrucibleMcpServer {
         self
     }
 
+    /// Send the note writes of the session to `writes`, so a turn in a
+    /// `propose` mode records a proposal instead of a file write.
+    pub fn with_note_writes(mut self, writes: crate::tools::notes::NoteWrites) -> Self {
+        self.note_tools = self.note_tools.with_writes(writes);
+        self
+    }
+
     /// Every tool name this server owns, before any per-session filtering.
     ///
     /// [`Self::list_tools`] answers "what may *this* session call", which is a

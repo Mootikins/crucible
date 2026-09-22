@@ -44,7 +44,9 @@ pub use crate::types::knob::{
     AcpKnob, AgentConfigOption, AgentOptionChoice, AgentOptionKind, KnobDescriptor, SessionKnob,
     SessionKnobSupport,
 };
-pub use crate::types::mode::{canonical_mode_id, default_internal_modes, ModeDescriptor};
+pub use crate::types::mode::{
+    canonical_mode_id, default_internal_modes, ModeDescriptor, WriteMode,
+};
 
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};

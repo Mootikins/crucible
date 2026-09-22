@@ -227,6 +227,13 @@ pub(crate) async fn create_op(
     // the create path into the delegation path.
     if let Some(obj) = params.as_object_mut() {
         obj.remove("parent_session_id");
+        // The plugin name is stamped here or not at all, for the same reason
+        // as parentage: a proposal of the session names this plugin, so a
+        // plugin must not name another one.
+        obj.remove("plugin");
+        if let Some(plugin) = crate::plugin_context::current_plugin_name(lua) {
+            obj.insert("plugin".to_string(), serde_json::Value::String(plugin));
+        }
         if let Some(delegate) = obj.remove("delegate") {
             match delegate {
                 serde_json::Value::Bool(true) => {

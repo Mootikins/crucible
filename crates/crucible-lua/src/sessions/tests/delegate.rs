@@ -161,3 +161,33 @@ async fn the_unbound_registration_refuses_delegate_too() {
     );
     assert!(mock.last_create_params().is_none());
 }
+
+/// A plugin session carries the name of the plugin that runs the create. The
+/// binding writes the name, and a name that the caller supplies never
+/// reaches the daemon. A proposal of the session names this plugin.
+#[tokio::test]
+async fn a_plugin_create_stamps_the_running_plugin() {
+    let mock = Arc::new(MockDaemonApi::new());
+    let (lua, _current) = delegate_vm(Arc::clone(&mock) as Arc<dyn DaemonSessionApi>);
+
+    let create = r#"
+        local s, err = cru.session.create({ type = "plugin", plugin = "someone-else" })
+        assert(err == nil, "unexpected error: " .. tostring(err))
+    "#;
+
+    let _: Value = lua.load(create).eval_async().await.unwrap();
+    let params = mock.last_create_params().expect("create reached the api");
+    assert!(
+        params.get("plugin").is_none(),
+        "outside a plugin, the binding sends no plugin name: {params}"
+    );
+
+    crate::plugin_context::enter_plugin(&lua, "reflection");
+    let _: Value = lua.load(create).eval_async().await.unwrap();
+    let params = mock.last_create_params().expect("create reached the api");
+    assert_eq!(
+        params.get("plugin").and_then(|v| v.as_str()),
+        Some("reflection"),
+        "the running plugin names the session: {params}"
+    );
+}

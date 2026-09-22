@@ -3452,6 +3452,11 @@ export interface components {
              *     agent can enforce.
              */
             review_policy: components["schemas"]["ReviewPolicyRow"];
+            /**
+             * @description What a note write in this mode does, already degraded to what this
+             *     session's agent can hold back.
+             */
+            writes: components["schemas"]["WriteModeRow"];
         };
         /** @description What `GET /api/notes` answers. */
         NoteListResponse: {
@@ -4979,6 +4984,14 @@ export interface components {
             code: number;
             message: string;
         };
+        /**
+         * @description What a note write in a mode does.
+         *
+         *     Mirrors `crucible_core::types::mode::WriteMode`, for the reason
+         *     [`ReviewPolicyRow`] gives.
+         * @enum {string}
+         */
+        WriteModeRow: "apply" | "propose";
     };
     responses: never;
     parameters: never;
@@ -5197,6 +5210,7 @@ export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];
 export type SchemaWebhookReceiveReply = components['schemas']['WebhookReceiveReply'];
 export type SchemaWikilinkRow = components['schemas']['WikilinkRow'];
 export type SchemaWriteErrorRow = components['schemas']['WriteErrorRow'];
+export type SchemaWriteModeRow = components['schemas']['WriteModeRow'];
 export type $defs = Record<string, never>;
 export interface operations {
     list_agents: {

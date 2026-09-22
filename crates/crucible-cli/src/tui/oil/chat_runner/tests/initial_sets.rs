@@ -73,7 +73,7 @@ impl SessionKnobs for RpcCountingAgent {
         Vec::new()
     }
 
-    async fn fetch_available_modes(&mut self) -> Vec<String> {
+    async fn fetch_available_modes(&mut self) -> Vec<crucible_core::types::mode::ModeDescriptor> {
         Vec::new()
     }
 
