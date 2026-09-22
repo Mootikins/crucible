@@ -33,6 +33,10 @@ impl CrucibleAcpClient {
         let mut cmd = Command::new(&config.agent_path);
         // Closing the pipes only sends EOF, and a hung agent ignores it.
         cmd.kill_on_drop(true);
+        // A group of its own lets the drop kill the children of a launcher
+        // too. The SDK's `AcpAgent` does the same.
+        #[cfg(unix)]
+        cmd.process_group(0);
         if let Some(args) = &config.agent_args {
             cmd.args(args);
         }
@@ -70,7 +74,7 @@ impl CrucibleAcpClient {
         let recorder = Recorder::from_env(&agent_name).map(|r| Arc::new(Mutex::new(r)));
         let transport = recorded_lines(stdin, stdout, recorder);
         let mut client = Self::connect(config, transport, agent_name, permission).await?;
-        client._child = Some(child);
+        client._child = Some(AgentProcess(child));
         Ok(client)
     }
 
@@ -187,6 +191,27 @@ impl CrucibleAcpClient {
             Ok(_) => Ok(()),
             Err(error) if error.code == ErrorCode::MethodNotFound => Ok(()),
             Err(error) => Err(super::request_error("session/close", &error)),
+        }
+    }
+}
+
+/// The agent process. A drop kills its whole process group: an agent that a
+/// launcher starts (`npx`, `uvx`, a sandbox prefix) is a child of the
+/// launcher, and a kill of the launcher alone leaves it alive.
+/// `kill_on_drop` then kills and reaps the launcher itself.
+pub(super) struct AgentProcess(tokio::process::Child);
+
+impl Drop for AgentProcess {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0.id().and_then(|pid| libc::pid_t::try_from(pid).ok()) {
+            // SAFETY: `killpg` takes two integers and touches no memory. The
+            // group id is the child pid, because the spawn used
+            // `process_group(0)`. `id()` is `None` after the child is reaped,
+            // so the pid is not a reused one.
+            unsafe {
+                libc::killpg(pid, libc::SIGKILL);
+            }
         }
     }
 }

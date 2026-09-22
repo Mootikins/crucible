@@ -237,3 +237,52 @@ async fn a_request_completes_while_a_turn_is_held() {
         .expect("the turn task")
         .expect("the turn ends normally");
 }
+
+/// A drop of the client kills the whole agent process group. An agent that a
+/// launcher starts (`npx`, `uvx`, a sandbox prefix) runs as a child of the
+/// launcher, and a kill of the launcher alone leaves that child alive.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_client_drop_kills_the_children_of_the_agent_process() {
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let pid_file = dir.path().join("grandchild.pid");
+    let config = ClientConfig {
+        agent_path: PathBuf::from("sh"),
+        agent_args: Some(vec![
+            "-c".to_string(),
+            format!("sleep 300 & echo $! > {}; wait", pid_file.display()),
+        ]),
+        ..Default::default()
+    };
+
+    let client = CrucibleAcpClient::spawn(config, "launcher", None)
+        .await
+        .expect("the launcher starts");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pid: libc::pid_t = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "the launcher started no child");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    // SAFETY: signal 0 sends nothing; it only checks that the pid exists.
+    let alive = || unsafe { libc::kill(pid, 0) == 0 };
+    assert!(alive(), "the child runs before the drop");
+
+    drop(client);
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while alive() {
+        assert!(
+            Instant::now() < deadline,
+            "the child of the agent process outlived the client"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}

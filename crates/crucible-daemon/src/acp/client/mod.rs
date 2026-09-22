@@ -74,9 +74,8 @@ pub struct CrucibleAcpClient {
     caps: AgentCapabilities,
     /// A drop of this sender ends the SDK connection.
     _stop: oneshot::Sender<()>,
-    /// The agent process, when the client started one. `kill_on_drop` kills
-    /// it when the client drops.
-    _child: Option<tokio::process::Child>,
+    /// The agent process, when the client started one. A drop kills it.
+    _child: Option<connection::AgentProcess>,
 }
 
 impl std::fmt::Debug for CrucibleAcpClient {
