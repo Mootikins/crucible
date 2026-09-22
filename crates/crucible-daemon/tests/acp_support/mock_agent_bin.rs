@@ -227,3 +227,69 @@ pub async fn completed_turn(done: oneshot::Receiver<TurnOutcome>, limit: Duratio
     );
     outcome
 }
+
+/// A chat session whose agent is the mock binary, built through the
+/// production `AgentManager` and the profile [`MOCK_PROFILE`].
+#[allow(dead_code)]
+pub struct MockSession {
+    pub agent_manager: Arc<crucible_daemon::AgentManager>,
+    pub session_id: crucible_core::session::SessionId,
+    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    /// Every event that the session broadcasts.
+    pub events: broadcast::Receiver<SessionEventMessage>,
+}
+
+/// Register `kilns` and start a chat session that attaches the first one.
+/// The session agent is the mock binary, which runs `script`.
+#[allow(dead_code)]
+pub async fn mock_session(
+    kilns: &[(&str, &Path)],
+    script: super::mock_agent::MockScript,
+) -> MockSession {
+    let session_manager = crucible_daemon::test_support::temp_session_manager_with_kilns(kilns);
+    let (event_tx, events) = broadcast::channel(256);
+    let profile = mock_profile(BTreeMap::from([script.env()]));
+    let agent_manager = Arc::new(crucible_daemon::AgentManager::new(acp_manager_params(
+        session_manager.clone(),
+        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
+        &event_tx,
+    )));
+    let session = session_manager
+        .create_session(
+            crucible_core::session::SessionType::Chat,
+            vec![crucible_daemon::test_support::kiln_name(kilns[0].0)],
+            None,
+            None,
+        )
+        .await
+        .expect("session");
+    agent_manager
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .expect("configure the agent");
+    MockSession {
+        agent_manager,
+        session_id: session.id,
+        event_tx,
+        events,
+    }
+}
+
+#[allow(dead_code)]
+impl MockSession {
+    /// Send `prompt` and require the turn to complete within `limit`.
+    pub async fn turn(&self, prompt: &str, limit: Duration) -> TurnOutcome {
+        let (_id, done) = self
+            .agent_manager
+            .send_message_notified(
+                &self.session_id,
+                prompt.to_string(),
+                &self.event_tx,
+                true,
+                None,
+            )
+            .await
+            .expect("the turn is accepted");
+        completed_turn(done, limit).await
+    }
+}

@@ -39,7 +39,8 @@ mod mock_agent;
 mod mock_agent_bin;
 use mock_agent::{logged, read_log, MockScript, Resume, Step};
 use mock_agent_bin::{
-    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
+    acp_manager_params, completed_turn, mock_profile, mock_session, profile_session_agent,
+    MockSession, MOCK_PROFILE,
 };
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
@@ -105,30 +106,22 @@ async fn setup_with(script: MockScript) -> Harness {
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
     let log_path = temp.path().join("methods.log");
-
-    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _events) = broadcast::channel(256);
-
-    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
-        session_manager.clone(),
-        BTreeMap::from([(MOCK_PROFILE.to_string(), logging_profile(&log_path, script))]),
-        &event_tx,
-    )));
-
-    let session = session_manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .expect("session");
-    agent_manager
-        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
-        .await
-        .expect("configure the agent");
+    let script = MockScript {
+        log: Some(log_path.clone()),
+        ..script
+    };
+    let MockSession {
+        agent_manager,
+        session_id,
+        event_tx,
+        ..
+    } = mock_session(&[("kiln", &kiln)], script).await;
 
     Harness {
         _temp: temp,
         log_path,
         agent_manager,
-        session_id: session.id,
+        session_id,
         event_tx,
     }
 }

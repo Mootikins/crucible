@@ -17,14 +17,11 @@
 //! These tests drive `AgentManager` against a real `mock-acp-agent` process,
 //! so the mode ids under assertion are ones that crossed the ACP wire.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::session::SessionType;
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::AgentManager;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
@@ -34,9 +31,7 @@ mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
 use mock_agent::{logged, MockScript, Step};
-use mock_agent_bin::{
-    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
-};
+use mock_agent_bin::{completed_turn, mock_session, MockSession};
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -95,32 +90,18 @@ async fn setup_with_script(script: MockScript) -> Harness {
         log: Some(log.clone()),
         ..script
     };
-    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, events) = broadcast::channel(256);
-
-    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
-        session_manager.clone(),
-        BTreeMap::from([(
-            MOCK_PROFILE.to_string(),
-            mock_profile(BTreeMap::from([script.env()])),
-        )]),
-        &event_tx,
-    )));
-
-    let session = session_manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .expect("session");
-    agent_manager
-        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
-        .await
-        .expect("configure the agent");
+    let MockSession {
+        agent_manager,
+        session_id,
+        event_tx,
+        events,
+    } = mock_session(&[("kiln", &kiln)], script).await;
 
     Harness {
         _temp: temp,
         log,
         agent_manager,
-        session_id: session.id,
+        session_id,
         event_tx,
         events,
     }

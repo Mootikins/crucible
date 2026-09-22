@@ -13,26 +13,17 @@
 
 #![cfg(unix)]
 
-use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::session::SessionType;
-use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::AgentManager;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 #[path = "acp_support/mock_agent.rs"]
 mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
 use mock_agent::{logged, MockScript, Step};
-use mock_agent_bin::{
-    acp_manager_params, completed_turn, mock_profile, profile_session_agent, MOCK_PROFILE,
-};
+use mock_agent_bin::mock_session;
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -56,8 +47,6 @@ async fn agent_calls(
     args: serde_json::Value,
 ) -> String {
     let log = temp.path().join("mock-agent.log");
-    let session_manager = temp_session_manager_with_kilns(&[("kiln", kiln), ("other-kiln", other)]);
-    let (event_tx, _events) = broadcast::channel::<SessionEventMessage>(256);
     let script = MockScript {
         turn: vec![
             Step::McpCall {
@@ -69,28 +58,11 @@ async fn agent_calls(
         log: Some(log.clone()),
         ..MockScript::default()
     };
-    let profile = mock_profile(BTreeMap::from([script.env()]));
-    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
-        session_manager.clone(),
-        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
-        &event_tx,
-    )));
-    let session = session_manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .expect("session");
-    agent_manager
-        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
-        .await
-        .expect("configure the agent");
+    let session = mock_session(&[("kiln", kiln), ("other-kiln", other)], script).await;
 
-    let (_id, done) = agent_manager
-        .send_message_notified(&session.id, "read it".to_string(), &event_tx, true, None)
-        .await
-        .expect("the turn is accepted");
     // The mock logs the MCP reply before it answers the prompt, so a
     // completed turn means the log holds the reply.
-    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    let outcome = session.turn("read it", TURN_TIMEOUT).await;
     assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
     let results = logged(&log, "mcp/result");

@@ -14,28 +14,18 @@
 
 #![cfg(unix)]
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
-use crucible_core::session::SessionType;
-use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
-use crucible_daemon::AgentManager;
 use crucible_lua::{IsolationClaim, IsolationRegistry, SandboxEnv, SandboxExec};
 use tempfile::TempDir;
-use tokio::sync::broadcast;
 
 #[path = "acp_support/mock_agent.rs"]
 mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
 use mock_agent::{MockScript, Step};
-use mock_agent_bin::{
-    acp_manager_params, completed_turn, mock_agent_path, mock_profile, profile_session_agent,
-    MOCK_PROFILE,
-};
+use mock_agent_bin::{mock_agent_path, mock_session};
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -67,30 +57,18 @@ async fn an_isolation_claim_launches_the_acp_agent_through_the_sandbox_prefix() 
     let marker = temp.path().join("launched.txt");
     let launcher = write_launcher(temp.path(), &marker);
 
-    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
-    let (event_tx, _events) = broadcast::channel::<SessionEventMessage>(256);
     let script = MockScript {
         turn: vec![Step::Text(ANSWER.to_string())],
         ..MockScript::default()
     };
     let (key, value) = script.env();
-    let profile = mock_profile(BTreeMap::from([(key.clone(), value.clone())]));
-    let agent_manager = Arc::new(AgentManager::new(acp_manager_params(
-        session_manager.clone(),
-        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
-        &event_tx,
-    )));
-
-    let session = session_manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .expect("session");
+    let session = mock_session(&[("kiln", &kiln)], script).await;
 
     // The claim that a plugin makes in a `session_start` hook. The launcher
     // is `/bin/sh <script>`, and `env(1)` takes the bare `K=V` operands.
     let isolation = IsolationRegistry::new();
     isolation.claim(
-        session.id.as_str(),
+        session.session_id.as_str(),
         IsolationClaim {
             plugin: "test-sandbox".to_string(),
             exempt: Default::default(),
@@ -104,18 +82,11 @@ async fn an_isolation_claim_launches_the_acp_agent_through_the_sandbox_prefix() 
             },
         },
     );
-    agent_manager.set_isolation(isolation);
+    // The claim is read when the turn builds the agent, not when the session
+    // agent is configured.
+    session.agent_manager.set_isolation(isolation);
 
-    agent_manager
-        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
-        .await
-        .expect("configure the agent");
-
-    let (_id, done) = agent_manager
-        .send_message_notified(&session.id, "hello".to_string(), &event_tx, true, None)
-        .await
-        .expect("the turn is accepted");
-    let outcome = completed_turn(done, TURN_TIMEOUT).await;
+    let outcome = session.turn("hello", TURN_TIMEOUT).await;
     assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
     let argv = std::fs::read_to_string(&marker).unwrap_or_else(|e| {
