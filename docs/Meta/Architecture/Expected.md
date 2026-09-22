@@ -364,7 +364,7 @@ review named them as suspects, and the check found them covered.
 | `cru.oq` multi-format parse and jq-style query | `crates/crucible-lua/src/json_query.rs:284`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:204` | yes, in the module list only |
 | `cru.shell` with a plugin shell policy | `crates/crucible-lua/src/shell.rs:366`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:202` | yes, in the module list only |
 | Session lifecycle hooks `cru.on_session_start`, `cru.on_session_end` | `crates/crucible-lua/src/hooks.rs:34`; registered at `crates/crucible-lua/src/executor.rs:258` | yes |
-| Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs:371` | yes, since 2026-08-23 (Review Comments and Rebase) |
+| Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs` (the handlers have since moved) | yes, since 2026-08-23 (Review Comments and Rebase) |
 | `session.export_to_file`: a transcript written to a caller path under write protection | `crates/crucible-daemon/src/rpc/dispatch.rs:172`; `crates/crucible-daemon/src/server/observe.rs:295` | yes, since 2026-08-23 (Session Export to a Path) |
 | Plugin RPC management: `plugin.install`, `plugin.remove`, `plugin.run_command` | `crates/crucible-daemon/src/rpc/dispatch.rs:194` | yes, since 2026-08-23 (Plugin Install names the RPCs) |
 
