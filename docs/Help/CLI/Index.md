@@ -22,7 +22,8 @@ Complete reference for all Crucible CLI commands.
 | `cru init` | Initialize a new kiln (Crucible workspace) |
 | `cru kiln` | Manage the kilns Crucible knows about (register, list, forget) — [[Help/CLI/kiln]] |
 | `cru project` | Manage the projects Crucible knows about (register, list, forget) — [[Help/CLI/project]] |
-| `cru diff` | Show the changes of a branch since its merge base (`cru diff branch`) — [[Help/CLI/diff]] |
+| `cru diff` | Show the changes of a branch since its merge base (`cru diff branch`), or the open comments of a diffset (`cru diff comments`) — [[Help/CLI/diff]] |
+| `cru proposal` | Review proposals: list, show, accept, reject, dismiss, resolve — [[Help/CLI/proposal]] |
 | `cru stats` | Display kiln statistics |
 | `cru status` | Display storage status and statistics for the knowledge base |
 | `cru models` | List chat models; `cru models embeddings` manages the local embedding models — [[Help/CLI/models]] |

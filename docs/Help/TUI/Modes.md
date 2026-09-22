@@ -12,7 +12,7 @@ tags:
 
 Modes control what actions an agent can take at runtime. They act as a permission layer on top of [[Help/Extending/Agent Cards|agent cards]].
 
-A mode is a **name, a tool set, and a permission stance**. Three ship by
+A mode is a **name, a tool set, and a permission stance**. Four ship by
 default, but they are not privileged: they are declared in Lua exactly the way
 yours would be, and you can add, replace, or remove any of them. Where a mode
 sits in the order of everything else that can allow or deny a call is
@@ -25,6 +25,7 @@ sits in the order of everything else that can allow or deny a call is
 | **Ask** | Auto-read, ask for writes | Normal interactive use (default) |
 | **Plan** | Read-only tool set | Exploring options before acting |
 | **Auto** | Full access, minimal prompts | Trusted automated workflows |
+| **Propose** | Full access, minimal prompts, note writes become proposals | Reviewing agent-authored notes before they land |
 
 ## Ask Mode
 
@@ -58,6 +59,30 @@ Full-access mode for trusted workflows. The agent:
 - Useful for running pre-approved plans
 
 Use auto mode carefully - it gives the agent significant autonomy.
+
+## Propose Mode
+
+A mode for review before a note write reaches disk. The agent:
+- Sees every tool, the same as auto mode
+- Runs with the `allow` permission stance, so nothing prompts
+- Turns each note write into a **proposal** instead of writing the file
+
+The file on disk does not change when the agent runs `create_note` or
+`update_note`. The daemon holds the write as a proposal until you decide.
+Accept it to write the file, reject it with a reason, or dismiss it with no
+decision. Review proposals with `cru proposal` or in the web Inbox and diff
+pane — see [[Help/CLI/proposal]].
+
+Propose mode is what the [[Help/Concepts/Reflection Pass|reflection pass]]
+runs in, so a plugin's note writes wait for you instead of landing unread.
+
+Propose mode only holds back the internal agent's own note tools. A session
+that runs an external agent over ACP writes with its own tools in its own
+process, so the daemon cannot turn its writes into proposals: such a session
+always applies its writes, whatever the mode says.
+
+Use propose mode when you want an agent's note changes queued for review
+rather than applied immediately.
 
 ## Switching Modes
 
@@ -116,10 +141,20 @@ cru.modes.review = {
     default = "deny",
     allow = { "bash:rg *", "bash:git log *" },
   },
+
+  -- What a note write does in this mode. `"apply"` (the default) writes the
+  -- file. `"propose"` records the write as a proposal and leaves the file on
+  -- disk unchanged, for the user to accept or reject later.
+  writes = "apply",
 }
 ```
 
 `permissions` may also be just `"allow"`, `"deny"`, or `"ask"`.
+
+`writes` takes only `"apply"` or `"propose"`. The internal agent keeps the
+declared value. A session running an external agent over ACP writes with its
+own tools, which the daemon cannot hold back, so its effective `writes` is
+always `"apply"` no matter what the mode declares.
 
 Names are sentence case everywhere — "Accept edits", not "Accept Edits" or
 "acceptEdits" — so a mode you declare and one an external agent advertises
