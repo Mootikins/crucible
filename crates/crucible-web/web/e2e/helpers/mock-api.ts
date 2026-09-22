@@ -45,7 +45,7 @@ export interface MockOverrides {
 }
 
 /** One body of `POST /api/chat/send`, as the browser sent it. */
-export interface SentMessage {
+interface SentMessage {
   session_id: string;
   content: string;
   /** The references of the attached comments. The text of a comment is not here. */

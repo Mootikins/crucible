@@ -67,7 +67,7 @@ export interface MergeViewSetup {
 }
 
 /** What the hunk headers ask of their owner. The owner keeps the state. */
-export interface HunkControl {
+interface HunkControl {
   /** The current text. A split view needs it to count the lines of the other side. */
   current: string;
   /** The owner hides or shows the hunk, then sends `setHiddenHunks`. */
