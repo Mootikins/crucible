@@ -30,6 +30,7 @@ use crate::review::{ReviewError, ReviewLedgers};
 use crate::rpc_client::{DiffFileRequest, DiffGetRequest};
 use crate::scm::{run_git, GitOpts};
 use crate::server::fs::project_root;
+use crate::server::session::review::ensure_record_loaded;
 use crate::session_manager::SessionManager;
 use crate::tools::containment::reject_non_normal;
 
@@ -187,6 +188,7 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
             })
         }
         DiffsetSource::SessionRecord { session } => {
+            ensure_record_loaded(admission.review, admission.sessions, session.as_str()).await;
             let files = admission
                 .review
                 .record_files(session.as_str())
@@ -285,6 +287,7 @@ async fn diff_file(
                 return Err(params_error("a session record has no renamed file"));
             }
             check_contained(root, &request.path)?;
+            ensure_record_loaded(admission.review, admission.sessions, session.as_str()).await;
             admission
                 .review
                 .record_text(session.as_str(), root, &request.path)
@@ -768,6 +771,48 @@ mod tests {
                 .unwrap_err();
             assert_eq!(error.code, INVALID_PARAMS, "{path}");
         }
+    }
+
+    /// After a daemon restart the ledger of a session is on disk only. The
+    /// session record must restore it from `review.jsonl`, as the old hunk
+    /// listing did, or it reads as "the agent changed nothing".
+    #[tokio::test]
+    async fn a_session_record_restores_a_resumed_ledger() {
+        use crucible_core::session::{Session, SessionType};
+
+        let daemon = Daemon::new();
+        let tmp = TempDir::new().unwrap();
+        init_repo(tmp.path(), &[("a.md", "one\n")]).await;
+        let session = Session::new(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+        )
+        .with_workspace(Some(tmp.path().to_path_buf()));
+        let id = session.id.clone();
+        let storage = session.storage_path(daemon.sessions.sessions_root());
+        daemon.sessions.register_transient(session);
+        daemon
+            .review
+            .open_or_restore(id.as_str(), &storage, &[tmp.path().to_path_buf()])
+            .await
+            .unwrap();
+        fs::write(tmp.path().join("a.md"), "one\ntwo\n").unwrap();
+        // A daemon restart: the journal is on disk and nothing is in memory.
+        daemon.review.clear_session(id.as_str());
+
+        let source = DiffsetSource::SessionRecord { session: id };
+        let diffset = daemon.get(&source).await.unwrap();
+        assert_eq!(
+            diffset.files.len(),
+            1,
+            "the session record read a resumed session as having changed nothing"
+        );
+        let root = diffset.files[0].root.clone();
+        let text = daemon
+            .file_in(&source, Some(&root), "a.md", None)
+            .await
+            .unwrap();
+        assert_eq!(text.base_text.as_deref(), Some("one\n"));
     }
 
     #[tokio::test]

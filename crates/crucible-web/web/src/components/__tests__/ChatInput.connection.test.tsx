@@ -82,13 +82,7 @@ vi.mock('../ChatModeControl', () => ({
 vi.mock('../AutocompletePopup', () => ({ AutocompletePopup: () => <div /> }));
 
 // No `vi.mock('@/lib/api')`. The chips inside the composer read the project
-// roster, the mode list and the status slots over the ROUTES in `beforeEach`,
-// and the review stream the status chips bind opens through the real
-// `subscribeToEvents` onto the `FakeEventSource` of `beforeEach`.
-
-vi.mock('@/lib/review-api', () => ({
-  listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
-}));
+// roster, the mode list and the status slots over the ROUTES in `beforeEach`.
 
 const { ChatInput } = await import('../ChatInput');
 const { createTestQueryEnv } = await import('@/test-utils/query');

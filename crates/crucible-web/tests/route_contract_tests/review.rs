@@ -1,21 +1,19 @@
 //! Review route contract tests.
 //!
-//! These three routes forward a request untouched and answer a **named
+//! These two routes forward a request untouched and answer a **named
 //! struct**. Task A6 named the replies (`routes/session/review.rs`), so the
 //! daemon's result no longer travels as `serde_json::Value`: the route reads
 //! the daemon's object into its reply type and writes that type back. A key
 //! the daemon grows therefore reaches the browser only after someone adds a
 //! field for it, which is the opposite of what this file used to promise.
-//! `list_hunks_drops_a_daemon_key_the_reply_does_not_model` states the new
-//! rule where a reader meets it.
 //!
 //! What holds the reply to the daemon is
 //! `src/routes/session/review_shape_tests.rs`. It builds the core types the
-//! daemon serialises — `ComposedHunk`, `Comment`, `RootStatus`, `Integrity` —
-//! pushes each through its row and demands the same JSON back,
+//! daemon serialises — `Comment` — pushes it through its row and demands the
+//! same JSON back,
 //! so a new field in `crucible-core` fails a test instead of going missing.
-//! These tests pin the HTTP surface around it: the path, the query, the
-//! statuses, and what reaches the daemon. `web/src/lib/__tests__/review-api.test.ts`
+//! These tests pin the HTTP surface around it: the path, the statuses, and
+//! what reaches the daemon. `web/src/lib/__tests__/review-api.test.ts`
 //! holds the other side of the same wire.
 
 use axum::body::Body;
@@ -52,118 +50,20 @@ async fn call(method: &str, uri: &str, body: Option<Value>) -> (MockDaemon, Stat
     (mock, status, json)
 }
 
-/// The listing carries the session, its hunks and its comments.
-#[tokio::test]
-async fn list_hunks_answers_the_sessions_hunks_and_comments() {
-    let (mock, status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(mock.received_methods(), vec!["review.list_hunks"]);
-    assert_eq!(json["session_id"], "s1");
-    assert_eq!(json["hunks"][0]["id"], "hunk-1");
-    assert_eq!(json["comments"][0]["id"], "comment-1");
-}
-
-/// The named reply answers every key it models, and drops the one it does not.
-///
-/// The mock daemon sends `a_key_the_web_does_not_model` for exactly this test.
-/// The request still succeeds — an unknown key is not a decode failure — and
-/// the key stops here. To carry a new daemon key to the browser, add a field
-/// to `ReviewHunksResponse`; nothing else will.
-#[tokio::test]
-async fn list_hunks_drops_a_daemon_key_the_reply_does_not_model() {
-    let (_mock, status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
-
-    assert_eq!(status, StatusCode::OK, "{json}");
-    assert!(
-        json.get("a_key_the_web_does_not_model").is_none(),
-        "the reply names its fields, so an unmodelled key must stop here: {json}"
-    );
-
-    let keys: Vec<&str> = json
-        .as_object()
-        .expect("the reply is an object")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    assert_eq!(
-        keys,
-        vec![
-            "session_id",
-            "scope",
-            "hunks",
-            "comments",
-            "degraded",
-            "integrity",
-        ],
-        "the body carries the fields `ReviewHunksResponse` declares, in order"
-    );
-}
-
-/// Three keys the browser reads, held by name because each one carries a
-/// distinction that a reply struct can lose.
-#[tokio::test]
-async fn list_hunks_keeps_the_keys_the_panel_reads() {
-    let (_mock, _status, json) = call("GET", "/api/session/s1/review/hunks", None).await;
-
-    assert!(
-        json.get("degraded").is_some(),
-        "a broken root must reach the client: {json}"
-    );
-    assert!(
-        json["hunks"][0].get("reapplied").is_some(),
-        "hunk fields keep their own names, and none is dropped: {json}"
-    );
-    // The unscoped losses `degraded` cannot carry, because they are exactly
-    // the ones with no root left to name.
-    assert!(
-        json.pointer("/integrity/skips").is_some(),
-        "a journal loss with no root to attach to must still reach the client: {json}"
-    );
-}
-
-/// The scope rides the query string and reaches the daemon as its own word.
-/// Absent is not sent as `null`: the daemon reads an absent scope as the
-/// session, and every client written before scopes existed sends nothing.
-#[tokio::test]
-async fn list_hunks_forwards_the_scope() {
-    let (mock, status, json) = call("GET", "/api/session/s1/review/hunks?scope=turn", None).await;
-
-    assert_eq!(status, StatusCode::OK);
-    let params = mock.received_params("review.list_hunks").unwrap();
-    assert_eq!(params["scope"], "turn");
-    assert_eq!(json["scope"], "turn");
-
-    let (mock, status, _json) = call("GET", "/api/session/s1/review/hunks", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let params = mock.received_params("review.list_hunks").unwrap();
-    assert!(
-        params.get("scope").is_none(),
-        "no scope asked, no scope sent: {params}"
-    );
-}
-
-/// A scope the shared type does not know is refused here, not guessed at.
-#[tokio::test]
-async fn an_unknown_scope_is_a_bad_request() {
-    let (mock, status, _json) =
-        call("GET", "/api/session/s1/review/hunks?scope=workspace", None).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        mock.received_methods().is_empty(),
-        "the daemon was not asked"
-    );
-}
-
 #[tokio::test]
 async fn a_session_id_with_a_slash_survives_the_path() {
     // The frontend percent-encodes it; axum decodes it back. If the round trip
     // dropped the encoding the daemon would be asked about a session named `a`.
-    let (mock, status, _json) = call("GET", "/api/session/a%2Fb/review/hunks", None).await;
+    let (mock, status, _json) = call(
+        "POST",
+        "/api/session/a%2Fb/review/comment/c1/resolve",
+        Some(json!({})),
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        mock.received_params("review.list_hunks").unwrap()["session_id"],
+        mock.received_params("review.resolve_comment").unwrap()["session_id"],
         "a/b"
     );
 }
@@ -257,8 +157,8 @@ async fn resolve_comment_takes_the_comment_id_from_the_path() {
 
 /// Everything the daemon refuses as INVALID_PARAMS — such as a comment on a
 /// path under no tracked root — is the caller's problem, not a gateway
-/// failure, and the client's response is to re-list rather than to report the
-/// daemon as broken.
+/// failure, and the client's response is to read again rather than to report
+/// the daemon as broken.
 #[tokio::test]
 async fn a_daemon_refusal_is_a_422_carrying_its_message() {
     let errors: MockErrors = [(
@@ -303,11 +203,11 @@ async fn a_daemon_refusal_is_a_422_carrying_its_message() {
 
 /// A journal the daemon cannot read answers INTERNAL_ERROR, and that must not
 /// be laundered into a 4xx: "your request was bad" would send the client
-/// looking for a hunk id to fix when the review data itself is unreadable.
+/// looking for a field to fix when the review data itself is unreadable.
 #[tokio::test]
 async fn an_internal_daemon_failure_stays_a_502() {
     let errors: MockErrors = [(
-        "review.list_hunks".to_string(),
+        "review.comment".to_string(),
         (-32603i64, "review journal unreadable".to_string()),
     )]
     .into_iter()
@@ -318,8 +218,12 @@ async fn an_internal_daemon_failure_stays_a_502() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/session/s1/review/hunks")
-                .body(Body::empty())
+                .method("POST")
+                .uri("/api/session/s1/review/comment")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "path": "src/a.rs", "line_start": 1, "body": "why" }).to_string(),
+                ))
                 .unwrap(),
         )
         .await

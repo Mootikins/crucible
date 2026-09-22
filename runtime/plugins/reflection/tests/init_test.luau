@@ -389,7 +389,7 @@ describe("reflection", function()
     it("gives the reviewer the session's outcome evidence", function()
       -- The mock has no review ledger; a test that wants hunks supplies them.
       (cru.session :: any).review_list_hunks = function(id)
-        return { { state = "accepted" }, { state = "rejected" } }, nil
+        return { { tool_call_ids = { "call-1" } }, { tool_call_ids = {} } }, nil
       end
 
       plugin.run({ id = "chat-1" })
@@ -398,7 +398,8 @@ describe("reflection", function()
       expect.equal(1, #sent)
       local prompt = sent[1][2] :: string
       expect.truthy(prompt:find("user turns: 1", 1, true) ~= nil)
-      expect.truthy(prompt:find("edits rejected: 1", 1, true) ~= nil)
+      expect.truthy(prompt:find("edits by the agent that remain: 1", 1, true) ~= nil)
+      expect.truthy(prompt:find("edits made outside the agent's tools: 1", 1, true) ~= nil)
     end)
 
     it("still reviews a session when review_list_hunks fails", function()
@@ -411,7 +412,7 @@ describe("reflection", function()
       local sent = test_mocks.get_calls("session", "send_and_collect")
       expect.equal(1, #sent)
       local prompt = sent[1][2] :: string
-      expect.truthy(prompt:find("edits rejected: 0", 1, true) ~= nil)
+      expect.truthy(prompt:find("edits by the agent that remain: 0", 1, true) ~= nil)
     end)
 
   end)
@@ -614,7 +615,7 @@ describe("reflection", function()
   end)
 
   describe("build_outcome", function()
-    it("counts turns, tool calls, tool errors and review decisions", function()
+    it("counts turns, tool calls, tool errors and the edits that remain", function()
       -- The rows have different shapes, so the list is typed `any`.
       local messages: { any } = {
         { role = "user", content = "a" },
@@ -625,29 +626,28 @@ describe("reflection", function()
         { role = "user", content = "b" },
       }
       local o = plugin.build_outcome(messages, {
-        { state = "accepted" }, { state = "rejected" }, { state = "rejected" },
+        { tool_call_ids = { "call-1" } }, { tool_call_ids = { "call-1", "call-2" } },
       })
       expect.equal(2, o.user_turns)
       expect.equal(2, o.tool_calls)
       expect.equal(1, o.tool_errors)
-      expect.equal(1, o.hunks_accepted)
-      expect.equal(2, o.hunks_rejected)
+      expect.equal(2, o.hunks_by_agent)
+      expect.equal(0, o.hunks_external)
     end)
 
-    it("counts the edits nobody reviewed yet", function()
-      -- `unreviewed` is the serde default of ReviewState, so a hunk with no
-      -- state counts there too.
-      local hunks: { any } = { { state = "unreviewed" }, {}, { state = "accepted" } }
+    it("counts a hunk with no tool call as external", function()
+      -- A hunk with no `tool_call_ids` key is external too.
+      local hunks: { any } = { { tool_call_ids = {} }, {}, { tool_call_ids = { "call-1" } } }
       local o = plugin.build_outcome({}, hunks)
-      expect.equal(2, o.hunks_unreviewed)
-      expect.equal(1, o.hunks_accepted)
+      expect.equal(2, o.hunks_external)
+      expect.equal(1, o.hunks_by_agent)
     end)
 
     it("renders as a short block the prompt can carry", function()
-      local text = plugin.render_outcome({ user_turns = 3, tool_calls = 4, tool_errors = 1, hunks_accepted = 0, hunks_rejected = 2, hunks_unreviewed = 3 })
+      local text = plugin.render_outcome({ user_turns = 3, tool_calls = 4, tool_errors = 1, hunks_by_agent = 2, hunks_external = 3 })
       expect.truthy(text:find("tool errors: 1", 1, true))
-      expect.truthy(text:find("edits rejected: 2", 1, true))
-      expect.truthy(text:find("edits not yet reviewed: 3", 1, true))
+      expect.truthy(text:find("edits by the agent that remain: 2", 1, true))
+      expect.truthy(text:find("edits made outside the agent's tools: 3", 1, true))
     end)
   end)
 

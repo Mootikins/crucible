@@ -956,7 +956,7 @@ fn every_route_the_router_serves_is_in_the_document() {
 ///
 /// `review-api.ts` is here because the regex scan this test replaces never
 /// read it, and its paths went unchecked.
-const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/review-api.ts", 3)];
+const CLIENT_API_MODULES: &[(&str, usize)] = &[("lib/api.ts", 70), ("lib/review-api.ts", 2)];
 
 /// A path with its parameter names removed: `/api/session/{id}` and
 /// `/api/session/${id}` both read as `/api/session/{}`.

@@ -93,10 +93,6 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: { current_mode_id: 'ask', modes: [] } }),
   );
 
-  await page.route('**/api/session/*/review/hunks**', (route) =>
-    route.fulfill({ json: { session_id: 'test-session-001', hunks: [], comments: [] } }),
-  );
-
   await page.route('**/api/fs/list**', (route) =>
     route.fulfill({ json: { entries: [] } }),
   );
@@ -131,12 +127,23 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: overrides.kilns ?? MOCK_KILNS }),
   );
 
-  // The branch diffset. The reply names the default branch, as the daemon
+  // The diffsets. A branch reply names the default branch, as the daemon
   // does for an empty base. A predicate keeps `/api/diff/file` out.
   await page.route(
     (url) => url.pathname === '/api/diff',
     (route) => {
       const query = new URL(route.request().url()).searchParams;
+      const session = query.get('session');
+      if (session) {
+        // A session record. The mock session changed no file.
+        return route.fulfill({
+          json: {
+            id: `session-${session}`,
+            source: { kind: 'session_record', session },
+            files: [],
+          },
+        });
+      }
       const proposalId = query.get('proposal');
       if (proposalId) {
         // A proposal diffset lists the writes of the proposal. Each write

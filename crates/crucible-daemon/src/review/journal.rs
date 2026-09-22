@@ -25,7 +25,6 @@
 //! `session_base`; a `rebase` record of an old daemon moves it on replay.
 //! Everything else degrades.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -33,7 +32,7 @@ use chrono::{DateTime, Utc};
 use crucible_core::diff::DiffsetId;
 use crucible_core::session::{
     ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, HunkId, Integrity,
-    Interval, Ledger, LineRange, PhysicalRoot, ReviewState, RootBase, Skip, SkipKind, SnapshotId,
+    Interval, Ledger, LineRange, PhysicalRoot, RootBase, Skip, SkipKind, SnapshotId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
@@ -74,14 +73,10 @@ pub(super) enum Record {
     },
     Interval(Interval),
     Child(ChildLedgerRef),
-    /// A review decision. Carries the `alg` it was made under: an identity
-    /// derived by different arithmetic names different lines, so applying the
-    /// decision would be applying it to code the user never saw.
-    State {
-        hunk: HunkId,
-        state: ReviewState,
-        alg: String,
-    },
+    /// One hunk decision of an old daemon. The daemon no longer writes this
+    /// record, because no hunk has a decision. Replay reads the tag and skips
+    /// the record, so an old journal still restores. The body is not read.
+    State {},
     /// A comment from a daemon before the comment store. The daemon no
     /// longer writes this record. It reads the record one time and copies
     /// the comment to the store; see `ReviewLedgers::migrate_comments`.
@@ -143,7 +138,6 @@ impl JournalComment {
 /// Everything one journal replays to.
 pub(super) struct Restored {
     pub(super) ledger: Ledger,
-    pub(super) states: HashMap<HunkId, ReviewState>,
     /// The old comments of the journal, with their resolution applied.
     pub(super) comments: Vec<JournalComment>,
     pub(super) integrity: Integrity,
@@ -172,9 +166,7 @@ pub(super) async fn append(path: &Path, record: &Record) -> ReviewResult<()> {
 ///
 /// Returns `Err` only when the file itself cannot be read — a case that must
 /// stop the caller rather than degrade it. A line that will not parse is
-/// recorded on [`Integrity`] and skipped, never dropped from disk: a decision
-/// excluded by an `alg` mismatch comes back if the change that caused the
-/// mismatch is rolled back.
+/// recorded on [`Integrity`] and skipped, never dropped from disk.
 pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored> {
     let text = tokio::fs::read_to_string(path)
         .await
@@ -186,7 +178,6 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     let mut bases: Vec<RootBase> = Vec::new();
     let mut intervals: Vec<Interval> = Vec::new();
     let mut children: Vec<ChildLedgerRef> = Vec::new();
-    let mut states: HashMap<HunkId, ReviewState> = HashMap::new();
     let mut comments: Vec<JournalComment> = Vec::new();
     let mut integrity = Integrity::default();
 
@@ -244,7 +235,7 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
                 // An explicit rebase is the user saying "the worktree as it is
                 // now is the baseline". Records the loader could not read
                 // describe history that no longer bears on the review surface,
-                // so the block they imposed is exactly what the rebase is for
+                // so the loss they imposed is exactly what the rebase is for
                 // — but only for the root it names. A partial rebase kept the
                 // loss of each root that it could not capture.
                 integrity.clear_root(&root);
@@ -252,29 +243,9 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
             }
             Record::Interval(interval) => intervals.push(interval),
             Record::Child(child) => children.push(child),
-            Record::State {
-                hunk,
-                state,
-                alg: recorded,
-            } => {
-                if recorded == alg() {
-                    states.insert(hunk, state);
-                } else {
-                    // Fail closed and leave it on disk: the hunk returns to the
-                    // queue, and rolling the change back restores the decision.
-                    integrity.record(Skip {
-                        record: SkipKind::Informational,
-                        line: number,
-                        reason: format!(
-                            "decision recorded under hunk arithmetic {recorded}, now {}",
-                            alg()
-                        ),
-                    });
-                }
-            }
-            // The `State` record of each rejected hunk is above, and it
-            // keeps the decision. Nothing reverts or undoes a hunk now.
-            Record::Rejected {} | Record::Undone => {}
+            // Old records of hunk decisions, of a reject and of its undo.
+            // Nothing decides, reverts or undoes a hunk now.
+            Record::State {} | Record::Rejected {} | Record::Undone => {}
             Record::Comment(comment) => comments.push(comment),
             Record::CommentResolved { comment } => {
                 match comments.iter_mut().find(|c| c.id == comment) {
@@ -293,7 +264,7 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
     if bases.is_empty() {
         // No base means no composed diff and no attribution, but capturing a
         // fresh one here would report that the agent changed nothing. Say so
-        // instead, loudly enough that the gate blocks.
+        // instead, loudly enough that every root reads as degraded.
         integrity.record(Skip {
             record: SkipKind::Session,
             line: 0,
@@ -311,7 +282,6 @@ pub(super) async fn load(path: &Path, session_id: &str) -> ReviewResult<Restored
 
     Ok(Restored {
         ledger,
-        states,
         comments,
         integrity,
     })
@@ -365,22 +335,22 @@ fn set_base(bases: &mut Vec<RootBase>, root: PathBuf, base_tree: SnapshotId) {
 /// corruption for a file written one line at a time is a truncated append —
 /// which leaves the head of the record, including its tag, perfectly readable
 /// while defeating any JSON parser. A half-written interval is still
-/// recognisably an interval over a named root, and scoping the block to that
-/// root is the difference between holding one repository and holding the whole
-/// session.
+/// recognisably an interval over a named root, and scoping the loss to that
+/// root is the difference between degrading one repository and degrading the
+/// whole session.
 fn classify(line: &str) -> SkipKind {
     match scan_string(line, "t").as_deref() {
-        // A lost reject batch costs nothing: the daemon skips the record,
-        // and the decision it belonged to has its own `state` record.
+        // The daemon skips the `state`, `rejected` and `undone` records of an
+        // old daemon, so the loss of one costs nothing.
         Some("child" | "state" | "comment" | "comment_resolved" | "rejected" | "undone") => {
             SkipKind::Informational
         }
         // Scoped to the interval's root only when it names exactly one. An
         // interval over several roots truncated partway through them would
-        // otherwise block its FIRST root and leave the rest unblocked, which
+        // otherwise degrade its FIRST root and leave the rest intact, which
         // by `Integrity`'s rule goes quiet on the very root whose evidence was
         // lost. `SkipKind` scopes to one root, so more than one legible root
-        // falls back to blocking the session.
+        // falls back to degrading the session.
         Some("interval") => match scan_strings(line, "root").as_slice() {
             [root] => SkipKind::Root {
                 root: PhysicalRoot::from_top_level(root),
@@ -391,7 +361,7 @@ fn classify(line: &str) -> SkipKind {
         // anything a newer daemon writes that this one has never heard of.
         // Unknown is unscoped on purpose: an unrecognised record could be an
         // interval by another name, and calling it informational would let its
-        // hunks go external — which is the gate turning itself off.
+        // hunks go external without a sign.
         _ => SkipKind::Session,
     }
 }
@@ -441,15 +411,13 @@ fn scan_string(line: &str, field: &str) -> Option<String> {
     None
 }
 
-/// Fingerprint of everything a recorded decision's meaning depends on: how a
-/// hunk's identity is derived, and which lines the diff engine groups into a
-/// hunk in the first place.
+/// Fingerprint of the hunk arithmetic: how a hunk's identity is derived, and
+/// which lines the diff engine groups into a hunk in the first place. The
+/// header records it, so an operator can see which arithmetic wrote a journal.
 ///
 /// Computed by *running* both on a fixed input rather than by naming versions
 /// in a const. A version string goes stale the moment someone bumps `similar`
-/// without touching this file, and a stale fingerprint silently re-activates
-/// decisions made under different arithmetic — which is the failure this
-/// exists to prevent, not a cosmetic one.
+/// without touching this file.
 fn alg() -> &'static str {
     static ALG: OnceLock<String> = OnceLock::new();
     ALG.get_or_init(|| {

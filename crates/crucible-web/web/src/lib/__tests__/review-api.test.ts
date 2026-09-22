@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockFetch, apiError } from '@/test-utils';
 import { getBus } from '@/lib/bus';
 import { resetAuthThrottleForTests } from '../api-client';
-import { addReviewComment, listReviewHunks, resolveReviewComment } from '../review-api';
+import { addReviewComment, resolveReviewComment } from '../review-api';
 
 /**
  * These URLs and bodies ARE the contract with the axum layer in
@@ -30,42 +30,11 @@ afterEach(() => {
 });
 
 describe('review REST surface', () => {
-  it('lists hunks for a session', async () => {
-    const mockFetch = serve('GET /api/session/s1/review/hunks', {
-      session_id: 's1',
-      hunks: [],
-      comments: [],
-    });
-    await listReviewHunks('s1');
-
-    const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/s1/review/hunks');
-    expect(sent.query.get('scope')).toBe('session');
-    expect(sent.method).toBe('GET');
-  });
-
-  // The scope is the daemon's decision to make; the browser only names it.
-  it('the turn scope asks the daemon for the turn', async () => {
-    const mockFetch = serve('GET /api/session/s1/review/hunks', {
-      session_id: 's1',
-      scope: 'turn',
-      hunks: [],
-      comments: [],
-    });
-    await listReviewHunks('s1', 'turn');
-
-    expect((await mockFetch.sent(0)).query.get('scope')).toBe('turn');
-  });
-
   it('encodes a session id with characters a path would eat', async () => {
-    const mockFetch = serve('GET /api/session/a%2Fb/review/hunks', {
-      session_id: 'a/b',
-      hunks: [],
-      comments: [],
-    });
-    await listReviewHunks('a/b');
+    const mockFetch = serve('POST /api/session/a%2Fb/review/comment', { comment: {} });
+    await addReviewComment('a/b', { path: 'src/a.rs', line_start: 3, body: 'why' });
 
-    expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/review/hunks');
+    expect((await mockFetch.sent(0)).path).toBe('/api/session/a%2Fb/review/comment');
   });
 
   it('comments on a range, passing only what the caller gave', async () => {
@@ -91,12 +60,14 @@ describe('review REST surface', () => {
   });
 
   it('surfaces the daemon message on failure, not a bare status', async () => {
-    // An INVALID_PARAMS case means "re-list and try again", and the body says
-    // why.
+    // An INVALID_PARAMS case means "read again and try again", and the body
+    // says why.
     global.fetch = createMockFetch({
-      'GET /api/session/s1/review/hunks': { status: 400, body: 'no such session' },
+      'POST /api/session/s1/review/comment': { status: 400, body: 'no such session' },
     });
-    await expect(listReviewHunks('s1')).rejects.toThrow('no such session');
+    await expect(
+      addReviewComment('s1', { path: 'src/a.rs', line_start: 3, body: 'why' }),
+    ).rejects.toThrow('no such session');
   });
 
   it('unwraps the error envelope instead of throwing the JSON at the user', async () => {

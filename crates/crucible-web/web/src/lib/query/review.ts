@@ -1,56 +1,59 @@
 import type { Accessor } from 'solid-js';
 import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
+import { getDiffComments, getDiffset } from '@/lib/diff-api';
+import type { DiffFileEntry, DiffsetSource } from '@/lib/diffset';
 import {
   addReviewComment,
-  listReviewHunks,
   resolveReviewComment,
   type NewComment,
-  type ReviewHunksResponse,
 } from '@/lib/review-api';
-import type { ReviewComment, ReviewScope } from '@/lib/review-types';
+import type { ReviewComment } from '@/lib/review-types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
 /**
- * The composed diff of a session, held under that session.
+ * The session record of a session, held under that session.
  *
- * Three surfaces read one listing: the changes panel in the right region, the
- * gutter of whatever file is open in the centre, and every tool card in the
- * transcript. The key is what lets one answer serve all three, and what lets
- * the daemon's own event reach them — the session stream says `review_changed`
- * and the route of that stream invalidates this entry.
+ * The record is the session record diffset: each file that differs between
+ * the session base and the disk. Its comments ride along, so one answer
+ * serves the panel. The key is what lets the daemon's own event reach it —
+ * the session stream says `review_changed` and the route of that stream
+ * invalidates this entry.
  *
  * Every write invalidates rather than patches: the listing is the daemon's
  * answer and not something the browser can compute from the reply.
- *
- * The scope is ASKED, not keyed. The slot is the listing: one array per
- * session, read by all three surfaces, so a second array per scope would be a
- * second listing of the same session. Switching scope re-asks under the same
- * key with the other word.
  */
 
-/** The options of one session's listing, under the scope its reader is on. */
-function hunksOptions(sessionId: string, scope: ReviewScope) {
-  return {
-    queryKey: keys.review(sessionId),
-    queryFn: () => listReviewHunks(sessionId, scope),
-  };
+/** The files of a session record and its comments. */
+export interface SessionRecordListing {
+  files: DiffFileEntry[];
+  comments: ReviewComment[];
 }
 
-/** One session's composed diff, under one scope. */
-export function useReviewHunks(
+/** Reads the files and the comments of one session record. */
+async function listSessionRecord(sessionId: string): Promise<SessionRecordListing> {
+  const source: DiffsetSource = { kind: 'session_record', session: sessionId };
+  const [diffset, comments] = await Promise.all([getDiffset(source), getDiffComments(source)]);
+  return { files: diffset.files, comments: comments.map((listed) => listed.comment) };
+}
+
+/** One session's record. */
+export function useSessionRecord(
   sessionId: Accessor<string | null>,
-  scope: Accessor<ReviewScope>,
-): UseQueryResult<ReviewHunksResponse, Error> {
+): UseQueryResult<SessionRecordListing, Error> {
   return useQuery(() => {
     const id = sessionId();
-    return { ...hunksOptions(id ?? '', scope()), enabled: id !== null };
+    return {
+      queryKey: keys.review(id ?? ''),
+      queryFn: () => listSessionRecord(id ?? ''),
+      enabled: id !== null,
+    };
   }, getQueryClient);
 }
 
 /**
- * Makes one session's listing wrong. Every write, the scope switch and the
- * stream's route call it.
+ * Makes one session's listing wrong. Every write and the stream's route call
+ * it.
  *
  * A listing already in FLIGHT is joined rather than restarted. The daemon
  * acknowledged the write before this ran, so that listing is at least as new
@@ -61,7 +64,6 @@ export function invalidateReview(sessionId: string): Promise<void> {
     .invalidateQueries({ queryKey: keys.review(sessionId) })
     .then(() => undefined);
 }
-
 
 /** Runs one write, then makes the listing it changed wrong. */
 function writing<T>(sessionId: string, run: () => Promise<T>): Promise<T> {

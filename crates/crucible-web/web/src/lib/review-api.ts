@@ -1,9 +1,9 @@
 /**
  * The `review.*` surface, over the axum bridge.
  *
- * One module per feature slice rather than more of `api.ts`: these three calls
- * are the whole attributed-diff review API and share an error contract nothing
- * else needs.
+ * One module per feature slice rather than more of `api.ts`: these two calls
+ * are the comment aliases of the session record and share an error contract
+ * nothing else needs. The record itself comes from `lib/diff-api.ts`.
  *
  * Every call goes through the generated client, not a private `fetch` wrapper,
  * so they inherit the 401 re-prompt and the `{"error":{message}}` unwrapping.
@@ -13,7 +13,6 @@
  */
 import { client, decode } from './api-client';
 import type { components } from './api-schema';
-import type { ReviewScope } from './review-types';
 
 type Schemas = components['schemas'];
 
@@ -27,38 +26,6 @@ type Schemas = components['schemas'];
  * something a foreign page can fire blind at a logged-in user.
  */
 const preflighted = { headers: { 'Content-Type': 'application/json' } };
-
-/** A root whose attribution the daemon can no longer vouch for. `degraded` is
- * null when the root is intact; the string is shown to the user verbatim. */
-export type DegradedRoot = Schemas['ReviewRootRow'];
-
-/** One journal record the daemon could not read back. `line` is 1-based in
- * `review.jsonl`. */
-export type IntegritySkip = Schemas['ReviewSkipRow'];
-
-/**
- * The list response.
- *
- * `scope` is the scope the daemon answered under — a store that switched scope
- * while this listing was in flight uses it to drop the stale answer.
- */
-export type ReviewHunksResponse = Schemas['ReviewHunksResponse'];
-
-/**
- * The composed diff under one scope. Always named on the wire, so the answer
- * and the question agree without a default living on two sides.
- */
-export async function listReviewHunks(
-  sessionId: string,
-  scope: ReviewScope = 'session',
-): Promise<ReviewHunksResponse> {
-  return decode(
-    await client.GET('/api/session/{id}/review/hunks', {
-      params: { path: { id: sessionId }, query: { scope } },
-    }),
-    'Failed to load review',
-  );
-}
 
 /**
  * A comment to add.

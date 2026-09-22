@@ -71,55 +71,6 @@ impl Fixture {
             .unwrap();
     }
 
-    /// Start a turn on the session's scheduler-owned tree the way a send
-    /// does: one `User` node, then the `Agent` node the tool calls run under.
-    /// Answers the node id a bracket closed in this turn would record.
-    async fn begin_turn(&self, text: &str) -> u32 {
-        use crucible_core::turn::NodeContent;
-        let tree = self
-            .am
-            .get_or_rebuild_session_tree(&self.session, std::path::Path::new("/nonexistent.jsonl"))
-            .await;
-        let mut tree = tree.lock().await;
-        let cursor = tree.current();
-        let user = tree.add_child_and_advance(
-            cursor,
-            NodeContent::User {
-                text: text.to_string(),
-            },
-        );
-        tree.add_child_and_advance(
-            user,
-            NodeContent::Agent {
-                text: String::new(),
-            },
-        );
-        tree.current().index()
-    }
-
-    /// One bracketed "tool call" that rewrites `file`, closed at `node_id` —
-    /// the turn coordinate the interval keeps.
-    async fn call_at(&self, tool_call_id: &str, file: &str, contents: &str, node_id: u32) {
-        let handle = self.am.review.open_bracket(&self.session).await.unwrap();
-        std::fs::write(self.dir.path().join(file), contents).unwrap();
-        self.am
-            .review
-            .close(&self.session, handle, tool_call_id, node_id)
-            .await
-            .unwrap();
-    }
-
-    /// The listing under one scope, as the handler answers it.
-    async fn list_scoped(&self, scope: &str) -> serde_json::Value {
-        let resp = handle_review_list_hunks(
-            self.request("review.list_hunks", serde_json::json!({ "scope": scope })),
-            &self.am,
-            &self.sm,
-        )
-        .await;
-        resp.result.expect("hunks")
-    }
-
     fn request(&self, method: &str, mut params: serde_json::Value) -> Request {
         params["session_id"] = serde_json::json!(self.session);
         Request {
@@ -128,16 +79,6 @@ impl Fixture {
             method: method.to_string(),
             params,
         }
-    }
-
-    async fn list(&self) -> Vec<ComposedHunk> {
-        let resp = handle_review_list_hunks(
-            self.request("review.list_hunks", serde_json::json!({})),
-            &self.am,
-            &self.sm,
-        )
-        .await;
-        serde_json::from_value(resp.result.expect("hunks")["hunks"].clone()).unwrap()
     }
 
     /// Drain the event channel and report which `review_changed` reasons
@@ -153,105 +94,8 @@ impl Fixture {
     }
 }
 
-/// A session that never ran a turn has no ledger. That is an empty queue,
-/// not a broken daemon — the panel opens on every session, including ones
-/// that have not been sent a message yet.
 #[tokio::test]
-async fn listing_a_session_with_no_ledger_is_an_empty_queue() {
-    let fx = Fixture::new("one\n").await;
-    let resp = handle_review_list_hunks(
-        fx.request("review.list_hunks", serde_json::json!({})),
-        &fx.am,
-        &fx.sm,
-    )
-    .await;
-    let result = resp.result.expect("success");
-    assert_eq!(result["hunks"].as_array().unwrap().len(), 0);
-    assert_eq!(result["comments"].as_array().unwrap().len(), 0);
-}
-
-/// The turn scope is a filter over the composed diff, decided by the daemon
-/// from the turn coordinate every interval carries: a hunk is the current
-/// turn's when one of its calls closed at or after the turn's first node.
-/// An external hunk has no call and is never the turn's.
-#[tokio::test]
-async fn turn_scope_lists_only_hunks_the_current_turn_touched() {
-    let fx = Fixture::new("1\n2\n3\n4\n5\n6\n7\n8\n9\n").await;
-    std::fs::write(fx.dir.path().join("b.txt"), "alpha\n").unwrap();
-    git(fx.dir.path(), &["add", "."]).await;
-    git(fx.dir.path(), &["commit", "-q", "-m", "second file"]).await;
-    fx.open_ledger().await;
-
-    let first = fx.begin_turn("edit a").await;
-    fx.call_at("call-1", "a.txt", "one\n2\n3\n4\n5\n6\n7\n8\n9\n", first)
-        .await;
-    let second = fx.begin_turn("edit b").await;
-    fx.call_at("call-2", "b.txt", "ALPHA\n", second).await;
-    // The user's own edit, seen by no bracket, far enough from the first
-    // hunk to compose as its own.
-    std::fs::write(
-        fx.dir.path().join("a.txt"),
-        "one\n2\n3\n4\n5\n6\n7\n8\nnine\n",
-    )
-    .unwrap();
-
-    let session = fx.list_scoped("session").await;
-    let paths = |v: &serde_json::Value| -> Vec<String> {
-        let mut out: Vec<String> = v["hunks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|h| h["path"].as_str().unwrap().to_string())
-            .collect();
-        out.sort();
-        out
-    };
-    assert_eq!(
-        paths(&session),
-        vec!["a.txt", "a.txt", "b.txt"],
-        "the session scope is the whole composed diff: {session}"
-    );
-    assert_eq!(session["scope"], serde_json::json!("session"));
-
-    let turn = fx.list_scoped("turn").await;
-    assert_eq!(
-        paths(&turn),
-        vec!["b.txt"],
-        "the turn scope keeps only what the current turn's calls wrote: {turn}"
-    );
-    assert_eq!(
-        turn["hunks"][0]["tool_call_ids"],
-        serde_json::json!(["call-2"])
-    );
-    assert_eq!(turn["scope"], serde_json::json!("turn"));
-
-    // Absent means session, so every client written before scopes still
-    // reads the whole diff.
-    let unscoped = fx.list().await;
-    assert_eq!(unscoped.len(), 3);
-}
-
-/// A scope the daemon does not know is refused before the ledger is read,
-/// like an unknown state.
-#[tokio::test]
-async fn an_unknown_scope_is_refused() {
-    let fx = Fixture::new("one\n").await;
-    fx.open_ledger().await;
-    let resp = handle_review_list_hunks(
-        fx.request(
-            "review.list_hunks",
-            serde_json::json!({ "scope": "workspace" }),
-        ),
-        &fx.am,
-        &fx.sm,
-    )
-    .await;
-    let err = resp.error.expect("refused");
-    assert_eq!(err.code, INVALID_PARAMS);
-}
-
-#[tokio::test]
-async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
+async fn a_comment_anchors_to_the_root_and_is_stored_on_the_record() {
     let mut fx = Fixture::new("one\n").await;
     fx.open_ledger().await;
 
@@ -277,15 +121,7 @@ async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
     assert_eq!(comment.line_range, LineRange::new(1, 2));
     assert!(!comment.resolved);
     assert_eq!(fx.review_reasons(), vec!["commented".to_string()]);
-
-    let listed = handle_review_list_hunks(
-        fx.request("review.list_hunks", serde_json::json!({})),
-        &fx.am,
-        &fx.sm,
-    )
-    .await;
-    let comments = listed.result.expect("success")["comments"].clone();
-    assert_eq!(comments.as_array().unwrap().len(), 1);
+    assert_eq!(fx.am.review.comments(&fx.session).unwrap(), vec![comment]);
 }
 
 /// `line_end`, `root` and `author` are the optional half of
@@ -471,7 +307,7 @@ async fn review_comment_is_an_alias_for_the_session_record() {
         }]
     );
 
-    // `diff.resolve_comment` resolves it, and `review.list_hunks` sees that.
+    // `diff.resolve_comment` resolves it, and the session record sees that.
     let resolved = handle_diff_resolve_comment(
         fx.request(
             "diff.resolve_comment",
@@ -487,26 +323,17 @@ async fn review_comment_is_an_alias_for_the_session_record() {
     .await;
     assert!(resolved.error.is_none(), "{:?}", resolved.error);
     assert_eq!(fx.review_reasons(), vec!["comment_resolved".to_string()]);
-    let hunks = handle_review_list_hunks(
-        fx.request("review.list_hunks", serde_json::json!({})),
-        &fx.am,
-        &fx.sm,
-    )
-    .await;
-    assert_eq!(
-        hunks.result.expect("success")["comments"][0]["resolved"],
-        serde_json::json!(true)
-    );
+    assert!(fx.am.review.comments(&fx.session).unwrap()[0].resolved);
 }
 
-/// The Lua/plugin review surface and the REST panel are backed by the same
+/// The Lua/plugin review surface and the RPC handlers are backed by the same
 /// free functions precisely so they cannot drift. They drifted here: every RPC
 /// handler opens with `ensure_loaded`, and none of the five bridge methods did
 /// — so a delegating agent asking a resumed session for its hunks was answered
 /// `[]` with no error ("the child changed nothing") while a browser hitting the
-/// same session got the queue restored from `review.jsonl`.
+/// same session got the record restored from `review.jsonl`.
 #[tokio::test]
-async fn the_lua_bridge_restores_a_resumed_sessions_queue_like_the_handler_does() {
+async fn the_lua_bridge_restores_a_resumed_sessions_record_like_the_handler_does() {
     use crucible_core::session::{Session, SessionType};
     use crucible_lua::DaemonSessionApi;
 
@@ -730,7 +557,7 @@ fn git_and_io_failures_map_to_internal_error() {
     }
 }
 
-// ── The crossing: a plugin session's own writes are its own review queue ────
+// ── The crossing: a plugin session's own writes are its own review record ───
 
 /// An agent whose one turn writes a note with `create_note`, then waits for
 /// the tool result before it ends the turn.
@@ -905,8 +732,8 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
     )
     .await
     .unwrap();
-    // What `aux:set_mode("auto")` does: the gate does not hold an `auto` turn,
-    // so the write is bracketed and queued rather than parked at the gate.
+    // What `aux:set_mode("auto")` does: the write is bracketed and lands on
+    // disk.
     am.set_mode(&session_id, "auto", None).await.unwrap();
 
     let (_message_id, done) = am
@@ -921,22 +748,13 @@ async fn a_plugin_sessions_note_write_lands_in_its_own_review_ledger() {
     assert_eq!(
         std::fs::read_to_string(kiln.path().join("Socket rules.md")).unwrap(),
         NOTE_TEXT,
-        "the note has to be on disk before the review can dispose of it"
+        "the note has to be on disk before the ledger can attribute it"
     );
 
-    let resp = handle_review_list_hunks(
-        Request {
-            jsonrpc: "2.0".to_string(),
-            id: Some(RequestId::Number(1)),
-            method: "review.list_hunks".to_string(),
-            params: serde_json::json!({ "session_id": session_id }),
-        },
-        &am,
-        &sm,
-    )
-    .await;
-    let result = resp.result.expect("the pass's own queue");
-    let hunks: Vec<ComposedHunk> = serde_json::from_value(result["hunks"].clone()).unwrap();
+    ensure_loaded(&am, &sm, &session_id).await;
+    let hunks = list_hunks(&am, &session_id)
+        .await
+        .expect("the pass's own record");
 
     assert_eq!(hunks.len(), 1, "one note written, one hunk: {hunks:?}");
     assert_eq!(hunks[0].path, "Socket rules.md");

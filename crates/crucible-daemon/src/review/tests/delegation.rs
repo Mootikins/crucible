@@ -107,9 +107,8 @@ async fn clearing_a_session_forgets_that_it_was_delegated() {
 /// `node_id` indexes a `ConversationTree`, and an index is meaningless in
 /// another tree. Carrying the child's own index into the parent compares two
 /// unrelated coordinate systems: a child that ran many turns produces indices
-/// larger than the parent's current turn, so the gate's `node_id < this_turn`
-/// reads harvested work as "not yet happened" and stops holding the parent's
-/// next delegation on it.
+/// larger than the parent's current turn, so a turn comparison reads
+/// harvested work as "not yet happened".
 #[tokio::test]
 async fn a_harvested_interval_is_stamped_with_the_parents_turn_not_the_childs() {
     let fx = Persisted::new("one\n").await;
@@ -135,14 +134,13 @@ async fn a_harvested_interval_is_stamped_with_the_parents_turn_not_the_childs() 
         .expect("the harvested interval");
     assert_eq!(
         harvested.node_id, 2,
-        "the child's turn coordinate was copied into the parent's ledger, so the \
-         parent's next delegation is not held on work it has not reviewed"
+        "the child's turn coordinate was copied into the parent's ledger"
     );
 }
 
 /// A link written before the parent-side turn was recorded leaves no
 /// coordinate at all. `0` is the earliest possible turn, so the harvest still
-/// counts as earlier-turn work and still gates — the fail-closed direction.
+/// counts as earlier-turn work.
 #[tokio::test]
 async fn a_harvest_with_no_recorded_parent_turn_still_counts_as_earlier() {
     let fx = Persisted::new("one\n").await;

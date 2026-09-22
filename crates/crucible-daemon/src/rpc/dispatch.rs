@@ -161,7 +161,6 @@ rpc_methods! {
     SessionUndo = "session.undo",
     SessionCanUndo = "session.can_undo",
     SessionUndoDepth = "session.undo_depth",
-    ReviewListHunks = "review.list_hunks",
     ReviewComment = "review.comment",
     ReviewResolveComment = "review.resolve_comment",
     PluginReload = "plugin.reload",
@@ -727,18 +726,10 @@ impl RpcDispatcher {
                 )
             ),
 
-            // Review record. Session-scoped like the handlers above, but
-            // namespaced `review.*` rather than `session.*`: the unit they act
-            // on is a composed hunk, and a delegating agent reviewing a child
-            // session addresses that child's id, not its own.
-            RpcMethod::ReviewListHunks => forward!(
-                id,
-                crate::server::session::handle_review_list_hunks(
-                    req.clone(),
-                    &self.ctx.agents,
-                    &self.ctx.sessions
-                )
-            ),
+            // Comment aliases of the session record. Session-scoped like the
+            // handlers above, but namespaced `review.*` rather than
+            // `session.*`: a delegating agent reviewing a child session
+            // addresses that child's id, not its own.
             RpcMethod::ReviewComment => forward!(
                 id,
                 crate::server::session::handle_review_comment(

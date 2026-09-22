@@ -20,7 +20,7 @@
 //!    `cancelled: false`.
 //! 6. success with a zero aggregate — `session.cache_stats`.
 //! 7. success with an empty collection — `session.load_events`,
-//!    `session.render_markdown`, `session.status`, `review.list_hunks`.
+//!    `session.render_markdown`, `session.status`.
 //! 8. success that never consulted the session at all —
 //!    `session.test_interaction`.
 //!
@@ -272,16 +272,6 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             Answer::Succeeds(json!({"status": []})),
         ),
         (
-            "review.list_hunks",
-            json!({}),
-            Answer::Succeeds(json!({
-                "session_id": GHOST,
-                "scope": "session",
-                "hunks": [], "comments": [], "degraded": [],
-                "integrity": {"skips": []},
-            })),
-        ),
-        (
             "session.export_to_file",
             json!({"output_path": out}),
             Answer::Succeeds(
@@ -306,7 +296,7 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
 ///
 /// A failure here is a wire-contract change. Read the diff before touching the
 /// expectation: some of these answers are load-bearing for a client that polls
-/// (`session.status`, `review.list_hunks`) and would start erroring on every
+/// (`session.status`) and would start erroring on every
 /// tick if the answer became a refusal.
 #[tokio::test]
 async fn every_session_method_keeps_its_own_answer_for_a_missing_session() {
@@ -392,27 +382,7 @@ async fn the_handlers_that_resolve_a_session_disagree_about_an_absent_one() {
     std::fs::create_dir_all(&kiln).expect("kiln");
     let dispatcher = RpcDispatcher::new(test_context(tmp.path(), &kiln));
 
-    // `review.list_hunks` resolves the session inside `ensure_loaded` and is
-    // documented to be silent when it is absent — the empty queue below is
-    // that silence, observable.
-    let resp = dispatcher
-        .dispatch(
-            ClientId::new(),
-            make_request("review.list_hunks", json!({"session_id": GHOST})),
-        )
-        .await;
-    assert!(
-        resp.error.is_none(),
-        "review.list_hunks must answer an absent session with an empty queue, not an error: {:?}",
-        resp.error
-    );
-    assert_eq!(
-        resp.result.expect("a result")["hunks"],
-        json!([]),
-        "an absent session has no hunks"
-    );
-
-    // `session.get` refuses the same absent session in the same breath.
+    // `session.get` refuses an absent session.
     let resp = dispatcher
         .dispatch(
             ClientId::new(),

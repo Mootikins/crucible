@@ -4,8 +4,8 @@
 --- `crucible-daemon/tests/review_plugin.rs` asserts the SHAPE of this tool
 --- surface — that four tools exist and each takes `session_id`. Nothing
 --- exercised what the tools do with a hunk once they have one, which is where
---- all the logic is: the truncation, the `external` derivation, the state
---- validation, and every error path.
+--- all the logic is: the truncation, the `external` derivation, and every
+--- error path.
 ---
 --- `cru.session.review_*` is registered by the daemon, not by the bare
 --- executor the runner builds, so each case installs its own stub and asserts
@@ -43,7 +43,6 @@ local function hunk(over: { [string]: any }?)
         id = "h1",
         path = "src/main.rs",
         root = "/repo",
-        state = "unreviewed",
         base_range = { 1, 4 },
         current_range = { 1, 6 },
         before_content = "old",
@@ -92,7 +91,6 @@ describe("review", function()
             expect.equal(row.id, "h1")
             expect.equal(row.path, "src/main.rs")
             expect.equal(row.root, "/repo")
-            expect.equal(row.state, "unreviewed")
             expect.equal(row.before, "old")
             expect.equal(row.after, "new")
             expect.deep_equal(row.tool_call_ids, { "tc-1" })
@@ -123,7 +121,7 @@ describe("review", function()
             -- nil, so an override of `{before_content = nil}` is no override.
             stub({
                 review_list_hunks = function()
-                    return { { id = "h1", path = "a.rs", state = "unreviewed", tool_call_ids = {} } }
+                    return { { id = "h1", path = "a.rs", tool_call_ids = {} } }
                 end,
             })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
@@ -141,7 +139,7 @@ describe("review", function()
             -- Likewise literal: the absence of the key is the case under test.
             stub({
                 review_list_hunks = function()
-                    return { { id = "h1", path = "a.rs", state = "unreviewed" } }
+                    return { { id = "h1", path = "a.rs" } }
                 end,
             })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
@@ -154,39 +152,24 @@ describe("review", function()
             expect.equal(row.external, false)
         end)
 
-        it("surfaces reapplied, and defaults it to false", function()
-            stub({
-                review_list_hunks = function()
-                    return { hunk({ id = "a", reapplied = true }), hunk({ id = "b" }) }
-                end,
-            })
-            local rows = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks
-            expect.equal(rows[1].reapplied, true)
-            expect.equal(rows[2].reapplied, false)
-        end)
-
-        it("counts unreviewed hunks, excluding external ones", function()
+        it("counts every hunk, external ones too", function()
             stub({
                 review_list_hunks = function()
                     return {
-                        hunk({ id = "a", state = "unreviewed" }),
-                        hunk({ id = "b", state = "accepted" }),
-                        -- External and unreviewed: somebody's own edit, so it
-                        -- is not work the reviewer can action.
-                        hunk({ id = "c", state = "unreviewed", tool_call_ids = {} }),
+                        hunk({ id = "a" }),
+                        hunk({ id = "b" }),
+                        hunk({ id = "c", tool_call_ids = {} }),
                     }
                 end,
             })
             local result = plugin.tools.review_list_hunks.fn({ session_id = SESSION })
             expect.equal(result.count, 3)
-            expect.equal(result.unreviewed, 1)
         end)
 
         it("reports an empty diff as zero, not as an error", function()
             stub({ review_list_hunks = function() return {} end })
             local result = plugin.tools.review_list_hunks.fn({ session_id = SESSION })
             expect.equal(result.count, 0)
-            expect.equal(result.unreviewed, 0)
             expect.deep_equal(result.hunks, {})
         end)
     end)

@@ -46,17 +46,17 @@ describe('the generated client', () => {
 
   it('puts a path parameter in the path and a query parameter in the query', async () => {
     const mockFetch = createMockFetch({
-      'GET /api/session/a%2Fb/review/hunks': { body: { session_id: 'a/b', hunks: [] } },
+      'GET /api/session/a%2Fb/history': { body: { history: [] } },
     });
     global.fetch = mockFetch;
 
-    await client.GET('/api/session/{id}/review/hunks', {
-      params: { path: { id: 'a/b' }, query: { scope: 'turn' } },
+    await client.GET('/api/session/{id}/history', {
+      params: { path: { id: 'a/b' }, query: { limit: 5 } },
     });
 
     const sent = await mockFetch.sent(0);
-    expect(sent.path).toBe('/api/session/a%2Fb/review/hunks');
-    expect(sent.query.get('scope')).toBe('turn');
+    expect(sent.path).toBe('/api/session/a%2Fb/history');
+    expect(sent.query.get('limit')).toBe('5');
   });
 
   it('names the app as the caller on every request', async () => {

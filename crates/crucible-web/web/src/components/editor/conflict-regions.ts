@@ -15,7 +15,7 @@
  *
  * Nothing here writes a note. The view above decides when the document is
  * settled, and `lib/conflicts.ts` writes it. This module owns the marking and
- * the replacement, the way `review-decorations.ts` owns the review's.
+ * the replacement.
  */
 import { StateEffect, StateField, type EditorState, type Extension, type Text } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';

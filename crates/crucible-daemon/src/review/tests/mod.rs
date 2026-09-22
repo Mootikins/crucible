@@ -17,8 +17,7 @@ mod retention;
 use std::path::{Path, PathBuf};
 
 use crucible_core::session::{
-    CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, ReviewState,
-    SkipKind,
+    CommentAnchor, CommentAuthor, CommentSide, ComposedHunk, HunkId, LineRange, SkipKind,
 };
 use tempfile::TempDir;
 

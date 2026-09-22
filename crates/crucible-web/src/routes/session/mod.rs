@@ -413,7 +413,6 @@ pub fn session_routes_with(policy: EndpointPolicy) -> OpenApiRouter<AppState> {
         // guard, the CORS allowlist, the body limit and the security headers
         // are applied to the session router, and a separate group is how the
         // review surface would quietly stop inheriting them.
-        .routes(routes!(review::list_hunks))
         .routes(routes!(review::comment))
         .routes(routes!(review::resolve_comment))
         .routes(routes!(export_session))

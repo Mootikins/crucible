@@ -1,11 +1,10 @@
-//! Review type tests. The identity rules here are load-bearing for the gate:
-//! a hunk that changes identity under an unrelated edit loses its review
-//! state, and a hunk that shares identity with another inherits a decision
-//! the user never made about it.
+//! Review type tests. The identity rules here keep one hunk on one id: a
+//! hunk that changes identity under an unrelated edit loses what refers to
+//! it, and two hunks that share an identity cannot be told apart.
 
 use crate::session::types::{
     ChildLedgerRef, ComposedHunk, HunkId, Integrity, Interval, Ledger, LineRange, PhysicalRoot,
-    ReviewScope, ReviewState, RootBase, RootInterval, Skip, SkipKind, SnapshotId,
+    RootBase, RootInterval, Skip, SkipKind, SnapshotId,
 };
 use std::path::Path;
 
@@ -19,8 +18,6 @@ fn hunk(id: HunkId, tool_call_ids: Vec<String>) -> ComposedHunk {
         before_content: "a\n".into(),
         after_content: "b\n".into(),
         tool_call_ids,
-        state: ReviewState::Unreviewed,
-        reapplied: false,
     }
 }
 
@@ -28,7 +25,6 @@ fn hunk(id: HunkId, tool_call_ids: Vec<String>) -> ComposedHunk {
 fn hunk_identity_includes_the_root() {
     // A session tracks several roots and hunk paths are root-relative, so the
     // same relative path in a workspace and a kiln is two different files.
-    // Sharing an id would make accepting one silently accept the other.
     let workspace = HunkId::derive(
         &PhysicalRoot::from_top_level("/work"),
         "a.txt",
@@ -101,11 +97,6 @@ fn hunk_identity_differs_per_path_per_side_and_per_base_range() {
         base,
         HunkId::derive(root, "src/lib.rs", "old\n", "new\n", LineRange::new(2, 2))
     );
-}
-
-#[test]
-fn unreviewed_is_the_default_state() {
-    assert_eq!(ReviewState::default(), ReviewState::Unreviewed);
 }
 
 #[test]
@@ -241,35 +232,6 @@ fn ledger_roundtrips_through_json_with_its_base() {
 }
 
 #[test]
-fn review_state_serializes_snake_case() {
-    assert_eq!(
-        serde_json::to_string(&ReviewState::Unreviewed).unwrap(),
-        "\"unreviewed\""
-    );
-    assert_eq!(
-        serde_json::to_string(&ReviewState::Rejected).unwrap(),
-        "\"rejected\""
-    );
-}
-
-/// The two scope words are the wire contract the web's `?scope=` query and the
-/// panel's control both spell. Walked through `EnumIter`, so a third variant
-/// fails here until it is spelled too.
-#[test]
-fn review_scope_strings_are_the_wire_contract() {
-    use strum::IntoEnumIterator;
-    let spelled: Vec<String> = ReviewScope::iter()
-        .map(|s| serde_json::to_string(&s).unwrap())
-        .collect();
-    assert_eq!(spelled, vec!["\"session\"", "\"turn\""]);
-    assert_eq!(ReviewScope::default(), ReviewScope::Session);
-    assert_eq!(
-        serde_json::from_str::<ReviewScope>("\"turn\"").unwrap(),
-        ReviewScope::Turn
-    );
-}
-
-#[test]
 fn interval_contested_defaults_false_for_older_records() {
     let json = r#"{"tool_call_id":"c","node_id":3,"roots_touched":[]}"#;
     let interval: Interval = serde_json::from_str(json).unwrap();
@@ -343,43 +305,8 @@ fn trees_for_a_root_covers_the_base_and_both_sides_of_every_interval() {
     );
 }
 
-/// Intervals go with the base because a tree pair measured against a base that
-/// no longer exists cannot intersect anything: keeping them would leave the
-/// ledger claiming attribution it has no way to compute.
-#[test]
-fn rebasing_replaces_the_base_and_voids_the_intervals_measured_from_it() {
-    let mut ledger = Ledger::new(
-        "s",
-        vec![RootBase {
-            root: PhysicalRoot::from_top_level("/a"),
-            base_tree: SnapshotId::git("old"),
-        }],
-    );
-    ledger.push_interval_in_memory(interval_over("/a", "old", "t1"));
-    ledger.link_child(ChildLedgerRef {
-        tool_call_id: "d".to_string(),
-        child_session_id: "child".to_string(),
-        node_id: Some(7),
-    });
-
-    ledger.rebase(vec![RootBase {
-        root: PhysicalRoot::from_top_level("/a"),
-        base_tree: SnapshotId::git("new"),
-    }]);
-
-    assert_eq!(
-        ledger.base_tree(&PhysicalRoot::from_top_level("/a")),
-        Some(&SnapshotId::git("new"))
-    );
-    assert!(ledger.intervals().is_empty());
-    // Delegation links describe session structure, not measurement, so they
-    // survive a rebase the way a comment does.
-    assert_eq!(ledger.children().len(), 1);
-}
-
-/// Grading exists because losing attribution fails *open*: an unattributed
-/// hunk is external, `unreviewed_hunks` skips external hunks, and the gate
-/// stops blocking. A lost interval must therefore be louder than a lost
+/// Grading exists because a lost interval makes the agent's hunks external
+/// without a sign. A lost interval must therefore be louder than a lost
 /// comment.
 #[test]
 fn integrity_blocks_only_the_root_a_skipped_interval_names() {

@@ -113,18 +113,18 @@ async fn a_call_that_wrote_nothing_records_no_interval() {
 /// not pretend to — its only evidence is a pair of tree SHAs, and a human
 /// write and a tool write inside one window are byte-identical evidence. A
 /// ledger that called the first one external would call the second one
-/// external too. The fix for the human-edit-during-the-gate defect is
+/// external too. The fix for a human edit during a permission prompt is
 /// therefore in the caller, at the open point (see
 /// `handle_tool_call_in_stream`), and the manager-level test for it is
 /// `agent_manager::tests::review_capture`.
 #[tokio::test]
 async fn an_edit_that_lands_before_the_bracket_opens_is_external() {
     let fx = Fixture::new("one\n").await;
-    // The human edits in their own editor while the review gate holds the
-    // call — which is now before the bracket exists at all.
+    // The human edits in their own editor while a permission prompt holds
+    // the call — which is before the bracket exists at all.
     std::fs::write(fx.dir.path().join("b.txt"), "typed by hand\n").unwrap();
 
-    // Gate releases, bracket opens, the tool writes its own file.
+    // The prompt releases, the bracket opens, the tool writes its own file.
     let handle = fx.ledgers.open_bracket(&fx.session).await.unwrap();
     fx.write("written by the tool\n");
     fx.ledgers
@@ -258,14 +258,6 @@ async fn an_edit_no_bracket_saw_is_external() {
     let hunks = fx.hunks().await;
     assert_eq!(hunks.len(), 1);
     assert!(hunks[0].is_external());
-    assert!(
-        fx.ledgers
-            .unreviewed_hunks(&fx.session)
-            .await
-            .unwrap()
-            .is_empty(),
-        "external hunks must never block the agent"
-    );
 }
 
 /// Concurrent delegated sessions share a workspace by default, so overlapping
@@ -393,10 +385,7 @@ async fn a_kiln_outside_git_is_tracked_through_a_restored_journal_and_its_hunks_
     );
 
     let ledgers = kiln.restart().await;
-    let (hunks, statuses) = ledgers
-        .list_hunks_with_status(&kiln.session, ReviewScope::Session, None)
-        .await
-        .unwrap();
+    let (hunks, statuses) = ledgers.list_hunks_with_status(&kiln.session).await.unwrap();
     assert!(
         statuses.iter().all(|s| !s.is_degraded()),
         "a plain root must not read as degraded: {statuses:?}"

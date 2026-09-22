@@ -1,9 +1,9 @@
 /**
  * The one CodeMirror merge-view setup for every diff surface.
  *
- * `HunkMergeView` shows one review hunk. The diff pane shows one file of a
- * diffset. Both show a read-only diff with the language highlight, the theme
- * and the word-level change highlight, so both get it from this helper.
+ * The diff pane shows one file of a diffset: a read-only diff with the
+ * language highlight, the theme and the word-level change highlight. Every
+ * diff surface gets that setup from this helper.
  * A diff is a code view: the prose features of the note editor stay off.
  */
 import type { Extension } from '@codemirror/state';

@@ -27,9 +27,7 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/windowing';
 import { EditorView } from '@codemirror/view';
-import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
-import { pendingReveal, reviewActions, reviewStore } from '@/lib/review-store';
-import { isExternal } from '@/lib/review-types';
+import { pendingReveal, reviewActions } from '@/lib/review-store';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel, isPending, writePath } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
@@ -238,58 +236,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     if (props.filePath) void saveFile(props.filePath);
   };
 
-  // ===== Review layer =========================================================
-  //
-  // The composed diff for this buffer, projected onto its current line
-  // numbers. Asked for by PATH rather than by session: a center-region buffer
-  // does not belong to a chat tab, and with several sessions on one workspace
-  // the honest answer is every session that touched it.
-  const reviewMarks = createMemo<ReviewHunkMark[]>(() => {
-    const path = props.filePath;
-    if (!path) return [];
-    return reviewStore.hunksForOpenPath(path).map(({ hunk }) => ({
-      id: hunk.id,
-      start: hunk.current_range.start,
-      end: hunk.current_range.end,
-      state: hunk.state,
-      external: isExternal(hunk),
-    }));
-  });
-
-  // Sync the layer with the file's hunks. The layer has no gutter, so a
-  // hunk-free file loses no width.
-  //
-  // Deferred to a microtask because `CodeMirrorEditor` rebuilds its entire
-  // configuration with `StateEffect.reconfigure` whenever one of seven props
-  // changes, discarding anything appended from outside. Its effect is created
-  // after this one and so runs later in the same flush; a microtask lands
-  // after the whole flush, when the rebuilt config is in place.
-  //
-  // KNOWN GAP: the markdown reading/live mode toggle is internal to
-  // EditorWithPreview, so it is not one of the dependencies below. The layer
-  // reappears on the next store refresh (any tool result or turn end). The
-  // real fix is one `extensions.push(reviewDecorations())` inside
-  // `createExtensions()`, which belongs to that component.
-  createEffect(() => {
-    const marks = reviewMarks();
-    // Reconfigure triggers visible from here — each one drops the layer.
-    void props.filePath;
-    void effectiveVimMode();
-    void settings.editor.maxLineWidth;
-    void settings.editor.renderMath;
-    void settings.editor.renderDiagrams;
-    void settings.editor.hideFrontmatterGap;
-    void settings.editor.reflowParagraphs;
-    void pendingDiff()?.original;
-    const view = editorView();
-    if (!view) return;
-    queueMicrotask(() => {
-      if (editorView() !== view) return;
-      syncReviewLayer(view, marks);
-    });
-  });
-
-  // A hunk picked in the Changes panel scrolls THIS buffer to it. Tab metadata
+  // A line picked elsewhere scrolls THIS buffer to it. Tab metadata
   // cannot carry this: a panel only re-renders when its active tab id changes,
   // so an already-open file would never see the request.
   createEffect(() => {

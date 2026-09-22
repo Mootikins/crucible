@@ -1,25 +1,25 @@
-//! The `review.*` RPC surface: the composed diff of a session.
+//! The `review.*` RPC surface: the comment aliases of a session record.
 //!
-//! Three operations — list, comment, resolve — over the session-scoped
-//! ledger `AgentManager` owns. The engine lives in `crate::review`; this
+//! Two operations — comment, resolve — over the session-scoped ledger
+//! `AgentManager` owns. The session record diffset (`diff.get`) replaces the
+//! old hunk listing. The engine lives in `crate::review`; this
 //! module is the boundary that turns [`ReviewError`] into JSON-RPC codes.
 //! Every operation that changes what the panel shows emits `review_changed`.
 //!
-//! The same functions back the Lua bridge (`cru.session.review_*`), so the
+//! The same functions back the Lua bridge (`cru.session.review_*`), which
+//! also reads the attributed hunks through [`list_hunks`], so the
 //! logic lives in free functions here rather than inside the handlers; §6
 //! needs a delegating agent to be able to review a sub-session, and a
 //! handler-only implementation would have to be written twice.
 
 use super::super::*;
-use crate::rpc_client::{
-    ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest,
-};
+use crate::rpc_client::{ReviewCommentRequest, ReviewResolveCommentRequest};
 use crate::rpc_helpers::typed_params;
 
 use std::path::Path;
 
 use crucible_core::session::{
-    Comment, CommentAuthor, CommentSide, ComposedHunk, LineRange, ReviewScope, RootBase, RootStatus,
+    Comment, CommentAuthor, CommentSide, ComposedHunk, LineRange, RootBase,
 };
 
 use crate::review::{paths, record_diffset, ReviewError, ReviewResult};
@@ -33,14 +33,24 @@ use crucible_core::session::SessionId;
 ///
 /// A review RPC can be the *first* thing that touches a session after a daemon
 /// restart — the panel opens on a resumed session long before it sends a
-/// message — and without this the queue would come back empty until the user
+/// message — and without this the record would come back empty until the user
 /// happened to run a turn, which reads as "the agent changed nothing".
 ///
 /// Silent when the session is not in the manager's memory either: there is no
 /// kiln to find a journal under, and inventing one would be guessing. The
-/// caller's own "no ledger is an empty queue" rule then applies.
+/// caller's own "no ledger is an empty record" rule then applies.
 pub(crate) async fn ensure_loaded(am: &AgentManager, sm: &SessionManager, session_id: &str) {
-    if am.review.is_open(session_id) {
+    ensure_record_loaded(&am.review, sm, session_id).await;
+}
+
+/// [`ensure_loaded`] for a caller that holds the ledgers and not the agent
+/// manager: the `diff.*` handlers of the session record.
+pub(crate) async fn ensure_record_loaded(
+    review: &crate::review::ReviewLedgers,
+    sm: &SessionManager,
+    session_id: &str,
+) {
+    if review.is_open(session_id) {
         return;
     }
     let Some(session) = sm.get_session(session_id) else {
@@ -53,9 +63,9 @@ pub(crate) async fn ensure_loaded(am: &AgentManager, sm: &SessionManager, sessio
         return;
     }
     // Loud but not fatal: `restore_from_journal` records the loss on the
-    // session's `Integrity` before it returns, so the queue comes back
+    // session's `Integrity` before it returns, so the record comes back
     // degraded, with a reason, rather than as an empty success.
-    if let Err(e) = am.review.restore_from_journal(session_id, &path).await {
+    if let Err(e) = review.restore_from_journal(session_id, &path).await {
         warn!(
             session_id,
             path = %path.display(),
@@ -65,10 +75,10 @@ pub(crate) async fn ensure_loaded(am: &AgentManager, sm: &SessionManager, sessio
     }
 }
 
-/// The session's composed diff.
+/// The session's composed diff, attributed to its tool calls.
 ///
-/// A session that has never run a turn has no ledger, and "nothing to review"
-/// is the honest answer for it rather than an error — the queue is empty, not
+/// A session that has never run a turn has no ledger, and "no changes" is the
+/// honest answer for it rather than an error — the record is empty, not
 /// broken.
 pub(crate) async fn list_hunks(
     am: &AgentManager,
@@ -76,33 +86,6 @@ pub(crate) async fn list_hunks(
 ) -> ReviewResult<Vec<ComposedHunk>> {
     match am.review.list_hunks(session_id).await {
         Err(ReviewError::NoLedger(_)) => Ok(Vec::new()),
-        other => other,
-    }
-}
-
-/// The composed diff plus the roots the ledger cannot vouch for, under one
-/// scope.
-///
-/// The statuses are not decoration: a degraded root contributes no hunks, so a
-/// client shown only the hunks would read a broken ledger as a clean queue.
-///
-/// The turn boundary is read here, from the session's scheduler-owned tree,
-/// because the engine knows intervals and not conversations.
-pub(crate) async fn list_hunks_with_status(
-    am: &AgentManager,
-    session_id: &str,
-    scope: ReviewScope,
-) -> ReviewResult<(Vec<ComposedHunk>, Vec<RootStatus>)> {
-    let turn_start = match scope {
-        ReviewScope::Session => None,
-        ReviewScope::Turn => am.turn_start_node(session_id).await,
-    };
-    match am
-        .review
-        .list_hunks_with_status(session_id, scope, turn_start)
-        .await
-    {
-        Err(ReviewError::NoLedger(_)) => Ok((Vec::new(), Vec::new())),
         other => other,
     }
 }
@@ -164,59 +147,6 @@ pub(crate) async fn resolve_comment(
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
-
-/// `review.list_hunks` — the composed diff plus its comments.
-///
-/// Comments ride along rather than getting a sixth method: the panel needs
-/// both to draw one row, and two round-trips over a worktree that moves under
-/// them can disagree.
-pub(crate) async fn handle_review_list_hunks(
-    req: Request,
-    am: &Arc<AgentManager>,
-    sm: &Arc<SessionManager>,
-) -> Response {
-    let params = match typed_params::<ReviewListHunksRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let session_id = &params.session_id;
-    let scope = params.scope.unwrap_or_default();
-    ensure_loaded(am, sm, session_id).await;
-
-    let listed = match list_hunks_with_status(am, session_id, scope).await {
-        Ok(listed) => am
-            .review
-            .comments(session_id)
-            .map(|comments| (listed, comments)),
-        Err(e) => Err(e),
-    };
-    match listed {
-        Ok(((hunks, roots), comments)) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session_id,
-                // Echoed so a client that switched scope while a listing was
-                // in flight can tell which scope the answer describes.
-                "scope": scope,
-                "hunks": hunks,
-                "comments": comments,
-                // Only the roots that are actually broken. An empty array is
-                // the common case and the one a client should not have to
-                // filter for.
-                "degraded": roots.iter().filter(|r| r.is_degraded()).collect::<Vec<_>>(),
-                // What the journal could not be read back as. Separate from
-                // `degraded` because the worst losses are exactly the ones
-                // with no root to attach to: a journal that will not read at
-                // all, or one whose base records are gone, leaves nothing that
-                // can name a repository — so `degraded` comes back empty.
-                // Reported as success with an empty queue, that is the data
-                // loss the journal exists to prevent.
-                "integrity": am.review.integrity(session_id),
-            }),
-        ),
-        Err(e) => review_error_to_response(req.id, e),
-    }
-}
 
 /// `review.comment` — anchor a comment to `line_start..line_end`.
 pub(crate) async fn handle_review_comment(
@@ -303,7 +233,7 @@ pub(crate) async fn handle_review_resolve_comment(
 /// Mapped variant by variant rather than through a catch-all: every variant
 /// here except `Git`/`Io` is something the *caller* did or a race the caller
 /// can retry out of, and answering INTERNAL_ERROR to a stale client tells it
-/// the daemon is broken when the correct action is to re-list.
+/// the daemon is broken when the correct action is to read again.
 fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Response {
     match err {
         ReviewError::NoLedger(_)
@@ -317,8 +247,8 @@ fn review_error_to_response(req_id: Option<RequestId>, err: ReviewError) -> Resp
             Response::error(req_id, INVALID_PARAMS, err.to_string())
         }
         // A journal the daemon cannot read is a daemon-side fault, and the
-        // caller must not read it as "nothing to review": that is the data
-        // loss the journal exists to prevent, reported as success.
+        // caller must not read it as "no changes": that is the data loss the
+        // journal exists to prevent, reported as success.
         // `WrongBackend` joins them: a snapshot read through the wrong seam
         // is the daemon's routing fault, and the caller can do nothing with
         // an INVALID_PARAMS about a request it made correctly.

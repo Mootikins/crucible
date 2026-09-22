@@ -913,17 +913,15 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 
     // The review methods delegate to the same free functions the `review.*`
-    // RPC handlers call, so a plugin tool and the web panel cannot drift on
-    // what a listing or a comment does.
+    // RPC handlers call, so a plugin tool and a client cannot drift on what a
+    // comment does.
     //
     // Every one of them opens with `ensure_loaded`, exactly as every handler
     // does, and for the reason `ensure_loaded` exists: a review call can be the
     // *first* thing that touches a session after a daemon restart. Without it a
     // delegating agent asking for a resumed session's hunks is answered `[]`
-    // with no error — "the child changed nothing" — while a browser hitting the
-    // same session through the REST route gets the queue restored from
-    // `review.jsonl`. That is precisely the drift these shared functions exist
-    // to prevent.
+    // with no error — "the child changed nothing" — while a client reading
+    // the same session record gets it restored from `review.jsonl`.
 
     fn review_list_hunks(&self, session_id: String) -> BoxFut<Vec<serde_json::Value>> {
         bridge_async!(

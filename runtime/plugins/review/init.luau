@@ -1,13 +1,13 @@
 --!strict
---- review — the attributed-diff review queue, as tools an agent can call.
+--- review — the attributed diff of a session, as tools an agent can call.
 ---
---- The daemon owns review; this plugin is the *tool* surface over it. Both it
---- and the web panel go through the same `review.*` operations, so a comment
---- from an agent and a comment from a person are stored the same way.
+--- The daemon owns review; this plugin is the *tool* surface over it. It and
+--- the clients store comments through the same operations, so a comment from
+--- an agent and a comment from a person are stored the same way.
 ---
 --- The reason this exists at all is delegation. A delegating agent spawns a
 --- sub-session, the sub-session edits the workspace, and the delegator is the
---- one who should read that diff before accepting it — that is a review, and
+--- one who should read that diff — that is a review, and
 --- it cannot happen over an RPC surface only the browser speaks. So every tool
 --- here takes `session_id` explicitly: the session under review is usually
 --- *not* the caller's own.
@@ -21,9 +21,9 @@
 
 local M = {}
 
---- Everything the reviewer needs to decide, and nothing that would blow up a
+--- Everything the reviewer needs to read, and nothing that would blow up a
 --- context window. Full hunk bodies are deliberately truncated: an agent
---- deciding on a 400-line hunk should open the file, not read it inline.
+--- reading a 400-line hunk should open the file, not read it inline.
 local MAX_CONTENT = 2000
 
 local function truncate(s)
@@ -41,19 +41,14 @@ local function project(hunk: { [string]: any }): { [string]: any }
         id = hunk.id,
         path = hunk.path,
         root = hunk.root,
-        state = hunk.state,
         base_range = hunk.base_range,
         current_range = hunk.current_range,
         before = truncate(hunk.before_content),
         after = truncate(hunk.after_content),
         tool_call_ids = hunk.tool_call_ids,
-        -- Surfaced as its own field because it is the one property that
-        -- changes what the reviewer is allowed to do.
+        -- Surfaced as its own field because it says whether the change is
+        -- the agent's work or somebody's own edit.
         external = (hunk.tool_call_ids == nil) or (#hunk.tool_call_ids == 0),
-        -- A change the reviewer already rejected and the agent applied again.
-        -- It adds no decision — the state is still "unreviewed" — but a
-        -- reviewing agent that cannot see the repeat will keep accepting it.
-        reapplied = hunk.reapplied == true,
     }
 end
 
@@ -79,15 +74,10 @@ function M.list_hunks(args: { [string]: any }): ToolResult
     local hunks: { any } = found or {}
 
     local out: { { [string]: any } } = {}
-    local unreviewed = 0
     for _, hunk in ipairs(hunks) do
-        local row = project(hunk)
-        if row.state == "unreviewed" and not row.external then
-            unreviewed = unreviewed + 1
-        end
-        out[#out + 1] = row
+        out[#out + 1] = project(hunk)
     end
-    return { hunks = out, count = #out, unreviewed = unreviewed }
+    return { hunks = out, count = #out }
 end
 
 --- Comment on a line range.
@@ -138,9 +128,8 @@ return {
     tools = {
         review_list_hunks = {
             desc = "List a session's composed diff: every change between the session's base "
-                .. "tree and the worktree now, with which tool calls produced it and whether "
-                .. "it has been reviewed. Use the child_session_id from delegate_session to "
-                .. "review work you delegated.",
+                .. "tree and the worktree now, with which tool calls produced it. Use the "
+                .. "child_session_id from delegate_session to review work you delegated.",
             params = {
                 { name = "session_id", type = "string", desc = "Session whose diff to list" },
             },

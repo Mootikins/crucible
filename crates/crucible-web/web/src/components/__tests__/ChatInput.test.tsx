@@ -103,13 +103,7 @@ vi.mock('../AutocompletePopup', () => ({
 // No `vi.mock('@/lib/api')`. Everything the composer's chips read arrives
 // over the routes in `beforeEach` — the scope chips' project roster, the
 // status chips' mode list and status slots, and the file the docked
-// permission card is about to overwrite — and the review stream the status
-// chips bind opens through the real `subscribeToEvents` onto the
-// `FakeEventSource` of `beforeEach`.
-
-vi.mock('@/lib/review-api', () => ({
-  listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
-}));
+// permission card is about to overwrite.
 
 // The roster the scope chips read through the shared kiln query.
 let kilnEnv: TestQueryEnv;

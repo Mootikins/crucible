@@ -101,8 +101,6 @@ impl ReviewLedgers {
         }
         self.journals
             .insert(session_id.to_string(), path.to_path_buf());
-        self.states
-            .insert(session_id.to_string(), restored.states.clone());
         self.migrate_comments(session_id, restored.comments).await;
         self.integrity
             .insert(session_id.to_string(), restored.integrity);

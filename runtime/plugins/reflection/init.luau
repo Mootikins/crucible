@@ -224,20 +224,18 @@ export type Outcome = {
     user_turns: number,
     tool_calls: number,
     tool_errors: number,
-    hunks_accepted: number,
-    hunks_rejected: number,
-    hunks_unreviewed: number,
+    hunks_by_agent: number,
+    hunks_external: number,
 }
 
---- Count the turns, the tool calls, the tool errors and the review decisions.
+--- Count the turns, the tool calls, the tool errors and the edits that remain.
 --- Tool rows come from `cru.session.messages(id, { tools = true })`; hunks
---- come from `cru.session.review_list_hunks(id)`, whose `state` is one of
---- `unreviewed`, `accepted` or `rejected` (ReviewState in crucible-core).
---- `unreviewed` is the serde default, so a hunk with no state counts there.
+--- come from `cru.session.review_list_hunks(id)`. A hunk with no
+--- `tool_call_ids` is external: no tool call of the session made it.
 function M.build_outcome(messages: { TranscriptRow }?, hunks: { any }?): Outcome
     local o: Outcome = {
         user_turns = 0, tool_calls = 0, tool_errors = 0,
-        hunks_accepted = 0, hunks_rejected = 0, hunks_unreviewed = 0,
+        hunks_by_agent = 0, hunks_external = 0,
     }
     for _, m in ipairs(messages or {}) do
         if m.role == "user" then
@@ -249,12 +247,10 @@ function M.build_outcome(messages: { TranscriptRow }?, hunks: { any }?): Outcome
         end
     end
     for _, h in ipairs(hunks or {}) do
-        if h.state == "accepted" then
-            o.hunks_accepted += 1
-        elseif h.state == "rejected" then
-            o.hunks_rejected += 1
+        if h.tool_call_ids and #h.tool_call_ids > 0 then
+            o.hunks_by_agent += 1
         else
-            o.hunks_unreviewed += 1
+            o.hunks_external += 1
         end
     end
     return o
@@ -267,10 +263,9 @@ function M.render_outcome(o: Outcome): string
         "- user turns: " .. o.user_turns,
         "- tool calls: " .. o.tool_calls,
         "- tool errors: " .. o.tool_errors,
-        "- edits accepted by the user: " .. o.hunks_accepted,
-        "- edits rejected: " .. o.hunks_rejected,
-        "- edits not yet reviewed: " .. o.hunks_unreviewed,
-        "A rejected edit or a tool error is where a durable lesson usually is.",
+        "- edits by the agent that remain: " .. o.hunks_by_agent,
+        "- edits made outside the agent's tools: " .. o.hunks_external,
+        "A rejected proposal or a tool error is where a durable lesson usually is.",
     }, "\n")
 end
 

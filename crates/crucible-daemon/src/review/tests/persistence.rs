@@ -241,9 +241,9 @@ async fn an_unreadable_journal_degrades_every_root() {
     );
 }
 
-/// Degradation is graded because losing attribution fails *open*: a hunk no
-/// interval accounts for is external, and `unreviewed_hunks` excludes external
-/// hunks. A skipped interval therefore has to degrade its root.
+/// Degradation is graded because losing attribution is silent: a hunk no
+/// interval accounts for is external. A skipped interval therefore has to
+/// degrade its root.
 #[tokio::test]
 async fn a_skipped_interval_degrades_its_own_root() {
     let fx = Persisted::new("one\n").await;
@@ -274,10 +274,7 @@ async fn a_skipped_interval_degrades_its_own_root() {
         SkipKind::Root { root: root.clone() },
         "an interval whose root is legible must not escalate to the whole session"
     );
-    let (_, statuses) = restarted
-        .list_hunks_with_status(&fx.session, ReviewScope::Session, None)
-        .await
-        .unwrap();
+    let (_, statuses) = restarted.list_hunks_with_status(&fx.session).await.unwrap();
     assert!(
         statuses.iter().any(|s| s.root == root && s.is_degraded()),
         "{statuses:?}"
@@ -289,9 +286,8 @@ async fn a_skipped_interval_degrades_its_own_root() {
 /// An interval naming several roots cannot be scoped to one of them.
 ///
 /// Scoping to the *first* legible root degraded that root and left the others
-/// intact — and a root whose intervals were lost reports external hunks, which
-/// `unreviewed_hunks` excludes, so the listing went quiet on exactly the root
-/// whose evidence was destroyed.
+/// intact — and a root whose intervals were lost reports external hunks, so
+/// the listing went quiet on exactly the root whose evidence was destroyed.
 #[tokio::test]
 async fn a_truncated_interval_naming_two_roots_blocks_the_whole_session() {
     let fx = Persisted::new("one\n").await;
@@ -405,12 +401,11 @@ async fn a_journal_with_no_base_degrades_every_root() {
     assert!(restarted.integrity(&fx.session).blocks_everything());
 }
 
-/// A decision is a statement about specific lines, named by an id derived from
-/// them. Change the derivation and the same id names different lines, so the
-/// decision must not be applied — but it must not be deleted either, or
-/// rolling the change back would not restore it.
+/// A journal from a daemon that recorded hunk decisions holds `state`
+/// records. No hunk has a decision now, but an old journal must still restore
+/// whole, and the record stays on disk.
 #[tokio::test]
-async fn a_decision_from_different_hunk_arithmetic_is_excluded_not_deleted() {
+async fn an_old_decision_record_is_skipped_and_the_journal_still_restores() {
     let fx = Persisted::new("one\n").await;
     fx.call("call-1", "EDITED\n").await;
     let id = fx.ledgers.list_hunks(&fx.session).await.unwrap()[0]
@@ -432,17 +427,20 @@ async fn a_decision_from_different_hunk_arithmetic_is_excluded_not_deleted() {
     std::fs::write(fx.journal(), text).unwrap();
 
     let restarted = fx.restart().await;
-    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
-    assert_eq!(
-        hunks[0].state,
-        ReviewState::Unreviewed,
-        "a decision made under different arithmetic was applied to lines nobody reviewed"
+    assert!(
+        restarted.integrity(&fx.session).is_intact(),
+        "an old decision record made the journal read as damaged: {:?}",
+        restarted.integrity(&fx.session).skips()
     );
+    let hunks = restarted.list_hunks(&fx.session).await.unwrap();
+    assert_eq!(hunks.len(), 1);
+    assert_eq!(hunks[0].id, id);
+    assert_eq!(hunks[0].tool_call_ids, vec!["call-1".to_string()]);
     assert!(
         std::fs::read_to_string(fx.journal())
             .unwrap()
             .contains("from-a-future-version"),
-        "the excluded decision was deleted from disk, so a rollback cannot restore it"
+        "the replay deleted an old record from disk"
     );
 }
 

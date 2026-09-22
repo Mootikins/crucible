@@ -1,61 +1,34 @@
 /**
- * Changes — the review queue for the current session.
+ * Changes — the session record of the current session, and the writes that
+ * need a merge.
  *
- * Roots → files → hunks over the composed diff (`session_base` → worktree).
- * The queue IS the unreviewed subset: it drains as you review and, when it is
- * empty, you are simply browsing the session's changes. There is no mode
- * switch and no completion state, because there is nothing to switch between.
+ * Roots → files over the session record diffset (`session_base` → disk). A
+ * file opens the session record in the diff pane. No change has a decision:
+ * the daemon keeps the attribution record, and the diff pane shows the text.
  *
  * Renders in the RIGHT edge region alongside Activity and Backlinks, which
  * puts it OUTSIDE the per-chat-tab `ChatProvider` — hence `useSessionSafe`
  * plus the global review store rather than `useChatSafe`, which would silently
  * hand back the inert fallback context.
  */
-import { Component, For, Show, createMemo, createSignal, onMount } from 'solid-js';
+import { Component, For, Show, createMemo, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
-import { HunkMergeView } from './HunkMergeView';
-import { openFileInEditor } from '@/lib/file-actions';
 import { notificationActions } from '@/stores/notificationStore';
-import { reviewActions, reviewStore, toolCallLabel, useReviewSession } from '@/lib/review-store';
+import { reviewActions, reviewStore, useReviewSession } from '@/lib/review-store';
 import { hit } from '@/lib/touch';
 import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
-import {
-  hunkPath,
-  hunkRangeLabel,
-  isExternal,
-  type ComposedHunk,
-  type ReviewScope,
-} from '@/lib/review-types';
-import { AlertTriangle, Check, ChevronRight, MessageCircle, RefreshCw } from '@/lib/icons';
+import type { DiffFileEntry } from '@/lib/diffset';
+import { AlertTriangle, Check, RefreshCw } from '@/lib/icons';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel } from '@/lib/proposal-api';
 import { openDiff } from '@/lib/panel-actions';
 
-/** Files, in composed-diff order, with their hunks. */
-interface FileGroup {
-  root: string;
-  path: string;
-  absPath: string;
-  hunks: ComposedHunk[];
-}
-
-function groupByFile(hunks: ComposedHunk[]): FileGroup[] {
-  const groups: FileGroup[] = [];
-  for (const h of hunks) {
-    const absPath = hunkPath(h);
-    const existing = groups.find((g) => g.absPath === absPath);
-    if (existing) existing.hunks.push(h);
-    else groups.push({ root: h.root, path: h.path, absPath, hunks: [h] });
-  }
-  return groups;
-}
-
 /** Roots in first-seen order, each with its files. */
-function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] }[] {
-  const roots: { root: string; files: FileGroup[] }[] = [];
-  for (const file of groupByFile(hunks)) {
+function groupByRoot(files: DiffFileEntry[]): { root: string; files: DiffFileEntry[] }[] {
+  const roots: { root: string; files: DiffFileEntry[] }[] = [];
+  for (const file of files) {
     const existing = roots.find((r) => r.root === file.root);
     if (existing) existing.files.push(file);
     else roots.push({ root: file.root, files: [file] });
@@ -63,183 +36,13 @@ function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] 
   return roots;
 }
 
-const STATE_CLASS: Record<string, string> = {
-  unreviewed: 'border-attention/50 bg-attention/10 text-attention',
-  accepted: 'border-ok/50 bg-ok/10 text-ok',
-  rejected: 'border-hairline bg-surface-elevated text-muted-dark',
-};
-
-const HunkRow: Component<{ sessionId: string; hunk: ComposedHunk }> = (props) => {
-  const [open, setOpen] = createSignal(false);
-  const [commenting, setCommenting] = createSignal(false);
-  const [body, setBody] = createSignal('');
-  const [busy, setBusy] = createSignal(false);
-
-  const external = () => isExternal(props.hunk);
-  const range = () => hunkRangeLabel(props.hunk);
-
-  // A refused comment means nothing was stored. Silence would read as a
-  // dropped click.
-  const act = (fn: () => Promise<void>) => {
-    if (busy()) return;
-    setBusy(true);
-    void fn()
-      .catch((e: Error) => notificationActions.addNotification('error', e.message))
-      .finally(() => setBusy(false));
-  };
-
-  const submitComment = () => {
-    const text = body().trim();
-    if (!text) return;
-    act(async () => {
-      await reviewActions.comment(props.sessionId, {
-        root: props.hunk.root,
-        path: props.hunk.path,
-        line_start: props.hunk.current_range.start,
-        line_end: props.hunk.current_range.end,
-        body: text,
-      });
-      setBody('');
-      setCommenting(false);
-    });
-  };
-
-  return (
-    <div class="border-t border-hairline" data-testid={`hunk-${props.hunk.id}`}>
-      <div class="flex items-center gap-1.5 px-2 py-1">
-        <button
-          type="button"
-          class="flex items-center gap-1 min-w-0 flex-1 text-left hover:bg-hover-wash rounded px-1 py-0.5"
-          aria-expanded={open()}
-          onClick={() => setOpen(!open())}
-        >
-          <ChevronRight
-            class={`w-3 h-3 shrink-0 text-muted-dark transition-transform ${open() ? 'rotate-90' : ''}`}
-          />
-          <span class="text-floor font-mono text-muted shrink-0">{range()}</span>
-          <span
-            class={`text-floor px-1 py-px rounded border shrink-0 ${STATE_CLASS[props.hunk.state]}`}
-          >
-            {props.hunk.state}
-          </span>
-          {/* The whole point of the flag: without it a change the user already
-              rejected, and the agent applied again, is indistinguishable from
-              first-time work — and gets accepted out of fatigue. */}
-          <Show when={props.hunk.reapplied}>
-            <span
-              class="text-floor px-1 py-px rounded border border-attention/50 bg-attention/10 text-attention shrink-0"
-              title="You rejected this exact change before and the agent applied it again."
-              data-testid={`hunk-reapplied-${props.hunk.id}`}
-            >
-              re-applied
-            </span>
-          </Show>
-          <Show
-            when={!external()}
-            fallback={
-              <span
-                class="text-floor px-1 py-px rounded border border-hairline text-muted-dark shrink-0"
-                title="Changed outside any tool call — your own editor, a formatter, or a plugin. Shown for context; not the agent's to undo."
-                data-testid="hunk-external"
-              >
-                external
-              </span>
-            }
-          >
-            <span class="text-floor text-muted-dark truncate font-mono">
-              {props.hunk.tool_call_ids.map(toolCallLabel).join(', ')}
-            </span>
-          </Show>
-        </button>
-
-        <button
-          type="button"
-          title="Comment on these lines"
-          data-testid={`comment-${props.hunk.id}`}
-          onClick={() => setCommenting(!commenting())}
-          class={`shrink-0 rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
-        >
-          <MessageCircle class="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <Show when={commenting()}>
-        <div class="px-3 pb-2 flex gap-1.5">
-          <textarea
-            rows="2"
-            value={body()}
-            data-testid={`comment-body-${props.hunk.id}`}
-            onInput={(e) => setBody(e.currentTarget.value)}
-            placeholder="Change this…"
-            class="flex-1 rounded border border-hairline bg-surface-base px-2 py-1 text-floor text-shell-ink"
-          />
-          <button
-            type="button"
-            disabled={busy() || !body().trim()}
-            onClick={submitComment}
-            data-testid={`comment-submit-${props.hunk.id}`}
-            class="self-end rounded border border-hairline px-2 py-1 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
-          >
-            Post
-          </button>
-        </div>
-      </Show>
-
-      <Show when={open()}>
-        <div class="px-2 pb-2">
-          {/* `before_content` is the hunk's session_base text and
-              `after_content` its worktree text: the original and the document
-              of one merge view. */}
-          <HunkMergeView hunk={props.hunk} />
-        </div>
-      </Show>
-    </div>
-  );
-};
-
-/**
- * The two scopes, in the order the control draws them. A filter over one
- * composed diff, decided by the daemon: a hunk the current turn extended and
- * an older turn began shows whole under "Turn".
- */
-const SCOPES: { scope: ReviewScope; label: string; title: string }[] = [
-  { scope: 'session', label: 'Session', title: 'Every change this session made' },
-  { scope: 'turn', label: 'Turn', title: 'Only the changes the current turn made' },
-];
-
 export const ChangesPanel: Component = () => {
   const { currentSession } = useSessionSafe();
   const sessionId = () => currentSession()?.session_id;
   useReviewSession(sessionId);
 
-  const [unreviewedOnly, setUnreviewedOnly] = createSignal(false);
-
   const state = () => reviewStore.session(sessionId());
-  const scope = () => reviewStore.scope(sessionId());
-
-  // Named roots first, then the losses that name none — a journal that will not
-  // read at all leaves nothing that can identify a repository, and that is
-  // precisely the case a root-only list reports as "everything is fine".
-  const degradedReasons = createMemo(() => [
-    ...state().degraded.map((d) => `${d.root}: ${d.degraded ?? 'unreadable'}`),
-    ...state()
-      .skips.filter((s) => s.record.kind !== 'informational')
-      .map((s) =>
-        s.record.kind === 'root' ? `${s.record.root}: ${s.reason}` : `every root: ${s.reason}`,
-      ),
-  ]);
-  // The filter and the count are the same predicate on purpose: "unreviewed
-  // only" must show exactly what the badge says is owed. External hunks are in
-  // neither — they are the user's own edits, not work the agent left behind —
-  // but they stay in the unfiltered list, because the composed diff has to
-  // remain honest about everything that changed.
-  const visible = createMemo(() =>
-    unreviewedOnly()
-      ? state().hunks.filter((h) => h.state === 'unreviewed' && !isExternal(h))
-      : state().hunks,
-  );
-  const roots = createMemo(() => groupByRoot(visible()));
-  const unreviewed = () => reviewStore.unreviewedCount(sessionId());
+  const roots = createMemo(() => groupByRoot(state().files));
 
   const openComments = createMemo(() => state().comments.filter((c) => !c.resolved));
 
@@ -262,17 +65,8 @@ export const ChangesPanel: Component = () => {
       <PanelHeader title="Changes" class="shrink-0">
         <div class="mt-1.5 flex items-center gap-2">
           <span class="text-floor text-muted-dark" data-testid="changes-count">
-            {unreviewed()} unreviewed · {state().hunks.length} total
+            {state().files.length} {state().files.length === 1 ? 'file' : 'files'}
           </span>
-          <label class="ml-auto flex items-center gap-1 text-floor text-muted-dark cursor-pointer">
-            <input
-              type="checkbox"
-              checked={unreviewedOnly()}
-              data-testid="changes-filter-unreviewed"
-              onChange={(e) => setUnreviewedOnly(e.currentTarget.checked)}
-            />
-            unreviewed only
-          </label>
           <button
             type="button"
             title="Refresh"
@@ -282,50 +76,19 @@ export const ChangesPanel: Component = () => {
               const id = sessionId();
               if (id) void reviewActions.refresh(id);
             }}
-            class="rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
+            class="ml-auto rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
           >
             <RefreshCw class={`w-3.5 h-3.5 ${state().loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        {/* The scope control: the daemon decides what the turn holds, the
-            panel only asks. */}
-        <div class="mt-1 flex items-center gap-1.5">
-          <div
-            role="group"
-            aria-label="Scope"
-            class="flex items-center rounded border border-hairline text-floor"
-          >
-            <For each={SCOPES}>
-              {(option) => (
-                <button
-                  type="button"
-                  title={option.title}
-                  data-testid={`changes-scope-${option.scope}`}
-                  aria-pressed={scope() === option.scope}
-                  onClick={() => {
-                    const id = sessionId();
-                    if (id) void reviewActions.setScope(id, option.scope);
-                  }}
-                  class={`px-2 py-0.5 hover:bg-hover-wash ${
-                    scope() === option.scope
-                      ? 'bg-hover-wash text-shell-ink'
-                      : 'text-muted-dark hover:text-shell-ink'
-                  } ${hit()}`}
-                >
-                  {option.label}
-                </button>
-              )}
-            </For>
-          </div>
-        </div>
       </PanelHeader>
 
       <div class="flex-1 overflow-y-auto">
-        {/* Above the roots, and OUTSIDE the session gate. A hunk drains as
-            you decide it; a conflict does not, it belongs to no session's
-            composed diff, and on a desktop there is no offline badge to carry
-            it — so a conflict that only showed under a selected session would
-            be a write nothing lists. The counts below stay about the session. */}
+        {/* Above the roots, and OUTSIDE the session check. A conflict
+            belongs to no session's record, and on a desktop there is no
+            offline badge to carry it — so a conflict that only showed under a
+            selected session would be a write nothing lists. The count above
+            stays about the session. */}
         <Show when={conflicts().length > 0}>
           <div data-testid="changes-conflicts">
             <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 border-b border-hairline">
@@ -360,7 +123,7 @@ export const ChangesPanel: Component = () => {
           </div>
         </Show>
 
-        {/* Beside the conflicts, and outside the session gate for the same
+        {/* Beside the conflicts, and outside the session check for the same
             reason: a proposal belongs to no session. */}
         <Show when={mergeProposals().length > 0}>
           <div data-testid="changes-proposals">
@@ -411,42 +174,9 @@ export const ChangesPanel: Component = () => {
             </p>
           </Show>
 
-          {/* Before the empty state, and instead of it. A degraded root
-              contributes ZERO hunks, so "No changes in this session yet" is
-              the wrong sentence for a record that cannot be read. */}
-          <Show when={reviewStore.isDegraded(sessionId())}>
-            <div
-              class="m-2 rounded border border-attention/50 bg-attention/10 px-3 py-2"
-              data-testid="changes-degraded"
-            >
-              <p class="text-xs text-attention">
-                This session's change history cannot be read, so this list is incomplete.
-              </p>
-              <ul class="mt-1 space-y-0.5">
-                <For each={degradedReasons()}>
-                  {(reason) => (
-                    <li class="text-floor text-muted-dark font-mono break-words">{reason}</li>
-                  )}
-                </For>
-              </ul>
-            </div>
-          </Show>
-
-          <Show
-            when={
-              state().loaded && state().hunks.length === 0 && !reviewStore.isDegraded(sessionId())
-            }
-          >
+          <Show when={state().loaded && state().files.length === 0}>
             <p class="p-3 text-xs text-muted-dark" data-testid="changes-empty">
-              No changes in this {scope()} yet.
-            </p>
-          </Show>
-
-          {/* The drained queue. Not a "done" state — the changes are still
-              here to browse, there is simply nothing owed. */}
-          <Show when={state().hunks.length > 0 && visible().length === 0}>
-            <p class="p-3 text-xs text-muted-dark" data-testid="changes-all-reviewed">
-              Nothing left to review.
+              No changes in this session yet.
             </p>
           </Show>
 
@@ -461,29 +191,25 @@ export const ChangesPanel: Component = () => {
                 </div>
                 <For each={root.files}>
                   {(file) => (
-                    <div class="border-b border-hairline">
-                      <div class="flex items-center gap-1 pr-2">
-                        <button
-                          type="button"
-                          data-testid={`changes-file-${file.path}`}
-                          onClick={() => {
-                            openFileInEditor(file.absPath, file.path.split('/').pop());
-                            reviewActions.reveal(file.absPath, file.hunks[0].current_range.start);
-                          }}
-                          class="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 text-left hover:bg-hover-wash"
-                        >
-                          <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
-                            {file.path}
-                          </span>
-                          <span class="shrink-0 text-floor text-muted-dark">
-                            {file.hunks.length}
-                          </span>
-                        </button>
-                      </div>
-                      <For each={file.hunks}>
-                        {(hunk) => <HunkRow sessionId={sessionId()!} hunk={hunk} />}
-                      </For>
-                    </div>
+                    <button
+                      type="button"
+                      data-testid={`changes-file-${file.path}`}
+                      title={`Open the session record at ${file.path}`}
+                      onClick={() => {
+                        const id = sessionId();
+                        if (id) openDiff({ kind: 'session_record', session: id });
+                      }}
+                      class="w-full min-w-0 flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-left hover:bg-hover-wash"
+                    >
+                      <span class="flex-1 min-w-0 truncate text-xs font-mono text-shell-ink">
+                        {file.path}
+                      </span>
+                      <span class="shrink-0 text-floor text-muted-dark">{file.status.kind}</span>
+                      <Show when={!file.binary && !file.too_large}>
+                        <span class="shrink-0 text-floor font-mono text-ok">+{file.added}</span>
+                        <span class="shrink-0 text-floor font-mono text-error">-{file.removed}</span>
+                      </Show>
+                    </button>
                   )}
                 </For>
               </div>

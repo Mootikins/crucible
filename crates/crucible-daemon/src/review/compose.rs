@@ -7,9 +7,7 @@
 
 use std::collections::HashMap;
 
-use crucible_core::session::{
-    ComposedHunk, HunkId, LineRange, PhysicalRoot, ReviewState, SnapshotId,
-};
+use crucible_core::session::{ComposedHunk, HunkId, LineRange, PhysicalRoot, SnapshotId};
 use similar::{DiffOp, TextDiff};
 
 use super::backend::RootBackend;
@@ -140,10 +138,6 @@ pub(super) async fn compose_root(
                 before_content: raw.before,
                 after_content: raw.after,
                 tool_call_ids: Vec::new(),
-                state: ReviewState::Unreviewed,
-                // Both are derived against the states map, which composition
-                // deliberately cannot see; `list_hunks` fills them in.
-                reapplied: false,
             });
         }
         texts.insert(path, (before, after));

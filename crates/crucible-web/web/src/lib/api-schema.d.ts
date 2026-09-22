@@ -1688,23 +1688,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/session/{id}/review/hunks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** `GET /api/session/{id}/review/hunks?scope=session|turn` */
-        get: operations["list_hunks"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/session/{id}/status": {
         parameters: {
             query?: never;
@@ -4154,116 +4137,12 @@ export interface components {
             /** @description The side that `line_range` counts its lines on. */
             side: components["schemas"]["CommentSideRow"];
         };
-        /**
-         * @description One hunk of the composed diff, the unit a decision applies to.
-         *
-         *     There is no `external` field, here or on the wire: a hunk is external when
-         *     `tool_call_ids` is empty, which is what `isExternal` reads in the browser.
-         */
-        ReviewHunkRow: {
-            /** @description The current-side text. Empty for a pure deletion. */
-            after_content: string;
-            /** @description The lines this hunk replaces, in base coordinates. */
-            base_range: components["schemas"]["LineRangeRow"];
-            /** @description The base-side text. Empty for a pure insertion. */
-            before_content: string;
-            /** @description The lines it occupies now, in worktree coordinates. */
-            current_range: components["schemas"]["LineRangeRow"];
-            /** @description Content-derived, and the only handle a decision names. */
-            id: string;
-            /** @description The path, relative to `root`. */
-            path: string;
-            /**
-             * @description The agent applied a change the user had rejected. The state comes back
-             *     `unreviewed`; this is the history that makes the grind visible.
-             */
-            reapplied?: boolean;
-            /** @description The repository top level this hunk belongs to. */
-            root: string;
-            state: components["schemas"]["ReviewStateRow"];
-            /** @description The tool calls whose writes survive into this hunk, in ledger order. */
-            tool_call_ids: string[];
-        };
-        /** @description What `GET /api/session/{id}/review/hunks` answers. */
-        ReviewHunksResponse: {
-            comments: components["schemas"]["ReviewCommentRow"][];
-            /** @description Only the roots that are broken. An empty array is the common case. */
-            degraded: components["schemas"]["ReviewRootRow"][];
-            hunks: components["schemas"]["ReviewHunkRow"][];
-            integrity: components["schemas"]["ReviewIntegrityRow"];
-            /**
-             * @description The scope the answer describes, echoed. A client that switched scope
-             *     while a listing was in flight reads it to drop the stale answer.
-             */
-            scope: components["schemas"]["ReviewScopeRow"];
-            session_id: string;
-        };
-        /**
-         * @description What the journal could not be read back as.
-         *
-         *     Separate from the degraded roots because the worst losses are the ones with
-         *     no root to name: a journal that will not read at all leaves `degraded`
-         *     empty.
-         */
-        ReviewIntegrityRow: {
-            skips: components["schemas"]["ReviewSkipRow"][];
-        };
         /** @description What `POST /api/session/{id}/review/comment/{comment_id}/resolve` answers. */
         ReviewResolveCommentResponse: {
             comment_id: string;
             resolved: boolean;
             session_id: string;
         };
-        /** @description Whether the ledger can still account for one tracked root. */
-        ReviewRootRow: {
-            /**
-             * @description Why this root's attribution cannot be trusted. `null` is intact, and
-             *     the string is shown to the user as the daemon wrote it. The key is
-             *     always written, so `required` rather than optional.
-             */
-            degraded: string | null;
-            /** @description The repository top level. */
-            root: string;
-        };
-        /**
-         * @description Which hunks a listing covers, as `crucible_core::session::ReviewScope`
-         *     spells it on the wire.
-         *
-         *     Web-owned because a schema is what puts the two values in the document, and
-         *     `crucible-core` takes no `utoipa` dependency. [`From`] converts it to the
-         *     core type, so a variant added there fails to compile here rather than
-         *     reaching the daemon as a scope this crate silently narrowed.
-         * @enum {string}
-         */
-        ReviewScopeRow: "session" | "turn";
-        /** @description What a skipped journal record costs. */
-        ReviewSkipKindRow: {
-            /** @enum {string} */
-            kind: "session";
-        } | {
-            /** @enum {string} */
-            kind: "root";
-            root: string;
-        } | {
-            /** @enum {string} */
-            kind: "informational";
-        };
-        /** @description One journal record the daemon could not read back. */
-        ReviewSkipRow: {
-            /**
-             * Format: int32
-             * @description The 1-based line in `review.jsonl`, so an operator can find it.
-             */
-            line: number;
-            /** @description The parse failure, verbatim. */
-            reason: string;
-            record: components["schemas"]["ReviewSkipKindRow"];
-        };
-        /**
-         * @description One user decision about one hunk.
-         * @enum {string}
-         */
-        ReviewStateRow: "unreviewed" | "accepted" | "rejected";
         /**
          * @description The values one save carries, in the shape `config.save` takes.
          *
@@ -4980,15 +4859,7 @@ export type SchemaResolveProposalBody = components['schemas']['ResolveProposalBo
 export type SchemaResumeSessionResponse = components['schemas']['ResumeSessionResponse'];
 export type SchemaReviewCommentResponse = components['schemas']['ReviewCommentResponse'];
 export type SchemaReviewCommentRow = components['schemas']['ReviewCommentRow'];
-export type SchemaReviewHunkRow = components['schemas']['ReviewHunkRow'];
-export type SchemaReviewHunksResponse = components['schemas']['ReviewHunksResponse'];
-export type SchemaReviewIntegrityRow = components['schemas']['ReviewIntegrityRow'];
 export type SchemaReviewResolveCommentResponse = components['schemas']['ReviewResolveCommentResponse'];
-export type SchemaReviewRootRow = components['schemas']['ReviewRootRow'];
-export type SchemaReviewScopeRow = components['schemas']['ReviewScopeRow'];
-export type SchemaReviewSkipKindRow = components['schemas']['ReviewSkipKindRow'];
-export type SchemaReviewSkipRow = components['schemas']['ReviewSkipRow'];
-export type SchemaReviewStateRow = components['schemas']['ReviewStateRow'];
 export type SchemaSaveRequest = components['schemas']['SaveRequest'];
 export type SchemaScmCloneResponse = components['schemas']['ScmCloneResponse'];
 export type SchemaSemanticSearchRequest = components['schemas']['SemanticSearchRequest'];
@@ -8428,52 +8299,6 @@ export interface operations {
                 content?: never;
             };
             /** @description The daemon could not resolve the comment */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_hunks: {
-        parameters: {
-            query?: {
-                /** @description The hunks to list. Absent means the whole session. */
-                scope?: components["schemas"]["ReviewScopeRow"];
-            };
-            header?: never;
-            path: {
-                /** @description The session under review */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewHunksResponse"];
-                };
-            };
-            /** @description The `scope` query named something that is neither `session` nor `turn` */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The session has no reviewable root */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The daemon could not read the journal */
             502: {
                 headers: {
                     [name: string]: unknown;

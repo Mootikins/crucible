@@ -8,7 +8,7 @@
 //! Translating the **query** is the only safe place to reconcile the two.
 //! Normalising at ingest would rewrite `RootBase.root`, which is the first
 //! field hashed into every [`HunkId`](crucible_core::session::HunkId), so every
-//! recorded decision would silently stop matching across a resume. Nothing
+//! id would silently change across a resume. Nothing
 //! this module produces is ever hashed or persisted.
 
 use std::ffi::OsStr;
@@ -19,8 +19,7 @@ use std::path::{Path, PathBuf};
 ///
 /// There is a limit at all because this is reached from strings the daemon
 /// does not author: `review.comment`'s `path` and `root` arrive over the
-/// network, and the gate resolves a model's write-tool argument on every tool
-/// call. Walking one component per level is unbounded work on an unbounded
+/// network. Walking one component per level is unbounded work on an unbounded
 /// input, and the recursive spelling this replaces was unbounded *stack* —
 /// which a 2 MiB tokio worker exhausts at roughly 26k components. A Rust stack
 /// overflow is a guard-page abort, not a catchable unwind, so that took the
@@ -91,10 +90,10 @@ mod tests {
         );
     }
 
-    /// The gate is asked about files that do not exist yet — a `write_file`
+    /// A query can name a file that does not exist yet — a `write_file`
     /// creating one, a deletion hunk describing one that is gone. Falling back
     /// to the raw input for those would leave the symlink unresolved and the
-    /// gate matching nothing.
+    /// query matching nothing.
     #[test]
     fn a_path_that_does_not_exist_yet_resolves_through_its_existing_ancestor() {
         let dir = TempDir::new().unwrap();

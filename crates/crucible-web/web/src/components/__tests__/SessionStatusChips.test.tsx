@@ -52,10 +52,6 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
   return env;
 }
 
-vi.mock('@/lib/review-api', () => ({
-  listReviewHunks: vi.fn(async () => ({ session_id: 's', hunks: [], comments: [] })),
-}));
-
 const baseSession = (id = 's1'): Session => ({
   session_id: id,
   type: 'chat',

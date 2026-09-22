@@ -197,7 +197,16 @@ async fn serve(admission: &Admission<'_>, source: &DiffsetSource) -> Result<Serv
         DiffsetSource::Branch { root, base, head } => Ok(Served::Branch(
             branch_sides(admission, root, base, head.as_deref()).await?,
         )),
-        DiffsetSource::SessionRecord { session } => Ok(Served::SessionRecord(session.clone())),
+        DiffsetSource::SessionRecord { session } => {
+            // A resumed session keeps its ledger on disk until a read loads it.
+            crate::server::session::review::ensure_record_loaded(
+                admission.review,
+                admission.sessions,
+                session.as_str(),
+            )
+            .await;
+            Ok(Served::SessionRecord(session.clone()))
+        }
         DiffsetSource::Proposal { id } => {
             admission.proposals.get(id).map_err(proposal_refusal)?;
             Ok(Served::Proposal(*id))

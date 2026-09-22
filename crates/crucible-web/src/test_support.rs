@@ -347,16 +347,6 @@ fn param_str<'a>(msg: &'a Value, key: &str) -> &'a str {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
-/// One param off a JSON-RPC request as it was sent, or `null`. For a list
-/// param, where `param_str` would flatten an array to `""`.
-fn param_value(msg: &Value, key: &str) -> Value {
-    msg.get("params")
-        .and_then(|p| p.get(key))
-        .cloned()
-        .unwrap_or(Value::Null)
-}
-
-#[cfg(any(test, feature = "test-utils"))]
 /// A `crucible_core::session::Comment` on the wire — all twelve fields, so a
 /// route test sees what the frontend's `ReviewComment` will actually receive.
 fn review_comment_fixture(id: &str, body: &str) -> Value {
@@ -1487,48 +1477,9 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // ── review.* ───────────────────────────────────────────────────────
         // Shaped from the daemon's real handlers in
         // `crucible-daemon/src/server/session/review.rs`, echoing the same
-        // params back, because the web layer's whole contract for these seven
+        // params back, because the web layer's whole contract for these
         // is "forward it untouched in both directions" — a hand-simplified
         // stub could not fail when that stopped being true.
-        "review.list_hunks" => {
-            let session_id = param_str(msg, "session_id");
-            // Echoed as the daemon echoes it: absent reads as the session.
-            let scope = match param_value(msg, "scope") {
-                Value::Null => json!("session"),
-                scope => scope,
-            };
-            json!({
-                "session_id": session_id,
-                "scope": scope,
-                "hunks": [{
-                    "id": "hunk-1",
-                    "root": "/tmp/test-project",
-                    "path": "src/a.rs",
-                    "base_range": { "start": 1, "end": 2 },
-                    "current_range": { "start": 1, "end": 3 },
-                    "before_content": "old\n",
-                    "after_content": "new\nnewer\n",
-                    "tool_call_ids": ["call-1"],
-                    "state": "unreviewed",
-                    "reapplied": false,
-                }],
-                "comments": [review_comment_fixture("comment-1", "why this?")],
-                // Pre-filtered to broken roots only; empty is the normal case.
-                "degraded": [],
-                // What the journal could not be read back as. Carries the
-                // losses `degraded` cannot: those have no root to name.
-                "integrity": { "skips": [] },
-                // A key `ReviewHunksResponse` does not model.
-                //
-                // Invented here, because the daemon's review results grow keys
-                // faster than the web route follows: `degraded` and
-                // `integrity` both arrived after the route was written. The route named its reply
-                // in task A6, so such a key now stops at the web layer, and
-                // `tests/route_contract_tests/review.rs` holds that behaviour
-                // where a reader can see it.
-                "a_key_the_web_does_not_model": 7,
-            })
-        }
         "review.comment" => json!({
             "session_id": param_str(msg, "session_id"),
             "comment": review_comment_fixture("comment-2", param_str(msg, "body")),

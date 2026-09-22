@@ -33,14 +33,13 @@ mod plain_store;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crucible_core::session::{
-    ChildLedgerRef, Comment, ComposedHunk, HunkId, Integrity, Interval, Ledger, PhysicalRoot,
-    ReviewScope, ReviewState, RootBase, RootInterval, RootStatus, SnapshotId,
+    ChildLedgerRef, Comment, ComposedHunk, Integrity, Interval, Ledger, PhysicalRoot, RootBase,
+    RootInterval, RootStatus, SnapshotId,
 };
 use dashmap::DashMap;
 use tracing::{debug, warn};
@@ -129,11 +128,6 @@ pub struct ReviewLedgers {
     /// [`crate::agent_manager::AgentManagerParams`] for that reason.
     plain: plain_store::PlainStore,
     ledgers: DashMap<String, Ledger>,
-    /// Review decisions, per session. A hunk absent from this map is
-    /// [`ReviewState::Unreviewed`] — the fail-closed answer, and the only
-    /// safe one: an identity we do not recognise must never inherit a
-    /// decision made about different lines.
-    states: DashMap<String, HashMap<HunkId, ReviewState>>,
     /// The comments of each diffset. A session keeps no comments of its
     /// own: the comments of its record belong to its session record diffset.
     comments: CommentStore,
@@ -199,7 +193,6 @@ impl ReviewLedgers {
         Self {
             plain: plain_store::PlainStore::new(plain_root),
             ledgers: DashMap::new(),
-            states: DashMap::new(),
             comments,
             open: DashMap::new(),
             journals: DashMap::new(),
@@ -271,7 +264,7 @@ impl ReviewLedgers {
     ///
     /// For callers that already hold a `Ledger` value. Note that a session
     /// restored this way is **not** persisted: nothing registers a journal
-    /// path, so later decisions live only for the daemon's lifetime.
+    /// path, so later intervals live only for the daemon's lifetime.
     #[cfg(test)]
     pub fn restore(&self, ledger: Ledger) {
         self.ledgers.insert(ledger.session_id().to_string(), ledger);
@@ -295,7 +288,6 @@ impl ReviewLedgers {
     /// at a parent that may since have been reissued.
     pub fn has_session(&self, session_id: &str) -> bool {
         self.ledgers.contains_key(session_id)
-            || self.states.contains_key(session_id)
             || self.parents.contains_key(session_id)
             || self.journals.contains_key(session_id)
             || self.integrity.contains_key(session_id)
@@ -358,10 +350,9 @@ impl ReviewLedgers {
     /// this drops the very intervals the harvest needs.
     pub fn clear_session(&self, session_id: &str) {
         self.ledgers.remove(session_id);
-        self.states.remove(session_id);
         self.parents.remove(session_id);
         // The journal itself stays on disk — teardown is not deletion, and the
-        // queue has to be there when the session is resumed. Only the in-memory
+        // record has to be there when the session is resumed. Only the in-memory
         // handles go, or every session the daemon ever loads leaks two map
         // entries for its lifetime.
         self.journals.remove(session_id);
@@ -577,14 +568,11 @@ impl ReviewLedgers {
         // meaningless in another one, so carrying the child's own index up
         // compares two unrelated coordinate systems: a child that ran twenty
         // turns produces indices larger than the parent's current turn, and
-        // `blocking_earlier_turn`'s `node_id < this_turn` then reads harvested
-        // work as "not yet happened" and stops gating the parent's next
-        // delegation — a bypass in the one fallback the delegation arm has.
+        // a turn comparison then reads harvested work as "not yet happened".
         //
         // `0` when the link carries no turn, which is a row written before the
-        // field existed. It is the earliest possible turn, so the harvest still
-        // gates; the cost is a delegation card that reads as turn 0, and a
-        // wrong display coordinate is the cheaper of the two errors.
+        // field existed. It is the earliest possible turn; the cost is a
+        // delegation card that reads as turn 0.
         let node_id = parent_ledger
             .children()
             .iter()
@@ -631,42 +619,21 @@ impl ReviewLedgers {
         absorbed
     }
 
-    /// The composed diff for a session, attributed and carrying review state.
-    ///
-    /// Always the whole session: a scope is a view for a person, never a
-    /// narrowing of what the ledger owes.
+    /// The composed diff for a session, attributed to its tool calls.
     pub async fn list_hunks(&self, session_id: &str) -> ReviewResult<Vec<ComposedHunk>> {
-        Ok(self
-            .list_hunks_with_status(session_id, ReviewScope::Session, None)
-            .await?
-            .0)
+        Ok(self.list_hunks_with_status(session_id).await?.0)
     }
 
     /// The composed diff, plus what the ledger can and cannot vouch for.
     ///
-    /// `scope` filters what comes back. Under [`ReviewScope::Turn`] a hunk is
-    /// kept when one of its calls closed at or after `turn_start`, the id of
-    /// the node that began the current turn ([`Interval::node_id`] is that
-    /// coordinate, and node ids are append-only). An external hunk has no call
-    /// and is never the turn's. `None` for `turn_start` under `Turn` means no
-    /// turn is known, so nothing is the turn's and the listing is empty; the
-    /// root statuses come back either way. Under `Session` the value is
-    /// ignored.
-    ///
     /// A degraded root contributes **no hunks**, which is why the statuses
-    /// have to come back beside them: losing attribution fails open on its own
+    /// have to come back beside them: losing attribution is silent on its own
     /// (see [`crucible_core::session::Integrity`]), so "this root produced
     /// nothing" and "this root cannot be read" must be distinguishable by every
     /// caller.
-    ///
-    /// Read-only, in the strongest sense: it prunes nothing. A decision recorded for a hunk with
-    /// no live counterpart round-trips unconditionally, because the `reapplied`
-    /// derivation below is defined by that decision still being there.
     pub async fn list_hunks_with_status(
         &self,
         session_id: &str,
-        scope: ReviewScope,
-        turn_start: Option<u32>,
     ) -> ReviewResult<(Vec<ComposedHunk>, Vec<RootStatus>)> {
         // Clone the ledger out rather than holding a DashMap guard across the
         // git awaits below — a guard held across an await is a deadlock
@@ -674,26 +641,6 @@ impl ReviewLedgers {
         let ledger = self
             .ledger(session_id)
             .ok_or_else(|| ReviewError::NoLedger(session_id.to_string()))?;
-        // The calls that belong to the current turn, or `None` when every
-        // hunk is in scope. Decided once from the intervals, not per root:
-        // a harvested child interval carries the parent-side node id, so it
-        // is placed in a turn the same way a native one is.
-        let turn_calls: Option<std::collections::HashSet<&str>> = match scope {
-            ReviewScope::Session => None,
-            ReviewScope::Turn => Some(
-                turn_start
-                    .map(|start| {
-                        ledger
-                            .intervals()
-                            .iter()
-                            .filter(|i| !i.contested && i.node_id >= start)
-                            .map(|i| i.tool_call_id.as_str())
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            ),
-        };
-        let states = self.states.get(session_id).map(|r| r.value().clone());
         let integrity = self
             .integrity
             .get(session_id)
@@ -713,7 +660,7 @@ impl ReviewLedgers {
                     session_id,
                     root = %base.root.display(),
                     reason = %reason,
-                    "review ledger cannot account for this root; writes under it are held"
+                    "review ledger cannot account for this root"
                 );
                 statuses.push(RootStatus::degraded(base.root.clone(), reason));
                 continue;
@@ -739,37 +686,7 @@ impl ReviewLedgers {
                 &intervals,
             )
             .await?;
-
-            for mut hunk in composition.hunks {
-                if let Some(calls) = &turn_calls {
-                    if !hunk
-                        .tool_call_ids
-                        .iter()
-                        .any(|c| calls.contains(c.as_str()))
-                    {
-                        continue;
-                    }
-                }
-                let recorded = states
-                    .as_ref()
-                    .and_then(|s| s.get(&hunk.id))
-                    .copied()
-                    .unwrap_or_default();
-                // A rejection reverts, so an identity recorded `Rejected` and
-                // present in the composed diff anyway means the agent applied
-                // the same change again. Resolving that to `Rejected` is what
-                // let a live worktree change read as reviewed and stopped the
-                // gate blocking on it; the decision is split off the history
-                // instead, and the history is derived rather than stored so
-                // this read path deletes nothing.
-                hunk.reapplied = recorded == ReviewState::Rejected;
-                hunk.state = if hunk.reapplied {
-                    ReviewState::Unreviewed
-                } else {
-                    recorded
-                };
-                all.push(hunk);
-            }
+            all.extend(composition.hunks);
         }
         Ok((all, statuses))
     }
@@ -875,20 +792,6 @@ impl ReviewLedgers {
                 Some(text) => FileText::Text(text),
             },
         )
-    }
-
-    /// Hunks that are unreviewed and owned by the ledger.
-    ///
-    /// External hunks are excluded on purpose. They are the user's own edits
-    /// (or writes no bracket saw), and refusing to let the agent work until
-    /// the user reviews their own typing is nonsense.
-    pub async fn unreviewed_hunks(&self, session_id: &str) -> ReviewResult<Vec<ComposedHunk>> {
-        Ok(self
-            .list_hunks(session_id)
-            .await?
-            .into_iter()
-            .filter(|h| h.state == ReviewState::Unreviewed && !h.is_external())
-            .collect())
     }
 
     /// The store of the comments of every diffset.

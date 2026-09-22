@@ -170,11 +170,7 @@ async fn a_gcd_base_tree_degrades_its_root() {
 
     let (hunks, statuses) = fx
         .ledgers
-        .list_hunks_with_status(
-            &fx.session,
-            crucible_core::session::ReviewScope::Session,
-            None,
-        )
+        .list_hunks_with_status(&fx.session)
         .await
         .unwrap();
     assert!(hunks.is_empty());

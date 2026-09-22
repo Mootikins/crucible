@@ -1,5 +1,5 @@
 //! Hunk identity: what separates two changes, and what must never renumber one
-//! onto another's recorded decision.
+//! onto another's id.
 
 use super::*;
 

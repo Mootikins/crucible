@@ -183,19 +183,19 @@ expect_text = ["When you exit, the recording saves to the path you specified.", 
 
 # TRANSITION Help/Concepts/Review Ledger.md
 #   "## The composed diff" — "Hunk identity is derived from content and base position, not worktree position"
-#   "## The review record" — "A hunk still carries a `state`."
+#   "## The review record" — "A hunk has no state."
 [[queries]]
 question = "how does a hunk keep its identity after nearby edits, and does a hunk still carry a state?"
 expect_note = "Review Ledger"
-expect_text = ["Hunk identity is derived from content and base position, not worktree position", "A hunk still carries a `state`."]
+expect_text = ["Hunk identity is derived from content and base position, not worktree position", "A hunk has no state."]
 
 # TRANSITION Help/Concepts/Review Ledger.md
-#   "## The review record" — "A degraded root contributes no hunks, and the listing names it with a reason"
-#   "## Where you meet it" — "**The web console.** The Changes panel lists the composed diff"
+#   "## The review record" — "A degraded root contributes no files to the session record"
+#   "## Where you meet it" — "**The web console.** The Changes panel lists the files of the session record"
 [[queries]]
-question = "how is a degraded review root reported, and where in the web UI do I read the hunks?"
+question = "how is a degraded review root reported, and where in the web UI do I read the session record?"
 expect_note = "Review Ledger"
-expect_text = ["A degraded root contributes no hunks, and the listing names it with a reason", "**The web console.** The Changes panel lists the composed diff"]
+expect_text = ["A degraded root contributes no files to the session record", "**The web console.** The Changes panel lists the files of the session record"]
 
 # TRANSITION Help/Concepts/Reflection Pass.md
 #   "## Why a proposed note waits in the kiln" — "This is the deliberate correction of the removed `session-digest` feature"

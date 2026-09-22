@@ -181,7 +181,7 @@ pub use proposals::{
     ProposalAcceptRequest, ProposalIdRequest, ProposalListRequest, ProposalRejectRequest,
     ProposalResolveRequest,
 };
-pub use review::{ReviewCommentRequest, ReviewListHunksRequest, ReviewResolveCommentRequest};
+pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest};
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionDismissNotificationRequest,
     SessionEventsAfterRequest, SessionExportToFileRequest, SessionForkRequest, SessionIdRequest,
