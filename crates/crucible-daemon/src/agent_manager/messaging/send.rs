@@ -9,6 +9,22 @@ fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<String>) {
     }
 }
 
+/// What one turn needs beside the session and the message.
+///
+/// The fields travel together through the entry points of a turn. A struct
+/// keeps each call readable, and it lets a new field reach the turn without a
+/// new argument on every caller.
+pub(crate) struct TurnRequest<'a> {
+    /// The review comments that the message attaches, as the daemon rendered
+    /// them. `server::diff_context::review_context` builds this text.
+    pub review_context: Option<String>,
+    pub event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    pub is_interactive: bool,
+    pub permission_override: Option<PermissionMode>,
+    /// Resolved when the turn reaches a terminal state.
+    pub completion_tx: Option<oneshot::Sender<TurnOutcome>>,
+}
+
 impl AgentManager {
     pub async fn send_message(
         &self,
@@ -21,18 +37,19 @@ impl AgentManager {
         self.send_message_inner(
             session_id,
             content,
-            None,
-            event_tx,
-            is_interactive,
-            permission_override,
-            None,
+            TurnRequest {
+                review_context: None,
+                event_tx,
+                is_interactive,
+                permission_override,
+                completion_tx: None,
+            },
         )
         .await
     }
 
     /// Like [`send_message`], with the review comments that the message
-    /// attaches. `review_context` is the message that
-    /// `server::diff_context::review_context` built from the references.
+    /// attaches.
     pub async fn send_message_with_context(
         &self,
         session_id: &str,
@@ -45,11 +62,13 @@ impl AgentManager {
         self.send_message_inner(
             session_id,
             content,
-            review_context,
-            event_tx,
-            is_interactive,
-            permission_override,
-            None,
+            TurnRequest {
+                review_context,
+                event_tx,
+                is_interactive,
+                permission_override,
+                completion_tx: None,
+            },
         )
         .await
     }
@@ -71,11 +90,13 @@ impl AgentManager {
             .send_message_inner(
                 session_id,
                 content,
-                None,
-                event_tx,
-                is_interactive,
-                permission_override,
-                Some(completion_tx),
+                TurnRequest {
+                    review_context: None,
+                    event_tx,
+                    is_interactive,
+                    permission_override,
+                    completion_tx: Some(completion_tx),
+                },
             )
             .await?;
         Ok((message_id, completion_rx))
@@ -85,12 +106,15 @@ impl AgentManager {
         &self,
         session_id: &str,
         content: String,
-        review_context: Option<String>,
-        event_tx: &broadcast::Sender<SessionEventMessage>,
-        is_interactive: bool,
-        permission_override: Option<PermissionMode>,
-        completion_tx: Option<oneshot::Sender<TurnOutcome>>,
+        request: TurnRequest<'_>,
     ) -> Result<String, AgentError> {
+        let TurnRequest {
+            review_context,
+            event_tx,
+            is_interactive,
+            permission_override,
+            completion_tx,
+        } = request;
         let ttft_start = Instant::now();
         info!(target: "ttft", session_id = %session_id, stage = "send_message_entry", elapsed_ms = 0, "ttft");
         // Sessions are always resumable: if the target is no longer resident in
