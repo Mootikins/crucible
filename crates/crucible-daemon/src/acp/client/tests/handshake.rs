@@ -175,3 +175,65 @@ async fn a_missing_agent_binary_is_a_connection_error() {
         "{result:?}"
     );
 }
+
+/// A request completes while a turn runs. The daemon sends a knob change,
+/// for example a model switch, without a wait for the turn to end.
+#[tokio::test]
+async fn a_request_completes_while_a_turn_is_held() {
+    use agent_client_protocol::schema::v1::{
+        ContentBlock, PromptRequest, SessionId, SetSessionConfigOptionRequest,
+    };
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let (client, mut agent) = raw_client().await;
+    let client = Arc::new(client);
+
+    let turn = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move {
+            let (out, _chunks) = tokio::sync::mpsc::unbounded_channel();
+            client
+                .prompt(
+                    PromptRequest::new(SessionId::from("s1"), vec![ContentBlock::from("go")]),
+                    &out,
+                )
+                .await
+        }
+    });
+    let prompt = agent.read().await;
+    assert_eq!(prompt["method"], "session/prompt");
+
+    // The agent holds the turn. It answers the next request only.
+    let request = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move {
+            client
+                .request(SetSessionConfigOptionRequest::new(
+                    "s1".to_string(),
+                    "model".to_string(),
+                    "other",
+                ))
+                .await
+        }
+    });
+    let set = tokio::time::timeout(Duration::from_secs(5), agent.read())
+        .await
+        .expect("the client must send the request while the turn is held");
+    assert_eq!(set["method"], "session/set_config_option");
+    agent
+        .write(json!({"jsonrpc": "2.0", "id": set["id"], "result": {"configOptions": []}}))
+        .await;
+    tokio::time::timeout(Duration::from_secs(5), request)
+        .await
+        .expect("the request must complete while the turn is held")
+        .expect("the request task")
+        .expect("the agent answered");
+
+    agent
+        .write(json!({"jsonrpc": "2.0", "id": prompt["id"], "result": {"stopReason": "end_turn"}}))
+        .await;
+    turn.await
+        .expect("the turn task")
+        .expect("the turn ends normally");
+}
