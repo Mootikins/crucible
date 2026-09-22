@@ -190,6 +190,14 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
             n => format!("\u{2699} {n} "),
         }),
 
+        // The same rule as `Tasks`: no proposal renders nothing, so the
+        // default bar carries the slot with no permanent zero.
+        StatusItem::Proposals => text_frag(match ctx.data.proposals {
+            0 => String::new(),
+            1 => "1 proposal ".to_string(),
+            n => format!("{n} proposals "),
+        }),
+
         StatusItem::Status => text_frag(ctx.data.status.clone()),
 
         // Renders as message plus a reversed severity badge, or — with no
@@ -352,7 +360,21 @@ mod tests {
             notification_counts: Vec::new(),
             cache_hit_rate: None,
             background_tasks: 0,
+            proposals: 0,
         }
+    }
+
+    #[test]
+    fn proposals_item_is_blank_at_zero() {
+        let mut data = data();
+        assert_eq!(render(&[StatusItem::Proposals], &data, false), "");
+        data.proposals = 1;
+        assert_eq!(render(&[StatusItem::Proposals], &data, false), "1 proposal");
+        data.proposals = 3;
+        assert_eq!(
+            render(&[StatusItem::Proposals], &data, false),
+            "3 proposals"
+        );
     }
 
     #[test]

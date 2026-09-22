@@ -32,6 +32,9 @@ impl OilChatApp {
         if let Some(action) = self.handle_diff_modal_key(key) {
             return action;
         }
+        if let Some(action) = self.handle_proposals_modal_key(key) {
+            return action;
+        }
         if self.interaction_modal.is_some() {
             return self.handle_interaction_key(key);
         }

@@ -240,6 +240,8 @@ impl OilChatApp {
             // filters an empty remainder — so no name means "the first one".
             ReplCommand::Surfaces => Action::Send(ChatAppMsg::OpenSurface(arg.map(str::to_string))),
             ReplCommand::Diff => Action::Send(ChatAppMsg::OpenDiff(arg.map(str::to_string))),
+            // The daemon holds the proposals, so the fetch is the runner's.
+            ReplCommand::Proposals => Action::Send(ChatAppMsg::FetchProposals { open: true }),
             ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue

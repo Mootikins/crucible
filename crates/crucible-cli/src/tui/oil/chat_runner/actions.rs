@@ -8,7 +8,7 @@ use std::io;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use super::{DrainMessagesOutcome, OilChatRunner, ProcessActionParams};
+use super::{DrainMessagesOutcome, EventLoopParams, OilChatRunner, ProcessActionParams};
 
 /// Write one app-config key through the daemon, and report what the store
 /// holds afterwards.
@@ -192,6 +192,56 @@ impl OilChatRunner {
         }));
     }
 
+    /// Read the proposals in the Inbox for the count and the `:proposals`
+    /// view.
+    ///
+    /// A fetch that the user asked for (`open`) reports its failure. A
+    /// refresh after `proposal_changed` stays silent, because the user did
+    /// not ask for it and cannot act on the warning.
+    pub(super) fn spawn_proposal_fetch(
+        open: bool,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
+        let tx = msg_tx.clone();
+        background_tasks.push(tokio::spawn(async move {
+            let fetched = match crucible_daemon::DaemonClient::connect().await {
+                Ok(client) => client.proposal_list(false).await,
+                Err(e) => Err(e),
+            };
+            let msg = match fetched {
+                Ok(proposals) => Some(ChatAppMsg::ProposalsLoaded { proposals, open }),
+                Err(e) if open => Some(ChatAppMsg::Error(format!("Proposals failed: {e:#}"))),
+                Err(e) => {
+                    tracing::debug!(error = %e, "proposal count refresh failed");
+                    None
+                }
+            };
+            if let Some(msg) = msg {
+                let _ = tx.send(msg);
+            }
+        }));
+    }
+
+    /// Start the daemon read that a drained message asks for.
+    ///
+    /// A message from the channel reaches the reducer, and a follow-up of the
+    /// reducer re-enters it, not `process_action`. Thus a read that an
+    /// event starts must begin here, or nothing runs it.
+    fn start_drained_read(
+        &self,
+        msg: &ChatAppMsg,
+        msg_tx: &mpsc::UnboundedSender<ChatAppMsg>,
+        background_tasks: &mut Vec<JoinHandle<()>>,
+    ) {
+        if self.is_replay {
+            return;
+        }
+        if let ChatAppMsg::FetchProposals { open } = msg {
+            Self::spawn_proposal_fetch(*open, msg_tx, background_tasks);
+        }
+    }
+
     /// Route a `ChatAppMsg` to the app reducer, and — in live mode — kick
     /// off any side-effects (e.g. sending a user message via RPC).
     ///
@@ -225,12 +275,15 @@ impl OilChatRunner {
 
     pub(super) async fn drain_pending_messages<A: AgentHandle>(
         &mut self,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
+        params: &mut EventLoopParams<'_, A>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
     ) -> DrainMessagesOutcome {
+        let app: &mut OilChatApp = params.app;
+        let agent: &mut A = params.agent;
+        let bridge: &AgentEventBridge = params.bridge;
+        let msg_tx = &params.msg_tx;
+        let msg_rx = &mut params.msg_rx;
+        let background_tasks: &mut Vec<JoinHandle<()>> = params.background_tasks;
         let mut processed_any = false;
 
         while let Ok(msg) = msg_rx.try_recv() {
@@ -256,8 +309,10 @@ impl OilChatRunner {
             // variant must not rely on this loop to execute it (this is
             // how the FetchModels prefetch and --set startup overrides
             // silently broke; both now run their effects directly).
+            self.start_drained_read(&msg, msg_tx, background_tasks);
             let mut action = Self::process_message(&msg, app, agent, bridge, self.is_replay).await;
             while let Action::Send(follow_up) = action {
+                self.start_drained_read(&follow_up, msg_tx, background_tasks);
                 action =
                     Self::process_message(&follow_up, app, agent, bridge, self.is_replay).await;
             }
@@ -711,6 +766,10 @@ impl OilChatRunner {
                             let _ = tx.send(msg);
                         }));
                     }
+                    // `:proposals`. Same replay gate: a replay must reach no daemon.
+                    ChatAppMsg::FetchProposals { open } if !self.is_replay => {
+                        Self::spawn_proposal_fetch(*open, params.msg_tx, params.background_tasks);
+                    }
                     // A `surface_changed` refetch. Same replay gate, and
                     // `open_if_closed = false`: this must refresh what is open and
                     // never open anything.
@@ -918,6 +977,7 @@ impl OilChatRunner {
                     | ChatAppMsg::RefreshSurface(_)
                     | ChatAppMsg::OpenDiff(_)
                     | ChatAppMsg::FetchDiffFile(_)
+                    | ChatAppMsg::FetchProposals { .. }
                     | ChatAppMsg::EvalLua(_)
                     | ChatAppMsg::ConfigSet { .. }
                     | ChatAppMsg::ConfigQuery { .. }

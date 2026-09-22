@@ -2,7 +2,8 @@ use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     CommandPanel, DiffModal, DiffModalOutcome, InputComponent, InteractionModal, NotificationArea,
-    ShellModal, StatusComponent, SurfaceModal, SurfaceModalOutcome,
+    ProposalsModal, ProposalsModalOutcome, ShellModal, StatusComponent, SurfaceModal,
+    SurfaceModalOutcome,
 };
 use crate::tui::oil::config::RuntimeConfig;
 #[cfg(test)]
@@ -99,6 +100,12 @@ pub struct OilChatApp {
     surface_modal: Option<SurfaceModal>,
     /// A diffset, open full-screen (`:diff`). See `components/diff_modal.rs`.
     diff_modal: Option<DiffModal>,
+    /// The proposals in the Inbox, open full-screen (`:proposals`). See
+    /// `components/proposals_modal.rs`.
+    proposals_modal: Option<ProposalsModal>,
+    /// Proposals that wait for a decision, for `sl.proposals`. Each
+    /// `proposal_changed` event reads the list again.
+    proposal_count: usize,
     /// Spinner animation start time (frame derived from elapsed time, not ticks)
     spinner_epoch: std::time::Instant,
     /// The frame clock. See [`OilChatApp::set_frame_time`].
@@ -167,6 +174,11 @@ impl OilChatApp {
         }
 
         if let Some(ref modal) = self.diff_modal {
+            let (w, h) = ctx.terminal_size;
+            return modal.view(w as usize, h as usize);
+        }
+
+        if let Some(ref modal) = self.proposals_modal {
             let (w, h) = ctx.terminal_size;
             return modal.view(w as usize, h as usize);
         }
@@ -446,6 +458,7 @@ impl OilChatApp {
             .cache_hit_rate(self.cache_hit_rate)
             .streaming(self.container_list.is_streaming())
             .background_tasks(self.container_list.background_task_count())
+            .proposals(self.proposal_count)
             .status(&self.status);
         if let Some((text, kind)) = self.notification_area.active_toast(self.frame_time) {
             status = status.toast(text, kind);
@@ -724,7 +737,10 @@ impl OilChatApp {
     /// know about is drawn inline, which leaves the transcript behind it and the
     /// prompt on top of it.
     pub(crate) fn has_fullscreen_modal(&self) -> bool {
-        self.shell_modal.is_some() || self.surface_modal.is_some() || self.diff_modal.is_some()
+        self.shell_modal.is_some()
+            || self.surface_modal.is_some()
+            || self.diff_modal.is_some()
+            || self.proposals_modal.is_some()
     }
 
     /// The open surface. Test-only: production reads it through the view and
@@ -769,6 +785,57 @@ impl OilChatApp {
             DiffModalOutcome::Handled => Action::Continue,
             DiffModalOutcome::Load(request) => Action::Send(ChatAppMsg::FetchDiffFile(request)),
         })
+    }
+
+    /// The open proposals view. Test-only, as [`Self::surface_modal`] is.
+    #[cfg(test)]
+    pub(crate) fn proposals_modal(&self) -> Option<&ProposalsModal> {
+        self.proposals_modal.as_ref()
+    }
+
+    /// The count of proposals that the status line shows.
+    #[cfg(test)]
+    pub(crate) fn proposal_count(&self) -> usize {
+        self.proposal_count
+    }
+
+    /// Keep the proposals that the daemon listed.
+    ///
+    /// The count is the proposals that wait for a decision. A superseded
+    /// proposal stays in the list, but a newer one waits in its place. The
+    /// view refreshes when it is open. It opens only when the user asked.
+    pub(crate) fn proposals_loaded(
+        &mut self,
+        proposals: Vec<crucible_core::proposal::Proposal>,
+        open: bool,
+    ) {
+        self.proposal_count = proposals.iter().filter(|p| p.state.is_pending()).count();
+        if let Some(modal) = self.proposals_modal.as_mut() {
+            modal.update(proposals);
+        } else if open && proposals.is_empty() {
+            self.add_notification(crucible_core::types::Notification::toast(
+                "No proposals wait for a decision",
+            ));
+        } else if open {
+            self.proposals_modal = Some(ProposalsModal::new(proposals));
+            self.needs_full_redraw = true;
+        }
+    }
+
+    /// Route a key to the open proposals view. `None` means no view is open.
+    pub(crate) fn handle_proposals_modal_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<Action<ChatAppMsg>> {
+        let modal = self.proposals_modal.as_mut()?;
+        match modal.handle_key(key) {
+            ProposalsModalOutcome::Close => {
+                self.proposals_modal = None;
+                self.needs_full_redraw = true;
+            }
+            ProposalsModalOutcome::Handled => {}
+        }
+        Some(Action::Continue)
     }
 
     pub(crate) fn open_surface_modal(&mut self, modal: SurfaceModal) {

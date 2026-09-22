@@ -52,6 +52,9 @@ pub struct StatusBar {
     /// A split tool has no transcript node to show progress in, so the count
     /// is the only place its in-flight state appears.
     pub background_tasks: usize,
+    /// Proposals that wait for a decision of the user. A proposal belongs to
+    /// no session, so the daemon counts them for every client.
+    pub proposals: usize,
 }
 
 impl StatusBar {
@@ -61,6 +64,11 @@ impl StatusBar {
 
     pub fn background_tasks(mut self, count: usize) -> Self {
         self.background_tasks = count;
+        self
+    }
+
+    pub fn proposals(mut self, count: usize) -> Self {
+        self.proposals = count;
         self
     }
 

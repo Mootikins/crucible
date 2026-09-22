@@ -8,6 +8,7 @@ mod interaction_modal;
 mod notification_area;
 mod notification_component;
 mod popup_overlay;
+mod proposals_modal;
 mod shell_modal;
 mod shell_render;
 pub(crate) mod status_bar;
@@ -34,6 +35,7 @@ pub use notification_component::{NotificationComponent, NotificationEntry};
 pub use popup_overlay::{
     popup_item, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
+pub use proposals_modal::{ProposalsModal, ProposalsModalOutcome};
 pub use shell_modal::{
     InsertedOutput, ShellHistoryItem, ShellModal, ShellModalMsg, ShellModalOutput, ShellStatus,
 };

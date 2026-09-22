@@ -21,7 +21,7 @@ pub const SIDE_BY_SIDE_MIN_WIDTH: usize = 120;
 /// the unified view.
 const MIN_PANE_WIDTH: usize = 10;
 
-fn count_changes(old: &str, new: &str) -> (usize, usize) {
+pub(crate) fn count_changes(old: &str, new: &str) -> (usize, usize) {
     let diff = TextDiff::from_lines(old, new);
     let mut added = 0;
     let mut removed = 0;

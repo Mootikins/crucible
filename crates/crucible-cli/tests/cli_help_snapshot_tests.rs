@@ -129,6 +129,18 @@ fn session_subcommand_help_snapshot() {
     assert_snapshot!("session_subcommand_help", help);
 }
 
+/// `cru proposal --help` names every decision a user can send. Lock the
+/// list, so that a lost subcommand is a failed review, not a silent change.
+#[test]
+fn proposal_subcommand_help_snapshot() {
+    let mut cmd = Cli::command();
+    let proposal = cmd
+        .find_subcommand_mut("proposal")
+        .expect("proposal subcommand exists");
+    let help = proposal.render_long_help().to_string();
+    assert_snapshot!("proposal_subcommand_help", help);
+}
+
 /// Prefix inference: `cru con show` should resolve to `cru config show`.
 /// `con` has no alias, so this test fails until `infer_subcommands = true`
 /// is set on the top-level command. (`session` has aliases `s`/`sess`, so

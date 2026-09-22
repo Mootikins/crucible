@@ -17,6 +17,7 @@ pub mod models;
 pub mod plugin;
 pub mod process;
 pub mod project;
+pub mod proposal;
 pub mod search;
 pub mod session;
 pub mod set;

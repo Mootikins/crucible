@@ -254,6 +254,9 @@ impl OilChatRunner {
         // Prefetch available models in background — daemon cache should be warm,
         // so this returns near-instantly. Ensures :model popup has data immediately.
         self.queue_model_prefetch(&msg_tx, &mut background_tasks, session_models_source);
+        // The status line counts the proposals from the first frame, not
+        // from the first `proposal_changed` event.
+        Self::spawn_proposal_fetch(false, &msg_tx, &mut background_tasks);
 
         let interaction_rx = agent.take_interaction_receiver();
         tracing::debug!(
@@ -351,13 +354,7 @@ impl OilChatRunner {
             self.render_app_frame(params.app)?;
 
             match self
-                .drain_phase_outcome(
-                    params.app,
-                    params.agent,
-                    params.bridge,
-                    &mut params.msg_rx,
-                    &mut replay_auto_exit_deadline,
-                )
+                .drain_phase_outcome(&mut params, &mut replay_auto_exit_deadline)
                 .await
             {
                 DrainPhaseOutcome::Quit => return Ok(()),
@@ -426,14 +423,11 @@ impl OilChatRunner {
 
     async fn drain_phase_outcome<A: AgentHandle>(
         &mut self,
-        app: &mut OilChatApp,
-        agent: &mut A,
-        bridge: &AgentEventBridge,
-        msg_rx: &mut mpsc::UnboundedReceiver<ChatAppMsg>,
+        params: &mut EventLoopParams<'_, A>,
         replay_auto_exit_deadline: &mut Option<tokio::time::Instant>,
     ) -> DrainPhaseOutcome {
         let drain_outcome = self
-            .drain_pending_messages(app, agent, bridge, msg_rx, replay_auto_exit_deadline)
+            .drain_pending_messages(params, replay_auto_exit_deadline)
             .await;
 
         if drain_outcome == DrainMessagesOutcome::Quit {

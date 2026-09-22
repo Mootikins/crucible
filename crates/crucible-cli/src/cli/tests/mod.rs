@@ -4,6 +4,7 @@ mod diff;
 mod init;
 mod misc;
 mod models;
+mod proposal;
 mod session;
 mod tasks;
 

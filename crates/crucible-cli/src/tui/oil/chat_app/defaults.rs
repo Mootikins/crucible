@@ -40,6 +40,8 @@ impl Default for OilChatApp {
             shell_modal: None,
             surface_modal: None,
             diff_modal: None,
+            proposals_modal: None,
+            proposal_count: 0,
             spinner_epoch: epoch,
             frame_time: epoch,
             needs_full_redraw: false,

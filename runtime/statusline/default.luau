@@ -40,6 +40,8 @@ local layout: { [string]: any } = {
       -- Tools that outran the split threshold have no transcript node to
       -- show progress in. This renders nothing while none are running.
       sl.tasks,
+      -- The proposals that wait for a decision. This renders nothing at 0.
+      sl.proposals,
       -- A notification takes the right-hand slot while it is showing, and
       -- context usage takes it back afterwards.
       sl.any(sl.notification, sl.context),

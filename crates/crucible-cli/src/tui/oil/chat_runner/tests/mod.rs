@@ -2,6 +2,7 @@ mod builders;
 mod initial_sets;
 mod knob_rpc;
 mod model_prefetch;
+mod proposal_fetch;
 mod replay;
 mod stream_gap;
 mod surface_refresh;

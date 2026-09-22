@@ -127,6 +127,11 @@ pub enum StatusItem {
     /// A slow tool leaves the transcript as two immutable nodes, so its
     /// in-flight state has no node to live in. This item is where it shows.
     Tasks,
+    /// Count of proposals that wait for a decision of the user.
+    ///
+    /// A proposal belongs to no session, so the count is the same in every
+    /// session. It renders nothing at zero.
+    Proposals,
     Status,
     Notification,
     Text(String),
@@ -233,6 +238,7 @@ pub fn item_to_wire(item: &StatusItem) -> Json {
         StatusItem::Context => json!({ "t": "context" }),
         StatusItem::Cache => json!({ "t": "cache" }),
         StatusItem::Tasks => json!({ "t": "tasks" }),
+        StatusItem::Proposals => json!({ "t": "proposals" }),
         StatusItem::Status => json!({ "t": "status" }),
         StatusItem::Notification => json!({ "t": "notification" }),
         StatusItem::Text(s) => json!({ "t": "text", "v": s }),
@@ -269,6 +275,7 @@ pub fn item_from_wire(v: &Json) -> Option<StatusItem> {
         "context" => StatusItem::Context,
         "cache" => StatusItem::Cache,
         "tasks" => StatusItem::Tasks,
+        "proposals" => StatusItem::Proposals,
         "status" => StatusItem::Status,
         "notification" => StatusItem::Notification,
         "text" => StatusItem::Text(crate::statusline_exprs::sanitize_uncapped(
@@ -411,6 +418,7 @@ pub fn builtin_default() -> Layout {
                 },
                 StatusItem::Align,
                 StatusItem::Tasks,
+                StatusItem::Proposals,
                 StatusItem::Any(vec![StatusItem::Notification, StatusItem::Context]),
             ]),
         ],
@@ -542,6 +550,13 @@ mod tests {
             assert_eq!(Region::from_name(r.name()), Some(r));
         }
         assert_eq!(Region::from_name("footer.below_input"), None);
+    }
+
+    #[test]
+    fn the_proposals_item_survives_a_wire_round_trip() {
+        let wire = item_to_wire(&StatusItem::Proposals);
+        assert_eq!(wire, json!({ "t": "proposals" }));
+        assert_eq!(item_from_wire(&wire), Some(StatusItem::Proposals));
     }
 
     #[test]

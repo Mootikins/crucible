@@ -157,24 +157,40 @@ pub(crate) fn renamed_from(status: &crucible_core::diff::FileStatus) -> Option<&
 }
 
 fn print_diffset(diffset: &Diffset, texts: &[Option<DiffFileText>], stat: bool) {
-    let terminal = std::io::stdout().is_terminal();
-    let width = if terminal {
-        crossterm::terminal::size().map_or(PIPE_WIDTH, |(w, _)| w as usize)
-    } else {
-        PIPE_WIDTH
-    };
-    let mut opts = DiffOptions::for_width(width);
-    opts.max_lines = None;
+    let mut opts = stdout_diff_options();
     opts.collapsed = stat;
+    print_node(&diffset_view(diffset, texts, &opts));
+}
+
+/// The diff options for stdout: its width, no line limit, and one column of
+/// lines for a pipe.
+pub(crate) fn stdout_diff_options() -> DiffOptions {
+    let terminal = std::io::stdout().is_terminal();
+    let mut opts = DiffOptions::for_width(stdout_width(terminal));
+    opts.max_lines = None;
     if !terminal {
         // A pipe reads one column of lines, as `git diff` gives.
         opts.layout = Some(DiffLayout::Unified);
     }
-    let node = diffset_view(diffset, texts, &opts);
-    let out = if terminal {
-        render_to_string(&node, width)
+    opts
+}
+
+fn stdout_width(terminal: bool) -> usize {
+    if terminal {
+        crossterm::terminal::size().map_or(PIPE_WIDTH, |(w, _)| w as usize)
     } else {
-        render_to_plain_text(&node, width)
+        PIPE_WIDTH
+    }
+}
+
+/// Print a node to stdout: with colors on a terminal, as plain text to a pipe.
+pub(crate) fn print_node(node: &Node) {
+    let terminal = std::io::stdout().is_terminal();
+    let width = stdout_width(terminal);
+    let out = if terminal {
+        render_to_string(node, width)
+    } else {
+        render_to_plain_text(node, width)
     };
     println!("{}", out.trim_end());
 }

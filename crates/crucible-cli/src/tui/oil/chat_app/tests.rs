@@ -793,3 +793,104 @@ fn a_loaded_diff_opens_full_screen_and_asks_for_the_first_file() {
     assert!(!app.has_fullscreen_modal(), "the screen went back");
     assert!(app.diff_modal().is_none());
 }
+
+fn proposal(state: crucible_core::proposal::ProposalState) -> crucible_core::proposal::Proposal {
+    crucible_core::proposal::Proposal {
+        id: crucible_core::proposal::ProposalId::generate(),
+        author: crucible_core::proposal::ProposalAuthor::Plugin {
+            name: "reflection".into(),
+        },
+        session: None,
+        title: "Link the two notes".into(),
+        rationale: None,
+        created_at: chrono::Utc::now(),
+        state,
+        writes: vec![],
+    }
+}
+
+/// The status line text of the app, with no input row.
+fn status_line(app: &OilChatApp) -> String {
+    let rows = app
+        .build_status_component()
+        .render_region(crucible_lua::statusline_items::Region::Prompt, || {
+            crucible_oil::node::Node::Empty
+        });
+    crucible_oil::render::render_to_plain_text(&crucible_oil::node::col(rows), 120)
+}
+
+/// `:proposals` asks the runner to fetch and to open the view. The reducer
+/// itself must not try to reach the daemon.
+#[test]
+fn the_proposals_command_asks_the_runner_to_fetch() {
+    let mut app = OilChatApp::default();
+    match app.handle_repl_command(":proposals") {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::FetchProposals { open }) => {
+            assert!(open, "the user asked for the view");
+        }
+        other => panic!("expected a fetch, got {other:?}"),
+    }
+
+    // The reply opens the view full-screen. Escape hands the screen back.
+    app.on_message(ChatAppMsg::ProposalsLoaded {
+        proposals: vec![proposal(crucible_core::proposal::ProposalState::Open)],
+        open: true,
+    });
+    assert!(app.has_fullscreen_modal(), "the runner must go fullscreen");
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(app.proposals_modal().is_none());
+    assert!(!app.has_fullscreen_modal());
+
+    // An empty Inbox opens nothing.
+    app.on_message(ChatAppMsg::ProposalsLoaded {
+        proposals: vec![],
+        open: true,
+    });
+    assert!(app.proposals_modal().is_none());
+}
+
+/// A `proposal_changed` event reads the list again. The reply sets the
+/// count in the status line, and it opens no view.
+#[test]
+fn a_proposal_changed_event_refreshes_the_count() {
+    use crucible_core::proposal::{ProposalId, ProposalState};
+
+    let mut app = OilChatApp::default();
+    assert!(!status_line(&app).contains("proposal"), "blank at 0");
+
+    match app.on_message(ChatAppMsg::ProposalChanged(ProposalId::generate())) {
+        crate::tui::oil::app::Action::Send(ChatAppMsg::FetchProposals { open }) => {
+            assert!(!open, "a change must not open the view");
+        }
+        other => panic!("expected a refetch, got {other:?}"),
+    }
+
+    // A superseded proposal stays in the Inbox, but its newer proposal is
+    // the one that waits for a decision.
+    app.on_message(ChatAppMsg::ProposalsLoaded {
+        proposals: vec![
+            proposal(ProposalState::Open),
+            proposal(ProposalState::Conflicted { files: vec![] }),
+            proposal(ProposalState::Superseded {
+                by: ProposalId::generate(),
+            }),
+        ],
+        open: false,
+    });
+    assert_eq!(app.proposal_count(), 2);
+    assert!(app.proposals_modal().is_none(), "a refresh opens nothing");
+    assert!(
+        status_line(&app).contains("2 proposals"),
+        "{}",
+        status_line(&app)
+    );
+
+    app.on_message(ChatAppMsg::ProposalsLoaded {
+        proposals: vec![],
+        open: false,
+    });
+    assert!(!status_line(&app).contains("proposal"), "blank at 0 again");
+}

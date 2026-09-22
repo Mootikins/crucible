@@ -37,6 +37,8 @@ pub(super) enum ReplCommand {
     Surfaces,
     /// Open the branch diff of the workspace full-screen.
     Diff,
+    /// List the proposals in the Inbox full-screen.
+    Proposals,
 }
 
 impl ReplCommand {
@@ -59,6 +61,7 @@ impl ReplCommand {
         Self::Lua,
         Self::Surfaces,
         Self::Diff,
+        Self::Proposals,
     ];
 
     /// The word after `:` that runs this command.
@@ -81,6 +84,7 @@ impl ReplCommand {
             Self::Lua => "lua",
             Self::Surfaces => "surfaces",
             Self::Diff => "diff",
+            Self::Proposals => "proposals",
         }
     }
 
@@ -103,7 +107,8 @@ impl ReplCommand {
             | Self::Config
             | Self::Lua
             | Self::Surfaces
-            | Self::Diff => &[],
+            | Self::Diff
+            | Self::Proposals => &[],
         }
     }
 
@@ -127,6 +132,7 @@ impl ReplCommand {
             Self::Lua => ":lua <expr>",
             Self::Surfaces => ":surfaces [name]",
             Self::Diff => ":diff [base]",
+            Self::Proposals => ":proposals",
         }
     }
 
@@ -150,6 +156,7 @@ impl ReplCommand {
             Self::Lua => "Evaluate Lua (daemon-side; := shorthand)",
             Self::Surfaces => "Open a plugin surface (lists them with no name)",
             Self::Diff => "Show the branch diff against the default branch or [base]",
+            Self::Proposals => "List the proposals that wait for a decision, with their diffs",
         }
     }
 
@@ -172,7 +179,8 @@ impl ReplCommand {
             | Self::Config
             | Self::Lua
             | Self::Surfaces
-            | Self::Diff => "core",
+            | Self::Diff
+            | Self::Proposals => "core",
         }
     }
 
@@ -201,6 +209,7 @@ impl ReplCommand {
             Self::Lua => ":lua",
             Self::Surfaces => ":surfaces",
             Self::Diff => ":diff",
+            Self::Proposals => ":proposals",
         }
     }
 

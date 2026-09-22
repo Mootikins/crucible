@@ -29,6 +29,8 @@ pub struct StatusComponent<'a> {
     /// Tools still running after they left the transcript, readable by
     /// `sl.when("has_background_tasks", ...)`.
     pub background_tasks: usize,
+    /// Proposals that wait for a decision, readable by `sl.proposals`.
+    pub proposals: usize,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -81,6 +83,11 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
+    pub fn proposals(mut self, count: usize) -> Self {
+        self.proposals = count;
+        self
+    }
+
     pub fn streaming(mut self, streaming: bool) -> Self {
         self.streaming = streaming;
         self
@@ -101,7 +108,8 @@ impl<'a> StatusComponent<'a> {
             .model(self.model)
             .context(self.context_used, self.context_total)
             .status(self.status)
-            .background_tasks(self.background_tasks);
+            .background_tasks(self.background_tasks)
+            .proposals(self.proposals);
         bar.cache_hit_rate = self.cache_hit_rate;
         if let Some((text, kind)) = self.toast {
             bar = bar.toast(text, kind);

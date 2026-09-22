@@ -296,9 +296,17 @@ impl OilChatApp {
             // The plugin is gone, so the panel must go too. This closes; it
             // never opens, and it never touches another surface's panel.
             ChatAppMsg::SurfaceWithdrawn(name) => self.close_withdrawn_surface(&name),
-            // The status line count of proposals (P3.10) reads this. The app
-            // has no proposal state yet, so it does nothing now.
-            ChatAppMsg::ProposalChanged(_) => {}
+            // The event names one proposal, but the count and the view need
+            // the whole list, so the app reads the list again. A change never
+            // opens the view: it refreshes what is open.
+            ChatAppMsg::ProposalChanged(_) => {
+                return Action::Send(ChatAppMsg::FetchProposals { open: false });
+            }
+            // The fetch is the runner's work.
+            ChatAppMsg::FetchProposals { .. } => {}
+            ChatAppMsg::ProposalsLoaded { proposals, open } => {
+                self.proposals_loaded(proposals, open);
+            }
             // The user asked for this diffset, so it takes the screen.
             ChatAppMsg::DiffLoaded(diffset) => return self.open_diff_modal(*diffset),
             ChatAppMsg::DiffFileLoaded { id, index, text } => {

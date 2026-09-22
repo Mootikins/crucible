@@ -61,6 +61,8 @@ enum FileSlot {
 #[derive(Debug, Clone)]
 pub struct DiffModal {
     diffset: Diffset,
+    /// The header text. `None` names the source of the diffset.
+    title: Option<String>,
     texts: Vec<FileSlot>,
     /// The index of the file on screen.
     file: usize,
@@ -78,12 +80,35 @@ impl DiffModal {
         let texts = vec![FileSlot::Absent; diffset.files.len()];
         Self {
             diffset,
+            title: None,
             texts,
             file: 0,
             first_line: 0,
             page: Cell::new(DEFAULT_PAGE),
             width: Cell::new(80),
         }
+    }
+
+    /// A diffset whose texts the caller holds already, such as a proposal.
+    ///
+    /// A file with `None` has no text yet, and the view asks for it as
+    /// [`Self::new`] does.
+    #[must_use]
+    pub fn with_texts(diffset: Diffset, texts: Vec<Option<DiffFileText>>) -> Self {
+        let mut modal = Self::new(diffset);
+        for (slot, text) in modal.texts.iter_mut().zip(texts) {
+            if let Some(text) = text {
+                *slot = FileSlot::Loaded(text);
+            }
+        }
+        modal
+    }
+
+    /// Show `title` in the header in place of the source.
+    #[must_use]
+    pub fn titled(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
     }
 
     /// The id of the diffset on screen.
@@ -234,6 +259,9 @@ impl DiffModal {
 
     /// The base that the diffset compares against.
     fn title(&self) -> String {
+        if let Some(title) = &self.title {
+            return title.clone();
+        }
         match &self.diffset.source {
             DiffsetSource::Branch { base, head, .. } => match head {
                 Some(head) => format!("{base}...{head}"),

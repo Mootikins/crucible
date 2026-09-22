@@ -11,6 +11,7 @@ mod eval;
 mod kiln;
 mod models;
 mod project;
+mod proposal;
 mod session;
 mod skills;
 mod storage;
@@ -27,6 +28,7 @@ pub use eval::EvalCommands;
 pub use kiln::KilnCommands;
 pub use models::{EmbeddingsCommands, ModelsCommands};
 pub use project::ProjectCommands;
+pub use proposal::ProposalCommands;
 pub use session::SessionCommands;
 pub use skills::SkillsCommands;
 pub use storage::StorageCommands;
@@ -240,6 +242,15 @@ pub enum Commands {
     Diff {
         #[command(subcommand)]
         command: DiffCommands,
+    },
+
+    /// Review the note writes that wait for you (list, show, accept, reject, dismiss)
+    #[command(
+        long_about = "Review proposals: note writes that wait for your decision.\n\nA session in the `propose` mode, such as a reflection pass, does not write a note. It makes a proposal. The file on disk changes only when you accept the proposal.\n\nExamples:\n  # The proposals that wait for you\n  cru proposal list\n\n  # The diff of one proposal\n  cru proposal show <id>\n\n  # Write it, or refuse it with a reason\n  cru proposal accept <id>\n  cru proposal reject <id> --reason \"the note says the opposite\"\n\n  # Take a superseded proposal out of the Inbox\n  cru proposal dismiss <id>"
+    )]
+    Proposal {
+        #[command(subcommand)]
+        command: ProposalCommands,
     },
 
     /// Process kiln files through the pipeline (parse, enrich, store)

@@ -265,6 +265,15 @@ pub enum ChatAppMsg {
     /// the system session, because a proposal belongs to no user session.
     /// The status line count of proposals reads it.
     ProposalChanged(crucible_core::proposal::ProposalId),
+    /// **Command** (TUI → daemon): read the proposals in the Inbox. `open`
+    /// opens the `:proposals` view. Without it, the reply only refreshes the
+    /// count and the view that is open.
+    FetchProposals { open: bool },
+    /// **Event** (daemon → TUI): the proposals in the Inbox arrived.
+    ProposalsLoaded {
+        proposals: Vec<crucible_core::proposal::Proposal>,
+        open: bool,
+    },
     /// **Command** (TUI → daemon): compute the branch diff of the workspace
     /// and open it (`:diff [base]`). `None` compares with the default branch.
     OpenDiff(Option<String>),
@@ -449,6 +458,8 @@ impl ChatAppMsg {
             | Self::SurfaceLoaded { .. }
             | Self::SurfaceWithdrawn(_)
             | Self::ProposalChanged(_)
+            | Self::FetchProposals { .. }
+            | Self::ProposalsLoaded { .. }
             | Self::OpenDiff(_)
             | Self::DiffLoaded(_)
             | Self::FetchDiffFile(_)
