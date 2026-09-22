@@ -24,17 +24,20 @@
 //! profile-name arm.
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{AgentProfile, BackendType, DelegationConfig};
 use crucible_core::session::{SessionAgent, SessionType};
+use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
 use crucible_daemon::test_support::{kiln_name, temp_session_manager_with_kilns};
 use crucible_daemon::{AgentManager, AgentManagerParams, FileSessionStorage, SessionManager};
+use crucible_lua::PluginSource;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
@@ -112,7 +115,7 @@ struct Harness {
     parent_id: String,
     /// Held so the delegation lifecycle keeps working; dropping it would
     /// unbind the child-session cleanup the service relies on.
-    _lifecycle: Arc<SessionLifecycle>,
+    lifecycle: Arc<SessionLifecycle>,
     _agent_manager: Arc<AgentManager>,
     _event_rx: broadcast::Receiver<SessionEventMessage>,
 }
@@ -121,6 +124,16 @@ struct Harness {
 /// override — the delegated child is built by the production factory and is
 /// therefore a real ACP handle over a real process.
 async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
+    setup_with_plugin(parent, profiles, None).await
+}
+
+/// `setup` with an optional one-file Lua plugin. The plugin runs in a real
+/// `DaemonPluginLoader`, so its session-start hooks fire as in production.
+async fn setup_with_plugin(
+    parent: SessionAgent,
+    profiles: &[(&str, &str)],
+    plugin_init: Option<&str>,
+) -> Harness {
     let temp = TempDir::new().expect("temp dir");
     let kiln = temp.path().join("kiln");
     std::fs::create_dir_all(&kiln).expect("kiln dir");
@@ -132,7 +145,12 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
         .map(|(name, answer)| ((*name).to_string(), mock_acp_profile(answer)))
         .collect();
 
-    let plugin_loader = Arc::new(tokio::sync::Mutex::new(None));
+    let loader = match plugin_init {
+        Some(init) => Some(load_test_plugin(temp.path(), init).await),
+        None => None,
+    };
+    let isolation = loader.as_ref().map(DaemonPluginLoader::isolation);
+    let plugin_loader = Arc::new(tokio::sync::Mutex::new(loader));
     let lifecycle = SessionLifecycle::new(
         session_manager.clone(),
         plugin_loader.clone(),
@@ -146,6 +164,9 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
         },
         service.clone(),
     ));
+    if let Some(registry) = isolation {
+        agent_manager.set_isolation(registry);
+    }
     service.bind_agent_manager(&agent_manager);
     lifecycle.bind_agent_manager(&agent_manager);
     service.bind_session_lifecycle(lifecycle.clone());
@@ -164,11 +185,34 @@ async fn setup(parent: SessionAgent, profiles: &[(&str, &str)]) -> Harness {
         session_manager,
         service,
         parent_id: session.id.to_string(),
-        _lifecycle: lifecycle,
+        lifecycle,
         _agent_manager: agent_manager,
         _event_rx: event_rx,
     }
 }
+
+async fn load_test_plugin(temp: &Path, init: &str) -> DaemonPluginLoader {
+    let root = temp.join("plugins");
+    let dir = root.join("sandbox");
+    std::fs::create_dir_all(&dir).expect("plugin dir");
+    std::fs::write(dir.join("init.lua"), init).expect("init.lua");
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .activate_discovered(&[(root, PluginSource::EnvPath)])
+        .await
+        .expect("load plugins");
+    loader
+}
+
+/// A plugin that claims isolation for every session but offers no way to
+/// launch a process inside its sandbox: the claim has an empty `exec`.
+const CLAIMS_ISOLATION_WITHOUT_EXEC: &str = r#"
+cru.on_session_start(function(session)
+  cru.isolation.require{ session = session.id, plugin = "sandbox" }
+end, { required = true })
+return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
+"#;
 
 fn request(h: &Harness, target: Option<&str>, prompt: &str) -> DelegationRequest {
     DelegationRequest {
@@ -361,5 +405,50 @@ async fn an_unknown_target_lists_the_configured_acp_profiles() {
     assert!(
         message.contains("mock-acp"),
         "the rejection must list the configured profile, got: {message}"
+    );
+}
+
+/// A sandboxed parent may not delegate to an ACP agent that the sandbox
+/// cannot hold.
+///
+/// The plugin claims isolation for the child too, so the backstop "the child
+/// has no claim" does not fire. The claim has no `exec`, so the ACP agent
+/// would start on the host and run its own tools there. Admission must
+/// refuse the child with the "claims isolation" reason.
+#[tokio::test]
+async fn a_sandboxed_parent_cannot_delegate_to_an_acp_agent_without_a_sandbox_exec() {
+    let h = setup_with_plugin(
+        internal_parent(delegation_config(1)),
+        &[("mock-acp", CHILD_ANSWER)],
+        Some(CLAIMS_ISOLATION_WITHOUT_EXEC),
+    )
+    .await;
+
+    // The parent goes through what `session.create` does. It is internal,
+    // so the daemon can enforce its claim.
+    h.lifecycle
+        .enforce_session_start(&h.parent_id)
+        .await
+        .expect("an internal parent under a claim is admitted");
+    let registry = h
+        .lifecycle
+        .isolation_registry()
+        .await
+        .expect("plugin isolation registry");
+    assert!(
+        registry.get(&h.parent_id).is_some(),
+        "the parent must be sandboxed or this test asserts nothing"
+    );
+
+    let error = h
+        .service
+        .spawn_delegation(request(&h, Some("mock-acp"), "task"))
+        .await
+        .expect_err("an ACP child that the sandbox cannot hold must be refused");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("claims isolation") && message.contains("sandbox"),
+        "the refusal must name the unenforceable claim, got: {message}"
     );
 }

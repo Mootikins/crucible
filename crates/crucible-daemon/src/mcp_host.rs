@@ -410,6 +410,157 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 
+    /// Send one JSON-RPC frame to the MCP endpoint. Return the reply body as
+    /// JSON and the `mcp-session-id` header.
+    async fn mcp_post(
+        client: &reqwest::Client,
+        url: &str,
+        session: Option<&str>,
+        body: serde_json::Value,
+    ) -> (serde_json::Value, Option<String>) {
+        let mut request = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .body(body.to_string());
+        if let Some(session) = session {
+            request = request.header("Mcp-Session-Id", session);
+        }
+        let response = request.send().await.expect("MCP request");
+        assert!(
+            response.status().is_success(),
+            "MCP status {}",
+            response.status()
+        );
+        let session_id = response
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let text = response.text().await.expect("MCP body");
+        // The streamable HTTP transport can answer as an SSE stream.
+        let payload = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .find(|data| data.starts_with('{'))
+            .unwrap_or(&text);
+        let json = if payload.trim().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(payload).expect("JSON-RPC payload")
+        };
+        (json, session_id)
+    }
+
+    /// An ACP agent reaches the kiln tools over HTTP, not through a method
+    /// call. The containment must hold on that transport too.
+    ///
+    /// The kiln resolver refuses an absolute path and a symlink that escapes
+    /// the kiln before containment applies. Containment adds the denied roots
+    /// inside the kiln, for example a sessions root that the kiln encloses.
+    /// Only the denied subtree below depends on the root set. It is readable
+    /// with `Ambient`, so this test fails if the root set does not reach the
+    /// server clone that answers the HTTP session.
+    #[tokio::test]
+    async fn a_note_read_over_http_outside_the_session_roots_is_refused() {
+        let kiln = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        std::fs::write(kiln.path().join("inside.md"), "kiln-grounded content").unwrap();
+        let denied = kiln.path().join("sessions");
+        std::fs::create_dir_all(&denied).unwrap();
+        std::fs::write(denied.join("transcript.md"), "DENIED-TRANSCRIPT").unwrap();
+        let secret = outside.path().join("secret.md");
+        std::fs::write(&secret, "OUTSIDE-THE-KILN").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&secret, kiln.path().join("escape.md")).unwrap();
+
+        let host = InProcessMcpHost::start(
+            kiln.path().to_path_buf(),
+            kiln.path().to_path_buf(),
+            Arc::new(MockKnowledgeRepository::new()),
+            Arc::new(MockEmbeddingProvider::new()),
+            None,
+            crate::tools::containment::RootSet::scoped([kiln.path().to_path_buf()], [denied]),
+        )
+        .await
+        .unwrap_or_else(|err| {
+            panic!(
+                "InProcessMcpHost::start failed; the MCP HTTP server needs a localhost \
+                 bind, which a sandbox may deny: {err:?}"
+            )
+        });
+
+        let client = reqwest::Client::new();
+        let url = host.mcp_url();
+        let (_, session) = mcp_post(
+            &client,
+            &url,
+            None,
+            serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": { "name": "containment-test", "version": "0.1.0" }
+                }
+            }),
+        )
+        .await;
+        let session = session.expect("initialize returns mcp-session-id");
+        mcp_post(
+            &client,
+            &url,
+            Some(&session),
+            serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+        )
+        .await;
+
+        let read = |id: u64, path: String| {
+            let client = client.clone();
+            let url = url.clone();
+            let session = session.clone();
+            async move {
+                mcp_post(
+                    &client,
+                    &url,
+                    Some(&session),
+                    serde_json::json!({
+                        "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                        "params": { "name": "read_note", "arguments": { "path": path } }
+                    }),
+                )
+                .await
+                .0
+            }
+        };
+
+        for (id, path) in [
+            (2, secret.to_string_lossy().into_owned()),
+            (4, "escape.md".to_string()),
+            (5, "sessions/transcript.md".to_string()),
+        ] {
+            let leaked = read(id, path).await;
+            let text = leaked.to_string();
+            assert!(
+                !text.contains("OUTSIDE-THE-KILN") && !text.contains("DENIED-TRANSCRIPT"),
+                "read_note over MCP reached a file outside the session roots: {leaked}"
+            );
+            assert!(
+                leaked.get("error").is_some()
+                    || leaked["result"]["isError"].as_bool() == Some(true),
+                "the read outside the session roots must be refused, got: {leaked}"
+            );
+        }
+
+        let note = read(3, "inside.md".to_string()).await;
+        assert!(
+            note.to_string().contains("kiln-grounded content"),
+            "the refusal must not cost the kiln itself: {note}"
+        );
+
+        host.shutdown().await;
+    }
+
     fn is_permission_denied(err: &ClientError) -> bool {
         matches!(
             err,
