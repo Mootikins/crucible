@@ -57,7 +57,6 @@ pub struct FrameRecord {
 pub struct Recorder {
     writer: BufWriter<File>,
     started: Instant,
-    path: PathBuf,
 }
 
 impl Recorder {
@@ -108,7 +107,6 @@ impl Recorder {
         Ok(Self {
             writer,
             started: Instant::now(),
-            path: path.to_path_buf(),
         })
     }
 
@@ -132,18 +130,6 @@ impl Recorder {
         if let Err(err) = self.writer.flush() {
             tracing::warn!(?err, "failed to flush ACP recorder");
         }
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl std::fmt::Debug for Recorder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Recorder")
-            .field("path", &self.path)
-            .finish()
     }
 }
 

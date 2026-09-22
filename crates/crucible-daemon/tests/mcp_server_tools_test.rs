@@ -192,6 +192,24 @@ async fn test_server_info_metadata() {
         "instructions should mention '{expected}', got: {instructions}"
     );
 
+    // The instructions must not name a workspace tool that the server does
+    // not serve. An agent reads them and tries the tools that they name.
+    let served = server.all_tool_names();
+    let workspace_tool = [
+        "read_file",
+        "edit_file",
+        "write_file",
+        "bash",
+        "glob",
+        "grep",
+    ];
+    for word in instructions.split(|c: char| !c.is_alphanumeric() && c != '_') {
+        assert!(
+            !workspace_tool.contains(&word) || served.iter().any(|name| name == word),
+            "instructions name `{word}`, which the server does not serve: {instructions}"
+        );
+    }
+
     // Verify tools capability is advertised
     assert!(info.capabilities.tools.is_some());
 }

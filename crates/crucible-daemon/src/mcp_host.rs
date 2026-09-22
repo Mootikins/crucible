@@ -18,7 +18,6 @@ use axum::http::{header::ACCEPT, HeaderValue};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -61,7 +60,6 @@ async fn ensure_streamable_accept(
 
 /// Hosts an MCP server in-process using streamable HTTP transport
 pub struct InProcessMcpHost {
-    _server_handle: JoinHandle<()>,
     address: SocketAddr,
     shutdown: CancellationToken,
 }
@@ -157,7 +155,7 @@ impl InProcessMcpHost {
             info!("MCP server cancelled");
         });
 
-        let server_handle = tokio::spawn(
+        tokio::spawn(
             async move {
                 if let Err(e) = server.await {
                     error!(error = %e, "MCP server shutdown with error");
@@ -169,7 +167,6 @@ impl InProcessMcpHost {
         info!("In-process MCP server started");
 
         Ok(Self {
-            _server_handle: server_handle,
             address: actual_addr,
             shutdown,
         })

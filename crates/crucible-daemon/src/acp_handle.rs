@@ -42,12 +42,6 @@ pub enum AcpHandleError {
     #[error("ACP connection failed: {0}")]
     Connection(String),
 
-    #[error("Agent not found: {0}")]
-    AgentNotFound(String),
-
-    #[error("ACP protocol error: {0}")]
-    Protocol(String),
-
     #[error("Configuration error: {0}")]
     Config(String),
 }

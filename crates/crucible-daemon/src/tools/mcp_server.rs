@@ -689,7 +689,6 @@ impl ServerHandler for CrucibleMcpServer {
                 Notes: create_note, read_note, update_note, delete_note, list_notes, \
                 read_metadata. \
                 Search: semantic_search, grep_notes, property_search. \
-                Workspace: read_file, edit_file, write_file, bash, glob, grep. \
                 Kiln: get_kiln_info. \
                 Delegation: delegate_session \
                 \u{2014} hand off tasks to other agents when asked to delegate. \

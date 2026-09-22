@@ -39,9 +39,6 @@ pub struct ReplayFixture {
 pub enum DivergenceKind {
     /// Client sent a request, fixture had no more outgoing frames.
     UnexpectedOutgoing { method: String },
-    /// Client sent an incoming-shaped frame from the wrong side. (Unlikely;
-    /// the client never reads from its own writer.)
-    WrongDirection,
     /// Outgoing method didn't match. Compares JSON-RPC `method` field.
     MethodMismatch { expected: String, actual: String },
     /// The method matched but a stable param did not. `field` names the
@@ -67,7 +64,6 @@ impl std::fmt::Display for DivergenceKind {
                     "client sent unexpected request {method:?}; fixture exhausted"
                 )
             }
-            Self::WrongDirection => write!(f, "transport received frame from wrong side"),
             Self::MethodMismatch { expected, actual } => {
                 write!(f, "method mismatch: expected {expected:?}, got {actual:?}")
             }

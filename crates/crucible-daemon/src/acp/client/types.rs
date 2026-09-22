@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::tool_table::ToolCallTable;
@@ -7,8 +6,7 @@ use crate::acp::streaming::TurnSummary;
 /// Configuration for the ACP client.
 ///
 /// Only `agent_path` is required. Each other field falls back to `None`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientConfig {
     /// Path to the agent executable or script
     pub agent_path: PathBuf,
@@ -146,35 +144,5 @@ mod streaming_state_proptests {
                 && candidate.trim() == state.accumulated_text.trim();
             prop_assert_eq!(state.is_duplicate_resend(&candidate), expected);
         }
-    }
-}
-
-#[cfg(test)]
-mod client_config_tests {
-    use super::*;
-
-    /// Only `agent_path` is required on the wire. Every other field falls
-    /// back to its default, and a removed field (`max_retries`) is ignored.
-    #[test]
-    fn client_config_parses_with_only_agent_path() {
-        let config: ClientConfig =
-            serde_json::from_str(r#"{"agent_path":"/bin/agent","max_retries":3}"#).unwrap();
-        assert_eq!(config.agent_path, PathBuf::from("/bin/agent"));
-        assert_eq!(config.agent_args, None);
-        assert_eq!(config.working_dir, None);
-        assert_eq!(config.env_vars, None);
-        assert_eq!(config.timeout_ms, None);
-
-        let json = serde_json::to_value(&config).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "agent_path": "/bin/agent",
-                "agent_args": null,
-                "working_dir": null,
-                "env_vars": null,
-                "timeout_ms": null,
-            })
-        );
     }
 }
