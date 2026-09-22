@@ -348,6 +348,7 @@ mod tests {
                     },
                 ),
             ],
+            unreadable_roots: Vec::new(),
         }
     }
 

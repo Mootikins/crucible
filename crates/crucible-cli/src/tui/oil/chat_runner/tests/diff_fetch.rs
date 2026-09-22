@@ -48,6 +48,7 @@ fn diffset() -> Diffset {
             binary: false,
             too_large: false,
         }],
+        unreadable_roots: Vec::new(),
     }
 }
 

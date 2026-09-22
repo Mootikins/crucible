@@ -401,6 +401,7 @@ mod tests {
             id: source.id(),
             source,
             files: vec![entry("a.rs"), entry("b.rs")],
+            unreadable_roots: Vec::new(),
         };
         let texts = |old: &str, new: &str| {
             Some(DiffFileText {

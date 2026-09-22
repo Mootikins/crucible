@@ -15,6 +15,7 @@ export type Diffset = Schemas['Diffset'];
 export type DiffsetSource = Schemas['DiffsetSource'];
 export type DiffFileEntry = Schemas['DiffFileEntry'];
 export type DiffFileText = Schemas['DiffFileText'];
+export type UnreadableRoot = Schemas['UnreadableRoot'];
 export type DiffComment = Schemas['ReviewCommentRow'];
 export type ListedComment = Schemas['ListedCommentRow'];
 export type CommentSide = Schemas['CommentSideRow'];

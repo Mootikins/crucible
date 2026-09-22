@@ -46,7 +46,7 @@ The **session record** diffset (`diff.get` with the `session_record` source) is 
 
 Every comment emits a `review_changed` event, so open clients refresh without polling.
 
-Structural damage degrades a root: an unreadable `review.jsonl`, a tracked root that is gone, or a base tree lost to `git gc`. A degraded root contributes no files to the session record and no hunks to the attribution.
+Structural damage degrades a root: an unreadable `review.jsonl`, a tracked root that is gone, or a base tree lost to `git gc`. A degraded root contributes no files to the session record and no hunks to the attribution. The session record names each degraded root and its reason in `unreadable_roots`, and the web diff pane shows them in a banner above the files.
 
 ## Where you meet it
 
@@ -75,4 +75,4 @@ A diffset owns each comment, not a session. `diff.comment` and `diff.resolve_com
 
 - Writes no bracket saw — your editor, background processes — are attributed to nobody; they appear as external hunks.
 - A root that becomes a git repository after its ledger opened keeps the plain store. A root whose repository goes away keeps the git backend the same way. The snapshot id is the record, and it does not follow the disk.
-- The session record diffset does not name a degraded root. The daemon log names it.
+- The TUI and `cru diff` do not show the degraded roots of a session record yet. The web diff pane shows them.

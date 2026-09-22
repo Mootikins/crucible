@@ -43,6 +43,7 @@ fn diffset() -> Diffset {
             ),
             entry("src/gone.rs", FileStatus::Deleted),
         ],
+        unreadable_roots: Vec::new(),
     }
 }
 

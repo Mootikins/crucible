@@ -538,6 +538,7 @@ pub fn mock_diffset_for(
             binary: false,
             too_large: false,
         }],
+        unreadable_roots: Vec::new(),
     }
 }
 

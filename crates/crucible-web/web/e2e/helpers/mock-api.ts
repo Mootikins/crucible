@@ -141,6 +141,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
             id: `session-${session}`,
             source: { kind: 'session_record', session },
             files: [],
+            unreadable_roots: [],
           },
         });
       }
@@ -162,6 +163,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
               binary: false,
               too_large: false,
             })),
+            unreadable_roots: [],
           },
         });
       }
@@ -172,6 +174,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
           id: 'branch-00000000000000000000000000000000',
           source: { kind: 'branch', root, base: query.get('base') ?? 'master', head },
           files: (overrides.diffFiles ?? MOCK_DIFF_FILES).map((file) => ({ root, ...file })),
+          unreadable_roots: [],
         },
       });
     },

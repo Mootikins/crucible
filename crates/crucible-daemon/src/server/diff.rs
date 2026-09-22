@@ -185,11 +185,12 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
                 id: source.id(),
                 source,
                 files,
+                unreadable_roots: Vec::new(),
             })
         }
         DiffsetSource::SessionRecord { session } => {
             ensure_record_loaded(admission.review, admission.sessions, session.as_str()).await;
-            let files = admission
+            let record = admission
                 .review
                 .record_files(session.as_str())
                 .await
@@ -197,7 +198,8 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
             Ok(Diffset {
                 id: source.id(),
                 source: source.clone(),
-                files,
+                files: record.files,
+                unreadable_roots: record.unreadable_roots,
             })
         }
         DiffsetSource::Proposal { id } => Ok(Diffset {
@@ -207,6 +209,7 @@ async fn diff_get(admission: &Admission<'_>, source: &DiffsetSource) -> Result<D
                 .proposals
                 .diff_files(id)
                 .map_err(proposal_refusal)?,
+            unreadable_roots: Vec::new(),
         }),
     }
 }

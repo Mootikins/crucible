@@ -8,7 +8,7 @@ import type { DiffFileEntry, Diffset, DiffsetSource } from '../diffset';
 
 const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
 
-const recordSet: Diffset = { id: 'session-chat-1', source: record, files: [] };
+const recordSet: Diffset = { id: 'session-chat-1', source: record, files: [], unreadable_roots: [] };
 
 function entry(root: string, path: string, over: Partial<DiffFileEntry> = {}): DiffFileEntry {
   return {

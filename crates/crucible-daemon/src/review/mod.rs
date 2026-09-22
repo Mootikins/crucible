@@ -44,7 +44,7 @@ use dashmap::DashMap;
 use tracing::{debug, warn};
 
 use backend::RootBackend;
-use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus};
+use crucible_core::diff::{DiffFileEntry, DiffFileText, FileStatus, UnreadableRoot};
 use crucible_core::types::acp::MAX_DIFF_BYTES;
 
 use crate::diff::branch::FileText;
@@ -695,17 +695,18 @@ impl ReviewLedgers {
     ///
     /// A session with no ledger has an empty record, because it has no base
     /// to compare with. A root that the ledger cannot read contributes no
-    /// files, as in [`Self::list_hunks_with_status`].
-    pub(crate) async fn record_files(&self, session_id: &str) -> ReviewResult<Vec<DiffFileEntry>> {
+    /// files, as in [`Self::list_hunks_with_status`]. The record names that
+    /// root and the reason, so that a client does not show it as complete.
+    pub(crate) async fn record_files(&self, session_id: &str) -> ReviewResult<RecordFiles> {
+        let mut record = RecordFiles::default();
         let Some(ledger) = self.ledger(session_id) else {
-            return Ok(Vec::new());
+            return Ok(record);
         };
         let integrity = self
             .integrity
             .get(session_id)
             .map(|r| r.value().clone())
             .unwrap_or_default();
-        let mut files = Vec::new();
         for base in ledger.session_base() {
             let backend = RootBackend::of(&base.base_tree);
             if let Some(reason) = degraded_reason(&integrity, base, backend, &self.plain).await {
@@ -715,6 +716,10 @@ impl ReviewLedgers {
                     reason = %reason,
                     "the session record leaves out a root that the ledger cannot read"
                 );
+                record.unreadable_roots.push(UnreadableRoot {
+                    root: base.root.clone(),
+                    reason,
+                });
                 continue;
             }
             let current = backend.capture(&self.plain, &base.root).await?;
@@ -728,11 +733,15 @@ impl ReviewLedgers {
                 let after = self
                     .snapshot_text(backend, base, &current, &path, kind.has_after())
                     .await?;
-                files.push(record_entry(&base.root, path, kind, &before, &after));
+                record
+                    .files
+                    .push(record_entry(&base.root, path, kind, &before, &after));
             }
         }
-        files.sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
-        Ok(files)
+        record
+            .files
+            .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
+        Ok(record)
     }
 
     /// The two texts of one file of the session record: the session base
@@ -932,6 +941,13 @@ pub(crate) fn line_counts(before: &str, after: &str) -> (u32, u32) {
     }
     let clamp = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
     (clamp(added), clamp(removed))
+}
+
+/// The files of a session record, and the roots that it leaves out.
+#[derive(Debug, Default)]
+pub(crate) struct RecordFiles {
+    pub(crate) files: Vec<DiffFileEntry>,
+    pub(crate) unreadable_roots: Vec<UnreadableRoot>,
 }
 
 /// Why one root's attribution cannot be trusted, or `None` when it can.

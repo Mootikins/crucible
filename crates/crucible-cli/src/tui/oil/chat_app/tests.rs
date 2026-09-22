@@ -734,6 +734,7 @@ fn branch_diffset(paths: &[&str]) -> crucible_core::diff::Diffset {
                 too_large: false,
             })
             .collect(),
+        unreadable_roots: Vec::new(),
     }
 }
 

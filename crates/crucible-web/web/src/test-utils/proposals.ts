@@ -53,6 +53,7 @@ export function proposalRoutes(
           too_large: false,
           ...counts,
         })),
+        unreadable_roots: [],
       };
     },
   };

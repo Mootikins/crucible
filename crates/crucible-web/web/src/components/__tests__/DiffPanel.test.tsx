@@ -35,6 +35,7 @@ function diffset(files: DiffFileEntry[]): Diffset {
     id: 'branch-0123456789abcdef0123456789abcdef',
     source: { kind: 'branch', root: '/repo', base: 'master', head: null },
     files,
+    unreadable_roots: [],
   };
 }
 
@@ -256,7 +257,12 @@ describe('DiffPanel', () => {
     const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
     env = createTestQueryEnv({
       'GET /api/diff': {
-        body: { id: 'session-chat-1', source: record, files: [entry('a.md', { root: '/one' }), entry('a.md', { root: '/two' })] },
+        body: {
+          id: 'session-chat-1',
+          source: record,
+          files: [entry('a.md', { root: '/one' }), entry('a.md', { root: '/two' })],
+          unreadable_roots: [],
+        },
       },
       'GET /api/diff/file': (request: Request) => {
         const root = new URL(request.url).searchParams.get('root');
@@ -273,6 +279,44 @@ describe('DiffPanel', () => {
     await waitFor(() => expect(section('a.md', '/two').textContent).toContain('/two'));
     expect(section('a.md', '/one').textContent).not.toContain('/two');
     expect(env.fetch.calls('GET /api/diff/file')).toBe(2);
+  });
+
+  it('a session record names each root that the daemon cannot read', async () => {
+    const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
+    env = createTestQueryEnv({
+      'GET /api/diff': {
+        body: {
+          id: 'session-chat-1',
+          source: record,
+          files: [entry('a.md', { root: '/one' })],
+          unreadable_roots: [
+            { root: '/gone', reason: 'tracked root no longer exists' },
+            { root: '/old', reason: 'session base snapshot abc is no longer stored' },
+          ],
+        } satisfies Diffset,
+      },
+      'GET /api/diff/file': { body: { base_text: 'a\n', current_text: 'b\n' } },
+      'GET /api/diff/comments': { body: { diffset: 'session-chat-1', comments: [] } },
+    });
+    render(() => <DiffPanel source={record} />);
+
+    const banner = await screen.findByTestId('diff-unreadable-roots');
+    const rows = within(banner).getAllByTestId('diff-unreadable-root');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('/gone'),
+      expect.stringContaining('/old'),
+    ]);
+    expect(rows[0].textContent).toContain('tracked root no longer exists');
+    expect(rows[1].textContent).toContain('session base snapshot abc is no longer stored');
+    // The readable root still lists its files below the banner.
+    expect(section('a.md', '/one')).toBeInTheDocument();
+  });
+
+  it('a diffset with no unreadable root shows no banner', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+    await waitFor(() => expect(section('src/a.rs')).toBeInTheDocument());
+    expect(screen.queryByTestId('diff-unreadable-roots')).toBeNull();
   });
 
   it('hovering a line number shows the add button', async () => {

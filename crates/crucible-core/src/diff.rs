@@ -145,6 +145,25 @@ pub struct Diffset {
     pub id: DiffsetId,
     pub source: DiffsetSource,
     pub files: Vec<DiffFileEntry>,
+    /// The roots that the diffset leaves out, because the daemon cannot read
+    /// them. Only a session record fills it. A branch and a proposal read
+    /// their files directly, so their list is empty.
+    pub unreadable_roots: Vec<UnreadableRoot>,
+}
+
+/// A root that a diffset leaves out, and the reason.
+///
+/// The session record compares each root with its session base. When the
+/// root or its base snapshot is gone, the record cannot list the files of
+/// that root. The client shows the root, so that the user does not read the
+/// record as complete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct UnreadableRoot {
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub root: PhysicalRoot,
+    /// Why the daemon cannot read the root, as a sentence for the user.
+    pub reason: String,
 }
 
 /// The two texts of one file of a diffset.
@@ -336,6 +355,10 @@ mod tests {
                     removed: 1,
                     binary: false,
                     too_large: false,
+                }],
+                unreadable_roots: vec![UnreadableRoot {
+                    root: root(),
+                    reason: "tracked root no longer exists".into(),
                 }],
             };
             let text = serde_json::to_string(&diffset).unwrap();

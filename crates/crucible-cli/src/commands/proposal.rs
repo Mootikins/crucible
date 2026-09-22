@@ -249,6 +249,7 @@ pub(crate) fn proposal_diffset(proposal: &Proposal) -> (Diffset, Vec<Option<Diff
         id: source.id(),
         source,
         files,
+        unreadable_roots: Vec::new(),
     };
     (diffset, texts)
 }

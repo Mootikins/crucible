@@ -2617,6 +2617,12 @@ export interface components {
             files: components["schemas"]["DiffFileEntry"][];
             id: components["schemas"]["DiffsetId"];
             source: components["schemas"]["DiffsetSource"];
+            /**
+             * @description The roots that the diffset leaves out, because the daemon cannot read
+             *     them. Only a session record fills it. A branch and a proposal read
+             *     their files directly, so their list is empty.
+             */
+            unreadable_roots: components["schemas"]["UnreadableRoot"][];
         };
         /**
          * @description The identity of one diffset.
@@ -4567,6 +4573,19 @@ export interface components {
             /** @description The note name it would link to. */
             target: string;
         };
+        /**
+         * @description A root that a diffset leaves out, and the reason.
+         *
+         *     The session record compares each root with its session base. When the
+         *     root or its base snapshot is gone, the record cannot list the files of
+         *     that root. The client shows the root, so that the user does not read the
+         *     record as complete.
+         */
+        UnreadableRoot: {
+            /** @description Why the daemon cannot read the root, as a sentence for the user. */
+            reason: string;
+            root: string;
+        };
         VectorSearchRequest: {
             /** @description Absolute path of the kiln to search. */
             kiln: string;
@@ -4815,6 +4834,7 @@ export type SchemaSwitchModelRequest = components['schemas']['SwitchModelRequest
 export type SchemaSystemEvent = components['schemas']['SystemEvent'];
 export type SchemaTitleResponse = components['schemas']['TitleResponse'];
 export type SchemaUnlinkedMentionRow = components['schemas']['UnlinkedMentionRow'];
+export type SchemaUnreadableRoot = components['schemas']['UnreadableRoot'];
 export type SchemaVectorSearchRequest = components['schemas']['VectorSearchRequest'];
 export type SchemaVectorSearchResponse = components['schemas']['VectorSearchResponse'];
 export type SchemaVectorSearchRow = components['schemas']['VectorSearchRow'];

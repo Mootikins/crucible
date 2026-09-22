@@ -54,6 +54,7 @@ import {
   type DiffFileText,
   type DiffsetSource,
   type ListedComment,
+  type UnreadableRoot,
 } from '@/lib/diffset';
 import {
   invalidateDiffset,
@@ -69,7 +70,7 @@ import { useProposal, useProposalDecision, type ProposalDecision } from '@/lib/q
 import { notificationActions } from '@/stores/notificationStore';
 import { ConflictView } from './ConflictView';
 import { commentExtensions, setComments, spanLabel, type CommentHost, type LineSpan } from './diff-comments';
-import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
+import { AlertTriangle, ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
 import { hit } from '@/lib/touch';
 
 /** A file with more changed lines than this starts collapsed. */
@@ -398,6 +399,7 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
       </PanelHeader>
 
       <div ref={body} class="flex-1 overflow-y-auto">
+        <UnreadableRoots roots={diffset.data?.unreadable_roots ?? []} />
         <Switch>
           <Match when={diffset.isError}>
             <p class="px-3 py-2 text-xs text-error" data-testid="diff-error">
@@ -434,6 +436,35 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
     </>
   );
 };
+
+/**
+ * The roots that the diffset leaves out. The daemon cannot read them, so the
+ * file list is not complete. Each row names the root and the reason.
+ */
+const UnreadableRoots: Component<{ roots: UnreadableRoot[] }> = (props) => (
+  <Show when={props.roots.length > 0}>
+    <div
+      class="mx-3 mt-2 rounded-md border border-attention/50 bg-attention/[0.06] px-3 py-1.5 text-xs"
+      data-testid="diff-unreadable-roots"
+      role="status"
+    >
+      <p class="flex items-center gap-2 text-shell-ink">
+        <AlertTriangle class="h-3.5 w-3.5 shrink-0 text-attention" />
+        This diff leaves out the files of these roots:
+      </p>
+      <ul class="mt-1 space-y-0.5 pl-5">
+        <For each={props.roots}>
+          {(unreadable) => (
+            <li data-testid="diff-unreadable-root">
+              <span class="font-mono text-shell-ink">{unreadable.root}</span>
+              <span class="text-muted-dark"> — {unreadable.reason}</span>
+            </li>
+          )}
+        </For>
+      </ul>
+    </div>
+  </Show>
+);
 
 interface FileSectionProps {
   source: DiffsetSource;

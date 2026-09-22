@@ -5650,7 +5650,8 @@
         "required": [
           "id",
           "source",
-          "files"
+          "files",
+          "unreadable_roots"
         ],
         "properties": {
           "id": {
@@ -5664,6 +5665,13 @@
             "items": {
               "$ref": "#/components/schemas/DiffFileEntry"
             }
+          },
+          "unreadable_roots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnreadableRoot"
+            },
+            "description": "The roots that the diffset leaves out, because the daemon cannot read\nthem. Only a session record fills it. A branch and a proposal read\ntheir files directly, so their list is empty."
           }
         }
       },
@@ -9650,6 +9658,23 @@
             "type": "integer",
             "description": "Byte offset of the mention in the note's content.",
             "minimum": 0
+          }
+        }
+      },
+      "UnreadableRoot": {
+        "type": "object",
+        "description": "A root that a diffset leaves out, and the reason.\n\nThe session record compares each root with its session base. When the\nroot or its base snapshot is gone, the record cannot list the files of\nthat root. The client shows the root, so that the user does not read the\nrecord as complete.",
+        "required": [
+          "root",
+          "reason"
+        ],
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the daemon cannot read the root, as a sentence for the user."
           }
         }
       },
