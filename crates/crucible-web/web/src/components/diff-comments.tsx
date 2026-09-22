@@ -331,14 +331,15 @@ class CommentWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'cm-diff-comment';
-    el.dataset.testid = 'diff-comment';
+    const block = commentBlock();
+    const card = block.appendChild(document.createElement('div'));
+    card.className = 'cm-diff-comment';
+    card.dataset.testid = 'diff-comment';
     disposers.set(
-      el,
-      render(() => <StoredComment comment={this.comment} host={this.host} />, el),
+      block,
+      render(() => <StoredComment comment={this.comment} host={this.host} />, card),
     );
-    return el;
+    return block;
   }
 
   destroy(dom: HTMLElement): void {
@@ -349,6 +350,21 @@ class CommentWidget extends WidgetType {
   ignoreEvent(): boolean {
     return true;
   }
+}
+
+/**
+ * The block of one comment widget: the gap around the card, as padding.
+ *
+ * The gap must NOT be a margin. CodeMirror measures a block widget with
+ * `getBoundingClientRect`, which leaves a margin out, so a margin here makes
+ * the height map short. The rows then flow lower than the gutter believes,
+ * and every change bar below the widget rides high by that margin. The
+ * browser test `e2e/diff-change-bar.spec.ts` fails when a margin comes back.
+ */
+function commentBlock(): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'cm-diff-comment-block';
+  return el;
 }
 
 /** The head and the body of one stored comment. */
@@ -435,8 +451,9 @@ class BoxWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const el = document.createElement('div');
-    el.className = 'cm-diff-comment-box';
+    const block = commentBlock();
+    const card = block.appendChild(document.createElement('div'));
+    card.className = 'cm-diff-comment-box';
     const close = () => view.dispatch({ effects: setDraft.of(null) });
     const dispose = render(
       () => (
@@ -450,10 +467,10 @@ class BoxWidget extends WidgetType {
           onCancel={close}
         />
       ),
-      el,
+      card,
     );
-    disposers.set(el, dispose);
-    return el;
+    disposers.set(block, dispose);
+    return block;
   }
 
   destroy(dom: HTMLElement): void {
@@ -529,8 +546,10 @@ const commentTheme = EditorView.theme({
     textAlign: 'center',
   },
   '.cm-line.cm-diff-selected': { backgroundImage: `linear-gradient(${tint(0.14)}, ${tint(0.14)})` },
+  // The gap is padding on the block, never a margin on the card: see
+  // `commentBlock`.
+  '.cm-diff-comment-block': { padding: '4px 8px 4px 0' },
   '.cm-diff-comment, .cm-diff-comment-box': {
-    margin: '4px 8px 4px 0',
     padding: '6px 8px',
     border: '1px solid var(--color-hairline)',
     borderRadius: 'var(--cru-radius-md)',
