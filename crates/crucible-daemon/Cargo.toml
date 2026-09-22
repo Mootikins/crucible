@@ -27,7 +27,7 @@ glob = { workspace = true }
 dashmap = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt", "compat"] }
 crucible-core = { path = "../crucible-core" }
 # OpenAPI schemas for the grep wire types, behind the `openapi` feature.
 utoipa = { workspace = true, optional = true }

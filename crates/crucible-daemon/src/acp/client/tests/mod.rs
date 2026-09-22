@@ -8,6 +8,7 @@ mod creation;
 mod io;
 mod process_streaming;
 mod protocol;
+mod sdk_spike;
 mod streaming;
 
 /// Cross-platform test path helper
