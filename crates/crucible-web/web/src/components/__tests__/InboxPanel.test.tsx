@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor } from '@solidjs/testing-library';
-import InboxPanel from '../InboxPanel';
+import { render, cleanup, waitFor, fireEvent } from '@solidjs/testing-library';
+import { installFakeEventSource } from '@/test-utils/sse';
+import { proposalFixture, proposalRoutes } from '@/test-utils/proposals';
 import { attentionStore, attentionActions } from '@/stores/attentionStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
@@ -8,6 +9,16 @@ import { resetSessionsForTests } from '@/lib/query/sessions';
 import { keys } from '@/lib/query/keys';
 import { getBus } from '@/lib/bus';
 import type { InteractionOf, Session } from '@/lib/types';
+
+// A click on a proposal row opens the diff pane. The pane is a tab of the
+// window store, so the test reads the call and not the layout.
+const openDiff = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/panel-actions', async (original) => ({
+  ...(await original<typeof import('@/lib/panel-actions')>()),
+  openDiff,
+}));
+
+const { default: InboxPanel } = await import('../InboxPanel');
 
 // No `vi.mock('@/lib/api')`. The panel reads the session list through
 // `lib/query/sessions.ts`, so the list it draws and the list the rail draws
@@ -60,6 +71,9 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
 }
 
 beforeEach(() => {
+  // The proposal list holds the system stream open, and jsdom has no
+  // `EventSource`.
+  installFakeEventSource();
   clearAttention();
   resetSessionsForTests();
   localStorage.removeItem('crucible:cache:sessions');
@@ -247,5 +261,87 @@ describe('the list the inbox shares with the rail', () => {
     );
     // The row is back in the recent list, which is the same list.
     await waitFor(() => expect(getByText(/1 recent sessions/)).toBeTruthy());
+  });
+});
+
+describe('InboxPanel — proposals', () => {
+  const OPEN = '7a1c2f3e-0000-4000-8000-000000000001';
+  const STALE = '7a1c2f3e-0000-4000-8000-000000000002';
+  const NEWER = '7a1c2f3e-0000-4000-8000-000000000003';
+
+  it('lists an open proposal', async () => {
+    serve(
+      proposalRoutes([
+        proposalFixture(OPEN, { kind: 'open' }, { title: 'Merge the two notes on X' }),
+      ]),
+    );
+    const { getByTestId } = render(() => <InboxPanel />);
+
+    const row = await waitFor(() => getByTestId(`inbox-proposal-${OPEN}`));
+    expect(row.textContent).toContain('Merge the two notes on X');
+    expect(row.textContent).toContain('consolidation');
+    expect(row.textContent).toContain('1 file');
+    await waitFor(() => expect(row.textContent).toContain('+3 −1'));
+
+    fireEvent.click(getByTestId(`inbox-proposal-open-${OPEN}`));
+    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: OPEN });
+  });
+
+  it('marks a stale proposal', async () => {
+    serve(
+      proposalRoutes([
+        proposalFixture(OPEN, { kind: 'open' }),
+        proposalFixture(STALE, { kind: 'stale' }),
+      ]),
+    );
+    const { getByTestId } = render(() => <InboxPanel />);
+
+    await waitFor(() => getByTestId(`inbox-proposal-${STALE}`));
+    expect(getByTestId(`inbox-proposal-state-${STALE}`).textContent).toBe('STALE');
+    expect(getByTestId(`inbox-proposal-state-${OPEN}`).textContent).toBe('OPEN');
+  });
+
+  it('counts proposals in the header', async () => {
+    serve(
+      proposalRoutes([
+        proposalFixture(OPEN, { kind: 'open' }),
+        proposalFixture(STALE, { kind: 'stale' }),
+      ]),
+    );
+    attentionActions.report('s1', { pendingInteraction: perm, title: 'waiting' });
+    const { getByText, queryByText } = render(() => <InboxPanel />);
+
+    await waitFor(() => expect(getByText(/3 pending/)).toBeTruthy());
+    expect(queryByText(/all clear/)).toBeNull();
+  });
+
+  // A superseded proposal stays until the user dismisses it. Its row names
+  // the newer proposal, and Dismiss is the way out.
+  it('links a superseded proposal to the newer one and dismisses it', async () => {
+    let rows = [
+      proposalFixture(OPEN, { kind: 'superseded', by: NEWER }),
+      proposalFixture(NEWER, { kind: 'open' }),
+    ];
+    const served = serve({
+      ...proposalRoutes(rows),
+      'GET /api/proposals': () => rows,
+      [`POST /api/proposals/${OPEN}/dismiss`]: () => {
+        const dismissed = { ...rows[0], state: { kind: 'dismissed' as const } };
+        rows = rows.slice(1);
+        return dismissed;
+      },
+    });
+    const { getByTestId, queryByTestId } = render(() => <InboxPanel />);
+
+    await waitFor(() => getByTestId(`inbox-proposal-${OPEN}`));
+    expect(getByTestId(`inbox-proposal-state-${OPEN}`).textContent).toBe('SUPERSEDED');
+
+    fireEvent.click(getByTestId(`inbox-proposal-newer-${OPEN}`));
+    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: NEWER });
+
+    fireEvent.click(getByTestId(`inbox-proposal-dismiss-${OPEN}`));
+    await waitFor(() => expect(queryByTestId(`inbox-proposal-${OPEN}`)).toBeNull());
+    expect(served.fetch.calls(`POST /api/proposals/${OPEN}/dismiss`)).toBe(1);
+    expect(getByTestId(`inbox-proposal-${NEWER}`)).toBeTruthy();
   });
 });

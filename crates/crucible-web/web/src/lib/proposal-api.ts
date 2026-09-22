@@ -13,6 +13,7 @@ type Schemas = components['schemas'];
 export type Proposal = Schemas['Proposal'];
 export type ProposalState = Schemas['ProposalState'];
 export type FileConflict = Schemas['FileConflict'];
+export type ProposedWrite = Schemas['ProposedWrite'];
 
 /**
  * Whether the user can still accept the proposal: it is not decided, and no
@@ -59,6 +60,33 @@ export function stateLabel(state: ProposalState): string {
 /** Fails the compile when a new state has no branch here. */
 function unknownState(state: never): never {
   throw new Error(`Unknown proposal state: ${JSON.stringify(state)}`);
+}
+
+/**
+ * The name of the writer, for a row or a bar. A plugin pass shows its plugin.
+ * A session shows the end of its id.
+ */
+export function authorLabel(proposal: Proposal): string {
+  const author = proposal.author;
+  switch (author.kind) {
+    case 'plugin':
+      return author.name;
+    case 'session':
+      return `session ${author.id.slice(-8)}`;
+  }
+}
+
+/** The absolute path of one write: its kiln root and its relative path. */
+export function writePath(write: ProposedWrite): string {
+  return `${write.root.replace(/\/+$/, '')}/${write.path.replace(/^\/+/, '')}`;
+}
+
+/**
+ * The proposals in the Inbox, oldest first: open, stale, conflicted and
+ * superseded. Accept, reject and dismiss take a proposal out.
+ */
+export async function listProposals(): Promise<Proposal[]> {
+  return decode(await client.GET('/api/proposals', {}), 'Failed to load the proposals');
 }
 
 /** One proposal, in any state. */
@@ -112,5 +140,16 @@ export async function resolveProposal(id: string, path: string, text: string): P
       body: { path, text },
     }),
     'Failed to accept the resolution',
+  );
+}
+
+/**
+ * Take the proposal out of the Inbox with no decision. The daemon keeps its
+ * file, so the history stays.
+ */
+export async function dismissProposal(id: string): Promise<Proposal> {
+  return decode(
+    await client.POST('/api/proposals/{id}/dismiss', { params: { path: { id } } }),
+    'Failed to dismiss the proposal',
   );
 }

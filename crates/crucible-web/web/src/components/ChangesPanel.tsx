@@ -37,6 +37,9 @@ import {
   type ReviewScope,
 } from '@/lib/review-types';
 import { AlertTriangle, Check, ChevronRight, MessageCircle, RefreshCw, Undo2 } from '@/lib/icons';
+import { useProposals } from '@/lib/query/proposals';
+import { authorLabel } from '@/lib/proposal-api';
+import { openDiff } from '@/lib/panel-actions';
 
 /** Files, in composed-diff order, with their hunks. */
 interface FileGroup {
@@ -358,6 +361,14 @@ export const ChangesPanel: Component = () => {
   // and the drain is not this panel's event stream.
   onMount(() => void conflictActions.refresh().catch(() => undefined));
   const conflicts = () => conflictStore.list();
+  // A stale or conflicted proposal needs a merge, as a conflict does. An open
+  // proposal waits in the Inbox only.
+  const proposalQuery = useProposals();
+  const mergeProposals = createMemo(() =>
+    (proposalQuery.data ?? []).filter(
+      (p) => p.state.kind === 'stale' || p.state.kind === 'conflicted',
+    ),
+  );
 
   return (
     <PanelShell>
@@ -473,6 +484,47 @@ export const ChangesPanel: Component = () => {
                     title={`Settle ${row.path}`}
                     data-testid={`changes-conflict-open-${row.path}`}
                     onClick={() => openConflict(row.path)}
+                    class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
+                  >
+                    Open
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        {/* Beside the conflicts, and outside the session gate for the same
+            reason: a proposal belongs to no session. */}
+        <Show when={mergeProposals().length > 0}>
+          <div data-testid="changes-proposals">
+            <div class="flex items-center gap-1 px-3 py-1 text-floor uppercase tracking-wider text-attention bg-attention/10 border-b border-hairline">
+              <AlertTriangle class="w-3 h-3 shrink-0" />
+              Proposals
+            </div>
+            <For each={mergeProposals()}>
+              {(proposal) => (
+                <div
+                  class="flex items-center gap-2 border-b border-hairline px-3 py-1.5"
+                  data-testid={`changes-proposal-${proposal.id}`}
+                >
+                  <span
+                    class="min-w-0 flex-1 truncate text-xs text-shell-ink"
+                    title={`${authorLabel(proposal)}: ${proposal.title}`}
+                  >
+                    {proposal.title}
+                  </span>
+                  <span
+                    class="shrink-0 text-floor text-muted-dark"
+                    data-testid={`changes-proposal-state-${proposal.id}`}
+                  >
+                    {proposal.state.kind}
+                  </span>
+                  <button
+                    type="button"
+                    title={`Review ${proposal.title}`}
+                    data-testid={`changes-proposal-open-${proposal.id}`}
+                    onClick={() => openDiff({ kind: 'proposal', id: proposal.id })}
                     class={`shrink-0 rounded border border-hairline px-2 py-0.5 text-floor text-shell-ink hover:bg-hover-wash ${hit()}`}
                   >
                     Open

@@ -1,5 +1,6 @@
 import {
   Component,
+  For,
   Show,
   createEffect,
   createMemo,
@@ -29,6 +30,9 @@ import { EditorView } from '@codemirror/view';
 import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
 import { pendingReveal, reviewActions, reviewStore } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
+import { useProposals } from '@/lib/query/proposals';
+import { authorLabel, isPending, writePath } from '@/lib/proposal-api';
+import { openDiff } from '@/lib/panel-actions';
 
 /** Extensions the browser renders itself, kept in step with the canvas media
  * node (`CanvasNodeView.tsx`) — the other place raw bytes become an `<img>`. */
@@ -148,6 +152,18 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // A pending proposed edit for this file → the editor shows it as an inline
   // diff (openFileWithDiff). Cleared on Dismiss.
   const pendingDiff = () => (props.filePath ? pendingDiffStore.get(props.filePath) : undefined);
+
+  // The proposals that wait for a decision and write this note. The list is
+  // the Inbox list, so a `proposal_changed` event updates both.
+  const proposals = useProposals();
+  const noteProposals = createMemo(() => {
+    const path = props.filePath;
+    if (!path) return [];
+    return (proposals.data ?? []).filter(
+      (proposal) =>
+        isPending(proposal.state) && proposal.writes.some((write) => writePath(write) === path),
+    );
+  });
 
   /** A proposed change can't be staged over unsaved work — see the effect below. */
   const blockedByUnsavedEdits = () => {
@@ -439,6 +455,31 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           </button>
         </div>
       </Show>
+
+      {/* A proposal waits for the user and writes this note. The disk holds no
+          change yet, so the bar is the only sign of it here. A superseded or
+          decided proposal waits for nothing, and puts no bar. */}
+      <For each={noteProposals()}>
+        {(proposal) => (
+          <div
+            data-testid={`proposal-bar-${proposal.id}`}
+            class="mx-3 mt-2 px-3 py-1 rounded-md border border-primary/40 bg-primary/[0.06] flex items-center gap-2 text-floor"
+          >
+            <Pencil class="w-3 h-3 text-primary shrink-0" />
+            <span class="text-shell-ink truncate">
+              {authorLabel(proposal)} proposes a change
+            </span>
+            <button
+              type="button"
+              data-testid={`proposal-bar-review-${proposal.id}`}
+              onClick={() => openDiff({ kind: 'proposal', id: proposal.id })}
+              class={`ml-auto shrink-0 rounded px-2 py-0.5 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
+            >
+              Review
+            </button>
+          </div>
+        )}
+      </For>
 
       {/* Proposed-edit review banner — shown while an agent's diff is overlaid
           on this file (openFileWithDiff). Accept/reject per hunk lives in the

@@ -3,6 +3,7 @@ import { render, waitFor } from '@solidjs/testing-library';
 import { createSignal, Show } from 'solid-js';
 import { createTestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
+import { installFakeEventSource } from '@/test-utils/sse';
 
 // Regression for the open-file refcount leak: FileViewerPanel's open effect
 // must depend ONLY on props.filePath. openFile() starts with a reactive store
@@ -50,6 +51,9 @@ let kilnEnv: ReturnType<typeof createTestQueryEnv>;
 
 describe('FileViewerPanel — open refcount does not leak', () => {
   beforeEach(() => {
+    // The panel reads the proposal list, which holds the system stream open.
+    // jsdom has no `EventSource`.
+    installFakeEventSource();
     resetKilnsForTests();
     kilnEnv = createTestQueryEnv({
       'GET /api/kilns': () => ({ kilns: [] }),

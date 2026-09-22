@@ -1,18 +1,51 @@
-import type { Accessor } from 'solid-js';
+import { onCleanup, type Accessor } from 'solid-js';
 import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/solid-query';
 import { diffsetKey } from '@/lib/diffset';
 import {
   acceptProposal,
+  dismissProposal,
   getProposal,
+  listProposals,
   rejectProposal,
   resolveProposal,
   type Proposal,
 } from '@/lib/proposal-api';
 import { getQueryClient } from './client';
 import { keys } from './keys';
+import { systemEvents } from './sse';
 
-/** One proposal, with its state. */
+/**
+ * Holds the system stream open while the caller is on screen.
+ *
+ * The caller does nothing with the frame. The route of the stream
+ * (`routes/system.ts`) invalidates the proposal entries. The root counts its
+ * subscribers, and with none it closes the `EventSource`.
+ */
+function holdSystemStream(): void {
+  onCleanup(systemEvents().subscribe(() => {}));
+}
+
+/**
+ * The proposals in the Inbox, oldest first. The list refetches when the daemon
+ * sends `proposal_changed`.
+ */
+export function useProposals(): UseQueryResult<Proposal[], Error> {
+  holdSystemStream();
+  return useQuery(
+    () => ({
+      queryKey: keys.proposals(),
+      queryFn: listProposals,
+    }),
+    getQueryClient,
+  );
+}
+
+/**
+ * One proposal, with its state. The entry refetches when the daemon sends
+ * `proposal_changed` for it.
+ */
 export function useProposal(id: Accessor<string>): UseQueryResult<Proposal, Error> {
+  holdSystemStream();
   return useQuery(() => {
     const value = id();
     return {
@@ -29,13 +62,14 @@ export type ProposalDecision =
   | { kind: 'resolve'; path: string; text: string };
 
 /**
- * Makes the proposal `id` and its diffset wrong. A decision changes the
- * state, and a decision on some files changes the file list.
+ * Makes the proposal `id`, its diffset and the Inbox list wrong. A decision
+ * changes the state, and a decision on some files changes the file list.
  */
 export function invalidateProposal(id: string): Promise<void> {
   const client = getQueryClient();
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.proposal(id) }),
+    client.invalidateQueries({ queryKey: keys.proposals() }),
     client.invalidateQueries({ queryKey: keys.diffset(diffsetKey({ kind: 'proposal', id })) }),
   ]).then(() => undefined);
 }
@@ -64,6 +98,20 @@ export function useProposalDecision(
         const ids = new Set([id(), ...(reply ? [reply.id] : [])]);
         return Promise.all([...ids].map(invalidateProposal));
       },
+    }),
+    getQueryClient,
+  );
+}
+
+/**
+ * Takes a proposal out of the Inbox with no decision. A superseded proposal
+ * leaves this way.
+ */
+export function useDismissProposal(): UseMutationResult<Proposal, Error, string> {
+  return useMutation(
+    () => ({
+      mutationFn: dismissProposal,
+      onSettled: (_reply, _error, id) => invalidateProposal(id),
     }),
     getQueryClient,
   );

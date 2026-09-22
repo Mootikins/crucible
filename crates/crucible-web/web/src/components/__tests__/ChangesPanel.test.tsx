@@ -3,6 +3,7 @@ import { render, screen, cleanup, waitFor, fireEvent, within } from '@solidjs/te
 import { createSignal } from 'solid-js';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource } from '@/test-utils/sse';
+import { proposalFixture, proposalRoutes } from '@/test-utils/proposals';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { Session } from '@/lib/types';
@@ -64,7 +65,11 @@ vi.mock('@/lib/offline/sync', () => ({
   resolveConflict: async () => ({ queued: false, stale: false, hash: 'h' }),
 }));
 const openPanelTab = vi.fn();
-vi.mock('@/lib/panel-actions', () => ({ openPanelTab: (id: string) => openPanelTab(id) }));
+const openDiff = vi.fn();
+vi.mock('@/lib/panel-actions', () => ({
+  openPanelTab: (id: string) => openPanelTab(id),
+  openDiff: (source: unknown) => openDiff(source),
+}));
 
 // Rejecting rewrites a file; the toast is how the user learns it happened.
 const addNotification = vi.fn();
@@ -821,5 +826,54 @@ describe('ChangesPanel — conflicts', () => {
     fireEvent.click(await screen.findByTestId('changes-conflict-open-/repo/notes/A.md'));
     expect(openPanelTab).toHaveBeenCalledWith('conflicts');
     expect(conflictStore.selected()).toBe('/repo/notes/A.md');
+  });
+});
+
+/**
+ * A stale or conflicted proposal needs the user as a conflict does, so the
+ * panel lists it beside the outbox conflicts. An open proposal waits in the
+ * Inbox only, and a superseded one waits for no decision.
+ */
+describe('ChangesPanel — proposals', () => {
+  const OPEN = '7a1c2f3e-0000-4000-8000-000000000001';
+  const STALE = '7a1c2f3e-0000-4000-8000-000000000002';
+  const CONFLICTED = '7a1c2f3e-0000-4000-8000-000000000003';
+  const SUPERSEDED = '7a1c2f3e-0000-4000-8000-000000000004';
+
+  it('lists stale and conflicted proposals', async () => {
+    env.restore();
+    env = createTestQueryEnv(
+      proposalRoutes([
+        proposalFixture(OPEN, { kind: 'open' }),
+        proposalFixture(STALE, { kind: 'stale' }, { title: 'Stale change' }),
+        proposalFixture(CONFLICTED, { kind: 'conflicted', files: [] }, { title: 'Conflicted change' }),
+        proposalFixture(SUPERSEDED, { kind: 'superseded', by: OPEN }),
+      ]),
+    );
+    render(() => <ChangesPanel />);
+
+    const section = await screen.findByTestId('changes-proposals');
+    expect(within(section).getByText('Stale change')).toBeInTheDocument();
+    expect(within(section).getByText('Conflicted change')).toBeInTheDocument();
+    expect(screen.getByTestId(`changes-proposal-state-${STALE}`).textContent).toBe('stale');
+    expect(screen.getByTestId(`changes-proposal-state-${CONFLICTED}`).textContent).toBe(
+      'conflicted',
+    );
+    expect(screen.queryByTestId(`changes-proposal-${OPEN}`)).toBeNull();
+    expect(screen.queryByTestId(`changes-proposal-${SUPERSEDED}`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`changes-proposal-open-${CONFLICTED}`));
+    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: CONFLICTED });
+  });
+
+  it('draws no proposal section when no proposal needs a merge', async () => {
+    env.restore();
+    const served = createTestQueryEnv(proposalRoutes([proposalFixture(OPEN, { kind: 'open' })]));
+    env = served;
+    render(() => <ChangesPanel />);
+
+    await waitFor(() => expect(served.fetch.calls('GET /api/proposals')).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('changes-proposals')).toBeNull();
   });
 });

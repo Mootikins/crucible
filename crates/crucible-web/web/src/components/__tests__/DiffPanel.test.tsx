@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, within } from '@solidjs/testing-library';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
+import { installFakeEventSource } from '@/test-utils/sse';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { SentRequest } from '@/test-utils/mock-fetch';
@@ -68,6 +69,9 @@ function serve(files: DiffFileEntry[], comments: ListedComment[] = []): void {
 }
 
 beforeEach(() => {
+  // A proposal pane holds the system stream open, so that `proposal_changed`
+  // refetches it. jsdom has no `EventSource`.
+  installFakeEventSource();
   resetGlobalRegistry();
 });
 

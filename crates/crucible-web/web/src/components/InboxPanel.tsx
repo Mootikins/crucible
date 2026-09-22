@@ -10,6 +10,11 @@ import { relativeTime } from '@/lib/format-time';
 import { sessionStatus, type SessionStatus } from '@/lib/session-status';
 import { SessionStatusDot } from '@/components/shell/SessionStatusDot';
 import type { InteractionResponse, Session, SessionState } from '@/lib/types';
+import { useDismissProposal, useProposals } from '@/lib/query/proposals';
+import { useDiffset } from '@/lib/query/diff';
+import { authorLabel, type Proposal, type ProposalState } from '@/lib/proposal-api';
+import { openDiff } from '@/lib/panel-actions';
+import { notificationActions } from '@/stores/notificationStore';
 
 // ── Inbox — everything waiting on you, one place ─────────────────────────
 // Crucible Shell design turn 5 / Feature Spec §3.2 "Agent Inbox". Pending
@@ -56,6 +61,112 @@ function statusLabel(session: Session): { label: string; color: string } {
   return STATE_DISPLAY[session.state] ?? STATE_DISPLAY.active;
 }
 
+/**
+ * The word and the color beside a proposal row. The Inbox lists only the
+ * states that wait for the user; the others leave it, and have no row.
+ */
+function proposalMarker(state: ProposalState): { label: string; color: string } {
+  switch (state.kind) {
+    case 'open':
+      return { label: 'OPEN', color: 'text-ok' };
+    case 'stale':
+      return { label: 'STALE', color: 'text-attention' };
+    case 'conflicted':
+      return { label: 'CONFLICTED', color: 'text-error' };
+    case 'superseded':
+      return { label: 'SUPERSEDED', color: 'text-muted-dark' };
+    case 'accepted':
+      return { label: 'ACCEPTED', color: 'text-muted-dark' };
+    case 'rejected':
+      return { label: 'REJECTED', color: 'text-muted-dark' };
+    case 'dismissed':
+      return { label: 'DISMISSED', color: 'text-muted-dark' };
+  }
+}
+
+/**
+ * One proposal in the Inbox: the author, the title, the file count and the
+ * line counts. A click opens the diff pane. A superseded row names the newer
+ * proposal and offers Dismiss, because no decision on it remains.
+ */
+const ProposalRow: Component<{ proposal: Proposal }> = (props) => {
+  const id = () => props.proposal.id;
+  // The same entry as the diff pane, so a click opens a pane that has its
+  // file list already.
+  const diffset = useDiffset(() => ({ kind: 'proposal', id: id() }));
+  const dismiss = useDismissProposal();
+  const marker = () => proposalMarker(props.proposal.state);
+  const files = () => props.proposal.writes.length;
+  const lines = () => {
+    const entries = diffset.data?.files;
+    if (!entries) return null;
+    const added = entries.reduce((sum, file) => sum + file.added, 0);
+    const removed = entries.reduce((sum, file) => sum + file.removed, 0);
+    return `+${added} −${removed}`;
+  };
+  const newer = () => {
+    const state = props.proposal.state;
+    return state.kind === 'superseded' ? state.by : null;
+  };
+  const onDismiss = () =>
+    dismiss.mutateAsync(id()).catch((e: Error) => {
+      notificationActions.addNotification('error', e.message);
+    });
+
+  return (
+    <div
+      data-testid={`inbox-proposal-${id()}`}
+      class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-hairline mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors"
+    >
+      <button
+        type="button"
+        data-testid={`inbox-proposal-open-${id()}`}
+        class="flex-1 min-w-0 text-left cursor-pointer"
+        onClick={() => openDiff({ kind: 'proposal', id: id() })}
+      >
+        <span class="block text-reading font-semibold truncate">{props.proposal.title}</span>
+        <span class="block text-floor text-muted-dark truncate">
+          {authorLabel(props.proposal)}
+          {` · ${files()} ${files() === 1 ? 'file' : 'files'}`}
+          <Show when={lines()}>{(text) => ` · ${text()}`}</Show>
+          {` · ${relativeTime(props.proposal.created_at)}`}
+        </span>
+      </button>
+      <Show when={newer()}>
+        {(by) => (
+          <>
+            <button
+              type="button"
+              data-testid={`inbox-proposal-newer-${id()}`}
+              class="font-mono text-floor text-muted-dark hover:text-muted cursor-pointer flex-none"
+              title="Open the proposal that replaces this one"
+              onClick={() => openDiff({ kind: 'proposal', id: by() })}
+            >
+              newer →
+            </button>
+            <button
+              type="button"
+              data-testid={`inbox-proposal-dismiss-${id()}`}
+              class="font-mono text-floor text-muted-dark hover:text-error cursor-pointer flex-none"
+              title="Take this proposal out of the Inbox"
+              disabled={dismiss.isPending}
+              onClick={() => void onDismiss()}
+            >
+              DISMISS
+            </button>
+          </>
+        )}
+      </Show>
+      <span
+        data-testid={`inbox-proposal-state-${id()}`}
+        class={`font-mono text-floor font-medium flex-none ${marker().color}`}
+      >
+        {marker().label}
+      </span>
+    </div>
+  );
+};
+
 const InboxPanel: Component = () => {
   const sessionCtx = useSessionSafe();
   const [resolved, setResolved] = createSignal<string | null>(null);
@@ -76,6 +187,11 @@ const InboxPanel: Component = () => {
   const [pendingDelete, setPendingDelete] = createSignal<string | null>(null);
 
   const waiting = attentionStore.waiting;
+  // Not keyed by session: a proposal belongs to no session, so it has its own
+  // list beside the session rows.
+  const proposalQuery = useProposals();
+  const proposals = () => proposalQuery.data ?? [];
+  const pendingCount = () => attentionStore.attentionCount() + proposals().length;
 
   const rows = () => sessions.data ?? [];
   const recentSessions = createMemo(() => sortByRecency(rows().filter((s) => !s.archived)));
@@ -205,7 +321,7 @@ const InboxPanel: Component = () => {
       <div class="max-w-[660px] mx-auto px-6 py-5">
         <div class="text-base font-bold mb-1">Inbox</div>
         <div class="font-mono text-floor text-muted-dark mb-4">
-          {attentionStore.attentionCount()} pending · {recentSessions().length} recent sessions
+          {pendingCount()} pending · {recentSessions().length} recent sessions
         </div>
 
         <For each={waiting()}>
@@ -231,7 +347,12 @@ const InboxPanel: Component = () => {
           )}
         </For>
 
-        <Show when={waiting().length === 0}>
+        <Show when={proposals().length > 0}>
+          <div class={`${SECTION_LABEL_CLASS} pt-2.5 pb-2`}>PROPOSALS</div>
+          <For each={proposals()}>{(proposal) => <ProposalRow proposal={proposal} />}</For>
+        </Show>
+
+        <Show when={pendingCount() === 0}>
           <div class="flex items-center gap-2.5 bg-ok/5 border border-ok/30 rounded-lg px-3.5 py-2.5 mb-2.5 text-ok text-reading">
             ✓ all clear — nothing waiting on you
           </div>

@@ -20,16 +20,18 @@ import { installSessionEventRoute } from '@/lib/query/routes/session';
 import { installSurfaceEventRoute } from '@/lib/query/routes/surfaces';
 import { installFsEventRoute } from '@/lib/query/routes/fs';
 import { installPluginEventRoute } from '@/lib/query/routes/plugins';
+import { installSystemEventRoute } from '@/lib/query/routes/system';
 
 // Before any pane opens a stream: a route turns an event into the cache write
 // it owes every pane. A pane that subscribes first would otherwise carry its
 // own fold only, and the session list, the history, the pending interactions,
 // the surface roster, the folder listings and the plugin publications would
-// stay as they were read.
+// stay as they were read. The system route keeps the proposals current.
 installSessionEventRoute();
 installSurfaceEventRoute();
 installFsEventRoute();
 installPluginEventRoute();
+installSystemEventRoute();
 
 const root = document.getElementById('root');
 

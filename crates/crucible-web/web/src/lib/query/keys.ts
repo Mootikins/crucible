@@ -95,5 +95,8 @@ export const keys = {
     ['diff', key, 'file', root, path, from] as const,
   diffComments: (key: string) => ['diff', key, 'comments'] as const,
   proposal: (id: string) => ['proposal', id] as const,
+  // The proposals in the Inbox. A proposal belongs to no session, so the
+  // list has no session in its key.
+  proposals: () => ['proposals'] as const,
   recents: () => ['recents'] as const,
 } as const;

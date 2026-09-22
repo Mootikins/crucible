@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@solidjs/testing-library';
+import { render, screen, cleanup, fireEvent, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { resetKilnsForTests } from '@/lib/query/kilns';
+import { installFakeEventSource } from '@/test-utils/sse';
+import { proposalFixture, proposalRoutes } from '@/test-utils/proposals';
 
 // FileViewerPanel calls useEditorSafe() + useSettingsSafe() unconditionally.
 // The editor's reactive shape varies per test (empty for "rendering", a dirty
@@ -87,6 +89,14 @@ vi.mock('@/lib/file-actions', () => ({
   findTabByFilePath: vi.fn(() => null),
 }));
 
+// The note bar opens the diff pane of a proposal. The pane is a tab of the
+// window store, so the test reads the call and not the layout.
+const openDiff = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/panel-actions', async (original) => ({
+  ...(await original<typeof import('@/lib/panel-actions')>()),
+  openDiff,
+}));
+
 // Mock windowStore actions (used internally by FileViewerPanel for dirty sync)
 vi.mock('@/stores/windowStore', () => ({
   windowActions: {
@@ -114,6 +124,9 @@ afterEach(cleanup);
 let env: TestQueryEnv;
 
 beforeEach(() => {
+  // The note bar reads the proposal list, which holds the system stream open.
+  // jsdom has no `EventSource`.
+  installFakeEventSource();
   resetGlobalRegistry();
   localStorage.clear();
   resetKilnsForTests();
@@ -381,5 +394,66 @@ describe('FileViewerPanel — the note changed on disk', () => {
     render(() => <FileViewerPanel filePath={FILE_PATH} />);
 
     expect(screen.queryByTestId('disk-changed-banner')).toBeNull();
+  });
+});
+
+/**
+ * A proposal waits for the user, and the note it writes is open. The bar
+ * above the text says so, and a click opens the diff pane of the proposal.
+ */
+describe('FileViewerPanel — the proposal bar', () => {
+  const ID = '7a1c2f3e-0000-4000-8000-000000000001';
+  const OTHER = '7a1c2f3e-0000-4000-8000-000000000002';
+
+  beforeEach(() => {
+    activeFileValue = FILE_PATH;
+    openFilesValue = [{ path: FILE_PATH, content: 'mine', dirty: false, baseHash: 'h1' }];
+    openDiff.mockClear();
+  });
+
+  it('shows the proposal bar on a note that a proposal writes', async () => {
+    env.restore();
+    env = createTestQueryEnv({
+      'GET /api/kilns': () => ({ kilns: kilnsValue }),
+      ...proposalRoutes([
+        proposalFixture(ID, { kind: 'open' }, {
+          writes: [
+            { root: '/kiln', path: 'notes/from-tui.md', base: { kind: 'hash', hash: 'h1' }, new_text: 'x\n' },
+          ],
+        }),
+        // A proposal on another note puts no bar here.
+        proposalFixture(OTHER, { kind: 'open' }, { author: { kind: 'plugin', name: 'reflection' } }),
+      ]),
+    });
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+
+    const bar = await waitFor(() => screen.getByTestId(`proposal-bar-${ID}`));
+    expect(bar.textContent).toContain('consolidation proposes a change');
+    expect(screen.queryByTestId(`proposal-bar-${OTHER}`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`proposal-bar-review-${ID}`));
+    expect(openDiff).toHaveBeenCalledWith({ kind: 'proposal', id: ID });
+  });
+
+  // A superseded proposal waits for no decision, so it puts no bar on the note.
+  it('draws no bar for a superseded proposal', async () => {
+    env.restore();
+    const served = createTestQueryEnv({
+      'GET /api/kilns': () => ({ kilns: kilnsValue }),
+      ...proposalRoutes([
+        proposalFixture(ID, { kind: 'superseded', by: OTHER }, {
+          writes: [
+            { root: '/kiln', path: 'notes/from-tui.md', base: { kind: 'hash', hash: 'h1' }, new_text: 'x\n' },
+          ],
+        }),
+      ]),
+    });
+    env = served;
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+
+    await waitFor(() => expect(served.fetch.calls('GET /api/proposals')).toBe(1));
+    // One macrotask, so the answer reaches the panel before the check.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId(`proposal-bar-${ID}`)).toBeNull();
   });
 });

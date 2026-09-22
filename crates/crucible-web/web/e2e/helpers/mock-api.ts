@@ -33,6 +33,11 @@ export interface MockOverrides {
   /** The texts of `GET /api/diff/file`, by path. */
   diffTexts?: Record<string, { base_text: string | null; current_text: string | null }>;
   chatMessage?: object | number;
+  /**
+   * The proposals of `GET /api/proposals`, as the daemon sends them. The
+   * proposal diffset of `GET /api/diff?proposal=` lists their writes.
+   */
+  proposals?: Array<{ id: string; writes: Array<{ root: string; path: string; new_text: string }> }>;
 }
 
 export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<void> {
@@ -132,6 +137,27 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     (url) => url.pathname === '/api/diff',
     (route) => {
       const query = new URL(route.request().url()).searchParams;
+      const proposalId = query.get('proposal');
+      if (proposalId) {
+        // A proposal diffset lists the writes of the proposal. Each write
+        // adds its lines to a note, which is enough for the counts.
+        const proposal = (overrides.proposals ?? []).find((p) => p.id === proposalId);
+        return route.fulfill({
+          json: {
+            id: `proposal-${proposalId}`,
+            source: { kind: 'proposal', id: proposalId },
+            files: (proposal?.writes ?? []).map((write) => ({
+              root: write.root,
+              path: write.path,
+              status: { kind: 'modified' },
+              added: write.new_text.split('\n').filter(Boolean).length,
+              removed: 0,
+              binary: false,
+              too_large: false,
+            })),
+          },
+        });
+      }
       const root = query.get('root') ?? '';
       const head = query.get('head');
       route.fulfill({
@@ -155,6 +181,23 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     if (!text) return route.fulfill({ status: 404, json: { error: `no file ${path}` } });
     return route.fulfill({ json: text });
   });
+
+  // The proposals in the Inbox, and one proposal by id. The system stream
+  // carries `proposal_changed`; the mock sends none.
+  await page.route(
+    (url) => url.pathname === '/api/proposals',
+    (route) => route.fulfill({ json: overrides.proposals ?? [] }),
+  );
+  await page.route(
+    (url) => /^\/api\/proposals\/[^/]+$/.test(url.pathname),
+    (route) => {
+      const id = new URL(route.request().url()).pathname.split('/').pop();
+      const proposal = (overrides.proposals ?? []).find((p) => p.id === id);
+      if (!proposal) return route.fulfill({ status: 422, json: { error: `no proposal ${id}` } });
+      return route.fulfill({ json: proposal });
+    },
+  );
+  await mockSSERoute(page, /\/api\/events\/system/, []);
 
   // Draft-session panel loads (lazy session creation surface).
   await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));
