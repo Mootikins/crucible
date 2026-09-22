@@ -106,7 +106,9 @@ describe('SessionStatusChips — effective write mode', () => {
     });
 
     setCurrentSession(session('s2'));
-    await waitFor(() => expect(screen.queryByTestId('session-status')?.dataset.writes).toBeUndefined());
+    await waitFor(() =>
+      expect(screen.queryByTestId('session-status')?.dataset.writes).toBeUndefined(),
+    );
     release();
   });
 });

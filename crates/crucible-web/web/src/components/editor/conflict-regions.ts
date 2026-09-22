@@ -17,7 +17,13 @@
  * settled, and `lib/conflicts.ts` writes it. This module owns the marking and
  * the replacement.
  */
-import { StateEffect, StateField, type EditorState, type Extension, type Text } from '@codemirror/state';
+import {
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Extension,
+  type Text,
+} from '@codemirror/state';
 import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
 import { diffWords } from 'diff';
 import type { MergeRegion } from '@/lib/types';
@@ -118,7 +124,9 @@ export function regionChoiceText(
   if (choice === 'theirs') return region.theirs;
   if (region.ours === '') return region.theirs;
   if (region.theirs === '') return region.ours;
-  return region.ours.endsWith('\n') ? region.ours + region.theirs : `${region.ours}\n${region.theirs}`;
+  return region.ours.endsWith('\n')
+    ? region.ours + region.theirs
+    : `${region.ours}\n${region.theirs}`;
 }
 
 /**
@@ -127,11 +135,7 @@ export function regionChoiceText(
  * The change and the drop go in ONE transaction, so no update ever sees a
  * region whose span names text that is no longer there.
  */
-export function resolveConflictRegion(
-  view: EditorView,
-  id: number,
-  choice: ConflictChoice,
-): void {
+export function resolveConflictRegion(view: EditorView, id: number, choice: ConflictChoice): void {
   const region = openConflictRegions(view.state).find((r) => r.id === id);
   if (!region) return;
   view.dispatch({

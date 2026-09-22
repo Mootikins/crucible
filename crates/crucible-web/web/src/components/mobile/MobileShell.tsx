@@ -241,24 +241,24 @@ export const MobileShell: Component = () => {
             />
           }
         >
-        <ContentSurface
-          tab={activeTab}
-          empty={
-            <EmptyState
-              class="flex-1"
-              title="No note is open"
-              body="Open one from the files drawer, or start a session."
-              action={[
-                { label: 'Open a note', onClick: openFilesDrawer },
-                {
-                  label: 'Start a session',
-                  onClick: () => getBus().emit('newSession', {}),
-                },
-              ]}
-              testid="mobile-empty"
-            />
-          }
-        />
+          <ContentSurface
+            tab={activeTab}
+            empty={
+              <EmptyState
+                class="flex-1"
+                title="No note is open"
+                body="Open one from the files drawer, or start a session."
+                action={[
+                  { label: 'Open a note', onClick: openFilesDrawer },
+                  {
+                    label: 'Start a session',
+                    onClick: () => getBus().emit('newSession', {}),
+                  },
+                ]}
+                testid="mobile-empty"
+              />
+            }
+          />
         </Show>
       </main>
       <BottomSheet open={menuOpen()} label="More" onClose={() => setMenuOpen(false)}>

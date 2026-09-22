@@ -31,7 +31,12 @@ let resolveAnswer: { path?: string | null } | { status: number } = {};
 /** The paths `POST /api/project/register` was given, in order. */
 let registered: string[] = [];
 /** What that registration answers. */
-let registerAnswer: Project = { path: '/registered', name: 'registered', kilns: [], last_accessed: '' };
+let registerAnswer: Project = {
+  path: '/registered',
+  name: 'registered',
+  kilns: [],
+  last_accessed: '',
+};
 let commands: CommandCall[] = [];
 
 const ranCommand = (name: string) => commands.filter((c) => c.name === name);
@@ -122,7 +127,16 @@ describe('RootDropdown', () => {
   it('renders grouped section headers with the expected option counts', () => {
     const groups = buildRoster(
       [project('/p1', 'P1'), project('/p2', 'P2')],
-      [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false }],
+      [
+        {
+          path: '/vault',
+          name: 'Vault',
+          last_access_secs_ago: null,
+          open: true,
+          registered: true,
+          git: false,
+        },
+      ],
     );
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={() => {}} />
@@ -158,7 +172,14 @@ describe('RootDropdown', () => {
     expect(getByTestId('root-dropdown').textContent).toContain('crucible');
 
     setKilns([
-      { path: '/vault', name: 'docs', registered: true, open: true, last_access_secs_ago: null, git: false },
+      {
+        path: '/vault',
+        name: 'docs',
+        registered: true,
+        open: true,
+        last_access_secs_ago: null,
+        git: false,
+      },
     ]);
     await Promise.resolve();
     expect(getByTestId('root-dropdown').textContent).toContain('docs');
@@ -169,14 +190,31 @@ describe('RootDropdown', () => {
   });
 
   it('calls onSelect with the resolved TreeRoot when an option is picked', () => {
-    const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false }]);
+    const groups = buildRoster(
+      [project('/p1', 'P1')],
+      [
+        {
+          path: '/vault',
+          name: 'Vault',
+          last_access_secs_ago: null,
+          open: true,
+          registered: true,
+          git: false,
+        },
+      ],
+    );
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const { getByTestId } = render(() => (
       <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={onSelect} />
     ));
     openPopout(getByTestId);
     fireEvent.click(screen.getByText('Vault'));
-    expect(onSelect).toHaveBeenCalledWith({ kind: 'kiln', path: '/vault', name: 'Vault', git: false });
+    expect(onSelect).toHaveBeenCalledWith({
+      kind: 'kiln',
+      path: '/vault',
+      name: 'Vault',
+      git: false,
+    });
   });
 
   // The dropdown is the file pane's ONLY root control. An empty roster must
@@ -202,8 +240,22 @@ describe('RootDropdown', () => {
     const groups = buildRoster(
       [project('/home/me/crucible', 'crucible'), project('/p2', 'other')],
       [
-        { path: '/vault', name: 'Vault', last_access_secs_ago: null, open: true, registered: true, git: false },
-        { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true, git: false },
+        {
+          path: '/vault',
+          name: 'Vault',
+          last_access_secs_ago: null,
+          open: true,
+          registered: true,
+          git: false,
+        },
+        {
+          path: '/archive',
+          name: 'Archive',
+          last_access_secs_ago: null,
+          open: true,
+          registered: true,
+          git: false,
+        },
       ],
     );
     const { getByTestId } = render(() => (
@@ -227,9 +279,19 @@ describe('RootDropdown', () => {
   // Browsing is not attaching. A root outside the session says so on its row,
   // because picking one must never read as widening what the agent can see.
   it('marks roots the session does not own as browse-only', () => {
-    const groups = buildRoster([project('/home/me/crucible', 'crucible')], [
-      { path: '/archive', name: 'Archive', last_access_secs_ago: null, open: true, registered: true, git: false },
-    ]);
+    const groups = buildRoster(
+      [project('/home/me/crucible', 'crucible')],
+      [
+        {
+          path: '/archive',
+          name: 'Archive',
+          last_access_secs_ago: null,
+          open: true,
+          registered: true,
+          git: false,
+        },
+      ],
+    );
     const { getByTestId } = render(() => (
       <RootDropdown
         own={[WORKSPACE]}
@@ -239,7 +301,9 @@ describe('RootDropdown', () => {
       />
     ));
     openPopout(getByTestId);
-    const rows = [...screen.getByTestId('root-dropdown-popout').querySelectorAll('[role="option"]')];
+    const rows = [
+      ...screen.getByTestId('root-dropdown-popout').querySelectorAll('[role="option"]'),
+    ];
     const hintOf = (label: string) =>
       rows.find((r) => r.textContent?.includes(label))?.textContent ?? '';
     expect(hintOf('crucible')).toContain('workspace');

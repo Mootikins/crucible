@@ -52,15 +52,34 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         return (
           <span class="inline-flex items-center text-primary" title="Running">
             <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="3"
+              />
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
           </span>
         );
       case 'complete':
-        return <span class="text-ok text-floor font-semibold" title="Complete">✓</span>;
+        return (
+          <span class="text-ok text-floor font-semibold" title="Complete">
+            ✓
+          </span>
+        );
       case 'error':
-        return <span class="text-error text-floor font-semibold" title="Error">✗</span>;
+        return (
+          <span class="text-error text-floor font-semibold" title="Error">
+            ✗
+          </span>
+        );
     }
   };
 
@@ -69,9 +88,12 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // meaningful in-progress/failed states carry a wash.
   const statusBgColor = () => {
     switch (props.toolCall.status) {
-      case 'running': return 'bg-primary/10';
-      case 'complete': return 'bg-transparent';
-      case 'error': return 'bg-error/10';
+      case 'running':
+        return 'bg-primary/10';
+      case 'complete':
+        return 'bg-transparent';
+      case 'error':
+        return 'bg-error/10';
     }
   };
 
@@ -201,7 +223,10 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                 Command
               </div>
               <div class="flex gap-2">
-                <span class="select-none text-primary text-xs font-mono leading-5" aria-hidden="true">
+                <span
+                  class="select-none text-primary text-xs font-mono leading-5"
+                  aria-hidden="true"
+                >
                   $
                 </span>
                 <pre
@@ -217,8 +242,12 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           {/* Args section — suppressed when a diff renders, since the diff header
               shows the file path and the diff body shows the old/new content. */}
           <Show when={formattedArgs() && diffs().length === 0}>
-            <div class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}>
-              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">Arguments</div>
+            <div
+              class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}
+            >
+              <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
+                Arguments
+              </div>
               <pre
                 data-testid="tool-args"
                 class="text-xs text-shell-body font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-48 overflow-y-auto"
@@ -233,7 +262,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
               formattedResult() so JSON-bearing error payloads get the same
               pretty-printing as successful results. */}
           <Show when={props.toolCall.result && props.toolCall.status === 'error'}>
-            <div class={`px-3 py-2 ${formattedArgs() && diffs().length === 0 ? 'border-t border-hairline' : ''} bg-surface-base`}>
+            <div
+              class={`px-3 py-2 ${formattedArgs() && diffs().length === 0 ? 'border-t border-hairline' : ''} bg-surface-base`}
+            >
               <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Error
               </div>
@@ -246,7 +277,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
           {/* Diff rendering — the daemon's FileDiff projection, one block per
               file (an ACP call may touch several). */}
           <Show when={diffs().length > 0}>
-            <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
+            <div
+              class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}
+            >
               {diffs().map((d) => (
                 <div class="mb-1.5 last:mb-0">
                   {/* Review this change in the session record — one
@@ -264,23 +297,29 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
                       </button>
                     </div>
                   </Show>
-                  {d.kind === 'single'
-                    ? (
-                      <DiffViewer
-                        fileName={d.fileName}
-                        oldContent={d.oldContent}
-                        newContent={d.newContent}
-                      />
-                    )
-                    : <MultiEditDiff fileName={d.fileName} edits={d.edits} />}
+                  {d.kind === 'single' ? (
+                    <DiffViewer
+                      fileName={d.fileName}
+                      oldContent={d.oldContent}
+                      newContent={d.newContent}
+                    />
+                  ) : (
+                    <MultiEditDiff fileName={d.fileName} edits={d.edits} />
+                  )}
                 </div>
               ))}
             </div>
           </Show>
 
           {/* Plain-text result section (kept for non-diff tools on success). */}
-          <Show when={props.toolCall.result && diffs().length === 0 && props.toolCall.status !== 'error'}>
-            <div class={`px-3 py-2 ${formattedArgs() ? 'border-t border-hairline' : ''} bg-surface-base`}>
+          <Show
+            when={
+              props.toolCall.result && diffs().length === 0 && props.toolCall.status !== 'error'
+            }
+          >
+            <div
+              class={`px-3 py-2 ${formattedArgs() ? 'border-t border-hairline' : ''} bg-surface-base`}
+            >
               <div class="text-floor uppercase tracking-wider text-muted-dark mb-1 font-semibold">
                 Result
               </div>

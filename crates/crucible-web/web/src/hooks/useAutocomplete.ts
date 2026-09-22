@@ -196,10 +196,7 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     // Both lists come from the shared entries the link completion reads, so a
     // composer and an open editor in one kiln ask the daemon once between
     // them, and a second trigger inside the freshness window asks for neither.
-    const [files, notes] = await Promise.all([
-      fetchKilnFilesOnce(kiln),
-      fetchKilnNotesOnce(kiln),
-    ]);
+    const [files, notes] = await Promise.all([fetchKilnFilesOnce(kiln), fetchKilnNotesOnce(kiln)]);
     const noteOptions = toAutocompleteItems(notes, 'note');
     setFileItems(toMentionItems([...files, ...notes]));
     setNoteItems(noteOptions);
@@ -285,7 +282,9 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     setSelectedIndex((prev) => Math.min(prev, filtered.length - 1));
   };
 
-  const onInput = async (e: InputEvent & { currentTarget: HTMLTextAreaElement; target: HTMLTextAreaElement }) => {
+  const onInput = async (
+    e: InputEvent & { currentTarget: HTMLTextAreaElement; target: HTMLTextAreaElement },
+  ) => {
     const value = e.currentTarget.value;
     const cursor = e.currentTarget.selectionStart ?? value.length;
     options.setInput(value);
@@ -310,7 +309,9 @@ export function useAutocomplete(options: UseAutocompleteOptions) {
     } else if (activeTrigger === '@') {
       replacement = `@${selected.insertText}${lineSuffix()}`;
     } else if (activeTrigger === '#') {
-      replacement = selected.insertText.startsWith('#') ? selected.insertText : `#${selected.insertText}`;
+      replacement = selected.insertText.startsWith('#')
+        ? selected.insertText
+        : `#${selected.insertText}`;
     } else {
       replacement = `/${selected.insertText}`;
     }

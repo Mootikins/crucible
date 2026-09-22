@@ -79,9 +79,7 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
   for (const p of projects) {
     const repo = p.repository;
     if (repo?.is_worktree && repo.root) {
-      const rel = p.path.startsWith(repo.root + '/')
-        ? p.path.slice(repo.root.length + 1)
-        : null;
+      const rel = p.path.startsWith(repo.root + '/') ? p.path.slice(repo.root.length + 1) : null;
       worktreeRoots.push({
         kind: 'project',
         path: p.path,
@@ -119,7 +117,8 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
   // project's attached kiln takes the answer of the row for the same root.
   const gitRoots = new Set<string>();
   for (const k of kilns) {
-    if (k.git && typeof k.path === 'string' && k.path.startsWith('/')) gitRoots.add(kilnRoot(k.path));
+    if (k.git && typeof k.path === 'string' && k.path.startsWith('/'))
+      gitRoots.add(kilnRoot(k.path));
   }
 
   const seen = new Map<string, TreeRoot>();
@@ -127,9 +126,7 @@ export function buildRoster(projects: Project[], kilns: KilnListEntry[]): Roster
     if (typeof rawPath !== 'string') return;
     // Absolute → its normalized root; bare name → the root it aliases, or (if
     // unknown) the name itself so a genuinely name-only kiln survives.
-    const root = rawPath.startsWith('/')
-      ? kilnRoot(rawPath)
-      : (nameToRoot.get(rawPath) ?? rawPath);
+    const root = rawPath.startsWith('/') ? kilnRoot(rawPath) : (nameToRoot.get(rawPath) ?? rawPath);
     if (!root || seen.has(root)) return;
     const display = name?.trim() || rootToName.get(root) || kilnLabel(root);
     seen.set(root, { kind: 'kiln', path: root, name: display, git: gitRoots.has(root) });

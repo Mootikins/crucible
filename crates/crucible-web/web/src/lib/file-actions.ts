@@ -80,11 +80,7 @@ function contentTypeForPath(filePath: string): 'file' | 'canvas' {
   return /\.canvas$/i.test(filePath) ? 'canvas' : 'file';
 }
 
-export function openFileInGroup(
-  groupId: string | null,
-  filePath: string,
-  fileName?: string,
-): void {
+export function openFileInGroup(groupId: string | null, filePath: string, fileName?: string): void {
   const existing = findTabByFilePath(filePath);
   if (existing) {
     windowActions.setActiveTab(existing.groupId, existing.tab.id);

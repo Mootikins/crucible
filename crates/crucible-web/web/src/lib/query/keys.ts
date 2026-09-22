@@ -11,31 +11,25 @@ export const keys = {
   config: () => ['config'] as const,
   projects: () => ['projects'] as const,
   project: (path: string) => ['project', path] as const,
-  targetProviders: (axis: 'workspace' | 'runtime') =>
-    ['targets', 'providers', axis] as const,
+  targetProviders: (axis: 'workspace' | 'runtime') => ['targets', 'providers', axis] as const,
   // The workspace belongs in the key: a provider answers PER project — a
   // branch list belongs to a repository — so one entry per (plugin, axis)
   // would serve project A's branches for project B, and a session would be
   // created against a worktree of the wrong repository.
   providerTargets: (plugin: string, axis: string, workspace?: string) =>
     ['targets', 'provider', plugin, axis, workspace] as const,
-  workspaceTargets: (workspace?: string) =>
-    ['targets', 'workspace', workspace] as const,
+  workspaceTargets: (workspace?: string) => ['targets', 'workspace', workspace] as const,
 
-  sessions: (includeArchived: boolean) =>
-    ['sessions', { includeArchived }] as const,
+  sessions: (includeArchived: boolean) => ['sessions', { includeArchived }] as const,
   session: (id: string) => ['session', id] as const,
   sessionHistory: (id: string) => ['session', id, 'history'] as const,
   sessionModels: (id: string) => ['session', id, 'models'] as const,
   sessionModes: (id: string) => ['session', id, 'modes'] as const,
   sessionStatus: (id: string) => ['session', id, 'status'] as const,
   sessionKnobs: (id: string) => ['session', id, 'knobs'] as const,
-  sessionAgentOptions: (id: string) =>
-    ['session', id, 'config/agent-options'] as const,
-  sessionPrecognition: (id: string) =>
-    ['session', id, 'config/precognition'] as const,
-  sessionContextStrategy: (id: string) =>
-    ['session', id, 'config/context-strategy'] as const,
+  sessionAgentOptions: (id: string) => ['session', id, 'config/agent-options'] as const,
+  sessionPrecognition: (id: string) => ['session', id, 'config/precognition'] as const,
+  sessionContextStrategy: (id: string) => ['session', id, 'config/context-strategy'] as const,
   sessionScope: (id: string) => ['session', id, 'scope'] as const,
   allModels: () => ['models', 'all'] as const,
   providers: () => ['providers'] as const,
@@ -54,24 +48,20 @@ export const keys = {
   pluginCommands: () => ['plugins', 'commands'] as const,
   surfaces: () => ['surfaces'] as const,
   skillsList: (kiln: string) => ['skills', 'list', kiln] as const,
-  skillsSearch: (kiln: string, query: string) =>
-    ['skills', 'search', kiln, query] as const,
-  skillDetail: (name: string, kiln: string) =>
-    ['skills', 'detail', name, kiln] as const,
+  skillsSearch: (kiln: string, query: string) => ['skills', 'search', kiln, query] as const,
+  skillDetail: (name: string, kiln: string) => ['skills', 'detail', name, kiln] as const,
   slashCommands: () => ['commands', 'slash'] as const,
   mcpStatus: () => ['mcp', 'status'] as const,
 
   fsDir: (path: string) => ['fs', 'dir', path] as const,
   fsFile: (path: string) => ['fs', 'file', path] as const,
   notesList: (kiln: string) => ['notes', 'list', kiln] as const,
-  notesResolve: (kiln: string, name: string) =>
-    ['notes', 'resolve', kiln, name] as const,
+  notesResolve: (kiln: string, name: string) => ['notes', 'resolve', kiln, name] as const,
   // Every held resolution, whatever kiln it belongs to. It is a factory like
   // the rest, because an invalidation that spells its own prefix is a literal
   // that no rename of `notesResolve` can reach.
   notesResolvePrefix: () => ['notes', 'resolve'] as const,
-  notesBacklinks: (kiln: string, note: string) =>
-    ['notes', 'backlinks', kiln, note] as const,
+  notesBacklinks: (kiln: string, note: string) => ['notes', 'backlinks', kiln, note] as const,
   notesGraph: (kiln: string) => ['notes', 'graph', kiln] as const,
   notesKiln: (kiln: string) => ['notes', 'kiln', kiln] as const,
   // `/api/kiln/files` is the sibling of `/api/kiln/notes`, so it keys into
@@ -79,12 +69,10 @@ export const keys = {
   // by walking that family, and a key outside it would never be dropped.
   kilnFiles: (kiln: string) => ['notes', 'kiln-files', kiln] as const,
   canvas: (path: string) => ['canvas', path] as const,
-  searchSemantic: (kiln: string, q: string) =>
-    ['search', 'semantic', kiln, q] as const,
+  searchSemantic: (kiln: string, q: string) => ['search', 'semantic', kiln, q] as const,
   searchGrep: (root: string, q: string, glob?: string) =>
     ['search', 'grep', root, q, glob] as const,
-  searchSessions: (q: string, kiln?: string) =>
-    ['search', 'sessions', q, kiln] as const,
+  searchSessions: (q: string, kiln?: string) => ['search', 'sessions', q, kiln] as const,
   review: (sessionId: string) => ['review', sessionId] as const,
   // One diffset, by the client key of its source (`diffsetKey`). The file
   // texts sit under it, so one invalidation of the diffset reaches them too.

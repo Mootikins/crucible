@@ -34,7 +34,6 @@ import { openDiff } from '@/lib/panel-actions';
  * node (`CanvasNodeView.tsx`) — the other place raw bytes become an `<img>`. */
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 
-
 interface FileViewerPanelProps {
   filePath?: string;
   /** Mode markdown opens in ('reading' | 'live' | 'source') — hover
@@ -53,7 +52,17 @@ interface FileViewerPanelProps {
 }
 
 const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
-  const { openFile, closeFile, openFiles, isLoading, error, updateFileContent, setBaseHash, saveFile, reloadFile } = useEditorSafe();
+  const {
+    openFile,
+    closeFile,
+    openFiles,
+    isLoading,
+    error,
+    updateFileContent,
+    setBaseHash,
+    saveFile,
+    reloadFile,
+  } = useEditorSafe();
   const { settings } = useSettingsSafe();
 
   // Live CodeMirror view (source/live modes; undefined in reading mode) for
@@ -143,7 +152,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   /** Rendered as bytes, never opened as text — see the early return below. */
   const isImage = () => !!props.filePath && IMAGE_EXT.test(props.filePath);
 
-  const fileData = () => openFiles().find(f => f.path === props.filePath) ?? null;
+  const fileData = () => openFiles().find((f) => f.path === props.filePath) ?? null;
 
   // The proposals that wait for a decision and write this note. The list is
   // the Inbox list, so a `proposal_changed` event updates both.
@@ -213,7 +222,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // that overflows the stack (updateTab replaces the whole tabs array).
   createEffect(() => {
     if (!props.filePath) return;
-    const file = openFiles().find(f => f.path === props.filePath);
+    const file = openFiles().find((f) => f.path === props.filePath);
     const isModified = file?.dirty ?? false;
     untrack(() => {
       const host = tabHost();
@@ -245,12 +254,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         {/* Keyed on the path: a different image in this pane starts over at
             fit instead of inheriting the previous image's zoom/pan. */}
         <Show when={props.filePath} keyed>
-          {(path) => (
-            <ImageViewer
-              src={rawFileUrl(path)}
-              alt={path.split('/').pop() ?? path}
-            />
-          )}
+          {(path) => <ImageViewer src={rawFileUrl(path)} alt={path.split('/').pop() ?? path} />}
         </Show>
       </PanelShell>
     );
@@ -275,8 +279,17 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
       {/* Error bar */}
       <Show when={error()}>
         <div class="mx-4 mt-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30 flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
-            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            class="w-4 h-4 shrink-0"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z"
+              clip-rule="evenodd"
+            />
           </svg>
           <span>{error()}</span>
         </div>
@@ -322,9 +335,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
             class="mx-3 mt-2 px-3 py-1 rounded-md border border-primary/40 bg-primary/[0.06] flex items-center gap-2 text-floor"
           >
             <Pencil class="w-3 h-3 text-primary shrink-0" />
-            <span class="text-shell-ink truncate">
-              {authorLabel(proposal)} proposes a change
-            </span>
+            <span class="text-shell-ink truncate">{authorLabel(proposal)} proposes a change</span>
             <button
               type="button"
               data-testid={`proposal-bar-review-${proposal.id}`}
@@ -347,74 +358,86 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           <Menu.ContextTrigger
             asChild={(triggerProps) => (
               <div {...triggerProps({ class: 'block h-full w-full text-left' })}>
-            <Show
-              when={fileData()}
-              fallback={
-                <Show when={!isLoading()}>
-                  <div class="h-full flex items-center justify-center text-muted-dark">
-                    <div class="text-center">
-                      <FileText class="w-10 h-10 mx-auto mb-4 text-muted-dark" />
-                      <div class="text-sm">Loading file...</div>
-                    </div>
-                  </div>
+                <Show
+                  when={fileData()}
+                  fallback={
+                    <Show when={!isLoading()}>
+                      <div class="h-full flex items-center justify-center text-muted-dark">
+                        <div class="text-center">
+                          <FileText class="w-10 h-10 mx-auto mb-4 text-muted-dark" />
+                          <div class="text-sm">Loading file...</div>
+                        </div>
+                      </div>
+                    </Show>
+                  }
+                >
+                  {(file) => (
+                    <EditorWithPreview
+                      content={file().content}
+                      path={file().path}
+                      onChange={(content) => updateFileContent(file().path, content)}
+                      onSave={handleSave}
+                      kiln={owningKiln(file().path)}
+                      baseHash={file().baseHash}
+                      onBaseChange={(hash) => setBaseHash(file().path, hash)}
+                      onFollowLink={(target) =>
+                        // The file's own kiln, or none. Falling back to the active
+                        // kiln let a project file — which belongs to no kiln —
+                        // follow links into whichever kiln was showing.
+                        void owningKilnAsync(file().path).then((kiln) =>
+                          openNoteInEditor(target, kiln),
+                        )
+                      }
+                      vimMode={effectiveVimMode()}
+                      lineWidth={settings.editor.maxLineWidth}
+                      renderMath={settings.editor.renderMath}
+                      renderDiagrams={settings.editor.renderDiagrams}
+                      hideFrontmatterGap={settings.editor.hideFrontmatterGap}
+                      reflowParagraphs={settings.editor.reflowParagraphs}
+                      editorApiRef={(view) => setEditorView(() => view)}
+                      // The compact shell owns the mode: its app bar carries the
+                      // Read/Write control, and the editor's own buttons are too
+                      // small for a thumb.
+                      mode={isCompact() ? compactEditorMode() : undefined}
+                      onModeChange={(next) => {
+                        if (next === 'reading' || next === 'live') setCompactEditorMode(next);
+                      }}
+                      initialMode={
+                        props.initialMode === 'reading' ||
+                        props.initialMode === 'live' ||
+                        props.initialMode === 'source'
+                          ? props.initialMode
+                          : undefined
+                      }
+                      scrollToNote={props.scrollToNote}
+                      scrollToLine={props.scrollToLine}
+                    />
+                  )}
                 </Show>
-              }
-            >
-              {(file) => (
-                <EditorWithPreview
-                  content={file().content}
-                  path={file().path}
-                  onChange={(content) => updateFileContent(file().path, content)}
-                  onSave={handleSave}
-                  kiln={owningKiln(file().path)}
-                  baseHash={file().baseHash}
-                  onBaseChange={(hash) => setBaseHash(file().path, hash)}
-                  onFollowLink={(target) =>
-                    // The file's own kiln, or none. Falling back to the active
-                    // kiln let a project file — which belongs to no kiln —
-                    // follow links into whichever kiln was showing.
-                    void owningKilnAsync(file().path).then((kiln) =>
-                      openNoteInEditor(target, kiln),
-                    )
-                  }
-                  vimMode={effectiveVimMode()}
-                  lineWidth={settings.editor.maxLineWidth}
-                  renderMath={settings.editor.renderMath}
-                  renderDiagrams={settings.editor.renderDiagrams}
-                hideFrontmatterGap={settings.editor.hideFrontmatterGap}
-                reflowParagraphs={settings.editor.reflowParagraphs}
-                  editorApiRef={(view) => setEditorView(() => view)}
-                  // The compact shell owns the mode: its app bar carries the
-                  // Read/Write control, and the editor's own buttons are too
-                  // small for a thumb.
-                  mode={isCompact() ? compactEditorMode() : undefined}
-                  onModeChange={(next) => {
-                    if (next === 'reading' || next === 'live') setCompactEditorMode(next);
-                  }}
-                  initialMode={
-                    props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
-                      ? props.initialMode
-                      : undefined
-                  }
-                  scrollToNote={props.scrollToNote}
-                  scrollToLine={props.scrollToLine}
-                />
-              )}
-            </Show>
               </div>
             )}
           />
           <Portal>
-          <Menu.Positioner>
-            <Menu.Content class={`${menuContent} z-50`}>
-              <Menu.Item value="cut" class={menuItem}>Cut</Menu.Item>
-              <Menu.Item value="copy" class={menuItem}>Copy</Menu.Item>
-              <Menu.Item value="paste" class={menuItem}>Paste</Menu.Item>
-              <Menu.Item value="select-all" class={menuItem}>Select All</Menu.Item>
-              <Menu.Separator class={menuSeparator} />
-              <Menu.Item value="copy-file-path" class={menuItem}>Copy File Path</Menu.Item>
-            </Menu.Content>
-          </Menu.Positioner>
+            <Menu.Positioner>
+              <Menu.Content class={`${menuContent} z-50`}>
+                <Menu.Item value="cut" class={menuItem}>
+                  Cut
+                </Menu.Item>
+                <Menu.Item value="copy" class={menuItem}>
+                  Copy
+                </Menu.Item>
+                <Menu.Item value="paste" class={menuItem}>
+                  Paste
+                </Menu.Item>
+                <Menu.Item value="select-all" class={menuItem}>
+                  Select All
+                </Menu.Item>
+                <Menu.Separator class={menuSeparator} />
+                <Menu.Item value="copy-file-path" class={menuItem}>
+                  Copy File Path
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Positioner>
           </Portal>
         </Menu.Root>
       </div>

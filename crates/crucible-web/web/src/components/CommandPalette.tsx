@@ -85,7 +85,7 @@ function scoreItem(item: OmniItem, query: string): number | null {
   const label = fuzzyScore(item.label, query);
   const rest = fuzzyScore(
     [item.description ?? '', item.shortcut ?? '', ...(item.keywords ?? [])].join(' '),
-    query
+    query,
   );
   if (label === null && rest === null) return null;
   return Math.max(label !== null ? label + 2000 : -Infinity, rest ?? -Infinity);
@@ -121,10 +121,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         keywords: [...(note.tags ?? []), ...note.path.split('/')],
         // Note records carry kiln-relative paths; the file API is absolute.
         action: () =>
-          openFileInEditor(
-            noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''),
-            note.name,
-          ),
+          openFileInEditor(noteAbsolutePath(note.path, statusBarStore.kilnPath() ?? ''), note.name),
       }));
 
   const commandItems = (): OmniItem[] =>
@@ -216,8 +213,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       </Command.List>
 
       <div class="flex gap-3.5 border-t border-hairline bg-shell-panel px-4 py-2 font-mono text-floor text-muted-dark">
-        <span><span class="text-primary">&gt;</span> command</span>
-        <span><span class="text-primary">[[</span> note</span>
+        <span>
+          <span class="text-primary">&gt;</span> command
+        </span>
+        <span>
+          <span class="text-primary">[[</span> note
+        </span>
         <span class="ml-auto">Ctrl+P commands · Ctrl+O notes</span>
       </div>
     </Command.Dialog>

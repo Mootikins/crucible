@@ -31,10 +31,7 @@ export function toolDiffsFromWire(diffs?: ToolCallDisplay['diffs']): ToolDiff[] 
       out[out.indexOf(same)] = {
         kind: 'multi',
         fileName: d.path,
-        edits: [
-          { oldContent: same.oldContent, newContent: same.newContent },
-          edit,
-        ],
+        edits: [{ oldContent: same.oldContent, newContent: same.newContent }, edit],
       };
     } else {
       same.edits.push(edit);

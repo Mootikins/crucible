@@ -112,7 +112,6 @@ vi.mock('@/stores/windowStore', () => ({
 // Dynamically import after mocks are in place
 const { default: FileViewerPanel } = await import('../FileViewerPanel');
 
-
 // Web test convention: unmount between tests so Solid reactive roots don't
 // leak across describes.
 afterEach(cleanup);
@@ -144,7 +143,6 @@ afterEach(() => {
 });
 
 describe('FileViewerPanel — panel registry', () => {
-
   it('registers "file" content type via registerPanels()', () => {
     registerPanels();
     const panel = getGlobalRegistry().get('file');
@@ -193,9 +191,7 @@ describe('FileViewerPanel — rendering', () => {
     render(() => <FileViewerPanel filePath="/kiln/assets/shot.png" />);
 
     const img = screen.getByTestId('file-image') as HTMLImageElement;
-    expect(img.getAttribute('src')).toBe(
-      '/api/file/raw?path=%2Fkiln%2Fassets%2Fshot.png',
-    );
+    expect(img.getAttribute('src')).toBe('/api/file/raw?path=%2Fkiln%2Fassets%2Fshot.png');
     // No editor, and no "Loading file..." spinner waiting on a text read that
     // is never coming.
     expect(document.querySelector('.cm-editor')).toBeNull();
@@ -416,13 +412,26 @@ describe('FileViewerPanel — the proposal bar', () => {
     env = createTestQueryEnv({
       'GET /api/kilns': () => ({ kilns: kilnsValue }),
       ...proposalRoutes([
-        proposalFixture(ID, { kind: 'open' }, {
-          writes: [
-            { root: '/kiln', path: 'notes/from-tui.md', base: { kind: 'hash', hash: 'h1' }, new_text: 'x\n' },
-          ],
-        }),
+        proposalFixture(
+          ID,
+          { kind: 'open' },
+          {
+            writes: [
+              {
+                root: '/kiln',
+                path: 'notes/from-tui.md',
+                base: { kind: 'hash', hash: 'h1' },
+                new_text: 'x\n',
+              },
+            ],
+          },
+        ),
         // A proposal on another note puts no bar here.
-        proposalFixture(OTHER, { kind: 'open' }, { author: { kind: 'plugin', name: 'reflection' } }),
+        proposalFixture(
+          OTHER,
+          { kind: 'open' },
+          { author: { kind: 'plugin', name: 'reflection' } },
+        ),
       ]),
     });
     render(() => <FileViewerPanel filePath={FILE_PATH} />);
@@ -441,11 +450,20 @@ describe('FileViewerPanel — the proposal bar', () => {
     const served = createTestQueryEnv({
       'GET /api/kilns': () => ({ kilns: kilnsValue }),
       ...proposalRoutes([
-        proposalFixture(ID, { kind: 'superseded', by: OTHER }, {
-          writes: [
-            { root: '/kiln', path: 'notes/from-tui.md', base: { kind: 'hash', hash: 'h1' }, new_text: 'x\n' },
-          ],
-        }),
+        proposalFixture(
+          ID,
+          { kind: 'superseded', by: OTHER },
+          {
+            writes: [
+              {
+                root: '/kiln',
+                path: 'notes/from-tui.md',
+                base: { kind: 'hash', hash: 'h1' },
+                new_text: 'x\n',
+              },
+            ],
+          },
+        ),
       ]),
     });
     env = served;

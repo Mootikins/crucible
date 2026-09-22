@@ -60,7 +60,10 @@ describe('buildRoster', () => {
       repository: { root: '/home/me/crucible', is_worktree: true },
     };
     const groups = buildRoster([wt], []);
-    expect(worktreeRoots(groups)[0]).toMatchObject({ path: '/elsewhere/checkout', name: 'checkout' });
+    expect(worktreeRoots(groups)[0]).toMatchObject({
+      path: '/elsewhere/checkout',
+      name: 'checkout',
+    });
   });
 
   // `diff.get` refuses a folder below the git top level, so only a root at
@@ -91,7 +94,11 @@ describe('buildRoster', () => {
 
   it('falls back to basename when a project name is empty', () => {
     const groups = buildRoster([project('/home/me/code/app', '')], []);
-    expect(groups[0].roots[0]).toMatchObject({ kind: 'project', path: '/home/me/code/app', name: 'app' });
+    expect(groups[0].roots[0]).toMatchObject({
+      kind: 'project',
+      path: '/home/me/code/app',
+      name: 'app',
+    });
   });
 
   it('uses kiln names, falling back to basename on null', () => {
@@ -137,7 +144,11 @@ describe('buildRoster', () => {
     // bare name through the name→path map so both collapse to one root, keeping
     // the descriptive name.
     const groups = buildRoster(
-      [project('/home/user/crucible', 'crucible', [{ path: '/home/user/crucible/docs', name: 'crucible-docs' }])],
+      [
+        project('/home/user/crucible', 'crucible', [
+          { path: '/home/user/crucible/docs', name: 'crucible-docs' },
+        ]),
+      ],
       [kiln('crucible-docs', ''), kiln('/home/user/crucible/docs', 'crucible-docs')],
     );
     const docsRoots = kilnRoots(groups).filter((r) => r.path === '/home/user/crucible/docs');
@@ -149,7 +160,9 @@ describe('buildRoster', () => {
 
   it('keeps a name-only kiln when nothing maps the name to a path', () => {
     const groups = buildRoster([], [kiln('solo-kiln', '')]);
-    expect(kilnRoots(groups)).toEqual([{ kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln', git: false }]);
+    expect(kilnRoots(groups)).toEqual([
+      { kind: 'kiln', path: 'solo-kiln', name: 'solo-kiln', git: false },
+    ]);
   });
 
   it('names an unnamed kiln by its directory basename', () => {

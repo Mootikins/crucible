@@ -206,7 +206,8 @@ function okBody(op: OpenApiOperation): { ref?: string; mediaType?: string } {
 export function buildPlan(doc: OpenApiDocument, values: ProbeValues): PlannedOperation[] {
   const plan: PlannedOperation[] = [];
   for (const [routePath, item] of Object.entries(doc.paths)) {
-    const shared = ((item as { parameters?: OpenApiParameter[] }).parameters ?? []) as OpenApiParameter[];
+    const shared = ((item as { parameters?: OpenApiParameter[] }).parameters ??
+      []) as OpenApiParameter[];
     for (const method of METHODS) {
       const op = item[method] as OpenApiOperation | undefined;
       if (!op) continue;
@@ -245,7 +246,8 @@ export function buildPlan(doc: OpenApiDocument, values: ProbeValues): PlannedOpe
           unfillable.push(filled.unfillable);
           continue;
         }
-        if (param.in === 'path') url = url.replace(`{${param.name}}`, encodeURIComponent(filled.value));
+        if (param.in === 'path')
+          url = url.replace(`{${param.name}}`, encodeURIComponent(filled.value));
         else if (param.in === 'query') query.set(param.name, filled.value);
         else if (param.in === 'header') headers[param.name] = filled.value;
       }
@@ -301,8 +303,12 @@ function main(): void {
 
   console.log('EXERCISED');
   for (const entry of exercised) {
-    const schema = entry.okSchemaRef ? entry.okSchemaRef.split('/').pop() : `(${entry.okMediaType ?? 'no 200 body'})`;
-    console.log(`  ${entry.key}\n    ${entry.url}\n    statuses ${entry.documented.join(', ')} | 200 ${schema}`);
+    const schema = entry.okSchemaRef
+      ? entry.okSchemaRef.split('/').pop()
+      : `(${entry.okMediaType ?? 'no 200 body'})`;
+    console.log(
+      `  ${entry.key}\n    ${entry.url}\n    statuses ${entry.documented.join(', ')} | 200 ${schema}`,
+    );
   }
 
   console.log('\nSKIPPED');

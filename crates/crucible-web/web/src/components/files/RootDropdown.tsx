@@ -67,8 +67,7 @@ export const RootDropdown: Component<{
   const resolve = useResolveWorkspaceTarget();
 
   /** The repository the Branches section lists, or nothing to list. */
-  const repoPath = () =>
-    props.activeRoot?.kind === 'project' ? props.activeRoot.path : undefined;
+  const repoPath = () => (props.activeRoot?.kind === 'project' ? props.activeRoot.path : undefined);
   // Keyed by that repository, which is what replaces the out-of-order guard
   // this list used to need: an answer for the root the user left lands in that
   // root's entry, not in the menu. The sessions rail reads the same key, so

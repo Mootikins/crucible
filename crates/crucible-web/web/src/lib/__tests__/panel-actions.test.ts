@@ -9,29 +9,38 @@ import type { DiffsetSource } from '../diffset';
 
 const StubComponent = () => null;
 
-function resetToState(overrides: Partial<{
-  tabGroups: Record<string, TabGroup>;
-  edgePanels: Record<EdgePanelPosition, {
-    id: string;
+function resetToState(
+  overrides: Partial<{
+    tabGroups: Record<string, TabGroup>;
+    edgePanels: Record<
+      EdgePanelPosition,
+      {
+        id: string;
+        layout: LayoutNode;
+        mode: EdgeMode;
+        width?: number;
+        height?: number;
+      }
+    >;
     layout: LayoutNode;
-    mode: EdgeMode;
-    width?: number;
-    height?: number;
-  }>;
-  layout: LayoutNode;
-  activePaneId: string | null;
-}>) {
+    activePaneId: string | null;
+  }>,
+) {
   setStore(
     produce((s) => {
       if (overrides.tabGroups !== undefined) s.tabGroups = overrides.tabGroups;
       if (overrides.edgePanels !== undefined) s.edgePanels = overrides.edgePanels as never;
       if (overrides.layout !== undefined) s.layout = overrides.layout;
       if (overrides.activePaneId !== undefined) s.activePaneId = overrides.activePaneId;
-    })
+    }),
   );
 }
 
-const makeTabGroup = (id: string, tabs: Tab[], activeTabId: string | null = tabs[0]?.id ?? null): TabGroup => ({
+const makeTabGroup = (
+  id: string,
+  tabs: Tab[],
+  activeTabId: string | null = tabs[0]?.id ?? null,
+): TabGroup => ({
   id,
   tabs,
   activeTabId,
@@ -103,7 +112,11 @@ describe('openPanelTab', () => {
   it('focuses the existing tab instead of duplicating', () => {
     openPanelTab('plugins');
     // move focus away, then reopen
-    setStore(produce((s) => { s.tabGroups['left-group'].activeTabId = 'sessions-tab'; }));
+    setStore(
+      produce((s) => {
+        s.tabGroups['left-group'].activeTabId = 'sessions-tab';
+      }),
+    );
 
     openPanelTab('plugins');
 
@@ -114,7 +127,11 @@ describe('openPanelTab', () => {
 
   it('re-expands a collapsed edge panel when focusing an existing tab', () => {
     openPanelTab('files');
-    setStore(produce((s) => { s.edgePanels.left.mode = 'strip'; }));
+    setStore(
+      produce((s) => {
+        s.edgePanels.left.mode = 'strip';
+      }),
+    );
 
     openPanelTab('files');
 
@@ -124,12 +141,18 @@ describe('openPanelTab', () => {
 
   it('focuses an existing center tab found by content type', () => {
     openPanelTab('search');
-    setStore(produce((s) => { s.tabGroups['center-group'].activeTabId = 'tab-chat-x'; }));
+    setStore(
+      produce((s) => {
+        s.tabGroups['center-group'].activeTabId = 'tab-chat-x';
+      }),
+    );
 
     openPanelTab('search');
 
     expect(windowStore.tabGroups['center-group'].activeTabId).toBe('tab-search');
-    expect(windowStore.tabGroups['center-group'].tabs.filter((t) => t.contentType === 'search')).toHaveLength(1);
+    expect(
+      windowStore.tabGroups['center-group'].tabs.filter((t) => t.contentType === 'search'),
+    ).toHaveLength(1);
   });
 
   it('is a safe no-op for an unregistered content type', () => {
@@ -141,7 +164,12 @@ describe('openPanelTab', () => {
 });
 
 describe('openDiff', () => {
-  const branch = (root: string, base = ''): DiffsetSource => ({ kind: 'branch', root, base, head: null });
+  const branch = (root: string, base = ''): DiffsetSource => ({
+    kind: 'branch',
+    root,
+    base,
+    head: null,
+  });
   const diffTabs = () =>
     Object.values(windowStore.tabGroups)
       .flatMap((g) => g.tabs)
@@ -156,14 +184,21 @@ describe('openDiff', () => {
     const tabs = diffTabs();
     expect(tabs).toHaveLength(2);
     expect(new Set(tabs.map((t) => t.id)).size).toBe(2);
-    expect(tabs.map((t) => (t.metadata?.source as DiffsetSource).kind)).toEqual(['branch', 'branch']);
+    expect(tabs.map((t) => (t.metadata?.source as DiffsetSource).kind)).toEqual([
+      'branch',
+      'branch',
+    ]);
     expect(tabs.map((t) => t.title)).toEqual(['Diff: a', 'Diff: b']);
   });
 
   it('a second request for one diffset focuses its tab', () => {
     openDiff(branch('/repo/a'));
     const [first] = diffTabs();
-    setStore(produce((s) => { s.tabGroups['center-group'].activeTabId = 'tab-chat-x'; }));
+    setStore(
+      produce((s) => {
+        s.tabGroups['center-group'].activeTabId = 'tab-chat-x';
+      }),
+    );
 
     openDiff(branch('/repo/a'));
 

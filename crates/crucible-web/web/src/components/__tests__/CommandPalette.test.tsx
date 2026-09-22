@@ -96,16 +96,12 @@ describe('parseOmniQuery — prefix routing', () => {
 
 describe('CommandPalette — open / closed', () => {
   it('renders nothing visible when open is false', () => {
-    render(() => (
-      <CommandPalette open={false} commands={[cmd()]} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={false} commands={[cmd()]} onOpenChange={() => {}} />);
     expect(screen.queryByPlaceholderText(CMD_PLACEHOLDER)).not.toBeInTheDocument();
   });
 
   it('renders the palette input when open is true', () => {
-    render(() => (
-      <CommandPalette open={true} commands={[cmd()]} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} commands={[cmd()]} onOpenChange={() => {}} />);
     expect(getInput()).toBeInTheDocument();
   });
 });
@@ -130,7 +126,12 @@ describe('CommandPalette — single-purpose modes', () => {
 
   it('notes mode lists kiln notes only, most recently updated first', async () => {
     render(() => (
-      <CommandPalette open={true} mode="notes" commands={[cmd({ label: 'Hidden Cmd' })]} onOpenChange={() => {}} />
+      <CommandPalette
+        open={true}
+        mode="notes"
+        commands={[cmd({ label: 'Hidden Cmd' })]}
+        onOpenChange={() => {}}
+      />
     ));
     await waitFor(() => {
       expect(screen.getByText('Architecture')).toBeInTheDocument();
@@ -144,9 +145,7 @@ describe('CommandPalette — single-purpose modes', () => {
   });
 
   it('mode sets the placeholder', () => {
-    render(() => (
-      <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />);
     expect(screen.getByPlaceholderText(NOTE_PLACEHOLDER)).toBeInTheDocument();
   });
 });
@@ -158,9 +157,7 @@ describe('CommandPalette — filtering & prefixes', () => {
   ];
 
   it('filters by case-insensitive substring across label and keywords', () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />);
     fireEvent.input(getInput(), { target: { value: 'build' } });
     expect(screen.getByText('Compile Project')).toBeInTheDocument();
     expect(screen.queryByText('Switch Workspace')).not.toBeInTheDocument();
@@ -170,7 +167,10 @@ describe('CommandPalette — filtering & prefixes', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[cmd({ id: 'cc', label: 'Clear Chat' }), cmd({ id: 'sw', label: 'Switch Workspace' })]}
+        commands={[
+          cmd({ id: 'cc', label: 'Clear Chat' }),
+          cmd({ id: 'sw', label: 'Switch Workspace' }),
+        ]}
         onOpenChange={() => {}}
       />
     ));
@@ -181,9 +181,7 @@ describe('CommandPalette — filtering & prefixes', () => {
   });
 
   it('fuzzy: notes match by path segments too', async () => {
-    render(() => (
-      <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} mode="notes" commands={[]} onOpenChange={() => {}} />);
     await waitFor(() => {
       expect(screen.getByText('Roadmap')).toBeInTheDocument();
     });
@@ -204,9 +202,7 @@ describe('CommandPalette — filtering & prefixes', () => {
       />
     ));
     fireEvent.input(getInput(), { target: { value: 'export' } });
-    const labels = screen
-      .getAllByText(/Export Session|Toggle Theme/)
-      .map((el) => el.textContent);
+    const labels = screen.getAllByText(/Export Session|Toggle Theme/).map((el) => el.textContent);
     expect(labels[0]).toBe('Export Session');
     expect(labels[1]).toBe('Toggle Theme');
   });
@@ -215,7 +211,9 @@ describe('CommandPalette — filtering & prefixes', () => {
     render(() => (
       <CommandPalette
         open={true}
-        commands={[cmd({ id: 'x', label: 'Toggle Mode', description: 'flip between plan and normal' })]}
+        commands={[
+          cmd({ id: 'x', label: 'Toggle Mode', description: 'flip between plan and normal' }),
+        ]}
         onOpenChange={() => {}}
       />
     ));
@@ -224,9 +222,7 @@ describe('CommandPalette — filtering & prefixes', () => {
   });
 
   it('[[ crosses over from commands mode to note search', async () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />);
     fireEvent.input(getInput(), { target: { value: '[[arch' } });
     await waitFor(() => {
       expect(screen.getByText('Architecture')).toBeInTheDocument();
@@ -244,9 +240,7 @@ describe('CommandPalette — filtering & prefixes', () => {
   });
 
   it('shows the empty message when nothing matches', () => {
-    render(() => (
-      <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} commands={commands} onOpenChange={() => {}} />);
     fireEvent.input(getInput(), { target: { value: 'zzzznomatch' } });
     expect(screen.getByText(/Nothing matches/)).toBeInTheDocument();
   });
@@ -298,9 +292,7 @@ describe('CommandPalette — extras', () => {
   });
 
   it('shows the prefix hint footer with both bindings', () => {
-    render(() => (
-      <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />
-    ));
+    render(() => <CommandPalette open={true} commands={[]} onOpenChange={() => {}} />);
     expect(screen.getByText('command')).toBeInTheDocument();
     expect(screen.getByText('note')).toBeInTheDocument();
     expect(screen.getByText(/Ctrl\+P commands · Ctrl\+O notes/)).toBeInTheDocument();

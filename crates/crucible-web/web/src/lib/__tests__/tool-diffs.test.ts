@@ -24,12 +24,16 @@ describe('toolDiffsFromWire — converting the daemon projection', () => {
       toolDiffsFromWire(
         wire({ diffs: [{ path: 'src/foo.rs', old_content: 'fn old()', new_content: 'fn new()' }] }),
       ),
-    ).toEqual([{ kind: 'single', fileName: 'src/foo.rs', oldContent: 'fn old()', newContent: 'fn new()' }]);
+    ).toEqual([
+      { kind: 'single', fileName: 'src/foo.rs', oldContent: 'fn old()', newContent: 'fn new()' },
+    ]);
   });
 
   it('maps a null old side to an empty one (whole-file write)', () => {
     expect(
-      toolDiffsFromWire(wire({ diffs: [{ path: 'src/new.ts', old_content: null, new_content: 'hello' }] })),
+      toolDiffsFromWire(
+        wire({ diffs: [{ path: 'src/new.ts', old_content: null, new_content: 'hello' }] }),
+      ),
     ).toEqual([{ kind: 'single', fileName: 'src/new.ts', oldContent: '', newContent: 'hello' }]);
   });
 
@@ -92,8 +96,8 @@ describe('toolDiffsFromWire — converting the daemon projection', () => {
       { path: 42, old_content: null, new_content: 'nope' },
       { path: 'also-bad' },
     ];
-    expect(
-      toolDiffsFromWire(wire({ diffs: malformed as ToolCallDisplay['diffs'] })),
-    ).toEqual([{ kind: 'single', fileName: 'ok', oldContent: 'x', newContent: 'y' }]);
+    expect(toolDiffsFromWire(wire({ diffs: malformed as ToolCallDisplay['diffs'] }))).toEqual([
+      { kind: 'single', fileName: 'ok', oldContent: 'x', newContent: 'y' },
+    ]);
   });
 });

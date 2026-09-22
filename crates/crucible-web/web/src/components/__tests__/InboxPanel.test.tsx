@@ -162,9 +162,7 @@ describe('InboxPanel', () => {
     const { getByText } = render(() => <InboxPanel />);
     (getByText('Allow') as HTMLElement).click();
 
-    await waitFor(() =>
-      expect(served.client.getQueryData(keys.pendingInteractions())).toEqual([]),
-    );
+    await waitFor(() => expect(served.client.getQueryData(keys.pendingInteractions())).toEqual([]));
     // And nothing asked the daemon for the aggregate again.
     expect(served.fetch.calls('GET /api/interactions/pending')).toBe(1);
   });
@@ -256,9 +254,7 @@ describe('the list the inbox shares with the rail', () => {
 
     (getByText('RESTORE') as HTMLElement).click();
 
-    await waitFor(() =>
-      expect(served.fetch.calls('POST /api/session/s-old/unarchive')).toBe(1),
-    );
+    await waitFor(() => expect(served.fetch.calls('POST /api/session/s-old/unarchive')).toBe(1));
     // The row is back in the recent list, which is the same list.
     await waitFor(() => expect(getByText(/1 recent sessions/)).toBeTruthy());
   });

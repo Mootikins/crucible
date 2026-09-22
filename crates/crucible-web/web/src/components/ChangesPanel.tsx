@@ -201,7 +201,11 @@ export const ChangesPanel: Component = () => {
                       title={`Open the session record at ${file.path}`}
                       onClick={() => {
                         const id = sessionId();
-                        if (id) openDiff({ kind: 'session_record', session: id }, { root: file.root, path: file.path });
+                        if (id)
+                          openDiff(
+                            { kind: 'session_record', session: id },
+                            { root: file.root, path: file.path },
+                          );
                       }}
                       class="w-full min-w-0 flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-left hover:bg-hover-wash"
                     >
@@ -211,7 +215,9 @@ export const ChangesPanel: Component = () => {
                       <span class="shrink-0 text-floor text-muted-dark">{file.status.kind}</span>
                       <Show when={!file.binary && !file.too_large}>
                         <span class="shrink-0 text-floor font-mono text-ok">+{file.added}</span>
-                        <span class="shrink-0 text-floor font-mono text-error">-{file.removed}</span>
+                        <span class="shrink-0 text-floor font-mono text-error">
+                          -{file.removed}
+                        </span>
                       </Show>
                     </button>
                   )}
@@ -264,4 +270,3 @@ export const ChangesPanel: Component = () => {
     </PanelShell>
   );
 };
-

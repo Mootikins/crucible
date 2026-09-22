@@ -9,8 +9,26 @@ import { useKilns, fetchKilnsOnce, kilnsSnapshot, resetKilnsForTests } from '../
 /** The storage key `swrLocal('kilns')` wrote, which the hook keeps. */
 const STORAGE_KEY = 'crucible:cache:kilns';
 
-const MAIN: KilnListEntry[] = [{ name: 'main', path: '/kilns/main', last_access_secs_ago: null, open: true, registered: true, git: false }];
-const STORED: KilnListEntry[] = [{ name: 'stored', path: '/kilns/stored', last_access_secs_ago: null, open: true, registered: true, git: false }];
+const MAIN: KilnListEntry[] = [
+  {
+    name: 'main',
+    path: '/kilns/main',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
+];
+const STORED: KilnListEntry[] = [
+  {
+    name: 'stored',
+    path: '/kilns/stored',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
+];
 
 /** The envelope `GET /api/kilns` answers; `listKilns` unwraps `kilns`. */
 function kilnsBody(kilns: KilnListEntry[]): { kilns: KilnListEntry[] } {
@@ -130,9 +148,7 @@ describe('fetchKilnsOnce', () => {
     // kiln does not exist". The rejection is what makes them stop instead.
     // The sentence carries the attempt AND the daemon's own words: a bare
     // status is what the user used to be left holding.
-    await expect(fetchKilnsOnce()).rejects.toThrow(
-      'Failed to list kilns: the daemon fell over',
-    );
+    await expect(fetchKilnsOnce()).rejects.toThrow('Failed to list kilns: the daemon fell over');
   });
 });
 

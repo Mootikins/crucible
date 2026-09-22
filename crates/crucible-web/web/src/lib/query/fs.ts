@@ -138,9 +138,7 @@ function fileOptions(path: string) {
  * changes while the panel is mounted, and `null` is "nothing to list yet",
  * which is a different state from an empty folder.
  */
-export function useListDir(
-  request: Accessor<DirRequest | null>,
-): UseQueryResult<FsListing, Error> {
+export function useListDir(request: Accessor<DirRequest | null>): UseQueryResult<FsListing, Error> {
   return useQuery(() => {
     const asked = request();
     return {

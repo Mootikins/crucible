@@ -27,7 +27,6 @@ const TONES: Record<string, string> = {
 };
 const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 
-
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
 

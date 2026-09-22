@@ -220,9 +220,7 @@ const InboxPanel: Component = () => {
       attentionActions.resolveInteraction(entry.sessionId, request.id);
       setResolved(`✓ Resolved — ${titleFor(entry)}`);
     } catch (err) {
-      setResolved(
-        `✕ Failed to respond: ${err instanceof Error ? err.message : 'unknown error'}`
-      );
+      setResolved(`✕ Failed to respond: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
   };
 
@@ -364,9 +362,7 @@ const InboxPanel: Component = () => {
           </div>
         </Show>
 
-        <div class={`${SECTION_LABEL_CLASS} pt-2.5 pb-2`}>
-          RECENT SESSIONS
-        </div>
+        <div class={`${SECTION_LABEL_CLASS} pt-2.5 pb-2`}>RECENT SESSIONS</div>
         <Show
           when={recentSessions().length > 0}
           fallback={
@@ -403,7 +399,10 @@ const InboxPanel: Component = () => {
         </button>
 
         <Show when={archivedOpen()}>
-          <Show when={!sessions.isPending} fallback={<div class="text-muted-dark text-xs px-1 py-2">Loading…</div>}>
+          <Show
+            when={!sessions.isPending}
+            fallback={<div class="text-muted-dark text-xs px-1 py-2">Loading…</div>}
+          >
             <Show
               when={archived().length > 0}
               fallback={<div class="text-muted-dark text-xs px-1 py-2">Nothing archived.</div>}
@@ -420,9 +419,7 @@ const InboxPanel: Component = () => {
                   onBlur={() => setClearArmed(false)}
                   onClick={() => void clearArchived()}
                 >
-                  {clearArmed()
-                    ? `REALLY DELETE ${archived().length} SESSIONS?`
-                    : 'CLEAR HISTORY…'}
+                  {clearArmed() ? `REALLY DELETE ${archived().length} SESSIONS?` : 'CLEAR HISTORY…'}
                 </button>
                 <Show when={clearProgress()}>
                   <span class="font-mono text-floor text-muted-dark">{clearProgress()}</span>

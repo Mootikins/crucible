@@ -1,4 +1,10 @@
-import { test, expect, request as playwrightRequest, type Page, type APIRequestContext } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type Page,
+  type APIRequestContext,
+} from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { appReady } from '../helpers/nav';
 import { readState } from './_state';
@@ -244,11 +250,17 @@ test.describe('the live session path', () => {
     // Detaching one is the same control, used again.
     const first = names[0];
     await page.getByTestId('scope-kiln').click();
-    await page.getByTestId('scope-kiln-popout').getByRole('option', { name: first, exact: false }).first().click();
+    await page
+      .getByTestId('scope-kiln-popout')
+      .getByRole('option', { name: first, exact: false })
+      .first()
+      .click();
     await page.keyboard.press('Escape');
     await expect
       .poll(
-        async () => ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] }).kilns,
+        async () =>
+          ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] })
+            .kilns,
         { timeout: 15_000, message: `detaching ${first} never took` },
       )
       .not.toContain(first);
@@ -257,7 +269,9 @@ test.describe('the live session path', () => {
     await api.dispose();
   });
 
-  test('a session read after a daemon restart carries its modes and its model', async ({ page }) => {
+  test('a session read after a daemon restart carries its modes and its model', async ({
+    page,
+  }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const sessionId = await createSession(api, []);
 
@@ -314,13 +328,23 @@ test.describe('the live session path', () => {
     // control, because a session's kilns are a flat set with no member
     // privileged.
     await page.getByTestId('scope-kiln').click();
-    await page.getByTestId('scope-kiln-popout').getByRole('option', { name: to, exact: false }).first().click();
-    await page.getByTestId('scope-kiln-popout').getByRole('option', { name: from, exact: false }).first().click();
+    await page
+      .getByTestId('scope-kiln-popout')
+      .getByRole('option', { name: to, exact: false })
+      .first()
+      .click();
+    await page
+      .getByTestId('scope-kiln-popout')
+      .getByRole('option', { name: from, exact: false })
+      .first()
+      .click();
     await page.keyboard.press('Escape');
 
     await expect
       .poll(
-        async () => ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] }).kilns,
+        async () =>
+          ((await (await api.get(`/api/session/${sessionId}`)).json()) as { kilns: string[] })
+            .kilns,
         { timeout: 15_000, message: 'the switch never reached the daemon' },
       )
       .toEqual([to]);

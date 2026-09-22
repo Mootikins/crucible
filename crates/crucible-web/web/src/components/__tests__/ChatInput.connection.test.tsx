@@ -136,7 +136,9 @@ describe('ChatInput — the dropped stream is recoverable from here', () => {
 
     expect(screen.queryByTestId('chat-connection-banner')).toBeNull();
     expect(screen.queryByTestId('chat-connection-retry')).toBeNull();
-    expect(screen.getByTestId('chat-input-form')).toHaveTextContent('Failed to send: unknown model');
+    expect(screen.getByTestId('chat-input-form')).toHaveTextContent(
+      'Failed to send: unknown model',
+    );
   });
 
   it('never stacks the two — one fault, one line', () => {

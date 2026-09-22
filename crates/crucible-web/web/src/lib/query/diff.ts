@@ -1,5 +1,10 @@
 import type { Accessor } from 'solid-js';
-import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/solid-query';
+import {
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/solid-query';
 import {
   diffsetKey,
   type DiffComment,
@@ -50,7 +55,9 @@ export function useDiffFile(
 }
 
 /** The comments of one diffset, each with its outdated flag. */
-export function useDiffComments(source: Accessor<DiffsetSource>): UseQueryResult<ListedComment[], Error> {
+export function useDiffComments(
+  source: Accessor<DiffsetSource>,
+): UseQueryResult<ListedComment[], Error> {
   return useQuery(() => {
     const value = source();
     return {
@@ -66,7 +73,9 @@ export function usePostDiffComment(): UseMutationResult<DiffComment, Error, NewD
     () => ({
       mutationFn: postDiffComment,
       onSuccess: (_stored, body) =>
-        getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(body.source)) }),
+        getQueryClient().invalidateQueries({
+          queryKey: keys.diffComments(diffsetKey(body.source)),
+        }),
     }),
     getQueryClient,
   );

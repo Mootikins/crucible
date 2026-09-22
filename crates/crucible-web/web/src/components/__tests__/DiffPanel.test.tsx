@@ -7,7 +7,13 @@ import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 import type { SentRequest } from '@/test-utils/mock-fetch';
 import { getBus } from '@/lib/bus';
-import type { DiffComment, DiffFileEntry, Diffset, DiffsetSource, ListedComment } from '@/lib/diffset';
+import type {
+  DiffComment,
+  DiffFileEntry,
+  Diffset,
+  DiffsetSource,
+  ListedComment,
+} from '@/lib/diffset';
 import type { Proposal, ProposalState } from '@/lib/proposal-api';
 
 const { DiffPanel } = await import('../DiffPanel');
@@ -63,7 +69,9 @@ function serve(files: DiffFileEntry[], comments: ListedComment[] = []): void {
   env = createTestQueryEnv({
     'GET /api/diff': { body: diffset(files) },
     'GET /api/diff/file': { body: { base_text: 'one\ntwo\n', current_text: 'one\n2\nthree\n' } },
-    'GET /api/diff/comments': { body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comments } },
+    'GET /api/diff/comments': {
+      body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comments },
+    },
     'POST /api/diff/comment': {
       body: { diffset: 'branch-0123456789abcdef0123456789abcdef', comment: comment('c-new') },
     },
@@ -128,7 +136,10 @@ describe('DiffPanel', () => {
   });
 
   it('lists one section per file with its counts', async () => {
-    serve([entry('src/a.rs'), entry('src/b.rs', { added: 7, removed: 0, status: { kind: 'added' } })]);
+    serve([
+      entry('src/a.rs'),
+      entry('src/b.rs', { added: 7, removed: 0, status: { kind: 'added' } }),
+    ]);
     render(() => <DiffPanel source={source} />);
 
     await waitFor(() => expect(section('src/a.rs')).toBeInTheDocument());
@@ -175,7 +186,10 @@ describe('DiffPanel', () => {
   });
 
   it('a large file starts collapsed', async () => {
-    serve([entry('src/a.rs', { added: 200, removed: 200 }), entry('src/big.rs', { added: 300, removed: 101 })]);
+    serve([
+      entry('src/a.rs', { added: 200, removed: 200 }),
+      entry('src/big.rs', { added: 300, removed: 101 }),
+    ]);
     render(() => <DiffPanel source={source} />);
 
     await waitFor(() => expect(section('src/big.rs')).toBeInTheDocument());
@@ -205,14 +219,18 @@ describe('DiffPanel', () => {
 
     it('expands and scrolls to the file of a root and a path', async () => {
       serve(files());
-      render(() => <DiffPanel source={source} focus={{ root: '/repo', path: 'src/big.rs', seq: 1 }} />);
+      render(() => (
+        <DiffPanel source={source} focus={{ root: '/repo', path: 'src/big.rs', seq: 1 }} />
+      ));
 
       await waitFor(() => expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('true'));
       await waitFor(() => expect(scrolled).toEqual(['diff-file-/repo:src/big.rs']));
       // The same path in another root keeps the size rule.
-      expect(within(section('src/big.rs', '/other')).getByTestId('diff-file-toggle').getAttribute('aria-expanded')).toBe(
-        'false',
-      );
+      expect(
+        within(section('src/big.rs', '/other'))
+          .getByTestId('diff-file-toggle')
+          .getAttribute('aria-expanded'),
+      ).toBe('false');
     });
 
     // A tool call names its file by the absolute path.
@@ -221,9 +239,11 @@ describe('DiffPanel', () => {
       render(() => <DiffPanel source={source} focus={{ path: '/other/src/big.rs', seq: 1 }} />);
 
       await waitFor(() => expect(scrolled).toEqual(['diff-file-/other:src/big.rs']));
-      expect(within(section('src/big.rs', '/other')).getByTestId('diff-file-toggle').getAttribute('aria-expanded')).toBe(
-        'true',
-      );
+      expect(
+        within(section('src/big.rs', '/other'))
+          .getByTestId('diff-file-toggle')
+          .getAttribute('aria-expanded'),
+      ).toBe('true');
       expect(toggle('src/big.rs').getAttribute('aria-expanded')).toBe('false');
     });
 
@@ -248,7 +268,9 @@ describe('DiffPanel', () => {
     render(() => <DiffPanel source={source} />);
 
     await waitFor(() => expect(section('img.png')).toBeInTheDocument());
-    expect(within(section('img.png')).getByText('Binary file. There is no text to show.')).toBeInTheDocument();
+    expect(
+      within(section('img.png')).getByText('Binary file. There is no text to show.'),
+    ).toBeInTheDocument();
     expect(section('img.png').querySelector('.cm-editor')).toBeNull();
     expect(env.fetch.calls('GET /api/diff/file')).toBe(0);
   });
@@ -329,7 +351,9 @@ describe('DiffPanel', () => {
     await over('src/a.rs', 2, 0);
 
     await waitFor(async () =>
-      expect(within(await lineNumber('src/a.rs', 2)).getByTestId('diff-comment-add')).toBeInTheDocument(),
+      expect(
+        within(await lineNumber('src/a.rs', 2)).getByTestId('diff-comment-add'),
+      ).toBeInTheDocument(),
     );
     // Only the line under the pointer has the button.
     expect(within(section('src/a.rs')).getAllByTestId('diff-comment-add')).toHaveLength(1);
@@ -376,7 +400,9 @@ describe('DiffPanel', () => {
       body: 'this needs a test',
     });
     // The box closes after the daemon stores the comment.
-    await waitFor(() => expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull());
+    await waitFor(() =>
+      expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull(),
+    );
   });
 
   it('send to chat inserts a reference', async () => {
@@ -395,7 +421,9 @@ describe('DiffPanel', () => {
     expect(inserted).toHaveBeenCalledWith({ text: '@src/a.rs:1-2 why this?' });
     // Send to chat does not store a comment.
     expect(env.fetch.calls('POST /api/diff/comment')).toBe(0);
-    await waitFor(() => expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull());
+    await waitFor(() =>
+      expect(within(section('src/a.rs')).queryByTestId('diff-comment-box')).toBeNull(),
+    );
   });
 
   it('copy comments writes the quickfix form', async () => {
@@ -404,8 +432,17 @@ describe('DiffPanel', () => {
     serve(
       [entry('src/a.rs')],
       [
-        { comment: comment('c1', { line_range: { start: 626, end: 629 }, body: 'this deny path needs a test' }), outdated: false },
-        { comment: comment('c2', { line_range: { start: 4, end: 5 }, body: 'first\nsecond' }), outdated: false },
+        {
+          comment: comment('c1', {
+            line_range: { start: 626, end: 629 },
+            body: 'this deny path needs a test',
+          }),
+          outdated: false,
+        },
+        {
+          comment: comment('c2', { line_range: { start: 4, end: 5 }, body: 'first\nsecond' }),
+          outdated: false,
+        },
         { comment: comment('c3', { body: 'done', resolved: true }), outdated: false },
       ],
     );
@@ -428,7 +465,10 @@ describe('DiffPanel', () => {
       [entry('src/a.rs')],
       [
         { comment: comment('c1', { body: 'still here' }), outdated: false },
-        { comment: comment('c2', { body: 'text is gone', line_range: { start: 9, end: 10 } }), outdated: true },
+        {
+          comment: comment('c2', { body: 'text is gone', line_range: { start: 9, end: 10 } }),
+          outdated: true,
+        },
       ],
     );
     render(() => <DiffPanel source={source} />);
@@ -439,9 +479,13 @@ describe('DiffPanel', () => {
     // It is after the editor, and not inside it.
     const editor = within(section('src/a.rs')).getByTestId('diff-file-editor');
     expect(editor.contains(outdated)).toBe(false);
-    expect(editor.compareDocumentPosition(outdated) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      editor.compareDocumentPosition(outdated) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // The comment that is not outdated shows in the editor, under its line.
-    await waitFor(() => expect(within(editor).getByTestId('diff-comment').textContent).toContain('still here'));
+    await waitFor(() =>
+      expect(within(editor).getByTestId('diff-comment').textContent).toContain('still here'),
+    );
   });
 
   describe('a proposal', () => {
@@ -465,13 +509,19 @@ describe('DiffPanel', () => {
     }
 
     /** The routes of one proposal in `state`. Each decision answers `reply`. */
-    function serveProposal(state: ProposalState, reply: Proposal = proposal({ kind: 'accepted' })): void {
+    function serveProposal(
+      state: ProposalState,
+      reply: Proposal = proposal({ kind: 'accepted' }),
+    ): void {
       env = createTestQueryEnv({
         'GET /api/diff': {
           body: {
             id: `proposal-${ID}`,
             source: proposalSource,
-            files: [entry('a.md', { root: '/kiln', status: { kind: 'added' } }), entry('b.md', { root: '/kiln' })],
+            files: [
+              entry('a.md', { root: '/kiln', status: { kind: 'added' } }),
+              entry('b.md', { root: '/kiln' }),
+            ],
           },
         },
         'GET /api/diff/file': { body: { base_text: null, current_text: 'a\n' } },
@@ -499,9 +549,13 @@ describe('DiffPanel', () => {
       expect(screen.getByTestId('proposal-reject-all')).toBeInTheDocument();
       expect(screen.getByTestId('proposal-title').textContent).toBe('Change 2 notes');
       await waitFor(() =>
-        expect(within(section('b.md', '/kiln')).getByTestId('proposal-accept-file')).toBeInTheDocument(),
+        expect(
+          within(section('b.md', '/kiln')).getByTestId('proposal-accept-file'),
+        ).toBeInTheDocument(),
       );
-      expect(within(section('a.md', '/kiln')).getByTestId('proposal-reject-file')).toBeInTheDocument();
+      expect(
+        within(section('a.md', '/kiln')).getByTestId('proposal-reject-file'),
+      ).toBeInTheDocument();
       // The files of a proposal load by the proposal id and the root of the file.
       const [list] = await sentTo('GET', '/api/diff');
       expect(list.query.get('proposal')).toBe(ID);
@@ -510,7 +564,9 @@ describe('DiffPanel', () => {
     it('a decided proposal shows no actions', async () => {
       serveProposal({ kind: 'accepted' });
       render(() => <DiffPanel source={proposalSource} />);
-      await waitFor(() => expect(screen.getByTestId('proposal-state').textContent).toBe('Accepted'));
+      await waitFor(() =>
+        expect(screen.getByTestId('proposal-state').textContent).toBe('Accepted'),
+      );
       await waitFor(() => expect(section('a.md', '/kiln')).toBeInTheDocument());
       expect(screen.queryByTestId('proposal-accept-all')).toBeNull();
       expect(screen.queryByTestId('proposal-reject-all')).toBeNull();
@@ -532,7 +588,9 @@ describe('DiffPanel', () => {
     it('accept on a file sends its path', async () => {
       serveProposal({ kind: 'open' }, proposal({ kind: 'accepted' }, { id: 'other' }));
       render(() => <DiffPanel source={proposalSource} />);
-      const accept = await waitFor(() => within(section('b.md', '/kiln')).getByTestId('proposal-accept-file'));
+      const accept = await waitFor(() =>
+        within(section('b.md', '/kiln')).getByTestId('proposal-accept-file'),
+      );
       fireEvent.click(accept);
 
       await waitFor(() => expect(env.fetch.calls(`POST ${ACCEPT}`)).toBe(1));
@@ -549,14 +607,18 @@ describe('DiffPanel', () => {
             path: 'a.md',
             disk_text: 'one\nDISK\n',
             merged_text: 'one\nMINE\n',
-            regions: [{ start_line: 2, end_line: 3, base: 'two\n', ours: 'MINE\n', theirs: 'DISK\n' }],
+            regions: [
+              { start_line: 2, end_line: 3, base: 'two\n', ours: 'MINE\n', theirs: 'DISK\n' },
+            ],
           },
         ],
       });
       render(() => <DiffPanel source={proposalSource} />);
 
       const conflict = await screen.findByTestId('proposal-conflict-/kiln:a.md');
-      await waitFor(() => expect(within(conflict).getByTestId('conflict-region-0')).toBeInTheDocument());
+      await waitFor(() =>
+        expect(within(conflict).getByTestId('conflict-region-0')).toBeInTheDocument(),
+      );
       // The conflict view takes the place of the files and of Accept all.
       expect(screen.queryByTestId('diff-file-/kiln:a.md')).toBeNull();
       expect(screen.queryByTestId('proposal-accept-all')).toBeNull();

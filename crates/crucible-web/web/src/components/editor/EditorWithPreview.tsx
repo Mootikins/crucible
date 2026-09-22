@@ -113,8 +113,7 @@ export const EditorWithPreview: Component<{
         notificationActions.addNotification('error', `Could not tick the task: ${error}`);
       });
   };
-  const defaultMode = (): EditorMode =>
-    isMarkdown() ? (props.initialMode ?? 'live') : 'source';
+  const defaultMode = (): EditorMode => (isMarkdown() ? (props.initialMode ?? 'live') : 'source');
   const [ownMode, setOwnMode] = createSignal<EditorMode>(defaultMode());
   const controlled = () => props.mode !== undefined;
   const mode = () => (controlled() ? props.mode! : ownMode());
@@ -132,7 +131,8 @@ export const EditorWithPreview: Component<{
     if (!controlled()) setOwnMode(defaultMode());
   });
 
-  const modeButton = 'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
+  const modeButton =
+    'rounded border border-hairline bg-surface-elevated/90 p-1.5 text-muted hover:text-shell-ink hover:border-primary/50 transition-colors';
 
   return (
     <div class="relative h-full w-full" data-kiln={props.kiln || undefined}>

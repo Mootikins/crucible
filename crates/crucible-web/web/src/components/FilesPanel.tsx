@@ -1,4 +1,13 @@
-import { Component, Show, createSignal, createEffect, createMemo, on, onMount, onCleanup } from 'solid-js';
+import {
+  Component,
+  Show,
+  createSignal,
+  createEffect,
+  createMemo,
+  on,
+  onMount,
+  onCleanup,
+} from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
@@ -27,11 +36,7 @@ import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { SortSpec } from '@/lib/file-tree/types';
 import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
 import { notesToTree } from '@/lib/file-tree/kiln-builder';
-import {
-  createFsEventBatcher,
-  reconcileMount,
-  type RootMount,
-} from '@/lib/file-tree/reconcile';
+import { createFsEventBatcher, reconcileMount, type RootMount } from '@/lib/file-tree/reconcile';
 import { FileTreeView, cssId, type TreeDensity } from './files/FileTreeView';
 import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
@@ -335,7 +340,9 @@ export const FilesPanel: Component<{
       // Say so rather than presenting a capped folder as complete. Non-fatal,
       // so it rides the same banner as the move/link notices.
       if (anyTruncated) {
-        setError(`Some folders have more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`);
+        setError(
+          `Some folders have more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`,
+        );
       }
     } catch (e) {
       failRoot(root, e);
@@ -652,9 +659,7 @@ export const FilesPanel: Component<{
    * avoids yanking the viewport when the row is already visible. */
   function scrollRelIntoView(rel: string) {
     window.setTimeout(() => {
-      document
-        .getElementById(`filetree-node-${cssId(rel)}`)
-        ?.scrollIntoView({ block: 'nearest' });
+      document.getElementById(`filetree-node-${cssId(rel)}`)?.scrollIntoView({ block: 'nearest' });
     }, 60);
   }
 
@@ -804,8 +809,15 @@ export const FilesPanel: Component<{
             title={`Hide extensions (${hiddenExts().join(' ') || 'none'}) — right-click to edit`}
             aria-pressed={hideExts()}
             onClick={toggleHideExts}
-            onContextMenu={(e) => { e.preventDefault(); editHiddenExts(); }}
-            classList={{ 'p-1 rounded hover:bg-hover-wash text-floor font-mono leading-none w-6 h-6 flex items-center justify-center': true, 'text-primary': hideExts(), 'text-muted': !hideExts() }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              editHiddenExts();
+            }}
+            classList={{
+              'p-1 rounded hover:bg-hover-wash text-floor font-mono leading-none w-6 h-6 flex items-center justify-center': true,
+              'text-primary': hideExts(),
+              'text-muted': !hideExts(),
+            }}
           >
             .ext
           </button>
@@ -853,9 +865,7 @@ export const FilesPanel: Component<{
       </div>
 
       <div class="flex-1 overflow-y-auto py-2">
-        <Show
-          when={error()}
-        >
+        <Show when={error()}>
           <div class="mx-3 my-2 px-3 py-2 text-sm text-error bg-error/10 rounded border border-error/30">
             {error()}
           </div>
@@ -896,7 +906,9 @@ export const FilesPanel: Component<{
                 openFilePath={openFilePath()}
                 defaultExpandedValue={expandedFor(root)}
                 loadChildren={root.kind === 'project' ? loadChildren(root) : undefined}
-                onLoadedTree={root.kind === 'project' ? (rootNode) => setRawRoot(rootNode) : undefined}
+                onLoadedTree={
+                  root.kind === 'project' ? (rootNode) => setRawRoot(rootNode) : undefined
+                }
                 onOpenLeaf={onOpenLeaf}
                 onExpandedChange={(values) => persistExpanded(root, values)}
                 onContextAction={onContextAction}

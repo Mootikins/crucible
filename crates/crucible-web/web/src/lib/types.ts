@@ -19,7 +19,6 @@ type Schemas = components['schemas'];
  * Client-local: the reducer folds `message_complete`'s snake_case counters into
  * this camelCase record, and nothing sends it back. */
 export interface TokenUsage {
-
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -68,7 +67,6 @@ export interface Message {
     notes: { name: string; relevance: number }[];
   };
 }
-
 
 // =============================================================================
 // Session Types (matching Rust SessionSummary)
@@ -316,11 +314,6 @@ export interface Notification {
   action?: { label: string; run: () => void };
 }
 
-
-
-
-
-
 // =============================================================================
 // SSE Event Types (generated from the Rust `ChatEvent` in events.rs)
 // =============================================================================
@@ -367,8 +360,6 @@ export type ChatEvent = Schemas['ChatEvent'] | ConnectionEvent;
  * predating the cursor protocol.
  */
 export type SequencedChatEvent = ChatEvent & { seq?: number };
-
-
 
 // =============================================================================
 // Interaction Request/Response Types (from Rust core interaction.rs)
@@ -866,5 +857,3 @@ export interface EditorFile {
 // =============================================================================
 // Context Types (re-exported from types/context.ts)
 // =============================================================================
-
-

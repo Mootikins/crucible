@@ -132,9 +132,7 @@ describe('useAutocomplete slash commands', () => {
       await type('/');
       expect(env.fetch.calls('GET /api/commands')).toBe(1);
       // Descriptions come across for the popup's second line.
-      expect(auto.items().find((i) => i.label === '/help')?.detail).toBe(
-        'Show available commands',
-      );
+      expect(auto.items().find((i) => i.label === '/help')?.detail).toBe('Show available commands');
       dispose();
     });
   });

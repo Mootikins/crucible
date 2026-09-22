@@ -185,9 +185,7 @@ describe('ToolCard — auto-expand on error', () => {
 
 describe('ToolCard — args formatting', () => {
   it('pretty-prints valid JSON args when expanded', () => {
-    render(() => (
-      <ToolCard toolCall={makeTool({ args: '{"a":1,"b":[2,3]}' })} />
-    ));
+    render(() => <ToolCard toolCall={makeTool({ args: '{"a":1,"b":[2,3]}' })} />);
     fireEvent.click(screen.getByText('read_file'));
     const pre = screen.getByText(/"a": 1/);
     expect(pre.textContent).toContain('"b": [');
@@ -272,7 +270,9 @@ describe('ToolCard — bash command rendering', () => {
   });
 
   it('does not treat a non-shell tool with a command arg as bash', () => {
-    render(() => <ToolCard toolCall={makeTool({ name: 'run_task', args: '{"command":"build"}' })} />);
+    render(() => (
+      <ToolCard toolCall={makeTool({ name: 'run_task', args: '{"command":"build"}' })} />
+    ));
     fireEvent.click(screen.getByText('run_task'));
 
     expect(screen.queryByTestId('bash-command')).not.toBeInTheDocument();
@@ -309,9 +309,7 @@ describe('ToolCard — result rendering', () => {
 
 describe('ToolCard — ID footer', () => {
   it('prefers callId over id when both are present', () => {
-    render(() => (
-      <ToolCard toolCall={makeTool({ id: 'inner', callId: 'outer-call' })} />
-    ));
+    render(() => <ToolCard toolCall={makeTool({ id: 'inner', callId: 'outer-call' })} />);
     fireEvent.click(screen.getByText('read_file'));
     expect(screen.getByText('ID: outer-call')).toBeInTheDocument();
   });
@@ -536,11 +534,18 @@ describe('ToolCard — Open diff', () => {
 
     // The pane shows the whole record, and focuses the file of this call.
     expect(openDiffMock).toHaveBeenCalledTimes(1);
-    expect(openDiffMock).toHaveBeenCalledWith({ kind: 'session_record', session: 's-1' }, { path: '/proj/app.ts' });
+    expect(openDiffMock).toHaveBeenCalledWith(
+      { kind: 'session_record', session: 's-1' },
+      { path: '/proj/app.ts' },
+    );
   });
 
   it('has no Open diff button for a non-diff tool', () => {
-    render(() => <ToolCard toolCall={{ id: 't', name: 'read_file', args: '{}', status: 'complete', result: 'ok' }} />);
+    render(() => (
+      <ToolCard
+        toolCall={{ id: 't', name: 'read_file', args: '{}', status: 'complete', result: 'ok' }}
+      />
+    ));
     fireEvent.click(screen.getByText('read_file'));
     expect(screen.queryByTestId('tool-open-diff')).not.toBeInTheDocument();
   });

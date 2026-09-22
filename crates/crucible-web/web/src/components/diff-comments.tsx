@@ -12,7 +12,13 @@
  */
 import { Show, createSignal, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
-import { StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
+import {
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Extension,
+  type Range,
+} from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -94,7 +100,9 @@ class LineMarker extends GutterMarker {
   }
 
   eq(other: LineMarker): boolean {
-    return other.line === this.line && other.hovered === this.hovered && other.chosen === this.chosen;
+    return (
+      other.line === this.line && other.hovered === this.hovered && other.chosen === this.chosen
+    );
   }
 
   toDOM(): Node {
@@ -188,7 +196,12 @@ class CommentWidget extends WidgetType {
   eq(other: CommentWidget): boolean {
     const a = this.comment;
     const b = other.comment;
-    return a.id === b.id && a.body === b.body && a.line_range.start === b.line_range.start && a.line_range.end === b.line_range.end;
+    return (
+      a.id === b.id &&
+      a.body === b.body &&
+      a.line_range.start === b.line_range.start &&
+      a.line_range.end === b.line_range.end
+    );
   }
 
   toDOM(): HTMLElement {
@@ -227,7 +240,11 @@ class BoxWidget extends WidgetType {
   }
 
   eq(other: BoxWidget): boolean {
-    return other.span.first === this.span.first && other.span.last === this.span.last && other.host === this.host;
+    return (
+      other.span.first === this.span.first &&
+      other.span.last === this.span.last &&
+      other.host === this.host
+    );
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -281,11 +298,15 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
   for (const comment of ui.comments) {
     const last = Math.min(lines, Math.max(1, comment.line_range.end - 1));
     const at = state.doc.line(last).to;
-    ranges.push(Decoration.widget({ widget: new CommentWidget(comment), block: true, side: 1 }).range(at));
+    ranges.push(
+      Decoration.widget({ widget: new CommentWidget(comment), block: true, side: 1 }).range(at),
+    );
   }
   if (ui.draft) {
     const at = state.doc.line(Math.min(lines, ui.draft.last)).to;
-    ranges.push(Decoration.widget({ widget: new BoxWidget(ui.draft, host), block: true, side: 2 }).range(at));
+    ranges.push(
+      Decoration.widget({ widget: new BoxWidget(ui.draft, host), block: true, side: 2 }).range(at),
+    );
   }
   return Decoration.set(ranges, true);
 }
@@ -320,7 +341,12 @@ const commentTheme = EditorView.theme({
 
 /** The extensions of one diff editor that takes line comments. */
 export function commentExtensions(host: CommentHost): Extension[] {
-  return [uiField, lineGutter, EditorView.decorations.compute([uiField], (state) => decorations(state, host)), commentTheme];
+  return [
+    uiField,
+    lineGutter,
+    EditorView.decorations.compute([uiField], (state) => decorations(state, host)),
+    commentTheme,
+  ];
 }
 
 const boxButton =
@@ -373,7 +399,9 @@ function CommentBox(props: {
         }}
         class="w-full resize-y rounded border border-hairline bg-transparent px-2 py-1 text-xs text-shell-ink"
       />
-      <Show when={error()}>{(message) => <span class="text-floor text-error">{message()}</span>}</Show>
+      <Show when={error()}>
+        {(message) => <span class="text-floor text-error">{message()}</span>}
+      </Show>
       <div class="flex items-center gap-1.5">
         <button
           type="button"
@@ -384,10 +412,20 @@ function CommentBox(props: {
         >
           Comment
         </button>
-        <button type="button" data-testid="diff-comment-send" onClick={() => props.onSend(text().trim())} class={boxButton}>
+        <button
+          type="button"
+          data-testid="diff-comment-send"
+          onClick={() => props.onSend(text().trim())}
+          class={boxButton}
+        >
           Send to chat
         </button>
-        <button type="button" data-testid="diff-comment-cancel" onClick={() => props.onCancel()} class={boxButton}>
+        <button
+          type="button"
+          data-testid="diff-comment-cancel"
+          onClick={() => props.onCancel()}
+          class={boxButton}
+        >
           Cancel
         </button>
       </div>

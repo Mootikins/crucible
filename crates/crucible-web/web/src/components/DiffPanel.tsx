@@ -69,7 +69,13 @@ import { useProposal, useProposalDecision, type ProposalDecision } from '@/lib/q
 import { notificationActions } from '@/stores/notificationStore';
 import { ConflictView } from './ConflictView';
 import { UnreadableRoots } from './UnreadableRoots';
-import { commentExtensions, setComments, spanLabel, type CommentHost, type LineSpan } from './diff-comments';
+import {
+  commentExtensions,
+  setComments,
+  spanLabel,
+  type CommentHost,
+  type LineSpan,
+} from './diff-comments';
 import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
 import { hit } from '@/lib/touch';
 
@@ -154,7 +160,9 @@ function textKey(text: string): string {
   return `${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
-const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocusRequest }> = (props) => {
+const ProposalDiffsetView: Component<{ source: ProposalSource; focus?: DiffFocusRequest }> = (
+  props,
+) => {
   const proposal = useProposal(() => props.source.id);
   const decision = useProposalDecision(() => props.source.id);
   const decide = (value: ProposalDecision): Promise<void> =>
@@ -233,10 +241,15 @@ const ProposalBar: Component<{ controls: ProposalControls }> = (props) => {
 };
 
 /** One `ConflictView` for each conflicted file of a proposal. */
-const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalControls }> = (props) => (
+const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalControls }> = (
+  props,
+) => (
   <For each={props.files}>
     {(file) => (
-      <section class="h-96 border-b border-hairline" data-testid={`proposal-conflict-${file.root}:${file.path}`}>
+      <section
+        class="h-96 border-b border-hairline"
+        data-testid={`proposal-conflict-${file.root}:${file.path}`}
+      >
         <ConflictView
           path={file.path}
           mergedContent={file.merged_text}
@@ -305,7 +318,9 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
 
   const openComments = () => (comments.data ?? []).map((l) => l.comment).filter((c) => !c.resolved);
   const commentsOf = (file: DiffFileEntry) =>
-    (comments.data ?? []).filter((l) => !l.comment.resolved && fileKey(l.comment) === fileKey(file));
+    (comments.data ?? []).filter(
+      (l) => !l.comment.resolved && fileKey(l.comment) === fileKey(file),
+    );
   const copyComments = () =>
     void navigator.clipboard?.writeText(quickfixList(openComments())).catch(() => undefined);
 
@@ -320,7 +335,8 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
     if (!controls || !decidable(controls.proposal())) return undefined;
     return {
       busy: controls.busy(),
-      run: (kind: 'accept' | 'reject', file: DiffFileEntry) => void controls.decide({ kind, paths: [file.path] }),
+      run: (kind: 'accept' | 'reject', file: DiffFileEntry) =>
+        void controls.decide({ kind, paths: [file.path] }),
     };
   };
 
@@ -336,7 +352,11 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
           </span>
         </div>
         <div class="mt-1 flex flex-wrap items-center gap-1.5">
-          <div role="group" aria-label="Layout" class="flex items-center rounded border border-hairline text-floor">
+          <div
+            role="group"
+            aria-label="Layout"
+            class="flex items-center rounded border border-hairline text-floor"
+          >
             <For each={[false, true]}>
               {(value) => (
                 <button
@@ -345,7 +365,9 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
                   data-testid={`diff-layout-${value ? 'split' : 'unified'}`}
                   onClick={() => setSplit(value)}
                   class={`px-2 py-0.5 hover:bg-hover-wash ${
-                    split() === value ? 'bg-hover-wash text-shell-ink' : 'text-muted-dark hover:text-shell-ink'
+                    split() === value
+                      ? 'bg-hover-wash text-shell-ink'
+                      : 'text-muted-dark hover:text-shell-ink'
                   } ${hit()}`}
                 >
                   {value ? 'Split' : 'Unified'}
@@ -464,7 +486,8 @@ function noTextReason(file: DiffFileEntry): string | null {
 
 const FileSection: Component<FileSectionProps> = (props) => {
   const renamedFrom = () => (props.file.status.kind === 'renamed' ? props.file.status.from : null);
-  const copyPath = () => void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
+  const copyPath = () =>
+    void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
 
   return (
     <section
@@ -486,7 +509,9 @@ const FileSection: Component<FileSectionProps> = (props) => {
             <ChevronRight class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
           )}
           <span class="min-w-0 truncate text-xs font-mono text-shell-ink" title={props.file.path}>
-            <Show when={renamedFrom()}>{(from) => <span class="text-muted-dark">{from()} → </span>}</Show>
+            <Show when={renamedFrom()}>
+              {(from) => <span class="text-muted-dark">{from()} → </span>}
+            </Show>
             {props.file.path}
           </span>
         </button>
@@ -601,7 +626,10 @@ const EndComments: Component<{ comments: ListedComment[]; split: boolean }> = (p
             >
               <span class="text-floor text-muted-dark">
                 {listed.outdated ? 'Outdated' : 'Base side'} ·{' '}
-                {spanLabel({ first: listed.comment.line_range.start, last: listed.comment.line_range.end - 1 })}
+                {spanLabel({
+                  first: listed.comment.line_range.start,
+                  last: listed.comment.line_range.end - 1,
+                })}
               </span>
               <p class="whitespace-pre-wrap text-shell-ink">{listed.comment.body}</p>
             </li>
@@ -706,8 +734,14 @@ const FileEditor: Component<FileEditorProps> = (props) => {
     const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side]), barTheme];
     if (props.split) {
       const view = new MergeView({
-        a: { doc: original, extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('base')] },
-        b: { doc: current, extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('current')] },
+        a: {
+          doc: original,
+          extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('base')],
+        },
+        b: {
+          doc: current,
+          extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('current')],
+        },
         parent: host,
         highlightChanges: true,
         gutter: true,
@@ -721,7 +755,10 @@ const FileEditor: Component<FileEditorProps> = (props) => {
     } else {
       // The unified view shows the line numbers of the current side only.
       const view = new EditorView({
-        state: EditorState.create({ doc: current, extensions: [...mergeViewExtensions(setup), ...extra('current')] }),
+        state: EditorState.create({
+          doc: current,
+          extensions: [...mergeViewExtensions(setup), ...extra('current')],
+        }),
         parent: host,
       });
       setViews([{ view, side: 'current' }]);

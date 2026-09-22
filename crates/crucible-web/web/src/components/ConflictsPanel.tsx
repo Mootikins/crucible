@@ -52,7 +52,10 @@ export const OutboxConflictView: Component<OutboxConflictViewProps> = (props) =>
     const name = nameOf(props.path);
     const outcome = await conflictActions.resolve(props.path, text);
     if (outcome.queued) {
-      notificationActions.addNotification('info', `${name} is settled. It goes out when the daemon answers.`);
+      notificationActions.addNotification(
+        'info',
+        `${name} is settled. It goes out when the daemon answers.`,
+      );
       props.onResolved?.();
       return;
     }

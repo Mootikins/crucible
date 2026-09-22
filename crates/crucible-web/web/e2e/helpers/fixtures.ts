@@ -80,12 +80,29 @@ export const MOCK_KILNS = {
  * root, and `GET /api/diff/file` answers their texts.
  */
 export const MOCK_DIFF_FILES = [
-  { path: 'src/lib.rs', status: { kind: 'modified' }, added: 1, removed: 1, binary: false, too_large: false },
-  { path: 'README.md', status: { kind: 'added' }, added: 3, removed: 0, binary: false, too_large: false },
+  {
+    path: 'src/lib.rs',
+    status: { kind: 'modified' },
+    added: 1,
+    removed: 1,
+    binary: false,
+    too_large: false,
+  },
+  {
+    path: 'README.md',
+    status: { kind: 'added' },
+    added: 3,
+    removed: 0,
+    binary: false,
+    too_large: false,
+  },
 ];
 
 /** The two texts of each mock diff file, by path. */
-export const MOCK_DIFF_TEXTS: Record<string, { base_text: string | null; current_text: string | null }> = {
+export const MOCK_DIFF_TEXTS: Record<
+  string,
+  { base_text: string | null; current_text: string | null }
+> = {
   'src/lib.rs': { base_text: 'fn main() {}\n', current_text: 'fn main() { run(); }\n' },
   'README.md': { base_text: null, current_text: '# Project\n\nNew text.\n' },
 };

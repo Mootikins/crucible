@@ -26,7 +26,23 @@ const SEND_BASE =
   'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors';
 
 export const ChatInput: Component = () => {
-  const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, connectionStatus, retryConnection, chatMode, availableModes, switchMode, addSystemMessage, clearMessages, pendingInteraction, respondToInteraction } = useChatSafe();
+  const {
+    sessionId,
+    sendMessage,
+    isLoading,
+    isStreaming,
+    cancelStream,
+    error,
+    connectionStatus,
+    retryConnection,
+    chatMode,
+    availableModes,
+    switchMode,
+    addSystemMessage,
+    clearMessages,
+    pendingInteraction,
+    respondToInteraction,
+  } = useChatSafe();
   const { currentSession, cancelCurrentOperation, availableModels, switchModel } = useSessionSafe();
   const [input, setInput] = createSignal('');
   let formRef: HTMLFormElement | undefined;
@@ -53,7 +69,9 @@ export const ChatInput: Component = () => {
     const active = statusBarStore.activeSessionId();
     if (active && sessionId() !== active) return;
     if (session()) {
-      (formRef?.querySelector('[data-testid="model-picker-button"]') as HTMLElement | null)?.click();
+      (
+        formRef?.querySelector('[data-testid="model-picker-button"]') as HTMLElement | null
+      )?.click();
     }
   });
 
@@ -105,7 +123,10 @@ export const ChatInput: Component = () => {
       // `nextChatMode` returns the current mode unchanged when it cannot
       // advance (the daemon no longer offers it). POSTing that re-sends a mode
       // `set_mode` rejects and toasts an error on every keypress.
-      const next = nextChatMode(chatMode(), availableModes().map((m) => m.id));
+      const next = nextChatMode(
+        chatMode(),
+        availableModes().map((m) => m.id),
+      );
       if (next !== chatMode()) switchMode(next);
     }
   };
@@ -114,8 +135,6 @@ export const ChatInput: Component = () => {
     cancelStream();
     await cancelCurrentOperation();
   };
-
-
 
   // Show the model id as-is. Prefixing with the provider's wire *type* turned
   // every model into "openai/…" for any OpenAI-compatible endpoint (e.g. a
@@ -167,7 +186,14 @@ export const ChatInput: Component = () => {
     },
     { key: 'mode', priority: 20, label: 'Mode', value: chatMode(), render: 'mode' },
     ...scopeChips(),
-    { key: 'status', priority: 90, label: 'Status', value: '', render: 'custom', element: statusChips },
+    {
+      key: 'status',
+      priority: 90,
+      label: 'Status',
+      value: '',
+      render: 'custom',
+      element: statusChips,
+    },
   ];
 
   return (
@@ -186,33 +212,31 @@ export const ChatInput: Component = () => {
       data-testid="chat-input-form"
     >
       <div class="mx-auto w-full max-w-[var(--chat-measure)]">
-      {/* A dropped stream and a daemon-side failure are different faults, so
+        {/* A dropped stream and a daemon-side failure are different faults, so
           they get different affordances. The stream is skippable-waitable, so
           it gets the same banner (and the same retry) the terminal has; the
           daemon error has nothing to re-issue from here and stays a statement. */}
-      <Show when={connectionStatus() === 'reconnecting'}>
-        <ConnectionBanner
-          class="mb-2"
-          tone="transient"
-          message={error() ?? 'Reconnecting…'}
-          retryLabel="Retry now"
-          onRetry={retryConnection}
-          testid="chat-connection-banner"
-          retryTestid="chat-connection-retry"
-        />
-      </Show>
+        <Show when={connectionStatus() === 'reconnecting'}>
+          <ConnectionBanner
+            class="mb-2"
+            tone="transient"
+            message={error() ?? 'Reconnecting…'}
+            retryLabel="Retry now"
+            onRetry={retryConnection}
+            testid="chat-connection-banner"
+            retryTestid="chat-connection-retry"
+          />
+        </Show>
 
-      <Show when={connectionStatus() !== 'reconnecting' && error()}>
-        <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">
-          {error()}
-        </div>
-      </Show>
+        <Show when={connectionStatus() !== 'reconnecting' && error()}>
+          <div class="mb-2 px-2 py-1 text-sm text-error bg-error-dark/20 rounded">{error()}</div>
+        </Show>
 
-      {/* No "no active session" notice here — MessageList already renders
+        {/* No "no active session" notice here — MessageList already renders
           the full empty state above; repeating it in the input strip read
           as two stacked prompts. */}
 
-      {/* The gate, docked above the prompt.
+        {/* The gate, docked above the prompt.
           A permission used to be drawn where the agent hit it, in the middle
           of the transcript — which scrolls. The one control the session is
           parked on could therefore be off-screen, and the composer below it
@@ -221,77 +245,76 @@ export const ChatInput: Component = () => {
           keeps a one-line record at the point of the request instead.
           It is its own card with its own edges (refine-composer.css): the
           prompt's shape must not depend on whether a request is open. */}
-      <Show when={pendingInteraction()}>
-        {(request) => (
-          <div class="composer-dock" data-testid="composer-dock">
-            <InteractionHandler request={request()} onRespond={respondToInteraction} />
-          </div>
-        )}
-      </Show>
+        <Show when={pendingInteraction()}>
+          {(request) => (
+            <div class="composer-dock" data-testid="composer-dock">
+              <InteractionHandler request={request()} onRespond={respondToInteraction} />
+            </div>
+          )}
+        </Show>
 
-      <ComposerCard
-        value={input}
-        setValue={setInput}
-        // `[[note]]` completion needs the DIRECTORY; the session carries a
-        // registry name. Unresolved (kiln-less, or the registry not back yet)
-        // completes against nothing rather than against the data root.
-        kilnPath={() => {
-          const s = currentSession();
-          return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
-        }}
-        // `@file` lists the files of the session's workspace, where the
-        // daemon resolves a mention first.
-        workspacePath={() => {
-          const s = currentSession();
-          return s ? sessionWorkspace(s) : null;
-        }}
-        placeholder={session() ? 'Type a message...' : 'Select a session first...'}
-        // Typing stays live mid-turn: a message sent while the agent works
-        // queues below the streaming block and dispatches when it ends.
-        disabled={!session()}
-        testid="chat-input"
-        onSubmit={() => void handleSubmit()}
-        onKeyDown={handleKeyDown}
-        chips={liveChips()}
-        action={
-          <Show
-            when={isStreaming()}
-            fallback={
-              <button
-                type="submit"
-                disabled={!canSend()}
-                aria-label="Send message"
-                title="Send (Enter)"
-                classList={{
-                  // A DISABLED send still has to be visible. It was
-                  // `bg-transparent`, which read as "there is no send button
-                  // here" rather than "you have not typed anything" — the
-                  // control vanished exactly when a new user needed to find
-                  // it. It keeps its fill and loses its colour instead.
-                  [SEND_BASE]: true,
-                  'bg-primary text-on-primary hover:bg-primary-hover': !!canSend(),
-                  'bg-control text-muted-dark cursor-not-allowed': !canSend(),
-                }}
-                data-testid="send-button"
-              >
-                <ArrowUp class="w-4 h-4" />
-              </button>
-            }
-          >
-            <button
-              type="button"
-              onClick={handleCancel}
-              aria-label="Cancel response"
-              title="Stop the response"
-              class={`${SEND_BASE} bg-error text-white hover:bg-error-dark`}
-              data-testid="cancel-button"
+        <ComposerCard
+          value={input}
+          setValue={setInput}
+          // `[[note]]` completion needs the DIRECTORY; the session carries a
+          // registry name. Unresolved (kiln-less, or the registry not back yet)
+          // completes against nothing rather than against the data root.
+          kilnPath={() => {
+            const s = currentSession();
+            return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
+          }}
+          // `@file` lists the files of the session's workspace, where the
+          // daemon resolves a mention first.
+          workspacePath={() => {
+            const s = currentSession();
+            return s ? sessionWorkspace(s) : null;
+          }}
+          placeholder={session() ? 'Type a message...' : 'Select a session first...'}
+          // Typing stays live mid-turn: a message sent while the agent works
+          // queues below the streaming block and dispatches when it ends.
+          disabled={!session()}
+          testid="chat-input"
+          onSubmit={() => void handleSubmit()}
+          onKeyDown={handleKeyDown}
+          chips={liveChips()}
+          action={
+            <Show
+              when={isStreaming()}
+              fallback={
+                <button
+                  type="submit"
+                  disabled={!canSend()}
+                  aria-label="Send message"
+                  title="Send (Enter)"
+                  classList={{
+                    // A DISABLED send still has to be visible. It was
+                    // `bg-transparent`, which read as "there is no send button
+                    // here" rather than "you have not typed anything" — the
+                    // control vanished exactly when a new user needed to find
+                    // it. It keeps its fill and loses its colour instead.
+                    [SEND_BASE]: true,
+                    'bg-primary text-on-primary hover:bg-primary-hover': !!canSend(),
+                    'bg-control text-muted-dark cursor-not-allowed': !canSend(),
+                  }}
+                  data-testid="send-button"
+                >
+                  <ArrowUp class="w-4 h-4" />
+                </button>
+              }
             >
-              <X class="w-4 h-4" />
-            </button>
-          </Show>
-        }
-      />
-
+              <button
+                type="button"
+                onClick={handleCancel}
+                aria-label="Cancel response"
+                title="Stop the response"
+                class={`${SEND_BASE} bg-error text-white hover:bg-error-dark`}
+                data-testid="cancel-button"
+              >
+                <X class="w-4 h-4" />
+              </button>
+            </Show>
+          }
+        />
       </div>
     </form>
   );

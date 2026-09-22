@@ -1,5 +1,10 @@
 import { onCleanup, type Accessor } from 'solid-js';
-import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/solid-query';
+import {
+  useMutation,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/solid-query';
 import { diffsetKey } from '@/lib/diffset';
 import {
   acceptProposal,

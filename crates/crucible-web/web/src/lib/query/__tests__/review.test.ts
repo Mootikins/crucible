@@ -3,10 +3,7 @@ import { createRoot } from 'solid-js';
 import { waitFor } from '@solidjs/testing-library';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { keys } from '../keys';
-import {
-  resolveReviewCommentOnce,
-  useSessionRecord,
-} from '../review';
+import { resolveReviewCommentOnce, useSessionRecord } from '../review';
 
 /**
  * The session record of a session, held under that session.

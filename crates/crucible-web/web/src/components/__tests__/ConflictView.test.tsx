@@ -4,13 +4,11 @@ import type { Conflicted } from '@/lib/offline/outbox';
 import type { WriteOutcome } from '@/lib/offline/sync';
 
 const pendingConflicts = vi.fn(async (): Promise<Conflicted[]> => []);
-const resolveConflict = vi.fn(
-  async (_path: string, _text: string): Promise<WriteOutcome> => ({
-    queued: false,
-    stale: false,
-    hash: 'h10',
-  }),
-);
+const resolveConflict = vi.fn(async (_path: string, _text: string): Promise<WriteOutcome> => ({
+  queued: false,
+  stale: false,
+  hash: 'h10',
+}));
 vi.mock('@/lib/offline/sync', () => ({
   pendingConflicts: () => pendingConflicts(),
   resolveConflict: (path: string, text: string) => resolveConflict(path, text),
@@ -195,7 +193,9 @@ describe('ConflictView', () => {
     await waitFor(() => expect(screen.getByTestId('conflict-save')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('conflict-save'));
 
-    await waitFor(() => expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)));
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)),
+    );
     await waitFor(() =>
       expect(
         screen.getByTestId('conflict-region-0'),
@@ -221,7 +221,9 @@ describe('ConflictView', () => {
     await waitFor(() => expect(screen.getByTestId('conflict-save')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('conflict-save'));
 
-    await waitFor(() => expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)));
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith('warning', expect.any(String)),
+    );
     expect(onResolved).not.toHaveBeenCalled();
   });
 
@@ -251,7 +253,9 @@ describe('ConflictView', () => {
     fireEvent.click(screen.getByTestId('conflict-save'));
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
-    expect(onSave.mock.calls[0][0]).toBe(['one', 'THEIRS1', 'three', 'MINE2', 'five', ''].join('\n'));
+    expect(onSave.mock.calls[0][0]).toBe(
+      ['one', 'THEIRS1', 'three', 'MINE2', 'five', ''].join('\n'),
+    );
     expect(resolveConflict, 'the view writes nothing itself').not.toHaveBeenCalled();
   });
 });

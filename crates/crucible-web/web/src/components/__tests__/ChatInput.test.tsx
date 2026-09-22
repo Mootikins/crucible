@@ -260,7 +260,12 @@ describe('ChatInput — the prompt carries only the message', () => {
   it('keeps the mic in the prompt and every chip out of it', () => {
     render(() => <ChatInput />);
     expect(surface().contains(screen.getByTestId('mic-button-mock'))).toBe(true);
-    for (const id of ['model-picker-button', 'chat-mode-control-mock', 'scope-project', 'scope-kiln']) {
+    for (const id of [
+      'model-picker-button',
+      'chat-mode-control-mock',
+      'scope-project',
+      'scope-kiln',
+    ]) {
       expect(surface().contains(screen.getByTestId(id)), `${id} is inside the capsule`).toBe(false);
     }
   });

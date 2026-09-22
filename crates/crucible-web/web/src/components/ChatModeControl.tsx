@@ -139,11 +139,15 @@ export const ChatModeControl: Component = () => {
     const rect = triggerRef.getBoundingClientRect();
     const panel = panelRef?.getBoundingClientRect();
     setPanelPos(
-      placePopup(rect, { width: window.innerWidth, height: window.innerHeight }, {
-        width: Math.ceil(panel?.width || 240),
-        preferredHeight: Math.ceil(panel?.height || PANEL_MAX_HEIGHT),
-        gap: 4,
-      }),
+      placePopup(
+        rect,
+        { width: window.innerWidth, height: window.innerHeight },
+        {
+          width: Math.ceil(panel?.width || 240),
+          preferredHeight: Math.ceil(panel?.height || PANEL_MAX_HEIGHT),
+          gap: 4,
+        },
+      ),
     );
   };
 
@@ -304,7 +308,12 @@ export const ChatModeControl: Component = () => {
                       {/* Only a mode with a glyph gets the slot; a Lua-only
                           row starts at its name. */}
                       <Show when={Icon} keyed>
-                        {(Glyph) => <Glyph class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-dark" aria-hidden="true" />}
+                        {(Glyph) => (
+                          <Glyph
+                            class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-dark"
+                            aria-hidden="true"
+                          />
+                        )}
                       </Show>
                       <span class="flex min-w-0 flex-1 flex-col">
                         <span class="flex items-center gap-1.5">
@@ -324,7 +333,10 @@ export const ChatModeControl: Component = () => {
                         </Show>
                       </span>
                       <Show when={mode.id === chatMode()}>
-                        <Check class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                        <Check
+                          class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
+                          aria-hidden="true"
+                        />
                       </Show>
                     </button>
                   );

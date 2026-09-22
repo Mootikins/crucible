@@ -1,4 +1,9 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type APIRequestContext,
+} from '@playwright/test';
 import { appReady, openSessionsList } from '../helpers/nav';
 import { busEmit } from '../helpers/bus';
 import { readState } from './_state';
@@ -80,7 +85,8 @@ test.describe('live session management', () => {
     // And the daemon agrees: lazy creation is a claim about the daemon's
     // records, not only about the browser's outbound calls.
     expect(
-      ((await (await api.get('/api/session/list')).json()) as { sessions: unknown[] }).sessions.length,
+      ((await (await api.get('/api/session/list')).json()) as { sessions: unknown[] }).sessions
+        .length,
     ).toBe(before);
 
     await page.getByTestId('composer-input').fill('First message');
@@ -114,7 +120,9 @@ test.describe('live session management', () => {
     // already had. A 200 is part of the claim: the stored-session read used to
     // answer 422 here.
     expect((await read).status()).toBe(200);
-    await expect(page.locator(`[data-tab-id="tab-chat-${target}"]`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-tab-id="tab-chat-${target}"]`)).toBeVisible({
+      timeout: 15_000,
+    });
 
     await api.dispose();
   });

@@ -3,8 +3,22 @@ import { attachableKilns, kilnNameForPath, kilnPathForName } from '@/lib/kiln-re
 import type { KilnListEntry } from '@/lib/types';
 
 const registry: KilnListEntry[] = [
-  { path: '/home/u/vault', name: 'vault', last_access_secs_ago: null, open: true, registered: true, git: false },
-  { path: '/home/u/work/notes', name: 'notes', last_access_secs_ago: null, open: true, registered: true, git: false },
+  {
+    path: '/home/u/vault',
+    name: 'vault',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
+  {
+    path: '/home/u/work/notes',
+    name: 'notes',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
 ];
 
 describe('kilnPathForName', () => {
@@ -66,8 +80,22 @@ describe('attachableKilns', () => {
   // and shows the 422 as a toast, which reads as a broken picker.
   it('leaves out a row the daemon reports as unregistered', () => {
     const rows: KilnListEntry[] = [
-      { path: '/home/u/vault', name: 'vault', registered: true, last_access_secs_ago: null, open: true, git: false },
-      { path: '/home/u/.crucible/sessions', name: '', registered: false, last_access_secs_ago: null, open: true, git: false },
+      {
+        path: '/home/u/vault',
+        name: 'vault',
+        registered: true,
+        last_access_secs_ago: null,
+        open: true,
+        git: false,
+      },
+      {
+        path: '/home/u/.crucible/sessions',
+        name: '',
+        registered: false,
+        last_access_secs_ago: null,
+        open: true,
+        git: false,
+      },
     ];
 
     expect(attachableKilns(rows).map((k) => k.name)).toEqual(['vault']);
@@ -77,7 +105,16 @@ describe('attachableKilns', () => {
   // alongside `registered: false` is still describing a directory no session
   // can attach, and a picker that trusted the label would offer it.
   it('leaves out an unregistered row even when it carries a label', () => {
-    const rows: KilnListEntry[] = [{ path: '/home/u/docs', name: 'docs', registered: false, last_access_secs_ago: null, open: true, git: false }];
+    const rows: KilnListEntry[] = [
+      {
+        path: '/home/u/docs',
+        name: 'docs',
+        registered: false,
+        last_access_secs_ago: null,
+        open: true,
+        git: false,
+      },
+    ];
 
     expect(attachableKilns(rows)).toEqual([]);
   });
@@ -85,7 +122,16 @@ describe('attachableKilns', () => {
   // An older daemon omits the field. Absent is not false: dropping every row
   // would empty the picker against a daemon that works.
   it('keeps a named row from a daemon that does not send the flag', () => {
-    const rows: KilnListEntry[] = [{ path: '/home/u/vault', name: 'vault', last_access_secs_ago: null, open: true, registered: true, git: false }];
+    const rows: KilnListEntry[] = [
+      {
+        path: '/home/u/vault',
+        name: 'vault',
+        last_access_secs_ago: null,
+        open: true,
+        registered: true,
+        git: false,
+      },
+    ];
 
     expect(attachableKilns(rows).map((k) => k.name)).toEqual(['vault']);
   });
@@ -96,8 +142,22 @@ describe('attachableKilns', () => {
     const rows: KilnListEntry[] = [
       // The daemon sends an empty name for a row it cannot name; `name` is a
       // `String` on the wire, never null.
-      { path: '/a', name: '', registered: true, last_access_secs_ago: null, open: true, git: false },
-      { path: '/b', name: '   ', registered: true, last_access_secs_ago: null, open: true, git: false },
+      {
+        path: '/a',
+        name: '',
+        registered: true,
+        last_access_secs_ago: null,
+        open: true,
+        git: false,
+      },
+      {
+        path: '/b',
+        name: '   ',
+        registered: true,
+        last_access_secs_ago: null,
+        open: true,
+        git: false,
+      },
     ];
 
     expect(attachableKilns(rows)).toEqual([]);

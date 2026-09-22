@@ -6,7 +6,13 @@ import { iconForPanelId } from './tab-icons';
 import { tabHost } from './tab-host';
 import { terminalAllowed } from './terminal-availability';
 import type { LayoutNode, Tab, TabContentType } from '@/types/windowTypes';
-import { diffsetKey, diffsetTitle, type DiffFocus, type DiffFocusRequest, type DiffsetSource } from './diffset';
+import {
+  diffsetKey,
+  diffsetTitle,
+  type DiffFocus,
+  type DiffFocusRequest,
+  type DiffsetSource,
+} from './diffset';
 
 /** First pane group in the center tiling — where center-zone tabs open. */
 export function findFirstCenterPaneGroupId(): string | null {
@@ -51,7 +57,9 @@ export function filesSide(): EdgePanelPosition {
  * split has no left or right, so both halves count as the same edge and the
  * top one wins.
  */
-export function edgeCenterPane(side: EdgePanelPosition): { paneId: string; groupId: string | null } | null {
+export function edgeCenterPane(
+  side: EdgePanelPosition,
+): { paneId: string; groupId: string | null } | null {
   function walk(node: LayoutNode): { paneId: string; groupId: string | null } | null {
     if (node.type === 'pane') return { paneId: node.id, groupId: node.tabGroupId ?? null };
     if (node.direction === 'horizontal') return walk(side === 'left' ? node.first : node.second);
@@ -132,7 +140,7 @@ export function closedPanels(): PanelDefinition[] {
 }
 
 export function findTabByContentType(
-  contentType: TabContentType
+  contentType: TabContentType,
 ): { groupId: string; tab: Tab } | null {
   for (const [groupId, group] of Object.entries(windowStore.tabGroups)) {
     const tab = group.tabs.find((t) => t.contentType === contentType);

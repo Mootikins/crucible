@@ -72,7 +72,6 @@ export const ComposerCard: Component<ComposerCardProps> = (props) => {
   const [lines, setLines] = createSignal<'one' | 'many'>('one');
   const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
 
-
   const autocomplete = useAutocomplete({
     input: props.value,
     setInput: props.setValue,

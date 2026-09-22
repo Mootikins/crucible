@@ -8,7 +8,12 @@ import type { DiffFileEntry, Diffset, DiffsetSource } from '../diffset';
 
 const record: DiffsetSource = { kind: 'session_record', session: 'chat-1' };
 
-const recordSet: Diffset = { id: 'session-chat-1', source: record, files: [], unreadable_roots: [] };
+const recordSet: Diffset = {
+  id: 'session-chat-1',
+  source: record,
+  files: [],
+  unreadable_roots: [],
+};
 
 function entry(root: string, path: string, over: Partial<DiffFileEntry> = {}): DiffFileEntry {
   return {
@@ -65,7 +70,10 @@ describe('diff-api', () => {
 
   it('sends the old path of a renamed file in a session record', async () => {
     serve();
-    await getDiffFile(record, entry('/work', 'new.md', { status: { kind: 'renamed', from: 'old.md' } }));
+    await getDiffFile(
+      record,
+      entry('/work', 'new.md', { status: { kind: 'renamed', from: 'old.md' } }),
+    );
 
     const sent = await env.fetch.sent(0);
     expect(sent.query.get('from')).toBe('old.md');
@@ -86,7 +94,10 @@ describe('diff-api', () => {
 
   it('asks for a proposal by its id, and sends the root of each file', async () => {
     serve();
-    const proposal: DiffsetSource = { kind: 'proposal', id: '00000000-0000-0000-0000-000000000000' };
+    const proposal: DiffsetSource = {
+      kind: 'proposal',
+      id: '00000000-0000-0000-0000-000000000000',
+    };
     await getDiffset(proposal);
     await getDiffFile(proposal, entry('/kiln', 'a.md'));
 

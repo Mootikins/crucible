@@ -1,4 +1,9 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type APIRequestContext,
+} from '@playwright/test';
 import { appReady, openSessionsList } from '../helpers/nav';
 import { readState } from './_state';
 import { resetStoredLayout } from './_panes';
@@ -76,10 +81,7 @@ test.describe('live session lifecycle', () => {
     });
     expect(sent.status(), await sent.text()).toBe(200);
     await expect
-      .poll(
-        async () => (await api.get(`/api/session/${id}/history`)).status(),
-        { timeout: 30_000 },
-      )
+      .poll(async () => (await api.get(`/api/session/${id}/history`)).status(), { timeout: 30_000 })
       .toBe(200);
     await expect
       .poll(
@@ -133,7 +135,9 @@ test.describe('live session lifecycle', () => {
     await api.dispose();
   });
 
-  test('the context-menu delete, confirmed, removes the session from the daemon', async ({ page }) => {
+  test('the context-menu delete, confirmed, removes the session from the daemon', async ({
+    page,
+  }) => {
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const id = await createTitledSession(api, 'Delete me');
 

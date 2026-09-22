@@ -224,7 +224,10 @@ describe('FilesPanel — a project root loads once', () => {
     currentSessionValue = { id: 's-1', kilns: [], workspace: '/proj' };
     // A cached kilns value paints synchronously AND is corrected by the
     // response — the double-apply this guards against.
-    localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));
+    localStorage.setItem(
+      'crucible:cache:kilns',
+      JSON.stringify([{ path: '/vault', name: 'vault' }]),
+    );
     localStorage.setItem('crucible.filetree.expanded.project:/proj', JSON.stringify(['src']));
     listDirMock.mockImplementation(async (_root: string, rel: string) => ({
       entries:

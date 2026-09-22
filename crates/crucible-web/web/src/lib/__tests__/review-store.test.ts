@@ -86,8 +86,7 @@ const writeCount = (name: string) => wrote.filter((seen) => seen.name === name).
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 /** Waits out the route's coalescing window and lets the listing it starts land. */
-const afterDebounce = () =>
-  new Promise((r) => setTimeout(r, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
+const afterDebounce = () => new Promise((r) => setTimeout(r, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
 
 /** The review routes of two sessions, recording everything they are asked. */
 function reviewRoutes() {
@@ -206,7 +205,6 @@ describe('refresh', () => {
 });
 
 describe('mutations', () => {
-
   it('resolving a comment re-lists', async () => {
     const dispose = await bound('s1');
     writeAnswers.set('resolve', () => ({ comment_id: 'c1' }));

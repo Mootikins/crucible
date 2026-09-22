@@ -32,7 +32,7 @@ import { getBus } from '@/lib/bus';
 
 function focusChatInput(): void {
   const candidate = document.querySelector<HTMLTextAreaElement | HTMLInputElement | HTMLElement>(
-    'textarea, input[type="text"], [contenteditable="true"]'
+    'textarea, input[type="text"], [contenteditable="true"]',
   );
   if (!candidate) return;
   candidate.focus();
@@ -60,20 +60,22 @@ const PANEL_COMMAND_DESCRIPTIONS: Record<string, string> = {
 /** One "Open …" command per registered panel, so any closed window can be
  * brought back from the palette (focuses the existing tab if still open). */
 function panelOpenCommands(): PaletteCommand[] {
-  return getGlobalRegistry()
-    .list()
-    .filter((def) => !PANEL_COMMAND_EXCLUDED.has(def.id))
-    // No "Open Terminal" on clients that can't use it (remote without the
-    // remote_shell opt-in) — the command would open an explanation panel.
-    .filter((def) => def.id !== 'terminal' || terminalAllowed())
-    .map((def) => ({
-      id: `nav-open-${def.id}`,
-      label: `Open ${def.title}`,
-      description: PANEL_COMMAND_DESCRIPTIONS[def.id] ?? `Open the ${def.title} panel.`,
-      category: 'Navigation' as const,
-      keywords: ['open', 'panel', 'window', 'reopen', 'view', def.id],
-      action: () => openPanelTab(def.id as TabContentType),
-    }));
+  return (
+    getGlobalRegistry()
+      .list()
+      .filter((def) => !PANEL_COMMAND_EXCLUDED.has(def.id))
+      // No "Open Terminal" on clients that can't use it (remote without the
+      // remote_shell opt-in) — the command would open an explanation panel.
+      .filter((def) => def.id !== 'terminal' || terminalAllowed())
+      .map((def) => ({
+        id: `nav-open-${def.id}`,
+        label: `Open ${def.title}`,
+        description: PANEL_COMMAND_DESCRIPTIONS[def.id] ?? `Open the ${def.title} panel.`,
+        category: 'Navigation' as const,
+        keywords: ['open', 'panel', 'window', 'reopen', 'view', def.id],
+        action: () => openPanelTab(def.id as TabContentType),
+      }))
+  );
 }
 
 const App: Component = () => {
@@ -154,7 +156,8 @@ const App: Component = () => {
       category: 'Settings',
       keywords: ['settings', 'preferences', 'options', 'config', 'theme', 'font'],
       action: () => setIsSettingsOpen(true),
-    }, {
+    },
+    {
       id: 'files-toggle-hidden',
       label: 'Toggle Hidden Files',
       description: 'Show or hide dotfiles in the file tree.',
@@ -299,7 +302,8 @@ const App: Component = () => {
     // open-session). Lets other panels/commands "reveal in editor" a path
     // without a sidebar click.
     getBus().on('openFile', ({ path, name }) =>
-      openFileInEditor(path, name ?? path.split('/').pop() ?? path));
+      openFileInEditor(path, name ?? path.split('/').pop() ?? path),
+    );
     // Ribbon palette button (WindowManager can't reach the palette signal).
     // `mode` lets non-App surfaces (center composer CTAs) open the notes tree
     // directly instead of the commands list.
@@ -340,7 +344,6 @@ const App: Component = () => {
       </WhisperProvider>
     </SettingsProvider>
   );
-
 };
 
 export default App;

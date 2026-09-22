@@ -59,7 +59,7 @@ const PANEL_ICONS: Record<string, Component<{ class?: string }>> = {
 };
 
 export function iconForContentType(
-  contentType: TabContentType
+  contentType: TabContentType,
 ): Component<{ class?: string }> | undefined {
   return TAB_ICONS[contentType];
 }

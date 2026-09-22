@@ -3,9 +3,30 @@ import { resolveSessionRoot, sessionRoots } from '../session-roots';
 import type { KilnListEntry, Project, Session } from '@/lib/types';
 
 const KILNS: KilnListEntry[] = [
-  { path: '/home/me/docs', name: 'docs', last_access_secs_ago: null, open: true, registered: true, git: true },
-  { path: '/home/me/notes', name: 'notes', last_access_secs_ago: null, open: true, registered: true, git: false },
-  { path: '/home/me/archive', name: 'archive', last_access_secs_ago: null, open: true, registered: true, git: false },
+  {
+    path: '/home/me/docs',
+    name: 'docs',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: true,
+  },
+  {
+    path: '/home/me/notes',
+    name: 'notes',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
+  {
+    path: '/home/me/archive',
+    name: 'archive',
+    last_access_secs_ago: null,
+    open: true,
+    registered: true,
+    git: false,
+  },
 ];
 
 const PROJECTS: Project[] = [
@@ -125,11 +146,7 @@ describe('sessionRoots', () => {
 
 describe('resolveSessionRoot', () => {
   const roots = () =>
-    sessionRoots(
-      session({ workspace: '/home/me/crucible', kilns: ['docs'] }),
-      KILNS,
-      PROJECTS,
-    );
+    sessionRoots(session({ workspace: '/home/me/crucible', kilns: ['docs'] }), KILNS, PROJECTS);
 
   it('follows the session when nothing is pinned', () => {
     expect(resolveSessionRoot(roots(), null)?.name).toBe('crucible');

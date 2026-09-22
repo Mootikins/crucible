@@ -37,7 +37,10 @@ export interface MockOverrides {
    * The proposals of `GET /api/proposals`, as the daemon sends them. The
    * proposal diffset of `GET /api/diff?proposal=` lists their writes.
    */
-  proposals?: Array<{ id: string; writes: Array<{ root: string; path: string; new_text: string }> }>;
+  proposals?: Array<{
+    id: string;
+    writes: Array<{ root: string; path: string; new_text: string }>;
+  }>;
 }
 
 export async function setupBasicMocks(page: Page, overrides: MockOverrides = {}): Promise<void> {
@@ -93,15 +96,11 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: { current_mode_id: 'ask', modes: [] } }),
   );
 
-  await page.route('**/api/fs/list**', (route) =>
-    route.fulfill({ json: { entries: [] } }),
-  );
+  await page.route('**/api/fs/list**', (route) => route.fulfill({ json: { entries: [] } }));
 
   await mockSSERoute(page, /\/api\/fs\/events/, []);
 
-  await page.route('**/api/recents', (route) =>
-    route.fulfill({ json: { recents: [] } }),
-  );
+  await page.route('**/api/recents', (route) => route.fulfill({ json: { recents: [] } }));
 
   await page.route('**/api/providers', (route) =>
     route.fulfill({ json: overrides.providers ?? MOCK_PROVIDERS }),
@@ -211,9 +210,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
 
   // Draft-session panel loads (lazy session creation surface).
   await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: [] } }));
-  await page.route('**/api/models**', (route) =>
-    route.fulfill({ json: { models: ['llama3.2'] } }),
-  );
+  await page.route('**/api/models**', (route) => route.fulfill({ json: { models: ['llama3.2'] } }));
 
   await page.route('**/api/layout', (route) => {
     if (route.request().method() === 'GET') {
@@ -257,9 +254,7 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     route.fulfill({ json: { title: 'Auto-generated Title' } }),
   );
 
-  await page.route('**/api/session/*/title', (route) =>
-    route.fulfill({ status: 200, body: '{}' }),
-  );
+  await page.route('**/api/session/*/title', (route) => route.fulfill({ status: 200, body: '{}' }));
 
   await page.route('**/api/session/*/models', (route) =>
     route.fulfill({ json: { models: ['llama3.2', 'mistral'] } }),

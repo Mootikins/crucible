@@ -282,10 +282,12 @@ describe('ChangesPanel — the session record', () => {
     expect(screen.queryByTestId('comment-c2')).toBeNull();
 
     fireEvent.click(screen.getByTestId('resolve-c1'));
-    await waitFor(() => expect(resolveDiffComment).toHaveBeenCalledWith(
+    await waitFor(() =>
+      expect(resolveDiffComment).toHaveBeenCalledWith(
         { kind: 'session_record', session: 's1' },
         'c1',
-      ),);
+      ),
+    );
   });
 });
 
@@ -343,7 +345,11 @@ describe('ChangesPanel — proposals', () => {
       proposalRoutes([
         proposalFixture(OPEN, { kind: 'open' }),
         proposalFixture(STALE, { kind: 'stale' }, { title: 'Stale change' }),
-        proposalFixture(CONFLICTED, { kind: 'conflicted', files: [] }, { title: 'Conflicted change' }),
+        proposalFixture(
+          CONFLICTED,
+          { kind: 'conflicted', files: [] },
+          { title: 'Conflicted change' },
+        ),
         proposalFixture(SUPERSEDED, { kind: 'superseded', by: OPEN }),
       ]),
     );

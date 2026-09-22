@@ -74,8 +74,12 @@ function trimSlash(path: string): string {
 }
 
 /** Whether a focus target names this file. */
-export function focusMatches(file: Pick<DiffFileEntry, 'root' | 'path'>, focus: DiffFocus): boolean {
-  if (focus.root !== undefined) return trimSlash(file.root) === trimSlash(focus.root) && file.path === focus.path;
+export function focusMatches(
+  file: Pick<DiffFileEntry, 'root' | 'path'>,
+  focus: DiffFocus,
+): boolean {
+  if (focus.root !== undefined)
+    return trimSlash(file.root) === trimSlash(focus.root) && file.path === focus.path;
   const root = trimSlash(file.root);
   const joined = root.endsWith('/') ? `${root}${file.path}` : `${root}/${file.path}`;
   return joined === focus.path || file.path === focus.path;
@@ -162,7 +166,9 @@ export function quickfixLine(comment: Pick<DiffComment, 'path' | 'line_range' | 
   const [first, last] = inclusiveLines(comment.line_range.start, comment.line_range.end);
   const [head = '', ...rest] = textLines(comment.body);
   const range = last > first ? `[${first}-${last}] ` : '';
-  return [`${comment.path}:${first}: ${range}${head}`, ...rest.map((line) => `  ${line}`)].join('\n');
+  return [`${comment.path}:${first}: ${range}${head}`, ...rest.map((line) => `  ${line}`)].join(
+    '\n',
+  );
 }
 
 /** The quickfix list of the open comments: one entry for each, in order. */

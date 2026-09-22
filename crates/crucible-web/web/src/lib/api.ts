@@ -77,16 +77,10 @@ interface AppConfigControls {
   read_only: { path: string; reason: string }[];
 }
 
-
-
 /** What one save did: the leaves that landed, and the leaves that could not.
  * `ok` is false when anything was refused or withheld; `refused` names the
  * file and line of the higher layer that holds each leaf. */
 export type ConfigSaveResult = Schemas['ConfigSaveReply'];
-
-
-
-
 
 /** Settings trees, keyed by the plugin that declared them. */
 export type PluginOptions = Record<string, PluginOptionNode>;
@@ -177,10 +171,7 @@ function openJson<T>(value: unknown): T {
  * Returns the assigned message_id. Does NOT stream events —
  * subscribe to events separately via `subscribeToEvents`.
  */
-export async function sendChatMessage(
-  sessionId: string,
-  content: string,
-): Promise<string> {
+export async function sendChatMessage(sessionId: string, content: string): Promise<string> {
   return decode(
     await client.POST('/api/chat/send', {
       body: { session_id: sessionId, content },
@@ -227,10 +218,7 @@ export const SSE_EVENT_TYPES = [
 ] as const satisfies readonly Schemas['ChatEvent']['type'][];
 
 /** Every daemon event name the tuple above forgot. Empty, or the build stops. */
-type MissingSseEventType = Exclude<
-  Schemas['ChatEvent']['type'],
-  (typeof SSE_EVENT_TYPES)[number]
->;
+type MissingSseEventType = Exclude<Schemas['ChatEvent']['type'], (typeof SSE_EVENT_TYPES)[number]>;
 const _SSE_EVENT_TYPES_ARE_COMPLETE: [MissingSseEventType] extends [never] ? true : never = true;
 void _SSE_EVENT_TYPES_ARE_COMPLETE;
 
@@ -289,11 +277,7 @@ function decodeEvent<T>(
  * the stream carries is delivered. An absent handshake is the legacy
  * protocol and is allowed.
  */
-function guardStreamVersion(
-  stream: string,
-  source: EventSource,
-  shutDown: () => void,
-): void {
+function guardStreamVersion(stream: string, source: EventSource, shutDown: () => void): void {
   source.addEventListener('stream_version', (e: MessageEvent) => {
     try {
       assertStreamVersion(stream, e.data);
@@ -478,13 +462,8 @@ export async function getConfig(): Promise<Config> {
  * the leaves beside it still saved.
  */
 export async function saveConfig(values: Record<string, unknown>): Promise<ConfigSaveResult> {
-  return decode(
-    await client.POST('/api/config', { body: { values } }),
-    'Failed to save config',
-  );
+  return decode(await client.POST('/api/config', { body: { values } }), 'Failed to save config');
 }
-
-
 
 /**
  * Every command loaded plugins declared.
@@ -494,10 +473,7 @@ export async function saveConfig(values: Record<string, unknown>): Promise<Confi
  * browser, so a caller could invoke a command it had no way to discover.
  */
 export async function getPluginCommands(): Promise<PluginCommand[]> {
-  const body = decode(
-    await client.GET('/api/plugins/commands'),
-    'Failed to list plugin commands',
-  );
+  const body = decode(await client.GET('/api/plugins/commands'), 'Failed to list plugin commands');
   return body.commands ?? [];
 }
 
@@ -575,7 +551,6 @@ export async function executePluginOption(plugin: string, path: string[]): Promi
   );
 }
 
-
 /**
  * Invoke a plugin command and hand back what it returned.
  *
@@ -612,10 +587,8 @@ export async function getTargetProviders(axis: TargetProvider['axis']): Promise<
       plugin,
       axis,
       label: typeof decl.label === 'string' && decl.label ? decl.label : plugin,
-      targets_command:
-        typeof decl.targets_command === 'string' ? decl.targets_command : undefined,
-      resolve_command:
-        typeof decl.resolve_command === 'string' ? decl.resolve_command : undefined,
+      targets_command: typeof decl.targets_command === 'string' ? decl.targets_command : undefined,
+      resolve_command: typeof decl.resolve_command === 'string' ? decl.resolve_command : undefined,
     });
   }
   return providers.sort((a, b) => a.label.localeCompare(b.label));
@@ -639,9 +612,7 @@ export async function getProviderTargets(
     const result = await runPluginCommand(provider.targets_command, { workspace });
     // A plugin command answers opaque JSON, which no document narrows: the
     // provider names the command and the plugin decides what comes back.
-    const list = Array.isArray(result)
-      ? result
-      : (result as { targets?: unknown } | null)?.targets;
+    const list = Array.isArray(result) ? result : (result as { targets?: unknown } | null)?.targets;
     if (!Array.isArray(list)) return [];
     return list.flatMap((item) => {
       const target = item as Partial<ProviderTarget> | null;
@@ -713,7 +684,6 @@ export async function resolveWorkspaceTarget(spec: string, workspace?: string): 
 // Session Endpoints
 // =============================================================================
 
-
 export async function createSession(params: CreateSessionParams): Promise<Session> {
   // The daemon's reason rides the error; `SessionContext.createSession`
   // is the one that toasts it, so no `notify` here or it shows twice.
@@ -777,7 +747,7 @@ export async function searchSessions(
   kilns?: string | string[],
   limit?: number,
 ): Promise<SessionSearchResponse> {
-  const scope = (typeof kilns === 'string' ? [kilns] : kilns ?? []).filter(Boolean);
+  const scope = (typeof kilns === 'string' ? [kilns] : (kilns ?? [])).filter(Boolean);
   const data = decode(
     await client.GET('/api/sessions/search', {
       params: { query: { q: query, kiln: scope, limit } },
@@ -805,7 +775,6 @@ export interface GrepResponse {
   hits: GrepHit[];
   truncated: boolean;
 }
-
 
 /**
  * Ripgrep content search over an absolute `root` (must be inside a registered
@@ -845,7 +814,6 @@ export async function grepSearch(
 // =============================================================================
 // Semantic Search (vector) — POST /api/search/semantic
 // =============================================================================
-
 
 /**
  * Semantic (vector) search over a kiln's processed notes: the daemon embeds
@@ -1079,7 +1047,6 @@ export async function disconnectSessionKiln(
   );
 }
 
-
 /** List ACP agent profiles with probed availability. */
 export async function listAgents(): Promise<AgentProfileEntry[]> {
   return decode(await client.GET('/api/agents'), 'Failed to list agents').agents;
@@ -1093,8 +1060,7 @@ export async function listAgents(): Promise<AgentProfileEntry[]> {
  * one; the parameter is gone from both sides rather than converted to a name.
  */
 export async function listAllModels(): Promise<string[]> {
-  return decode(await client.GET('/api/models'), 'Failed to list models', { notify: true })
-    .models;
+  return decode(await client.GET('/api/models'), 'Failed to list models', { notify: true }).models;
 }
 
 // =============================================================================
@@ -1135,12 +1101,14 @@ export async function setPrecognition(sessionId: string, enabled: boolean): Prom
 
 /** Get the context-assembly strategy, by its string spelling. */
 export async function getContextStrategy(sessionId: string): Promise<string | null> {
-  return decode(
-    await client.GET('/api/session/{id}/config/context-strategy', {
-      params: { path: { id: sessionId } },
-    }),
-    'Failed to get context strategy',
-  ).context_strategy ?? null;
+  return (
+    decode(
+      await client.GET('/api/session/{id}/config/context-strategy', {
+        params: { path: { id: sessionId } },
+      }),
+      'Failed to get context strategy',
+    ).context_strategy ?? null
+  );
 }
 
 /**
@@ -1470,7 +1438,6 @@ export async function resolveNotePath(
   };
 }
 
-
 /**
  * Linked + unlinked mentions for a note. `note` accepts a note name or
  * kiln-relative path (fuzzy-resolved server-side).
@@ -1481,7 +1448,6 @@ export async function getBacklinks(kiln: string, note: string): Promise<Backlink
     'Failed to get backlinks',
   );
 }
-
 
 // =============================================================================
 // Project Endpoints
@@ -1512,10 +1478,7 @@ export async function listProjects(): Promise<Project[]> {
 // SCM Endpoints (branch/worktree browsing)
 // =============================================================================
 
-
-
 export type ScmCloneResponse = Schemas['ScmCloneResponse'];
-
 
 /** Clone a remote repo into `[workspace] root_dir` and register it as a
  * project. Slow (network clone) — no client-side timeout beyond fetch's. */
@@ -1592,10 +1555,7 @@ export async function getFileWithHash(
 }
 
 export async function saveFileContent(path: string, content: string): Promise<void> {
-  expectOk(
-    await client.PUT('/api/kiln/file', { body: { path, content } }),
-    'Failed to save file',
-  );
+  expectOk(await client.PUT('/api/kiln/file', { body: { path, content } }), 'Failed to save file');
 }
 
 /**
@@ -2087,7 +2047,10 @@ export function subscribeToSystemEvents(
  */
 export async function getCanvas(path: string): Promise<CanvasResponse> {
   return openJson<CanvasResponse>(
-    decode(await client.GET('/api/canvas', { params: { query: { path } } }), 'Failed to load canvas'),
+    decode(
+      await client.GET('/api/canvas', { params: { query: { path } } }),
+      'Failed to load canvas',
+    ),
   );
 }
 

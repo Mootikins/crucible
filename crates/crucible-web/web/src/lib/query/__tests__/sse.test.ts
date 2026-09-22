@@ -237,9 +237,15 @@ describe('the session resume cursor', () => {
 
     onlySource().emit('token', { type: 'token', content: 'a' }, { lastEventId: '12' });
     onlySource().emit('token', { type: 'token', content: 'b' });
-    onlySource().emit('message_complete', {
-      type: 'message_complete', id: 'm1', content: 'c',
-    }, { lastEventId: '13' });
+    onlySource().emit(
+      'message_complete',
+      {
+        type: 'message_complete',
+        id: 'm1',
+        content: 'c',
+      },
+      { lastEventId: '13' },
+    );
 
     expect(seen.map((event) => [event.type, event.seq])).toEqual([
       ['token', 12],
@@ -258,9 +264,24 @@ describe('surfaceEvents', () => {
 
     expect(onlySource().url).toBe('/api/surfaces/events');
 
-    onlySource().emit('surface_changed', { plugin: 'board', name: 'tasks', version: 2, withdrawn: true });
-    expect(first).toHaveBeenCalledWith({ plugin: 'board', name: 'tasks', version: 2, withdrawn: true });
-    expect(second).toHaveBeenCalledWith({ plugin: 'board', name: 'tasks', version: 2, withdrawn: true });
+    onlySource().emit('surface_changed', {
+      plugin: 'board',
+      name: 'tasks',
+      version: 2,
+      withdrawn: true,
+    });
+    expect(first).toHaveBeenCalledWith({
+      plugin: 'board',
+      name: 'tasks',
+      version: 2,
+      withdrawn: true,
+    });
+    expect(second).toHaveBeenCalledWith({
+      plugin: 'board',
+      name: 'tasks',
+      version: 2,
+      withdrawn: true,
+    });
   });
 
   it('closes the stream when the last subscriber leaves', async () => {
@@ -281,7 +302,12 @@ describe('surfaceEvents', () => {
     setSurfaceEventRoute(route);
     surfaceEvents().subscribe(vi.fn());
 
-    onlySource().emit('surface_changed', { plugin: 'board', name: 'tasks', version: 2, withdrawn: true });
+    onlySource().emit('surface_changed', {
+      plugin: 'board',
+      name: 'tasks',
+      version: 2,
+      withdrawn: true,
+    });
 
     expect(route).toHaveBeenCalledWith(
       { plugin: 'board', name: 'tasks', version: 2, withdrawn: true },

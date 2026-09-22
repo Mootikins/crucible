@@ -210,10 +210,7 @@ export const CodeMirrorEditor: Component<{
       // CM6, so the shell background/gutter overrides win over the theme's.
       editorThemeExtension(theme()),
       EditorView.updateListener.of((update) => {
-        if (
-          update.docChanged &&
-          !update.transactions.some((tr) => tr.annotation(contentSync))
-        ) {
+        if (update.docChanged && !update.transactions.some((tr) => tr.annotation(contentSync))) {
           props.onChange(update.state.doc.toString());
         }
       }),
@@ -306,8 +303,7 @@ export const CodeMirrorEditor: Component<{
       canDrop: (source) => !source.isDir,
       onDrop: (source, input) => {
         const pos =
-          v.posAtCoords({ x: input.clientX, y: input.clientY }) ??
-          v.state.selection.main.head;
+          v.posAtCoords({ x: input.clientX, y: input.clientY }) ?? v.state.selection.main.head;
         const text = insertTextFor(source, props.path);
         v.dispatch({
           changes: { from: pos, insert: text },
