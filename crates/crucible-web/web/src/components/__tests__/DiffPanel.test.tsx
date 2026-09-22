@@ -194,6 +194,97 @@ describe('DiffPanel', () => {
     expect(section('src/a.rs').querySelector('.cm-editor')).toBeNull();
   });
 
+  describe('the hunks', () => {
+    /** The header button of each hunk of one file, once the editor draws it. */
+    async function hunkHeaders(path: string): Promise<HTMLElement[]> {
+      let found: HTMLElement[] = [];
+      await waitFor(() => {
+        found = [
+          ...section(path).querySelectorAll<HTMLElement>('[data-testid="diff-hunk-toggle"]'),
+        ];
+        expect(found.length).toBeGreaterThan(0);
+      });
+      return found;
+    }
+    const rows = (path: string) =>
+      [...section(path).querySelectorAll('.cm-content > .cm-line')].map((l) => l.textContent);
+
+    it('a hunk has a header with its base and current lines', async () => {
+      // "one\ntwo\n" becomes "one\n2\nthree\n": one hunk of 2 base and 3 current lines.
+      serve([entry('src/a.rs')]);
+      render(() => <DiffPanel source={source} />);
+      const [header] = await hunkHeaders('src/a.rs');
+      expect(header.textContent).toBe('@@ -1,2 +1,3 @@');
+      expect(header.tagName).toBe('BUTTON');
+      expect(header.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('a click on a header hides its lines, its removed rows and its comments', async () => {
+      serve(
+        [entry('src/a.rs')],
+        [{ comment: comment('c1', { body: 'in the hunk' }), outdated: false }],
+      );
+      render(() => <DiffPanel source={source} />);
+      const [header] = await hunkHeaders('src/a.rs');
+      await waitFor(() =>
+        expect(within(section('src/a.rs')).getByTestId('diff-comment')).toBeInTheDocument(),
+      );
+      expect(rows('src/a.rs')).toContain('three');
+
+      fireEvent.click(header);
+
+      await waitFor(() => expect(rows('src/a.rs')).not.toContain('three'));
+      expect(rows('src/a.rs')).not.toContain('one');
+      expect(section('src/a.rs').querySelector('.cm-deletedChunk')).toBeNull();
+      expect(within(section('src/a.rs')).queryByTestId('diff-comment')).toBeNull();
+      const [hidden] = await hunkHeaders('src/a.rs');
+      expect(hidden.getAttribute('aria-expanded')).toBe('false');
+
+      // A new editor for the file keeps the hunk hidden.
+      fireEvent.click(screen.getByTestId('diff-wrap'));
+      await waitFor(async () =>
+        expect((await hunkHeaders('src/a.rs'))[0].getAttribute('aria-expanded')).toBe('false'),
+      );
+      expect(rows('src/a.rs')).not.toContain('three');
+
+      fireEvent.click((await hunkHeaders('src/a.rs'))[0]);
+
+      await waitFor(() => expect(rows('src/a.rs')).toContain('three'));
+      expect(section('src/a.rs').querySelector('.cm-deletedChunk')).not.toBeNull();
+      expect(within(section('src/a.rs')).getByTestId('diff-comment')).toBeInTheDocument();
+    });
+
+    it('Collapse all hides every hunk, and Expand all shows them', async () => {
+      serve([entry('src/a.rs'), entry('src/b.rs')]);
+      render(() => <DiffPanel source={source} />);
+      await hunkHeaders('src/a.rs');
+      await hunkHeaders('src/b.rs');
+      const button = screen.getByTestId('diff-collapse-all');
+      expect(button.getAttribute('aria-label')).toBe('Collapse all');
+
+      fireEvent.click(button);
+
+      for (const path of ['src/a.rs', 'src/b.rs']) {
+        await waitFor(async () =>
+          expect((await hunkHeaders(path)).map((h) => h.getAttribute('aria-expanded'))).toEqual([
+            'false',
+          ]),
+        );
+        expect(rows(path)).not.toContain('three');
+        // The file stays open: only its hunks hide.
+        expect(toggle(path).getAttribute('aria-expanded')).toBe('true');
+      }
+      expect(button.getAttribute('aria-label')).toBe('Expand all');
+
+      fireEvent.click(button);
+
+      for (const path of ['src/a.rs', 'src/b.rs']) {
+        await waitFor(() => expect(rows(path)).toContain('three'));
+      }
+      expect(button.getAttribute('aria-label')).toBe('Collapse all');
+    });
+  });
+
   it('loads the text only when a file expands', async () => {
     serve([entry('src/big.rs', { added: 300, removed: 101 })]);
     render(() => <DiffPanel source={source} />);

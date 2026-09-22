@@ -75,6 +75,11 @@ vim -q <(cru diff comments session-<id>)
   relative to the root of the comment, so run Vim in that root.
 - `-f json` prints each comment with all its fields.
 
+In the web diff pane, each hunk has a header row with its patch range, for
+example `@@ -14,7 +14,7 @@`. A click on the header hides the hunk or shows it
+again. **Collapse all** in the toolbar hides every hunk, and **Expand all**
+shows every hunk again. The chevron of a file hides the whole file.
+
 In the web diff pane, **Copy comments** copies the same quickfix list, and
 **Send to chat** puts the reference `@path:start-end` into the composer.
 

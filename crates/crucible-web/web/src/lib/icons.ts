@@ -44,6 +44,7 @@ export { default as ChevronDown } from 'lucide-solid/icons/chevron-down';
 export { default as ChevronLeft } from 'lucide-solid/icons/chevron-left';
 export { default as ChevronRight } from 'lucide-solid/icons/chevron-right';
 export { default as ChevronsDownUp } from 'lucide-solid/icons/chevrons-down-up';
+export { default as ChevronsUpDown } from 'lucide-solid/icons/chevrons-up-down';
 export { default as Rows2 } from 'lucide-solid/icons/rows-2';
 export { default as Columns2 } from 'lucide-solid/icons/columns-2';
 export { default as WrapText } from 'lucide-solid/icons/wrap-text';

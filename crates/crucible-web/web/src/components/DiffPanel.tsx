@@ -14,6 +14,10 @@
  * file and scrolls to it, so a click in the Changes panel or on a tool card
  * shows the clicked file.
  *
+ * Each hunk has a header row with its patch range. A click on the header
+ * hides the hunk or shows it again. The panel keeps that choice, so that a new
+ * editor for the file (a wrap or a layout change) keeps it too.
+ *
  * A line comment starts on the line numbers (`diff-comments.tsx`). The daemon
  * stores it, and lists it with an outdated flag. An outdated comment shows at
  * the end of its file, because its text is no longer in the file.
@@ -41,7 +45,12 @@ import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { MergeView } from '@codemirror/merge';
 import { PanelShell } from './PanelShell';
-import { hidesFinalNewline, mergeViewExtensions, type MergeCollapse } from '@/lib/merge-view';
+import {
+  hidesFinalNewline,
+  mergeViewExtensions,
+  setHiddenHunks,
+  type MergeCollapse,
+} from '@/lib/merge-view';
 import {
   diffsetLabel,
   focusMatches,
@@ -81,6 +90,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
+  ChevronsUpDown,
   Columns2,
   Copy,
   MessageSquareText,
@@ -367,6 +377,15 @@ const ProposalConflicts: Component<{ files: FileConflict[]; controls: ProposalCo
   </For>
 );
 
+/**
+ * The hidden hunks of one file: the default of the toolbar, and the choice of
+ * the user for each hunk, by its label.
+ */
+interface HunkChoice {
+  hidden: boolean;
+  own: Readonly<Record<string, boolean>>;
+}
+
 interface DiffsetViewProps {
   source: DiffsetSource;
   proposal?: ProposalControls;
@@ -393,8 +412,24 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
     expanded()[fileKey(file)] ?? file.added + file.removed <= LARGE_FILE_LINES;
   const toggle = (file: DiffFileEntry) =>
     setExpanded((prev) => ({ ...prev, [fileKey(file)]: !isExpanded(file) }));
-  const collapseAll = () =>
-    setExpanded(Object.fromEntries(files().map((f) => [fileKey(f), false])));
+  // The hunks. Collapse all and Expand all set the default of every hunk and
+  // clear the choices for single hunks.
+  const [hunksHidden, setHunksHidden] = createSignal(false);
+  const [hunkChoices, setHunkChoices] = createSignal<Record<string, Record<string, boolean>>>({});
+  const hunksOf = (file: DiffFileEntry): HunkChoice => ({
+    hidden: hunksHidden(),
+    own: hunkChoices()[fileKey(file)] ?? {},
+  });
+  const toggleHunk = (file: DiffFileEntry, label: string) =>
+    setHunkChoices((prev) => {
+      const key = fileKey(file);
+      const own = prev[key] ?? {};
+      return { ...prev, [key]: { ...own, [label]: !(own[label] ?? hunksHidden()) } };
+    });
+  const toggleAllHunks = () => {
+    setHunksHidden(!hunksHidden());
+    setHunkChoices({});
+  };
 
   // The focus target: expand its file, then scroll to its section. Each
   // request applies once, when the diffset lists the file, so a refresh does
@@ -500,14 +535,18 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
           </button>
           <button
             type="button"
-            aria-label="Collapse all"
-            title="Collapse all"
+            aria-label={hunksHidden() ? 'Expand all' : 'Collapse all'}
+            title={hunksHidden() ? 'Expand all: show every hunk' : 'Collapse all: hide every hunk'}
             data-testid="diff-collapse-all"
             disabled={files().length === 0}
-            onClick={collapseAll}
+            onClick={toggleAllHunks}
             class={`${iconButton} ${hit()}`}
           >
-            <ChevronsDownUp class="h-3.5 w-3.5" />
+            {hunksHidden() ? (
+              <ChevronsUpDown class="h-3.5 w-3.5" />
+            ) : (
+              <ChevronsDownUp class="h-3.5 w-3.5" />
+            )}
           </button>
           <button
             type="button"
@@ -568,6 +607,8 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
                   onToggle={() => toggle(file)}
                   split={split()}
                   wrap={wrap()}
+                  hunks={hunksOf(file)}
+                  onHunkToggle={(label) => toggleHunk(file, label)}
                   decide={fileDecision()}
                 />
               )}
@@ -588,6 +629,8 @@ interface FileSectionProps {
   onToggle: () => void;
   split: boolean;
   wrap: boolean;
+  hunks: HunkChoice;
+  onHunkToggle: (label: string) => void;
   /** The Accept and Reject of this file, for a proposal that takes them. */
   decide?: FileDecision;
 }
@@ -719,6 +762,8 @@ const FileSection: Component<FileSectionProps> = (props) => {
                 comments={props.comments}
                 split={props.split}
                 wrap={props.wrap}
+                hunks={props.hunks}
+                onHunkToggle={props.onHunkToggle}
               />
             </NearViewport>
           }
@@ -799,6 +844,8 @@ interface FileBodyProps {
   comments: ListedComment[];
   split: boolean;
   wrap: boolean;
+  hunks: HunkChoice;
+  onHunkToggle: (label: string) => void;
 }
 
 const FileBody: Component<FileBodyProps> = (props) => {
@@ -852,6 +899,8 @@ const FileBody: Component<FileBodyProps> = (props) => {
             wrap={props.wrap}
             hosts={hosts}
             comments={placed()}
+            hunks={props.hunks}
+            onHunkToggle={props.onHunkToggle}
           />
         )}
       </Match>
@@ -869,7 +918,15 @@ interface FileEditorProps {
   wrap: boolean;
   hosts: Record<CommentSide, CommentHost>;
   comments: DiffComment[];
+  hunks: HunkChoice;
+  onHunkToggle: (label: string) => void;
 }
+
+/** The test on a hunk label that `setHiddenHunks` takes. */
+const hiddenTest =
+  (choice: HunkChoice) =>
+  (label: string): boolean =>
+    choice.own[label] ?? choice.hidden;
 
 /** The read-only CodeMirror view of one file: unified, or split in two. */
 const FileEditor: Component<FileEditorProps> = (props) => {
@@ -888,6 +945,7 @@ const FileEditor: Component<FileEditorProps> = (props) => {
       wrap: props.wrap,
       collapse: COLLAPSE,
       hideFinalNewline: hidesFinalNewline(original, current),
+      hunks: { current, onToggle: (label: string) => props.onHunkToggle(label) },
     };
     const hosts = untrack(() => props.hosts);
     const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side])];
@@ -923,6 +981,12 @@ const FileEditor: Component<FileEditorProps> = (props) => {
       setViews([{ view, side: 'current' }]);
       destroy = () => view.destroy();
     }
+  });
+
+  // After the editors, so that a new editor gets the hidden hunks at once.
+  createEffect(() => {
+    const hidden = hiddenTest(props.hunks);
+    for (const { view } of views()) view.dispatch({ effects: setHiddenHunks.of(hidden) });
   });
 
   createEffect(() => {

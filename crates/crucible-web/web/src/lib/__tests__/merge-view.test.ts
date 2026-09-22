@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { getChunks, MergeView } from '@codemirror/merge';
-import { hidesFinalNewline, mergeViewExtensions, type MergeViewSetup } from '../merge-view';
+import {
+  diffHunks,
+  hidesFinalNewline,
+  mergeViewExtensions,
+  setHiddenHunks,
+  type MergeViewSetup,
+} from '../merge-view';
 
 // Twenty lines with one change in the middle. A margin of 3 leaves more
 // than 4 unchanged lines on each side, so both sides collapse.
@@ -178,5 +184,123 @@ describe('the final newline', () => {
   it('keeps it when only one text ends in a newline, so the change shows', () => {
     expect(hidesFinalNewline('a\n', 'a')).toBe(false);
     expect(hidesFinalNewline('a', 'a\n')).toBe(false);
+  });
+});
+
+describe('the hunks', () => {
+  /** Twenty lines, with each of the given lines changed. */
+  const changed = (...lines: number[]) =>
+    ORIGINAL.split('\n')
+      .map((text, i) => (lines.includes(i + 1) ? `${text} changed` : text))
+      .join('\n');
+
+  function unified(doc: string, hidden: (label: string) => boolean = () => false): EditorView {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: mergeViewExtensions({
+          original: ORIGINAL,
+          path: 'src/a.rs',
+          collapse: { margin: 3, minSize: 4 },
+          hunks: { current: doc, onToggle: (label) => toggled.push(label) },
+        }),
+      }),
+      parent,
+    });
+    view.dispatch({ effects: setHiddenHunks.of(hidden) });
+    return view;
+  }
+  let toggled: string[] = [];
+  afterEach(() => {
+    toggled = [];
+  });
+
+  const headers = (v: EditorView) => [
+    ...v.dom.querySelectorAll<HTMLElement>('[data-testid="diff-hunk-toggle"]'),
+  ];
+
+  it('names the base and the current lines of a hunk, as a patch does', () => {
+    const v = unified(CHANGED);
+    // Line 10 changes. Three lines of context on each side: lines 7 to 13.
+    expect(diffHunks(v.state, { margin: 3, minSize: 4 }).map((h) => h.label)).toEqual([
+      '@@ -7,7 +7,7 @@',
+    ]);
+    expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -7,7 +7,7 @@']);
+    expect(headers(v)[0].getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('counts an added and a removed line on their own side', () => {
+    // Lines 10b and 10c come after line 10, and line 15 goes. The context of
+    // line 10b starts at line 8. The hunk runs to the end of the text.
+    const doc = ORIGINAL.replace('line 10', 'line 10\nline 10b\nline 10c').replace('line 15\n', '');
+    const v = unified(doc);
+    expect(diffHunks(v.state, { margin: 3, minSize: 4 }).map((h) => h.label)).toEqual([
+      '@@ -8,13 +8,14 @@',
+    ]);
+  });
+
+  it('two chunks with shared context are one hunk', () => {
+    // The context of line 10 ends at 13, and the context of line 15 starts at
+    // 12, so the unchanged lines between them do not fold.
+    const near = unified(changed(10, 15));
+    expect(headers(near).map((h) => h.textContent)).toEqual(['@@ -7,14 +7,14 @@']);
+    near.destroy();
+    // Lines 3 and 15 are far apart. The lines between them fold.
+    const far = unified(changed(3, 15));
+    expect(headers(far).map((h) => h.textContent)).toEqual([
+      '@@ -1,6 +1,6 @@',
+      '@@ -12,9 +12,9 @@',
+    ]);
+  });
+
+  it('a click on a header asks the owner to toggle its hunk', () => {
+    const v = unified(CHANGED);
+    headers(v)[0].click();
+    expect(toggled).toEqual(['@@ -7,7 +7,7 @@']);
+  });
+
+  it('a hidden hunk shows only its header: no line and no removed row', () => {
+    const v = unified(CHANGED, () => true);
+    expect(headers(v).map((h) => h.getAttribute('aria-expanded'))).toEqual(['false']);
+    const lines = [...v.dom.querySelectorAll('.cm-content > .cm-line')].map((l) => l.textContent);
+    expect(lines.some((l) => /line (7|10|ten|13)$/.test(l ?? ''))).toBe(false);
+    expect(v.dom.querySelector('.cm-deletedChunk')).toBeNull();
+    // The owner shows it again.
+    v.dispatch({ effects: setHiddenHunks.of(() => false) });
+    expect(v.dom.querySelector('.cm-deletedChunk')).not.toBeNull();
+    expect(v.dom.querySelector('.cm-changedLine')?.textContent).toBe('line ten');
+  });
+
+  it('a hidden hunk on the first line hides the removed row above that line', () => {
+    // The removed row of a change on line 1 is a block before position 0.
+    const v = unified(ORIGINAL.replace('line 1\n', 'line one\n'), () => true);
+    expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -1,4 +1,4 @@']);
+    expect(v.dom.querySelector('.cm-deletedChunk')).toBeNull();
+    expect(v.dom.querySelector('.cm-changedLine')).toBeNull();
+  });
+
+  it('a hidden hunk at the end of the text hides its removed last line', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const base = 'a\nb\n';
+    const doc = 'a\n';
+    view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: mergeViewExtensions({
+          original: base,
+          path: 'a.md',
+          collapse: { margin: 3, minSize: 4 },
+          hideFinalNewline: hidesFinalNewline(base, doc),
+          hunks: { current: doc, onToggle: () => undefined },
+        }),
+      }),
+      parent,
+    });
+    expect(headers(view).map((h) => h.textContent)).toEqual(['@@ -1,2 +1,1 @@']);
+    view.dispatch({ effects: setHiddenHunks.of(() => true) });
+    expect(view.dom.querySelector('.cm-deletedChunk')).toBeNull();
   });
 });

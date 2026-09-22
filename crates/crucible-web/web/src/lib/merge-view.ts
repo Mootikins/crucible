@@ -6,8 +6,15 @@
  * diff surface gets that setup from this helper.
  * A diff is a code view: the prose features of the note editor stay off.
  */
-import type { Extension } from '@codemirror/state';
-import { EditorState, RangeSetBuilder } from '@codemirror/state';
+import type { Extension, Range } from '@codemirror/state';
+import {
+  EditorState,
+  Facet,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+  Text,
+} from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -16,7 +23,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { getChunks, unifiedMergeView } from '@codemirror/merge';
+import { type Chunk, getChunks, getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '@/components/editor/CodeMirrorEditor';
 import { editorThemeExtension } from '@/components/editor/editor-theme';
 import { theme } from '@/lib/theme';
@@ -51,6 +58,20 @@ export interface MergeViewSetup {
   collapse?: MergeCollapse;
   /** Hide the empty line after a final newline. See `hidesFinalNewline`. */
   hideFinalNewline?: boolean;
+  /**
+   * A header row for each hunk, which hides and shows the hunk. It needs
+   * `collapse`, because the collapse decides where a hunk ends. Absent: no
+   * header.
+   */
+  hunks?: HunkControl;
+}
+
+/** What the hunk headers ask of their owner. The owner keeps the state. */
+export interface HunkControl {
+  /** The current text. A split view needs it to count the lines of the other side. */
+  current: string;
+  /** The owner hides or shows the hunk, then sends `setHiddenHunks`. */
+  onToggle: (label: string) => void;
 }
 
 const tint = (color: string, percent: number) =>
@@ -216,6 +237,291 @@ const wordMarks = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+/**
+ * One hunk: the changed lines and their context lines, as a patch shows them.
+ * The unchanged lines between two hunks fold.
+ */
+export interface DiffHunk {
+  /** `@@ -base,count +current,count @@`. The label also names the hunk. */
+  label: string;
+  /** The first position of the hunk in this editor. */
+  from: number;
+  /** The last position of the hunk in this editor. */
+  to: number;
+}
+
+/** The start line and the line count of a hunk on one side, as a patch writes them. */
+const patchRange = (start: number, count: number) => `${count === 0 ? start - 1 : start},${count}`;
+
+/**
+ * The number of lines of a chunk on one side. A chunk covers whole lines: its
+ * end is the start of the next line, or one past the end of the text.
+ */
+function chunkLines(doc: Text, from: number, to: number): number {
+  if (from >= to) return 0;
+  const last = to > doc.length ? doc.lines : doc.lineAt(to).number - 1;
+  return last - doc.lineAt(from).number + 1;
+}
+
+/** The setup of the hunk headers of one editor. */
+interface HunkSetup {
+  collapse: MergeCollapse;
+  hideFinalNewline: boolean;
+  /** The text of the other side, for the editor of the base side. */
+  current: Text;
+  onToggle: (label: string) => void;
+}
+
+const hunkSetup = Facet.define<HunkSetup, HunkSetup | null>({
+  combine: (values) => values[0] ?? null,
+});
+
+/**
+ * The hunks of one editor, with the rule of `collapseUnchanged` in
+ * `@codemirror/merge`: a run of unchanged lines folds when it has `minSize`
+ * lines or more after `margin` lines stay next to each change. Two chunks with
+ * no fold between them are one hunk.
+ */
+export function diffHunks(state: EditorState, collapse: MergeCollapse): DiffHunk[] {
+  const found = getChunks(state);
+  if (!found) return [];
+  const isA = found.side === 'a';
+  const setup = state.facet(hunkSetup);
+  const doc = state.doc;
+  const other = isA ? (setup?.current ?? Text.empty) : getOriginalDoc(state);
+  const { margin } = collapse;
+  const minSize = collapse.minSize ?? 4;
+  const own = (c: Chunk) =>
+    isA ? chunkLines(doc, c.fromA, c.toA) : chunkLines(doc, c.fromB, c.toB);
+  const theirs = (c: Chunk) =>
+    isA ? chunkLines(other, c.fromB, c.toB) : chunkLines(other, c.fromA, c.toA);
+  // The empty line after a final newline is not a line of the file.
+  let lastLine = doc.lines;
+  if (setup?.hideFinalNewline && lastLine > 1 && doc.line(lastLine).length === 0) lastLine--;
+
+  const hunks: DiffHunk[] = [];
+  // Each chunk adds its line difference: the other side minus this side.
+  let deltaBefore = 0;
+  let deltaIn = 0;
+  let open = false;
+  let start = 1;
+  const close = (end: number, toEnd: boolean) => {
+    const last = Math.max(start, end);
+    const count = Math.max(0, end - start + 1);
+    const [base, current] = isA
+      ? [
+          [start, count],
+          [start + deltaBefore, count + deltaIn],
+        ]
+      : [
+          [start + deltaBefore, count + deltaIn],
+          [start, count],
+        ];
+    hunks.push({
+      label: `@@ -${patchRange(base[0], base[1])} +${patchRange(current[0], current[1])} @@`,
+      from: doc.line(start).from,
+      // A hunk at the end of the text covers the empty last line too: a
+      // removed last line of the base sits there.
+      to: toEnd ? doc.length : doc.line(last).to,
+    });
+    deltaBefore += deltaIn;
+    deltaIn = 0;
+    open = false;
+  };
+  let prevLine = 1;
+  for (let i = 0; ; i++) {
+    const chunk = i < found.chunks.length ? found.chunks[i] : null;
+    const collapseFrom = i ? prevLine + margin : 1;
+    const collapseTo = chunk
+      ? doc.lineAt(isA ? chunk.fromA : chunk.fromB).number - 1 - margin
+      : doc.lines;
+    if (collapseTo - collapseFrom + 1 >= minSize) {
+      if (open) close(collapseFrom - 1, false);
+      start = collapseTo + 1;
+    }
+    if (!chunk) {
+      if (open) close(lastLine, true);
+      break;
+    }
+    open = true;
+    deltaIn += theirs(chunk) - own(chunk);
+    prevLine = doc.lineAt(Math.min(doc.length, isA ? chunk.toA : chunk.toB)).number;
+  }
+  return hunks;
+}
+
+/**
+ * Gives the editor the hidden hunks, as a test on the label. The owner keeps
+ * the state, so that it survives a new editor for the same file.
+ */
+export const setHiddenHunks = StateEffect.define<(label: string) => boolean>();
+
+const CHEVRON_PATH = 'm6 9 6 6 6-6';
+
+/** The header row of one hunk: a chevron and the patch range, in a button. */
+class HunkHeader extends WidgetType {
+  constructor(
+    readonly label: string,
+    readonly hidden: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: HunkHeader): boolean {
+    return other.label === this.label && other.hidden === this.hidden;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'cm-diff-hunk';
+    const button = row.appendChild(document.createElement('button'));
+    button.type = 'button';
+    button.className = 'cm-diff-hunk-toggle';
+    button.dataset.testid = 'diff-hunk-toggle';
+    button.setAttribute('aria-expanded', String(!this.hidden));
+    button.title = this.hidden ? 'Show this hunk' : 'Hide this hunk';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('class', 'cm-diff-hunk-chevron');
+    const path = svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'));
+    path.setAttribute('d', CHEVRON_PATH);
+    button.append(svg, document.createTextNode(this.label));
+    const label = this.label;
+    button.addEventListener('click', () => view.state.facet(hunkSetup)?.onToggle(label));
+    return row;
+  }
+
+  // The button owns its clicks and keys. The editor must not take them.
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+interface HunkState {
+  hidden: (label: string) => boolean;
+  chunks: unknown;
+  decorations: DecorationSet;
+}
+
+/**
+ * A block replace that also covers the block widgets at its two ends.
+ *
+ * An inclusive block replace starts after a block widget that sits before its
+ * first position. The removed row of a change on line 1 is such a widget, at
+ * position 0, so no start position can cover it. `@codemirror/view` gives the
+ * wider reach only to the viewport gaps that it draws itself, through the
+ * `isBlockGap` field of the spec. The field is not in the typings. The test
+ * "a hidden hunk on the first line" in `merge-view.test.ts` fails when a new
+ * version of the library drops it.
+ */
+const COVERS_END_BLOCKS = { isBlockGap: true, inclusive: true } as Parameters<
+  typeof Decoration.replace
+>[0];
+
+function hunkDecorations(state: EditorState, hidden: (label: string) => boolean): DecorationSet {
+  const setup = state.facet(hunkSetup);
+  if (!setup) return Decoration.none;
+  const ranges: Range<Decoration>[] = [];
+  for (const hunk of diffHunks(state, setup.collapse)) {
+    const header = new HunkHeader(hunk.label, hidden(hunk.label));
+    if (header.hidden) {
+      // The header takes the place of the hunk, with the removed rows and the
+      // comments at either end of it.
+      ranges.push(
+        Decoration.replace({ ...COVERS_END_BLOCKS, widget: header, block: true }).range(
+          hunk.from,
+          hunk.to,
+        ),
+      );
+    } else {
+      // Before the removed-line block of a chunk on the first line (side -1).
+      ranges.push(Decoration.widget({ widget: header, block: true, side: -2 }).range(hunk.from));
+    }
+  }
+  return Decoration.set(ranges, true);
+}
+
+/**
+ * The hunk headers and the hidden hunks. A block decoration must come from the
+ * state, not from a view plugin. The chunks of a split view arrive by an
+ * effect after the editor mounts, so the field follows them too.
+ */
+const hunkField = StateField.define<HunkState>({
+  create(state) {
+    const hidden = () => false;
+    return {
+      hidden,
+      chunks: getChunks(state)?.chunks,
+      decorations: hunkDecorations(state, hidden),
+    };
+  },
+  update(value, tr) {
+    let { hidden } = value;
+    for (const effect of tr.effects) if (effect.is(setHiddenHunks)) hidden = effect.value;
+    const chunks = getChunks(tr.state)?.chunks;
+    if (hidden === value.hidden && chunks === value.chunks && !tr.docChanged) return value;
+    return { hidden, chunks, decorations: hunkDecorations(tr.state, hidden) };
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
+
+const hunkTheme = EditorView.theme({
+  '.cm-diff-hunk': { display: 'flex' },
+  '.cm-diff-hunk-toggle': {
+    display: 'flex',
+    flex: '1',
+    alignItems: 'center',
+    gap: '0.5em',
+    padding: '0.25em 0.5em',
+    border: 'none',
+    borderTop: '1px solid var(--color-hairline)',
+    background: 'transparent',
+    color: 'var(--color-muted-dark)',
+    font: 'inherit',
+    fontSize: 'var(--cru-font-floor)',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  '.cm-diff-hunk-toggle:hover': {
+    background: 'var(--color-hover-wash)',
+    color: 'var(--color-shell-ink)',
+  },
+  '.cm-diff-hunk-toggle:focus-visible': {
+    outline: '1px solid var(--color-focus-ring)',
+    outlineOffset: '-1px',
+  },
+  '.cm-diff-hunk-chevron': {
+    width: '1.1em',
+    height: '1.1em',
+    flexShrink: '0',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: '2',
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    transition: 'transform 120ms ease-out',
+  },
+  '.cm-diff-hunk-toggle[aria-expanded="false"] .cm-diff-hunk-chevron': {
+    transform: 'rotate(-90deg)',
+  },
+});
+
+/** The extensions of the hunk headers. */
+function hunkExtensions(setup: MergeViewSetup): Extension {
+  if (!setup.hunks || !setup.collapse) return [];
+  return [
+    hunkSetup.of({
+      collapse: setup.collapse,
+      hideFinalNewline: !!setup.hideFinalNewline,
+      current: Text.of(setup.hunks.current.split('\n')),
+      onToggle: setup.hunks.onToggle,
+    }),
+    hunkField,
+    hunkTheme,
+  ];
+}
+
 /** The extensions of one read-only diff editor. */
 export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
   const editor: Extension[] = [
@@ -227,6 +533,7 @@ export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
     diffTheme,
     setup.hideFinalNewline ? finalNewline : [],
     wordMarks,
+    hunkExtensions(setup),
   ];
   if (setup.split) return editor;
   return [
