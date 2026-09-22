@@ -1,13 +1,16 @@
 import type { Accessor } from 'solid-js';
-import { useQuery, type UseQueryResult } from '@tanstack/solid-query';
+import { useMutation, useQuery, type UseMutationResult, type UseQueryResult } from '@tanstack/solid-query';
 import {
   diffsetKey,
+  type DiffComment,
   type DiffFileEntry,
   type DiffFileText,
   type Diffset,
   type DiffsetSource,
+  type ListedComment,
+  type NewDiffComment,
 } from '@/lib/diffset';
-import { getDiffFile, getDiffset } from '@/lib/diff-api';
+import { getDiffComments, getDiffFile, getDiffset, postDiffComment } from '@/lib/diff-api';
 import { getQueryClient } from './client';
 import { keys } from './keys';
 
@@ -40,10 +43,35 @@ export function useDiffFile(
     const file = entry();
     const from = file.status.kind === 'renamed' ? file.status.from : undefined;
     return {
-      queryKey: keys.diffFile(diffsetKey(value), file.path, from),
+      queryKey: keys.diffFile(diffsetKey(value), file.root, file.path, from),
       queryFn: () => getDiffFile(value, file),
     };
   }, getQueryClient);
+}
+
+/** The comments of one diffset, each with its outdated flag. */
+export function useDiffComments(source: Accessor<DiffsetSource>): UseQueryResult<ListedComment[], Error> {
+  return useQuery(() => {
+    const value = source();
+    return {
+      queryKey: keys.diffComments(diffsetKey(value)),
+      queryFn: () => getDiffComments(value),
+      // The daemon does not serve the comments of a proposal yet.
+      enabled: value.kind !== 'proposal',
+    };
+  }, getQueryClient);
+}
+
+/** Stores one comment. The comments of its diffset then load again. */
+export function usePostDiffComment(): UseMutationResult<DiffComment, Error, NewDiffComment> {
+  return useMutation(
+    () => ({
+      mutationFn: postDiffComment,
+      onSuccess: (_stored, body) =>
+        getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(body.source)) }),
+    }),
+    getQueryClient,
+  );
 }
 
 /** Makes one diffset and the texts of its files wrong. Refresh calls it. */

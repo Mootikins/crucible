@@ -8,10 +8,13 @@
 import { client, decode } from './api-client';
 import {
   unreachable,
+  type DiffComment,
   type DiffFileEntry,
   type DiffFileText,
   type Diffset,
   type DiffsetSource,
+  type ListedComment,
+  type NewDiffComment,
 } from './diffset';
 
 /** The error of a source that the web server does not serve yet. */
@@ -87,4 +90,38 @@ export async function getDiffFile(
     default:
       return unreachable(source);
   }
+}
+
+/**
+ * The comments of one diffset, oldest first. The daemon marks each comment
+ * whose quoted text is gone as outdated.
+ */
+export async function getDiffComments(source: DiffsetSource): Promise<ListedComment[]> {
+  let query;
+  switch (source.kind) {
+    case 'branch':
+      query = branchQuery(source);
+      break;
+    case 'session_record':
+      query = sessionQuery(source);
+      break;
+    case 'proposal':
+      throw notServed(source);
+    default:
+      return unreachable(source);
+  }
+  const reply = decode(
+    await client.GET('/api/diff/comments', { params: { query } }),
+    'Failed to load the comments',
+  );
+  return reply.comments;
+}
+
+/** Stores one comment on a line range of one file. The reply is the stored comment. */
+export async function postDiffComment(body: NewDiffComment): Promise<DiffComment> {
+  const reply = decode(
+    await client.POST('/api/diff/comment', { body }),
+    'Failed to save the comment',
+  );
+  return reply.comment;
 }

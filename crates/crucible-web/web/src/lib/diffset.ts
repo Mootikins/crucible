@@ -15,6 +15,10 @@ export type Diffset = Schemas['Diffset'];
 export type DiffsetSource = Schemas['DiffsetSource'];
 export type DiffFileEntry = Schemas['DiffFileEntry'];
 export type DiffFileText = Schemas['DiffFileText'];
+export type DiffComment = Schemas['ReviewCommentRow'];
+export type ListedComment = Schemas['ListedCommentRow'];
+export type CommentSide = Schemas['CommentSideRow'];
+export type NewDiffComment = Schemas['CommentBody'];
 
 /** Fails the compile when a new source variant has no branch here. */
 export function unreachable(source: never): never {
@@ -76,4 +80,60 @@ export function diffsetLabel(source: DiffsetSource): string {
     default:
       return unreachable(source);
   }
+}
+
+/**
+ * The first and the last line of a stored range, both inclusive.
+ *
+ * The daemon stores `end` as one past the last line. The text forms show the
+ * last line, so the end is inclusive only in text.
+ */
+export function inclusiveLines(start: number, end: number): [number, number] {
+  return [start, Math.max(start, end - 1)];
+}
+
+/** "626" for one line, "626-628" for a range. */
+function span(first: number, last: number): string {
+  return last > first ? `${first}-${last}` : `${first}`;
+}
+
+/**
+ * The reference form of a range: "path:626" or "path:626-628". A mention puts
+ * "@" before it. It mirrors `reference` in `crucible-core/src/diff.rs`.
+ */
+export function referenceForm(path: string, start: number, end: number): string {
+  const [first, last] = inclusiveLines(start, end);
+  return `${path}:${span(first, last)}`;
+}
+
+/** The lines of a text, as Rust `str::lines` gives them: no last empty line, no "\r". */
+function textLines(text: string): string[] {
+  if (text === '') return [];
+  const lines = text.split('\n');
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.map((line) => line.replace(/\r$/, ''));
+}
+
+/**
+ * The quickfix form of one comment: "path:626: text" for one line, and
+ * "path:626: [626-628] text" for a range.
+ *
+ * The Vim default `errorformat` (`%f:%l:%m`) needs a ":" after the line
+ * number, so the location has only the start line. A range goes at the start
+ * of the message. Each further line of the text is indented by two spaces.
+ * It mirrors `quickfix_line` in `crucible-core/src/diff.rs`.
+ */
+export function quickfixLine(comment: Pick<DiffComment, 'path' | 'line_range' | 'body'>): string {
+  const [first, last] = inclusiveLines(comment.line_range.start, comment.line_range.end);
+  const [head = '', ...rest] = textLines(comment.body);
+  const range = last > first ? `[${first}-${last}] ` : '';
+  return [`${comment.path}:${first}: ${range}${head}`, ...rest.map((line) => `  ${line}`)].join('\n');
+}
+
+/** The quickfix list of the open comments: one entry for each, in order. */
+export function quickfixList(comments: readonly DiffComment[]): string {
+  return comments
+    .filter((c) => !c.resolved)
+    .map((c) => `${quickfixLine(c)}\n`)
+    .join('');
 }

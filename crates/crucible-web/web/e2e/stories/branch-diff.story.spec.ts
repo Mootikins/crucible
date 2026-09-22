@@ -56,8 +56,8 @@ test.describe('Branch diff from the Files panel', () => {
     await open.click();
 
     await expect(page.getByTestId('diff-source')).toContainText('Branch working tree');
-    await expect(page.getByTestId('diff-file-src/lib.rs')).toBeVisible();
-    await expect(page.getByTestId('diff-file-README.md')).toBeVisible();
+    await expect(page.getByTestId(`diff-file-${ROOT}:src/lib.rs`)).toBeVisible();
+    await expect(page.getByTestId(`diff-file-${ROOT}:README.md`)).toBeVisible();
     await story.step(page, 'the branch diff lists the changed files');
 
     // One request, for the browsed root, with the default base and the working tree.

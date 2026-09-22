@@ -9,6 +9,10 @@
  * A diff is a code view. The body is monospace, it never reflows, and the
  * prose features of the note editor stay off. The change bar is the 3 px
  * gutter of `@codemirror/merge`. The panel draws no chip.
+ *
+ * A line comment starts on the line numbers (`diff-comments.tsx`). The daemon
+ * stores it, and lists it with an outdated flag. An outdated comment shows at
+ * the end of its file, because its text is no longer in the file.
  */
 import {
   Component,
@@ -20,16 +24,35 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { EditorState, type Extension } from '@codemirror/state';
-import { EditorView, lineNumbers } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import { MergeView } from '@codemirror/merge';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { mergeViewExtensions, type MergeCollapse } from '@/lib/merge-view';
-import { diffsetLabel, type DiffFileEntry, type DiffFileText, type DiffsetSource } from '@/lib/diffset';
-import { invalidateDiffset, useDiffFile, useDiffset } from '@/lib/query/diff';
+import {
+  diffsetLabel,
+  quickfixList,
+  referenceForm,
+  type CommentSide,
+  type DiffComment,
+  type DiffFileEntry,
+  type DiffFileText,
+  type DiffsetSource,
+  type ListedComment,
+} from '@/lib/diffset';
+import {
+  invalidateDiffset,
+  useDiffComments,
+  useDiffFile,
+  useDiffset,
+  usePostDiffComment,
+} from '@/lib/query/diff';
+import { getBus } from '@/lib/bus';
+import { commentExtensions, setComments, spanLabel, type CommentHost, type LineSpan } from './diff-comments';
 import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
 import { hit } from '@/lib/touch';
 
@@ -54,6 +77,14 @@ export interface DiffPanelProps {
   source?: DiffsetSource;
 }
 
+/**
+ * The key of one file in the panel. A session record can span more than one
+ * root, and two roots can hold the same relative path.
+ */
+function fileKey(file: Pick<DiffFileEntry, 'root' | 'path'>): string {
+  return `${file.root}:${file.path}`;
+}
+
 const toolButton =
   'rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50';
 
@@ -72,9 +103,10 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
 
 const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
   const diffset = useDiffset(() => props.source);
+  const comments = useDiffComments(() => props.source);
   const [split, setSplit] = createSignal(false);
   const [wrap, setWrap] = createSignal(true);
-  // The choice of the user for each path. A path without a choice takes the
+  // The choice of the user for each file. A path without a choice takes the
   // size rule, so a refresh that adds a file applies the rule to it.
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
 
@@ -86,11 +118,17 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
     }),
   );
   const isExpanded = (file: DiffFileEntry) =>
-    expanded()[file.path] ?? file.added + file.removed <= LARGE_FILE_LINES;
+    expanded()[fileKey(file)] ?? file.added + file.removed <= LARGE_FILE_LINES;
   const toggle = (file: DiffFileEntry) =>
-    setExpanded((prev) => ({ ...prev, [file.path]: !isExpanded(file) }));
+    setExpanded((prev) => ({ ...prev, [fileKey(file)]: !isExpanded(file) }));
   const collapseAll = () =>
-    setExpanded(Object.fromEntries(files().map((f) => [f.path, false])));
+    setExpanded(Object.fromEntries(files().map((f) => [fileKey(f), false])));
+
+  const openComments = () => (comments.data ?? []).map((l) => l.comment).filter((c) => !c.resolved);
+  const commentsOf = (file: DiffFileEntry) =>
+    (comments.data ?? []).filter((l) => !l.comment.resolved && fileKey(l.comment) === fileKey(file));
+  const copyComments = () =>
+    void navigator.clipboard?.writeText(quickfixList(openComments())).catch(() => undefined);
 
   return (
     <>
@@ -143,6 +181,17 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
           </button>
           <button
             type="button"
+            title="Copy the open comments in the quickfix form"
+            data-testid="diff-copy-comments"
+            disabled={openComments().length === 0}
+            onClick={copyComments}
+            class={`${toolButton} flex items-center gap-1 ${hit()}`}
+          >
+            <Copy class="w-3.5 h-3.5" />
+            Copy comments
+          </button>
+          <button
+            type="button"
             title="Refresh"
             data-testid="diff-refresh"
             disabled={diffset.isFetching}
@@ -173,6 +222,7 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
                 <FileSection
                   source={props.source}
                   file={file}
+                  comments={commentsOf(file)}
                   expanded={isExpanded(file)}
                   onToggle={() => toggle(file)}
                   split={split()}
@@ -190,6 +240,8 @@ const DiffsetView: Component<{ source: DiffsetSource }> = (props) => {
 interface FileSectionProps {
   source: DiffsetSource;
   file: DiffFileEntry;
+  /** The open comments of this file. */
+  comments: ListedComment[];
   expanded: boolean;
   onToggle: () => void;
   split: boolean;
@@ -208,7 +260,7 @@ const FileSection: Component<FileSectionProps> = (props) => {
   const copyPath = () => void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
 
   return (
-    <section class="border-b border-hairline" data-testid={`diff-file-${props.file.path}`}>
+    <section class="border-b border-hairline" data-testid={`diff-file-${fileKey(props.file)}`}>
       <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-shell-bg px-2 py-1">
         <button
           type="button"
@@ -246,12 +298,19 @@ const FileSection: Component<FileSectionProps> = (props) => {
           when={noTextReason(props.file)}
           fallback={
             <NearViewport>
-              <FileBody source={props.source} file={props.file} split={props.split} wrap={props.wrap} />
+              <FileBody
+                source={props.source}
+                file={props.file}
+                comments={props.comments}
+                split={props.split}
+                wrap={props.wrap}
+              />
             </NearViewport>
           }
         >
           {(reason) => <p class="px-3 pb-2 text-xs text-muted-dark">{reason()}</p>}
         </Show>
+        <EndComments comments={props.comments} split={props.split} />
       </Show>
     </section>
   );
@@ -286,20 +345,96 @@ const NearViewport: Component<{ children: JSX.Element }> = (props) => {
   );
 };
 
-const FileBody: Component<{ source: DiffsetSource; file: DiffFileEntry; split: boolean; wrap: boolean }> = (
-  props,
-) => {
+/**
+ * The comments that the editor cannot show under a line, at the end of the
+ * file: an outdated comment, and a comment on the base side in the unified
+ * view, which shows only the line numbers of the current side.
+ */
+const EndComments: Component<{ comments: ListedComment[]; split: boolean }> = (props) => {
+  const rows = () =>
+    props.comments.filter((l) => l.outdated || (!props.split && l.comment.side === 'base'));
+  return (
+    <Show when={rows().length > 0}>
+      <ul class="flex flex-col gap-1 px-3 pb-2">
+        <For each={rows()}>
+          {(listed) => (
+            <li
+              data-testid={listed.outdated ? 'diff-comment-outdated' : 'diff-comment-base'}
+              class="rounded border border-hairline px-2 py-1 text-xs"
+            >
+              <span class="text-floor text-muted-dark">
+                {listed.outdated ? 'Outdated' : 'Base side'} ·{' '}
+                {spanLabel({ first: listed.comment.line_range.start, last: listed.comment.line_range.end - 1 })}
+              </span>
+              <p class="whitespace-pre-wrap text-shell-ink">{listed.comment.body}</p>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Show>
+  );
+};
+
+interface FileBodyProps {
+  source: DiffsetSource;
+  file: DiffFileEntry;
+  comments: ListedComment[];
+  split: boolean;
+  wrap: boolean;
+}
+
+const FileBody: Component<FileBodyProps> = (props) => {
   const text = useDiffFile(
     () => props.source,
     () => props.file,
   );
+  const post = usePostDiffComment();
+
+  const comment = async (side: CommentSide, span: LineSpan, body: string) => {
+    const file = props.file;
+    const source = props.source;
+    await post.mutateAsync({
+      source,
+      // A branch source names its own root. A session record needs the root of the file.
+      ...(source.kind === 'session_record' ? { root: file.root } : {}),
+      path: file.path,
+      ...(file.status.kind === 'renamed' ? { from: file.status.from } : {}),
+      line_start: span.first,
+      line_end: span.last + 1,
+      side,
+      body,
+    });
+  };
+  const sendToChat = (span: LineSpan, body: string) => {
+    const reference = `@${referenceForm(props.file.path, span.first, span.last + 1)}`;
+    getBus().emit('insertIntoComposer', { text: body ? `${reference} ${body}` : reference });
+  };
+  const host = (side: CommentSide): CommentHost => ({
+    side,
+    comment: (span, body) => comment(side, span, body),
+    sendToChat,
+  });
+  const hosts = { base: host('base'), current: host('current') };
+
+  // The comments that the editor shows under their lines.
+  const placed = () => props.comments.filter((l) => !l.outdated).map((l) => l.comment);
+
   return (
     <Switch>
       <Match when={text.isError}>
         <p class="px-3 pb-2 text-xs text-error">{text.error?.message}</p>
       </Match>
       <Match when={text.data}>
-        {(data) => <FileEditor path={props.file.path} text={data()} split={props.split} wrap={props.wrap} />}
+        {(data) => (
+          <FileEditor
+            path={props.file.path}
+            text={data()}
+            split={props.split}
+            wrap={props.wrap}
+            hosts={hosts}
+            comments={placed()}
+          />
+        )}
       </Match>
       <Match when={true}>
         <p class="px-3 pb-2 text-xs text-muted-dark">Loading {props.file.path}…</p>
@@ -308,34 +443,58 @@ const FileBody: Component<{ source: DiffsetSource; file: DiffFileEntry; split: b
   );
 };
 
+interface FileEditorProps {
+  path: string;
+  text: DiffFileText;
+  split: boolean;
+  wrap: boolean;
+  hosts: Record<CommentSide, CommentHost>;
+  comments: DiffComment[];
+}
+
 /** The read-only CodeMirror view of one file: unified, or split in two. */
-const FileEditor: Component<{ path: string; text: DiffFileText; split: boolean; wrap: boolean }> = (props) => {
+const FileEditor: Component<FileEditorProps> = (props) => {
   let host!: HTMLDivElement;
   let destroy: (() => void) | undefined;
+  // Each editor with the side that its line numbers count on.
+  const [views, setViews] = createSignal<{ view: EditorView; side: CommentSide }[]>([]);
 
   createEffect(() => {
     destroy?.();
     const original = props.text.base_text ?? '';
     const current = props.text.current_text ?? '';
     const setup = { original, path: props.path, wrap: props.wrap, collapse: COLLAPSE };
-    const extra: Extension[] = [lineNumbers(), barTheme];
+    const hosts = untrack(() => props.hosts);
+    const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side]), barTheme];
     if (props.split) {
-      const side = [...mergeViewExtensions({ ...setup, split: true }), ...extra];
       const view = new MergeView({
-        a: { doc: original, extensions: side },
-        b: { doc: current, extensions: side },
+        a: { doc: original, extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('base')] },
+        b: { doc: current, extensions: [...mergeViewExtensions({ ...setup, split: true }), ...extra('current')] },
         parent: host,
         highlightChanges: true,
         gutter: true,
         collapseUnchanged: COLLAPSE,
       });
+      setViews([
+        { view: view.a, side: 'base' },
+        { view: view.b, side: 'current' },
+      ]);
       destroy = () => view.destroy();
     } else {
+      // The unified view shows the line numbers of the current side only.
       const view = new EditorView({
-        state: EditorState.create({ doc: current, extensions: [...mergeViewExtensions(setup), ...extra] }),
+        state: EditorState.create({ doc: current, extensions: [...mergeViewExtensions(setup), ...extra('current')] }),
         parent: host,
       });
+      setViews([{ view, side: 'current' }]);
       destroy = () => view.destroy();
+    }
+  });
+
+  createEffect(() => {
+    const comments = props.comments;
+    for (const { view, side } of views()) {
+      view.dispatch({ effects: setComments.of(comments.filter((c) => c.side === side)) });
     }
   });
 

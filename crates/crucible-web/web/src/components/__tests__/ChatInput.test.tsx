@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@solidjs/testing-library';
+import { render, screen, cleanup, waitFor } from '@solidjs/testing-library';
+import { getBus } from '@/lib/bus';
 import { installFakeEventSource } from '@/test-utils/sse';
 import { createSignal } from 'solid-js';
 import type { InteractionRequest } from '@/lib/types';
@@ -162,6 +163,18 @@ describe('ChatInput', () => {
     render(() => <ChatInput />);
     const sendButton = screen.getByTestId('send-button');
     expect(sendButton).toBeInTheDocument();
+  });
+
+  it('a reference from the diff pane goes into the composer', async () => {
+    render(() => <ChatInput />);
+    const textarea = screen.getByTestId('chat-input') as HTMLTextAreaElement;
+
+    getBus().emit('insertIntoComposer', { text: '@src/a.rs:1-2 why this?' });
+    await waitFor(() => expect(textarea.value).toBe('@src/a.rs:1-2 why this?'));
+
+    // A second reference goes after the draft, on its own line.
+    getBus().emit('insertIntoComposer', { text: '@src/b.rs:4-4' });
+    await waitFor(() => expect(textarea.value).toBe('@src/a.rs:1-2 why this?\n@src/b.rs:4-4'));
   });
 
   it('disables send button when input is empty', () => {

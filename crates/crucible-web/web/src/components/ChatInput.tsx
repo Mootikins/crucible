@@ -57,6 +57,16 @@ export const ChatInput: Component = () => {
     }
   });
 
+  // The diff pane sends a reference to a range with the text of the user.
+  // Only the composer of the focused chat takes it, so split panes do not
+  // all get a copy. The text goes after a draft, on its own line.
+  getBus().on('insertIntoComposer', ({ text }) => {
+    const active = statusBarStore.activeSessionId();
+    if (active && sessionId() !== active) return;
+    if (!session()) return;
+    setInput((draft) => (draft.trim() ? `${draft.replace(/\s+$/, '')}\n${text}` : text));
+  });
+
   const handleSubmit = async (e?: Event) => {
     e?.preventDefault();
     const message = input().trim();

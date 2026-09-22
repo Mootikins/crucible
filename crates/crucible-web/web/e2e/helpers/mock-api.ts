@@ -144,6 +144,11 @@ export async function setupBasicMocks(page: Page, overrides: MockOverrides = {})
     },
   );
 
+  // The comments of a diffset. The mock stores none.
+  await page.route('**/api/diff/comments**', (route) =>
+    route.fulfill({ json: { diffset: 'branch-00000000000000000000000000000000', comments: [] } }),
+  );
+
   await page.route('**/api/diff/file**', (route) => {
     const path = new URL(route.request().url()).searchParams.get('path') ?? '';
     const text = (overrides.diffTexts ?? MOCK_DIFF_TEXTS)[path];
