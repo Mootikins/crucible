@@ -21,6 +21,31 @@ impl AgentManager {
         self.send_message_inner(
             session_id,
             content,
+            None,
+            event_tx,
+            is_interactive,
+            permission_override,
+            None,
+        )
+        .await
+    }
+
+    /// Like [`send_message`], with the review comments that the message
+    /// attaches. `review_context` is the message that
+    /// `server::diff_context::review_context` built from the references.
+    pub async fn send_message_with_context(
+        &self,
+        session_id: &str,
+        content: String,
+        review_context: Option<String>,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+        is_interactive: bool,
+        permission_override: Option<PermissionMode>,
+    ) -> Result<String, AgentError> {
+        self.send_message_inner(
+            session_id,
+            content,
+            review_context,
             event_tx,
             is_interactive,
             permission_override,
@@ -46,6 +71,7 @@ impl AgentManager {
             .send_message_inner(
                 session_id,
                 content,
+                None,
                 event_tx,
                 is_interactive,
                 permission_override,
@@ -59,6 +85,7 @@ impl AgentManager {
         &self,
         session_id: &str,
         content: String,
+        review_context: Option<String>,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
@@ -159,6 +186,27 @@ impl AgentManager {
                 &session.jsonl_path(self.session_manager.sessions_root()),
             )
             .await;
+
+        // The review comments that the message attaches. An internal agent
+        // gets them as accepted context before the user turn, so replay, undo
+        // and fork keep them with their role. An ACP agent owns its history,
+        // so the block goes with this turn only, as the `@file` attachments do.
+        let mut acp_review_context = None;
+        if let Some(text) = review_context {
+            if agent_config.agent_type == "acp" {
+                acp_review_context = Some(text);
+            } else if let Err(e) = input
+                .accept(
+                    self.session_manager.storage().as_ref(),
+                    &session,
+                    crate::observe::LogEvent::system(text),
+                )
+                .await
+            {
+                self.request_state.remove(session_id);
+                return Err(e.into());
+            }
+        }
 
         if !emit_event(
             event_tx,
@@ -316,6 +364,17 @@ impl AgentManager {
         if attachment_message.is_some() {
             debug!(session_id = %session_id, "Attached @-mentioned file contents to the turn");
         }
+        let attachment_message = match (acp_review_context, attachment_message) {
+            (None, files) => files,
+            (Some(review), None) => Some(
+                crucible_core::traits::ContextMessage::system(review)
+                    .with_tag(crate::diff::context::KIND),
+            ),
+            (Some(review), Some(mut files)) => {
+                files.content = format!("{review}\n\n{}", files.content);
+                Some(files)
+            }
+        };
 
         // Pass the user's content through to the stream loop unchanged;
         // the Precognition system block (if any) is staged on

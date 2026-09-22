@@ -38,7 +38,7 @@ use crate::server::session::review::emit_review_changed;
 ///
 /// The caller can correct each variant except the daemon faults: git, I/O,
 /// the journal and a snapshot read through the wrong backend.
-fn review_refusal(error: ReviewError) -> Refusal {
+pub(crate) fn review_refusal(error: ReviewError) -> Refusal {
     match error {
         ReviewError::Git(_)
         | ReviewError::Io(_)
@@ -56,7 +56,7 @@ fn review_refusal(error: ReviewError) -> Refusal {
 }
 
 /// The text of one side of a file.
-fn side_text(texts: &DiffFileText, side: CommentSide) -> Option<&str> {
+pub(crate) fn side_text(texts: &DiffFileText, side: CommentSide) -> Option<&str> {
     match side {
         CommentSide::Base => texts.base_text.as_deref(),
         CommentSide::Current => texts.current_text.as_deref(),
@@ -166,18 +166,27 @@ pub(crate) fn resolve_in(
 }
 
 /// A source whose comments the daemon serves, with a branch resolved.
-enum Served {
+pub(crate) enum Served {
     Branch(BranchSides),
     SessionRecord(SessionId),
     Proposal(ProposalId),
 }
 
 impl Served {
-    fn diffset(&self) -> DiffsetId {
+    pub(crate) fn diffset(&self) -> DiffsetId {
         match self {
             Served::Branch(sides) => sides.source().id(),
             Served::SessionRecord(session) => DiffsetId::for_session(session),
             Served::Proposal(id) => DiffsetId::for_proposal(id),
+        }
+    }
+
+    /// The resolved source. A branch source names its resolved base; the
+    /// other kinds are `requested` as the caller sent it.
+    pub(crate) fn source(&self, requested: &DiffsetSource) -> DiffsetSource {
+        match self {
+            Served::Branch(sides) => sides.source(),
+            Served::SessionRecord(_) | Served::Proposal(_) => requested.clone(),
         }
     }
 
@@ -192,7 +201,10 @@ impl Served {
 
 /// Admit and resolve `source`. A branch source with an empty base names the
 /// default branch, so its diffset id is the id of the resolved source.
-async fn serve(admission: &Admission<'_>, source: &DiffsetSource) -> Result<Served, Refusal> {
+pub(crate) async fn serve(
+    admission: &Admission<'_>,
+    source: &DiffsetSource,
+) -> Result<Served, Refusal> {
     match source {
         DiffsetSource::Branch { root, base, head } => Ok(Served::Branch(
             branch_sides(admission, root, base, head.as_deref()).await?,
@@ -232,7 +244,9 @@ async fn diff_comment(
         body: &request.body,
         author: request.author.unwrap_or(CommentAuthor::Human),
     };
-    let comment = match serve(admission, &request.source).await? {
+    let served = serve(admission, &request.source).await?;
+    let source = served.source(&request.source);
+    let comment = match served {
         Served::Branch(sides) => {
             if request.root.as_ref().is_some_and(|r| *r != sides.root) {
                 return Err(params_error(
@@ -283,6 +297,12 @@ async fn diff_comment(
             comment
         }
     };
+    // A search by comment id needs the source: a branch id does not name it.
+    admission
+        .review
+        .comment_store()
+        .remember_source(&source)
+        .map_err(internal_error)?;
     Ok(DiffCommentReply {
         diffset: comment.diffset.clone(),
         comment,

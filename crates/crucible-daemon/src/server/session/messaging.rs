@@ -54,6 +54,7 @@ pub(crate) async fn handle_session_send_message(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
+    admission: crate::server::diff::Admission<'_>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
     let content = require_param!(req, "content", as_str);
@@ -71,10 +72,48 @@ pub(crate) async fn handle_session_send_message(
                 .ok()
         });
 
+    let comments: Vec<crucible_core::diff::CommentRef> = match req.params.get("comments") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(value) => match serde_json::from_value(value.clone()) {
+            Ok(comments) => comments,
+            Err(e) => {
+                return Response::error(req.id, INVALID_PARAMS, format!("Invalid comments: {e}"))
+            }
+        },
+    };
+    // The client sends references only. The daemon builds the block of each
+    // comment, and refuses the message when a reference names no open comment.
+    let review_context = if comments.is_empty()
+        && crate::agent_manager::attachments::comment_mentions(content).is_empty()
+    {
+        None
+    } else {
+        let workspace = am
+            .session_manager()
+            .read_session(session_id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|session| session.workspace);
+        match crate::server::diff_context::review_context(
+            &admission,
+            session_id,
+            workspace.as_deref(),
+            &comments,
+            content,
+        )
+        .await
+        {
+            Ok(context) => context,
+            Err((code, message)) => return Response::error(req.id, code, message),
+        }
+    };
+
     match am
-        .send_message(
+        .send_message_with_context(
             session_id,
             content.to_string(),
+            review_context,
             event_tx,
             is_interactive,
             permission_override,
@@ -140,18 +179,10 @@ pub(crate) async fn inject_context_impl(
     // and then drains the same message from the live queue a second time.
     am.get_or_rebuild_session_tree(session_id, &session.jsonl_path(sm.sessions_root()))
         .await;
-    let accepted = crate::observe::events::InjectedContext {
-        after_turn: input.after_turn.clone(),
-        message: log_event.clone(),
-    };
-    let event_json = serde_json::to_string(&accepted).map_err(|e| e.to_string())?;
-    let storage = sm.storage();
-    storage
-        .append_event(&session, &event_json)
+    input
+        .accept(sm.storage().as_ref(), &session, log_event)
         .await
         .map_err(|e| e.to_string())?;
-
-    input.pending.push(log_event);
     drop(input);
     let _ = emit_event(
         event_tx,

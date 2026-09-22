@@ -106,6 +106,20 @@ impl DiffsetSource {
     }
 }
 
+/// A reference to one stored comment that a client attaches to a chat
+/// message.
+///
+/// The client sends only the reference. The daemon finds the comment in the
+/// diffset of `source` and gives the agent the comment as context.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CommentRef {
+    /// The id of the comment.
+    pub id: String,
+    /// The source of the diffset that owns the comment.
+    pub source: DiffsetSource,
+}
+
 /// How a file changed between the two sides.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

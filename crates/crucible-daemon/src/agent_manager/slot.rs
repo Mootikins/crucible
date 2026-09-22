@@ -95,6 +95,31 @@ pub(crate) struct SessionInput {
     pub pending: Vec<crate::observe::LogEvent>,
 }
 
+impl SessionInput {
+    /// Accept context for the next turn: write it to the session log after
+    /// the last turn, then queue it for the live tree.
+    ///
+    /// The caller holds this input lock and rebuilt the tree before the
+    /// call. Else the first turn reads this line from the log and takes the
+    /// same message from the queue a second time.
+    pub(crate) async fn accept(
+        &mut self,
+        storage: &dyn crate::session_storage::SessionStorage,
+        session: &crucible_core::session::Session,
+        message: crate::observe::LogEvent,
+    ) -> Result<(), crate::session_manager::SessionError> {
+        let accepted = crate::observe::events::InjectedContext {
+            after_turn: self.after_turn.clone(),
+            message: message.clone(),
+        };
+        storage
+            .append_event(session, &serde_json::to_string(&accepted)?)
+            .await?;
+        self.pending.push(message);
+        Ok(())
+    }
+}
+
 /// The two values a turn builds from the session's config, and the generation
 /// that says whether a build in flight is still building the right thing.
 ///

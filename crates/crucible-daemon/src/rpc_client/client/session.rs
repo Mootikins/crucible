@@ -282,6 +282,10 @@ pub struct SessionSendMessageRequest {
     pub is_interactive: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
+    /// The stored review comments that the message attaches. The daemon
+    /// resolves each one into a context block.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<crucible_core::diff::CommentRef>,
 }
 
 /// Request for `session.interaction_respond`.
@@ -617,10 +621,36 @@ impl DaemonClient {
                     content: content.to_string(),
                     is_interactive,
                     permission_mode,
+                    comments: Vec::new(),
                 },
             )
             .await?;
 
+        Ok(resp.message_id)
+    }
+
+    /// Send a message with the stored review comments that it attaches.
+    ///
+    /// The daemon refuses the message when a comment is unknown or resolved.
+    pub async fn session_send_message_with_comments(
+        &self,
+        session_id: &str,
+        content: &str,
+        comments: &[crucible_core::diff::CommentRef],
+        is_interactive: bool,
+    ) -> Result<String> {
+        let resp: SessionSendMessageResponse = self
+            .typed_call(
+                "session.send_message",
+                SessionSendMessageRequest {
+                    session_id: session_id.to_string(),
+                    content: content.to_string(),
+                    is_interactive,
+                    permission_mode: None,
+                    comments: comments.to_vec(),
+                },
+            )
+            .await?;
         Ok(resp.message_id)
     }
 

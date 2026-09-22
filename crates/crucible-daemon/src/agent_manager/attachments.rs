@@ -51,6 +51,10 @@ pub(super) fn build_attachment_message(
     let mut seen: Vec<(PathBuf, Option<RangeInclusive<usize>>)> = Vec::new();
 
     for mention in extract_mentions(content) {
+        // `@comment:<id>` names a stored review comment, not a file.
+        if mention.starts_with(COMMENT_MENTION) {
+            continue;
+        }
         let (path_text, lines) = split_line_suffix(mention);
         let Some(path) = resolve_under_roots(tool_root, roots, path_text) else {
             continue;
@@ -103,6 +107,22 @@ pub(super) fn build_attachment_message(
     ));
     msg.metadata.tags.push(ATTACHMENT_TAG.to_string());
     Some(msg)
+}
+
+/// The prefix of a mention that names a stored review comment by its id.
+const COMMENT_MENTION: &str = "comment:";
+
+/// The comment ids of every `@comment:<id>` mention in `content`, in order.
+///
+/// The daemon resolves each id into a review-comment block. Thus a client
+/// with no comment UI, such as the TUI, can attach a stored comment as text.
+pub(crate) fn comment_mentions(content: &str) -> Vec<&str> {
+    extract_mentions(content)
+        .into_iter()
+        .filter_map(|mention| mention.strip_prefix(COMMENT_MENTION))
+        .map(|id| id.trim_end_matches('.'))
+        .filter(|id| !id.is_empty())
+        .collect()
 }
 
 /// Pull `@`-prefixed tokens that start a word.
@@ -380,6 +400,16 @@ mod tests {
             msg.content.len() < MAX_FILE_BYTES + 4096,
             "the whole file must not land in the prompt"
         );
+    }
+
+    #[test]
+    fn a_comment_mention_names_an_id_and_no_file() {
+        let ws = workspace_with(&[("comment:abc", "NOT-A-FILE")]);
+        assert_eq!(
+            comment_mentions("see @comment:abc-1, and @comment:def. not me@comment:x"),
+            vec!["abc-1", "def"]
+        );
+        assert!(attach(ws.path(), "see @comment:abc").is_none());
     }
 
     #[test]

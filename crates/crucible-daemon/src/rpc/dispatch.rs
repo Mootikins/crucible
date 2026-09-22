@@ -639,7 +639,8 @@ impl RpcDispatcher {
                 crate::server::session::handle_session_send_message(
                     req.clone(),
                     &self.ctx.agents,
-                    &self.ctx.event_tx
+                    &self.ctx.event_tx,
+                    self.ctx.diff_admission()
                 )
             ),
             RpcMethod::SessionInjectContext => {

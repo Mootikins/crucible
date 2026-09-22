@@ -11,8 +11,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
-use crucible_core::diff::{project, DiffsetId, Projection};
-use crucible_core::session::{Comment, LineRange};
+use crucible_core::diff::{project, DiffsetId, DiffsetSource, Projection};
+use crucible_core::proposal::ProposalId;
+use crucible_core::session::{Comment, LineRange, SessionId};
 use serde::{Deserialize, Serialize};
 
 use crate::registry_store::RegistryStore;
@@ -46,8 +47,29 @@ struct DiffsetComments {
     /// Only a session record has a journal. See [`CommentStore::migrate`].
     #[serde(default)]
     journal_migrated: bool,
+    /// The source of the diffset. A branch id is a hash, so only this field
+    /// names the branch of a comment that a client finds by its id alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<DiffsetSource>,
     #[serde(default)]
     comments: Vec<Comment>,
+}
+
+/// The source that a diffset id names, for a kind whose id holds its source.
+///
+/// A session record and a proposal put their id in the diffset id. A branch
+/// id is a hash, so it gives `None`.
+fn source_of_id(id: &str) -> Option<DiffsetSource> {
+    if let Some(session) = id.strip_prefix("session-") {
+        return SessionId::parse(session)
+            .ok()
+            .map(|session| DiffsetSource::SessionRecord { session });
+    }
+    let proposal = id.strip_prefix("proposal-")?;
+    proposal
+        .parse::<ProposalId>()
+        .ok()
+        .map(|id| DiffsetSource::Proposal { id })
 }
 
 /// A comment as the daemon lists it: its range follows its text.
@@ -120,6 +142,44 @@ impl CommentStore {
             file.comments.push(comment.clone());
             Ok(())
         })
+    }
+
+    /// Keep the source of a diffset beside its comments, so that a later
+    /// search by comment id can name the diffset.
+    pub fn remember_source(&self, source: &DiffsetSource) -> Result<()> {
+        self.file(&source.id())?.update(|file| {
+            file.source = Some(source.clone());
+            Ok(())
+        })
+    }
+
+    /// Find a comment by its id in every diffset, with the source of its
+    /// diffset.
+    ///
+    /// The source is `None` for a branch comment that the store kept before
+    /// it kept sources. A missing store directory holds no comment.
+    pub fn find(&self, comment_id: &str) -> Result<Option<(Comment, Option<DiffsetSource>)>> {
+        let entries = match std::fs::read_dir(&self.dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        for entry in entries {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let file = RegistryStore::<DiffsetComments>::new(path.clone()).read()?;
+            if let Some(comment) = file.comments.into_iter().find(|c| c.id == comment_id) {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                let source = file.source.or_else(|| source_of_id(stem));
+                return Ok(Some((comment, source)));
+            }
+        }
+        Ok(None)
     }
 
     /// Mark a comment of `diffset` resolved. The result is `false` when the
@@ -242,6 +302,43 @@ mod tests {
         assert!(reopened.resolve(&first, &kept.id).unwrap());
         assert!(reopened.list(&first).unwrap()[0].resolved);
         assert!(!reopened.resolve(&second, &kept.id).unwrap());
+    }
+
+    #[test]
+    fn a_comment_is_found_by_its_id_with_its_source() {
+        let dir = TempDir::new().unwrap();
+        let store = CommentStore::new(dir.path().join(DIR));
+        assert!(
+            store.find("none").unwrap().is_none(),
+            "no directory, no comment"
+        );
+
+        let record = session("s-1");
+        let on_record = comment(&record, "record");
+        store.add(&on_record).unwrap();
+        let branch = DiffsetSource::Branch {
+            root: PhysicalRoot::from_top_level("/repo"),
+            base: "main".into(),
+            head: None,
+        };
+        let on_branch = comment(&branch.id(), "branch");
+        store.add(&on_branch).unwrap();
+
+        // A session record names its source in its id.
+        let (found, source) = store.find(&on_record.id).unwrap().unwrap();
+        assert_eq!(found, on_record);
+        assert_eq!(
+            source,
+            Some(DiffsetSource::SessionRecord {
+                session: SessionId::parse("s-1").unwrap()
+            })
+        );
+        // A branch id is a hash: the store names the source only after it
+        // keeps it.
+        assert_eq!(store.find(&on_branch.id).unwrap().unwrap().1, None);
+        store.remember_source(&branch).unwrap();
+        assert_eq!(store.find(&on_branch.id).unwrap().unwrap().1, Some(branch));
+        assert!(store.find("missing").unwrap().is_none());
     }
 
     #[test]
