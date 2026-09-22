@@ -9,7 +9,7 @@
 //! agent rather than per known agent name.
 
 use crate::acp::client::ClientConfig;
-use crate::acp::discovery::{builtin_command, resolve_configured_profile};
+use crate::acp::discovery;
 use crate::acp_handle::AcpHandleError;
 use crucible_core::config::components::acp::AcpConfig;
 use crucible_core::session::SessionAgent;
@@ -116,48 +116,46 @@ fn sandbox_env_argv(
 /// Resolved command, arguments, and environment variables for an ACP agent.
 type ResolvedCommand = (String, Vec<String>, Vec<(String, String)>);
 
-/// Resolve agent name to (command, args, env_vars) using known agents list
-/// and any profile overrides from AcpConfig.
+/// Resolve agent name to (command, args, env_vars) through the one profile
+/// resolver in `acp::discovery`.
+///
+/// An unknown name is an error. The launcher used to run the name itself as a
+/// command, so a typo started a missing binary and the failure named nothing.
+///
+/// This is also the one place that joins the two halves of the agent's
+/// environment. The profile's `env` is the base; the session's
+/// `env_overrides` wins where the two name the same variable, because a
+/// session knob and a `session.create` request are more specific than the
+/// config file. `SessionAgent::from_profile` used to copy the profile env onto
+/// the session as well, and this merge then put the profile's value back —
+/// so the request's choice never reached the agent.
 fn resolve_agent_command(
     agent_name: &str,
     agent_config: &SessionAgent,
     acp_config: Option<&AcpConfig>,
 ) -> Result<ResolvedCommand, AcpHandleError> {
-    let profile = acp_config
-        .and_then(|config| resolve_configured_profile(agent_name, config))
-        .transpose()
-        .map_err(|e| AcpHandleError::Config(e.to_string()))?;
+    let empty = AcpConfig::default();
+    let config = acp_config.unwrap_or(&empty);
 
-    let (command, args) = match &profile {
-        Some(profile) => (
-            profile
-                .command
-                .clone()
-                .unwrap_or_else(|| agent_name.to_string()),
-            profile.args.clone().unwrap_or_default(),
-        ),
-        None => builtin_command(agent_name)
-            .map(|(cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
-            .unwrap_or_else(|| (agent_name.to_string(), Vec::new())),
-    };
+    let profile = discovery::profile(agent_name, config)
+        .map_err(|e| AcpHandleError::Config(e.to_string()))?
+        .ok_or_else(|| {
+            AcpHandleError::Config(discovery::unknown_agent(agent_name, config).to_string())
+        })?;
 
-    let mut env_vars: Vec<(String, String)> = agent_config
-        .env_overrides
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let command = profile.command.clone().ok_or_else(|| {
+        AcpHandleError::Config(format!("Agent profile '{agent_name}' defines no `command`"))
+    })?;
 
-    if let Some(profile) = &profile {
-        for (k, v) in &profile.env {
-            if let Some(existing) = env_vars.iter_mut().find(|(ek, _)| ek == k) {
-                existing.1 = v.clone();
-            } else {
-                env_vars.push((k.clone(), v.clone()));
-            }
+    let mut env_vars: Vec<(String, String)> = profile.env.into_iter().collect();
+    for (name, value) in &agent_config.env_overrides {
+        match env_vars.iter_mut().find(|(known, _)| known == name) {
+            Some(entry) => entry.1 = value.clone(),
+            None => env_vars.push((name.clone(), value.clone())),
         }
     }
 
-    Ok((command, args, env_vars))
+    Ok((command, profile.args.unwrap_or_default(), env_vars))
 }
 
 #[cfg(test)]
@@ -243,27 +241,35 @@ mod tests {
         assert_eq!(args, vec!["@agentclientprotocol/claude-agent-acp"]);
     }
     /// Why `session.create`/`session.configure_agent` must keep `agent_name`
-    /// set on an ACP agent: it is the only input to profile resolution, and its
-    /// absence is not an error — the fallback at the top of
-    /// `build_client_config` execs the literal `acp`, which is nothing. The RPC
-    /// round trips that keep the name set are pinned in
-    /// `tests/rpc_session_create_agent_e2e.rs`.
+    /// set on an ACP agent: it is the only input to profile resolution. Without
+    /// it the launcher falls back to the literal name `acp`, which no profile
+    /// defines, so the launch is refused. The RPC round trips that keep the
+    /// name set are pinned in `tests/rpc_session_create_agent_e2e.rs`.
     #[test]
-    fn an_acp_agent_without_a_name_resolves_no_profile() {
+    fn an_acp_agent_without_a_name_is_refused() {
         let mut agent = test_session_agent("claude");
         agent.agent_name = None;
 
-        let config = build_client_config(&agent, Path::new("/nonexistent"), None, None).unwrap();
-        assert_eq!(config.agent_path, PathBuf::from("acp"));
-        assert_eq!(config.agent_args, None);
+        let error = build_client_config(&agent, Path::new("/nonexistent"), None, None)
+            .expect_err("a nameless ACP agent resolves no profile");
+
+        assert!(error.to_string().contains("'acp'"), "{error}");
     }
 
+    /// An unknown name is a configuration error, not a command.
+    ///
+    /// The launcher used to exec the name itself, so a typo started a missing
+    /// binary and the failure named the typo instead of the profile.
     #[test]
-    fn test_resolve_unknown_agent_uses_name_as_command() {
-        let config = test_session_agent("my-custom-agent");
-        let (cmd, args, _) = resolve_agent_command("my-custom-agent", &config, None).unwrap();
-        assert_eq!(cmd, "my-custom-agent");
-        assert!(args.is_empty());
+    fn an_unknown_agent_name_is_refused_instead_of_executed() {
+        let agent = test_session_agent("my-custom-agent");
+
+        let error = resolve_agent_command("my-custom-agent", &agent, None)
+            .expect_err("an unknown name must not become a command");
+
+        let message = error.to_string();
+        assert!(message.contains("my-custom-agent"), "{message}");
+        assert!(message.contains("acp.agents"), "{message}");
     }
     #[test]
     fn test_env_overrides_from_session_agent() {
@@ -279,6 +285,34 @@ mod tests {
             ("OPENCODE_MODEL".to_string(), "ollama/llama3.2".to_string())
         );
     }
+    /// The session's own `env_overrides` must beat the profile's `env`.
+    ///
+    /// `SessionAgent::from_profile` already lays the profile env down as the
+    /// base, and `session.create` lets the request override a value on top of
+    /// it. A second merge in the launcher put the profile value back, so the
+    /// request's choice never reached the agent.
+    #[test]
+    fn a_session_env_override_beats_the_profile_env() {
+        let mut agent = test_session_agent("opencode");
+        agent
+            .env_overrides
+            .insert("OPENCODE_MODEL".to_string(), "chosen".to_string());
+
+        let mut acp_config = AcpConfig::default();
+        let mut profile = crucible_core::config::AgentProfile::default();
+        profile
+            .env
+            .insert("OPENCODE_MODEL".to_string(), "from-profile".to_string());
+        acp_config.agents.insert("opencode".to_string(), profile);
+
+        let (_, _, env) = resolve_agent_command("opencode", &agent, Some(&acp_config)).unwrap();
+
+        assert_eq!(
+            env,
+            vec![("OPENCODE_MODEL".to_string(), "chosen".to_string())]
+        );
+    }
+
     #[test]
     fn test_profile_overrides_command() {
         let config = test_session_agent("opencode");
@@ -293,78 +327,46 @@ mod tests {
         let (cmd, _, _) = resolve_agent_command("opencode", &config, Some(&acp_config)).unwrap();
         assert_eq!(cmd, "/usr/local/bin/opencode");
     }
-    /// A profile that extends a built-in agent launches the command of that
-    /// agent. The launcher ran the profile name as a command instead.
+    /// A profile named after a built-in keeps the built-in command and adds
+    /// its own arguments.
     #[test]
-    fn a_profile_that_extends_a_builtin_launches_the_builtin_command() {
-        let agent = test_session_agent("my-claude");
+    fn a_profile_named_after_a_builtin_keeps_the_builtin_command() {
+        let agent = test_session_agent("cursor");
         let mut acp_config = AcpConfig::default();
         acp_config.agents.insert(
-            "my-claude".to_string(),
+            "cursor".to_string(),
             crucible_core::config::AgentProfile {
-                extends: Some("claude".to_string()),
-                env: [("ANTHROPIC_MODEL".to_string(), "opus".to_string())].into(),
-                ..Default::default()
-            },
-        );
-
-        let config =
-            build_client_config(&agent, Path::new("/tmp/w"), Some(&acp_config), None).unwrap();
-
-        assert_eq!(config.agent_path, PathBuf::from("npx"));
-        assert_eq!(
-            config.agent_args,
-            Some(vec!["@agentclientprotocol/claude-agent-acp".to_string()])
-        );
-        assert_eq!(
-            config.env_vars,
-            Some(vec![("ANTHROPIC_MODEL".to_string(), "opus".to_string())])
-        );
-    }
-
-    /// A profile that extends a built-in and sets `args` keeps the command
-    /// of the built-in.
-    #[test]
-    fn a_profile_that_extends_a_builtin_keeps_the_builtin_command_with_its_own_args() {
-        let agent = test_session_agent("fast-cursor");
-        let mut acp_config = AcpConfig::default();
-        acp_config.agents.insert(
-            "fast-cursor".to_string(),
-            crucible_core::config::AgentProfile {
-                extends: Some("cursor".to_string()),
                 args: Some(vec!["acp".to_string(), "--fast".to_string()]),
                 ..Default::default()
             },
         );
 
-        let (cmd, args, _) =
-            resolve_agent_command("fast-cursor", &agent, Some(&acp_config)).unwrap();
+        let (cmd, args, _) = resolve_agent_command("cursor", &agent, Some(&acp_config)).unwrap();
 
         assert_eq!(cmd, "cursor-agent");
         assert_eq!(args, vec!["acp", "--fast"]);
     }
 
-    /// A profile that extends an agent that does not exist is a config
-    /// error that names both agents. The launcher must not run the profile
-    /// name as a command.
+    /// The removed `extends` key is a configuration error that names the key.
+    /// The launcher must not run the profile name as a command instead.
     #[test]
-    fn a_profile_that_extends_an_unknown_agent_is_an_error() {
-        let agent = test_session_agent("broken");
+    fn a_profile_that_still_sets_extends_is_refused_by_name() {
+        let agent = test_session_agent("my-claude");
         let mut acp_config = AcpConfig::default();
         acp_config.agents.insert(
-            "broken".to_string(),
+            "my-claude".to_string(),
             crucible_core::config::AgentProfile {
-                extends: Some("nope".to_string()),
+                removed_extends: Some("claude".to_string()),
                 ..Default::default()
             },
         );
 
-        let error = resolve_agent_command("broken", &agent, Some(&acp_config))
-            .expect_err("an unknown base is a config error");
+        let error = resolve_agent_command("my-claude", &agent, Some(&acp_config))
+            .expect_err("inheritance is removed");
 
         let message = error.to_string();
-        assert!(message.contains("'broken'"), "{message}");
-        assert!(message.contains("'nope'"), "{message}");
+        assert!(message.contains("extends"), "{message}");
+        assert!(message.contains("my-claude"), "{message}");
     }
 
     #[test]
@@ -559,6 +561,7 @@ mod tests {
 
     /// The profile's `[acp.agents.*] env` is the other half of the same
     /// configuration, and reaches the container by the same route.
+    ///
     #[test]
     fn profile_env_reaches_the_container_too() {
         let agent = test_session_agent("opencode");

@@ -274,14 +274,13 @@ pub(crate) async fn handle_agents_list_profiles(
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
     let profiles = agent_manager.build_available_agents();
-    let builtins = crate::acp::discovery::default_agent_profiles();
 
     // Probe availability concurrently: missing binaries fail the PATH lookup
     // in ~1ms, installed ones are bounded by the 2s --version probe timeout.
     let probes = profiles.iter().map(|(name, profile)| {
         let name = name.clone();
         let profile = profile.clone();
-        let is_builtin = builtins.contains_key(&name);
+        let is_builtin = crate::acp::discovery::is_builtin(&name);
         async move {
             let available = probe_profile_availability(&profile).await;
             AgentProfileEntry {
@@ -340,7 +339,6 @@ pub(crate) async fn handle_agents_resolve_profile(
         Err(response) => return *response,
     };
     let profiles = agent_manager.build_available_agents();
-    let builtins = crate::acp::discovery::default_agent_profiles();
 
     match profiles.get(&name) {
         Some(profile) => Response::success(
@@ -349,7 +347,7 @@ pub(crate) async fn handle_agents_resolve_profile(
                 "name": name,
                 "description": profile.description.clone().unwrap_or_default(),
                 "command": profile.command.clone().unwrap_or_default(),
-                "is_builtin": builtins.contains_key(&name),
+                "is_builtin": crate::acp::discovery::is_builtin(&name),
                 "args": profile.args.clone().unwrap_or_default(),
                 "env": profile.env,
             }),
@@ -365,13 +363,8 @@ mod tests {
 
     fn profile_with_command(command: Option<&str>) -> AgentProfile {
         AgentProfile {
-            extends: None,
             command: command.map(str::to_string),
-            args: None,
-            env: std::collections::BTreeMap::new(),
-            description: None,
-            delegation: None,
-            permissions: None,
+            ..Default::default()
         }
     }
 

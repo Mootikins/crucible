@@ -40,7 +40,7 @@ use tempfile::TempDir;
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 
-use crate::support::{mock_agent_path, mock_session_agent, MockScript, Step};
+use crate::support::{mock_agent_path, mock_path_acp_config, mock_session_agent, MockScript, Step};
 
 /// Run one delegated turn with these steps and return every event the daemon
 /// broadcast.
@@ -59,7 +59,9 @@ async fn delegated_turn_events(turn: Vec<Step>) -> Vec<SessionEventMessage> {
         background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
         mcp_gateway: None,
         llm_config: None,
-        acp_config: None,
+        // The daemon refuses an agent name no profile defines, so the mock
+        // binary's path needs one.
+        acp_config: Some(mock_path_acp_config().clone()),
         context_config: None,
         permission_config: None,
         plugin_loader: None,

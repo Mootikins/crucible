@@ -66,8 +66,7 @@ Delegation settings live in your agent profile under `init.lua`. Each agent can 
 cru.config.set({
     acp = {
         agents = {
-            ["my-claude"] = {
-                extends = "claude",
+            claude = {
                 delegation = {
                     enabled = true,
                     max_depth = 2,

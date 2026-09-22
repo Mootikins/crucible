@@ -16,4 +16,6 @@ pub mod parity;
 #[allow(unused_imports)]
 pub use mock_agent::{connect, logged, prompt_with, read_log, MockScript, Resume, Step};
 #[allow(unused_imports)]
-pub use mock_agent_bin::{mock_agent_path, mock_handle_params, mock_session_agent};
+pub use mock_agent_bin::{
+    mock_agent_path, mock_handle_params, mock_path_acp_config, mock_session_agent,
+};

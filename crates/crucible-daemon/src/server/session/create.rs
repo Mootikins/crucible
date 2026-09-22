@@ -623,10 +623,9 @@ mod tests {
         .unwrap();
         let session = ctx.create_session_resolved(&params).await.unwrap();
         let agent = sm.get_session(&session.id).unwrap().agent.unwrap();
-        assert_eq!(
-            agent.env_overrides.get("KEEP").map(String::as_str),
-            Some("profile")
-        );
+        // The profile's own `env` stays in the config. `acp_launch` reads it
+        // there at every spawn, under the session's overrides.
+        assert!(!agent.env_overrides.contains_key("KEEP"));
         assert_eq!(
             agent
                 .env_overrides

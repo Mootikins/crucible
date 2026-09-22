@@ -854,64 +854,58 @@ mod permission_channel_tests {
     }
 }
 
-mod resolve_agent_profile_tests {
-    use crate::acp::discovery::default_agent_profiles;
+mod agent_profile_permission_tests {
+    use crate::acp::discovery::profile;
     use crucible_core::config::components::{
-        acp::AgentProfile,
+        acp::{AcpConfig, AgentProfile},
         permissions::{PermissionConfig, PermissionMode},
     };
-
-    use crate::agent_manager::resolve_agent_profile;
     use test_case::test_case;
-
-    fn make_profile_with_permissions(mode: PermissionMode) -> AgentProfile {
-        let perms = PermissionConfig {
-            default: mode,
-            ..Default::default()
-        };
-        AgentProfile {
-            permissions: Some(perms),
-            ..Default::default()
-        }
-    }
 
     #[derive(Clone, Copy)]
     enum ProfileScenario {
-        MergesPermissions,
-        NoPermissionsReturnsNone,
+        ConfiguredPermissions,
+        NoPermissions,
     }
 
-    #[test_case(ProfileScenario::MergesPermissions; "resolve_agent_profile_merges_permissions")]
-    #[test_case(ProfileScenario::NoPermissionsReturnsNone; "resolve_agent_profile_no_permissions_returns_none")]
-    fn resolve_agent_profile_outcomes(scenario: ProfileScenario) {
-        let mut configured = std::collections::BTreeMap::new();
-        let (name, expected_some) = match scenario {
-            ProfileScenario::MergesPermissions => {
-                configured.insert(
-                    "my-claude".to_string(),
-                    make_profile_with_permissions(PermissionMode::Ask),
-                );
-                ("my-claude", true)
-            }
-            ProfileScenario::NoPermissionsReturnsNone => {
-                let p = AgentProfile {
-                    extends: Some("opencode".to_string()),
-                    ..Default::default()
-                };
-                configured.insert("my-opencode".to_string(), p);
-                ("my-opencode", false)
-            }
+    /// A profile carries its own `[permissions]` block through to the caller,
+    /// and a profile without one carries nothing.
+    #[test_case(ProfileScenario::ConfiguredPermissions; "a_configured_profile_keeps_its_permissions")]
+    #[test_case(ProfileScenario::NoPermissions; "a_profile_without_permissions_has_none")]
+    fn agent_profile_permission_outcomes(scenario: ProfileScenario) {
+        let permissions = match scenario {
+            ProfileScenario::ConfiguredPermissions => Some(PermissionConfig {
+                default: PermissionMode::Ask,
+                ..Default::default()
+            }),
+            ProfileScenario::NoPermissions => None,
         };
-        let available = default_agent_profiles();
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "claude".to_string(),
+            AgentProfile {
+                permissions: permissions.clone(),
+                ..Default::default()
+            },
+        );
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
 
-        let resolved =
-            resolve_agent_profile(name, &configured, &available).expect("should resolve");
+        let resolved = profile("claude", &config)
+            .expect("a built-in overlay resolves")
+            .expect("claude is a built-in");
 
-        if expected_some {
-            let perms = resolved.permissions.expect("should have permissions");
-            assert_eq!(perms.default, PermissionMode::Ask);
-        } else {
-            assert!(resolved.permissions.is_none());
+        match permissions {
+            Some(_) => assert_eq!(
+                resolved
+                    .permissions
+                    .expect("should have permissions")
+                    .default,
+                PermissionMode::Ask
+            ),
+            None => assert!(resolved.permissions.is_none()),
         }
     }
 }
@@ -933,6 +927,8 @@ mod session_permission_config_tests {
         agents.insert(
             "my-claude".to_string(),
             AgentProfile {
+                // `my-claude` is not a built-in, so it must say what to run.
+                command: Some("my-claude".to_string()),
                 permissions: Some(PermissionConfig {
                     default: PermissionMode::Deny,
                     ..Default::default()

@@ -97,7 +97,9 @@ impl SessionAgent {
     /// - provider: "acp"
     /// - model: the provided agent_name
     /// - capabilities, agent_description, delegation_config from profile
-    /// - env_overrides: profile's env vars (isolated, parent env NOT inherited)
+    /// - env_overrides: empty. The profile's `env` stays in the config, and
+    ///   the ACP launcher reads it there at every spawn; the parent's
+    ///   environment is NOT inherited.
     ///
     /// KNOWN LIMITATION: No permission inheritance for subagents.
     /// Subagents start with a fresh permission state (empty env_overrides, no inherited
@@ -114,9 +116,12 @@ impl SessionAgent {
             system_prompt: String::new(),
             max_context_tokens: None,
             endpoint: None,
-            // The profile's map is BTreeMap (stable config rendering); the
-            // session type keeps its own shape.
-            env_overrides: profile.env.clone().into_iter().collect(),
+            // Empty on purpose. The profile's `env` belongs to the config and
+            // the launcher reads it there at every spawn, so a copy here would
+            // freeze the config values into the session row and then win over
+            // the session's own overrides. `env_overrides` means what the
+            // session itself sets, nothing more.
+            env_overrides: HashMap::new(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
             agent_description: profile.description.clone(),

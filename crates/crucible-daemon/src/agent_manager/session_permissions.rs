@@ -6,10 +6,32 @@
 //! daemon-global config there hands a session the operator locked down the
 //! permissive global rules instead.
 
-use super::{default_agent_profiles, messaging, resolve_agent_profile, AgentManager};
+use super::{messaging, AgentManager};
 use crucible_core::config::components::permissions::PermissionConfig;
+use tracing::warn;
 
 impl AgentManager {
+    /// The `[permissions]` block of the agent profile `name`, if it has one.
+    ///
+    /// One lookup for both callers: this module and the agent dispatch path in
+    /// `messaging::send`. A profile that does not resolve contributes no
+    /// permissions, which is safe because the same profile fails the launch —
+    /// no turn ever runs under it.
+    pub(crate) fn agent_profile_permissions(&self, name: &str) -> Option<PermissionConfig> {
+        let config = self.acp_config.as_ref()?;
+        match crate::acp::discovery::profile(name, config) {
+            Ok(resolved) => resolved?.permissions,
+            Err(error) => {
+                warn!(
+                    agent = %name,
+                    %error,
+                    "agent profile does not resolve; applying the global permission rules"
+                );
+                None
+            }
+        }
+    }
+
     /// The `[permissions]` rules that apply to `session_id`.
     ///
     /// Resolved the same way and in the same order as the agent dispatch path:
@@ -30,11 +52,7 @@ impl AgentManager {
             .get_session(session_id)
             .and_then(|session| session.agent)
             .and_then(|agent| agent.agent_name)
-            .and_then(|name| {
-                let acp = self.acp_config.as_ref()?;
-                let available = default_agent_profiles();
-                resolve_agent_profile(&name, &acp.agents, &available)?.permissions
-            });
+            .and_then(|name| self.agent_profile_permissions(&name));
         messaging::permission::resolve_effective_permission_config(
             None,
             agent_permissions,

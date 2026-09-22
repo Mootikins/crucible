@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crucible_daemon::acp::client::ClientConfig;
-use crucible_daemon::acp::discovery::default_agent_profiles;
+use crucible_daemon::acp::discovery::profile as acp_profile;
 use crucible_daemon::acp::CrucibleAcpClient;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -57,9 +57,8 @@ fn resolve_on_path(command: &str) -> Option<PathBuf> {
 /// Every assertion here is about the real agent, so each failure names the
 /// profile and what a reader must install to satisfy it.
 async fn assert_profile_completes_handshake(name: &str) {
-    let profiles = default_agent_profiles();
-    let profile = profiles
-        .get(name)
+    let profile = acp_profile(name, &Default::default())
+        .unwrap_or_else(|error| panic!("`{name}` does not resolve: {error}"))
         .unwrap_or_else(|| panic!("`{name}` is not a built-in ACP profile"));
 
     let command = profile

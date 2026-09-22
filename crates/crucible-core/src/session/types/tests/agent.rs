@@ -306,7 +306,7 @@ fn test_session_agent_from_profile_basic() {
     use crate::config::AgentProfile;
 
     let profile = AgentProfile {
-        extends: Some("claude".to_string()),
+        removed_extends: None,
         command: None,
         args: None,
         env: {
@@ -329,45 +329,32 @@ fn test_session_agent_from_profile_basic() {
         agent.agent_description,
         Some("Claude via profile".to_string())
     );
-    // env vars should be in env_overrides, not inherited from parent
-    assert_eq!(
-        agent.env_overrides.get("ANTHROPIC_API_KEY"),
-        Some(&"key123".to_string())
-    );
+    // The profile's env stays in the config; the ACP launcher reads it there.
+    assert!(agent.env_overrides.is_empty());
 }
 
+/// `env_overrides` holds what the session itself sets, and nothing else.
+///
+/// The profile's `env` belongs to the config, and `acp_launch` reads it there
+/// at every spawn. A copy here froze the config values into the session row
+/// and then beat the session's own overrides at launch.
 #[test]
-fn test_session_agent_from_profile_env_isolation() {
-    // Profile env vars should go into SessionAgent.env_overrides, parent env NOT inherited
+fn from_profile_leaves_the_profile_env_in_the_config() {
     use crate::config::AgentProfile;
 
     let profile = AgentProfile {
-        extends: None,
-        command: None,
-        args: None,
         env: {
             let mut map = std::collections::BTreeMap::new();
             map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
             map.insert("ANOTHER_VAR".to_string(), "another_value".to_string());
             map
         },
-        description: None,
-        delegation: None,
-        permissions: None,
+        ..Default::default()
     };
 
     let agent = SessionAgent::from_profile(&profile, "test-agent");
 
-    // Only profile env vars should be in env_overrides
-    assert_eq!(agent.env_overrides.len(), 2);
-    assert_eq!(
-        agent.env_overrides.get("CUSTOM_VAR"),
-        Some(&"custom_value".to_string())
-    );
-    assert_eq!(
-        agent.env_overrides.get("ANOTHER_VAR"),
-        Some(&"another_value".to_string())
-    );
+    assert!(agent.env_overrides.is_empty());
 }
 
 #[test]
@@ -385,7 +372,7 @@ fn test_session_agent_from_profile_with_delegation() {
     };
 
     let profile = AgentProfile {
-        extends: Some("opencode".to_string()),
+        removed_extends: None,
         command: None,
         args: None,
         env: std::collections::BTreeMap::new(),

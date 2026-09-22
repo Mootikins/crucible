@@ -42,30 +42,38 @@ models routinely go quiet for minutes at a time mid-turn.
 
 ## `acp.agents.<name>` — agent profiles
 
-A profile either extends a built-in (`opencode`, `claude`, `gemini`, `codex`, `cursor`,
-`hermes`, `antigravity`) or
-defines its own command. The profile name is what you pass to `cru chat -a <name>`.
+A profile does not inherit from another profile. There are two kinds, and the name
+decides which:
+
+1. The name of a built-in (`opencode`, `claude`, `gemini`, `codex`, `cursor`, `hermes`,
+   `antigravity`). The fields you set lay over that built-in.
+2. Any other name. The profile must define `command`, because Crucible has nothing
+   else to run.
+
+The profile name is what you pass to `cru chat -a <name>`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `extends` | string | *(unset)* | Built-in profile to inherit command and args from |
-| `command` | string | *(from `extends`)* | Executable to spawn |
-| `args` | array of string | *(from `extends`)* | Arguments passed to the command |
+| `command` | string | *(from the built-in of the same name)* | Executable to spawn |
+| `args` | array of string | *(from the built-in of the same name)* | Arguments passed to the command |
 | `env` | table | `{}` | Environment variables for the agent process |
 | `description` | string | *(unset)* | Human-readable label |
 | `delegation` | table | *(unset)* | See the delegation sub-table below |
 | `permissions` | table | *(unset)* | Per-agent override of the global `permissions` |
 
-A profile with neither `command` nor a resolvable `extends` is rejected at spawn time —
-Crucible has nothing to run.
+A profile that is not a built-in and defines no `command` is an error. Crucible does not
+run the profile name as a command, so a misspelled name fails with the name in the message.
+
+Earlier versions had an `extends` key. It is removed. A config that still sets it gets an
+error that names the key: move the fields into the profile named after the built-in, or
+give the profile its own `command`.
 
 ```lua
 cru.config.set({
     acp = {
         agents = {
-            ["claude-proxy"] = {
+            claude = {
                 -- Point Claude Code at a local proxy
-                extends = "claude",
                 description = "Claude Code through a local gateway",
                 env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
             },
@@ -102,8 +110,7 @@ Absent means no delegation configuration, which leaves the tool unadvertised.
 cru.config.set({
     acp = {
         agents = {
-            orchestrator = {
-                extends = "claude",
+            claude = {
                 delegation = {
                     enabled = true,
                     max_depth = 2,
@@ -162,11 +169,10 @@ See [[Help/Config/permissions]] for pattern syntax and
 ```lua
 cru.config.set({
     acp = {
-        default_agent = "claude-proxy",
+        default_agent = "claude",
         streaming_timeout_minutes = 30,
         agents = {
-            ["claude-proxy"] = {
-                extends = "claude",
+            claude = {
                 description = "Claude Code through a local gateway",
                 env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
                 delegation = {

@@ -141,65 +141,140 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
     },
 ];
 
-fn is_builtin(name: &str) -> bool {
+/// Is `name` one of the agents Crucible ships a profile for?
+pub fn is_builtin(name: &str) -> bool {
     BUILTIN_AGENTS.iter().any(|agent| agent.name == name)
 }
 
-/// Look up the command and arguments of a built-in agent by name.
-pub(crate) fn builtin_command(name: &str) -> Option<(&'static str, &'static [&'static str])> {
+/// The profile Crucible ships for the built-in `name`.
+fn builtin_profile(name: &str) -> Option<AgentProfile> {
     BUILTIN_AGENTS
         .iter()
         .find(|agent| agent.name == name)
-        .map(|agent| (agent.command, agent.args))
+        .map(|agent| AgentProfile {
+            command: Some(agent.command.to_string()),
+            args: Some(agent.args.iter().map(|s| s.to_string()).collect()),
+            description: Some(agent.description.to_string()),
+            ..Default::default()
+        })
 }
 
-pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
+/// The built-in names, in discovery order, as one comma-separated list.
+fn builtin_names() -> String {
     BUILTIN_AGENTS
         .iter()
-        .map(|agent| {
-            (
-                agent.name.to_string(),
-                AgentProfile {
-                    extends: None,
-                    command: Some(agent.command.to_string()),
-                    args: Some(agent.args.iter().map(|s| s.to_string()).collect()),
-                    env: std::collections::BTreeMap::new(),
-                    description: Some(agent.description.to_string()),
-                    delegation: None,
-                    permissions: None,
-                },
-            )
-        })
-        .collect()
+        .map(|agent| agent.name)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
-fn ordered_profile_names(profiles: &HashMap<String, AgentProfile>) -> Vec<String> {
-    let mut ordered: Vec<String> = BUILTIN_AGENTS
+/// The error for a name that neither a built-in nor `[acp.agents]` defines.
+pub(crate) fn unknown_agent(name: &str, config: &AcpConfig) -> anyhow::Error {
+    anyhow!(
+        "Unknown ACP agent '{name}'. Known agents: {}. Name a built-in, or define \
+         `[acp.agents.{name}]` with a `command`.",
+        agent_names(config).join(", ")
+    )
+}
+
+/// The profile of the agent `name`, or `None` when nothing defines it.
+///
+/// This is the one place that decides what a profile means, and every caller
+/// goes through it: the launcher, discovery, the agent list and the permission
+/// lookup. There are exactly two kinds of profile.
+///
+/// 1. `name` is a built-in. The built-in supplies command, arguments and
+///    description; an `[acp.agents.<name>]` entry lays its own fields over it.
+/// 2. `name` is anything else. The `[acp.agents.<name>]` entry must define
+///    `command`, because Crucible has nothing else to run.
+///
+/// A profile never inherits from another profile. The removed `extends` key
+/// produces an error that names it.
+///
+/// Error policy: a caller that names a profile gets an error for that profile.
+/// [`profiles`] sweeps every name and skips a failing one with a warning, so a
+/// single broken entry cannot hide every other agent.
+pub fn profile(name: &str, config: &AcpConfig) -> Result<Option<AgentProfile>> {
+    let builtin = builtin_profile(name);
+    let Some(configured) = config.agents.get(name) else {
+        return Ok(builtin);
+    };
+
+    if let Some(base) = &configured.removed_extends {
+        return Err(anyhow!(
+            "Agent profile '{name}' sets `extends = \"{base}\"`, which Crucible removed. \
+             A profile no longer inherits. To adjust the built-in '{base}', move these \
+             fields into `[acp.agents.{base}]`; to keep the name '{name}', give it its \
+             own `command` and `args`."
+        ));
+    }
+
+    let mut resolved = builtin.unwrap_or_default();
+    if let Some(command) = &configured.command {
+        resolved.command = Some(command.clone());
+    }
+    if let Some(args) = &configured.args {
+        resolved.args = Some(args.clone());
+    }
+    if let Some(description) = &configured.description {
+        resolved.description = Some(description.clone());
+    }
+    if let Some(delegation) = &configured.delegation {
+        resolved.delegation = Some(delegation.clone());
+    }
+    if let Some(permissions) = &configured.permissions {
+        resolved.permissions = Some(permissions.clone());
+    }
+    resolved.env.extend(configured.env.clone());
+
+    if resolved.command.is_none() {
+        return Err(anyhow!(
+            "Agent profile '{name}' must define `command`. Only a built-in name ({}) \
+             takes its command from Crucible.",
+            builtin_names()
+        ));
+    }
+
+    Ok(Some(resolved))
+}
+
+/// Every agent name Crucible knows: the built-ins in discovery order, then
+/// the configured names that are not built-in, sorted.
+pub fn agent_names(config: &AcpConfig) -> Vec<String> {
+    let mut names: Vec<String> = BUILTIN_AGENTS
         .iter()
-        .filter(|agent| profiles.contains_key(agent.name))
         .map(|agent| agent.name.to_string())
         .collect();
 
-    let mut custom: Vec<String> = profiles
+    let mut custom: Vec<String> = config
+        .agents
         .keys()
         .filter(|name| !is_builtin(name))
         .cloned()
         .collect();
     custom.sort();
-    ordered.extend(custom);
+    names.extend(custom);
 
-    ordered
+    names
 }
 
-fn merge_profiles(config: &AcpConfig) -> Result<HashMap<String, AgentProfile>> {
-    let mut merged = default_agent_profiles();
-
-    for (name, profile) in &config.agents {
-        let resolved = resolve_profile(name, profile, &merged)?;
-        merged.insert(name.clone(), resolved);
-    }
-
-    Ok(merged)
+/// Every profile that resolves, in discovery order.
+///
+/// A profile that does not resolve is skipped with a warning. One broken
+/// `[acp.agents]` entry must not hide every other agent from the picker or
+/// from discovery; a caller that asks for that entry by name still gets the
+/// error, from [`profile`].
+pub fn profiles(config: &AcpConfig) -> Vec<(String, AgentProfile)> {
+    agent_names(config)
+        .into_iter()
+        .filter_map(|name| match profile(&name, config) {
+            Ok(resolved) => resolved.map(|resolved| (name, resolved)),
+            Err(error) => {
+                warn!(agent = %name, %error, "skipping unusable ACP agent profile");
+                None
+            }
+        })
+        .collect()
 }
 
 fn profile_to_agent_info(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
@@ -251,7 +326,7 @@ pub async fn discover_agent(preferred: Option<&str>, acp_config: &AcpConfig) -> 
     Ok(agent)
 }
 
-/// Cache-free discovery core: merges profiles, probes availability, and returns
+/// Cache-free discovery core: resolves profiles, probes availability, and returns
 /// the first available agent in priority order. Unlike [`discover_agent`] it does
 /// NOT read or write the process-global `AGENT_CACHE`, so parallel tests can call
 /// it without cross-test state bleeding.
@@ -259,12 +334,12 @@ pub async fn discover_agent_uncached(
     preferred: Option<&str>,
     acp_config: &AcpConfig,
 ) -> Result<AgentInfo> {
-    let merged_profiles = merge_profiles(acp_config)?;
+    let resolved = profiles(acp_config);
 
     // If a preferred agent is specified, check it first (single probe)
     if let Some(agent_name) = preferred {
         debug!("Trying preferred agent: {}", agent_name);
-        if let Some(profile) = merged_profiles.get(agent_name) {
+        if let Some((_, profile)) = resolved.iter().find(|(name, _)| name == agent_name) {
             if let Some(cmd) = profile.command.as_deref() {
                 if is_agent_available(cmd).await {
                     info!("Using preferred agent: {}", agent_name);
@@ -279,23 +354,20 @@ pub async fn discover_agent_uncached(
     }
 
     // Parallel probe: check all agents concurrently
-    let ordered_names = ordered_profile_names(&merged_profiles);
-    debug!("Probing {} agents in parallel", ordered_names.len());
+    debug!("Probing {} agents in parallel", resolved.len());
     let start = std::time::Instant::now();
 
-    let futures: Vec<_> = ordered_names
+    let futures: Vec<_> = resolved
         .iter()
-        .filter_map(|name| {
-            merged_profiles.get(name).and_then(|profile| {
-                profile.command.as_ref().map(|command| {
-                    let name = name.clone();
-                    let profile = profile.clone();
-                    let command = command.clone();
-                    async move {
-                        let available = is_agent_available(&command).await;
-                        (name, profile, available)
-                    }
-                })
+        .filter_map(|(name, profile)| {
+            profile.command.as_ref().map(|command| {
+                let name = name.clone();
+                let profile = profile.clone();
+                let command = command.clone();
+                async move {
+                    let available = is_agent_available(&command).await;
+                    (name, profile, available)
+                }
             })
         })
         .collect();
@@ -324,7 +396,8 @@ pub async fn discover_agent_uncached(
          After installation, use with:\n\
          cru chat --agent <agent> \"your message\"\n\
          \n\
-         Or specify a custom agent with: --agent <command>",
+         For another agent, define `[acp.agents.<name>]` with a `command`, \
+         then pass that name.",
         install_lines(|agent| agent.requires.is_none()),
         install_lines(|agent| agent.requires.is_some()),
     ))
@@ -420,114 +493,15 @@ pub async fn is_agent_available(command: &str) -> bool {
     }
 }
 
-/// Resolve an agent from config profiles or built-in agents
+/// The command, arguments and environment of the agent `name`.
 ///
-/// This function looks up an agent by name, checking:
-/// 1. Custom profiles in config.agents
-/// 2. Built-in default agent profiles
-///
-/// For custom profiles, it can extend a built-in agent (using `extends`)
-/// or define a completely custom agent (using `command` and `args`).
-///
-/// # Arguments
-/// * `name` - Agent name to resolve
-/// * `config` - ACP configuration containing agent profiles
-///
-/// # Returns
-/// AgentInfo with merged configuration
+/// A thin wrapper over [`profile`] for the callers that want the launch shape
+/// rather than the profile. An unknown name is an error, never a command.
 pub fn resolve_agent_from_config(name: &str, config: &AcpConfig) -> Result<AgentInfo> {
-    let merged_profiles = merge_profiles(config)?;
-
-    if let Some(profile) = merged_profiles.get(name) {
-        return profile_to_agent_info(name, profile);
+    match profile(name, config)? {
+        Some(resolved) => profile_to_agent_info(name, &resolved),
+        None => Err(unknown_agent(name, config)),
     }
-
-    let mut known_names = ordered_profile_names(&merged_profiles);
-    known_names.sort();
-
-    Err(anyhow!(
-        "Unknown agent '{}'. Known agent names: {}. Use --agent with a known agent name or define it in config.",
-        name,
-        known_names.join(", ")
-    ))
-}
-
-/// Resolve a custom agent profile
-fn resolve_profile(
-    name: &str,
-    profile: &AgentProfile,
-    merged_profiles: &HashMap<String, AgentProfile>,
-) -> Result<AgentProfile> {
-    let base_name = profile.extends.as_deref().unwrap_or(name);
-
-    if profile.extends.is_some() && !merged_profiles.contains_key(base_name) {
-        return Err(anyhow!(
-            "Agent profile '{}' extends unknown agent '{}'. Define command/args or use a known base agent.",
-            name,
-            base_name
-        ));
-    }
-
-    if profile.command.is_none()
-        && profile.args.is_none()
-        && profile.extends.is_none()
-        && !merged_profiles.contains_key(name)
-    {
-        return Err(anyhow!(
-            "Agent profile '{}' must define `command` or `extends`",
-            name
-        ));
-    }
-
-    Ok(overlay_profile(profile, merged_profiles.get(base_name)))
-}
-
-/// Lay the fields that `profile` sets over its `base` profile.
-///
-/// This is the one merge rule for ACP profiles. Discovery, the launcher and
-/// the permission lookup all use it, so they agree on what a profile means.
-pub(crate) fn overlay_profile(profile: &AgentProfile, base: Option<&AgentProfile>) -> AgentProfile {
-    let mut resolved = base.cloned().unwrap_or_default();
-    resolved.extends = profile.extends.clone();
-
-    if let Some(command) = &profile.command {
-        resolved.command = Some(command.clone());
-    }
-    if let Some(args) = &profile.args {
-        resolved.args = Some(args.clone());
-    }
-    if let Some(description) = &profile.description {
-        resolved.description = Some(description.clone());
-    }
-    if let Some(delegation) = &profile.delegation {
-        resolved.delegation = Some(delegation.clone());
-    }
-    if let Some(permissions) = &profile.permissions {
-        resolved.permissions = Some(permissions.clone());
-    }
-
-    resolved.env.extend(profile.env.clone());
-    resolved
-}
-
-/// Resolve the configured profile `name` for a launch.
-///
-/// Returns `None` when the config does not name the agent. An error in
-/// another profile does not stop this launch. An error in this profile does.
-pub(crate) fn resolve_configured_profile(
-    name: &str,
-    config: &AcpConfig,
-) -> Option<Result<AgentProfile>> {
-    let profile = config.agents.get(name)?;
-    let mut merged = default_agent_profiles();
-    for (other, other_profile) in &config.agents {
-        if other != name {
-            if let Ok(resolved) = resolve_profile(other, other_profile, &merged) {
-                merged.insert(other.clone(), resolved);
-            }
-        }
-    }
-    Some(resolve_profile(name, profile, &merged))
 }
 
 #[cfg(test)]
@@ -680,46 +654,104 @@ mod tests {
         assert!(agent.env_vars.is_empty());
     }
 
+    /// A profile named after a built-in lays its own fields over that
+    /// built-in. This is the only way to reach a built-in's command.
     #[test]
-    fn test_resolve_agent_from_config_profile() {
-        use crucible_core::config::{AcpConfig, AgentProfile};
-
-        // Create a config with a custom profile
-        let mut agents = std::collections::BTreeMap::new();
+    fn a_profile_named_after_a_builtin_overlays_it() {
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "LOCAL_ENDPOINT".to_string(),
             "http://localhost:11434/v1".to_string(),
         );
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
-            "opencode-local".to_string(),
+            "opencode".to_string(),
             AgentProfile {
-                extends: Some("opencode".to_string()),
-                command: None,
-                args: None,
                 env,
-                description: None,
-                delegation: None,
-                permissions: None,
+                ..Default::default()
             },
         );
 
         let config = AcpConfig {
-            default_agent: Some("opencode-local".to_string()),
             agents,
             ..Default::default()
         };
 
-        // Resolve should find the profile and merge with built-in agent
-        let agent = resolve_agent_from_config("opencode-local", &config).expect("should resolve");
+        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
 
-        assert_eq!(agent.name, "opencode-local");
-        assert_eq!(agent.command, "opencode"); // From built-in
-        assert_eq!(agent.args, vec!["acp".to_string()]); // From built-in
+        assert_eq!(agent.name, "opencode");
+        assert_eq!(agent.command, "opencode");
+        assert_eq!(agent.args, vec!["acp".to_string()]);
         assert_eq!(
             agent.env_vars.get("LOCAL_ENDPOINT"),
             Some(&"http://localhost:11434/v1".to_string())
         );
+    }
+
+    /// A profile whose name is not a built-in must define `command`.
+    #[test]
+    fn a_profile_that_is_not_a_builtin_must_define_a_command() {
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert("my-agent".to_string(), AgentProfile::default());
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let message = profile("my-agent", &config)
+            .expect_err("a profile with nothing to run is an error")
+            .to_string();
+
+        assert!(message.contains("'my-agent'"), "{message}");
+        assert!(message.contains("command"), "{message}");
+    }
+
+    /// The removed `extends` key gets an error that names it. Serde would
+    /// otherwise drop the key and the operator would read "must define
+    /// `command`", which says nothing about what changed.
+    #[test]
+    fn the_removed_extends_key_is_an_error_that_names_it() {
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "my-claude".to_string(),
+            AgentProfile {
+                removed_extends: Some("claude".to_string()),
+                ..Default::default()
+            },
+        );
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let message = profile("my-claude", &config)
+            .expect_err("inheritance is removed")
+            .to_string();
+
+        assert!(message.contains("extends"), "{message}");
+        assert!(message.contains("my-claude"), "{message}");
+        assert!(message.contains("claude"), "{message}");
+    }
+
+    /// One unusable entry must not hide every other agent. The sweep skips it;
+    /// a caller that names it still gets the error from `profile`.
+    #[test]
+    fn one_broken_profile_does_not_hide_the_others() {
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert("broken".to_string(), AgentProfile::default());
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let names: Vec<String> = profiles(&config).into_iter().map(|(n, _)| n).collect();
+
+        assert!(names.contains(&"opencode".to_string()), "{names:?}");
+        assert!(!names.contains(&"broken".to_string()), "{names:?}");
+        assert!(profile("broken", &config).is_err());
     }
 
     #[test]
@@ -730,13 +762,9 @@ mod tests {
         agents.insert(
             "my-agent".to_string(),
             AgentProfile {
-                extends: None,
                 command: Some("/usr/local/bin/my-agent".to_string()),
                 args: Some(vec!["--mode".to_string(), "acp".to_string()]),
-                env: std::collections::BTreeMap::new(),
-                description: None,
-                delegation: None,
-                permissions: None,
+                ..Default::default()
             },
         );
 
@@ -780,7 +808,7 @@ mod tests {
 
     #[test]
     fn test_default_agent_profiles_include_all_builtin_agents() {
-        let profiles = default_agent_profiles();
+        let names = agent_names(&AcpConfig::default());
 
         for name in [
             "opencode",
@@ -791,13 +819,14 @@ mod tests {
             "hermes",
             "antigravity",
         ] {
-            assert!(profiles.contains_key(name), "missing profile: {}", name);
+            assert!(names.iter().any(|n| n == name), "missing profile: {}", name);
         }
     }
 
     #[test]
     fn test_default_agent_profiles_have_command_args_and_description() {
-        let profiles = default_agent_profiles();
+        let profiles: HashMap<String, AgentProfile> =
+            profiles(&AcpConfig::default()).into_iter().collect();
 
         for name in [
             "opencode",
@@ -829,13 +858,9 @@ mod tests {
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
-                extends: None,
                 command: Some("cargo".to_string()),
                 args: None,
-                env: std::collections::BTreeMap::new(),
-                description: None,
-                delegation: None,
-                permissions: None,
+                ..Default::default()
             },
         );
 
@@ -850,35 +875,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_agent_uses_extends_for_backward_compatible_defaults() {
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
-            "my-claude".to_string(),
-            AgentProfile {
-                extends: Some("claude".to_string()),
-                command: None,
-                args: None,
-                env: std::collections::BTreeMap::new(),
-                description: None,
-                delegation: None,
-                permissions: None,
-            },
-        );
-
-        let config = AcpConfig {
-            agents,
-            ..Default::default()
-        };
-
-        let agent = resolve_agent_from_config("my-claude", &config).expect("should resolve");
-        assert_eq!(agent.command, "npx");
-        assert_eq!(
-            agent.args,
-            vec!["@agentclientprotocol/claude-agent-acp".to_string()]
-        );
-    }
-
-    #[test]
     fn test_unknown_agent_error_is_helpful() {
         let config = AcpConfig::default();
 
@@ -886,7 +882,7 @@ mod tests {
         let message = err.to_string();
 
         assert!(message.contains("definitely-unknown"));
-        assert!(message.contains("known agent"));
+        assert!(message.contains("Known agents"));
     }
 
     /// The `antigravity` built-in must launch what the ACP registry entry
@@ -917,13 +913,10 @@ mod tests {
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
-                extends: None,
                 command: Some("cargo".to_string()),
                 args: Some(vec!["--version".to_string()]),
-                env: std::collections::BTreeMap::new(),
                 description: Some("Overridden".to_string()),
-                delegation: None,
-                permissions: None,
+                ..Default::default()
             },
         );
 
@@ -947,13 +940,10 @@ mod tests {
         agents.insert(
             "cargo-agent".to_string(),
             AgentProfile {
-                extends: None,
                 command: Some("cargo".to_string()),
                 args: Some(vec!["--version".to_string()]),
-                env: std::collections::BTreeMap::new(),
                 description: Some("Cargo-backed profile".to_string()),
-                delegation: None,
-                permissions: None,
+                ..Default::default()
             },
         );
 

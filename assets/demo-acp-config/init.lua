@@ -40,7 +40,6 @@ cru.config.set({
     acp = {
         agents = {
             claude = {
-                extends = "claude",
                 -- The recording runs the agent against a throwaway config
                 -- directory so the operator's own Claude login is untouched.
                 env = {
@@ -53,8 +52,6 @@ cru.config.set({
                     allowed_targets = { "cursor", "opencode" },
                 },
             },
-            cursor = { extends = "cursor" },
-            opencode = { extends = "opencode" },
         },
     },
 })

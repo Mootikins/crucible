@@ -295,7 +295,7 @@ entry but no shipped proof.
 | F199 | ACP host: spawn external agents over stdio JSON-RPC and negotiate capabilities | P, R |
 | F200 | ACP context injection: precognition as a tagged system block | P |
 | F201 | In-process MCP host over HTTP/SSE; stdio fallback `cru mcp --stdio --standalone` | P |
-| F202 | Agent discovery for `opencode`, `claude`, `gemini`, `codex`, `cursor`; `[acp.agents.*]` with `extends` | P, R |
+| F202 | Agent discovery for `opencode`, `claude`, `gemini`, `codex`, `cursor`, `hermes`, `antigravity`; `[acp.agents.*]` overlays a built-in of the same name | P, R |
 | F203 | ACP permission gate through the session policy; no handler means deny | P |
 | F204 | ACP streaming with diff handling; cancel closes the transport | P |
 | F205 | ACP model switching `session/set_config_option` | P |
@@ -797,7 +797,6 @@ Owner: **AgentCardRegistry**.
 pub struct AcpProfileName(String);
 pub struct AcpProfile {
     name: AcpProfileName,
-    extends: Option<AcpProfileName>,
     command: Vec<String>,
     env: BTreeMap<String, String>,
     trust: DataClass,
@@ -1801,8 +1800,9 @@ only.
 
 ### 9.9 An ACP profile
 
-Add `[acp.agents.<name>]` with `extends`, `command`, `env`, `trust` and
-delegation limits. Discovery probes the command against the resolved
+Add `[acp.agents.<name>]` with `command`, `env`, `trust` and delegation
+limits. A name that matches a built-in overlays that built-in; any other
+name must give a `command`. Profiles do not inherit from each other. Discovery probes the command against the resolved
 environment and records an absolute path.
 
 ### 9.10 An MCP upstream

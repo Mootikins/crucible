@@ -87,22 +87,27 @@ error; the values are ignored. See [[Help/Config/acp]].
 
 ### Custom ACP Agent Profiles
 
-Extend a built-in agent profile with additional environment or arguments under `acp.agents.<name>`:
+Add environment or arguments to a built-in under `acp.agents.<name>`. The name of a
+built-in overlays that built-in; any other name must define its own `command`:
 
 ```lua
 cru.config.set({
     acp = {
         agents = {
-            ["my-claude"] = {
-                extends = "claude",
+            claude = {
                 env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+            },
+            ["my-agent"] = {
+                command = "/usr/local/bin/my-agent",
+                args = { "--mode", "acp" },
             },
         },
     },
 })
 ```
 
-The extended name is then selectable via `cru chat --acp my-claude`.
+The name is then selectable via `cru chat --acp my-agent`. Profiles do not inherit from
+each other; the removed `extends` key is an error.
 
 See [[Help/Config/acp]] for every field on `acp` and `acp.agents.<name>`, including
 delegation and per-agent permissions.

@@ -1,6 +1,5 @@
 //! Agent lifecycle management for the daemon.
 
-use crate::acp::discovery::default_agent_profiles;
 use crate::agent_factory::{
     create_agent_from_session_config, AgentFactoryError, CreateAgentFromSessionConfigParams,
 };
@@ -49,19 +48,6 @@ pub(crate) mod tool_safety;
 pub use tool_safety::{believed_read_only, is_safe};
 
 pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
-
-pub(crate) fn resolve_agent_profile(
-    name: &str,
-    configured: &std::collections::BTreeMap<String, AgentProfile>,
-    available: &HashMap<String, AgentProfile>,
-) -> Option<AgentProfile> {
-    let profile = configured.get(name)?;
-    let base_name = profile.extends.as_deref().unwrap_or(name);
-    Some(crate::acp::discovery::overlay_profile(
-        profile,
-        available.get(base_name),
-    ))
-}
 
 #[derive(Error, Debug)]
 pub enum AgentError {
@@ -1744,16 +1730,16 @@ impl AgentManager {
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
     }
 
+    /// Every ACP agent profile a session can name, built-in or configured.
+    ///
+    /// A configured profile that does not resolve is left out with a warning;
+    /// see `acp::discovery::profiles` for that policy.
     pub fn build_available_agents(&self) -> HashMap<String, AgentProfile> {
-        let mut available = default_agent_profiles();
-        if let Some(config) = &self.acp_config {
-            for name in config.agents.keys() {
-                if let Some(resolved) = resolve_agent_profile(name, &config.agents, &available) {
-                    available.insert(name.clone(), resolved);
-                }
-            }
-        }
-        available
+        let empty = AcpConfig::default();
+        let config = self.acp_config.as_ref().unwrap_or(&empty);
+        crate::acp::discovery::profiles(config)
+            .into_iter()
+            .collect()
     }
 }
 

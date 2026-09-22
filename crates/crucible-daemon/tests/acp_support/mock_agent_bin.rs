@@ -114,7 +114,7 @@ pub fn mock_handle_params<'a>(
         parent_session_id: None,
         delegation_config: None,
         card_roots: &NO_CARD_ROOTS,
-        acp_config: None,
+        acp_config: Some(mock_path_acp_config()),
         permission_handler: None,
         sandbox_exec: None,
         containment: crucible_daemon::tools::containment::RootSet::Ambient,
@@ -131,14 +131,37 @@ pub const MOCK_PROFILE: &str = "mock-acp";
 #[allow(dead_code)]
 pub fn mock_profile(env: BTreeMap<String, String>) -> AgentProfile {
     AgentProfile {
-        extends: None,
         command: Some(mock_agent_path().to_string_lossy().into_owned()),
         args: Some(Vec::new()),
         env,
         description: Some("mock ACP agent".to_string()),
-        delegation: None,
-        permissions: None,
+        ..Default::default()
     }
+}
+
+/// The `AcpConfig` a spawned-agent test resolves its agent through.
+///
+/// The daemon refuses an agent name that no profile defines; it does not run
+/// the name itself as a command. [`mock_session_agent`] names the mock binary
+/// by its absolute path, so that path needs a profile of its own.
+#[allow(dead_code)]
+pub fn mock_path_acp_config() -> &'static AcpConfig {
+    static CONFIG: std::sync::OnceLock<AcpConfig> = std::sync::OnceLock::new();
+    CONFIG.get_or_init(|| {
+        let path = mock_agent_path().to_string_lossy().into_owned();
+        AcpConfig {
+            agents: [(
+                path.clone(),
+                AgentProfile {
+                    command: Some(path),
+                    args: Some(Vec::new()),
+                    ..Default::default()
+                },
+            )]
+            .into(),
+            ..Default::default()
+        }
+    })
 }
 
 /// A session agent that names the ACP profile `profile`, so the production

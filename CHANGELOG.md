@@ -12,6 +12,25 @@ is a Keep a Changelog category.
 
 ## [Unreleased]
 
+### Breaking
+
+- **An ACP profile no longer inherits.** The `extends` key on
+  `[acp.agents.<name>]` is removed. A profile named after a built-in lays its
+  fields over that built-in; any other name must define `command`. A config
+  that still sets `extends` gets an error that names the key and says what to
+  write instead.
+- **An unknown ACP agent name is an error, not a command.** The launcher used
+  to run the name itself, so a misspelled profile started a missing binary and
+  the failure named nothing.
+
+### Fixed
+
+- **A session's `env_overrides` now beats the profile's `env`.** The profile
+  environment was merged twice — once onto the session and once at launch —
+  and the launch copy put the config value back, so a `session.create`
+  override never reached the agent. The profile `env` now lives in the config
+  alone, and the launcher reads it there under the session's overrides.
+
 ### Added
 
 - **Antigravity is a built-in ACP agent** (`cru chat --acp antigravity`). The

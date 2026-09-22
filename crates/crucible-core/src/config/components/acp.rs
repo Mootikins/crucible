@@ -64,10 +64,21 @@ fn default_max_concurrent_delegations() -> u32 {
 }
 
 /// Configuration profile for an ACP agent
+///
+/// A profile does not inherit from another profile. A profile named after a
+/// built-in agent lays its fields over that built-in; any other name must
+/// define `command`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentProfile {
-    /// Base agent to extend (opencode, claude, gemini, etc.)
-    pub extends: Option<String>,
+    /// The removed `extends` key, captured only so the daemon can report it.
+    ///
+    /// Inheritance is gone. Serde drops an unknown key, so without this field
+    /// an old `extends = "claude"` would vanish and the profile would then
+    /// fail with "must define `command`", which tells the operator nothing
+    /// about what changed. `acp::discovery::profile` turns a captured value
+    /// into an error that names the key and the replacement.
+    #[serde(default, rename = "extends", skip_serializing_if = "Option::is_none")]
+    pub removed_extends: Option<String>,
     /// Custom command to run (overrides built-in command)
     pub command: Option<String>,
     /// Custom arguments (overrides built-in args)
@@ -119,7 +130,7 @@ mod tests {
             env.OPENCODE_MODEL = "ollama/llama3.2"
 
             [agents.claude-proxy]
-            extends = "claude"
+            command = "npx"
             env.ANTHROPIC_BASE_URL = "http://localhost:4000"
         "#;
 
@@ -145,7 +156,7 @@ mod tests {
             .agents
             .get("claude-proxy")
             .expect("should have profile");
-        assert_eq!(claude_proxy.extends, Some("claude".to_string()));
+        assert_eq!(claude_proxy.command, Some("npx".to_string()));
         assert_eq!(
             claude_proxy.env.get("ANTHROPIC_BASE_URL"),
             Some(&"http://localhost:4000".to_string())
@@ -191,6 +202,22 @@ mod tests {
         assert_eq!(config.default_agent, Some("claude".to_string()));
     }
 
+    /// Inheritance is removed, but an old config still names `extends`. Serde
+    /// drops an unknown key, so the profile must capture the value. The daemon
+    /// turns it into an error that names the key; a silent drop would give the
+    /// operator "must define `command`", which explains nothing.
+    #[test]
+    fn a_profile_that_still_names_extends_keeps_the_value_for_the_error() {
+        let toml = r#"
+            [agents.my-claude]
+            extends = "claude"
+        "#;
+
+        let config: AcpConfig = toml::from_str(toml).expect("an old config still parses");
+        let profile = config.agents.get("my-claude").expect("should have profile");
+        assert_eq!(profile.removed_extends.as_deref(), Some("claude"));
+    }
+
     #[test]
     fn test_acp_config_default_has_empty_agents() {
         let config = AcpConfig::default();
@@ -200,7 +227,7 @@ mod tests {
     #[test]
     fn test_agent_profile_default() {
         let profile = AgentProfile::default();
-        assert!(profile.extends.is_none());
+        assert!(profile.removed_extends.is_none());
         assert!(profile.command.is_none());
         assert!(profile.args.is_none());
         assert!(profile.env.is_empty());
@@ -215,7 +242,7 @@ mod tests {
         let toml = r#"
             [agents.documented-agent]
             description = "An agent with documentation"
-            extends = "claude"
+            command = "npx"
         "#;
 
         let config: AcpConfig = toml::from_str(toml).expect("should parse");
@@ -236,7 +263,7 @@ mod tests {
         let toml = r#"
             [agents.capable-agent]
             capabilities = ["search", "write", "execute"]
-            extends = "opencode"
+            command = "opencode"
         "#;
 
         let config: AcpConfig = toml::from_str(toml).expect("an old config still parses");
@@ -244,14 +271,14 @@ mod tests {
             .agents
             .get("capable-agent")
             .expect("should have profile");
-        assert_eq!(profile.extends.as_deref(), Some("opencode"));
+        assert_eq!(profile.command.as_deref(), Some("opencode"));
     }
 
     #[test]
     fn test_agent_profile_with_delegation_config() {
         let toml = r#"
             [agents.delegating-agent]
-            extends = "claude"
+            command = "npx"
             
             [agents.delegating-agent.delegation]
             enabled = true
@@ -283,7 +310,7 @@ mod tests {
     fn test_agent_profile_delegation_defaults() {
         let toml = r#"
             [agents.default-delegation-agent]
-            extends = "claude"
+            command = "npx"
             
             [agents.default-delegation-agent.delegation]
             enabled = false
@@ -309,7 +336,7 @@ mod tests {
     fn test_agent_profile_all_new_fields_optional() {
         let toml = r#"
             [agents.minimal-agent]
-            extends = "claude"
+            command = "npx"
         "#;
 
         let config: AcpConfig = toml::from_str(toml).expect("should parse");
@@ -333,7 +360,7 @@ mod tests {
             env.OPENCODE_MODEL = "ollama/llama3.2"
 
             [agents.claude-proxy]
-            extends = "claude"
+            command = "npx"
             env.ANTHROPIC_BASE_URL = "http://localhost:4000"
         "#;
 
@@ -362,7 +389,7 @@ mod tests {
             .agents
             .get("claude-proxy")
             .expect("should have profile");
-        assert_eq!(claude_proxy.extends, Some("claude".to_string()));
+        assert_eq!(claude_proxy.command, Some("npx".to_string()));
         assert_eq!(
             claude_proxy.env.get("ANTHROPIC_BASE_URL"),
             Some(&"http://localhost:4000".to_string())
@@ -395,7 +422,7 @@ mod tests {
         // Custom value should round-trip through serde
         let toml = r#"
             [agents.delegating-agent]
-            extends = "claude"
+            command = "npx"
             
             [agents.delegating-agent.delegation]
             enabled = true
@@ -432,7 +459,7 @@ mod tests {
     fn agent_profile_deserializes_permissions() {
         let toml = r#"
             [agents.claude]
-            extends = "claude"
+            command = "npx"
 
             [agents.claude.permissions]
             default = "ask"
@@ -455,7 +482,7 @@ mod tests {
     fn agent_profile_without_permissions_deserializes_to_none() {
         let toml = r#"
             [agents.opencode]
-            extends = "opencode"
+            command = "opencode"
         "#;
         let config: AcpConfig = toml::from_str(toml).expect("should parse");
         let profile = config.agents.get("opencode").expect("opencode agent");

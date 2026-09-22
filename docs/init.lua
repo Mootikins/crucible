@@ -176,10 +176,15 @@ cru.config.set({
         streaming_timeout_minutes = 15,  -- time allowed for one complete response
         -- default_agent = "claude",     -- omit to auto-discover
 
+        -- A profile named after a built-in overlays that built-in. Any
+        -- other name must define its own `command`.
         -- agents = {
-        --     ["my-claude"] = {
-        --         extends = "claude",
+        --     claude = {
         --         env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+        --     },
+        --     ["my-agent"] = {
+        --         command = "/usr/local/bin/my-agent",
+        --         args = { "--mode", "acp" },
         --     },
         -- },
     },

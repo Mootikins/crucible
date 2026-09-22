@@ -144,14 +144,14 @@ Agent discovery uses parallel probing: Crucible checks all known agents concurre
 
 ## Custom Agent Profiles
 
-Define custom profiles in `init.lua` using `extends` to inherit from a built-in:
+A profile does not inherit from another profile. A profile named after a built-in lays
+its fields over that built-in; any other name must define its own `command`:
 
 ```lua
 cru.config.set({
     acp = {
         agents = {
-            ["my-claude"] = {
-                extends = "claude",
+            claude = {
                 env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
             },
             ["my-agent"] = {
@@ -163,7 +163,7 @@ cru.config.set({
 })
 ```
 
-Then use with: `cru chat -a my-claude`
+Then use with: `cru chat -a my-agent`. An unknown name is an error, not a command.
 
 ## Crucible as ACP Host
 

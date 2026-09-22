@@ -42,7 +42,9 @@ mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
 use mock_agent::{logged, MockScript, Step};
-use mock_agent_bin::{mock_agent_path, mock_handle_params, mock_session_agent};
+use mock_agent_bin::{
+    mock_agent_path, mock_handle_params, mock_session_agent, profile_session_agent,
+};
 
 /// A session agent that runs the mock binary with `script`.
 fn scripted_agent(agent_path: &str, script: MockScript) -> SessionAgent {
@@ -504,14 +506,32 @@ async fn acp_session_new_without_config_options_reports_no_models() {
     );
 }
 
+/// A profile whose `command` names nothing fails at spawn, not at resolution.
+///
+/// The profile has to exist: an agent name no profile defines is refused
+/// earlier, with a configuration error rather than a spawn error.
 #[tokio::test]
 async fn missing_binary_returns_connection_error() {
     let workspace = TempDir::new().expect("Failed to create temp workspace");
-    let agent_config = mock_session_agent("/nonexistent/path/to/binary");
+    let agent_config = profile_session_agent("missing");
+    let acp_config = AcpConfig {
+        agents: [(
+            "missing".to_string(),
+            AgentProfile {
+                command: Some("/nonexistent/path/to/binary".to_string()),
+                ..Default::default()
+            },
+        )]
+        .into(),
+        ..Default::default()
+    };
 
     let result = timeout(
         Duration::from_secs(10),
-        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
+        AcpAgentHandle::new(AcpAgentHandleParams {
+            acp_config: Some(&acp_config),
+            ..mock_handle_params(&agent_config, workspace.path())
+        }),
     )
     .await
     .expect("missing binary should fail quickly");

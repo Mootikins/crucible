@@ -839,6 +839,8 @@ mod tests {
             agents.insert(
                 PROFILE_NAME.to_string(),
                 crucible_core::config::components::acp::AgentProfile {
+                    // The name is not a built-in, so it must say what to run.
+                    command: Some(PROFILE_NAME.to_string()),
                     permissions: Some(permissions),
                     ..Default::default()
                 },

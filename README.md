@@ -148,16 +148,21 @@ Custom profiles go in `~/.config/crucible/init.lua`:
 cru.config.set({
   acp = {
     agents = {
-      ["my-claude"] = {
-        extends = "claude",
+      -- The name of a built-in overlays that built-in.
+      claude = {
         env = { ANTHROPIC_BASE_URL = "http://localhost:4000" },
+      },
+      -- Any other name must define its own command.
+      ["my-agent"] = {
+        command = "/usr/local/bin/my-agent",
+        args = { "--mode", "acp" },
       },
     },
   },
 })
 ```
 
-Then: `cru chat -a my-claude`. See [ACP configuration](./docs/Help/Config/acp.md) for every
+Then: `cru chat -a my-agent`. See [ACP configuration](./docs/Help/Config/acp.md) for every
 field, including per-profile trust and delegation limits.
 
 ### Lua Plugins
