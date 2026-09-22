@@ -36,12 +36,12 @@ import {
   untrack,
   type JSX,
 } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { MergeView } from '@codemirror/merge';
 import { PanelShell } from './PanelShell';
-import { PanelHeader } from './PanelHeader';
-import { mergeViewExtensions, type MergeCollapse } from '@/lib/merge-view';
+import { hidesFinalNewline, mergeViewExtensions, type MergeCollapse } from '@/lib/merge-view';
 import {
   diffsetLabel,
   focusMatches,
@@ -76,7 +76,19 @@ import {
   type CommentHost,
   type LineSpan,
 } from './diff-comments';
-import { ChevronDown, ChevronRight, ChevronsDownUp, Copy, RefreshCw } from '@/lib/icons';
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  Columns2,
+  Copy,
+  MessageSquareText,
+  RefreshCw,
+  Rows2,
+  WrapText,
+} from '@/lib/icons';
+import { fileIconFor } from '@/lib/file-icons';
 import { hit } from '@/lib/touch';
 
 /** A file with more changed lines than this starts collapsed. */
@@ -118,8 +130,99 @@ function fileKey(file: Pick<DiffFileEntry, 'root' | 'path'>): string {
   return `${file.root}:${file.path}`;
 }
 
-const toolButton =
-  'rounded border border-hairline px-2 py-0.5 text-floor text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50';
+/** An icon button of the toolbar or of a file row. */
+const iconButton =
+  'flex shrink-0 items-center justify-center gap-1 rounded p-1 text-muted-dark hover:bg-hover-wash hover:text-shell-ink disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-dark focus-ring';
+/** The state of a toggle in the toolbar: on, or off. */
+const pressed = (on: boolean) => (on ? 'bg-control text-shell-ink hover:bg-control' : '');
+
+/** A decision button. The accept form has a fill; the reject form has none. */
+const decisionButton = (accept: boolean) =>
+  `flex h-6 shrink-0 items-center rounded px-2 text-floor disabled:opacity-50 focus-ring ${
+    accept
+      ? 'bg-control text-shell-ink hover:text-shell-ink hover:bg-hover-wash'
+      : 'text-muted hover:bg-hover-wash hover:text-shell-ink'
+  }`;
+
+/** A thin rule between two groups of the toolbar. */
+const Rule = () => <span aria-hidden="true" class="mx-1 h-4 w-px shrink-0 bg-hairline-strong" />;
+
+/** A git ref in mono, or the prose name of the default when it has none. */
+const Ref: Component<{ name: string | null | undefined; fallback: string }> = (props) => (
+  <Show when={props.name} fallback={<span class="text-shell-ink">{props.fallback}</span>}>
+    {(name) => <span class="min-w-0 truncate font-mono text-shell-ink">{name()}</span>}
+  </Show>
+);
+
+/** The source when it is of one kind, or null. */
+function ofKind<K extends DiffsetSource['kind']>(
+  source: DiffsetSource,
+  kind: K,
+): Extract<DiffsetSource, { kind: K }> | null {
+  return source.kind === kind ? (source as Extract<DiffsetSource, { kind: K }>) : null;
+}
+
+/** The first block of an id. The full id is in the tooltip. */
+const shortId = (id: string) => id.split('-')[0];
+
+/**
+ * What the diffset compares, in the UI font. Only a ref or an id is in mono.
+ * A proposal shows its title and its state: its id is in the tooltip.
+ */
+const SourceLabel: Component<{ source: DiffsetSource; proposal?: Proposal }> = (props) => (
+  <span
+    class="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs"
+    data-testid="diff-source"
+    title={diffsetLabel(props.source)}
+  >
+    <Switch>
+      <Match when={ofKind(props.source, 'branch')}>
+        {(branch) => (
+          <>
+            <Ref name={branch().head} fallback="Working tree" />
+            <ArrowRight class="h-3 w-3 shrink-0 text-muted-dark" aria-hidden="true" />
+            <span class="sr-only">against</span>
+            <Ref name={branch().base} fallback="Default branch" />
+          </>
+        )}
+      </Match>
+      <Match when={ofKind(props.source, 'session_record')}>
+        {(record) => (
+          <>
+            <span class="text-shell-ink">Session</span>
+            <span class="min-w-0 truncate font-mono text-muted">{record().session}</span>
+          </>
+        )}
+      </Match>
+      <Match when={ofKind(props.source, 'proposal')}>
+        {(proposal) => (
+          <span class="flex min-w-0 items-center gap-1.5" data-testid="proposal-bar">
+            <Show
+              when={props.proposal}
+              fallback={
+                <>
+                  <span class="text-shell-ink">Proposal</span>
+                  <span class="font-mono text-muted">{shortId(proposal().id)}</span>
+                </>
+              }
+            >
+              {(value) => (
+                <>
+                  <span class="min-w-0 truncate text-shell-ink" data-testid="proposal-title">
+                    {value().title}
+                  </span>
+                  <span class="shrink-0 text-floor text-muted" data-testid="proposal-state">
+                    {stateLabel(value().state)}
+                  </span>
+                </>
+              )}
+            </Show>
+          </span>
+        )}
+      </Match>
+    </Switch>
+  </span>
+);
 
 export const DiffPanel: Component<DiffPanelProps> = (props) => {
   return (
@@ -199,8 +302,8 @@ function decidable(proposal: Proposal | undefined): boolean {
   return !!proposal && isPending(proposal.state) && proposal.state.kind !== 'conflicted';
 }
 
-/** The state and the decisions of a proposal, in the header. */
-const ProposalBar: Component<{ controls: ProposalControls }> = (props) => {
+/** Accept all and Reject all, at the end of the toolbar. */
+const ProposalActions: Component<{ controls: ProposalControls }> = (props) => {
   const proposal = () => props.controls.proposal();
   // A superseded or conflicted proposal can still be rejected.
   const rejectable = () => {
@@ -208,43 +311,35 @@ const ProposalBar: Component<{ controls: ProposalControls }> = (props) => {
     return !!state && (isPending(state) || state.kind === 'superseded');
   };
   return (
-    <div class="mt-1 flex flex-wrap items-center gap-1.5" data-testid="proposal-bar">
-      <span class="min-w-0 truncate text-xs text-shell-ink" data-testid="proposal-title">
-        {proposal()?.title}
-      </span>
-      <Show when={proposal()}>
-        {(value) => (
-          <span class="text-floor text-muted-dark" data-testid="proposal-state">
-            {stateLabel(value().state)}
-          </span>
-        )}
-      </Show>
-      <span class="ml-auto" />
-      <Show when={decidable(proposal())}>
-        <button
-          type="button"
-          title="Write every file of the proposal"
-          data-testid="proposal-accept-all"
-          disabled={props.controls.busy()}
-          onClick={() => void props.controls.decide({ kind: 'accept' })}
-          class={`${toolButton} text-shell-ink ${hit()}`}
-        >
-          Accept all
-        </button>
-      </Show>
-      <Show when={rejectable()}>
-        <button
-          type="button"
-          title="Reject every file of the proposal. No file changes."
-          data-testid="proposal-reject-all"
-          disabled={props.controls.busy()}
-          onClick={() => void props.controls.decide({ kind: 'reject' })}
-          class={`${toolButton} ${hit()}`}
-        >
-          Reject all
-        </button>
-      </Show>
-    </div>
+    <Show when={decidable(proposal()) || rejectable()}>
+      <Rule />
+      <div class="flex shrink-0 items-center gap-1">
+        <Show when={rejectable()}>
+          <button
+            type="button"
+            title="Reject every file of the proposal. No file changes."
+            data-testid="proposal-reject-all"
+            disabled={props.controls.busy()}
+            onClick={() => void props.controls.decide({ kind: 'reject' })}
+            class={`${decisionButton(false)} ${hit()}`}
+          >
+            Reject all
+          </button>
+        </Show>
+        <Show when={decidable(proposal())}>
+          <button
+            type="button"
+            title="Write every file of the proposal"
+            data-testid="proposal-accept-all"
+            disabled={props.controls.busy()}
+            onClick={() => void props.controls.decide({ kind: 'accept' })}
+            class={`${decisionButton(true)} ${hit()}`}
+          >
+            Accept all
+          </button>
+        </Show>
+      </div>
+    </Show>
   );
 };
 
@@ -350,33 +445,44 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
 
   return (
     <>
-      <PanelHeader title="Diff" class="shrink-0">
-        <div class="mt-1.5 flex flex-wrap items-center gap-2">
-          <span class="min-w-0 truncate text-xs font-mono text-shell-ink" data-testid="diff-source">
-            {diffsetLabel(diffset.data?.source ?? props.source)}
-          </span>
-          <ChangeCounts testId="diff-counts" added={totals().added} removed={totals().removed} />
+      {/* One row: what the diff compares, its counts, then the view controls. */}
+      <div
+        class="flex min-h-(--cru-row-md) shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-hairline px-3 py-1"
+        data-testid="diff-toolbar"
+      >
+        <h2 class="sr-only">Diff</h2>
+        {/* The label keeps room for itself: in a narrow pane, the controls
+            move to a second row before the label shrinks to nothing. */}
+        <div class="flex min-w-40 flex-1 items-center gap-2">
+          <SourceLabel
+            source={diffset.data?.source ?? props.source}
+            proposal={props.proposal?.proposal()}
+          />
+          <ChangeCounts
+            testId="diff-counts"
+            class="shrink-0"
+            added={totals().added}
+            removed={totals().removed}
+          />
         </div>
-        <div class="mt-1 flex flex-wrap items-center gap-1.5">
+        <div class="ml-auto flex shrink-0 items-center gap-0.5">
           <div
             role="group"
             aria-label="Layout"
-            class="flex items-center rounded border border-hairline text-floor"
+            class="flex items-center gap-0.5 rounded-md border border-hairline p-0.5"
           >
             <For each={[false, true]}>
               {(value) => (
                 <button
                   type="button"
                   aria-pressed={split() === value}
+                  aria-label={value ? 'Split' : 'Unified'}
+                  title={value ? 'Split: base and current side by side' : 'Unified: one column'}
                   data-testid={`diff-layout-${value ? 'split' : 'unified'}`}
                   onClick={() => setSplit(value)}
-                  class={`px-2 py-0.5 hover:bg-hover-wash ${
-                    split() === value
-                      ? 'bg-hover-wash text-shell-ink'
-                      : 'text-muted-dark hover:text-shell-ink'
-                  } ${hit()}`}
+                  class={`${iconButton} rounded-sm p-0.5 ${pressed(split() === value)} ${hit()}`}
                 >
-                  {value ? 'Split' : 'Unified'}
+                  {value ? <Columns2 class="h-3.5 w-3.5" /> : <Rows2 class="h-3.5 w-3.5" />}
                 </button>
               )}
             </For>
@@ -384,47 +490,55 @@ const DiffsetView: Component<DiffsetViewProps> = (props) => {
           <button
             type="button"
             aria-pressed={wrap()}
+            aria-label="Wrap"
+            title="Wrap long lines"
             data-testid="diff-wrap"
             onClick={() => setWrap(!wrap())}
-            class={`${toolButton} ${wrap() ? 'text-shell-ink' : ''} ${hit()}`}
+            class={`${iconButton} ${pressed(wrap())} ${hit()}`}
           >
-            Wrap
+            <WrapText class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
+            aria-label="Collapse all"
             title="Collapse all"
             data-testid="diff-collapse-all"
             disabled={files().length === 0}
             onClick={collapseAll}
-            class={`${toolButton} flex items-center gap-1 ${hit()}`}
+            class={`${iconButton} ${hit()}`}
           >
-            <ChevronsDownUp class="w-3.5 h-3.5" />
-            Collapse all
+            <ChevronsDownUp class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
+            aria-label="Copy comments"
             title="Copy the open comments in the quickfix form"
             data-testid="diff-copy-comments"
             disabled={openComments().length === 0}
             onClick={copyComments}
-            class={`${toolButton} flex items-center gap-1 ${hit()}`}
+            class={`${iconButton} ${hit()}`}
           >
-            <Copy class="w-3.5 h-3.5" />
-            Copy comments
+            <MessageSquareText class="h-3.5 w-3.5" />
+            <Show when={openComments().length > 0}>
+              <span class="text-floor tabular-nums">{openComments().length}</span>
+            </Show>
           </button>
           <button
             type="button"
+            aria-label="Refresh"
             title="Refresh"
             data-testid="diff-refresh"
             disabled={diffset.isFetching}
             onClick={() => void invalidateDiffset(props.source)}
-            class={`ml-auto rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50 ${hit()}`}
+            class={`${iconButton} ${hit()}`}
           >
-            <RefreshCw class={`w-3.5 h-3.5 ${diffset.isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw class={`h-3.5 w-3.5 ${diffset.isFetching ? 'animate-spin' : ''}`} />
           </button>
+          <Show when={props.proposal}>
+            {(controls) => <ProposalActions controls={controls()} />}
+          </Show>
         </div>
-        <Show when={props.proposal}>{(controls) => <ProposalBar controls={controls()} />}</Show>
-      </PanelHeader>
+      </div>
 
       <div ref={body} class="flex-1 overflow-y-auto">
         <UnreadableRoots roots={diffset.data?.unreadable_roots ?? []} />
@@ -490,10 +604,23 @@ function noTextReason(file: DiffFileEntry): string | null {
   return null;
 }
 
+/** The status letter of a file, as `git status --short` writes it. */
+const STATUS: Record<DiffFileEntry['status']['kind'], { letter: string; tone: string }> = {
+  added: { letter: 'A', tone: 'text-ok' },
+  modified: { letter: 'M', tone: 'text-muted' },
+  deleted: { letter: 'D', tone: 'text-error' },
+  renamed: { letter: 'R', tone: 'text-muted' },
+};
+
 const FileSection: Component<FileSectionProps> = (props) => {
   const renamedFrom = () => (props.file.status.kind === 'renamed' ? props.file.status.from : null);
   const copyPath = () =>
     void navigator.clipboard?.writeText(props.file.path).catch(() => undefined);
+  const icon = () => fileIconFor(props.file.path);
+  // The directory is quieter than the name, so the eye finds the file.
+  const cut = () => props.file.path.lastIndexOf('/') + 1;
+  const dir = () => props.file.path.slice(0, cut());
+  const name = () => props.file.path.slice(cut());
 
   return (
     <section
@@ -501,36 +628,53 @@ const FileSection: Component<FileSectionProps> = (props) => {
       data-testid={`diff-file-${fileKey(props.file)}`}
       data-file-key={fileKey(props.file)}
     >
-      <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-shell-bg px-2 py-1">
+      <div class="sticky top-0 z-10 flex h-(--cru-row-sm) items-center gap-1 bg-shell-bg pl-1.5 pr-2">
         <button
           type="button"
           aria-expanded={props.expanded}
           data-testid="diff-file-toggle"
           onClick={() => props.onToggle()}
-          class={`flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-hover-wash ${hit()}`}
+          class={`flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-hover-wash focus-ring ${hit()}`}
         >
           {props.expanded ? (
-            <ChevronDown class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
+            <ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-dark" />
           ) : (
-            <ChevronRight class="w-3.5 h-3.5 shrink-0 text-muted-dark" />
+            <ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-dark" />
           )}
-          <span class="min-w-0 truncate text-xs font-mono text-shell-ink" title={props.file.path}>
+          <Dynamic
+            component={icon().icon}
+            class="h-3.5 w-3.5 shrink-0"
+            style={{ color: icon().color }}
+          />
+          <span class="min-w-0 truncate text-xs" title={props.file.path}>
             <Show when={renamedFrom()}>
-              {(from) => <span class="text-muted-dark">{from()} → </span>}
+              {(from) => <span class="text-muted">{from()} → </span>}
             </Show>
-            {props.file.path}
+            <span class="text-muted">{dir()}</span>
+            <span class="text-shell-ink">{name()}</span>
           </span>
         </button>
-        <span class="shrink-0 text-floor text-muted-dark">{props.file.status.kind}</span>
         <button
           type="button"
           title="Copy the path"
+          aria-label="Copy the path"
           data-testid="diff-file-copy"
           onClick={copyPath}
-          class={`rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash ${hit()}`}
+          class={`${iconButton} ${hit()}`}
         >
-          <Copy class="w-3.5 h-3.5" />
+          <Copy class="h-3.5 w-3.5" />
         </button>
+        {/* The rest of the row toggles the file too. The button above is the
+            keyboard path, so this area stays out of the tab order. */}
+        <div aria-hidden="true" class="h-full min-w-2 flex-1" onClick={() => props.onToggle()} />
+        <span
+          class={`w-3 shrink-0 text-center text-floor font-medium ${STATUS[props.file.status.kind].tone}`}
+          title={props.file.status.kind}
+          aria-label={props.file.status.kind}
+          data-testid="diff-file-status"
+        >
+          {STATUS[props.file.status.kind].letter}
+        </span>
         <ChangeCounts
           testId="diff-file-counts"
           class="shrink-0"
@@ -539,28 +683,28 @@ const FileSection: Component<FileSectionProps> = (props) => {
         />
         <Show when={props.decide}>
           {(decide) => (
-            <>
-              <button
-                type="button"
-                title={`Write ${props.file.path}`}
-                data-testid="proposal-accept-file"
-                disabled={decide().busy}
-                onClick={() => decide().run('accept', props.file)}
-                class={`${toolButton} text-shell-ink ${hit()}`}
-              >
-                Accept
-              </button>
+            <div class="ml-1 flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 title={`Reject ${props.file.path}. The file does not change.`}
                 data-testid="proposal-reject-file"
                 disabled={decide().busy}
                 onClick={() => decide().run('reject', props.file)}
-                class={`${toolButton} ${hit()}`}
+                class={`${decisionButton(false)} ${hit()}`}
               >
                 Reject
               </button>
-            </>
+              <button
+                type="button"
+                title={`Write ${props.file.path}`}
+                data-testid="proposal-accept-file"
+                disabled={decide().busy}
+                onClick={() => decide().run('accept', props.file)}
+                class={`${decisionButton(true)} ${hit()}`}
+              >
+                Accept
+              </button>
+            </div>
           )}
         </Show>
       </div>
@@ -738,7 +882,13 @@ const FileEditor: Component<FileEditorProps> = (props) => {
     destroy?.();
     const original = props.text.base_text ?? '';
     const current = props.text.current_text ?? '';
-    const setup = { original, path: props.path, wrap: props.wrap, collapse: COLLAPSE };
+    const setup = {
+      original,
+      path: props.path,
+      wrap: props.wrap,
+      collapse: COLLAPSE,
+      hideFinalNewline: hidesFinalNewline(original, current),
+    };
     const hosts = untrack(() => props.hosts);
     const extra = (side: CommentSide): Extension[] => [...commentExtensions(hosts[side])];
     if (props.split) {

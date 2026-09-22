@@ -7,6 +7,11 @@
  * the range. The stored comments of the file show as blocks under their last
  * line.
  *
+ * A removed row of the unified view has no line of its own in the editor. The
+ * gutter numbers it with its line in the base text, as a patch does. A base
+ * number does not take a comment, because the unified view comments on the
+ * current side only.
+ *
  * The editor owns only this display state. The comments come from the query
  * layer through `setComments`, and the host stores a new comment.
  */
@@ -27,6 +32,7 @@ import {
   gutter,
   type DecorationSet,
 } from '@codemirror/view';
+import { getChunks, getOriginalDoc } from '@codemirror/merge';
 import { type CommentSide, type DiffComment } from '@/lib/diffset';
 
 /** The first and the last line of a range. Both are 1-based and inclusive. */
@@ -127,6 +133,101 @@ class LineMarker extends GutterMarker {
 }
 
 /**
+ * The hidden element that gives the gutter its width: the widest number. It
+ * names no line, so a search for the number of a line cannot find it.
+ */
+class SpacerMarker extends GutterMarker {
+  constructor(readonly lines: number) {
+    super();
+  }
+
+  eq(other: SpacerMarker): boolean {
+    return other.lines === this.lines;
+  }
+
+  toDOM(): Node {
+    const el = document.createElement('div');
+    el.className = 'cm-diff-line';
+    el.textContent = String(this.lines);
+    return el;
+  }
+}
+
+/**
+ * The base line numbers of one removed chunk, beside its rows.
+ *
+ * Each number takes the height of its row. A wrapped row is taller than one
+ * line, so the marker reads the heights of the rows when they change.
+ */
+class BaseLinesMarker extends GutterMarker {
+  constructor(
+    readonly first: number,
+    readonly count: number,
+    /** The element of the removed chunk, when the editor drew it. */
+    readonly chunk: HTMLElement | null,
+  ) {
+    super();
+  }
+
+  eq(other: BaseLinesMarker): boolean {
+    return other.first === this.first && other.count === this.count && other.chunk === this.chunk;
+  }
+
+  toDOM(): Node {
+    const el = document.createElement('div');
+    el.className = 'cm-diff-base-lines';
+    for (let i = 0; i < this.count; i++) {
+      const row = el.appendChild(document.createElement('div'));
+      row.className = 'cm-diff-line';
+      row.dataset.testid = `diff-base-line-${this.first + i}`;
+      row.textContent = String(this.first + i);
+    }
+    const chunk = this.chunk;
+    if (chunk && typeof ResizeObserver !== 'undefined') {
+      const fit = () => {
+        chunk.querySelectorAll<HTMLElement>('.cm-deletedLine').forEach((line, i) => {
+          const row = el.children[i] as HTMLElement | undefined;
+          const height = line.getBoundingClientRect().height;
+          if (row && height > 0) row.style.height = `${height}px`;
+        });
+      };
+      const observer = new ResizeObserver(fit);
+      observer.observe(chunk);
+      observers.set(el, observer);
+    }
+    return el;
+  }
+
+  destroy(dom: Node): void {
+    observers.get(dom as HTMLElement)?.disconnect();
+    observers.delete(dom as HTMLElement);
+  }
+}
+
+/** The height observer of each base-number marker, by its element. */
+const observers = new WeakMap<HTMLElement, ResizeObserver>();
+
+/**
+ * The base numbers of the removed chunk that a block widget draws, or null
+ * for any other widget. The removed chunk of `@codemirror/merge` sits at the
+ * start of its chunk in the current text. Its widget builds its element on
+ * demand, and the spacer of the split view does not, so `buildDOM` tells the
+ * two apart.
+ */
+function baseLines(view: EditorView, widget: WidgetType, from: number): BaseLinesMarker | null {
+  if (!('buildDOM' in widget)) return null;
+  const chunks = getChunks(view.state);
+  if (chunks?.side !== 'b') return null;
+  const chunk = chunks.chunks.find((c) => c.fromB === from && c.fromA < c.toA);
+  if (!chunk) return null;
+  const base = getOriginalDoc(view.state);
+  const first = base.lineAt(chunk.fromA).number;
+  const count = base.sliceString(chunk.fromA, chunk.endA).split('\n').length;
+  const dom = (widget as { dom?: HTMLElement | null }).dom ?? null;
+  return new BaseLinesMarker(first, count, dom);
+}
+
+/**
  * The line of the number under an event.
  *
  * The gutter gives each handler the line at the height of the element. The
@@ -155,7 +256,8 @@ const lineGutter = gutter({
     return new LineMarker(line, ui.hover === line, chosen);
   },
   lineMarkerChange: (update) => update.startState.field(uiField) !== update.state.field(uiField),
-  initialSpacer: (view) => new LineMarker(view.state.doc.lines, false, false),
+  widgetMarker: (view, widget, block) => baseLines(view, widget, block.from),
+  initialSpacer: (view) => new SpacerMarker(view.state.doc.lines),
   domEventHandlers: {
     mousedown(view, _block, event) {
       const line = lineOf(event);
@@ -314,6 +416,7 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
 const commentTheme = EditorView.theme({
   '.cm-diff-lines .cm-gutterElement': { cursor: 'pointer', userSelect: 'none' },
   '.cm-diff-line': { position: 'relative', paddingLeft: '1.25em' },
+  '.cm-diff-base-lines': { cursor: 'default' },
   '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-shell-ink)' },
   '.cm-diff-comment-add': {
     position: 'absolute',

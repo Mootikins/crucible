@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { getChunks } from '@codemirror/merge';
-import { mergeViewExtensions, type MergeViewSetup } from '../merge-view';
+import { hidesFinalNewline, mergeViewExtensions, type MergeViewSetup } from '../merge-view';
 
 // Twenty lines with one change in the middle. A margin of 3 leaves more
 // than 4 unchanged lines on each side, so both sides collapse.
@@ -98,5 +98,48 @@ describe('mergeViewExtensions', () => {
     expect(mount({ wrap: true }).lineWrapping).toBe(true);
     view?.destroy();
     expect(mount({ wrap: false }).lineWrapping).toBe(false);
+  });
+});
+
+describe('the final newline', () => {
+  function unified(original: string, doc: string): EditorView {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    view = new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: mergeViewExtensions({
+          original,
+          path: 'a.md',
+          hideFinalNewline: hidesFinalNewline(original, doc),
+        }),
+      }),
+      parent,
+    });
+    return view;
+  }
+  const rows = (v: EditorView) => [...v.dom.querySelectorAll('.cm-content > .cm-line')];
+
+  it('draws no empty row after the last line', () => {
+    const v = unified('a\nb\n', 'a\nc\n');
+    expect(rows(v).map((row) => row.textContent)).toEqual(['a', 'c']);
+  });
+
+  it('keeps a removed last line', () => {
+    const v = unified('a\nb\n', 'a\n');
+    expect(v.dom.querySelector('.cm-deletedChunk .cm-deletedLine')?.textContent).toBe('b');
+    expect(rows(v).map((row) => row.textContent)).toEqual(['a']);
+  });
+
+  it('hides it for an added file, and when both texts end in a newline', () => {
+    expect(hidesFinalNewline('', 'a\n')).toBe(true);
+    expect(hidesFinalNewline('a\n', '')).toBe(true);
+    expect(hidesFinalNewline('a\n', 'b\n')).toBe(true);
+    expect(hidesFinalNewline('a', 'b')).toBe(true);
+  });
+
+  it('keeps it when only one text ends in a newline, so the change shows', () => {
+    expect(hidesFinalNewline('a\n', 'a')).toBe(false);
+    expect(hidesFinalNewline('a', 'a\n')).toBe(false);
   });
 });

@@ -156,6 +156,30 @@ describe('DiffPanel', () => {
     expect(sent.query.has('base')).toBe(false);
   });
 
+  it('writes the source in the UI font, and only the branch name in mono', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    const label = await screen.findByTestId('diff-source');
+    await waitFor(() => expect(within(label).getByText('master')).toBeInTheDocument());
+    expect(label.className).not.toContain('font-mono');
+    expect(within(label).getByText('Working tree').className).not.toContain('font-mono');
+    expect(within(label).getByText('master').className).toContain('font-mono');
+  });
+
+  it('numbers a removed row with its base line, and draws no row for the final newline', async () => {
+    // The base "one\ntwo\n" becomes "one\n2\nthree\n": base line 2 goes, and
+    // current lines 2 and 3 come.
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await lineNumber('src/a.rs', 3);
+    const gutter = section('src/a.rs');
+    expect(gutter.querySelector('[data-testid="diff-base-line-2"]')?.textContent).toBe('2');
+    // Each text ends in a newline. The empty line after it is not a line of the file.
+    expect(gutter.querySelector('[data-testid="diff-line-4"]')).toBeNull();
+  });
+
   it('a section collapses on click', async () => {
     serve([entry('src/a.rs')]);
     render(() => <DiffPanel source={source} />);
@@ -548,6 +572,10 @@ describe('DiffPanel', () => {
       await screen.findByTestId('proposal-accept-all');
       expect(screen.getByTestId('proposal-reject-all')).toBeInTheDocument();
       expect(screen.getByTestId('proposal-title').textContent).toBe('Change 2 notes');
+      // The header names the proposal by its title. The id is in the tooltip only.
+      const label = screen.getByTestId('diff-source');
+      expect(label.textContent).not.toContain(ID);
+      expect(label.getAttribute('title')).toContain(ID);
       await waitFor(() =>
         expect(
           within(section('b.md', '/kiln')).getByTestId('proposal-accept-file'),

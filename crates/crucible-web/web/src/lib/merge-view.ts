@@ -8,7 +8,7 @@
  */
 import type { Extension } from '@codemirror/state';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
-import { Decoration, EditorView } from '@codemirror/view';
+import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import { getChunks, unifiedMergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '@/components/editor/CodeMirrorEditor';
 import { editorThemeExtension } from '@/components/editor/editor-theme';
@@ -42,6 +42,8 @@ export interface MergeViewSetup {
   wrap?: boolean;
   /** Absent: every unchanged line stays visible. */
   collapse?: MergeCollapse;
+  /** Hide the empty line after a final newline. See `hidesFinalNewline`. */
+  hideFinalNewline?: boolean;
 }
 
 const tint = (color: string, percent: number) =>
@@ -75,6 +77,58 @@ const diffTheme = EditorView.theme({
   '&.cm-editor .cm-changedLineGutter.cm-changedLineGutter': { background: 'var(--color-ok)' },
   '&.cm-editor .cm-deletedLineGutter.cm-deletedLineGutter, &.cm-editor.cm-merge-a .cm-changedLineGutter.cm-changedLineGutter':
     { background: 'var(--color-error)' },
+  // The fold of unchanged lines is a quiet label in the UI font. The library
+  // draws a grey gradient in a literal colour and two "⦚" marks.
+  '&.cm-editor .cm-collapsedLines.cm-collapsedLines': {
+    padding: '0.25em 0',
+    background: 'var(--color-hover-wash)',
+    color: 'var(--color-muted-dark)',
+    fontFamily: 'var(--cru-font-ui)',
+    fontSize: 'var(--cru-font-floor)',
+    textAlign: 'center',
+  },
+  '&.cm-editor .cm-collapsedLines.cm-collapsedLines:hover': { color: 'var(--color-shell-ink)' },
+  '&.cm-editor .cm-collapsedLines.cm-collapsedLines::before, &.cm-editor .cm-collapsedLines.cm-collapsedLines::after':
+    { content: 'none' },
+});
+
+/**
+ * Whether the diff hides the empty line after the final newline of a text.
+ *
+ * CodeMirror shows an empty line after a final newline. That line is not a
+ * line of the file, so the diff hides it. When only one of two texts ends in
+ * a newline, the diff keeps the line, so that the change of the newline shows.
+ * The texts stay whole: a diff of cut texts marks the last line as changed
+ * when text is added after it.
+ */
+export function hidesFinalNewline(base: string, current: string): boolean {
+  const ends = (text: string) => text.endsWith('\n');
+  return base === '' || current === '' || ends(base) === ends(current);
+}
+
+/** An empty block in the place of a line. */
+class NoLine extends WidgetType {
+  eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'cm-diff-no-line';
+    return el;
+  }
+}
+
+const noLine = Decoration.replace({ block: true, widget: new NoLine() });
+
+/**
+ * Replaces the empty last line with an empty block. A removed chunk at the end
+ * of the text is a block of its own, so it stays in view.
+ */
+const finalNewline = EditorView.decorations.compute(['doc'], (state) => {
+  const end = state.doc.length;
+  if (end === 0 || state.doc.sliceString(end - 1) !== '\n') return Decoration.none;
+  return Decoration.set(noLine.range(end, end));
 });
 
 const insertOnlyLine = Decoration.line({ class: 'cm-insertOnly' });
@@ -105,6 +159,7 @@ export function mergeViewExtensions(setup: MergeViewSetup): Extension[] {
     editorThemeExtension(theme()),
     getLanguageExtension(setup.path) ?? [],
     diffTheme,
+    setup.hideFinalNewline ? finalNewline : [],
   ];
   if (setup.split) return editor;
   return [

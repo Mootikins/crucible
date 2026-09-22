@@ -89,6 +89,14 @@ export const MOCK_DIFF_FILES = [
     too_large: false,
   },
   {
+    path: 'src/server.rs',
+    status: { kind: 'modified' },
+    added: 5,
+    removed: 2,
+    binary: false,
+    too_large: false,
+  },
+  {
     path: 'README.md',
     status: { kind: 'added' },
     added: 3,
@@ -98,6 +106,99 @@ export const MOCK_DIFF_FILES = [
   },
 ];
 
+const SERVER_BASE = `use std::net::SocketAddr;
+use std::time::Duration;
+
+use axum::{routing::get, Router};
+use tokio::net::TcpListener;
+
+/// The settings of one server.
+pub struct Config {
+    pub addr: SocketAddr,
+    pub timeout: Duration,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
+            timeout: Duration::from_secs(30),
+        }
+    }
+}
+
+/// Builds the routes of the server.
+fn routes() -> Router {
+    Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/version", get(|| async { env!("CARGO_PKG_VERSION") }))
+}
+
+/// Serves the routes until the process stops.
+pub async fn serve(config: Config) -> std::io::Result<()> {
+    let listener = TcpListener::bind(config.addr).await?;
+    axum::serve(listener, routes()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_port_is_3000() {
+        assert_eq!(Config::default().addr.port(), 3000);
+    }
+}
+`;
+
+const SERVER_CURRENT = `use std::net::SocketAddr;
+use std::time::Duration;
+
+use axum::{routing::get, Router};
+use tokio::net::TcpListener;
+
+/// The settings of one server.
+pub struct Config {
+    pub addr: SocketAddr,
+    pub timeout: Duration,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            addr: SocketAddr::from(([127, 0, 0, 1], 3000)),
+            timeout: Duration::from_secs(10),
+        }
+    }
+}
+
+/// Builds the routes of the server.
+fn routes() -> Router {
+    Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/version", get(|| async { env!("CARGO_PKG_VERSION") }))
+}
+
+/// Serves the routes until the process stops.
+pub async fn serve(config: Config) -> std::io::Result<()> {
+    let listener = TcpListener::bind(config.addr).await?;
+    tracing::info!(addr = %config.addr, "the server listens");
+    axum::serve(listener, routes())
+        .with_graceful_shutdown(shutdown(config.timeout))
+        .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_port_is_3000() {
+        assert_eq!(Config::default().addr.port(), 3000);
+    }
+}
+`;
+
 /** The two texts of each mock diff file, by path. */
 export const MOCK_DIFF_TEXTS: Record<
   string,
@@ -105,6 +206,9 @@ export const MOCK_DIFF_TEXTS: Record<
 > = {
   'src/lib.rs': { base_text: 'fn main() {}\n', current_text: 'fn main() { run(); }\n' },
   'README.md': { base_text: null, current_text: '# Project\n\nNew text.\n' },
+  // About forty lines with two changes apart, so that the unchanged lines
+  // between them fold.
+  'src/server.rs': { base_text: SERVER_BASE, current_text: SERVER_CURRENT },
 };
 
 export const MOCK_CONFIG = {
