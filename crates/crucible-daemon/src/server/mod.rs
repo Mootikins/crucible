@@ -101,6 +101,23 @@ use plugins::*;
 /// size is the fix for that and is a different change.
 const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
+/// The time the background tasks get to stop after a shutdown signal.
+///
+/// All the tasks see their cancellation at the same moment and share this one
+/// deadline. Each join used to have its own 5 s timeout, one after the other,
+/// so the timeouts added up. At the deadline the persist task stops taking
+/// queued events, and a task that has not stopped is aborted.
+const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(2);
+
+/// The time a session write that started before [`SHUTDOWN_DEADLINE`] gets
+/// to finish after it.
+///
+/// A started write finishes, because an interrupted append can leave a partial
+/// line in `session.jsonl`. A write that takes longer than this does not end
+/// soon (a hung disk, a FIFO without a reader), so the daemon logs it and
+/// exits. With `cru`'s runtime shutdown grace, the whole exit takes 4 s at most.
+const STARTED_WRITE_GRACE: Duration = Duration::from_secs(1);
+
 /// Daemon server that listens on a Unix socket
 pub struct Server {
     listener: UnixListener,
@@ -717,8 +734,12 @@ impl Server {
         let mut persist_rx = self.rpc_context.event_tx.subscribe();
         let persist_cancel = CancellationToken::new();
         let persist_cancel_clone = persist_cancel.clone();
+        // Cancelled at `SHUTDOWN_DEADLINE`: the drain then stops taking
+        // queued events.
+        let persist_deadline = CancellationToken::new();
+        let persist_deadline_clone = persist_deadline.clone();
 
-        let persist_task = tokio::spawn(async move {
+        let mut persist_task = tokio::spawn(async move {
             let last_persist_times: DashMap<String, Instant> = DashMap::new();
             let persist_debounce_interval = Duration::from_secs(30);
             loop {
@@ -726,11 +747,26 @@ impl Server {
                                     biased;
                                     _ = persist_cancel_clone.cancelled() => {
                                         debug!("Persist task received shutdown signal, draining remaining events");
-                                        while let Ok(event) = persist_rx.try_recv() {
+                                        // One `meta.json` save per session, not one per event: a
+                                        // streamed turn can leave thousands of events queued.
+                                        let mut touched = std::collections::HashSet::new();
+                                        loop {
+                                            // Checked between events only, so a write that
+                                            // started always gets to finish.
+                                            if persist_deadline_clone.is_cancelled() {
+                                                let unwritten = persist_rx.len();
+                                                if unwritten > 0 {
+                                                    warn!(unwritten, "Shutdown deadline passed; these queued session events were not persisted");
+                                                }
+                                                break;
+                                            }
+                                            let Ok(event) = persist_rx.try_recv() else { break };
                                             forward_to_recording(&sm_clone, &event);
-                                            if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
-                                                if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
-                                                    warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
+                                            if touched.insert(event.session_id.clone()) {
+                                                if let Err(e) = sm_clone.update_last_activity(&event.session_id, Utc::now()).await {
+                                                    if !matches!(e, crate::session_manager::SessionError::NotFound(_)) {
+                                                        warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
+                                                    }
                                                 }
                                             }
                                             if let Err(e) = persist_event(&event, &sm_clone, storage.as_ref()).await {
@@ -1192,51 +1228,60 @@ impl Server {
             }
         }
 
-        // Graceful shutdown: signal cancellation, wait with timeout, then abort if needed
+        // Cancel everything at once, then join against one deadline, so the
+        // joins wait in parallel and their waits do not add up.
+        let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
         persist_cancel.cancel();
         reprocess_cancel.cancel();
         sweep_cancel.cancel();
         title_cancel.cancel();
         // The notifier parks on `rx.recv()`, and the tracker's sender outlives
         // it (`AgentManager` holds the watch), so `Closed` never arrives on its
-        // own — without this the join below always burns its full timeout.
+        // own — without this the join below always runs to the deadline.
         review_watch_cancel.cancel();
         reconnect_cancel.cancel();
-        match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
+
+        let mut tasks = vec![
+            ("reprocess", reprocess_task),
+            ("auto-archive sweep", archive_sweep_task),
+            ("auto-title", auto_title_task),
+        ];
+        tasks.extend(reconnect_task.map(|task| ("MCP reconnect", task)));
+        if let Some((watch, task)) = review_watch_task {
+            // `shutdown` takes the watch's locks, and an `add_watch` that
+            // lists a large repository holds them.
+            match tokio::time::timeout_at(deadline, watch.shutdown()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => warn!(error = %e, "review external-change watch shutdown failed"),
+                Err(_) => {
+                    warn!("review external-change watch did not stop before the shutdown deadline")
+                }
+            }
+            tasks.push(("review watch", task));
+        }
+        for (name, task) in tasks {
+            join_before(deadline, name, task).await;
+        }
+
+        match tokio::time::timeout_at(deadline, &mut persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
-            Err(_) => warn!("Persist task did not complete within timeout, aborting"),
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(5), reprocess_task).await {
-            Ok(Ok(())) => debug!("Reprocess task completed gracefully"),
-            Ok(Err(e)) => warn!("Reprocess task panicked: {}", e),
-            Err(_) => warn!("Reprocess task did not complete within timeout, aborting"),
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(5), archive_sweep_task).await {
-            Ok(Ok(())) => debug!("Auto-archive sweep task completed gracefully"),
-            Ok(Err(e)) => warn!("Auto-archive sweep task panicked: {}", e),
-            Err(_) => warn!("Auto-archive sweep task did not complete within timeout, aborting"),
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(5), auto_title_task).await {
-            Ok(Ok(())) => debug!("Auto-title task completed gracefully"),
-            Ok(Err(e)) => warn!("Auto-title task panicked: {}", e),
-            Err(_) => warn!("Auto-title task did not complete within timeout, aborting"),
-        }
-        if let Some(task) = reconnect_task {
-            match tokio::time::timeout(std::time::Duration::from_secs(5), task).await {
-                Ok(Ok(())) => debug!("MCP reconnect task completed gracefully"),
-                Ok(Err(e)) => warn!("MCP reconnect task panicked: {}", e),
-                Err(_) => warn!("MCP reconnect task did not complete within timeout, aborting"),
-            }
-        }
-        if let Some((watch, task)) = review_watch_task {
-            if let Err(e) = watch.shutdown().await {
-                warn!(error = %e, "review external-change watch shutdown failed");
-            }
-            match tokio::time::timeout(std::time::Duration::from_secs(5), task).await {
-                Ok(Ok(())) => debug!("Review watch task completed gracefully"),
-                Ok(Err(e)) => warn!("Review watch task panicked: {}", e),
-                Err(_) => warn!("Review watch task did not complete within timeout, aborting"),
+            Err(_) => {
+                persist_deadline.cancel();
+                match tokio::time::timeout(STARTED_WRITE_GRACE, &mut persist_task).await {
+                    Ok(Ok(())) => {
+                        debug!("Persist task finished its started write after the deadline")
+                    }
+                    Ok(Err(e)) => warn!("Persist task panicked: {}", e),
+                    Err(_) => {
+                        persist_task.abort();
+                        warn!(
+                            grace_ms = STARTED_WRITE_GRACE.as_millis() as u64,
+                            "A session write did not finish in its grace time after the shutdown deadline; \
+                             exiting without it and without the session events queued after it"
+                        );
+                    }
+                }
             }
         }
 
@@ -1535,6 +1580,28 @@ impl Server {
                     spawn_plugin_watcher(plugin_dirs, plugin_loader_clone);
                 }
             }
+        }
+    }
+}
+
+/// Wait for a background task until `deadline`, then abort it.
+///
+/// A timeout on a `JoinHandle` only stops the wait: the task goes on running
+/// until the runtime drops it. The abort stops it here.
+async fn join_before(
+    deadline: tokio::time::Instant,
+    name: &str,
+    mut task: tokio::task::JoinHandle<()>,
+) {
+    match tokio::time::timeout_at(deadline, &mut task).await {
+        Ok(Ok(())) => debug!(task = name, "Background task stopped"),
+        Ok(Err(e)) => warn!(task = name, error = %e, "Background task panicked"),
+        Err(_) => {
+            task.abort();
+            warn!(
+                task = name,
+                "Background task did not stop before the shutdown deadline; aborted"
+            );
         }
     }
 }

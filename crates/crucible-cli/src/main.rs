@@ -71,11 +71,24 @@ fn main() -> Result<()> {
         None
     };
 
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(async_main(cli, standalone_sock))
+        .build()?;
+    let result = runtime.block_on(async_main(cli, standalone_sock));
+    // A dropped runtime waits for every thread that is still in a blocking
+    // call, with no limit: a plugin service in a synchronous `io.popen` read
+    // kept a SIGTERMed daemon alive for as long as its child ran. The daemon
+    // finished its own shutdown before `block_on` returned, so what is left
+    // is work that the exit abandons.
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_GRACE);
+    result
 }
+
+/// The time the exit waits for blocking calls that are still running.
+///
+/// The last part of the daemon's shutdown budget; see `SHUTDOWN_DEADLINE` in
+/// `crucible_daemon::server`.
+const RUNTIME_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Whether this command should offer first-run setup.
 ///
