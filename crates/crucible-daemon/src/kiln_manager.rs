@@ -950,9 +950,7 @@ impl KilnManager {
         };
         for event in events {
             if let crucible_core::events::SessionEvent::Internal(inner) = event {
-                if let Some(msg) = crate::event_map::message_for(inner.as_ref()) {
-                    crate::event_emitter::emit_event(tx, msg);
-                }
+                crate::event_emitter::emit_event(tx, crate::event_map::message_for(inner.as_ref()));
             }
         }
     }

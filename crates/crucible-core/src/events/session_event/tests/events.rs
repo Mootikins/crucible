@@ -33,16 +33,6 @@ fn note_modified() -> SessionEvent {
     })
 }
 
-fn precognition() -> SessionEvent {
-    SessionEvent::internal(InternalSessionEvent::PrecognitionComplete {
-        notes_count: 3,
-        query_summary: "rust".into(),
-        kilns_searched: 2,
-        kilns_filtered: 0,
-        kilns_failed: 1,
-    })
-}
-
 fn every_live_event() -> Vec<SessionEvent> {
     vec![
         message(),
@@ -68,7 +58,6 @@ fn every_live_event() -> Vec<SessionEvent> {
             path: test_path("a.md"),
             existed: true,
         }),
-        precognition(),
     ]
 }
 
@@ -78,7 +67,6 @@ fn event_type_is_the_snake_case_name() {
     assert_eq!(interaction().event_type(), "interaction_requested");
     assert_eq!(custom().event_type(), "custom");
     assert_eq!(note_modified().event_type(), "note_modified");
-    assert_eq!(precognition().event_type(), "precognition_complete");
 }
 
 #[test]
@@ -87,7 +75,6 @@ fn type_name_is_the_variant_name() {
     assert_eq!(interaction().type_name(), "InteractionRequested");
     assert_eq!(custom().type_name(), "Custom");
     assert_eq!(note_modified().type_name(), "NoteModified");
-    assert_eq!(precognition().type_name(), "PrecognitionComplete");
 }
 
 #[test]
@@ -98,10 +85,6 @@ fn summary_names_the_key_fields() {
         .summary(100)
         .starts_with("name=tool_called, payload_size="));
     assert!(note_modified().summary(100).contains("change=Content"));
-    assert_eq!(
-        precognition().summary(100),
-        "notes=3, query=rust, searched=2, filtered=0, failed=1"
-    );
 }
 
 #[test]

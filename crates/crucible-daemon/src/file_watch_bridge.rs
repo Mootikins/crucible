@@ -115,11 +115,8 @@ impl EventEmitter for DaemonEventBridge {
                     inner.as_ref(),
                     InternalSessionEvent::FileMoved { to, .. } if to.is_dir()
                 );
-                // Only events with a row in the table are broadcast. The
-                // watcher emits pipeline signals this bus has no name for.
-                if let Some(msg) =
-                    crate::event_map::message_for(inner.as_ref()).filter(|_| !folder_move)
-                {
+                if !folder_move {
+                    let msg = crate::event_map::message_for(inner.as_ref());
                     debug!(event_type = %msg.event, "Broadcasting file event via daemon bus");
                     if !emit_event(&self.event_tx, msg) {
                         tracing::debug!("Failed to emit file watch event (no subscribers)");

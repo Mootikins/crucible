@@ -185,11 +185,7 @@ pub fn row_for_wire(wire: &str) -> Option<&'static EventRow> {
 /// shape come from one serde declaration and cannot disagree;
 /// `every_outbound_name_is_its_row` pins the names that come out against the
 /// table.
-///
-/// Returns `None` for an internal event with no wire form. That is not an
-/// oversight — `PrecognitionComplete` reaches the wire through the turn
-/// payload, not through this table.
-pub fn message_for(event: &InternalSessionEvent) -> Option<SessionEventMessage> {
+pub fn message_for(event: &InternalSessionEvent) -> SessionEventMessage {
     let payload = match event {
         InternalSessionEvent::FileChanged { path, kind } => SystemPayload::FileChanged {
             path: path.clone(),
@@ -214,9 +210,8 @@ pub fn message_for(event: &InternalSessionEvent) -> Option<SessionEventMessage> 
             path: path.to_string_lossy().to_string(),
             existed: *existed,
         },
-        _ => return None,
     };
-    Some(SessionEventMessage::typed(SYSTEM_SESSION, payload))
+    SessionEventMessage::typed(SYSTEM_SESSION, payload)
 }
 
 /// Build the `note:renamed` message.
@@ -472,32 +467,26 @@ mod tests {
             message_for(&InternalSessionEvent::FileChanged {
                 path: PathBuf::from("/w/a.md"),
                 kind: FileChangeKind::Modified,
-            })
-            .expect("file_changed has a wire form"),
+            }),
             message_for(&InternalSessionEvent::FileDeleted {
                 path: PathBuf::from("/w/a.md"),
-            })
-            .expect("file_deleted has a wire form"),
+            }),
             message_for(&InternalSessionEvent::FileMoved {
                 from: PathBuf::from("/w/a.md"),
                 to: PathBuf::from("/w/b.md"),
-            })
-            .expect("file_moved has a wire form"),
+            }),
             message_for(&InternalSessionEvent::NoteCreated {
                 path: PathBuf::from("Daily/a.md"),
                 title: Some("A".into()),
-            })
-            .expect("note:created has a wire form"),
+            }),
             message_for(&InternalSessionEvent::NoteModified {
                 path: PathBuf::from("Daily/a.md"),
                 change_type: NoteChangeType::Content,
-            })
-            .expect("note:modified has a wire form"),
+            }),
             message_for(&InternalSessionEvent::NoteDeleted {
                 path: PathBuf::from("Daily/a.md"),
                 existed: true,
-            })
-            .expect("note:deleted has a wire form"),
+            }),
             note_renamed("Daily/a.md", "Daily/b.md"),
             webhook_received("ci".into(), Default::default(), "{}".into()),
             session_created("sess-1"),
@@ -724,8 +713,7 @@ mod tests {
         let msg = message_for(&InternalSessionEvent::NoteModified {
             path: PathBuf::from("Daily/2026-08-18.md"),
             change_type: NoteChangeType::Content,
-        })
-        .expect("has a wire form");
+        });
         let hooked = decode(&msg).expect("decodes");
 
         let lua = Arc::new(mlua::Lua::new());
@@ -792,8 +780,7 @@ mod tests {
         let msg = message_for(&InternalSessionEvent::FileChanged {
             path: path.clone(),
             kind: FileChangeKind::Modified,
-        })
-        .expect("file_changed has a wire form");
+        });
         assert_eq!(
             msg.data.get("path").and_then(|v| v.as_str()),
             Some(path.to_string_lossy().as_ref()),
@@ -804,8 +791,7 @@ mod tests {
         let moved = message_for(&InternalSessionEvent::FileMoved {
             from: path.clone(),
             to: PathBuf::from(OsStr::from_bytes(b"/w/\xfe.md")),
-        })
-        .expect("file_moved has a wire form");
+        });
         assert!(decode(&moved).is_some());
     }
 
@@ -836,18 +822,5 @@ mod tests {
     fn publication_changed_reaches_no_lua_handler() {
         let msg = publication_changed("kanban".to_string(), "kanban:board".to_string());
         assert!(decode(&msg).is_none());
-    }
-
-    /// The internal events with no wire form stay internal.
-    #[test]
-    fn a_pipeline_only_event_has_no_message() {
-        assert!(message_for(&InternalSessionEvent::PrecognitionComplete {
-            notes_count: 0,
-            query_summary: String::new(),
-            kilns_searched: 0,
-            kilns_filtered: 0,
-            kilns_failed: 0,
-        })
-        .is_none());
     }
 }

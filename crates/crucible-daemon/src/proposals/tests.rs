@@ -356,8 +356,7 @@ async fn a_file_event_on_a_proposed_path_makes_the_proposal_stale() {
             path: kiln.join("a.md"),
             kind: Default::default(),
         },
-    )
-    .unwrap();
+    );
     tx.send(event).unwrap();
 
     // The watcher announces the change after it writes the state.

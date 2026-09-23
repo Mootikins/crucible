@@ -271,8 +271,7 @@ mod tests {
         let sent = event_map::message_for(&InternalSessionEvent::NoteCreated {
             path: PathBuf::from("Daily/2026-08-18.md"),
             title: Some("Today".into()),
-        })
-        .expect("note:created has a wire form");
+        });
 
         let fired = dispatch(
             "note:created",
@@ -318,8 +317,7 @@ mod tests {
         let sent = event_map::message_for(&InternalSessionEvent::NoteModified {
             path: PathBuf::from("Meta/Design.md"),
             change_type: crucible_core::events::NoteChangeType::Content,
-        })
-        .expect("note:modified has a wire form");
+        });
 
         dispatch_expecting_silence(
             "note:modified",

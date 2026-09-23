@@ -369,9 +369,7 @@ impl KilnManager {
         if !in_watched_set(kiln, path) {
             return;
         }
-        if let Some(msg) = crate::event_map::message_for(&event()) {
-            crate::event_emitter::emit_event(tx, msg);
-        }
+        crate::event_emitter::emit_event(tx, crate::event_map::message_for(&event()));
     }
 }
 

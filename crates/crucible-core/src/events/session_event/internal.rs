@@ -76,23 +76,6 @@ pub enum InternalSessionEvent {
         /// Whether the note existed before deletion.
         existed: bool,
     },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Enrichment events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Precognition (context enrichment) completed.
-    PrecognitionComplete {
-        /// Number of notes found and injected into context.
-        notes_count: usize,
-        /// Summary of the query used for enrichment.
-        query_summary: String,
-        /// Number of kilns searched during enrichment.
-        kilns_searched: usize,
-        /// Number of kilns filtered out by trust level.
-        kilns_filtered: usize,
-        /// Number of kilns that failed during search.
-        kilns_failed: usize,
-    },
 }
 
 impl InternalSessionEvent {
@@ -105,9 +88,6 @@ impl InternalSessionEvent {
             Self::NoteCreated { .. } => "note_created",
             Self::NoteModified { .. } => "note_modified",
             Self::NoteDeleted { .. } => "note_deleted",
-            Self::PrecognitionComplete { .. } => {
-                super::ScriptingEvent::PrecognitionComplete.as_str()
-            }
         }
     }
 
@@ -120,7 +100,6 @@ impl InternalSessionEvent {
             Self::NoteCreated { .. } => "NoteCreated",
             Self::NoteModified { .. } => "NoteModified",
             Self::NoteDeleted { .. } => "NoteDeleted",
-            Self::PrecognitionComplete { .. } => "PrecognitionComplete",
         }
     }
 
@@ -145,22 +124,6 @@ impl InternalSessionEvent {
             }
             Self::NoteDeleted { path, existed } => {
                 format!("path={}, existed={}", path.display(), existed)
-            }
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                kilns_searched,
-                kilns_filtered,
-                kilns_failed,
-            } => {
-                format!(
-                    "notes={}, query={}, searched={}, filtered={}, failed={}",
-                    notes_count,
-                    truncate_bytes(query_summary, max_len),
-                    kilns_searched,
-                    kilns_filtered,
-                    kilns_failed
-                )
             }
         }
     }

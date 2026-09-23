@@ -4,7 +4,7 @@
 //! and the cases that pin its serde shape read apart from the declaration.
 
 use super::*;
-use crate::events::session_event::{FileChangeKind, InternalSessionEvent, ScriptingEvent};
+use crate::events::session_event::{FileChangeKind, ScriptingEvent};
 use crate::events::SessionEvent;
 use crate::interaction::{InteractionRequest, PermRequest};
 use crate::protocol::SessionEventMessage;
@@ -538,16 +538,8 @@ fn event_reporting(scripting: ScriptingEvent) -> Option<SessionEvent> {
             request_id: String::new(),
             request: InteractionRequest::Permission(PermRequest::bash(["true"])),
         }),
-        ScriptingEvent::PrecognitionComplete => Some(SessionEvent::internal(
-            InternalSessionEvent::PrecognitionComplete {
-                notes_count: 0,
-                query_summary: String::new(),
-                kilns_searched: 0,
-                kilns_filtered: 0,
-                kilns_failed: 0,
-            },
-        )),
-        ScriptingEvent::TextDelta
+        ScriptingEvent::PrecognitionComplete
+        | ScriptingEvent::TextDelta
         | ScriptingEvent::AgentThinking
         | ScriptingEvent::AgentResponded
         | ScriptingEvent::ToolCalled
