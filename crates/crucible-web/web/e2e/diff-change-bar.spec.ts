@@ -14,14 +14,14 @@ import { MOCK_PROJECT, MOCK_SESSION } from './helpers/fixtures';
  * - `getBoundingClientRect` leaves a margin out, so a block widget with a
  *   vertical margin makes every bar below it ride high by that margin — see
  *   `.cm-diff-comment` in `components/diff-comments.tsx`.
- * - CodeMirror measures the rows of a view that the window shows, and keeps
- *   an estimate of 14 px a row for any other view. A file under the fold
- *   therefore drew a 14 px bar beside an 18 px row until the user scrolled to
- *   it — see `measureHiddenRows` in `lib/merge-view.ts`.
+ * - CodeMirror measures the rows of a view when the window shows it, and
+ *   keeps an estimate of 14 px a row until then. A file that mounts under
+ *   the fold is therefore measured when the user scrolls to it, as T3 Code
+ *   measures a diff file only near the viewport.
  *
  * This spec measures every file of the mock diffset: `src/lib.rs` and
- * `src/server.rs` at the top of the pane, and `README.md` under the fold. It
- * scrolls nowhere, so the bars of `README.md` must already cover its rows.
+ * `src/server.rs` at the top of the pane, and `README.md`, which mounts under
+ * the fold. The spec scrolls to `README.md` before it measures that file.
  *
  * jsdom has no layout, so a vitest unit cannot see this. A browser can.
  */
@@ -158,6 +158,7 @@ async function openFilesPanel(page: Page): Promise<void> {
 /** Select one line of `src/server.rs` and store a comment on it. */
 async function commentOnLine(page: Page, line: number, text: string): Promise<void> {
   const number = page.getByTestId(FILE).locator(`[data-testid="diff-line-${line}"]`);
+  await number.scrollIntoViewIfNeeded();
   const at = await number.boundingBox();
   if (!at) throw new Error(`no line number ${line}`);
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
@@ -197,16 +198,23 @@ async function everyBarCoversItsRow(page: Page): Promise<void> {
   // A row taller than one line has wrapped. The case is worthless without it.
   const wrapped = await settled(page);
   expect(wrapped.some((p) => p.row.bottom - p.row.top > 30)).toBe(true);
-  // `README.md` is under the fold. Its rows must already be measured: the
-  // spec scrolls nowhere, so only a mount-time measurement can align them.
+  // `README.md` is not measured yet: the window has not shown it.
+  expectAligned(
+    wrapped.filter((p) => p.file !== UNDER_FOLD),
+    6,
+  );
+
+  // `README.md` mounted under the fold. A user scrolls to it, and CodeMirror
+  // measures it when the window shows it.
   expect(await underTheFold(page, UNDER_FOLD)).toBe(true);
-  expect(wrapped.filter((p) => p.file === UNDER_FOLD).length).toBeGreaterThanOrEqual(3);
-  expectAligned(wrapped, 9);
+  await page.getByTestId(`diff-file-${UNDER_FOLD}`).scrollIntoViewIfNeeded();
+  const scrolled = await settled(page);
+  expect(scrolled.filter((p) => p.file === UNDER_FOLD).length).toBeGreaterThanOrEqual(3);
+  expectAligned(scrolled, 9);
 
   // A comment is a block widget between two rows. Every bar below it must
   // still cover its row.
   await commentOnLine(page, 17, 'The timeout is now 10 seconds. Why?');
-  expect(await underTheFold(page, UNDER_FOLD)).toBe(true);
   expectAligned(await settled(page), 9);
 }
 

@@ -8,9 +8,7 @@
  *
  * A diff is a code view. The body is monospace, it never reflows, and the
  * prose features of the note editor stay off. The change bar is the 3 px
- * gutter of `@codemirror/merge`. The panel draws no chip. A section that
- * mounts under the fold measures its own rows (`measureHiddenRows`), because
- * CodeMirror measures only what the window shows.
+ * gutter of `@codemirror/merge`. The panel draws no chip.
  *
  * A focus target in the tab metadata names one file. The panel expands that
  * file and scrolls to it, so a click in the Changes panel or on a tool card
@@ -50,7 +48,6 @@ import {
   createEffect,
   createMemo,
   createSignal,
-  on,
   onCleanup,
   untrack,
   type JSX,
@@ -62,7 +59,6 @@ import { MergeView } from '@codemirror/merge';
 import { PanelShell } from './PanelShell';
 import {
   hidesFinalNewline,
-  measureHiddenRows,
   mergeViewExtensions,
   setHiddenHunks,
   type MergeCollapse,
@@ -1188,46 +1184,10 @@ const FileEditor: Component<FileEditorProps> = (props) => {
     }
   });
 
-  /** Measure every editor of this file that the window shows no part of. */
-  const measureHidden = () => {
-    for (const { view } of views()) measureHiddenRows(view);
-  };
-
-  // The text of a file arrives after the files above it filled the pane, so
-  // this editor can mount under the fold. Collapse all and a new comment then
-  // change the row heights of a file that stays under the fold. This effect
-  // runs last, so the measurement reads the hunks and the comments that the
-  // two effects above dispatched.
-  createEffect(on([views, () => props.hunks, () => props.comments], measureHidden));
-
-  /**
-   * The same measurement when a file above this one grows and pushes this
-   * editor out of the window.
-   *
-   * No effect of this component runs then, so only an observer sees it. The
-   * callback runs after the layout, and after the animation frame in which
-   * CodeMirror declined to measure.
-   */
-  const watchWindow = (el: HTMLDivElement) => {
-    if (typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(() => measureHidden());
-    observer.observe(el);
-    onCleanup(() => observer.disconnect());
-  };
-
   onCleanup(() => {
     destroy?.();
     destroy = undefined;
   });
 
-  return (
-    <div
-      ref={(el) => {
-        host = el;
-        watchWindow(el);
-      }}
-      class="font-mono text-xs"
-      data-testid="diff-file-editor"
-    />
-  );
+  return <div ref={host} class="font-mono text-xs" data-testid="diff-file-editor" />;
 };
