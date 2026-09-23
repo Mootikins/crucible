@@ -53,7 +53,12 @@ pub enum LogEvent {
     },
 
     /// User message
-    User { ts: DateTime<Utc>, content: String },
+    User {
+        ts: DateTime<Utc>,
+        content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin: Option<String>,
+    },
 
     /// Conversation context was cleared at this point in the same session.
     Clear {
@@ -197,6 +202,7 @@ impl LogEvent {
         LogEvent::User {
             ts: Utc::now(),
             content: content.into(),
+            plugin: None,
         }
     }
 
@@ -443,6 +449,9 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
         "user_message" => Some(LogEvent::User {
             ts,
             content: text("content")?,
+            plugin: text("plugin").or_else(|| {
+                (text("origin").as_deref() == Some("plugin")).then(|| "plugin".to_owned())
+            }),
         }),
         "thinking" => Some(LogEvent::Thinking {
             ts,

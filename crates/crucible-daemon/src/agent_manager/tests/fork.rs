@@ -1,5 +1,37 @@
 use super::*;
+use crucible_core::traits::llm::MessageRole;
 use crucible_lua::register_sessions_module_with_api;
+
+#[tokio::test]
+async fn fork_keeps_a_plugin_turns_system_role_and_owner() {
+    let sm = temp_session_manager();
+    let am = create_test_agent_manager(sm.clone());
+    let parent = sm
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    am.configure_agent(&parent.id, test_agent()).await.unwrap();
+    let plugin = SessionEventMessage::plugin_message(&parent.id, "m-plugin", "continue", "alpha");
+    sm.storage()
+        .append_event(&parent, &serde_json::to_string(&plugin).unwrap())
+        .await
+        .unwrap();
+
+    let (child, count) = am
+        .fork_session(sm.get_session(&parent.id).unwrap(), None)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    let tree = am
+        .get_or_rebuild_session_tree(&child.id, &child.jsonl_path(sm.sessions_root()))
+        .await;
+    let messages = tree.lock().await.flatten_current_path_to_context();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].role, MessageRole::System);
+    assert_eq!(messages[0].metadata.kind.as_deref(), Some("plugin"));
+    assert_eq!(messages[0].metadata.source.as_deref(), Some("alpha"));
+    assert!(messages[0].content.contains("continue"));
+}
 
 #[tokio::test]
 async fn lua_and_rpc_forks_inherit_scope_config_and_run_with_the_selected_history() {

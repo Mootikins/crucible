@@ -839,7 +839,7 @@ end)
 
 ### Inject
 
-Return `{ inject = { content = "..." } }` to start another turn. The content becomes the whole user message of that turn, so there is no placement option: an earlier API documented `position = "user_prefix" | "user_suffix"`, the scheduler never read it, and both values behaved identically. A handler that still sets it keeps working, and the key means nothing.
+Return `{ inject = { content = "..." } }` to start another turn. The content becomes a plugin-owned system message in model context and appears as `↻ <plugin>` with the full text in the TUI and web. ACP agents receive the same tagged text in a user-role prompt. There is no placement option: an earlier API documented `position = "user_prefix" | "user_suffix"`, the scheduler never read it, and both values behaved identically. A handler that still sets it keeps working, and the key means nothing.
 
 The value must be a TABLE. `return { inject = "text" }` sets nothing and starts
 no turn.

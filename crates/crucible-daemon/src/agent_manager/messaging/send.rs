@@ -500,9 +500,12 @@ impl AgentManager {
             TurnOrigin::User => {
                 SessionEventMessage::user_message(session_id, &message_id, &original_content)
             }
-            TurnOrigin::Plugin => {
-                SessionEventMessage::plugin_message(session_id, &message_id, &original_content)
-            }
+            TurnOrigin::Plugin => SessionEventMessage::plugin_message(
+                session_id,
+                &message_id,
+                &original_content,
+                plugin_name.as_deref().unwrap_or("plugin"),
+            ),
         };
         if !emit_event(event_tx, opening_event) {
             warn!(session_id = %session_id, "No subscribers for user_message event");
@@ -606,12 +609,16 @@ impl AgentManager {
             let mut t = conversation_tree.lock().await;
             input.after_turn = Some(message_id.clone());
             let parent = t.current();
-            let _user_node = t.add_child_and_advance(
-                parent,
-                crucible_core::turn::NodeContent::User {
+            let turn_node = match origin {
+                TurnOrigin::User => crucible_core::turn::NodeContent::User {
                     text: original_content.clone(),
                 },
-            );
+                TurnOrigin::Plugin => crucible_core::turn::NodeContent::Plugin {
+                    text: original_content.clone(),
+                    name: plugin_name.clone().unwrap_or_else(|| "plugin".into()),
+                },
+            };
+            t.add_child_and_advance(parent, turn_node);
             // After append+advance, undo_depth() is the count of User
             // nodes on the current path — 1 means this turn is the first.
             t.undo_depth() == 1
@@ -682,7 +689,19 @@ impl AgentManager {
         // mutation (old enrich_with_precognition) to the message-array
         // seam — Lua transform_context handlers can now further mutate
         // the precognition message via the same seam.
-        let content = original_content.clone();
+        // ACP owns its history and receives this turn through a user-role
+        // prompt. Tag plugin text here; the internal agent gets the tagged
+        // system node from the scheduler-owned conversation tree instead.
+        let content = if agent_config.agent_type == "acp" && origin == TurnOrigin::Plugin {
+            crucible_core::traits::ContextMessage::injection(
+                "plugin",
+                plugin_name.as_deref().unwrap_or("plugin"),
+                &original_content,
+            )
+            .content
+        } else {
+            original_content.clone()
+        };
 
         let session_id_owned = session_id.to_string();
         let request_state = self.request_state.clone();

@@ -83,7 +83,8 @@ of the prompt, so the editor gets `refusal` and the reason.
 
 A `turn:complete` plugin handler can ask the daemon for another turn. That turn runs in
 the session after `cru acp` answers this prompt, and the editor sees it on the next
-`session/load` replay.
+`session/load` replay. The plugin's instruction is wrapped in a
+`<system-message kind="plugin" source="…">` tag in the user-role ACP prompt.
 
 ## Host configuration
 

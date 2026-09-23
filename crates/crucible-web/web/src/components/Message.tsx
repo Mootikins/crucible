@@ -97,10 +97,12 @@ export const Message: Component<MessageProps> = (props) => {
               // the editor is open, where a fit-content box would collapse
               // around a textarea's intrinsic width.
               `user-quote${isEditing() ? ' w-full' : ''}`
-            : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
+            : props.message.plugin
+              ? 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading'
+              : 'w-full rounded-md border border-hairline bg-surface-base px-3 py-1.5 text-reading italic text-muted'
         }
       >
-        <AuthorHeading>{isUser() ? 'You' : 'Notice'}</AuthorHeading>
+        <AuthorHeading>{isUser() ? 'You' : props.message.plugin ? `↻ ${props.message.plugin}` : 'Notice'}</AuthorHeading>
         <Show when={!isEditing()} fallback={
           <div class="flex flex-col gap-2">
             <textarea

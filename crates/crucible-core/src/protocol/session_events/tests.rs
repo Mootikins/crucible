@@ -466,7 +466,7 @@ fn only_a_plugin_turn_names_its_origin_on_the_wire() {
         serde_json::json!({"message_id": "m-1", "content": "hello"})
     );
 
-    let plugin = SessionEventMessage::plugin_message("s1", "m-2", "keep going");
+    let plugin = SessionEventMessage::plugin_message("s1", "m-2", "keep going", "alpha");
     assert_eq!(plugin.event, "user_message");
     assert_eq!(
         plugin.data,
@@ -474,6 +474,7 @@ fn only_a_plugin_turn_names_its_origin_on_the_wire() {
             "message_id": "m-2",
             "content": "keep going",
             "origin": "plugin",
+            "plugin": "alpha",
         })
     );
     assert!(plugin.payload().unwrap().is_persisted());

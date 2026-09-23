@@ -40,6 +40,8 @@ export interface Message {
   toolCall?: ToolCallDisplay;
   /** Message subtype (e.g., 'precognition' for auto-injected context) */
   type?: string;
+  /** Owner of a plugin-requested system turn. */
+  plugin?: string;
   /** Thinking block data (extended thinking / reasoning) */
   thinking?: ThinkingBlock;
   /** Token usage data (populated on message_complete) */

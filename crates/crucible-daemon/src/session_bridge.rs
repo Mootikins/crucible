@@ -220,7 +220,13 @@ pub(crate) fn message_rows(
                 Some(serde_json::json!({ "role": role, "content": content, "timestamp": ts }))
             };
             match event {
-                LogEvent::User { content, .. } => text_row("user", content),
+                LogEvent::User { content, plugin, .. } => match plugin {
+                    Some(name) if role_filter.is_none_or(|r| r == "system") => Some(
+                        serde_json::json!({"role": "system", "content": content, "plugin": name, "timestamp": ts}),
+                    ),
+                    Some(_) => None,
+                    None => text_row("user", content),
+                },
                 LogEvent::Assistant { content, .. } => text_row("assistant", content),
                 LogEvent::System { content, .. } => text_row("system", content),
                 LogEvent::ToolCall { id, name, args, .. } if tools_wanted => {

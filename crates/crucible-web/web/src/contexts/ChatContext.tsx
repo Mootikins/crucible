@@ -263,7 +263,8 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         pendingThinking = '';
         loadedMessages.push({
           id: (data.message_id as string) || `user-${loadedMessages.length}`,
-          role: 'user',
+          role: data.origin === 'plugin' ? 'system' : 'user',
+          plugin: data.origin === 'plugin' ? (typeof data.plugin === 'string' ? data.plugin : 'plugin') : undefined,
           content: data.content,
           timestamp: turnStart ?? synthetic(),
         });

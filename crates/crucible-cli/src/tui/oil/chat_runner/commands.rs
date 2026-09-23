@@ -164,8 +164,19 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             Some(name) => format!("── ↻ {name} cleared the context ──"),
             None => "── Context cleared ──".to_string(),
         })],
-        TurnPayload::UserMessage { content, .. } => non_empty(content)
-            .map(|c| vec![ChatAppMsg::UserMessage(c)])
+        TurnPayload::UserMessage {
+            content,
+            origin,
+            plugin,
+            ..
+        } => non_empty(content)
+            .map(|c| match origin {
+                crucible_core::turn::TurnOrigin::User => vec![ChatAppMsg::UserMessage(c)],
+                crucible_core::turn::TurnOrigin::Plugin => vec![ChatAppMsg::SystemNotice(format!(
+                    "↻ {}\n{c}",
+                    plugin.as_deref().unwrap_or("plugin")
+                ))],
+            })
             .unwrap_or_default(),
         TurnPayload::TextDelta { content } => non_empty(content)
             .map(|c| vec![ChatAppMsg::TextDelta(c)])
@@ -487,5 +498,20 @@ fn context_cleared_names_the_plugin_in_the_transcript() {
         session_event_to_chat_msgs("context_cleared", &serde_json::json!({"plugin": "alpha"}));
     assert!(
         matches!(&messages[..], [ChatAppMsg::SystemNotice(text)] if text == "── ↻ alpha cleared the context ──")
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn a_plugin_turn_is_a_labelled_system_row_in_the_tui() {
+    let messages = session_event_to_chat_msgs(
+        "user_message",
+        &serde_json::json!({
+            "message_id": "m2", "content": "continue with the detailed plan",
+            "origin": "plugin", "plugin": "alpha"
+        }),
+    );
+    assert!(
+        matches!(&messages[..], [ChatAppMsg::SystemNotice(text)] if text == "↻ alpha\ncontinue with the detailed plan")
     );
 }

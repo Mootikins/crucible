@@ -71,6 +71,12 @@ afterEach(() => {
 // ── Role rendering ─────────────────────────────────────────────────────
 
 describe('Message — role rendering', () => {
+  it('shows a plugin turn with its owner and full text', () => {
+    render(() => <Message message={makeMessage({ role: 'system', plugin: 'alpha', content: 'continue with the detailed plan' })} />);
+    expect(screen.getByText('↻ alpha')).toBeInTheDocument();
+    expect(screen.getByText('continue with the detailed plan')).toBeInTheDocument();
+    expect(screen.queryByText('Notice')).not.toBeInTheDocument();
+  });
   it('draws a context clear marker as a divider', () => {
     render(() => <Message message={makeMessage({ role: 'system', type: 'clear', content: '↻ alpha cleared the context' })} />);
     expect(screen.getByTestId('context-clear-divider').textContent).toContain('alpha cleared the context');

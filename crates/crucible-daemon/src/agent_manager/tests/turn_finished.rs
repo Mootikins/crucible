@@ -9,6 +9,7 @@ use crucible_core::config::components::permissions::PermissionMode;
 use crucible_core::interaction::PermResponse;
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
 use crucible_core::session::PluginApproval;
+use crucible_core::traits::llm::MessageRole;
 use crucible_core::turn::{TurnOrigin, TurnStatus};
 
 /// The decoded fields of a `turn_finished` event.
@@ -205,6 +206,36 @@ async fn a_turn_complete_inject_starts_a_new_turn_marked_as_the_plugin_s() {
         finished_fields(second.last().unwrap()).0,
         TurnStatus::Completed
     );
+}
+
+#[tokio::test]
+async fn a_plugin_turn_reaches_the_agent_as_tagged_system_context() {
+    let mut h = ReactorTestHarness::new().await;
+    h.agent_manager
+        .slot(&h.session_id)
+        .set_follow_up(crate::agent_manager::slot::FollowUpTurn {
+            content: "keep going".into(),
+            plugin: "alpha".into(),
+        });
+    let (_, received) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+
+    h.send("start").await;
+    events_until_turn_finished(&mut h.event_rx).await;
+    let second = events_until_turn_finished(&mut h.event_rx).await;
+    let opening = second.iter().find(|e| e.event == "user_message").unwrap();
+    assert_eq!(opening.data["plugin"], "alpha");
+
+    let messages = received.lock().unwrap().clone().unwrap();
+    let plugin = messages
+        .iter()
+        .find(|m| m.content.contains("keep going"))
+        .unwrap();
+    assert_eq!(plugin.role, MessageRole::System);
+    assert_eq!(plugin.metadata.kind.as_deref(), Some("plugin"));
+    assert_eq!(plugin.metadata.source.as_deref(), Some("alpha"));
+    assert!(plugin
+        .content
+        .starts_with("<system-message kind=\"plugin\" source=\"alpha\">"));
 }
 
 /// A user cancel clears a follow-up a handler already stored, so the cancel

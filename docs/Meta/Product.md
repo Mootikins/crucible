@@ -323,7 +323,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 - [-] **Scripted Agent Control (daemon plugin VM)** `P0` — the same `cru.get_session()` surface from a daemon-side plugin · `crucible-lua`, `crucible-daemon`
   - **Gets you:** a visible error. Setters now raise `"<field>: not supported on this session"` instead of reporting success and changing nothing; getters still return defaults, so `s.mode` reads `"chat"` — a mode id not in the registry.
 - [x] **Session Event Handlers** `P0` — Lua hooks on `turn:complete` can inject follow-up messages · `crucible-lua`, `crucible-daemon`
-  - **Gets you:** a handler returning `{ inject = { content = "..." } }` causes the agent to run another turn with that content as the message — the user sees a second streamed response.
+  - **Gets you:** a handler returning `{ inject = { content = "..." } }` causes the agent to run another turn with tagged system context. The TUI and web show its full text under `↻ <plugin>` and then stream the second response. Replay, undo and fork keep the plugin name and role.
 
 ### Lua Session & Tool Primitives
 

@@ -81,11 +81,18 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
         }
 
-        LogEvent::User { ts, content } => {
+        LogEvent::User {
+            ts,
+            content,
+            plugin,
+        } => {
             if options.include_timestamps {
                 writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
             }
-            writeln!(output, "## User\n").unwrap();
+            match plugin {
+                Some(name) => writeln!(output, "## ↻ {name}\n").unwrap(),
+                None => writeln!(output, "## User\n").unwrap(),
+            }
             writeln!(
                 output,
                 "{}\n",

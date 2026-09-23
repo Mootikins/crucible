@@ -55,6 +55,8 @@ pub enum NodeContent {
     Root,
     /// User-authored message.
     User { text: String },
+    /// Plugin-requested turn, kept as a system injection with its owner.
+    Plugin { name: String, text: String },
     /// Agent response (model output). Text accumulates via
     /// `append_delta`; finalised on the next non-delta event.
     Agent { text: String },
@@ -205,12 +207,17 @@ impl ConversationTree {
         out
     }
 
-    /// Count the `User` nodes on the current path — the number of
+    /// Count turn-opening nodes on the current path — the number of
     /// turns that could be undone.
     pub fn undo_depth(&self) -> usize {
         self.path_to_here(self.current)
             .iter()
-            .filter(|id| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .filter(|id| {
+                matches!(
+                    self.get(**id).content,
+                    NodeContent::User { .. } | NodeContent::Plugin { .. }
+                )
+            })
             .count()
     }
 
@@ -229,7 +236,12 @@ impl ConversationTree {
         let user_indices: Vec<usize> = path
             .iter()
             .enumerate()
-            .filter(|(_, id)| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .filter(|(_, id)| {
+                matches!(
+                    self.get(**id).content,
+                    NodeContent::User { .. } | NodeContent::Plugin { .. }
+                )
+            })
             .map(|(idx, _)| idx)
             .collect();
         if user_indices.is_empty() {
@@ -262,7 +274,12 @@ impl ConversationTree {
         let user_indices: Vec<usize> = path
             .iter()
             .enumerate()
-            .filter(|(_, id)| matches!(self.get(**id).content, NodeContent::User { .. }))
+            .filter(|(_, id)| {
+                matches!(
+                    self.get(**id).content,
+                    NodeContent::User { .. } | NodeContent::Plugin { .. }
+                )
+            })
             .map(|(idx, _)| idx)
             .collect();
         if user_indices.is_empty() {
@@ -357,6 +374,9 @@ impl ConversationTree {
             match &node.content {
                 NodeContent::Root => continue,
                 NodeContent::User { text } => out.push(ContextMessage::user(text)),
+                NodeContent::Plugin { name, text } => {
+                    out.push(ContextMessage::injection("plugin", name, text));
+                }
                 NodeContent::Agent { text } if !text.is_empty() => {
                     out.push(ContextMessage::assistant(text));
                 }

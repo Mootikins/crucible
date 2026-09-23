@@ -40,7 +40,7 @@ use tokio::time::timeout;
 mod mock_agent;
 #[path = "acp_support/mock_agent_bin.rs"]
 mod mock_agent_bin;
-use mock_agent::{read_log, MockScript, Resume, Step};
+use mock_agent::{logged, read_log, MockScript, Resume, Step};
 use mock_agent_bin::{
     acp_manager_params, completed_turn, mock_agent_path, mock_handle_params, mock_profile,
     mock_session_agent, profile_session_agent, MOCK_PROFILE,
@@ -50,6 +50,53 @@ use mock_agent_bin::{
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 
 const ANSWER: &str = "the resumed agent answered";
+
+#[tokio::test]
+async fn a_plugin_prompt_reaches_acp_inside_its_system_message_tag() {
+    let temp = TempDir::new().unwrap();
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let log_path = temp.path().join("methods.log");
+    let sessions = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
+    let (event_tx, mut rx) = broadcast::channel(256);
+    let session = sessions
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+    let manager = manager(sessions.clone(), resuming_script(&log_path), &event_tx);
+    manager
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .unwrap();
+
+    manager
+        .clear_session(
+            &session.id,
+            Some("continue".into()),
+            Some("alpha".into()),
+            &event_tx,
+        )
+        .await
+        .unwrap();
+    timeout(TURN_TIMEOUT, async {
+        while rx.recv().await.unwrap().event != "turn_finished" {}
+    })
+    .await
+    .unwrap();
+
+    let prompts = logged(&log_path, "session/prompt");
+    let prompt = prompts.last().unwrap();
+    let text: String = prompt["prompt"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|block| block["text"].as_str())
+        .collect();
+    assert_eq!(
+        text,
+        "<system-message kind=\"plugin\" source=\"alpha\">\ncontinue\n</system-message>"
+    );
+}
 
 /// The script of the agent that both managers resolve `mock-acp` to. Every
 /// agent process that runs it appends to `log_path`.

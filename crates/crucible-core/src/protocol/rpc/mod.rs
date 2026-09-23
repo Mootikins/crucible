@@ -177,6 +177,7 @@ impl SessionEventMessage {
                 message_id: message_id.into(),
                 content: content.into(),
                 origin: crate::turn::TurnOrigin::User,
+                plugin: None,
             },
         )
     }
@@ -187,6 +188,7 @@ impl SessionEventMessage {
         session_id: impl Into<String>,
         message_id: impl Into<String>,
         content: impl Into<String>,
+        plugin: impl Into<String>,
     ) -> Self {
         Self::typed(
             session_id,
@@ -194,6 +196,7 @@ impl SessionEventMessage {
                 message_id: message_id.into(),
                 content: content.into(),
                 origin: crate::turn::TurnOrigin::Plugin,
+                plugin: Some(plugin.into()),
             },
         )
     }

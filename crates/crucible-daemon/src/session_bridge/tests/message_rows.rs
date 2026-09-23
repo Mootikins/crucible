@@ -10,6 +10,7 @@ fn events() -> Vec<LogEvent> {
         LogEvent::User {
             ts: Utc::now(),
             content: "run it".into(),
+            plugin: None,
         },
         LogEvent::ToolCall {
             ts: Utc::now(),

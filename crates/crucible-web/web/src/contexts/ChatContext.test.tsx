@@ -599,7 +599,7 @@ describe('isLoadingHistory', () => {
         </span>
         <ul>
           {messages().map((m) => (
-            <li data-testid={`hist-msg-${m.id}`} data-role={m.role}>
+            <li data-testid={`hist-msg-${m.id}`} data-role={m.role} data-plugin={m.plugin}>
               {m.content}
             </li>
           ))}
@@ -623,6 +623,20 @@ describe('isLoadingHistory', () => {
     expect(screen.getByTestId('hist-msg-before').textContent).toBe('before');
     expect(screen.getByTestId('hist-msg-clear-1').textContent).toContain('alpha cleared the context');
     expect(screen.getByTestId('hist-msg-after').textContent).toBe('after');
+  });
+
+  it('restores a plugin turn as a named system message', async () => {
+    historyAnswer = () => ({
+      session_id: ID,
+      history: [{ type: 'event', session_id: ID, event: 'user_message', data: {
+        message_id: 'plugin-turn', content: 'continue with details', origin: 'plugin', plugin: 'alpha',
+      } }],
+      total_events: 1,
+    });
+    render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
+    await waitFor(() => expect(screen.getByTestId('hist-msg-plugin-turn')).toBeInTheDocument());
+    expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-role', 'system');
+    expect(screen.getByTestId('hist-msg-plugin-turn')).toHaveAttribute('data-plugin', 'alpha');
   });
 
   it('is true during history load and false after', async () => {

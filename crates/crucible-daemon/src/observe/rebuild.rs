@@ -52,7 +52,12 @@ pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
 pub(crate) fn apply_injection_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
     use crucible_core::traits::context_ops::ContextMessage;
     let message = match event {
-        LogEvent::User { content, .. } => ContextMessage::user(content),
+        LogEvent::User {
+            content, plugin, ..
+        } => match plugin {
+            Some(name) => ContextMessage::injection("plugin", name, content),
+            None => ContextMessage::user(content),
+        },
         LogEvent::Assistant { content, .. } => ContextMessage::assistant(content),
         LogEvent::System { content, tags, .. } => {
             let mut message = ContextMessage::system(content);
@@ -68,14 +73,20 @@ pub(crate) fn apply_injection_to_tree(tree: &mut ConversationTree, event: &LogEv
 
 fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
     match event {
-        LogEvent::User { content, .. } => {
+        LogEvent::User {
+            content, plugin, ..
+        } => {
             let parent = tree.current();
-            tree.add_child_and_advance(
-                parent,
-                NodeContent::User {
+            let node = match plugin {
+                Some(name) => NodeContent::Plugin {
+                    name: name.clone(),
                     text: content.clone(),
                 },
-            );
+                None => NodeContent::User {
+                    text: content.clone(),
+                },
+            };
+            tree.add_child_and_advance(parent, node);
         }
         LogEvent::Assistant { content, .. } => {
             let parent = tree.current();
@@ -139,6 +150,7 @@ fn apply_event_to_tree(tree: &mut ConversationTree, event: &LogEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::llm::MessageRole;
 
     #[test]
     fn rebuild_from_empty_is_just_root() {
@@ -246,6 +258,29 @@ this is not json
             &tree.get(path[2]).content,
             NodeContent::Agent { text } if text == "hi there"
         ));
+    }
+
+    #[test]
+    fn plugin_provenance_survives_replay_and_undo_of_a_later_user_turn() {
+        let jsonl = concat!(
+            r#"{"type":"event","session_id":"s1","event":"user_message","data":{"message_id":"m1","content":"start"}}"#,
+            "\n",
+            r#"{"type":"event","session_id":"s1","event":"user_message","data":{"message_id":"m2","content":"continue","origin":"plugin","plugin":"alpha"}}"#,
+            "\n",
+            r#"{"type":"event","session_id":"s1","event":"user_message","data":{"message_id":"m3","content":"later"}}"#,
+            "\n",
+        );
+        let mut tree = rebuild_tree_from_str(jsonl);
+        let messages = tree.flatten_current_path_to_context();
+        assert_eq!(messages[1].role, MessageRole::System);
+        assert_eq!(messages[1].metadata.kind.as_deref(), Some("plugin"));
+        assert_eq!(messages[1].metadata.source.as_deref(), Some("alpha"));
+        assert!(messages[1].content.contains("continue"));
+
+        tree.undo_turns(1);
+        let messages = tree.flatten_current_path_to_context();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].metadata.source.as_deref(), Some("alpha"));
     }
 
     #[tokio::test]

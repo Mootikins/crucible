@@ -60,6 +60,9 @@ pub enum TurnPayload {
         /// message, so their turns keep the shape they always had.
         #[serde(default, skip_serializing_if = "crate::turn::TurnOrigin::is_user")]
         origin: crate::turn::TurnOrigin,
+        /// Plugin that requested this turn; absent for a person's message.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin: Option<String>,
     },
     TextDelta {
         #[serde(default)]

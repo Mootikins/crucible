@@ -113,7 +113,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-207: A turn ends once, and a plugin can ask for the next one
 **As a user**, the console stops showing a turn as running the moment the daemon says the turn is over, whatever ended it; and a turn a plugin asked for reads as its own turn under the reply.
-**Acceptance:** `turn_finished` ends the turn for every status (`completed`, `cancelled`, `handler_cancelled`, `timed_out`, `failed`), so a cancel from ANOTHER client stops this console's spinner; a `failed` turn and a `handler_cancelled` turn (for example the loop guard of an ACP turn) show the `error` they carry as a warning; the `user_message` of a turn a `turn:complete` handler asked for carries `origin: "plugin"` and renders like any other message, with its own reply under it.
+**Acceptance:** `turn_finished` ends the turn for every status (`completed`, `cancelled`, `handler_cancelled`, `timed_out`, `failed`), so a cancel from ANOTHER client stops this console's spinner; a `failed` turn and a `handler_cancelled` turn (for example the loop guard of an ACP turn) show the `error` they carry as a warning; the opening event of a turn a `turn:complete` handler asked for names its plugin and renders the full text as `↻ <plugin>` in a system row, with its own reply under it.
 **Tests:** T2 `user_story_tests/turn_end_tests.rs::{every_turn_finished_status_ends_the_turn, a_failed_turn_shows_its_error, a_handler_cancelled_turn_shows_its_reason, the_turn_a_handler_asks_for_renders_as_its_own_turn}`. Web: `chatEventReducer.test.ts` "turn_finished: a failed turn shows its error" and "a turn that a handler cancelled shows its reason". Daemon: `agent_manager/tests/turn_finished.rs`.
 
 ## 3. Tools, Subagents & MCP
