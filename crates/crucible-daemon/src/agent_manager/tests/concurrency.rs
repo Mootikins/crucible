@@ -485,3 +485,74 @@ async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
         "the loader must still be held, or the assertion above proved nothing"
     );
 }
+
+/// `workflow.cancel` stops the step turn that runs now.
+///
+/// The driver holds the execution lock for the whole step turn. A cancel
+/// that only takes that lock waits until the turn ends, which a hanging
+/// agent never does.
+#[tokio::test]
+async fn workflow_cancel_stops_the_running_step_turn() {
+    let (tmp, session_manager, session) = setup_session_manager().await;
+    let agent_manager = create_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+    agent_manager.install_agent_for_test(
+        session.id.to_string(),
+        Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
+    );
+    let (event_tx, _event_rx) = broadcast::channel::<SessionEventMessage>(256);
+    let ctx = Arc::new(crate::rpc::RpcContext::for_test(
+        agent_manager.kiln_manager.clone(),
+        session_manager.clone(),
+        agent_manager.clone(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            tmp.path().join("projects.json"),
+        )),
+        event_tx,
+        tmp.path().into(),
+    ));
+    let request = |method: &str, params: serde_json::Value| crate::protocol::Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: method.to_string(),
+        params,
+    };
+
+    let start = request(
+        "workflow.start",
+        serde_json::json!({
+            "session_id": session.id,
+            "source": "---\ntype: workflow\n---\n# W\n\n## Step\n\nDo the work.\n",
+        }),
+    );
+    let run = tokio::spawn({
+        let ctx = ctx.clone();
+        async move { crate::rpc::workflow_handlers::handle_workflow_start(&ctx, &start).await }
+    });
+    while !agent_manager
+        .request_state
+        .contains_key(session.id.as_str())
+    {
+        tokio::task::yield_now().await;
+    }
+
+    let cancel = request(
+        "workflow.cancel",
+        serde_json::json!({ "session_id": session.id }),
+    );
+    timeout(
+        Duration::from_secs(5),
+        crate::rpc::workflow_handlers::handle_workflow_cancel(&ctx, &cancel),
+    )
+    .await
+    .expect("the cancel does not wait for the turn")
+    .unwrap();
+    timeout(Duration::from_secs(5), run)
+        .await
+        .expect("the workflow run ends")
+        .unwrap()
+        .unwrap();
+}

@@ -210,6 +210,9 @@ pub async fn handle_workflow_cancel(
         }
     };
 
+    // The driver holds the execution lock for the whole step turn. Thus the
+    // cancel stops that turn first, or the lock below waits for its end.
+    ctx.agents.cancel(&p.session_id).await;
     {
         let mut guard = handle.lock().await;
         guard.cancel();

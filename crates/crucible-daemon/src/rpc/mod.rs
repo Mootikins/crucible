@@ -10,7 +10,7 @@ mod knob_method;
 mod missing_session_contract;
 mod params;
 pub(crate) mod ui;
-mod workflow_handlers;
+pub(crate) mod workflow_handlers;
 
 pub use context::{DeferredShutdown, RpcContext, RpcContextParams};
 pub use dispatch::{
