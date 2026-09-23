@@ -73,6 +73,11 @@ pub(crate) struct SessionSlot {
     /// produced it releases the request slot. A user cancel clears it: the
     /// user stopped the work, so the plugin's follow-up is stopped too.
     follow_up: Mutex<Option<String>>,
+    /// How the turn that runs now may decide a permission. The turn start
+    /// writes it. The ACP permission handler reads it for each call, because
+    /// the handler lives as long as the cached agent handle and a later turn
+    /// can differ.
+    turn_gate: Mutex<TurnGate>,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -97,6 +102,16 @@ pub(crate) struct SessionSlot {
     /// Per-session prompt-cache aggregate, updated on every
     /// `message_complete` that carries usage data.
     cache_stats: Mutex<CacheStats>,
+}
+
+/// What a permission decision reads from the turn that runs now.
+///
+/// The default is the answer for no turn: nobody can answer a prompt, and no
+/// override applies.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct TurnGate {
+    pub is_interactive: bool,
+    pub permission_override: Option<crucible_core::config::components::permissions::PermissionMode>,
 }
 
 /// Serializes injection acceptance with the next turn's assembly boundary.
@@ -400,6 +415,22 @@ impl SessionSlot {
 
     fn lock_follow_up(&self) -> std::sync::MutexGuard<'_, Option<String>> {
         self.follow_up
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Record how the turn that starts now may decide a permission.
+    pub(crate) fn set_turn_gate(&self, gate: TurnGate) {
+        *self.lock_turn_gate() = gate;
+    }
+
+    /// How the turn that runs now may decide a permission.
+    pub(crate) fn turn_gate(&self) -> TurnGate {
+        self.lock_turn_gate().clone()
+    }
+
+    fn lock_turn_gate(&self) -> std::sync::MutexGuard<'_, TurnGate> {
+        self.turn_gate
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

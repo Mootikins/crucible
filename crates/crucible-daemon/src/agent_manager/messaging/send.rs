@@ -205,6 +205,14 @@ impl AgentManager {
             }
         }
 
+        // The ACP permission handler of a cached handle reads this for each
+        // call, so the handle keeps nothing of the turn that built it.
+        self.slot(session_id)
+            .set_turn_gate(crate::agent_manager::slot::TurnGate {
+                is_interactive,
+                permission_override,
+            });
+
         // Where the agent's tools act. A session with no workspace still
         // anchors somewhere concrete; see `scope::session_tool_root`.
         let tool_root = crate::agent_manager::scope::session_tool_root(
@@ -214,14 +222,7 @@ impl AgentManager {
 
         let event_tx_clone = event_tx.clone();
         let agent = match self
-            .get_or_create_agent(
-                session_id,
-                &agent_config,
-                &tool_root,
-                &event_tx_clone,
-                is_interactive,
-                permission_override,
-            )
+            .get_or_create_agent(session_id, &agent_config, &tool_root, &event_tx_clone)
             .await
         {
             Ok(agent) => agent,
@@ -816,8 +817,6 @@ impl AgentManager {
         agent_config: &SessionAgent,
         workspace: &std::path::Path,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-        is_interactive: bool,
-        permission_override: Option<PermissionMode>,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
         // Check the cache, and note the generation the build below has to
         // install against. Anything that invalidates while we are awaiting
@@ -839,16 +838,9 @@ impl AgentManager {
                 .await
                 .map_err(AgentFactoryError::AgentBuild)?,
             None => {
-                self.build_agent_from_config(
-                    session_id,
-                    agent_config,
-                    workspace,
-                    event_tx,
-                    is_interactive,
-                    permission_override,
-                )
-                .await?
-                .0
+                self.build_agent_from_config(session_id, agent_config, workspace, event_tx)
+                    .await?
+                    .0
             }
         };
 
@@ -1014,7 +1006,7 @@ impl AgentManager {
             &session,
             self.session_manager.sessions_root(),
         );
-        self.get_or_create_agent(session_id, &agent_config, &tool_root, event_tx, true, None)
+        self.get_or_create_agent(session_id, &agent_config, &tool_root, event_tx)
             .await
             .map(|_| ())
     }
@@ -1030,8 +1022,6 @@ impl AgentManager {
         agent_config: &SessionAgent,
         workspace: &std::path::Path,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-        is_interactive: bool,
-        permission_override: Option<PermissionMode>,
     ) -> Result<(BoxedAgentHandle, SessionAgent), AgentError> {
         let mut resolved_config = if agent_config.endpoint.is_none() {
             let provider_key = agent_config
@@ -1078,8 +1068,6 @@ impl AgentManager {
             Some(self.build_acp_permission_handler(
                 session_id,
                 event_tx,
-                is_interactive,
-                permission_override,
                 agent_permissions,
                 resolved_config.tool_policy.clone(),
             ))

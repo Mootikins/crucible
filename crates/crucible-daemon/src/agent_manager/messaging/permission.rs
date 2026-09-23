@@ -155,43 +155,37 @@ pub(in crate::agent_manager) async fn prompt_user(
 }
 
 impl AgentManager {
+    /// The handler lives as long as the cached agent handle, so it reads
+    /// the interactivity and the override of the turn from the session slot
+    /// for each call, not from the turn that built the handle.
     pub(super) fn build_acp_permission_handler(
         &self,
         session_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-        is_interactive: bool,
-        permission_override: Option<PermissionMode>,
         agent_permissions: Option<PermissionConfig>,
         tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
         let slot = self.slot(session_id);
-        let session_id_owned = session_id.to_string();
-        let event_tx_owned = event_tx.clone();
-        let ask_callback: PermissionPromptCallback = Arc::new(move |request: PermRequest| {
-            let slot = slot.clone();
-            let session_id = session_id_owned.clone();
-            let event_tx = event_tx_owned.clone();
-            Box::pin(async move { prompt_user(&slot, &session_id, &event_tx, request).await })
-        });
-
-        // Priority: CLI override > agent-specific > global config.
-        // For Allow and Deny overrides, the user's intent is unconditional —
-        // ignore base-config rules entirely. For Ask, preserve rules (interactive default).
-        let effective_config = resolve_effective_permission_config(
-            permission_override,
-            agent_permissions,
-            self.permission_config.clone(),
-        );
-
-        let gate = Arc::new(
-            DaemonPermissionGate::new(effective_config, is_interactive)
-                .with_prompt_callback(ask_callback),
-        );
-
+        let session_id = session_id.to_string();
+        let event_tx = event_tx.clone();
+        let global_permissions = self.permission_config.clone();
         let tool_policy = tool_policy.map(Arc::new);
 
         Arc::new(move |call, options| {
-            let gate = gate.clone();
+            let turn = slot.turn_gate();
+            let config = resolve_effective_permission_config(
+                turn.permission_override,
+                agent_permissions.clone(),
+                global_permissions.clone(),
+            );
+            let (slot, session_id, event_tx) = (slot.clone(), session_id.clone(), event_tx.clone());
+            let ask: PermissionPromptCallback = Arc::new(move |request: PermRequest| {
+                let (slot, session_id, event_tx) =
+                    (slot.clone(), session_id.clone(), event_tx.clone());
+                Box::pin(async move { prompt_user(&slot, &session_id, &event_tx, request).await })
+            });
+            let gate =
+                DaemonPermissionGate::new(config, turn.is_interactive).with_prompt_callback(ask);
             let tool_policy = tool_policy.clone();
 
             Box::pin(async move {
@@ -1256,6 +1250,7 @@ mod acp_tool_policy_tests {
 #[cfg(test)]
 mod acp_permission_handler_tests {
     use super::*;
+    use crate::agent_manager::slot::TurnGate;
     use crate::agent_manager::tests::create_test_agent_manager;
     use crate::test_support::temp_session_manager;
     use agent_client_protocol::schema::v1::{
@@ -1319,7 +1314,11 @@ mod acp_permission_handler_tests {
         event_tx: &broadcast::Sender<SessionEventMessage>,
         tool_policy: Option<ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
-        am.build_acp_permission_handler(SESSION, event_tx, true, None, None, tool_policy)
+        am.slot(SESSION).set_turn_gate(TurnGate {
+            is_interactive: true,
+            permission_override: None,
+        });
+        am.build_acp_permission_handler(SESSION, event_tx, None, tool_policy)
     }
 
     /// Read events until the prompt arrives. Return its request id.
@@ -1393,6 +1392,49 @@ mod acp_permission_handler_tests {
                 .expect("the handler must return after the answer")
                 .expect("join");
             assert_eq!(selected(&outcome).as_deref(), Some(expected));
+        }
+    }
+
+    /// A cached handle keeps no interactivity of the turn that built it. A
+    /// later turn that nobody can answer (a workflow step) is not asked.
+    #[tokio::test]
+    async fn a_later_non_interactive_turn_is_not_asked() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+        am.slot(SESSION).set_turn_gate(TurnGate {
+            is_interactive: false,
+            permission_override: None,
+        });
+
+        let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
+            .await
+            .expect("a turn with nobody to ask must not wait for an answer");
+
+        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(event_rx.try_recv().is_err(), "nobody is asked");
+    }
+
+    /// A changed permission override applies on the next call of the same
+    /// cached handle.
+    #[tokio::test]
+    async fn a_changed_override_applies_on_the_next_call() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, _event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        for (mode, expected) in [
+            (PermissionMode::Allow, "allow_once"),
+            (PermissionMode::Deny, "reject_once"),
+        ] {
+            am.slot(SESSION).set_turn_gate(TurnGate {
+                is_interactive: true,
+                permission_override: Some(mode),
+            });
+            let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
+                .await
+                .expect("an override answers without a prompt");
+            assert_eq!(selected(&outcome).as_deref(), Some(expected), "{mode:?}");
         }
     }
 
