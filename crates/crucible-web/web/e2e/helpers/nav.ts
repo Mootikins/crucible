@@ -102,3 +102,31 @@ export async function openNewSessionTab(page: Page): Promise<void> {
     timeout: READY_TIMEOUT,
   });
 }
+
+/**
+ * Open the branch diff of the project from the Files panel, then close the
+ * right rail, so that the diff pane has the width of the centre.
+ *
+ * The Files tab opens through the store, not the pointer: the pointer path
+ * races the JS tween of the panel (see root-dropdown-pick).
+ */
+export async function openBranchDiff(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const store = (window as unknown as Record<string, any>).__windowStore;
+    const actions = (window as unknown as Record<string, any>).__windowActions;
+    if (store.edgePanels?.right?.mode !== 'docked') actions.toggleEdgePanel('right');
+    const firstGroup = (node: any): string | null => {
+      if (!node || typeof node !== 'object') return null;
+      if (node.type === 'pane') return node.tabGroupId ?? null;
+      return firstGroup(node.first) ?? firstGroup(node.second);
+    };
+    const groupId = firstGroup(store.edgePanels.right.layout);
+    if (!groupId) throw new Error('right edge panel has no tab group');
+    actions.setActiveTab(groupId, 'files-tab');
+  });
+  const open = page.getByTestId('open-branch-diff');
+  await expect(open).toBeVisible({ timeout: READY_TIMEOUT });
+  await open.click();
+  await expect(page.getByTestId('diff-toolbar')).toBeVisible();
+  await page.getByTestId('ribbon-toggle-right').click();
+}

@@ -574,11 +574,13 @@ const commentTheme = EditorView.theme({
   // The gap is padding on the block, never a margin on the card: see
   // `commentBlock`.
   '.cm-diff-comment-block': { padding: '4px 8px 4px 0' },
+  // A bar on the left edge in the hue of the selection ties the card to its
+  // lines. A full frame drew a second box around each comment.
   '.cm-diff-comment, .cm-diff-comment-box': {
-    padding: '6px 8px',
-    border: '1px solid var(--color-hairline)',
-    borderRadius: 'var(--cru-radius-md)',
-    background: 'var(--color-shell-bg)',
+    padding: '4px 8px',
+    border: 'none',
+    borderLeft: `2px solid ${tint(0.7)}`,
+    background: tint(0.06),
     fontFamily: 'var(--font-sans, sans-serif)',
     whiteSpace: 'pre-wrap',
   },
@@ -666,11 +668,10 @@ function CommentBox(props: {
 
   return (
     <div data-testid="diff-comment-box" class="flex flex-col gap-1.5">
-      <span class="text-floor text-muted-dark">{props.label}</span>
       <textarea
         ref={input}
         data-testid="diff-comment-input"
-        rows={3}
+        rows={2}
         placeholder="Write a comment. Ctrl+Enter saves it."
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
@@ -693,7 +694,17 @@ function CommentBox(props: {
           No chat takes this comment. The diff pane stores it.
         </span>
       </Show>
+      {/* The label shares the row of the buttons, so the box takes one row less. */}
       <div class="flex items-center gap-1.5">
+        <span class="mr-auto text-floor text-muted-dark">{props.label}</span>
+        <button
+          type="button"
+          data-testid="diff-comment-cancel"
+          onClick={() => props.onCancel()}
+          class={secondaryButton}
+        >
+          Cancel
+        </button>
         <button
           type="button"
           data-testid="diff-comment-submit"
@@ -702,14 +713,6 @@ function CommentBox(props: {
           class={primaryButton}
         >
           Comment
-        </button>
-        <button
-          type="button"
-          data-testid="diff-comment-cancel"
-          onClick={() => props.onCancel()}
-          class={secondaryButton}
-        >
-          Cancel
         </button>
       </div>
     </div>

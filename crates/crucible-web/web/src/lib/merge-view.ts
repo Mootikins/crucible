@@ -105,19 +105,23 @@ const diffTheme = EditorView.theme({
   '&.cm-editor .cm-changedLineGutter.cm-changedLineGutter': { background: 'var(--color-ok)' },
   '&.cm-editor .cm-deletedLineGutter.cm-deletedLineGutter, &.cm-editor.cm-merge-a .cm-changedLineGutter.cm-changedLineGutter':
     { background: 'var(--color-error)' },
-  // The fold of unchanged lines is a quiet label in the UI font. The library
-  // draws a grey gradient in a literal colour and two "⦚" marks.
+  // The fold of unchanged lines is a quiet label in the UI font, between two
+  // hairlines, on the background of the file header, as T3 Code draws its
+  // separator. The library draws a grey gradient in a literal colour and two
+  // "⦚" marks. A band of its own colour made each fold a second header.
   '&.cm-editor .cm-collapsedLines.cm-collapsedLines': {
-    padding: '0.25em 0',
-    background: 'var(--color-hover-wash)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75em',
+    padding: '0.25em 0.75em',
+    background: 'none',
     color: 'var(--color-muted-dark)',
     fontFamily: 'var(--cru-font-ui)',
     fontSize: 'var(--cru-font-floor)',
-    textAlign: 'center',
   },
   '&.cm-editor .cm-collapsedLines.cm-collapsedLines:hover': { color: 'var(--color-shell-ink)' },
   '&.cm-editor .cm-collapsedLines.cm-collapsedLines::before, &.cm-editor .cm-collapsedLines.cm-collapsedLines::after':
-    { content: 'none' },
+    { content: '""', flex: '1', height: '1px', margin: '0', background: 'var(--color-hairline)' },
 });
 
 /**
@@ -474,8 +478,8 @@ const hunkTheme = EditorView.theme({
     alignItems: 'center',
     gap: '0.5em',
     padding: '0.25em 0.5em',
+    // No rule: the fold above the hunk, or the file header, separates it.
     border: 'none',
-    borderTop: '1px solid var(--color-hairline)',
     background: 'transparent',
     color: 'var(--color-muted-dark)',
     font: 'inherit',

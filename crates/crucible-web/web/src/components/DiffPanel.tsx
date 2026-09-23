@@ -939,7 +939,7 @@ const EndComments: Component<{
           {(listed) => (
             <li
               data-testid={listed.outdated ? 'diff-comment-outdated' : 'diff-comment-base'}
-              class="rounded border border-hairline px-2 py-1 text-xs"
+              class="border-l-2 border-hairline px-2 py-1 text-xs"
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="text-floor text-muted-dark">

@@ -549,6 +549,22 @@ describe('DiffPanel', () => {
     expect(submit.disabled).toBe(false);
   });
 
+  it('the range label of the box sits in the row of its buttons, under the text field', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await press('src/a.rs', 2);
+    await release('src/a.rs', 2);
+    const box = await within(section('src/a.rs')).findByTestId('diff-comment-box');
+    const row = within(box).getByText('Line 2').parentElement!;
+    expect(row.contains(within(box).getByTestId('diff-comment-submit'))).toBe(true);
+    expect(row.contains(within(box).getByTestId('diff-comment-cancel'))).toBe(true);
+    const input = within(box).getByTestId('diff-comment-input');
+    expect(row.contains(input)).toBe(false);
+    // The text field comes first in the box.
+    expect(input.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('the selected lines carry the selection class on the rows and the numbers', async () => {
     serve([entry('src/a.rs')]);
     render(() => <DiffPanel source={source} />);
