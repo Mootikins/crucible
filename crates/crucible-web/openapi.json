@@ -2999,6 +2999,68 @@
         }
       }
     },
+    "/api/session/{id}/config/plugin-turn-limit": {
+      "get": {
+        "operationId": "get_plugin_turn_limit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginTurnLimitResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "set_plugin_turn_limit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPluginTurnLimitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/{id}/config/plugins/{plugin}/approval": {
       "get": {
         "operationId": "get_plugin_approval",
@@ -8016,6 +8078,19 @@
           }
         }
       },
+      "PluginTurnLimitResponse": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "PrecognitionNote": {
         "type": "object",
         "required": [
@@ -9449,6 +9524,19 @@
         "properties": {
           "approval": {
             "$ref": "#/components/schemas/PluginApproval"
+          }
+        }
+      },
+      "SetPluginTurnLimitRequest": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

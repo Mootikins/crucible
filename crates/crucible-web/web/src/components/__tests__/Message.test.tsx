@@ -71,6 +71,11 @@ afterEach(() => {
 // ── Role rendering ─────────────────────────────────────────────────────
 
 describe('Message — role rendering', () => {
+  it('draws a context clear marker as a divider', () => {
+    render(() => <Message message={makeMessage({ role: 'system', type: 'clear', content: '↻ alpha cleared the context' })} />);
+    expect(screen.getByTestId('context-clear-divider').textContent).toContain('alpha cleared the context');
+    expect(screen.queryByTestId('message-system')).not.toBeInTheDocument();
+  });
   it('renders the user prompt as a full-width quoted block and its content as plain text', () => {
     const { container } = render(() => (
       <Message message={makeMessage({ role: 'user', content: 'hi **there**' })} />

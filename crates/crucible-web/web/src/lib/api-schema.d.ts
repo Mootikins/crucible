@@ -1451,6 +1451,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/config/plugin-turn-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_plugin_turn_limit"];
+        put: operations["set_plugin_turn_limit"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/config/plugins/{plugin}/approval": {
         parameters: {
             query?: never;
@@ -3794,6 +3810,10 @@ export interface components {
              */
             result: unknown;
         };
+        PluginTurnLimitResponse: {
+            /** Format: int32 */
+            limit: number;
+        };
         PrecognitionNote: {
             name: string;
             /** Format: double */
@@ -4484,6 +4504,10 @@ export interface components {
         SetPluginApprovalRequest: {
             approval: components["schemas"]["PluginApproval"];
         };
+        SetPluginTurnLimitRequest: {
+            /** Format: int32 */
+            limit: number;
+        };
         SetPrecognitionRequest: {
             enabled: boolean;
         };
@@ -4905,6 +4929,7 @@ export type SchemaPluginReloadResponse = components['schemas']['PluginReloadResp
 export type SchemaPluginRemoveResponse = components['schemas']['PluginRemoveResponse'];
 export type SchemaPluginRow = components['schemas']['PluginRow'];
 export type SchemaPluginRunCommandResponse = components['schemas']['PluginRunCommandResponse'];
+export type SchemaPluginTurnLimitResponse = components['schemas']['PluginTurnLimitResponse'];
 export type SchemaPrecognitionNote = components['schemas']['PrecognitionNote'];
 export type SchemaPrecognitionResponse = components['schemas']['PrecognitionResponse'];
 export type SchemaProject = components['schemas']['Project'];
@@ -4958,6 +4983,7 @@ export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionR
 export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
 export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
 export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
+export type SchemaSetPluginTurnLimitRequest = components['schemas']['SetPluginTurnLimitRequest'];
 export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
@@ -7885,6 +7911,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginApprovalsResponse"];
+                };
+            };
+        };
+    };
+    get_plugin_turn_limit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginTurnLimitResponse"];
+                };
+            };
+        };
+    };
+    set_plugin_turn_limit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPluginTurnLimitRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
         };

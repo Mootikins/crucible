@@ -65,6 +65,13 @@ impl SessionKnobs for KnobRecordingAgent {
     fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
         crucible_core::session::PluginApproval::Inherit
     }
+    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
+        self.calls.push("set_plugin_turn_limit");
+        Ok(())
+    }
+    fn get_plugin_turn_limit(&self) -> u32 {
+        25
+    }
     fn get_system_prompt(&self) -> Option<String> {
         None
     }
@@ -136,6 +143,7 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("model=gpt-4o", "switch_model" ; "model")]
 #[test_case("contextstrategy=summarize", "set_context_strategy" ; "context strategy")]
 #[test_case("precognition=off", "set_precognition" ; "precognition")]
+#[test_case("plugin_turn_limit=7", "set_plugin_turn_limit" ; "plugin turn limit")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
     let mut app = OilChatApp::default();
@@ -263,6 +271,12 @@ impl SessionKnobs for ModeListingAgent {
     }
     fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
         crucible_core::session::PluginApproval::Inherit
+    }
+    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_turn_limit".into()))
+    }
+    fn get_plugin_turn_limit(&self) -> u32 {
+        25
     }
     fn get_system_prompt(&self) -> Option<String> {
         None

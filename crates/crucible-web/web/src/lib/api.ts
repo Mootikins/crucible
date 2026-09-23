@@ -962,6 +962,25 @@ export async function setPluginApproval(
   );
 }
 
+export async function getPluginTurnLimit(sessionId: string): Promise<number> {
+  return decode(
+    await client.GET('/api/session/{id}/config/plugin-turn-limit', {
+      params: { path: { id: sessionId } },
+    }),
+    'Failed to load plugin turn limit',
+  ).limit;
+}
+
+export async function setPluginTurnLimit(sessionId: string, limit: number): Promise<void> {
+  expectOk(
+    await client.PUT('/api/session/{id}/config/plugin-turn-limit', {
+      params: { path: { id: sessionId } },
+      body: { limit },
+    }),
+    'Failed to set plugin turn limit',
+  );
+}
+
 /**
  * The settings this session's external agent advertised for itself.
  *

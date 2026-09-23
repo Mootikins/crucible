@@ -23,6 +23,9 @@ pub(crate) struct TurnRequest<'a> {
     /// Who asked for the turn. A plugin turn has no caller to notify.
     pub origin: TurnOrigin,
     pub plugin_name: Option<String>,
+    /// Reset conversation context after claiming the turn slot, before the
+    /// prompt is committed. This makes clear-with-prompt one admitted turn.
+    pub clear_before: bool,
     /// The review comments that the message attaches, as the daemon rendered
     /// them. `server::diff_context::review_context` builds this text.
     pub review_context: Option<String>,
@@ -35,6 +38,138 @@ pub(crate) struct TurnRequest<'a> {
 }
 
 impl AgentManager {
+    /// Clear context in this session. With a prompt, the marker and the new
+    /// turn share one request claim, so another sender cannot slip between.
+    pub fn clear_session<'a>(
+        self: &'a Arc<Self>,
+        session_id: &'a str,
+        prompt: Option<String>,
+        plugin: Option<String>,
+        event_tx: &'a broadcast::Sender<SessionEventMessage>,
+    ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
+        Box::pin(async move {
+            if let Some(name) = plugin.as_ref() {
+                if let dashmap::mapref::entry::Entry::Occupied(_) =
+                    self.request_state.entry(session_id.to_string())
+                {
+                    self.slot(session_id).set_clear_after_turn(
+                        crate::agent_manager::slot::ClearAfterTurn {
+                            prompt,
+                            plugin: name.clone(),
+                        },
+                    );
+                    return Ok(None);
+                }
+            }
+            if let Some(prompt) = prompt {
+                let origin = if plugin.is_some() {
+                    TurnOrigin::Plugin
+                } else {
+                    TurnOrigin::User
+                };
+                return self
+                    .send_message_inner(
+                        session_id,
+                        prompt,
+                        TurnRequest {
+                            origin,
+                            plugin_name: plugin,
+                            clear_before: true,
+                            review_context: None,
+                            event_tx,
+                            is_interactive: true,
+                            permission_override: None,
+                            completion_tx: None,
+                        },
+                    )
+                    .await
+                    .map(Some);
+            }
+
+            let session = self.get_or_revive_session(session_id).await?;
+            let (cancel_tx, _cancel_rx) = oneshot::channel();
+            match self.request_state.entry(session_id.to_string()) {
+                dashmap::mapref::entry::Entry::Occupied(_) => {
+                    return Err(AgentError::ConcurrentRequest(session_id.to_string()));
+                }
+                dashmap::mapref::entry::Entry::Vacant(entry) => {
+                    entry.insert(RequestState {
+                        cancel_tx: Some(cancel_tx),
+                        task_handle: None,
+                        _work: Some(self.activity().start(crate::activity::WorkKind::Turn)),
+                    });
+                }
+            }
+            let result = self
+                .clear_context_inner(&session, plugin.as_deref(), event_tx)
+                .await;
+            let result = match result {
+                Ok(()) => self.ensure_agent_handle(session_id, Some(event_tx)).await,
+                Err(error) => Err(error),
+            };
+            self.request_state.remove(session_id);
+            result.map(|()| None)
+        })
+    }
+
+    async fn clear_context_inner(
+        &self,
+        session: &crucible_core::session::Session,
+        plugin: Option<&str>,
+        event_tx: &broadcast::Sender<SessionEventMessage>,
+    ) -> Result<(), AgentError> {
+        let session_id = session.id.to_string();
+        let slot = self.slot(&session_id);
+        let mut input = slot.input.lock().await;
+        let tree = self
+            .get_or_rebuild_session_tree(
+                session_id.as_str(),
+                &session.jsonl_path(self.session_manager.sessions_root()),
+            )
+            .await;
+        let marker = crate::observe::LogEvent::Clear {
+            ts: chrono::Utc::now(),
+            plugin: plugin.map(str::to_owned),
+        };
+        self.session_manager
+            .storage()
+            .append_event(
+                session,
+                &marker
+                    .to_jsonl()
+                    .map_err(crate::session_manager::SessionError::from)?,
+            )
+            .await?;
+        *tree.lock().await = crucible_core::turn::ConversationTree::new();
+        input.pending.clear();
+        input.after_turn = None;
+        drop(input);
+
+        if session
+            .agent
+            .as_ref()
+            .is_some_and(|agent| agent.agent_type == "acp")
+        {
+            self.session_manager
+                .modify_session(&session_id, |live| {
+                    live.acp_session_id = None;
+                    true
+                })
+                .await?;
+            slot.invalidate_agent();
+        }
+        emit_event(
+            event_tx,
+            SessionEventMessage::typed(
+                session_id.as_str(),
+                crucible_core::protocol::session_events::TurnPayload::ContextCleared {
+                    plugin: plugin.map(str::to_owned),
+                },
+            ),
+        );
+        Ok(())
+    }
+
     pub async fn send_message(
         self: &Arc<Self>,
         session_id: &str,
@@ -49,6 +184,7 @@ impl AgentManager {
             TurnRequest {
                 origin: TurnOrigin::User,
                 plugin_name: None,
+                clear_before: false,
                 review_context: None,
                 event_tx,
                 is_interactive,
@@ -76,6 +212,7 @@ impl AgentManager {
             TurnRequest {
                 origin: TurnOrigin::User,
                 plugin_name: None,
+                clear_before: false,
                 review_context,
                 event_tx,
                 is_interactive,
@@ -106,6 +243,7 @@ impl AgentManager {
                 TurnRequest {
                     origin: TurnOrigin::User,
                     plugin_name: None,
+                    clear_before: false,
                     review_context: None,
                     event_tx,
                     is_interactive,
@@ -147,6 +285,7 @@ impl AgentManager {
                     TurnRequest {
                         origin: TurnOrigin::Plugin,
                         plugin_name: Some(follow_up.plugin),
+                        clear_before: false,
                         review_context: None,
                         event_tx: &event_tx,
                         is_interactive,
@@ -174,6 +313,7 @@ impl AgentManager {
         let TurnRequest {
             origin,
             plugin_name,
+            clear_before,
             review_context,
             event_tx,
             is_interactive,
@@ -211,6 +351,16 @@ impl AgentManager {
             }
         }
 
+        if clear_before {
+            if let Err(error) = self
+                .clear_context_inner(&session, plugin_name.as_deref(), event_tx)
+                .await
+            {
+                self.request_state.remove(session_id);
+                return Err(error);
+            }
+        }
+
         // Where the agent's tools act. A session with no workspace still
         // anchors somewhere concrete; see `scope::session_tool_root`.
         let tool_root = crate::agent_manager::scope::session_tool_root(
@@ -230,6 +380,55 @@ impl AgentManager {
             }
         };
         info!(target: "ttft", session_id = %session_id, stage = "agent_ready", elapsed_ms = ttft_start.elapsed().as_millis() as u64, "ttft");
+
+        let input_slot = self.slot(session_id);
+        match origin {
+            TurnOrigin::User => input_slot
+                .plugin_turn_count
+                .store(0, std::sync::atomic::Ordering::Relaxed),
+            TurnOrigin::Plugin => {
+                let count = input_slot
+                    .plugin_turn_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    .saturating_add(1);
+                if count >= session.plugin_turn_limit {
+                    if let Some(plugin) = plugin_name.as_deref() {
+                        let approval = match self.get_plugin_approval(session_id, plugin).await {
+                            Ok(approval) => approval,
+                            Err(error) => {
+                                self.request_state.remove(session_id);
+                                return Err(error);
+                            }
+                        };
+                        if approval == crucible_core::session::PluginApproval::Inherit {
+                            if let Err(error) = self
+                                .set_plugin_approval(
+                                    session_id,
+                                    plugin,
+                                    crucible_core::session::PluginApproval::Ask,
+                                    Some(event_tx),
+                                )
+                                .await
+                            {
+                                self.request_state.remove(session_id);
+                                return Err(error);
+                            }
+                            let notice = crucible_core::types::Notification::warning(format!(
+                                "Plugin {plugin} reached the {} consecutive turn limit; approval is now Ask",
+                                session.plugin_turn_limit
+                            ));
+                            if let Err(error) = self
+                                .add_notification(session_id, notice, Some(event_tx))
+                                .await
+                            {
+                                self.request_state.remove(session_id);
+                                return Err(error);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
         let original_content = content;
@@ -260,7 +459,6 @@ impl AgentManager {
         // `precognition_complete`, nothing in the transcript to say the answer
         // was ungrounded. Reproduced by widening the window to 200ms, which
         // turns `oneshot_precognition_query_e2e` red every run.
-        let input_slot = self.slot(session_id);
         let mut input = input_slot.input.lock().await;
         let conversation_tree = self
             .get_or_rebuild_session_tree(
@@ -615,6 +813,7 @@ impl AgentManager {
                     // handler asked for stops with it. Dropping the stored
                     // content is the whole clear.
                     drop(slot.take_follow_up());
+                    drop(slot.take_clear_after_turn());
                     (TurnStatus::Cancelled, None, None)
                 }
                 outcome = stream_future => outcome_to_status(outcome),
@@ -658,7 +857,19 @@ impl AgentManager {
             // a NEW turn, here, with the slot free. It is a normal turn, so it
             // takes admission, Precognition, persistence and undo like any
             // other; only its origin says who asked for it.
-            if let Some(follow_up) = slot.take_follow_up().filter(|_| !awaited) {
+            if let Some(clear) = slot.take_clear_after_turn() {
+                drop(slot.take_follow_up());
+                let clear_request: futures::future::BoxFuture<'_, _> =
+                    Box::pin(manager.clear_session(
+                        &session_id_owned,
+                        clear.prompt,
+                        Some(clear.plugin),
+                        &event_tx_clone,
+                    ));
+                if let Err(error) = clear_request.await {
+                    warn!(session_id = %session_id_owned, error = %error, "Deferred context clear failed");
+                }
+            } else if let Some(follow_up) = slot.take_follow_up().filter(|_| !awaited) {
                 manager
                     .start_follow_up_turn(
                         session_id_owned,

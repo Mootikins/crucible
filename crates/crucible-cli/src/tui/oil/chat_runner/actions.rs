@@ -507,6 +507,15 @@ impl OilChatRunner {
                             }
                         }
                     }
+                    ChatAppMsg::SetPluginTurnLimit(limit) => {
+                        if let Err(error) = params.agent.set_plugin_turn_limit(*limit).await {
+                            params.app.add_notification(
+                                crucible_core::types::Notification::warning(format!(
+                                    "Set plugin turn limit failed: {error}"
+                                )),
+                            );
+                        }
+                    }
                     ChatAppMsg::CloseInteraction {
                         request_id,
                         response,
@@ -864,7 +873,9 @@ impl OilChatRunner {
                     ChatAppMsg::RunPluginCommand { ref name, ref args } if !self.is_replay => {
                         tracing::info!(command = %name, "Running plugin command");
                         let name = name.clone();
-                        let args = if args.is_empty() {
+                        let args = if name == "clear" {
+                            serde_json::json!({ "session_id": params.agent.session_id() })
+                        } else if args.is_empty() {
                             serde_json::Value::Null
                         } else {
                             serde_json::json!({ "input": args })

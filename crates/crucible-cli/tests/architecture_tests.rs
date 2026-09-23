@@ -506,6 +506,10 @@ const WEB_KNOB_ROUTES: &[(&str, &str)] = &[
     ),
     ("precognition", "/api/session/{}/config/precognition"),
     (
+        "plugin_turn_limit",
+        "/api/session/{}/config/plugin-turn-limit",
+    ),
+    (
         "plugin_approval",
         "/api/session/{}/config/plugins/{}/approval",
     ),
@@ -599,6 +603,7 @@ const TUI_SET_KEYS: &[(&str, &str, &str)] = &[
     ("model", "model", "claude-opus-4"),
     ("context_strategy", "contextstrategy", "truncate"),
     ("precognition", "precognition", "true"),
+    ("plugin_turn_limit", "plugin_turn_limit", "7"),
 ];
 
 /// Ids the TUI cannot set at all. REMOVE entries as keys land; never add.

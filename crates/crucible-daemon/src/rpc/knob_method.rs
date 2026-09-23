@@ -41,6 +41,7 @@ pub fn rpc_set_method(knob: SessionKnob) -> RpcMethod {
         SessionKnob::Mode => RpcMethod::SessionSetMode,
         SessionKnob::ContextStrategy => RpcMethod::SessionSetContextStrategy,
         SessionKnob::Precognition => RpcMethod::SessionSetPrecognition,
+        SessionKnob::PluginTurnLimit => RpcMethod::SessionSetPluginTurnLimit,
     }
 }
 

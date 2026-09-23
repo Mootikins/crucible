@@ -46,6 +46,19 @@ fn plugin_approval_is_independent_and_survives_resume() {
     assert!(!session.plugin_approvals.contains_key("goal"));
 }
 
+#[test]
+fn plugin_turn_limit_defaults_to_25_and_survives_resume() {
+    let mut session = session_with_kilns(&[]);
+    assert_eq!(session.plugin_turn_limit, 25);
+    session.plugin_turn_limit = 5;
+    let resumed: Session = serde_json::from_value(serde_json::to_value(&session).unwrap()).unwrap();
+    assert_eq!(resumed.plugin_turn_limit, 5);
+    let mut old = serde_json::to_value(&session).unwrap();
+    old.as_object_mut().unwrap().remove("plugin_turn_limit");
+    let old: Session = serde_json::from_value(old).unwrap();
+    assert_eq!(old.plugin_turn_limit, 25);
+}
+
 /// A session created without one HAS no workspace, and says so.
 ///
 /// It used to be spelled `workspace == kilns[0]` — a sentinel that could not

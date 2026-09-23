@@ -28,7 +28,7 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:set all` | Show all options |
 | `:model` | Open model picker |
 | `:model <name>` | Switch to model |
-| `:clear` | Clear conversation |
+| `:clear` | Clear model context in this session; keep the transcript (`/clear` also works) |
 | `:undo [N]` | Undo the last N agent turns (default 1); refused on an external-agent session |
 | `:export <path>` | Export session to markdown |
 | `:messages` | Toggle the notification drawer (aliases: `:msgs`, `:notifications`) |
@@ -249,7 +249,7 @@ state yet.)
 ```
 :quit                   # Exit chat (alias: :q)
 :help [topic]           # Show help (alias: :h; topics: commands, keys, config, tools)
-:clear                  # Clear conversation (start fresh)
+:clear                  # Clear model context; keep the transcript and session
 :undo [N]               # Undo the last N agent turns (also /undo)
 :export <path>          # Export session to markdown (~ expands)
 :messages               # Toggle notification drawer

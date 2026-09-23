@@ -247,7 +247,16 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     let turnStart: number | undefined;
     for (const evt of response.history) {
       const data = payload(evt);
-      if (evt.event === 'user_message' && typeof data.content === 'string') {
+      if (evt.event === 'context_cleared') {
+        const plugin = typeof data.plugin === 'string' ? data.plugin : null;
+        loadedMessages.push({
+          id: `clear-${loadedMessages.length}`,
+          role: 'system',
+          type: 'clear',
+          content: plugin ? `↻ ${plugin} cleared the context` : 'Context cleared',
+          timestamp: eventTime(evt) ?? synthetic(),
+        });
+      } else if (evt.event === 'user_message' && typeof data.content === 'string') {
         turnStart = eventTime(evt);
         // New turn: drop any segments a prior turn left uncollected.
         pendingSegments = [];

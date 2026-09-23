@@ -177,6 +177,8 @@ pub enum ChatAppMsg {
     /// **Command** (TUI → daemon): Set validation retry count.
     /// **Command** (TUI → daemon): Turn precognition (auto-RAG) on or off.
     SetPrecognition(bool),
+    /// **Command** (TUI → daemon): Limit consecutive plugin turns.
+    SetPluginTurnLimit(u32),
     /// **Command** (TUI → daemon): Set precognition search results count.
     /// **Command** (TUI → daemon): Set auto-compaction threshold (fraction of `context_budget`).
     /// `None` clears the override; `Some(0.0)` disables auto-compaction.
@@ -428,6 +430,7 @@ impl ChatAppMsg {
             | Self::SetContextBudget(_)
             | Self::SetContextStrategy(_)
             | Self::SetPrecognition(_)
+            | Self::SetPluginTurnLimit(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }

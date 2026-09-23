@@ -84,6 +84,9 @@ pub(crate) struct SessionSlot {
     /// The grants that the user gave with "allow for this session". They
     /// live as long as the slot; no file holds them.
     session_grants: Mutex<crucible_core::config::PatternStore>,
+    clear_after_turn: Mutex<Option<ClearAfterTurn>>,
+    /// Consecutive accepted plugin turns since the last accepted user turn.
+    pub(in crate::agent_manager) plugin_turn_count: std::sync::atomic::AtomicU32,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -158,6 +161,11 @@ impl SessionInput {
         self.pending.push(message);
         Ok(())
     }
+}
+
+pub(crate) struct ClearAfterTurn {
+    pub prompt: Option<String>,
+    pub plugin: String,
 }
 
 /// The two values a turn builds from the session's config, and the generation
@@ -427,6 +435,20 @@ impl SessionSlot {
         self.lock_follow_up().take()
     }
 
+    pub(crate) fn set_clear_after_turn(&self, clear: ClearAfterTurn) {
+        *self
+            .clear_after_turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(clear);
+    }
+
+    pub(crate) fn take_clear_after_turn(&self) -> Option<ClearAfterTurn> {
+        self.clear_after_turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
     fn lock_follow_up(&self) -> std::sync::MutexGuard<'_, Option<FollowUpTurn>> {
         self.follow_up
             .lock()
@@ -576,7 +598,7 @@ impl SessionSlot {
     ///
     /// Called from the same teardown as [`Self::drop_permissions`] and for the
     /// same reason: a dropped sender releases its waiter immediately instead of
-    /// parking it for the full timeout.
+    /// leaving it parked indefinitely.
     pub(crate) fn drop_interactions(&self) -> usize {
         let mut interactions = self.lock_interactions();
         let count = interactions.len();

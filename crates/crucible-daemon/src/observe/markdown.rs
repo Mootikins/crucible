@@ -71,6 +71,16 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             writeln!(output).unwrap();
         }
 
+        LogEvent::Clear { ts, plugin } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- clear: {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            match plugin {
+                Some(plugin) => writeln!(output, "---\n\nContext cleared by {plugin}\n").unwrap(),
+                None => writeln!(output, "---\n\nContext cleared\n").unwrap(),
+            }
+        }
+
         LogEvent::User { ts, content } => {
             if options.include_timestamps {
                 writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();

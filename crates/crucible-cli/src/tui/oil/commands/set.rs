@@ -106,6 +106,7 @@ pub enum SetRpcAction {
     SwitchModel(String),
     SetContextStrategy(String),
     SetPrecognition(bool),
+    SetPluginTurnLimit(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +209,19 @@ pub fn classify_set_value(key: String, value: String) -> Result<SetEffect, SetEr
             })?;
             Ok(SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(enabled)))
         }
+        "plugin_turn_limit" | "pluginturnlimit" => {
+            let limit = value
+                .parse::<u32>()
+                .ok()
+                .filter(|limit| *limit > 0)
+                .ok_or_else(|| SetError::InvalidValue {
+                    key,
+                    message: "expected a positive whole number".into(),
+                })?;
+            Ok(SetEffect::DaemonRpc(SetRpcAction::SetPluginTurnLimit(
+                limit,
+            )))
+        }
         // Syntax-highlight theme (syntect). Was spelled `theme`, which collided
         // with the UI colorscheme — three different things were called "theme".
         // Validated against the loaded theme set so a typo fails loudly instead
@@ -261,6 +275,7 @@ impl SetRpcAction {
             SetRpcAction::SwitchModel(m) => Some(ChatAppMsg::SwitchModel(m)),
             SetRpcAction::SetContextStrategy(s) => Some(ChatAppMsg::SetContextStrategy(s)),
             SetRpcAction::SetPrecognition(enabled) => Some(ChatAppMsg::SetPrecognition(enabled)),
+            SetRpcAction::SetPluginTurnLimit(limit) => Some(ChatAppMsg::SetPluginTurnLimit(limit)),
         }
     }
 }

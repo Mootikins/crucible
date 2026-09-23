@@ -52,6 +52,8 @@ pub enum SessionKnob {
     Model,
     /// Which permission mode the session runs in.
     Mode,
+    /// Maximum consecutive plugin turns before approval becomes Ask.
+    PluginTurnLimit,
 }
 
 /// What an ACP session can do with a knob.
@@ -167,6 +169,7 @@ impl SessionKnob {
         Self::Mode,
         Self::ContextStrategy,
         Self::Precognition,
+        Self::PluginTurnLimit,
     ];
 
     /// The wire id: what `session.list_knobs` reports and what a front end
@@ -178,6 +181,7 @@ impl SessionKnob {
             Self::Precognition => "precognition",
             Self::Model => "model",
             Self::Mode => "mode",
+            Self::PluginTurnLimit => "plugin_turn_limit",
         }
     }
 
@@ -203,6 +207,7 @@ impl SessionKnob {
 
             // `session/set_mode`.
             Self::Mode => AcpKnob::Wire,
+            Self::PluginTurnLimit => AcpKnob::Daemon,
         }
     }
 }

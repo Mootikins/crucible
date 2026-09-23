@@ -38,7 +38,9 @@ pub async fn rebuild_tree_from_jsonl(path: &Path) -> Result<ConversationTree> {
 pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
     let mut tree = ConversationTree::new();
     for (event, injected) in crate::observe::events::replay_session_log(jsonl) {
-        if injected {
+        if matches!(event, LogEvent::Clear { .. }) {
+            tree = ConversationTree::new();
+        } else if injected {
             apply_injection_to_tree(&mut tree, &event);
         } else {
             apply_event_to_tree(&mut tree, &event);
@@ -143,6 +145,20 @@ mod tests {
         let tree = rebuild_tree_from_str("");
         assert_eq!(tree.len(), 1);
         assert_eq!(tree.current(), tree.root());
+    }
+
+    #[test]
+    fn a_clear_marker_starts_fresh_context_without_erasing_the_log() {
+        let jsonl = r#"{"type":"user","ts":"2026-04-21T00:00:00Z","content":"before"}
+{"type":"clear","ts":"2026-04-21T00:00:01Z","plugin":"goal"}
+{"type":"user","ts":"2026-04-21T00:00:02Z","content":"after"}
+"#;
+        let tree = rebuild_tree_from_str(jsonl);
+        let path = tree.path_to_here(tree.current());
+        assert_eq!(path.len(), 2);
+        assert!(
+            matches!(&tree.get(path[1]).content, NodeContent::User { text } if text == "after")
+        );
     }
 
     #[test]

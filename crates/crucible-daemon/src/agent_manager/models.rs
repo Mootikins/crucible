@@ -611,6 +611,43 @@ impl AgentManager {
         Ok(())
     }
 
+    pub fn get_plugin_turn_limit(&self, session_id: &str) -> Result<u32, AgentError> {
+        self.session_manager
+            .get_session(session_id)
+            .map(|session| session.plugin_turn_limit)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_owned()))
+    }
+
+    pub async fn set_plugin_turn_limit(
+        &self,
+        session_id: &str,
+        limit: u32,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if limit == 0 {
+            return Err(AgentError::InvalidConfig(
+                "plugin turn limit must be greater than zero".into(),
+            ));
+        }
+        self.session_manager
+            .modify_session(session_id, |session| {
+                session.plugin_turn_limit = limit;
+                true
+            })
+            .await?;
+        if let Some(tx) = event_tx {
+            emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "plugin_turn_limit_changed",
+                    serde_json::json!({"limit": limit}),
+                ),
+            );
+        }
+        Ok(())
+    }
+
     async fn read_approval_session(
         &self,
         session_id: &str,

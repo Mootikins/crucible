@@ -116,6 +116,12 @@ function routeSessionSubEvent(
       break;
     }
 
+    case 'context_cleared':
+      void client.invalidateQueries({ queryKey: keys.sessionHistory(sessionId) });
+      break;
+    case 'plugin_turn_limit_changed':
+      void client.invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(sessionId) });
+      break;
     case 'user_message':
       appendUserMessage(client, sessionId, event.data as SessionEventData);
       break;

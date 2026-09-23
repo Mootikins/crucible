@@ -160,6 +160,10 @@ fn non_empty(s: String) -> Option<String> {
 
 fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
     match turn {
+        TurnPayload::ContextCleared { plugin } => vec![ChatAppMsg::SystemNotice(match plugin {
+            Some(name) => format!("── ↻ {name} cleared the context ──"),
+            None => "── Context cleared ──".to_string(),
+        })],
         TurnPayload::UserMessage { content, .. } => non_empty(content)
             .map(|c| vec![ChatAppMsg::UserMessage(c)])
             .unwrap_or_default(),
@@ -474,4 +478,14 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
         // `replay_complete` is consumed by the stateful wrapper, not here.
         _ => vec![],
     }
+}
+
+#[cfg(test)]
+#[test]
+fn context_cleared_names_the_plugin_in_the_transcript() {
+    let messages =
+        session_event_to_chat_msgs("context_cleared", &serde_json::json!({"plugin": "alpha"}));
+    assert!(
+        matches!(&messages[..], [ChatAppMsg::SystemNotice(text)] if text == "── ↻ alpha cleared the context ──")
+    );
 }

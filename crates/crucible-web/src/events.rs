@@ -417,6 +417,7 @@ impl ChatEvent {
                 // Not modelled by the browser's presentation enum; the raw
                 // envelope still reaches it through the passthrough.
                 TurnPayload::UserMessage { .. }
+                | TurnPayload::ContextCleared { .. }
                 | TurnPayload::ToolCallUpdate { .. }
                 | TurnPayload::InteractionCompleted { .. }
                 | TurnPayload::ContextInjected { .. }

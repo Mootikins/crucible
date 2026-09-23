@@ -311,6 +311,7 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
                 "parent_session_id": session.parent_session_id,
                 "agent": session.agent,
                 "plugin_approvals": session.plugin_approvals,
+                "plugin_turn_limit": session.plugin_turn_limit,
             });
 
             if let Some(mode) = session.recording_mode {

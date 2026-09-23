@@ -48,6 +48,12 @@ pub struct SessionPluginRequest {
     pub plugin: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginTurnLimitRequest {
+    pub session_id: String,
+    pub limit: u32,
+}
+
 /// Request for `session.set_precognition`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
@@ -291,6 +297,33 @@ impl DaemonClient {
             },
         )
         .await
+    }
+
+    pub async fn session_set_plugin_turn_limit(&self, session_id: &str, limit: u32) -> Result<()> {
+        self.typed_unit_call(
+            "session.set_plugin_turn_limit",
+            SessionPluginTurnLimitRequest {
+                session_id: session_id.to_owned(),
+                limit,
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_plugin_turn_limit(&self, session_id: &str) -> Result<u32> {
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.get_plugin_turn_limit",
+                SessionIdRequest {
+                    session_id: session_id.to_string(),
+                },
+            )
+            .await?;
+        let limit = result
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| anyhow::anyhow!("session.get_plugin_turn_limit omitted limit"))?;
+        Ok(u32::try_from(limit)?)
     }
 
     pub async fn session_get_plugin_approval(

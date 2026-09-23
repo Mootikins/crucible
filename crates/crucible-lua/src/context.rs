@@ -383,6 +383,14 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             unimplemented!()
         }
+        fn clear_session(
+            &self,
+            _: String,
+            _: Option<String>,
+            _: Option<String>,
+        ) -> Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send>> {
+            unimplemented!()
+        }
         fn cancel(&self, _: String) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
             unimplemented!()
         }

@@ -502,11 +502,11 @@ fn lua_evaled_error_surfaces_notification() {
 }
 
 #[test]
-fn repl_clear_dispatches_clear_history() {
+fn repl_clear_dispatches_lua_command() {
     let mut app = app();
     assert!(matches!(
         app.handle_repl_command(":clear"),
-        Action::Send(ChatAppMsg::ClearHistory)
+        Action::Send(ChatAppMsg::RunPluginCommand { name, args }) if name == "clear" && args.is_empty()
     ));
 }
 

@@ -815,6 +815,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // of which `session.list` sends.
         "session.get" => json!({
             "session_id": "test-session-001",
+            "plugin_turn_limit": 5,
             "type": "chat",
             "kilns": ["test-kiln"],
             "workspace": "/tmp/test-kiln",
@@ -1158,6 +1159,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.set_context_strategy" => json!(null),
         "session.get_context_strategy" => json!({"context_strategy": "recent"}),
         "session.set_plugin_approval" => json!({"plugin": "alpha", "approval": "ask"}),
+        "session.set_plugin_turn_limit" => json!(null),
         "session.get_plugin_approval" => json!({"plugin": "alpha", "approval": "ask"}),
         "session.list_plugin_approvals" => json!({"approvals": {"alpha": "ask", "beta": "stop"}}),
         "session.set_output_validation" => json!(null),

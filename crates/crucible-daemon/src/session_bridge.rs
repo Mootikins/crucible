@@ -374,6 +374,23 @@ impl DaemonSessionApi for DaemonSessionBridge {
         )
     }
 
+    fn clear_session(
+        &self,
+        session_id: String,
+        prompt: Option<String>,
+        plugin: Option<String>,
+    ) -> BoxFut<Option<String>> {
+        bridge_async!(
+            self.agent_manager,
+            self.event_tx,
+            |am, event_tx| async move {
+                am.clear_session(&session_id, prompt, plugin, &event_tx)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        )
+    }
+
     fn cancel(&self, session_id: String) -> BoxFut<bool> {
         bridge_async!(self.agent_manager, |am| async move {
             Ok(am.cancel(&session_id).await)

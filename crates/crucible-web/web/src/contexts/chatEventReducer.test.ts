@@ -204,6 +204,11 @@ beforeEach(() => {
 // ============================================================================
 
 describe('event matrix — covers every ChatEvent variant', () => {
+  it('shows a live context clear divider with the plugin name', () => {
+    const h = createHarness();
+    h.reducer({ type: 'session_event', event: 'context_cleared', data: { plugin: 'alpha' } });
+    expect(h.state.messages).toMatchObject([{ role: 'system', content: '↻ alpha cleared the context' }]);
+  });
   // ---- Parameterized clusters (homogeneous shape across many variants) ----
 
   // tool_call: dispatch one tool-call event, assert the ToolCallDisplay

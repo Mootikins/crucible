@@ -208,6 +208,14 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         Box::pin(async { Ok("msg-001".to_string()) })
     }
+    fn clear_session(
+        &self,
+        _: String,
+        _: Option<String>,
+        _: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send>> {
+        Box::pin(async { Ok(None) })
+    }
     fn cancel(&self, _: String) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
         Box::pin(async { Ok(true) })
     }

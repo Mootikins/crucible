@@ -55,6 +55,13 @@ pub enum LogEvent {
     /// User message
     User { ts: DateTime<Utc>, content: String },
 
+    /// Conversation context was cleared at this point in the same session.
+    Clear {
+        ts: DateTime<Utc>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin: Option<String>,
+    },
+
     /// Assistant response (final, not streaming chunks)
     Assistant {
         ts: DateTime<Utc>,
@@ -329,6 +336,7 @@ impl LogEvent {
             LogEvent::Init { ts, .. }
             | LogEvent::System { ts, .. }
             | LogEvent::User { ts, .. }
+            | LogEvent::Clear { ts, .. }
             | LogEvent::Assistant { ts, .. }
             | LogEvent::Thinking { ts, .. }
             | LogEvent::ToolCall { ts, .. }

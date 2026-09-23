@@ -22,6 +22,8 @@ const GET = 'GET /api/session/s1/config/context-strategy';
 const SET = 'PUT /api/session/s1/config/context-strategy';
 const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
 const SET_APPROVAL = 'PUT /api/session/s1/config/plugins/alpha/approval';
+const GET_LIMIT = 'GET /api/session/s1/config/plugin-turn-limit';
+const SET_LIMIT = 'PUT /api/session/s1/config/plugin-turn-limit';
 
 let env: TestQueryEnv;
 
@@ -32,6 +34,8 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
     [SET]: () => new Response(null, { status: 204 }),
     [APPROVALS]: () => ({ approvals: { alpha: 'inherit' } }),
     [SET_APPROVAL]: () => ({ success: true }),
+    [GET_LIMIT]: () => ({ limit: 5 }),
+    [SET_LIMIT]: () => ({ success: true }),
     ...routes,
   });
   return env;
@@ -54,6 +58,18 @@ afterEach(() => {
 });
 
 describe('AdvancedSessionSettings', () => {
+  it('shows and updates the session plugin turn limit', async () => {
+    let sent: unknown;
+    serve({ [SET_LIMIT]: async (request) => {
+      sent = await request.json();
+      return { success: true };
+    } });
+    renderSection();
+    const input = await screen.findByTestId('plugin-turn-limit');
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe('5'));
+    fireEvent.change(input, { target: { value: '7' } });
+    await waitFor(() => expect(sent).toEqual({ limit: 7 }));
+  });
   it('shows loaded plugins and persists a stricter approval', async () => {
     let sent: unknown;
     serve({

@@ -31,6 +31,10 @@ impl PluginApproval {
     }
 }
 
+fn default_plugin_turn_limit() -> u32 {
+    25
+}
+
 /// A session is a continuous sequence of agent actions in a workspace.
 ///
 /// Sessions are the fundamental unit of agent interaction in Crucible.
@@ -210,6 +214,11 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub plugin_approvals: BTreeMap<String, PluginApproval>,
 
+    /// Consecutive plugin turns allowed before the daemon raises this plugin's
+    /// approval floor to ask. Zero asks before the first plugin turn.
+    #[serde(default = "default_plugin_turn_limit")]
+    pub plugin_turn_limit: u32,
+
     /// The kiln set as it appears on disk: paths, in all three spellings a
     /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
@@ -307,6 +316,7 @@ impl Session {
             variables: BTreeMap::new(),
             plugin: None,
             plugin_approvals: BTreeMap::new(),
+            plugin_turn_limit: default_plugin_turn_limit(),
         }
     }
 

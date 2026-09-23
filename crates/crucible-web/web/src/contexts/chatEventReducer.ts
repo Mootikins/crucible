@@ -635,6 +635,18 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           break;
         }
 
+        if (event.event === 'context_cleared') {
+          const plugin = (event.data as { plugin?: string } | null)?.plugin;
+          deps.addMessage({
+            id: generateMessageId(),
+            role: 'system',
+            type: 'clear',
+            content: plugin ? `↻ ${plugin} cleared the context` : 'Context cleared',
+            timestamp: Date.now(),
+          });
+          break;
+        }
+
         // The daemon echoes user_message over SSE with the turn's canonical
         // message_id — the same id sendMessage keyed its entry on, so dedup
         // is exact. Viewers that attached mid-turn get the prompt from here.

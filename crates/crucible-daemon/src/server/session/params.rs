@@ -135,6 +135,25 @@ session_config_setter!(
     optional_param!(req, "precognition_enabled", as_bool).unwrap_or(true)
 );
 
+pub(crate) async fn handle_session_set_plugin_turn_limit(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let limit = require_param!(req, "limit", as_u64);
+    let Ok(limit) = u32::try_from(limit) else {
+        return Response::error(req.id, INVALID_PARAMS, "limit must fit in u32");
+    };
+    match am
+        .set_plugin_turn_limit(session_id, limit, Some(event_tx))
+        .await
+    {
+        Ok(()) => Response::success(req.id, serde_json::json!({"limit": limit})),
+        Err(e) => agent_error_to_response(req.id, e),
+    }
+}
+
 // timeout_secs can be null to clear the timeout, so we use optional.
 // ── Getters (uniform shape: fetch → echo, sync `AgentManager` accessors) ─────
 
@@ -149,6 +168,11 @@ session_config_getter!(
     get_context_strategy,
     "context_strategy",
     display
+);
+session_config_getter!(
+    handle_session_get_plugin_turn_limit,
+    get_plugin_turn_limit,
+    "limit"
 );
 
 // ── Hand-written handlers (deviate from the uniform macro shape) ────────────

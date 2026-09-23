@@ -2,6 +2,49 @@ use crate::test_support::TestLuaBuilder;
 use mlua::{Table, Value};
 
 #[tokio::test]
+async fn clear_passes_one_prompt_and_current_plugin_to_daemon() {
+    use crate::sessions::register_sessions_module_with_api;
+    use std::sync::Arc;
+
+    let lua = TestLuaBuilder::new().build();
+    let api = Arc::new(super::MockDaemonApi::new());
+    register_sessions_module_with_api(&lua, api.clone()).unwrap();
+    crate::plugin_context::enter_plugin(&lua, "alpha");
+    let response: (String, Value) = lua
+        .load("return cru.session.clear('session-1', { prompt = 'continue' })")
+        .eval_async()
+        .await
+        .unwrap();
+    assert_eq!(response.0, "msg-clear-001");
+    assert!(matches!(response.1, Value::Nil));
+    assert_eq!(
+        api.clear_calls(),
+        vec![(
+            "session-1".into(),
+            Some("continue".into()),
+            Some("alpha".into())
+        )]
+    );
+}
+
+#[tokio::test]
+async fn clear_without_options_calls_the_same_primitive() {
+    use crate::sessions::register_sessions_module_with_api;
+    use std::sync::Arc;
+
+    let lua = TestLuaBuilder::new().build();
+    let api = Arc::new(super::MockDaemonApi::new());
+    register_sessions_module_with_api(&lua, api.clone()).unwrap();
+    let result: (Value, Value) = lua
+        .load("return cru.session.clear('s1')")
+        .eval_async()
+        .await
+        .unwrap();
+    assert!(matches!(result, (Value::Nil, Value::Nil)));
+    assert_eq!(api.clear_calls(), vec![("s1".into(), None, None)]);
+}
+
+#[tokio::test]
 async fn sessions_stub_create_returns_nil() {
     let lua = TestLuaBuilder::new().with_sessions().build();
 

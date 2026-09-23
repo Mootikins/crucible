@@ -32,3 +32,27 @@ async fn plugin_approval_can_be_read_and_changed_after_session_eviction() {
         PluginApproval::Stop
     );
 }
+
+#[tokio::test]
+async fn plugin_turn_limit_is_session_owned_and_survives_eviction() {
+    let sessions = temp_session_manager();
+    let session = sessions
+        .create_session(SessionType::Chat, vec![], None, None)
+        .await
+        .unwrap();
+    let id = session.id.to_string();
+    let agents = create_test_agent_manager(sessions.clone());
+    agents.set_plugin_turn_limit(&id, 5, None).await.unwrap();
+    sessions.end_session(&id).await.unwrap();
+    sessions.remove_session(&id).unwrap();
+    assert_eq!(
+        sessions
+            .read_session(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .plugin_turn_limit,
+        5
+    );
+    assert!(agents.set_plugin_turn_limit(&id, 0, None).await.is_err());
+}

@@ -12,10 +12,12 @@ import {
   listAgentOptions,
   listKnobs,
   listPluginApprovals,
+  getPluginTurnLimit,
   setAgentOption,
   setContextStrategy,
   setPrecognition,
   setPluginApproval,
+  setPluginTurnLimit,
   type PluginApproval,
   type SessionStatusSlot,
 } from '@/lib/api';
@@ -199,6 +201,21 @@ export function usePluginApprovals(
   id: Accessor<string | null>,
 ): UseQueryResult<Record<string, PluginApproval>, Error> {
   return sessionQuery(id, keys.sessionPluginApprovals, listPluginApprovals);
+}
+
+export function usePluginTurnLimit(id: Accessor<string | null>): UseQueryResult<number, Error> {
+  return sessionQuery(id, keys.sessionPluginTurnLimit, getPluginTurnLimit);
+}
+
+export function useSetPluginTurnLimit(): UseMutationResult<void, Error, { id: string; limit: number }> {
+  return useMutation(
+    () => ({
+      mutationFn: ({ id, limit }: { id: string; limit: number }) => setPluginTurnLimit(id, limit),
+      onSuccess: (_result: void, { id }: { id: string; limit: number }) =>
+        getQueryClient().invalidateQueries({ queryKey: keys.sessionPluginTurnLimit(id) }),
+    }),
+    () => getQueryClient(),
+  );
 }
 
 export function useSetPluginApproval(): UseMutationResult<

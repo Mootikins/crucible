@@ -121,6 +121,12 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
             LogEvent::Thinking { content, .. } => {
                 println!("[thinking] {}", truncate_chars(content, 100, true));
             }
+            LogEvent::Clear { plugin, .. } => {
+                println!(
+                    "[context cleared by {}]",
+                    plugin.as_deref().unwrap_or("user")
+                );
+            }
             LogEvent::SubagentSpawned {
                 id, session_link, ..
             } => {

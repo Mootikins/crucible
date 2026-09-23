@@ -134,6 +134,7 @@ impl Group {
         Some(match event {
             // Turn (14). [`migrate`] gives the old names their current form.
             "user_message"
+            | "context_cleared"
             | "text_delta"
             | "thinking"
             | "segment_complete"

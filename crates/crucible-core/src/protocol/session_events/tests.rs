@@ -53,6 +53,23 @@ fn to_wire_and_from_wire_round_trip() {
     ));
 }
 
+#[test]
+fn context_clear_is_a_persisted_turn_marker() {
+    let payload = SessionEventPayload::Turn(TurnPayload::ContextCleared {
+        plugin: Some("alpha".into()),
+    });
+    let (name, data) = payload.to_wire();
+    assert_eq!(name, "context_cleared");
+    assert_eq!(data, serde_json::json!({"plugin": "alpha"}));
+    assert!(payload.is_persisted());
+    assert!(matches!(
+        SessionEventPayload::from_wire(&name, &data),
+        Ok(SessionEventPayload::Turn(
+            TurnPayload::ContextCleared { .. }
+        ))
+    ));
+}
+
 /// An unknown name is an error that still carries the name, not a lossy
 /// `#[serde(other)]` unit variant. Consumers pass `{event, data}` straight
 /// through on this path.

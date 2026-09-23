@@ -218,6 +218,11 @@ async fn no_knob_restarts_the_agent_process() {
                 .set_mode(id, "plan", None)
                 .await
                 .expect("the agent declared `plan`"),
+            SessionKnob::PluginTurnLimit => h
+                .agent_manager
+                .set_plugin_turn_limit(id, 7, None)
+                .await
+                .expect("the daemon owns this limit"),
         }
         assert_eq!(
             handshakes(&h),

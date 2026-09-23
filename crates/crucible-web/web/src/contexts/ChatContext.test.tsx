@@ -608,6 +608,23 @@ describe('isLoadingHistory', () => {
     );
   }
 
+  it('keeps both sides of a clear marker on history reload', async () => {
+    historyAnswer = () => ({
+      session_id: ID,
+      history: [
+        { type: 'event', session_id: ID, event: 'user_message', data: { message_id: 'before', content: 'before' } },
+        { type: 'event', session_id: ID, event: 'context_cleared', data: { plugin: 'alpha' } },
+        { type: 'event', session_id: ID, event: 'user_message', data: { message_id: 'after', content: 'after' } },
+      ],
+      total_events: 3,
+    });
+    render(() => <TestWrapper><HistoryTestConsumer /></TestWrapper>);
+    await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('3'));
+    expect(screen.getByTestId('hist-msg-before').textContent).toBe('before');
+    expect(screen.getByTestId('hist-msg-clear-1').textContent).toContain('alpha cleared the context');
+    expect(screen.getByTestId('hist-msg-after').textContent).toBe('after');
+  });
+
   it('is true during history load and false after', async () => {
     const held = deferred<unknown>();
     historyAnswer = () => held.promise;

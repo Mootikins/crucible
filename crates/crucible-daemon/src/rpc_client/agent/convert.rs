@@ -242,6 +242,7 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
         }
         // `user_message` is the client's own input echoed back.
         TurnPayload::UserMessage { .. }
+        | TurnPayload::ContextCleared { .. }
         // Segments are additive over `message_complete`'s full text; a
         // `TurnEvent` consumer accumulates deltas and would double-count.
         | TurnPayload::SegmentComplete { .. }

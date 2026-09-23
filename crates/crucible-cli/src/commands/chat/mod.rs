@@ -886,6 +886,10 @@ async fn apply_rpc_action(
             .set_precognition(enabled)
             .await
             .map_err(|e| e.to_string()),
+        SetRpcAction::SetPluginTurnLimit(limit) => handle
+            .set_plugin_turn_limit(limit)
+            .await
+            .map_err(|e| e.to_string()),
     }
 }
 

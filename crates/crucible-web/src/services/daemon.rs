@@ -613,6 +613,12 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Once SessionSetPluginTurnLimit =>
+        session_set_plugin_turn_limit(session_id: &str, limit: u32)
+        -> () = session_set_plugin_turn_limit(&session_id, limit);
+    }
+
+    forward_rpc! {
         Safe SessionGetPluginApproval =>
         session_get_plugin_approval(session_id: &str, plugin: &str)
         -> crucible_core::session::PluginApproval = session_get_plugin_approval(&session_id, &plugin);

@@ -15,7 +15,7 @@ import { Component, For, createSignal } from 'solid-js';
 
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { useGetContextStrategy, usePluginApprovals, useSetContextStrategy, useSetPluginApproval, type PluginApproval } from '@/lib/query/session-config';
+import { useGetContextStrategy, usePluginApprovals, usePluginTurnLimit, useSetContextStrategy, useSetPluginApproval, useSetPluginTurnLimit, type PluginApproval } from '@/lib/query/session-config';
 
 import { SettingRow, SettingsSectionState } from './primitives';
 
@@ -44,10 +44,12 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const setStrategy = useSetContextStrategy();
   const approvals = usePluginApprovals(sessionId);
   const setApproval = useSetPluginApproval();
+  const turnLimit = usePluginTurnLimit(sessionId);
+  const setTurnLimit = useSetPluginTurnLimit();
 
   /** The failure of one write, which is not the failure of the read. */
   const [writeError, setWriteError] = createSignal<string | null>(null);
-  const error = () => writeError() ?? strategyQuery.error?.message ?? approvals.error?.message ?? null;
+  const error = () => writeError() ?? strategyQuery.error?.message ?? approvals.error?.message ?? turnLimit.error?.message ?? null;
 
   const options = (known: string[], current: string) =>
     current && !known.includes(current) ? [current, ...known] : known;
@@ -88,6 +90,28 @@ export const AdvancedSessionSettingsSection: Component = () => {
             <option value={name}>{name}</option>
           ))}
         </select>
+      </SettingRow>
+
+      <SettingRow label="Plugin turn limit" description="Consecutive plugin turns before approval switches to Ask">
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={turnLimit.data ?? 25}
+          data-testid="plugin-turn-limit"
+          class={`${inputClass} w-24`}
+          onChange={async (e) => {
+            const id = sessionId();
+            const limit = Number((e.target as HTMLInputElement).value);
+            if (!id || !Number.isSafeInteger(limit) || limit < 1) return;
+            setWriteError(null);
+            try {
+              await setTurnLimit.mutateAsync({ id, limit });
+            } catch (err) {
+              setWriteError(err instanceof Error ? err.message : 'Failed to set plugin turn limit');
+            }
+          }}
+        />
       </SettingRow>
 
       <For each={Object.entries(approvals.data ?? {})}>

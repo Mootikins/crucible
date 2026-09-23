@@ -31,6 +31,7 @@ export const keys = {
   sessionPrecognition: (id: string) => ['session', id, 'config/precognition'] as const,
   sessionContextStrategy: (id: string) => ['session', id, 'config/context-strategy'] as const,
   sessionPluginApprovals: (id: string) => ['session', id, 'config/plugin-approvals'] as const,
+  sessionPluginTurnLimit: (id: string) => ['session', id, 'config/plugin-turn-limit'] as const,
   sessionScope: (id: string) => ['session', id, 'scope'] as const,
   allModels: () => ['models', 'all'] as const,
   providers: () => ['providers'] as const,

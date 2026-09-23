@@ -95,6 +95,67 @@ fn method_log(path: &Path) -> Vec<String> {
         .collect()
 }
 
+#[tokio::test]
+async fn clear_opens_a_new_acp_session_under_the_same_crucible_id() {
+    let temp = TempDir::new().unwrap();
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let log_path = temp.path().join("methods.log");
+    let sessions = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
+    let (event_tx, _rx) = broadcast::channel(256);
+    let session = sessions
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+    let manager = manager(sessions.clone(), resuming_script(&log_path), &event_tx);
+    manager
+        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .await
+        .unwrap();
+    let (_, done) = manager
+        .send_message_notified(&session.id, "first".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    completed_turn(done, TURN_TIMEOUT).await;
+    let old_acp_id = sessions
+        .get_session(&session.id)
+        .unwrap()
+        .acp_session_id
+        .unwrap();
+
+    manager
+        .clear_session(&session.id, None, Some("alpha".into()), &event_tx)
+        .await
+        .unwrap();
+    let after_clear = sessions.get_session(&session.id).unwrap();
+    assert_ne!(
+        after_clear.acp_session_id.as_deref(),
+        Some(old_acp_id.as_str())
+    );
+    let (_, done) = manager
+        .send_message_notified(&session.id, "after clear".into(), &event_tx, true, None)
+        .await
+        .unwrap();
+    completed_turn(done, TURN_TIMEOUT).await;
+
+    let live = sessions.get_session(&session.id).unwrap();
+    assert_eq!(live.id, session.id);
+    assert_ne!(live.acp_session_id.as_deref(), Some(old_acp_id.as_str()));
+    let log = method_log(&log_path);
+    assert_eq!(
+        log.iter()
+            .filter(|line| line.starts_with("session/new"))
+            .count(),
+        2,
+        "{log:?}"
+    );
+    assert!(
+        !log.iter()
+            .any(|line| line == &format!("session/resume {old_acp_id}")),
+        "{log:?}"
+    );
+}
+
 /// The full loop: turn one opens an agent session, the daemon persists its
 /// id, and a rebuilt handle resumes that id instead of opening a second one.
 #[tokio::test]

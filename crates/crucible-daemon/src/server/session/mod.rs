@@ -49,8 +49,9 @@ pub(crate) use notifications::{
 };
 pub(crate) use params::{
     handle_session_cache_stats, handle_session_can_undo, handle_session_get_context_strategy,
-    handle_session_get_mode, handle_session_get_precognition, handle_session_set_context_strategy,
-    handle_session_set_mode, handle_session_set_precognition, handle_session_undo,
+    handle_session_get_mode, handle_session_get_plugin_turn_limit, handle_session_get_precognition,
+    handle_session_set_context_strategy, handle_session_set_mode,
+    handle_session_set_plugin_turn_limit, handle_session_set_precognition, handle_session_undo,
     handle_session_undo_depth,
 };
 pub(crate) use scope::{

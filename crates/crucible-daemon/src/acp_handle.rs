@@ -534,6 +534,12 @@ impl SessionKnobs for AcpAgentHandle {
     fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
         crucible_core::session::PluginApproval::Inherit
     }
+    async fn set_plugin_turn_limit(&mut self, _limit: u32) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_turn_limit".into()))
+    }
+    fn get_plugin_turn_limit(&self) -> u32 {
+        25
+    }
 }
 
 // -- Native `Agent` impl ----------------------------------------------------

@@ -241,6 +241,12 @@ pub trait SessionKnobs: Send + Sync {
 
     /// Read the permission floor for one plugin; absence means inherit.
     fn get_plugin_approval(&self, plugin: &str) -> crate::session::PluginApproval;
+
+    /// Set the maximum number of consecutive plugin turns before approval rises to Ask.
+    async fn set_plugin_turn_limit(&mut self, limit: u32) -> ChatResult<()>;
+
+    /// Read the current session's plugin turn limit.
+    fn get_plugin_turn_limit(&self) -> u32;
 }
 
 /// The empty answer for every knob: each setter returns
@@ -306,6 +312,17 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_plugin_approval(&self, _plugin: &str) -> $crate::session::PluginApproval {
                 $crate::session::PluginApproval::Inherit
+            }
+            async fn set_plugin_turn_limit(
+                &mut self,
+                _limit: u32,
+            ) -> $crate::traits::chat::ChatResult<()> {
+                Err($crate::traits::chat::ChatError::NotSupported(
+                    "set_plugin_turn_limit".into(),
+                ))
+            }
+            fn get_plugin_turn_limit(&self) -> u32 {
+                25
             }
         }
     };
@@ -487,6 +504,14 @@ impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
 
     fn get_plugin_approval(&self, plugin: &str) -> crate::session::PluginApproval {
         (**self).get_plugin_approval(plugin)
+    }
+
+    async fn set_plugin_turn_limit(&mut self, limit: u32) -> ChatResult<()> {
+        (**self).set_plugin_turn_limit(limit).await
+    }
+
+    fn get_plugin_turn_limit(&self) -> u32 {
+        (**self).get_plugin_turn_limit()
     }
 
     // Every DEFAULTED method on the trait has to be repeated here, and the

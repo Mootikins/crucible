@@ -53,6 +53,10 @@ pub(crate) const SESSION_FNS: &[(&str, &str)] = &[
         "send_message",
         "(session_id: string, content: string) -> (string?, string?)",
     ),
+    (
+        "clear",
+        "(session_id: string, options: { prompt: string? }?) -> (string?, string?)",
+    ),
     // The boolean says whether anything WAS cancelled, so `false` is a real
     // answer and not a failure.
     ("cancel", "(session_id: string) -> (boolean?, string?)"),
@@ -322,6 +326,25 @@ pub(crate) async fn send_message_op(
             let s = lua.create_string(&response_id)?;
             Ok((Value::String(s), Value::Nil))
         }
+        Err(e) => err_pair(lua, e),
+    }
+}
+
+pub(crate) async fn clear_op(
+    lua: &Lua,
+    api: &Arc<dyn DaemonSessionApi>,
+    sid: &str,
+    options: Value,
+) -> mlua::Result<(Value, Value)> {
+    let prompt = match options {
+        Value::Nil => None,
+        Value::Table(table) => table.get::<Option<String>>("prompt")?,
+        _ => return err_pair(lua, "clear options must be a table".to_string()),
+    };
+    let plugin = crate::plugin_context::current_plugin_name(lua);
+    match api.clear_session(sid.to_string(), prompt, plugin).await {
+        Ok(Some(response_id)) => Ok((Value::String(lua.create_string(&response_id)?), Value::Nil)),
+        Ok(None) => Ok((Value::Nil, Value::Nil)),
         Err(e) => err_pair(lua, e),
     }
 }
@@ -784,6 +807,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("list", ());
     stub_async!("configure_agent", (String, Value));
     stub_async!("send_message", (String, String));
+    stub_async!("clear", (String, Value));
     stub_async!("cancel", String);
     stub_async!("pause", String);
     stub_async!("resume", String);
@@ -977,6 +1001,16 @@ fn register_sessions_inner(
         move |lua, (session_id, content): (String, String)| {
             let a = Arc::clone(&a);
             async move { send_message_op(&lua, &a, &session_id, content).await }
+        },
+    )?;
+
+    let a = Arc::clone(&api);
+    ns.async_func(
+        "clear",
+        decl("clear")?,
+        move |lua, (session_id, options): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move { clear_op(&lua, &a, &session_id, options).await }
         },
     )?;
 

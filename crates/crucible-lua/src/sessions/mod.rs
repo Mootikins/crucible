@@ -193,6 +193,14 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         content: String,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 
+    /// Clear context in the same session and optionally start one new turn.
+    fn clear_session(
+        &self,
+        session_id: String,
+        prompt: Option<String>,
+        plugin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send>>;
+
     /// Cancel the current operation in a session.
     ///
     /// Returns `true` if something was cancelled.

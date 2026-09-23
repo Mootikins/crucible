@@ -371,3 +371,156 @@ async fn plugin_ask_overrides_an_internal_turns_allow_override() {
         .unwrap();
     events_until_turn_finished(&mut h.event_rx).await;
 }
+
+#[tokio::test]
+async fn a_plugin_loop_raises_approval_after_the_session_limit() {
+    let mut h = ReactorTestHarness::new().await;
+    h.agent_manager
+        .session_manager
+        .modify_session(&h.session_id, |session| {
+            session.plugin_turn_limit = 2;
+            true
+        })
+        .await
+        .unwrap();
+    let _vm = h.load_daemon_lua(
+        r#"
+            completed = 0
+            cru.on("turn:complete", function(ctx, event)
+                completed += 1
+                if completed <= 3 then
+                    return { inject = { content = "keep going" } }
+                end
+            end)
+        "#,
+    );
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.send("start").await;
+    let mut notices = Vec::new();
+    for _ in 0..4 {
+        let events = events_until_turn_finished(&mut h.event_rx).await;
+        notices.extend(
+            events
+                .into_iter()
+                .filter(|e| e.event == "notification_added"),
+        );
+    }
+    let approvals = h
+        .agent_manager
+        .list_plugin_approvals(&h.session_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        approvals
+            .values()
+            .filter(|a| **a == PluginApproval::Ask)
+            .count(),
+        1
+    );
+    assert_eq!(notices.len(), 1, "the loop limit must notify once");
+}
+
+#[tokio::test]
+async fn clear_with_prompt_starts_a_fresh_turn_in_the_same_session() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.send("before").await;
+    events_until_turn_finished(&mut h.event_rx).await;
+
+    let next = h
+        .agent_manager
+        .clear_session(&h.session_id, Some("after".into()), None, &h.event_tx)
+        .await
+        .unwrap();
+    assert!(next.is_some());
+    events_until_turn_finished(&mut h.event_rx).await;
+    let slot = h.agent_manager.slot(&h.session_id);
+    let tree = slot.tree.get().unwrap().lock().await;
+    let path = tree.path_to_here(tree.current());
+    assert!(!path.iter().any(|id| matches!(&tree.get(*id).content,
+        crucible_core::turn::NodeContent::User { text } if text == "before")));
+    assert!(path.iter().any(|id| matches!(&tree.get(*id).content,
+        crucible_core::turn::NodeContent::User { text } if text == "after")));
+    let session = h
+        .agent_manager
+        .session_manager
+        .get_session(&h.session_id)
+        .unwrap();
+    let log = std::fs::read_to_string(
+        session.jsonl_path(h.agent_manager.session_manager.sessions_root()),
+    )
+    .unwrap();
+    assert!(
+        log.contains("\"type\":\"clear\""),
+        "the same session records a clear marker"
+    );
+}
+
+#[tokio::test]
+async fn clear_keeps_the_plugin_turn_count_and_user_turn_resets_it() {
+    use std::sync::atomic::Ordering;
+    let mut h = ReactorTestHarness::new().await;
+    let slot = h.agent_manager.slot(&h.session_id);
+    slot.plugin_turn_count.store(4, Ordering::Relaxed);
+    h.agent_manager
+        .clear_session(&h.session_id, None, Some("alpha".into()), &h.event_tx)
+        .await
+        .unwrap();
+    assert_eq!(slot.plugin_turn_count.load(Ordering::Relaxed), 4);
+
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.send("user resumed").await;
+    events_until_turn_finished(&mut h.event_rx).await;
+    assert_eq!(slot.plugin_turn_count.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn a_plugin_can_clear_and_start_one_turn_from_turn_complete() {
+    let mut h = ReactorTestHarness::new().await;
+    let loader = h.load_daemon_lua("");
+    let temp = TempDir::new().unwrap();
+    let ctx = Arc::new(crate::rpc::RpcContext::for_test(
+        h.agent_manager.kiln_manager.clone(),
+        h.agent_manager.session_manager.clone(),
+        h.agent_manager.clone(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            temp.path().join("projects.json"),
+        )),
+        h.event_tx.clone(),
+        temp.path().into(),
+    ));
+    let lua = loader.plugin_lua();
+    crucible_lua::register_sessions_module_with_api(
+        &lua,
+        Arc::new(crate::session_bridge::DaemonSessionBridge::new(ctx)),
+    )
+    .unwrap();
+    let previous = crucible_lua::enter_plugin(&lua, "alpha");
+    lua.load(
+        r#"
+        clear_error = nil
+        completed = 0
+        cru.on("turn:complete", function(ctx, event)
+            completed += 1
+            if completed == 1 then
+                local _, err = cru.session.clear(event.session_id, { prompt = "after clear" })
+                clear_error = err
+            end
+        end)
+    "#,
+    )
+    .exec()
+    .unwrap();
+    crucible_lua::set_source(&lua, previous);
+
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.send("before clear").await;
+    events_until_turn_finished(&mut h.event_rx).await;
+    let second = events_until_turn_finished(&mut h.event_rx).await;
+    assert!(second.iter().any(|event| event.event == "context_cleared"));
+    assert!(second
+        .iter()
+        .any(|event| event.event == "user_message" && event.data["content"] == "after clear"));
+    let err: Option<String> = lua.globals().get("clear_error").unwrap();
+    assert!(err.is_none(), "clear failed: {err:?}");
+}

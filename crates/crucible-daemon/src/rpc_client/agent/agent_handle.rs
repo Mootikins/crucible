@@ -192,6 +192,18 @@ impl SessionKnobs for DaemonAgentHandle {
             .copied()
             .unwrap_or_default()
     }
+    async fn set_plugin_turn_limit(&mut self, limit: u32) -> ChatResult<()> {
+        self.client
+            .session_set_plugin_turn_limit(&self.session_id, limit)
+            .await
+            .chat_comm()?;
+        self.cached_plugin_turn_limit = limit;
+        Ok(())
+    }
+
+    fn get_plugin_turn_limit(&self) -> u32 {
+        self.cached_plugin_turn_limit
+    }
     /// A proxy handle was not built with a prompt; the daemon's own handle
     /// holds it. There is no RPC to read it back, and nothing needs one.
     fn get_system_prompt(&self) -> Option<String> {

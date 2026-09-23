@@ -16,6 +16,51 @@ pub(crate) struct SetPluginApprovalRequest {
     approval: PluginApproval,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct SetPluginTurnLimitRequest {
+    limit: u32,
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/session/{id}/config/plugin-turn-limit",
+    params(("id" = String, Path)),
+    request_body = SetPluginTurnLimitRequest,
+    responses((status = 200, body = OkResponse))
+)]
+pub(crate) async fn set_plugin_turn_limit(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SetPluginTurnLimitRequest>,
+) -> Result<Json<OkResponse>, WebError> {
+    state
+        .daemon
+        .session_set_plugin_turn_limit(&id, req.limit)
+        .await
+        .daemon_err()?;
+    Ok(OkResponse::success())
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct PluginTurnLimitResponse {
+    limit: u32,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/session/{id}/config/plugin-turn-limit",
+    params(("id" = String, Path)),
+    responses((status = 200, body = PluginTurnLimitResponse))
+)]
+pub(crate) async fn get_plugin_turn_limit(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<PluginTurnLimitResponse>, WebError> {
+    let session = state.daemon.session_get(&id).await.daemon_err()?;
+    let limit = session["plugin_turn_limit"].as_u64().unwrap_or(25) as u32;
+    Ok(Json(PluginTurnLimitResponse { limit }))
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct PluginApprovalResponse {
     plugin: String,

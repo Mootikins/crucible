@@ -14,6 +14,8 @@ mod proposals;
 mod subscription;
 mod ui;
 
+type ClearCall = (String, Option<String>, Option<String>);
+
 /// Mock implementation of DaemonSessionApi for testing.
 pub(super) struct MockDaemonApi {
     /// Whole params object from the most recent `create_session`, so tests can
@@ -33,6 +35,7 @@ pub(super) struct MockDaemonApi {
     /// Session ids from every `send_message` call, in order — what the
     /// handle-method tests assert the handle passed through.
     send_calls: StdMutex<Vec<String>>,
+    clear_calls: StdMutex<Vec<ClearCall>>,
     /// Session ids from every `end_session` call, in order.
     end_calls: StdMutex<Vec<String>>,
     /// `(session_id, hunk_id)` from every `review_list_hunks` call.
@@ -69,6 +72,7 @@ impl MockDaemonApi {
             undo_depth_value: StdMutex::new(2),
             completions: StdMutex::new(Vec::new()),
             send_calls: StdMutex::new(Vec::new()),
+            clear_calls: StdMutex::new(Vec::new()),
             end_calls: StdMutex::new(Vec::new()),
             review_list_calls: StdMutex::new(Vec::new()),
             mode_calls: StdMutex::new(Vec::new()),
@@ -91,6 +95,10 @@ impl MockDaemonApi {
     /// Session ids from every `send_message` call, in order.
     pub(super) fn send_calls(&self) -> Vec<String> {
         self.send_calls.lock().unwrap().clone()
+    }
+
+    pub(super) fn clear_calls(&self) -> Vec<ClearCall> {
+        self.clear_calls.lock().unwrap().clone()
     }
 
     /// Session ids from every `end_session` call, in order.
@@ -382,6 +390,19 @@ impl DaemonSessionApi for MockDaemonApi {
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         self.send_calls.lock().unwrap().push(session_id);
         Box::pin(async { Ok("msg-response-001".to_string()) })
+    }
+
+    fn clear_session(
+        &self,
+        session_id: String,
+        prompt: Option<String>,
+        plugin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>, String>> + Send>> {
+        self.clear_calls
+            .lock()
+            .unwrap()
+            .push((session_id, prompt.clone(), plugin));
+        Box::pin(async move { Ok(prompt.map(|_| "msg-clear-001".to_string())) })
     }
 
     fn cancel(

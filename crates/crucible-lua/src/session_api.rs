@@ -28,8 +28,8 @@
 use crate::error::LuaError;
 use crate::host_hook::HostHook;
 use crate::sessions::register::{
-    cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
-    fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
+    cache_stats_op, can_undo_op, cancel_op, clear_op, complete_op, configure_agent_op,
+    end_session_op, fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
     review_list_hunks_op, send_and_collect_op, send_message_op, set_mode_op, set_title_op,
     subscribe_op, undo_depth_op, undo_history_op, undo_op, unsubscribe_op,
 };
@@ -461,6 +461,7 @@ impl UserData for Session {
         // ── Lifecycle verbs ─────────────────────────────────────────────
         session_method!(methods, "configure_agent", configure_agent_op, config: Value);
         session_method!(methods, "send_message", send_message_op, content: String);
+        session_method!(methods, "clear", clear_op, options: Value);
         session_method!(methods, "cancel", cancel_op);
         session_method!(methods, "pause", pause_op);
         session_method!(methods, "resume", resume_op);

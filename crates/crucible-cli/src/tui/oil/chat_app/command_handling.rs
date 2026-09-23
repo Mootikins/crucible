@@ -247,7 +247,10 @@ impl OilChatApp {
                 Action::Continue
             }
             ReplCommand::Model => self.handle_model_repl(arg),
-            ReplCommand::Clear => Action::Send(ChatAppMsg::ClearHistory),
+            ReplCommand::Clear => Action::Send(ChatAppMsg::RunPluginCommand {
+                name: "clear".into(),
+                args: String::new(),
+            }),
             ReplCommand::Undo => {
                 let count = arg
                     .and_then(|n| n.parse::<usize>().ok())
@@ -598,6 +601,11 @@ impl OilChatApp {
                 self.runtime_config
                     .set(key, ConfigValue::Bool(*enabled), ModSource::Command);
                 self.send_setting_ack("precognition", enabled);
+            }
+            SetRpcAction::SetPluginTurnLimit(limit) => {
+                self.runtime_config
+                    .set_str(key, &limit.to_string(), ModSource::Command);
+                self.send_setting_ack("plugin_turn_limit", limit);
             }
         }
         match action.into_chat_msg() {

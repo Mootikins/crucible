@@ -40,6 +40,7 @@ export const Message: Component<MessageProps> = (props) => {
   const handleMarkdownClick = makeMarkdownClickHandler();
   const isUser = () => props.message.role === 'user';
   const isSystem = () => props.message.role === 'system';
+  const isClearMarker = () => props.message.type === 'clear';
   const hasPrecognition = () => !!props.message.precognition;
   const [copied, setCopied] = createSignal(false);
   const [isEditing, setIsEditing] = createSignal(false);
@@ -74,6 +75,13 @@ export const Message: Component<MessageProps> = (props) => {
   };
 
   return (
+    <Show when={!isClearMarker()} fallback={
+      <div class="flex w-full items-center gap-3 py-2 text-xs text-muted" data-testid="context-clear-divider">
+        <span class="h-px flex-1 bg-hairline" />
+        <span>{props.message.content}</span>
+        <span class="h-px flex-1 bg-hairline" />
+      </div>
+    }>
     <div
       // Bubble, then meta row, as one right-aligned group. The gap between
       // transcript rows belongs to the list.
@@ -196,5 +204,6 @@ export const Message: Component<MessageProps> = (props) => {
         </TurnMeta>
       </Show>
     </div>
+    </Show>
   );
 };

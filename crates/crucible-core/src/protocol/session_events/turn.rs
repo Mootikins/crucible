@@ -45,6 +45,12 @@ use crate::types::{CanonicalToolCall, ToolRender};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum TurnPayload {
+    /// Context before this marker remains in the transcript but is excluded
+    /// from future model turns.
+    ContextCleared {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin: Option<String>,
+    },
     UserMessage {
         #[serde(default)]
         message_id: String,
@@ -251,6 +257,7 @@ impl TurnPayload {
             Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted,
             Self::PrecognitionComplete { .. } => ScriptingEvent::PrecognitionComplete,
             Self::SegmentComplete { .. }
+            | Self::ContextCleared { .. }
             | Self::ToolCallUpdate { .. }
             | Self::ContextInjected { .. }
             | Self::PostLlmCall { .. }
@@ -267,6 +274,7 @@ impl TurnPayload {
     pub fn is_persisted(&self) -> bool {
         match self {
             Self::UserMessage { .. }
+            | Self::ContextCleared { .. }
             | Self::Thinking { .. }
             | Self::SegmentComplete { .. }
             | Self::MessageComplete { .. }

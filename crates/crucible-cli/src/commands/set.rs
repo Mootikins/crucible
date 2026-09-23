@@ -137,6 +137,12 @@ pub async fn execute(args: Vec<String>, session_id_flag: Option<String>) -> anyh
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to set precognition: {}", e))?;
             }
+            SetRpcAction::SetPluginTurnLimit(limit) => {
+                client
+                    .session_set_plugin_turn_limit(&session_id, *limit)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to set plugin turn limit: {}", e))?;
+            }
         }
         println!("Set {} on session {}", setting_str, session_id);
     }

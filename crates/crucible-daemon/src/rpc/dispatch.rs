@@ -146,6 +146,8 @@ rpc_methods! {
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
     SessionSetPluginApproval = "session.set_plugin_approval",
+    SessionSetPluginTurnLimit = "session.set_plugin_turn_limit",
+    SessionGetPluginTurnLimit = "session.get_plugin_turn_limit",
     SessionGetPluginApproval = "session.get_plugin_approval",
     SessionListPluginApprovals = "session.list_plugin_approvals",
     SessionInjectContext = "session.inject_context",
@@ -747,6 +749,21 @@ impl RpcDispatcher {
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionSetPluginTurnLimit => forward!(
+                id,
+                crate::server::session::handle_session_set_plugin_turn_limit(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionGetPluginTurnLimit => forward!(
+                id,
+                crate::server::session::handle_session_get_plugin_turn_limit(
+                    req.clone(),
+                    &self.ctx.agents
                 )
             ),
             RpcMethod::SessionGetPluginApproval => forward!(

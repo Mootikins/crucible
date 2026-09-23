@@ -140,6 +140,21 @@ async fn plugin_approval_routes_forward_plugin_and_value() {
     assert_eq!(body["approvals"], json!({"alpha": "ask", "beta": "stop"}));
 }
 
+#[tokio::test]
+async fn plugin_turn_limit_routes_forward_and_read_session_value() {
+    let uri = "/api/session/s1/config/plugin-turn-limit";
+    let (status, _, mock) = call("PUT", uri, Some(json!({"limit": 7}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let params = mock
+        .received_params("session.set_plugin_turn_limit")
+        .unwrap();
+    assert_eq!(params["session_id"], "s1");
+    assert_eq!(params["limit"], 7);
+    let (status, body, _) = call("GET", uri, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["limit"], 5);
+}
+
 // ── Nullable knobs ────────────────────────────────────────────────────────
 
 // ── mode, which is not a config/ knob ─────────────────────────────────────

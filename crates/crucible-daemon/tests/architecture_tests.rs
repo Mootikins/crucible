@@ -237,6 +237,11 @@ const CONFIG_METHODS: &[ConfigMethod] = &[
         request_field: "context_strategy",
         result_field: "context_strategy",
     },
+    ConfigMethod {
+        suffix: "plugin_turn_limit",
+        request_field: "limit",
+        result_field: "limit",
+    },
 ];
 
 const SESSION_ID: &str = "session_id";

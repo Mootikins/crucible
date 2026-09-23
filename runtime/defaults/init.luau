@@ -4,6 +4,17 @@
 -- That file runs second on the same VM, so anything it assigns wins and
 -- `cru.modes.x = nil` removes. Nothing merges and nothing re-applies.
 
+-- The built-in clear command uses the same public primitive plugins use.
+-- The command adapter in runtime/plugins/clear supplies the active session id.
+rawset(cru, "builtin_clear", function(args)
+  if type(args) ~= "table" or type(args.session_id) ~= "string" then
+    error("clear requires an active session")
+  end
+  local _, err = cru.session.clear(args.session_id)
+  if err then error(err) end
+  return "Context cleared"
+end)
+
 -- Precognition context formatter
 --
 -- Customizes how relevant notes are injected before the FIRST LLM turn of a
@@ -393,7 +404,7 @@ cru.config.set({
 -- `require` here would run the plugin now, before the operator's init.lua
 -- can disable it.
 cru.plugin.setup({
-  "auto-title", "consolidation", "crucible-help", "daily-notes", "discord",
+  "auto-title", "clear", "consolidation", "crucible-help", "daily-notes", "discord",
   "graph", "kanban", "oci", "reflection", "retrieval-lab", "review",
   "session-board", "todo-list", "web-search", "worktree",
 })
