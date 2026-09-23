@@ -17,8 +17,9 @@
 //! back would have to preserve that file's comments and layout, and losing them
 //! to a settings toggle is not a trade worth making.
 
+use crate::registry_store::RegistryStore;
 use crucible_lua::OptionsRegistry;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const FILE: &str = "plugin-options.json";
 
@@ -32,44 +33,43 @@ struct StoredOption {
 /// `plugin -> [ { path, value } ]`.
 type Store = std::collections::BTreeMap<String, Vec<StoredOption>>;
 
-fn file(dir: &Path) -> PathBuf {
-    dir.join(FILE)
-}
-
-fn load(dir: &Path) -> Store {
-    std::fs::read_to_string(file(dir))
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+/// The locked, atomic store under `dir`. The lock prevents a lost update when
+/// two daemons write. The atomic write prevents a half file after a crash.
+fn store(dir: &Path) -> RegistryStore<Store> {
+    RegistryStore::new(dir.join(FILE))
 }
 
 /// Remember `value` for `plugin`'s option at `path`, replacing any previous
 /// value for the same path.
 ///
-/// Best-effort: a failed write is logged, never propagated. The set itself
-/// already succeeded, and turning "this will not survive a restart" into
-/// "your change was rejected" would be a worse answer to a full disk.
-pub fn record(dir: &Path, plugin: &str, path: &[String], value: serde_json::Value) {
-    let mut store = load(dir);
-    let entries = store.entry(plugin.to_string()).or_default();
-    entries.retain(|e| e.path != path);
-    entries.push(StoredOption {
-        path: path.to_vec(),
-        value,
-    });
+/// A file that does not parse is an error that names the file, and the file
+/// stays as it is. It still holds every value the user stored; a reset would
+/// erase all of them to add one.
+pub fn record(
+    dir: &Path,
+    plugin: &str,
+    path: &[String],
+    value: serde_json::Value,
+) -> anyhow::Result<()> {
+    store(dir).update(|store| {
+        let entries = store.entry(plugin.to_string()).or_default();
+        entries.retain(|e| e.path != path);
+        entries.push(StoredOption {
+            path: path.to_vec(),
+            value,
+        });
+        Ok(())
+    })
+}
 
-    let write = std::fs::create_dir_all(dir).and_then(|()| {
-        let json = serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string());
-        std::fs::write(file(dir), json)
-    });
-    if let Err(e) = write {
-        tracing::warn!(
-            plugin = %plugin,
-            path = %path.join("."),
-            error = %e,
-            "could not persist a plugin option; it applies until the daemon restarts"
-        );
-    }
+/// The stored values, or nothing with a warning. A broken file must not stop
+/// the daemon or a reload; `record` refuses to overwrite it, so the user can
+/// still repair it.
+fn load(dir: &Path) -> Store {
+    store(dir).read().unwrap_or_else(|e| {
+        tracing::warn!(error = %format!("{e:#}"), "stored plugin options not restored");
+        Store::default()
+    })
 }
 
 /// Replay stored values through each plugin's own setter.
@@ -148,7 +148,8 @@ mod tests {
             "oci",
             &["image".to_string()],
             serde_json::json!("debian"),
-        );
+        )
+        .unwrap();
 
         // A fresh registry, as after a restart: the plugin loaded with its
         // own default and has never heard of the stored value.
@@ -174,8 +175,8 @@ mod tests {
     fn the_last_value_for_a_path_wins_rather_than_accumulating() {
         let dir = tempfile::tempdir().unwrap();
         let path = vec!["image".to_string()];
-        record(dir.path(), "oci", &path, serde_json::json!("debian"));
-        record(dir.path(), "oci", &path, serde_json::json!("fedora"));
+        record(dir.path(), "oci", &path, serde_json::json!("debian")).unwrap();
+        record(dir.path(), "oci", &path, serde_json::json!("fedora")).unwrap();
 
         let (_lua, reg) = registry();
         restore(dir.path(), &reg);
@@ -193,13 +194,15 @@ mod tests {
             "oci",
             &["removed_last_year".to_string()],
             serde_json::json!(true),
-        );
+        )
+        .unwrap();
         record(
             dir.path(),
             "oci",
             &["image".to_string()],
             serde_json::json!("debian"),
-        );
+        )
+        .unwrap();
 
         let (_lua, reg) = registry();
         restore(dir.path(), &reg);
@@ -207,6 +210,83 @@ mod tests {
             reg.get("oci", &["image".to_string()], "web").unwrap(),
             "debian",
             "a stale entry must not take the entries beside it down"
+        );
+    }
+
+    /// A file that does not parse still holds the user's values. The next
+    /// `record` must not replace it with a store of one entry.
+    #[test]
+    fn a_broken_store_file_is_kept_and_the_record_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = r#"{ "oci": [ { "path": ["image"], "value": "debian" } "#;
+        std::fs::write(dir.path().join(FILE), broken).unwrap();
+
+        let result = record(
+            dir.path(),
+            "oci",
+            &["network".to_string()],
+            serde_json::json!("none"),
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(FILE)).unwrap(),
+            broken,
+            "a record over a broken file erased the stored values"
+        );
+        let err = format!(
+            "{:#}",
+            result.expect_err("a broken file must refuse the record")
+        );
+        assert!(
+            err.contains(&dir.path().join(FILE).display().to_string()),
+            "the error must name the file to repair: {err}"
+        );
+    }
+
+    /// Two writers for two different options: each must see the other's
+    /// write. Without the lock, both read the old file and the last write
+    /// erases the first. The barrier starts both writers together; the
+    /// rounds make an interleaving of the two reads near certain.
+    #[test]
+    fn concurrent_records_for_different_options_keep_both() {
+        for round in 0..100 {
+            let dir = tempfile::tempdir().unwrap();
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                for key in ["image", "network"] {
+                    let (dir, barrier) = (dir.path(), &barrier);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        record(dir, "oci", &[key.to_string()], serde_json::json!(key)).unwrap();
+                    });
+                }
+            });
+
+            let stored = load(dir.path());
+            let mut keys: Vec<_> = stored["oci"].iter().map(|e| e.path[0].clone()).collect();
+            keys.sort();
+            assert_eq!(keys, ["image", "network"], "round {round} lost an update");
+        }
+    }
+
+    /// No file is the first-run state, not an error: the first `record`
+    /// creates the file.
+    #[test]
+    fn a_record_without_a_store_file_creates_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = record(
+            dir.path(),
+            "oci",
+            &["image".to_string()],
+            serde_json::json!("debian"),
+        );
+        result.expect("an absent file is an empty store");
+
+        let (_lua, reg) = registry();
+        restore(dir.path(), &reg);
+        assert_eq!(
+            reg.get("oci", &["image".to_string()], "web").unwrap(),
+            "debian"
         );
     }
 
@@ -289,7 +369,7 @@ mod wiring_tests {
             .options()
             .set(PLUGIN, &image(), serde_json::json!("debian"), "web")
             .expect("set");
-        record(store.path(), PLUGIN, &image(), serde_json::json!("debian"));
+        record(store.path(), PLUGIN, &image(), serde_json::json!("debian")).unwrap();
 
         loader.reload_plugin(PLUGIN).await.expect("reload");
 

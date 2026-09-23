@@ -1,8 +1,9 @@
 //! Locked, atomic read-modify-write over one JSON state file.
 //!
-//! The daemon owns two registries that outlive the process — `projects.json`
-//! and `kilns.json` — and both need the same four steps: take a lock, read,
-//! check, replace atomically. This is that shape, once.
+//! The daemon owns state files that outlive the process — `projects.json`,
+//! `kilns.json`, `plugins.installed.json` and `plugin-options.json` — and each
+//! needs the same four steps: take a lock, read, check, replace atomically.
+//! This is that shape, once.
 //!
 //! The lock is a `<file>.lock` sidecar, the pattern
 //! [`crate::plugin_ops`] already uses for `plugins.toml`, and for the same

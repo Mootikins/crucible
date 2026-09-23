@@ -391,8 +391,20 @@ pub(crate) async fn handle_plugin_option_call(
                 // The store lives under the loader's bound data root — the
                 // daemon's resolved `data_home`, not `crucible_home()`, so an
                 // injected root is honored instead of the process's real one.
-                if let Some(dir) = loader.option_store_dir() {
-                    crate::daemon_plugins::option_store::record(dir, &plugin, &path, value);
+                //
+                // The daemon logs a failed record and does not return it.
+                // The set already took effect, so "this value will not
+                // survive a restart" is the correct answer, not a refusal.
+                let recorded = loader.option_store_dir().map(|dir| {
+                    crate::daemon_plugins::option_store::record(dir, &plugin, &path, value)
+                });
+                if let Some(Err(e)) = recorded {
+                    tracing::warn!(
+                        plugin = %plugin,
+                        path = %path.join("."),
+                        error = %format!("{e:#}"),
+                        "could not persist a plugin option; it applies until the daemon restarts"
+                    );
                 }
                 serde_json::json!({ "ok": true })
             })
