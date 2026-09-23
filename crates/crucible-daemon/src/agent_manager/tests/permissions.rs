@@ -107,6 +107,68 @@ mod the_tool_gate_in_a_turn {
         );
         h.wait_for("message_complete").await;
     }
+
+    /// Run one call to a tool that no rule answers, with these turn
+    /// settings. Return the error of each `tool_result` event and the error
+    /// that the conversation tree records for the model.
+    async fn deny_through_the_prompt_gate(
+        is_interactive: bool,
+        permission_override: Option<PermissionMode>,
+    ) -> (Vec<String>, Option<String>) {
+        let mut h = ReactorTestHarness::new().await;
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", "write", serde_json::json!({ "path": "a" })),
+            script::text("done"),
+            script::done(),
+        ]);
+        h.agent_manager
+            .send_message(
+                &h.session_id,
+                "run tool".to_string(),
+                &h.event_tx,
+                is_interactive,
+                permission_override,
+            )
+            .await
+            .unwrap();
+        let mut events = Vec::new();
+        loop {
+            let event = h
+                .wait_for_first_of(&["tool_result", "message_complete"])
+                .await;
+            if event.event == "message_complete" {
+                break;
+            }
+            events.push(event.data["result"]["error"].as_str().unwrap().to_string());
+        }
+        let tree = h.agent_manager.get_session_tree(&h.session_id).unwrap();
+        let tree = tree.lock().await;
+        let model_error = tree.iter().find_map(|(_, node)| match &node.content {
+            crucible_core::turn::NodeContent::ToolResult { error, .. } => error.clone(),
+            _ => None,
+        });
+        (events, model_error)
+    }
+
+    /// A denial in the prompt gate gives the views ONE `tool_result`, and
+    /// the model reads the same reason.
+    #[tokio::test]
+    async fn a_prompt_gate_denial_emits_one_result_with_the_reason_of_the_model() {
+        for (interactive, permission_override, reason) in [
+            (
+                true,
+                Some(PermissionMode::Deny),
+                "Tool call denied by permission override",
+            ),
+            (false, None, "this session runs non-interactively"),
+        ] {
+            let (events, model_error) =
+                deny_through_the_prompt_gate(interactive, permission_override).await;
+            assert_eq!(events.len(), 1, "one tool_result, got: {events:?}");
+            assert!(events[0].contains(reason), "got: {events:?}");
+            assert_eq!(model_error.as_deref(), Some(events[0].as_str()));
+        }
+    }
 }
 
 mod is_safe_tests {

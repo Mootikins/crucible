@@ -48,6 +48,18 @@ fn deny_tool_call(
     crucible_core::traits::chat::ChatToolResult::error(tool_name, call_id, error_msg)
 }
 
+/// The `data.result` body of a `tool_result` event: `{"error": …}` for a
+/// failed call, else `{"result": …}`. See `ToolResultBody` for the reader.
+pub(super) fn tool_result_body(
+    result: impl serde::Serialize,
+    error: Option<&str>,
+) -> serde_json::Value {
+    match error {
+        Some(error) => serde_json::json!({ "error": error }),
+        None => serde_json::json!({ "result": result }),
+    }
+}
+
 /// Whether code running under `source` may take a tool call over — return
 /// `{ handled = true, … }` or a transform from `pre_tool_call`.
 ///
@@ -443,11 +455,7 @@ impl AgentManager {
                         args.clone(),
                     ),
                 );
-                let payload = if let Some(ref err) = result.error {
-                    serde_json::json!({ "error": err })
-                } else {
-                    serde_json::json!({ "result": &result.result })
-                };
+                let payload = tool_result_body(&result.result, result.error.as_deref());
                 emit_event(
                     &stream_ctx.event_tx,
                     SessionEventMessage::tool_result_with_terminate(
@@ -517,19 +525,13 @@ impl AgentManager {
             }
             ToolGate::Approve(marker) => (marker, false),
             ToolGate::Ask => {
-                match Self::handle_permission_request(stream_ctx, tool_call, &call, &call_id, &args)
-                    .await
-                {
+                match Self::handle_permission_request(stream_ctx, tool_call, &call, &args).await {
                     Ok(reason) => (reason, true),
-                    Err(deny_reason) => {
-                        // Feed the SPECIFIC denial reason back to the model so
-                        // it can adapt (config rule vs shell policy vs
-                        // non-interactive).
-                        return crucible_core::traits::chat::ChatToolResult::error(
-                            tool_call.name.clone(),
-                            call_id.clone(),
-                            deny_reason,
-                        );
+                    // Feed the SPECIFIC denial reason back to the model so it
+                    // can adapt (config rule vs shell policy vs
+                    // non-interactive).
+                    Err(reason) => {
+                        return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
                     }
                 }
             }
@@ -719,11 +721,7 @@ impl AgentManager {
             None
         };
 
-        let mut event_result = if let Some(error) = &error_str {
-            serde_json::json!({ "error": error })
-        } else {
-            serde_json::json!({ "result": result_str })
-        };
+        let mut event_result = tool_result_body(&result_str, error_str.as_deref());
 
         if let Some(ref path) = spill_path {
             event_result["spill_path"] = serde_json::json!(path);

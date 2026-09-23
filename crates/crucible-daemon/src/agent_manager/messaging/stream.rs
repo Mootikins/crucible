@@ -656,11 +656,8 @@ impl AgentManager {
                         serde_json::Value::String(patched_text)
                     };
 
-                    let event_result = if let Some(err) = error {
-                        serde_json::json!({ "error": err })
-                    } else {
-                        serde_json::json!({ "result": result })
-                    };
+                    let event_result =
+                        super::tool_call::tool_result_body(&result, error.as_deref());
                     if !emit_event(
                         &stream_ctx.event_tx,
                         SessionEventMessage::tool_result(

@@ -556,17 +556,18 @@ impl AgentManager {
     /// made before that event is emitted, so an auto-approval marker can ride
     /// along with the card rather than arriving after it and popping in.
     ///
+    /// `Err(reason)` is a denial. The caller emits its `tool_result`.
+    ///
     /// `call` is the canonical form of `tool_call`. Every rule, saved
     /// pattern and hook below reads it.
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
         call: &CanonicalToolCall,
-        call_id: &str,
         args: &serde_json::Value,
     ) -> Result<Option<String>, String> {
         // Honor explicit --permissions override before running any hooks or prompt.
-        // `Allow` auto-approves; `Deny` auto-rejects with an error tool_result;
+        // `Allow` auto-approves; `Deny` auto-rejects;
         // `Ask` and `None` fall through to the standard hook/prompt flow.
         match stream_ctx.permission_override {
             Some(PermissionMode::Allow) => {
@@ -578,22 +579,7 @@ impl AgentManager {
                 return Ok(Some("permission override".to_string()));
             }
             Some(PermissionMode::Deny) => {
-                let error_msg = "Tool call denied by permission override".to_string();
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_result(
-                        &stream_ctx.session_id,
-                        call_id,
-                        &tool_call.name,
-                        serde_json::json!({ "error": &error_msg }),
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "No subscribers for tool_result (permission override Deny)"
-                    );
-                }
-                return Err(error_msg);
+                return Err("Tool call denied by permission override".to_string());
             }
             Some(PermissionMode::Ask) | None => {}
         }
@@ -617,26 +603,10 @@ impl AgentManager {
                     return Ok(Some("permissions config".to_string()));
                 }
                 PermissionDecision::Deny { reason } => {
-                    let error_msg = format!(
+                    return Err(format!(
                         "Tool '{}' denied by permissions config: {reason}",
                         tool_call.name
-                    );
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_result(
-                            &stream_ctx.session_id,
-                            call_id,
-                            &tool_call.name,
-                            serde_json::json!({ "error": &error_msg }),
-                        ),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            "No subscribers for config-denied tool_result event"
-                        );
-                    }
-                    return Err(error_msg);
+                    ));
                 }
                 PermissionDecision::Ask { .. } => {}
             }
@@ -700,27 +670,10 @@ impl AgentManager {
                     "Lua hook denied tool"
                 );
                 let resource_desc = Self::brief_resource_description(&tool_call.name, args);
-                let error_msg = format!(
+                Err(format!(
                     "Lua hook denied permission to {} {}",
                     tool_call.name, resource_desc
-                );
-
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_result(
-                        &stream_ctx.session_id,
-                        call_id,
-                        &tool_call.name,
-                        serde_json::json!({ "error": &error_msg }),
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        "No subscribers for hook denied tool_result event"
-                    );
-                }
-                Err(error_msg)
+                ))
             }
             PermissionHookResult::Prompt => {
                 // No hook had an opinion: fall back to the mode's own rules,
@@ -752,26 +705,10 @@ impl AgentManager {
                         return Ok(Some(format!("{} mode", stream_ctx.session_mode)));
                     }
                     Some(crucible_lua::ModeStance::Deny) => {
-                        let error_msg = format!(
+                        return Err(format!(
                             "Tool '{}' is not permitted in {} mode",
                             tool_call.name, stream_ctx.session_mode
-                        );
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::tool_result(
-                                &stream_ctx.session_id,
-                                call_id,
-                                &tool_call.name,
-                                serde_json::json!({ "error": &error_msg }),
-                            ),
-                        ) {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                tool = %tool_call.name,
-                                "No subscribers for mode-denied tool_result event"
-                            );
-                        }
-                        return Err(error_msg);
+                        ));
                     }
                     Some(crucible_lua::ModeStance::Ask) | None => {}
                 }
@@ -780,28 +717,12 @@ impl AgentManager {
                 // sends) have nobody to answer a prompt — deny immediately
                 // with an actionable message instead of hanging.
                 if !stream_ctx.is_interactive {
-                    let error_msg = format!(
+                    return Err(format!(
                         "Permission required for '{}' but this session runs non-interactively. \
                          Allow it via a permission pattern, Lua permission hook, or permissions \
                          config.",
                         tool_call.name
-                    );
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_result(
-                            &stream_ctx.session_id,
-                            call_id,
-                            &tool_call.name,
-                            serde_json::json!({ "error": &error_msg }),
-                        ),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            "No subscribers for non-interactive deny tool_result event"
-                        );
-                    }
-                    return Err(error_msg);
+                    ));
                 }
 
                 let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, args);
@@ -936,24 +857,8 @@ impl AgentManager {
                     session_id = %stream_ctx.session_id,
                     tool = %tool_call.name,
                     error = %error_msg,
-                    "Permission denied, emitting error result"
+                    "Permission denied"
                 );
-
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::tool_result(
-                        &stream_ctx.session_id,
-                        call_id,
-                        &tool_call.name,
-                        serde_json::json!({ "error": &error_msg }),
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        "No subscribers for permission denied tool_result event"
-                    );
-                }
                 Err(error_msg)
             }
         }
