@@ -674,7 +674,10 @@ commands = {
 
 A command's `fn` receives the argument table and returns any
 JSON-representable value; the TUI shows it as a system message. Commands
-surface as `/name` with autocomplete (tagged `(plugin)`).
+surface as `/name` with autocomplete (tagged `(plugin)`) while the name is
+unique. `/plugin:name` always calls that plugin's command. If two plugins
+declare the same bare name, both appear under their full names and `/name`
+reports the available full names.
 
 ## Providing Views
 

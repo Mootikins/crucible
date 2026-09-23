@@ -42,7 +42,7 @@ fn test_discover_skills_in_single_directory() {
 }
 
 #[test]
-fn test_priority_ordering_higher_scope_wins() {
+fn test_same_name_keeps_both_scopes() {
     let personal_dir = TempDir::new().unwrap();
     let kiln_dir = TempDir::new().unwrap();
 
@@ -59,13 +59,15 @@ fn test_priority_ordering_higher_scope_wins() {
 
     let discovered = discovery.discover().expect("Should discover");
 
-    let resolved = discovered.get("shared-skill").expect("Should find skill");
+    let resolved = discovered
+        .get("kiln:shared-skill")
+        .expect("Should find skill");
     assert_eq!(
         resolved.skill.source.scope,
         SkillScope::Kiln,
-        "Kiln should win"
+        "Kiln skill should remain available"
     );
-    assert_eq!(resolved.shadowed.len(), 1, "Should shadow personal");
+    assert!(discovered.contains_key("personal:shared-skill"));
 }
 
 #[test]

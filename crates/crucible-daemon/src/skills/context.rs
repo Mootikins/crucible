@@ -57,6 +57,7 @@ mod tests {
                     scope: SkillScope::Personal,
                     path: PathBuf::from("/test/SKILL.md"),
                     content_hash: "abc123".to_string(),
+                    namespace: String::new(),
                 },
                 indexed_at: Utc::now(),
             },

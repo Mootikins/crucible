@@ -163,7 +163,7 @@ impl OilChatApp {
             // Plugin-declared commands run via the daemon's plugin registry —
             // an invocation, not a chat message. Checked after the built-ins
             // so a plugin cannot shadow /plan or /help.
-            _ if self.plugin_command_names.contains(command.as_str()) => {
+            _ if self.plugin_command_names.contains(command.as_str()) || command.contains(':') => {
                 Action::Send(ChatAppMsg::RunPluginCommand {
                     name: command,
                     args: parts

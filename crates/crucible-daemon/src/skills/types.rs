@@ -7,9 +7,7 @@ use std::path::PathBuf;
 
 /// Scope/priority level for a skill.
 ///
-/// **Declaration order is precedence order** — `Ord` is derived, and
-/// `FolderDiscovery::discover` keeps the highest scope on a name collision.
-/// Lowest first.
+/// Scope is retained for display and filtering. Collisions preserve every source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SkillScope {
     /// Skills Crucible ships (`<runtime>/*/skills/`).
@@ -48,6 +46,9 @@ pub struct SkillSource {
     pub path: PathBuf,
     /// Content hash for change detection
     pub content_hash: String,
+    /// Stable source qualifier used when two skills share a name.
+    #[serde(default)]
+    pub namespace: String,
 }
 
 /// Parsed skill from SKILL.md
@@ -73,12 +74,12 @@ pub struct Skill {
     pub indexed_at: DateTime<Utc>,
 }
 
-/// A skill after priority resolution (may shadow others)
+/// A skill after source qualification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedSkill {
-    /// The winning skill
+    /// The discovered skill
     pub skill: Skill,
-    /// Paths of lower-priority skills this shadows
+    /// Legacy field retained for wire compatibility; name collisions no longer shadow.
     pub shadowed: Vec<PathBuf>,
 }
 

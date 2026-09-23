@@ -4,7 +4,9 @@
 
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader};
-use crucible_daemon::agent_cards::{card_directories, discover_agent_cards_in, CardRoots};
+use crucible_daemon::agent_cards::{
+    card_directories, discover_agent_cards_in, resolve_card, CardRoots,
+};
 use crucible_daemon::DaemonClient;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -309,7 +311,9 @@ fn truncate_description(description: &str) -> std::borrow::Cow<'_, str> {
 async fn show(config: &CliConfig, name: String, format: TextFormat, full: bool) -> Result<()> {
     let cards = load_agent_cards(config, &current_workspace());
 
-    let card = match cards.get(&name) {
+    // The daemon's own resolution, so `show` and `session.create --agent`
+    // agree on a bare name.
+    let card = match resolve_card(&cards, &name).map_err(anyhow::Error::msg)? {
         Some(c) => c,
         None => {
             anyhow::bail!("Agent card '{}' not found.", name);
@@ -601,10 +605,10 @@ You are a test agent.
         let config = test_config(kiln_path.clone());
         let dirs = hermetic_dirs(&config);
 
-        // Highest-priority first now, so the global default is LAST and the
-        // kiln's own directory is present above it.
+        // Highest-priority first: the personal directory is FIRST, and the
+        // kiln's own directory is present below it.
         assert_eq!(
-            dirs.last(),
+            dirs.first(),
             Some(&PathBuf::from("/cfg/crucible/agents")),
             "{dirs:?}"
         );
@@ -674,20 +678,20 @@ You are a test agent.
             .position(|p| p == &kiln_path.join(".crucible/agents"))
             .expect("kiln config dir present");
 
-        // Highest priority first, first match wins, so the kiln's own cards
-        // still beat a globally-configured directory — it now sits EARLIER
-        // rather than later. Same outcome, opposite spelling.
-        assert!(kiln_idx < custom_idx, "{dirs:?}");
+        // Highest priority first. A configured directory is personal, and
+        // the personal layer is above the kiln.
+        assert!(custom_idx < kiln_idx, "{dirs:?}");
     }
 
-    /// The workspace's own `.crucible/agents/` is searched FIRST, so a
-    /// project card shadows everything else — as it does in the daemon.
+    /// The personal directory is searched first, then the workspace's own
+    /// `.crucible/agents/`, as in the daemon.
     #[test]
-    fn test_collect_agent_directories_starts_with_the_workspace() {
+    fn test_collect_agent_directories_starts_with_the_personal_layer() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path);
         let dirs = hermetic_dirs(&config);
-        assert_eq!(dirs.first(), Some(&PathBuf::from("/ws/.crucible/agents")));
+        assert_eq!(dirs.first(), Some(&PathBuf::from("/cfg/crucible/agents")));
+        assert_eq!(dirs.get(1), Some(&PathBuf::from("/ws/.crucible/agents")));
     }
 
     /// A workspace no test card ever lives under, so these tests only see
@@ -715,16 +719,12 @@ You are a test agent.
         assert!(cards.contains_key("Test Agent"));
     }
 
-    /// Two cards share a name in a higher-priority root (the kiln's
-    /// `.crucible/agents/`) and a lower-priority one (a configured
-    /// `agent_directories` entry). `card_directories` lists the kiln first —
-    /// see `test_collect_agent_directories_order` — so the daemon's resolver
-    /// (`discover_agent_cards_in`, first write wins) keeps the kiln's card.
-    /// `load_agent_cards` used to insert unconditionally while walking that
-    /// same highest-first list, so the LAST directory visited won instead:
-    /// the opposite card from the one `session.create --agent` would resolve.
+    /// Two cards share a name in the kiln's `.crucible/agents/` and in a
+    /// configured `agent_directories` entry, which is personal. The personal
+    /// layer is on top, so the bare name resolves to its card, as the
+    /// daemon's `session.create --agent` does. Each full name reaches its card.
     #[test]
-    fn test_load_agent_cards_keeps_the_highest_priority_card_on_a_name_collision() {
+    fn test_load_agent_cards_resolves_a_bare_name_to_the_personal_card() {
         let kiln = TempDir::new().unwrap();
         let shared = TempDir::new().unwrap();
         let kiln_agents = kiln.path().join(".crucible").join("agents");
@@ -744,11 +744,16 @@ You are a test agent.
         config.agent_directories = vec![shared.path().to_path_buf()];
 
         let cards = load_agent_cards(&config, &no_workspace());
-        let card = cards.get("shared").expect("card present");
-        assert_eq!(
-            card.description, "kiln version",
-            "the kiln's .crucible/agents/ must outrank a configured agent_directories entry"
-        );
+        let description = |name| {
+            resolve_card(&cards, name)
+                .unwrap()
+                .unwrap()
+                .description
+                .clone()
+        };
+        assert_eq!(description("shared"), "configured version");
+        assert_eq!(description("personal:shared"), "configured version");
+        assert_eq!(description("kiln:shared"), "kiln version");
     }
 
     #[test]

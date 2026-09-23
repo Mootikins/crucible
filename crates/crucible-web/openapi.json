@@ -1625,7 +1625,7 @@
     "/api/plugins/command": {
       "post": {
         "summary": "`POST /api/plugins/command` — invoke a plugin command by name.",
-        "description": "Not under `/{name}` because a command's name is already globally unique —\nthe daemon refuses a second plugin claiming one — so routing by plugin would\nask the caller for something it does not need to know. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.",
+        "description": "Not under `/{name}` because the name sent here resolves through the daemon's\ncommand registry. The result is passed\nthrough verbatim, like publications and options: what a command returns is\nthe plugin's vocabulary, and a shape this layer validated would be a shape\nonly today's plugins could send.",
         "operationId": "run_command",
         "parameters": [
           {
@@ -7689,7 +7689,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Globally unique: the daemon refuses a second plugin claiming a name,\nwhich is why `POST /api/plugins/command` does not route by plugin."
+            "description": "Bare when unique; source-qualified when plugins share a name."
           },
           "description": {
             "type": "string"

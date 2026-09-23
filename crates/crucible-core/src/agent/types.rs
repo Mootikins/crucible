@@ -69,6 +69,10 @@ pub struct AgentCard {
     /// Human-readable name of the agent
     pub name: String,
 
+    /// Discovery source used to disambiguate cards with the same name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+
     /// Version of this agent card (semantic versioning)
     pub version: String,
 

@@ -3256,6 +3256,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                 "cards": [
                     {
                         "name": "alpha",
+                        "namespace": "workspace",
                         "version": "0.1.0",
                         "description": "First by name",
                         "tags": [],
@@ -3265,6 +3266,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                     },
                     {
                         "name": "zeta",
+                        "namespace": "workspace",
                         "version": "2.0.0",
                         "description": "Last by name",
                         "tags": ["review"],

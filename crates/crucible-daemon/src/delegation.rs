@@ -411,9 +411,14 @@ impl DelegationSpawner for DelegationService {
                         .unwrap_or(std::path::Path::new("")),
                     parent_kilns.first().map(std::path::PathBuf::as_path),
                 );
-                if let Some(card) = cards.get(name) {
+                if let Some(card) =
+                    crate::agent_cards::resolve_card(&cards, name).map_err(JobError::SpawnFailed)?
+                {
                     let specialty_models = manager.specialty_models();
-                    SessionAgent::from_card(card, &parent_agent, specialty_models.as_ref())
+                    let mut agent =
+                        SessionAgent::from_card(card, &parent_agent, specialty_models.as_ref());
+                    agent.agent_card_name = Some(name.to_string());
+                    agent
                 } else {
                     let available = manager.build_available_agents();
                     let profile = available.get(name).cloned().ok_or_else(|| {

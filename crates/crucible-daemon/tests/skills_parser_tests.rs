@@ -23,6 +23,7 @@ Follow these steps to create commits:
         scope: SkillScope::Personal,
         path: PathBuf::from("/test/skills/git-commit/SKILL.md"),
         content_hash: String::new(),
+        namespace: String::new(),
     };
 
     let parser = SkillParser::new();
@@ -53,6 +54,7 @@ Body without description.
         scope: SkillScope::Workspace,
         path: PathBuf::from("/test/SKILL.md"),
         content_hash: String::new(),
+        namespace: String::new(),
     };
 
     let parser = SkillParser::new();
@@ -77,6 +79,7 @@ Body content.
         scope: SkillScope::Kiln,
         path: PathBuf::from("/test/SKILL.md"),
         content_hash: String::new(),
+        namespace: String::new(),
     };
 
     let parser = SkillParser::new();
@@ -101,6 +104,7 @@ fn test_parse_no_frontmatter() {
         scope: SkillScope::Personal,
         path: PathBuf::from("/test/SKILL.md"),
         content_hash: String::new(),
+        namespace: String::new(),
     };
 
     let parser = SkillParser::new();
@@ -122,6 +126,7 @@ Body content here"#;
         scope: SkillScope::Personal,
         path: PathBuf::from("/test/SKILL.md"),
         content_hash: String::new(),
+        namespace: String::new(),
     };
 
     let parser = SkillParser::new();

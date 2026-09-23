@@ -426,15 +426,19 @@ impl RpcContext {
                 workspace,
                 kiln,
             );
-            match cards.get(name) {
-                Some(card) => Ok(crucible_core::session::SessionAgent::from_card(
-                    card,
-                    &base,
-                    self.llm_config
-                        .get()
-                        .map(|c| c.models.clone().into_iter().collect())
-                        .as_ref(),
-                )),
+            match crate::agent_cards::resolve_card(&cards, name)? {
+                Some(card) => {
+                    let mut agent = crucible_core::session::SessionAgent::from_card(
+                        card,
+                        &base,
+                        self.llm_config
+                            .get()
+                            .map(|c| c.models.clone().into_iter().collect())
+                            .as_ref(),
+                    );
+                    agent.agent_card_name = Some(name.to_string());
+                    Ok(agent)
+                }
                 None => Err(format!(
                     "Unknown agent card: {name}. Available cards: {}",
                     name_list(cards.into_keys())

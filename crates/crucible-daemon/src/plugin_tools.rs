@@ -182,17 +182,8 @@ impl PluginRegistry {
                 );
                 continue;
             };
-            if let Some(existing) = command_map.get(&command.name) {
-                warn!(
-                    plugin,
-                    command = %command.name,
-                    owner = %existing.plugin,
-                    "Plugin command rejected: name already claimed by another plugin"
-                );
-                continue;
-            }
             command_map.insert(
-                command.name.clone(),
+                format!("{plugin}:{}", command.name),
                 PluginCallable {
                     plugin: plugin.to_string(),
                     definition: ToolDefinition {
@@ -236,12 +227,21 @@ impl PluginRegistry {
     /// safe to do without asking first.
     pub fn commands_json(&self) -> Vec<serde_json::Value> {
         let commands = self.commands.read().expect("plugin commands lock poisoned");
+        let mut counts = HashMap::<&str, usize>::new();
+        for entry in commands.values() {
+            *counts.entry(&entry.definition.name).or_default() += 1;
+        }
         let mut out: Vec<serde_json::Value> = commands
             .values()
             .map(|entry| {
+                let name = if counts[entry.definition.name.as_str()] > 1 {
+                    format!("{}:{}", entry.plugin, entry.definition.name)
+                } else {
+                    entry.definition.name.clone()
+                };
                 serde_json::json!({
                     "plugin": entry.plugin,
-                    "name": entry.definition.name,
+                    "name": name,
                     "description": entry.definition.description,
                     "hint": entry.input_hint,
                     "parameters": entry.definition.parameters,
@@ -270,12 +270,39 @@ impl PluginRegistry {
             .map(|e| (e.plugin.clone(), e.lua.clone(), e.func.clone()))
     }
 
-    fn command_func(&self, name: &str) -> Option<(String, mlua::Lua, mlua::Function)> {
-        self.commands
-            .read()
-            .expect("plugin commands lock poisoned")
-            .get(name)
-            .map(|e| (e.plugin.clone(), e.lua.clone(), e.func.clone()))
+    fn command_func(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<Option<(String, mlua::Lua, mlua::Function)>> {
+        let commands = self.commands.read().expect("plugin commands lock poisoned");
+        if let Some(entry) = commands.get(name) {
+            return Ok(Some((
+                entry.plugin.clone(),
+                entry.lua.clone(),
+                entry.func.clone(),
+            )));
+        }
+        let mut matches: Vec<_> = commands
+            .iter()
+            .filter(|(_, entry)| entry.definition.name == name)
+            .collect();
+        matches.sort_by_key(|(full_name, _)| *full_name);
+        match matches.as_slice() {
+            [] => Ok(None),
+            [(_, entry)] => Ok(Some((
+                entry.plugin.clone(),
+                entry.lua.clone(),
+                entry.func.clone(),
+            ))),
+            _ => anyhow::bail!(
+                "Ambiguous command '{name}'. Use one of: {}",
+                matches
+                    .iter()
+                    .map(|(full_name, _)| full_name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 
     /// Invoke a plugin command by name. `Ok(None)` means no such command.
@@ -284,7 +311,7 @@ impl PluginRegistry {
         name: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<Option<serde_json::Value>> {
-        let Some((plugin, lua, func)) = self.command_func(name) else {
+        let Some((plugin, lua, func)) = self.command_func(name)? else {
             return Ok(None);
         };
         // Enter the owning plugin's context for the call, exactly as the
@@ -604,6 +631,7 @@ mod tests {
         assert_eq!(commands[0]["name"], "greet");
         assert_eq!(commands[0]["plugin"], "p");
         assert_eq!(commands[0]["hint"], "[args]");
+        assert_eq!(registry.command_func("p:greet").unwrap().unwrap().0, "p");
     }
 
     #[test]
@@ -666,5 +694,50 @@ mod tests {
             .await
             .expect("lookup should not error");
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn colliding_commands_keep_both_full_names_and_explain_the_bare_error() {
+        let (lua, func) = lua_with_fn();
+        let registry = PluginRegistry::new();
+        for plugin in ["first", "second"] {
+            registry.register_plugin(
+                plugin,
+                &lua,
+                &[],
+                &[command("greet")],
+                HashMap::new(),
+                HashMap::from([("greet".to_owned(), func.clone())]),
+            );
+        }
+        let names: Vec<_> = registry
+            .commands_json()
+            .into_iter()
+            .map(|v| v["name"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(names, ["first:greet", "second:greet"]);
+        assert_eq!(
+            registry.command_func("first:greet").unwrap().unwrap().0,
+            "first"
+        );
+        assert_eq!(
+            registry.command_func("second:greet").unwrap().unwrap().0,
+            "second"
+        );
+        assert_eq!(
+            registry
+                .run_command("second:greet", serde_json::json!({ "text": "hello" }))
+                .await
+                .unwrap()
+                .unwrap()["echoed"],
+            "hello"
+        );
+        let error = registry
+            .run_command("greet", serde_json::json!({}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("first:greet"), "{error}");
+        assert!(error.contains("second:greet"), "{error}");
     }
 }

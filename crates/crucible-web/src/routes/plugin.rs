@@ -325,8 +325,7 @@ pub(crate) enum CommandEffectRow {
 pub(crate) struct PluginCommandRow {
     /// The plugin that declared it.
     pub(crate) plugin: String,
-    /// Globally unique: the daemon refuses a second plugin claiming a name,
-    /// which is why `POST /api/plugins/command` does not route by plugin.
+    /// Bare when unique; source-qualified when plugins share a name.
     pub(crate) name: String,
     pub(crate) description: String,
     /// The one-line argument hint, or `null`. Always written, so `required`.
@@ -623,9 +622,8 @@ pub(crate) struct PluginRunCommandResponse {
 
 /// `POST /api/plugins/command` — invoke a plugin command by name.
 ///
-/// Not under `/{name}` because a command's name is already globally unique —
-/// the daemon refuses a second plugin claiming one — so routing by plugin would
-/// ask the caller for something it does not need to know. The result is passed
+/// Not under `/{name}` because the name sent here resolves through the daemon's
+/// command registry. The result is passed
 /// through verbatim, like publications and options: what a command returns is
 /// the plugin's vocabulary, and a shape this layer validated would be a shape
 /// only today's plugins could send.
@@ -678,10 +676,15 @@ async fn refuse_another_plugins_command(
         return Ok(());
     };
     let commands = state.daemon.plugin_commands().await.daemon_err()?;
-    let owner = commands
-        .iter()
-        .find(|c| c.get("name").and_then(serde_json::Value::as_str) == Some(command))
-        .and_then(|c| c.get("plugin").and_then(serde_json::Value::as_str));
+    let owner = commands.iter().find_map(|c| {
+        let listed = c.get("name").and_then(serde_json::Value::as_str)?;
+        let owner = c.get("plugin").and_then(serde_json::Value::as_str)?;
+        if listed == command || (!listed.contains(':') && format!("{owner}:{listed}") == command) {
+            Some(owner)
+        } else {
+            None
+        }
+    });
 
     match owner {
         Some(owner) if owner == plugin => Ok(()),
@@ -987,6 +990,18 @@ mod tests {
         // The browser's hand-written caller types this reply as `unknown`, so
         // nothing told a reader the answer sits under `result`.
         assert_eq!(ran.result["branches"][0], "main");
+    }
+
+    #[tokio::test]
+    async fn plugin_caller_can_use_full_name_of_unique_command() {
+        let ran: PluginRunCommandResponse = shape_as(
+            "POST",
+            "/api/plugins/command",
+            Some(serde_json::json!({ "name": "mock-plugin:mock_command", "args": {} })),
+            vec![(PLUGIN_CALLER_HEADER, "mock-plugin".to_string())],
+        )
+        .await;
+        assert_eq!(ran.name, "mock-plugin:mock_command");
     }
 
     #[tokio::test]

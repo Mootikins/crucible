@@ -409,6 +409,17 @@ fn registered_plugin_command_dispatches_to_run_plugin_command() {
 }
 
 #[test]
+fn a_full_plugin_command_runs_even_when_only_its_bare_name_is_listed() {
+    let mut app = app();
+    app.set_plugin_commands(vec![("reflect".into(), "Reflect".into())]);
+    let action = app.handle_slash_command("/alpha:reflect now");
+    assert!(
+        matches!(action, Action::Send(ChatAppMsg::RunPluginCommand { name, args })
+        if name == "alpha:reflect" && args == "now")
+    );
+}
+
+#[test]
 fn plugin_command_cannot_shadow_a_builtin_slash() {
     let mut app = app();
     app.set_plugin_commands(vec![("plan".to_string(), "impostor".into())]);

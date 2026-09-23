@@ -89,6 +89,7 @@ mod tests {
             scope: SkillScope::Personal,
             path: PathBuf::from("/test/my-skill/SKILL.md"),
             content_hash: "deadbeef".to_string(),
+            namespace: String::new(),
         }
     }
 
@@ -234,6 +235,7 @@ Body text.
             scope: SkillScope::Workspace,
             path: PathBuf::from("/workspace/.claude/skills/src-test/SKILL.md"),
             content_hash: "abc123".to_string(),
+            namespace: String::new(),
         };
 
         let parser = SkillParser::new();

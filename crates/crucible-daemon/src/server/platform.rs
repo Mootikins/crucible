@@ -207,13 +207,13 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let result = discover_skills(kiln_path).await;
 
     match result {
-        Ok(Ok(skills)) => match skills.get(&name) {
-            Some(resolved) => {
+        Ok(Ok(skills)) => match crate::skills::discovery::resolve_skill(&skills, &name) {
+            Ok(Some(resolved)) => {
                 let skill = &resolved.skill;
                 reply(
                     req.id,
                     SkillDetail {
-                        name: skill.name.clone(),
+                        name: name.clone(),
                         scope: skill.source.scope.to_string(),
                         description: skill.description.clone(),
                         source_path: skill.source.path.to_string_lossy().into_owned(),
@@ -223,7 +223,10 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
                     },
                 )
             }
-            None => Response::error(req.id, INVALID_PARAMS, format!("Skill not found: {}", name)),
+            Ok(None) => {
+                Response::error(req.id, INVALID_PARAMS, format!("Skill not found: {}", name))
+            }
+            Err(error) => Response::error(req.id, INVALID_PARAMS, error),
         },
         Ok(Err(e)) => internal_error(req.id, e),
         Err(e) => internal_error(req.id, e),
@@ -315,7 +318,11 @@ pub(crate) async fn handle_agents_list_cards(
         &workspace,
         kiln_path.as_deref(),
     )
-    .into_values()
+    .into_iter()
+    .map(|(name, mut card)| {
+        card.name = name;
+        card
+    })
     .collect();
     cards.sort_by(|a, b| a.name.cmp(&b.name));
     Response::success(req.id, serde_json::json!({ "cards": cards }))

@@ -90,6 +90,11 @@ Use a specific agent card:
 cru session create --agent Researcher
 ```
 
+A bare name resolves to the card of the highest layer: your personal cards
+(`~/.config/crucible/agents/`) are above the project and the kiln. A full name
+such as `kiln:Researcher` selects one card. See
+[[Help/Extending/Agent Cards#File Locations]].
+
 `cru chat` takes `--acp` (an external agent subprocess), not a card: it
 resolves its agent client-side rather than through the daemon's session
 create, which is where cards are looked up.

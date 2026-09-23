@@ -474,8 +474,8 @@ impl CrucibleMcpServer {
             Some(self.kiln_path.as_path()),
         );
         let body = match discovery.discover() {
-            Ok(skills) => match skills.get(&name) {
-                Some(resolved) => {
+            Ok(skills) => match crate::skills::discovery::resolve_skill(&skills, &name) {
+                Ok(Some(resolved)) => {
                     let mut body = resolved.skill.body.clone();
                     // Advisory tool restriction: Crucible skills are context
                     // injection with no activation lifecycle, so allowed-tools is
@@ -495,7 +495,7 @@ impl CrucibleMcpServer {
                     }
                     body
                 }
-                None => {
+                Ok(None) => {
                     let mut names: Vec<&str> = skills.keys().map(String::as_str).collect();
                     names.sort_unstable();
                     format!(
@@ -503,6 +503,7 @@ impl CrucibleMcpServer {
                         names.join(", ")
                     )
                 }
+                Err(error) => error,
             },
             Err(e) => format!("Skill discovery failed: {e}"),
         };

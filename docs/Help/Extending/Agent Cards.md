@@ -32,17 +32,21 @@ the session's scope; an unknown name is an error, not a fallback to defaults.
 
 ## File Locations
 
-Cards resolve over the same runtimepath every asset kind uses, **highest
-priority first**, and the first match by card name wins:
+Cards resolve over the same runtimepath every asset kind uses, with one
+difference: the personal layer is on top. You develop a card personally
+before you share it in a kiln. The order is, highest first:
 
-1. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
-2. `KILN/.crucible/agents/` — kiln-scoped cards
-3. each `agent_directories` entry (deprecated; see below)
-4. `~/.config/crucible/agents/` — personal cards
+1. the personal layer: each `agent_directories` entry (deprecated; see
+   below), then `~/.config/crucible/agents/`
+2. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
+3. `KILN/.crucible/agents/` — kiln-scoped cards
 
-A project card beats a kiln card. Note that **skills go the other way** — a
-kiln's skills beat a workspace's, because a kiln is where knowledge lives
-while a workspace is where work happens. Both have always behaved this way.
+Layers override. A bare name resolves to the card of the highest layer that
+has it, in `cru session create --agent`, in delegation and in
+`cru agents show`. Every card also keeps its full name `source:name`, such as
+`personal:researcher` or `kiln:researcher`, and a full name always works. Two
+cards of one name in the same layer are ambiguous: the bare name returns an
+error that lists the full names.
 
 To add a directory, put it on `runtimepath` rather than in
 `agent_directories`: one entry there supplies `agents/`, `skills/`, `plugins/`

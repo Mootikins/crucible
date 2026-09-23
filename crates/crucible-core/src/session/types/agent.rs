@@ -441,6 +441,7 @@ mod narrowing_tests {
         AgentCard {
             id: uuid::Uuid::nil(),
             name: "child".to_string(),
+            namespace: None,
             version: "0.1.0".to_string(),
             description: "child card".to_string(),
             tags: Vec::new(),

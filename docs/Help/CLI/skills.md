@@ -23,8 +23,8 @@ cru skills search <query> [-n <limit>]
 
 ## `cru skills list`
 
-Lists every discovered skill, sorted by name, with its scope and description. A skill that
-shadows a same-named skill from a lower-priority root is annotated with the number it shadows.
+Lists every discovered skill, sorted by name, with its scope and description. A unique
+name is shown bare; when sources share a name, each is shown as `source:name`.
 
 Scope is a *label* for where a skill came from, not the precedence mechanism.
 Precedence is position on the runtimepath, and `cru doctor` prints that list
@@ -57,7 +57,8 @@ license) followed by its full markdown body — the instructions an agent would 
 cru skills show commit
 ```
 
-If the name doesn't resolve, the daemon returns an RPC error and the command fails —
+The full `source:name` also works when the short name is unique. If a short name
+is ambiguous, the error lists the full names. If the name doesn't resolve, the daemon returns an RPC error and the command fails —
 use `cru skills list` to see the available names.
 
 ## `cru skills search`
@@ -77,7 +78,7 @@ cru skills search review -n 25
 ## Discovery and precedence
 
 Discovery collects `<dir>/*/SKILL.md` from each search path below. When two skills share a
-name, the one from the **higher scope** wins and the loser is recorded as shadowed.
+name, both remain available under their source-qualified names.
 
 | Scope | Searched | Precedence |
 |-------|----------|------------|

@@ -1,4 +1,4 @@
-//! Folder-based skill discovery with priority ordering
+//! Folder-based skill discovery with source-qualified collisions.
 
 use crate::skills::error::{SkillError, SkillResult};
 use crate::skills::parser::SkillParser;
@@ -25,6 +25,7 @@ pub struct SearchPath {
     pub path: PathBuf,
     pub scope: SkillScope,
     pub agent: Option<String>,
+    pub namespace: String,
 }
 
 impl SearchPath {
@@ -33,6 +34,7 @@ impl SearchPath {
             path,
             scope,
             agent: None,
+            namespace: scope.to_string(),
         }
     }
 
@@ -46,9 +48,14 @@ impl SearchPath {
         self.agent = agent;
         self
     }
+
+    pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.namespace = namespace.into();
+        self
+    }
 }
 
-/// Folder-based discovery with priority ordering
+/// Folder-based discovery across ordered search paths.
 pub struct FolderDiscovery {
     search_paths: Vec<SearchPath>,
     parser: SkillParser,
@@ -83,7 +90,7 @@ impl FolderDiscovery {
     }
 
     pub fn discover(&self) -> SkillResult<HashMap<String, ResolvedSkill>> {
-        let mut resolved: HashMap<String, ResolvedSkill> = HashMap::new();
+        let mut discovered = Vec::new();
 
         for search_path in &self.search_paths {
             if !search_path.path.exists() {
@@ -92,21 +99,33 @@ impl FolderDiscovery {
             }
 
             for skill in self.discover_in_path(search_path)? {
-                let name = skill.name.clone();
-                match resolved.entry(name) {
-                    std::collections::hash_map::Entry::Occupied(mut held) => {
-                        // FIRST wins: the paths are highest-priority first, so
-                        // anything found later is shadowed by what is held.
-                        held.get_mut().shadowed.push(skill.source.path.clone());
-                    }
-                    std::collections::hash_map::Entry::Vacant(slot) => {
-                        slot.insert(ResolvedSkill {
-                            skill,
-                            shadowed: vec![],
-                        });
-                    }
-                }
+                discovered.push(skill);
             }
+        }
+        let mut counts = HashMap::new();
+        for skill in &discovered {
+            *counts.entry(skill.name.clone()).or_insert(0usize) += 1;
+        }
+        let mut resolved = HashMap::new();
+        for skill in discovered {
+            let key = if counts[&skill.name] == 1 {
+                skill.name.clone()
+            } else {
+                format!("{}:{}", skill.source.namespace, skill.name)
+            };
+            let mut key = key;
+            let mut suffix = 2;
+            while resolved.contains_key(&key) {
+                key = format!("{}-{}:{}", skill.source.namespace, suffix, skill.name);
+                suffix += 1;
+            }
+            resolved.insert(
+                key,
+                ResolvedSkill {
+                    skill,
+                    shadowed: vec![],
+                },
+            );
         }
         Ok(resolved)
     }
@@ -194,9 +213,42 @@ impl FolderDiscovery {
             scope: search_path.scope,
             path: path.to_path_buf(),
             content_hash,
+            namespace: search_path.namespace.clone(),
         };
 
         self.parser.parse(&content, source)
+    }
+}
+
+pub fn resolve_skill<'a>(
+    skills: &'a HashMap<String, ResolvedSkill>,
+    name: &str,
+) -> Result<Option<&'a ResolvedSkill>, String> {
+    if let Some(skill) = skills.get(name) {
+        return Ok(Some(skill));
+    }
+    let mut matches: Vec<_> = skills
+        .iter()
+        .filter(|(_, resolved)| {
+            resolved.skill.name == name
+                || format!(
+                    "{}:{}",
+                    resolved.skill.source.namespace, resolved.skill.name
+                ) == name
+        })
+        .collect();
+    matches.sort_by(|a, b| a.0.cmp(b.0));
+    match matches.as_slice() {
+        [] => Ok(None),
+        [(_, skill)] => Ok(Some(skill)),
+        _ => Err(format!(
+            "Ambiguous skill '{name}'. Use one of: {}",
+            matches
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
     }
 }
 
@@ -274,7 +326,20 @@ pub fn default_discovery_paths_from(
 
     search_paths(RuntimeAsset::Skills, &path)
         .into_iter()
-        .map(|c| SearchPath::new(c.path, scope_for(c.origin)).with_agent_opt(c.harness))
+        .map(|c| {
+            let namespace = match c.origin {
+                Origin::Plugin => c
+                    .path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "plugin".into()),
+                _ => scope_for(c.origin).to_string(),
+            };
+            SearchPath::new(c.path, scope_for(c.origin))
+                .with_agent_opt(c.harness)
+                .with_namespace(namespace)
+        })
         .collect()
 }
 
@@ -541,6 +606,14 @@ mod tests {
 
         assert_eq!(resolved.len(), 1);
         let skill = &resolved["commit"];
+        assert_eq!(
+            resolve_skill(&resolved, "personal:commit")
+                .unwrap()
+                .unwrap()
+                .skill
+                .name,
+            "commit"
+        );
         assert_eq!(skill.skill.name, "commit");
         assert_eq!(skill.skill.description, "Create commits");
         assert!(skill.shadowed.is_empty());
@@ -566,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn higher_scope_shadows_lower() {
+    fn higher_scope_collision_keeps_both() {
         let tmp = TempDir::new().unwrap();
 
         let personal_dir = tmp.path().join("personal");
@@ -577,21 +650,60 @@ mod tests {
         std::fs::create_dir(&workspace_dir).unwrap();
         write_skill(&workspace_dir, "commit", "Workspace commit style");
 
-        // Highest priority first; the workspace skill is the one kept.
         let discovery = FolderDiscovery::new(vec![
             SearchPath::new(workspace_dir, SkillScope::Workspace),
             SearchPath::new(personal_dir, SkillScope::Personal),
         ]);
         let resolved = discovery.discover().unwrap();
 
-        assert_eq!(resolved.len(), 1);
-        let commit = &resolved["commit"];
+        assert_eq!(resolved.len(), 2);
+        let commit = &resolved["workspace:commit"];
         assert_eq!(commit.skill.description, "Workspace commit style");
-        assert_eq!(commit.shadowed.len(), 1);
+        assert_eq!(
+            resolved["personal:commit"].skill.description,
+            "Personal commit style"
+        );
+        assert!(resolve_skill(&resolved, "commit")
+            .unwrap_err()
+            .contains("workspace:commit"));
+        assert_eq!(
+            resolve_skill(&resolved, "workspace:commit")
+                .unwrap()
+                .unwrap()
+                .skill
+                .description,
+            "Workspace commit style"
+        );
     }
 
     #[test]
-    fn kiln_scope_shadows_workspace_and_personal() {
+    fn colliding_skill_names_keep_both_source_qualified_entries() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path().join("workspace");
+        let personal = tmp.path().join("personal");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&personal).unwrap();
+        write_skill(&workspace, "commit", "Workspace style");
+        write_skill(&personal, "commit", "Personal style");
+        let found = FolderDiscovery::new(vec![
+            SearchPath::new(workspace, SkillScope::Workspace),
+            SearchPath::new(personal, SkillScope::Personal),
+        ])
+        .discover()
+        .unwrap();
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            found["workspace:commit"].skill.description,
+            "Workspace style"
+        );
+        assert_eq!(found["personal:commit"].skill.description, "Personal style");
+        assert!(resolve_skill(&found, "commit")
+            .unwrap_err()
+            .contains("personal:commit"));
+    }
+
+    #[test]
+    fn kiln_collision_keeps_workspace_and_personal() {
         let tmp = TempDir::new().unwrap();
 
         let personal = tmp.path().join("personal");
@@ -616,9 +728,9 @@ mod tests {
         ]);
         let resolved = discovery.discover().unwrap();
 
-        let review = &resolved["review"];
+        let review = &resolved["kiln:review"];
         assert_eq!(review.skill.description, "Kiln review");
-        assert_eq!(review.shadowed.len(), 2);
+        assert_eq!(resolved.len(), 3);
     }
 
     /// A skill you wrote beats one Crucible shipped.
@@ -647,8 +759,12 @@ mod tests {
         let resolved = discovery.discover().unwrap();
 
         assert_eq!(
-            resolved["review"].skill.description, "Kiln review",
-            "the kiln's own skill must win"
+            resolved["kiln:review"].skill.description, "Kiln review",
+            "the kiln's own skill remains available"
+        );
+        assert_eq!(
+            resolved["builtin:review"].skill.description,
+            "Bundled review"
         );
     }
 
@@ -673,10 +789,13 @@ mod tests {
             .discover()
             .unwrap();
 
-        assert_eq!(
-            resolved["cru-help"].skill.description, "User copy",
-            "the first root listed is the one that wins"
-        );
+        assert_eq!(resolved.len(), 2);
+        assert!(resolved
+            .values()
+            .any(|skill| skill.skill.description == "User copy"));
+        assert!(resolved
+            .values()
+            .any(|skill| skill.skill.description == "Shipped copy"));
     }
 
     /// …and a bundled skill with no competition still loads.

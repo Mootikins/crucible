@@ -826,9 +826,8 @@ export interface paths {
         put?: never;
         /**
          * `POST /api/plugins/command` — invoke a plugin command by name.
-         * @description Not under `/{name}` because a command's name is already globally unique —
-         *     the daemon refuses a second plugin claiming one — so routing by plugin would
-         *     ask the caller for something it does not need to know. The result is passed
+         * @description Not under `/{name}` because the name sent here resolves through the daemon's
+         *     command registry. The result is passed
          *     through verbatim, like publications and options: what a command returns is
          *     the plugin's vocabulary, and a shape this layer validated would be a shape
          *     only today's plugins could send.
@@ -3571,10 +3570,7 @@ export interface components {
             effect: components["schemas"]["CommandEffectRow"];
             /** @description The one-line argument hint, or `null`. Always written, so `required`. */
             hint: string | null;
-            /**
-             * @description Globally unique: the daemon refuses a second plugin claiming a name,
-             *     which is why `POST /api/plugins/command` does not route by plugin.
-             */
+            /** @description Bare when unique; source-qualified when plugins share a name. */
             name: string;
             /**
              * @description The declared parameters, as the JSON Schema `signature.rs` emits, or

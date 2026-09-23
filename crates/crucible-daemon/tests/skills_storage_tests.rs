@@ -18,6 +18,7 @@ fn test_skill(name: &str, scope: SkillScope) -> Skill {
             scope,
             path: PathBuf::from(format!("/test/{}/SKILL.md", name)),
             content_hash: "abc123".to_string(),
+            namespace: String::new(),
         },
         indexed_at: Utc::now(),
     }

@@ -105,6 +105,7 @@ impl AgentCardLoader {
         let card = AgentCard {
             id: card_id,
             name,
+            namespace: None,
             version: frontmatter.version.unwrap_or_else(|| "0.1.0".to_string()),
             description: frontmatter.description,
             tags: frontmatter.tags,
