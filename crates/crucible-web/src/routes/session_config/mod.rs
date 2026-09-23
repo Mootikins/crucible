@@ -20,6 +20,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::services::daemon::AppState;
 
+pub(super) mod approval;
 pub(super) mod basic;
 pub(super) mod prompt;
 
@@ -29,6 +30,10 @@ mod tests;
 // The `__path_*` types come with the handlers: `utoipa_axum::routes!` reads
 // each handler's `#[utoipa::path]` attribute through the type the macro
 // generates beside it, and resolves both names in this module's scope.
+pub(super) use approval::{
+    __path_get_plugin_approval, __path_list_plugin_approvals, __path_set_plugin_approval,
+    get_plugin_approval, list_plugin_approvals, set_plugin_approval,
+};
 pub(super) use basic::{
     __path_get_precognition, __path_list_agent_options, __path_set_agent_option,
     __path_set_precognition, get_precognition, list_agent_options, set_agent_option,
@@ -56,6 +61,8 @@ pub(super) use prompt::{
 pub(super) fn config_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(set_precognition, get_precognition))
+        .routes(routes!(set_plugin_approval, get_plugin_approval))
+        .routes(routes!(list_plugin_approvals))
         // Not one of Crucible's knobs: the settings the external agent
         // advertised for itself. One path serves both directions because the
         // value belongs to the agent — GET lists what it has, POST sets one,

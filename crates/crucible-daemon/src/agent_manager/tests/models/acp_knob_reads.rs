@@ -95,6 +95,16 @@ impl AgentHandle for FakeAcpAgent {
 
 #[async_trait::async_trait]
 impl SessionKnobs for FakeAcpAgent {
+    async fn set_plugin_approval(
+        &mut self,
+        _plugin: &str,
+        _approval: crucible_core::session::PluginApproval,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_approval".into()))
+    }
+    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
+        crucible_core::session::PluginApproval::Inherit
+    }
     fn get_system_prompt(&self) -> Option<String> {
         None
     }

@@ -1435,6 +1435,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/{id}/config/plugin-approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_plugin_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/{id}/config/plugins/{plugin}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_plugin_approval"];
+        put: operations["set_plugin_approval"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session/{id}/config/precognition": {
         parameters: {
             query?: never;
@@ -3493,6 +3525,20 @@ export interface components {
             key: string;
         };
         /**
+         * @description A permission floor a plugin can add to its turns.
+         * @enum {string}
+         */
+        PluginApproval: "inherit" | "ask" | "stop";
+        PluginApprovalResponse: {
+            approval: components["schemas"]["PluginApproval"];
+            plugin: string;
+        };
+        PluginApprovalsResponse: {
+            approvals: {
+                [key: string]: components["schemas"]["PluginApproval"];
+            };
+        };
+        /**
          * @description One executable primitive a plugin declared, and the arguments it takes.
          *
          *     **A deliberate reshape, so it keeps its own struct.** The daemon builds a
@@ -4435,6 +4481,9 @@ export interface components {
         SetModeRequest: {
             mode: string;
         };
+        SetPluginApprovalRequest: {
+            approval: components["schemas"]["PluginApproval"];
+        };
         SetPrecognitionRequest: {
             enabled: boolean;
         };
@@ -4840,6 +4889,9 @@ export type SchemaPatchFileRequest = components['schemas']['PatchFileRequest'];
 export type SchemaPendingInteraction = components['schemas']['PendingInteraction'];
 export type SchemaPendingInteractionsResponse = components['schemas']['PendingInteractionsResponse'];
 export type SchemaPinnedLeaf = components['schemas']['PinnedLeaf'];
+export type SchemaPluginApproval = components['schemas']['PluginApproval'];
+export type SchemaPluginApprovalResponse = components['schemas']['PluginApprovalResponse'];
+export type SchemaPluginApprovalsResponse = components['schemas']['PluginApprovalsResponse'];
 export type SchemaPluginCommandRow = components['schemas']['PluginCommandRow'];
 export type SchemaPluginCommandsResponse = components['schemas']['PluginCommandsResponse'];
 export type SchemaPluginInstallOutcomeRow = components['schemas']['PluginInstallOutcomeRow'];
@@ -4905,6 +4957,7 @@ export type SchemaSessionStatusSlot = components['schemas']['SessionStatusSlot']
 export type SchemaSetAgentOptionRequest = components['schemas']['SetAgentOptionRequest'];
 export type SchemaSetContextStrategyRequest = components['schemas']['SetContextStrategyRequest'];
 export type SchemaSetModeRequest = components['schemas']['SetModeRequest'];
+export type SchemaSetPluginApprovalRequest = components['schemas']['SetPluginApprovalRequest'];
 export type SchemaSetPrecognitionRequest = components['schemas']['SetPrecognitionRequest'];
 export type SchemaSetTitleRequest = components['schemas']['SetTitleRequest'];
 export type SchemaSetWorkspaceRequest = components['schemas']['SetWorkspaceRequest'];
@@ -7812,6 +7865,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_plugin_approvals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginApprovalsResponse"];
+                };
+            };
+        };
+    };
+    get_plugin_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                plugin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginApprovalResponse"];
+                };
+            };
+        };
+    };
+    set_plugin_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                plugin: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPluginApprovalRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
             };
         };
     };

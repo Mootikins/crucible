@@ -175,7 +175,7 @@ impl AgentManager {
         // starts it after this turn releases its request slot, so the new
         // turn gets admission, precognition, persistence and undo like any
         // other turn. There is no continuation inside a turn.
-        if let Some(content) = Self::dispatch_turn_complete_handlers(
+        if let Some(follow_up) = Self::dispatch_turn_complete_handlers(
             &stream_ctx.session_id,
             &stream_ctx.message_id,
             accumulated_response,
@@ -187,10 +187,10 @@ impl AgentManager {
         {
             info!(
                 session_id = %stream_ctx.session_id,
-                content_len = content.len(),
+                content_len = follow_up.content.len(),
                 "A turn:complete handler asked for a new turn"
             );
-            stream_ctx.slot.set_follow_up(content);
+            stream_ctx.slot.set_follow_up(follow_up);
         }
     }
 
@@ -905,7 +905,7 @@ impl AgentManager {
         plugin_handlers: Option<&PluginHandlers>,
         facts: TurnFacts,
         response_tail_chars: usize,
-    ) -> Option<String> {
+    ) -> Option<crate::agent_manager::slot::FollowUpTurn> {
         let (response_tail, response_truncated) = response_tail(response, response_tail_chars);
         let event = SessionEvent::Custom {
             name: "turn:complete".to_string(),
@@ -944,7 +944,7 @@ impl AgentManager {
         registry: &crucible_lua::LuaScriptHandlerRegistry,
         lua: &mlua::Lua,
         event: &SessionEvent,
-    ) -> Option<String> {
+    ) -> Option<crate::agent_manager::slot::FollowUpTurn> {
         use crucible_lua::ScriptHandlerResult;
 
         let handlers = registry.runtime_handlers_for(
@@ -962,7 +962,7 @@ impl AgentManager {
             "Dispatching turn:complete handlers"
         );
 
-        let mut pending_injection: Option<String> = None;
+        let mut pending_injection = None;
         for handler in handlers {
             match registry
                 .execute_runtime_handler(lua, handler.id, event, Some(session_id))
@@ -983,7 +983,10 @@ impl AgentManager {
                             content_len = content.len(),
                             "Handler returned inject"
                         );
-                        pending_injection = Some(content);
+                        pending_injection = Some(crate::agent_manager::slot::FollowUpTurn {
+                            content,
+                            plugin: handler.source.to_string(),
+                        });
                     }
                 }
                 Err(e) => {

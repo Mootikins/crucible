@@ -117,6 +117,29 @@ async fn context_strategy_round_trips_its_string_spelling() {
     assert_get_returns("context-strategy", "context_strategy", json!("recent")).await;
 }
 
+#[tokio::test]
+async fn plugin_approval_routes_forward_plugin_and_value() {
+    let uri = "/api/session/s1/config/plugins/alpha/approval";
+    let (status, _, mock) = call("PUT", uri, Some(json!({"approval": "ask"}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let params = mock.received_params("session.set_plugin_approval").unwrap();
+    assert_eq!(params["session_id"], "s1");
+    assert_eq!(params["plugin"], "alpha");
+    assert_eq!(params["approval"], "ask");
+
+    let (status, body, mock) = call("GET", uri, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"plugin": "alpha", "approval": "ask"}));
+    assert_eq!(
+        mock.received_params("session.get_plugin_approval").unwrap()["plugin"],
+        "alpha"
+    );
+
+    let (status, body, _) = call("GET", "/api/session/s1/config/plugin-approvals", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["approvals"], json!({"alpha": "ask", "beta": "stop"}));
+}
+
 // ── Nullable knobs ────────────────────────────────────────────────────────
 
 // ── mode, which is not a config/ knob ─────────────────────────────────────

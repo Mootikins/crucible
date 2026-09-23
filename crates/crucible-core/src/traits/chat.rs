@@ -231,6 +231,16 @@ pub trait SessionKnobs: Send + Sync {
     /// Whether Precognition is currently enabled. `AgentConfig` defaults
     /// to on.
     fn get_precognition(&self) -> bool;
+
+    /// Set the permission floor for one plugin's turns.
+    async fn set_plugin_approval(
+        &mut self,
+        plugin: &str,
+        approval: crate::session::PluginApproval,
+    ) -> ChatResult<()>;
+
+    /// Read the permission floor for one plugin; absence means inherit.
+    fn get_plugin_approval(&self, plugin: &str) -> crate::session::PluginApproval;
 }
 
 /// The empty answer for every knob: each setter returns
@@ -284,6 +294,18 @@ macro_rules! impl_unsupported_session_knobs {
             }
             fn get_precognition(&self) -> bool {
                 true
+            }
+            async fn set_plugin_approval(
+                &mut self,
+                _plugin: &str,
+                _approval: $crate::session::PluginApproval,
+            ) -> $crate::traits::chat::ChatResult<()> {
+                Err($crate::traits::chat::ChatError::NotSupported(
+                    "set_plugin_approval".into(),
+                ))
+            }
+            fn get_plugin_approval(&self, _plugin: &str) -> $crate::session::PluginApproval {
+                $crate::session::PluginApproval::Inherit
             }
         }
     };
@@ -453,6 +475,18 @@ impl crate::turn::Agent for Box<dyn AgentHandle + Send + Sync> {
 impl SessionKnobs for Box<dyn AgentHandle + Send + Sync> {
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         SessionKnobs::switch_model(&mut **self, model_id).await
+    }
+
+    async fn set_plugin_approval(
+        &mut self,
+        plugin: &str,
+        approval: crate::session::PluginApproval,
+    ) -> ChatResult<()> {
+        (**self).set_plugin_approval(plugin, approval).await
+    }
+
+    fn get_plugin_approval(&self, plugin: &str) -> crate::session::PluginApproval {
+        (**self).get_plugin_approval(plugin)
     }
 
     // Every DEFAULTED method on the trait has to be repeated here, and the

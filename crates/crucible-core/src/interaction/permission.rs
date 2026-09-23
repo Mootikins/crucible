@@ -87,6 +87,9 @@ pub struct PermRequest {
     /// `permissions config` or `ask mode`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
+    /// Plugin whose turn requested this permission, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
 }
 
 impl PermRequest {
@@ -103,6 +106,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
+            plugin: None,
         }
     }
 
@@ -119,6 +123,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
+            plugin: None,
         }
     }
 
@@ -135,6 +140,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
+            plugin: None,
         }
     }
 
@@ -148,6 +154,7 @@ impl PermRequest {
             diffs: Vec::new(),
             call: None,
             layer: None,
+            plugin: None,
         }
     }
 
@@ -168,6 +175,7 @@ impl PermRequest {
                 ..call.clone()
             })),
             layer: None,
+            plugin: None,
         }
     }
 

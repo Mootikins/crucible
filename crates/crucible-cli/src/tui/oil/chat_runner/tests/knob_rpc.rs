@@ -55,6 +55,16 @@ impl AgentHandle for KnobRecordingAgent {
 /// answer, written out so the compiler sees the choice.
 #[async_trait::async_trait]
 impl SessionKnobs for KnobRecordingAgent {
+    async fn set_plugin_approval(
+        &mut self,
+        _plugin: &str,
+        _approval: crucible_core::session::PluginApproval,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_approval".into()))
+    }
+    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
+        crucible_core::session::PluginApproval::Inherit
+    }
     fn get_system_prompt(&self) -> Option<String> {
         None
     }
@@ -244,6 +254,16 @@ impl AgentHandle for ModeListingAgent {
 /// Only the mode list is live; every knob is the empty answer.
 #[async_trait::async_trait]
 impl SessionKnobs for ModeListingAgent {
+    async fn set_plugin_approval(
+        &mut self,
+        _plugin: &str,
+        _approval: crucible_core::session::PluginApproval,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_approval".into()))
+    }
+    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
+        crucible_core::session::PluginApproval::Inherit
+    }
     fn get_system_prompt(&self) -> Option<String> {
         None
     }

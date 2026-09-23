@@ -227,6 +227,11 @@ impl InteractionModal {
 
         let mut lines: Vec<Node> = Vec::new();
 
+        if let Some(plugin) = &perm_request.plugin {
+            let text = format!("  {plugin} requests permission");
+            lines.push(pad_line(&text, UnicodeWidthStr::width(text.as_str())));
+        }
+
         lines.push(styled(
             t.decorations
                 .half_block_bottom

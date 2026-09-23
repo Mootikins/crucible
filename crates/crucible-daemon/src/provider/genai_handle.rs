@@ -1531,6 +1531,18 @@ impl SessionKnobs for GenaiAgentHandle {
     fn get_precognition(&self) -> bool {
         true
     }
+
+    async fn set_plugin_approval(
+        &mut self,
+        _plugin: &str,
+        _approval: crucible_core::session::PluginApproval,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_plugin_approval".into()))
+    }
+
+    fn get_plugin_approval(&self, _plugin: &str) -> crucible_core::session::PluginApproval {
+        crucible_core::session::PluginApproval::Inherit
+    }
 }
 
 #[async_trait]

@@ -7,6 +7,7 @@ use crucible_core::protocol::session_events::{
     SessionInitializedPayload, WorkspaceIndexedPayload,
 };
 
+mod approval;
 mod create;
 mod lifecycle;
 mod list;
@@ -18,6 +19,10 @@ mod params;
 pub(crate) mod review;
 pub(crate) mod scope;
 
+pub(crate) use approval::{
+    handle_session_get_plugin_approval, handle_session_list_plugin_approvals,
+    handle_session_set_plugin_approval,
+};
 pub(crate) use create::handle_session_create;
 pub(crate) use lifecycle::{
     handle_session_archive, handle_session_compact, handle_session_delete, handle_session_end,

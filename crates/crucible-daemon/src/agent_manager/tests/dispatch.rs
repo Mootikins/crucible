@@ -256,7 +256,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("Continue working"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("Continue working")
+        );
     }
 
     /// A handler registered in the PLUGIN VM (a separate registry + Lua pair,
@@ -266,13 +269,14 @@ mod event_dispatch {
     /// handler got documented silence.
     #[tokio::test]
     async fn plugin_vm_turn_complete_handler_fires_and_injects() {
-        use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
+        use crucible_lua::{register_cru_on_api, set_source, LuaScriptHandlerRegistry, LuaSource};
 
         // A plugin VM: its own Lua state and its own registry, like the
         // daemon's plugin loader.
         let plugin_lua = Arc::new(mlua::Lua::new());
         let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
         register_cru_on_api(&plugin_lua, (*plugin_registry).clone()).unwrap();
+        let previous = set_source(&plugin_lua, LuaSource::Plugin("goal".into()));
         plugin_lua
             .load(
                 r#"
@@ -283,6 +287,7 @@ mod event_dispatch {
             )
             .exec()
             .unwrap();
+        set_source(&plugin_lua, previous);
         let plugin_pair = (plugin_registry, plugin_lua);
 
         let injection = AgentManager::dispatch_turn_complete_handlers(
@@ -295,7 +300,9 @@ mod event_dispatch {
         )
         .await;
 
-        let content = injection.expect("plugin VM handler must be dispatched");
+        let follow_up = injection.expect("plugin VM handler must be dispatched");
+        assert_eq!(follow_up.plugin, "goal");
+        let content = follow_up.content;
         assert_eq!(
             content, "from the plugin VM: test-session",
             "handler must fire from the plugin registry and see ctx.session_id"
@@ -349,7 +356,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("plugin inject"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("plugin inject")
+        );
     }
 
     #[tokio::test]
@@ -386,7 +396,7 @@ mod event_dispatch {
         .await;
 
         assert_eq!(
-            injection.as_deref(),
+            injection.as_ref().map(|t| t.content.as_str()),
             Some("Second injection"),
             "Last inject should win"
         );
@@ -426,7 +436,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("Suffix content"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("Suffix content")
+        );
     }
 
     /// A turn ENDS. There is no re-prompt inside it, so the payload carries
@@ -501,7 +514,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("xxxthe end|truncated=true"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("xxxthe end|truncated=true")
+        );
     }
 
     /// A reply shorter than the limit arrives whole, and says so.
@@ -532,7 +548,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("short|truncated=false"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("short|truncated=false")
+        );
     }
 
     /// A handler sees that the turn ran a tool.
@@ -568,7 +587,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("tools=true"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("tools=true")
+        );
     }
 
     /// A handler reads why the turn ended, in the wire spelling.
@@ -601,7 +623,10 @@ mod event_dispatch {
         )
         .await;
 
-        assert_eq!(injection.as_deref(), Some("stop=max_tokens"));
+        assert_eq!(
+            injection.as_ref().map(|t| t.content.as_str()),
+            Some("stop=max_tokens")
+        );
     }
 
     #[tokio::test]

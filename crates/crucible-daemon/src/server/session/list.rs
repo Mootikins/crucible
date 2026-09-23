@@ -310,6 +310,7 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
                 "continued_from": session.continued_from,
                 "parent_session_id": session.parent_session_id,
                 "agent": session.agent,
+                "plugin_approvals": session.plugin_approvals,
             });
 
             if let Some(mode) = session.recording_mode {

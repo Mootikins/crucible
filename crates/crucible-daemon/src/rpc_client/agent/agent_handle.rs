@@ -168,6 +168,30 @@ impl AgentHandle for DaemonAgentHandle {
 
 #[async_trait]
 impl SessionKnobs for DaemonAgentHandle {
+    async fn set_plugin_approval(
+        &mut self,
+        plugin: &str,
+        approval: crucible_core::session::PluginApproval,
+    ) -> ChatResult<()> {
+        self.client
+            .session_set_plugin_approval(&self.session_id, plugin, approval)
+            .await
+            .chat_comm()?;
+        if approval == crucible_core::session::PluginApproval::Inherit {
+            self.cached_plugin_approvals.remove(plugin);
+        } else {
+            self.cached_plugin_approvals
+                .insert(plugin.to_owned(), approval);
+        }
+        Ok(())
+    }
+
+    fn get_plugin_approval(&self, plugin: &str) -> crucible_core::session::PluginApproval {
+        self.cached_plugin_approvals
+            .get(plugin)
+            .copied()
+            .unwrap_or_default()
+    }
     /// A proxy handle was not built with a prompt; the daemon's own handle
     /// holds it. There is no RPC to read it back, and nothing needs one.
     fn get_system_prompt(&self) -> Option<String> {

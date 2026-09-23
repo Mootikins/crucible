@@ -35,6 +35,19 @@ pub struct SessionSetModeRequest {
     pub mode_id: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginApprovalRequest {
+    pub session_id: String,
+    pub plugin: String,
+    pub approval: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionPluginRequest {
+    pub session_id: String,
+    pub plugin: String,
+}
+
 /// Request for `session.set_precognition`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSetPrecognitionRequest {
@@ -261,6 +274,55 @@ impl DaemonClient {
             },
         )
         .await
+    }
+
+    pub async fn session_set_plugin_approval(
+        &self,
+        session_id: &str,
+        plugin: &str,
+        approval: crucible_core::session::PluginApproval,
+    ) -> Result<()> {
+        self.typed_unit_call(
+            "session.set_plugin_approval",
+            SessionPluginApprovalRequest {
+                session_id: session_id.to_owned(),
+                plugin: plugin.to_owned(),
+                approval: approval.as_str().to_owned(),
+            },
+        )
+        .await
+    }
+
+    pub async fn session_get_plugin_approval(
+        &self,
+        session_id: &str,
+        plugin: &str,
+    ) -> Result<crucible_core::session::PluginApproval> {
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.get_plugin_approval",
+                SessionPluginRequest {
+                    session_id: session_id.to_owned(),
+                    plugin: plugin.to_owned(),
+                },
+            )
+            .await?;
+        Ok(serde_json::from_value(result["approval"].clone())?)
+    }
+
+    pub async fn session_list_plugin_approvals(
+        &self,
+        session_id: &str,
+    ) -> Result<std::collections::BTreeMap<String, crucible_core::session::PluginApproval>> {
+        let result: serde_json::Value = self
+            .typed_call_with_retry(
+                "session.list_plugin_approvals",
+                SessionIdRequest {
+                    session_id: session_id.to_owned(),
+                },
+            )
+            .await?;
+        Ok(serde_json::from_value(result["approvals"].clone())?)
     }
 
     pub async fn session_list_models(&self, session_id: &str) -> Result<Vec<String>> {

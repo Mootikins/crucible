@@ -31,6 +31,20 @@ fn test_perm_modal_allow() {
 }
 
 #[test]
+fn plugin_permission_prompt_names_its_source() {
+    let modal = InteractionModal::new(
+        "req-plugin".into(),
+        InteractionRequest::Permission(PermRequest {
+            plugin: Some("alpha".into()),
+            ..PermRequest::bash(["cargo", "test"])
+        }),
+        true,
+    );
+    let rendered = render_to_string(&modal.view(80, 0), 80);
+    assert!(rendered.contains("alpha requests permission"));
+}
+
+#[test]
 fn test_perm_modal_deny() {
     let perm = PermRequest::bash(["npm", "install"]);
     let mut modal = InteractionModal::new(

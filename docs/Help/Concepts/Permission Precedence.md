@@ -13,7 +13,7 @@ tags:
 
 Several things can decide whether a tool call runs: the agent card, the
 `permissions` config, a CLI flag, a saved "allow for this project" pattern, a
-Lua hook, and the session's mode. They are consulted in a fixed order, and the
+Lua hook, the session's mode, and plugin approval. They are consulted in a fixed order, and the
 first one with an opinion wins.
 
 One function decides every tool call, whatever its source: the calls of
@@ -82,8 +82,9 @@ next.
 | 7 | Saved patterns and session grants | answering "allow for this project" or "allow for this session" at a prompt |
 | 8 | Lua permission hooks | `cru.permissions.on_request` |
 | 9 | Mode rules, then mode stance | `cru.modes.<name>.permissions` |
-| 10 | Non-interactive sessions: ask becomes deny | how the session was started |
-| 11 | Prompt the user | — |
+| 10 | Plugin approval | session setting for the active plugin |
+| 11 | Non-interactive sessions: ask becomes deny | how the session was started |
+| 12 | Prompt the user | — |
 
 The implementation is `decide_permission` in
 `crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`; it is
@@ -210,7 +211,19 @@ Modes come after hooks deliberately. A stance is a static declaration; a hook is
 a decision. `cru.modes.auto` saying "allow by default" must not override a hook
 that denies `bash`.
 
-### 10 — Non-interactive sessions
+### 10 — Plugin approval
+
+Each plugin starts with `inherit`, which uses the preceding decision. `ask`
+turns a Lua hook or mode allowance into a prompt; an explicit mode denial still
+denies. `stop` denies calls that reach this layer, with a reason naming the
+plugin. Configured rules, agent-card decisions, read-only exemptions and saved
+grants retain their precedence. A `--permissions allow` override falls through
+for plugin calls when their approval is `ask` or `stop`.
+
+The setting belongs to the session, survives resume, and applies to both
+Crucible tools and ACP permission requests from that plugin's turn.
+
+### 11 — Non-interactive sessions
 
 A delegated child session or a headless send has nobody to answer a prompt.
 Rather than hang, anything that reached this point is denied with a message
@@ -219,7 +232,7 @@ naming the three ways to permit it.
 This step is easy to forget and it changes behaviour: the same tool call that
 *asks* in your terminal *denies* inside a delegation. See [[Help/Concepts/Delegation]].
 
-### 11 — Prompt
+### 12 — Prompt
 
 Whatever is left reaches you, with a diff preview where one can be synthesised.
 A session shows one prompt at a time. A cancel of the turn ends the waiting

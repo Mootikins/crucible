@@ -10,6 +10,27 @@ use super::enums::{RecordingMode, SessionState, SessionType};
 use super::id::SessionId;
 use crate::config::KilnName;
 
+/// A permission floor a plugin can add to its turns.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PluginApproval {
+    #[default]
+    Inherit,
+    Ask,
+    Stop,
+}
+
+impl PluginApproval {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Inherit => "inherit",
+            Self::Ask => "ask",
+            Self::Stop => "stop",
+        }
+    }
+}
+
 /// A session is a continuous sequence of agent actions in a workspace.
 ///
 /// Sessions are the fundamental unit of agent interaction in Crucible.
@@ -185,6 +206,10 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
 
+    /// Per-plugin permission floor. An absent entry inherits the session mode.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugin_approvals: BTreeMap<String, PluginApproval>,
+
     /// The kiln set as it appears on disk: paths, in all three spellings a
     /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
@@ -281,6 +306,22 @@ impl Session {
             isolation_record: None,
             variables: BTreeMap::new(),
             plugin: None,
+            plugin_approvals: BTreeMap::new(),
+        }
+    }
+
+    pub fn plugin_approval(&self, plugin: &str) -> PluginApproval {
+        self.plugin_approvals
+            .get(plugin)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn set_plugin_approval(&mut self, plugin: &str, approval: PluginApproval) {
+        if approval == PluginApproval::Inherit {
+            self.plugin_approvals.remove(plugin);
+        } else {
+            self.plugin_approvals.insert(plugin.to_owned(), approval);
         }
     }
 

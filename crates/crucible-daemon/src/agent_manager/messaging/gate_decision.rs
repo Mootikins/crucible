@@ -26,6 +26,7 @@ use crucible_core::config::components::permissions::{
 };
 use crucible_core::config::PatternStore;
 use crucible_core::interaction::{PermRequest, PermissionScope};
+use crucible_core::session::PluginApproval;
 use crucible_core::types::CanonicalToolCall;
 use crucible_lua::{ModeRegistry, ModeStance, PermissionHookResult};
 use std::collections::HashSet;
@@ -40,6 +41,8 @@ pub(crate) struct PermissionContext<'a> {
     /// The `[permissions]` rules of the session.
     pub engine: &'a PermissionEngine,
     pub permission_override: Option<PermissionMode>,
+    pub plugin: Option<&'a str>,
+    pub plugin_approval: PluginApproval,
     /// The `whitelists.d` directory and the project of the saved patterns.
     /// `None`: no saved patterns.
     pub patterns: Option<(&'a Path, &'a Path)>,
@@ -142,6 +145,7 @@ pub(crate) async fn decide_permission(
     };
     let request = PermRequest {
         layer: Some(layer),
+        plugin: ctx.plugin.map(str::to_owned),
         ..PermRequest::from_call(call, args.clone())
     };
     let Some(response) = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await
@@ -243,11 +247,13 @@ fn decide_unprompted(
         return allow("agent card policy");
     }
     match ctx.permission_override {
-        Some(PermissionMode::Allow) => return allow("permission override"),
+        Some(PermissionMode::Allow) if ctx.plugin_approval == PluginApproval::Inherit => {
+            return allow("permission override")
+        }
         Some(PermissionMode::Deny) => {
             return Unprompted::Deny("Tool call denied by permission override".to_string())
         }
-        Some(PermissionMode::Ask) | None => {}
+        Some(PermissionMode::Allow | PermissionMode::Ask) | None => {}
     }
     // `is_safe`, never `believed_read_only`: an MCP server must not annotate
     // its way past the hooks and the mode stance with `readOnlyHint`. An
@@ -295,7 +301,21 @@ fn decide_unprompted(
         ))),
         PermissionHookResult::Prompt => mode_stance(ctx, call, args),
     };
-    // The plugin approval check (feat/plugin-turns 75ffa651d) goes here.
+    // A plugin turn takes the stricter of the stance and the plugin value.
+    if !matches!(stance, Some(Unprompted::Deny(_))) {
+        match ctx.plugin_approval {
+            PluginApproval::Inherit => {}
+            PluginApproval::Ask => {
+                return Unprompted::Ask(format!("plugin {}", ctx.plugin.unwrap_or("plugin")))
+            }
+            PluginApproval::Stop => {
+                return Unprompted::Deny(format!(
+                    "Plugin '{}' is stopped from requesting tool permission",
+                    ctx.plugin.unwrap_or("plugin")
+                ))
+            }
+        }
+    }
     if let Some(decision) = stance {
         return decision;
     }
@@ -370,6 +390,8 @@ pub(crate) fn unattended_refusal(
         tool_policy: None,
         engine,
         permission_override: None,
+        plugin: None,
+        plugin_approval: PluginApproval::Inherit,
         patterns: None,
         slot: None,
         hooks: None,
@@ -418,6 +440,8 @@ mod tests {
             tool_policy: Some(&policy),
             engine: engine.unwrap_or(&unconfigured),
             permission_override,
+            plugin: None,
+            plugin_approval: PluginApproval::Inherit,
             patterns: None,
             slot: None,
             hooks: None,

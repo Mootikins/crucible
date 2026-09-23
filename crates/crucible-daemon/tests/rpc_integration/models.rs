@@ -6,6 +6,90 @@ use crucible_daemon::DaemonClient;
 use super::server::TestServer;
 
 #[tokio::test]
+async fn plugin_approval_round_trips_over_socket_and_on_attach() {
+    use crucible_core::session::PluginApproval;
+    use crucible_core::traits::chat::SessionKnobs;
+    use crucible_daemon::DaemonAgentHandle;
+
+    let server = TestServer::start().await.unwrap();
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let created = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".into(),
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
+            workspace: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+            isolation: None,
+        })
+        .await
+        .unwrap();
+    let id = created["session_id"].as_str().unwrap();
+
+    client
+        .session_set_plugin_approval(id, "alpha", PluginApproval::Ask)
+        .await
+        .unwrap();
+    client
+        .session_set_plugin_approval(id, "beta", PluginApproval::Stop)
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .session_get_plugin_approval(id, "alpha")
+            .await
+            .unwrap(),
+        PluginApproval::Ask
+    );
+    assert_eq!(
+        client
+            .session_list_plugin_approvals(id)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        client.session_get(id).await.unwrap()["plugin_approvals"]["beta"],
+        "stop"
+    );
+
+    let (attached_client, events) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .unwrap();
+    let mut handle = DaemonAgentHandle::new_and_subscribe(
+        std::sync::Arc::new(attached_client),
+        id.to_owned(),
+        events,
+    )
+    .await
+    .unwrap();
+    assert_eq!(handle.get_plugin_approval("alpha"), PluginApproval::Ask);
+    handle
+        .set_plugin_approval("alpha", PluginApproval::Inherit)
+        .await
+        .unwrap();
+    assert_eq!(handle.get_plugin_approval("alpha"), PluginApproval::Inherit);
+    assert_eq!(
+        client
+            .session_get_plugin_approval(id, "beta")
+            .await
+            .unwrap(),
+        PluginApproval::Stop
+    );
+    assert_eq!(
+        client
+            .session_list_plugin_approvals(id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn test_session_switch_model() {
     use crucible_core::session::SessionAgent;
 

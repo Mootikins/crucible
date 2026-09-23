@@ -1,7 +1,7 @@
 use super::super::agent::SessionAgent;
 use super::super::config::ContextStrategy;
 use super::super::enums::{SessionState, SessionType};
-use super::super::session::Session;
+use super::super::session::{PluginApproval, Session};
 use super::super::summary::SessionSummary;
 use crate::config::{BackendType, KilnName};
 use std::collections::HashMap;
@@ -29,6 +29,21 @@ fn test_session_new() {
     assert_eq!(session.session_type, SessionType::Chat);
     assert_eq!(session.kilns, vec![kiln.clone()]);
     assert_eq!(session.state, SessionState::Active);
+}
+
+#[test]
+fn plugin_approval_is_independent_and_survives_resume() {
+    let mut session = session_with_kilns(&[]);
+    assert_eq!(session.plugin_approval("goal"), PluginApproval::Inherit);
+    session.set_plugin_approval("goal", PluginApproval::Ask);
+    session.set_plugin_approval("other", PluginApproval::Stop);
+    let stored = serde_json::to_value(&session).unwrap();
+    let resumed: Session = serde_json::from_value(stored).unwrap();
+    assert_eq!(resumed.plugin_approval("goal"), PluginApproval::Ask);
+    assert_eq!(resumed.plugin_approval("other"), PluginApproval::Stop);
+    assert_eq!(resumed.plugin_approval("absent"), PluginApproval::Inherit);
+    session.set_plugin_approval("goal", PluginApproval::Inherit);
+    assert!(!session.plugin_approvals.contains_key("goal"));
 }
 
 /// A session created without one HAS no workspace, and says so.

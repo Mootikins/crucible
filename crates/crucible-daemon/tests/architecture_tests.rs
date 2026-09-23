@@ -458,7 +458,14 @@ fn config_methods_table_covers_every_knob() {
     // its whole option list back, which `session.list_agent_options` reads. A
     // `session.get_agent_option` would be a second way to read one row of that
     // list and a second thing to keep in step.
-    let not_a_knob: BTreeSet<String> = ["agent_option"].iter().map(|s| s.to_string()).collect();
+    // Per-plugin approval has a second key (`plugin`) and its handler lives in
+    // approval.rs. The scalar config table below cannot express that shape;
+    // the socket and web route round-trip tests cover its fields.
+    let per_plugin: BTreeSet<String> = ["plugin_approval"].iter().map(|s| s.to_string()).collect();
+    let not_a_knob: BTreeSet<String> = ["agent_option", "plugin_approval"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let scope_owned = &scope_owned | &not_a_knob;
 
     let sides = [
@@ -468,7 +475,7 @@ fn config_methods_table_covers_every_knob() {
         ),
         (
             "client get",
-            captures(r"fn session_get_([a-z0-9_]+)\(", &client),
+            &captures(r"fn session_get_([a-z0-9_]+)\(", &client) - &per_plugin,
         ),
         (
             "server set",

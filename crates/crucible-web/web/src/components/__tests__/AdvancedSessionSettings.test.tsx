@@ -20,6 +20,8 @@ import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 
 const GET = 'GET /api/session/s1/config/context-strategy';
 const SET = 'PUT /api/session/s1/config/context-strategy';
+const APPROVALS = 'GET /api/session/s1/config/plugin-approvals';
+const SET_APPROVAL = 'PUT /api/session/s1/config/plugins/alpha/approval';
 
 let env: TestQueryEnv;
 
@@ -28,6 +30,8 @@ function serve(routes: Record<string, MockFetchAnswer> = {}): TestQueryEnv {
   env = createTestQueryEnv({
     [GET]: () => ({ context_strategy: 'recent' }),
     [SET]: () => new Response(null, { status: 204 }),
+    [APPROVALS]: () => ({ approvals: { alpha: 'inherit' } }),
+    [SET_APPROVAL]: () => ({ success: true }),
     ...routes,
   });
   return env;
@@ -50,6 +54,20 @@ afterEach(() => {
 });
 
 describe('AdvancedSessionSettings', () => {
+  it('shows loaded plugins and persists a stricter approval', async () => {
+    let sent: unknown;
+    serve({
+      [SET_APPROVAL]: async (request) => {
+        sent = await request.json();
+        return { success: true };
+      },
+    });
+    renderSection();
+    const select = await screen.findByTestId('plugin-approval-alpha');
+    expect((select as HTMLSelectElement).value).toBe('inherit');
+    fireEvent.change(select, { target: { value: 'ask' } });
+    await waitFor(() => expect(sent).toEqual({ approval: 'ask' }));
+  });
   it('sends the enum knob by its string spelling', async () => {
     let sent: { context_strategy: string } | null = null;
     serve({

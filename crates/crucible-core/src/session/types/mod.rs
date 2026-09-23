@@ -20,5 +20,5 @@ pub use review::{
     Integrity, Interval, Ledger, LineRange, PhysicalRoot, RootBase, RootInterval, RootStatus, Skip,
     SkipKind, SnapshotId,
 };
-pub use session::{IsolationRecord, IsolationRequirement, Session};
+pub use session::{IsolationRecord, IsolationRequirement, PluginApproval, Session};
 pub use summary::SessionSummary;

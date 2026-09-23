@@ -5,7 +5,10 @@
 //! `origin: plugin`. These tests pin both halves.
 
 use super::*;
+use crucible_core::config::components::permissions::PermissionMode;
+use crucible_core::interaction::PermResponse;
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
+use crucible_core::session::PluginApproval;
 use crucible_core::turn::{TurnOrigin, TurnStatus};
 
 /// The decoded fields of a `turn_finished` event.
@@ -210,7 +213,10 @@ async fn a_turn_complete_inject_starts_a_new_turn_marked_as_the_plugin_s() {
 async fn a_user_cancel_clears_the_turn_a_handler_asked_for() {
     let h = ReactorTestHarness::new().await;
     let slot = h.agent_manager.slot(&h.session_id);
-    slot.set_follow_up("keep going".into());
+    slot.set_follow_up(crate::agent_manager::slot::FollowUpTurn {
+        content: "keep going".into(),
+        plugin: "test".into(),
+    });
 
     let mut rx = h.event_tx.subscribe();
     h.inject_agent(Box::new(super::concurrency::PendingMockAgent));
@@ -313,4 +319,55 @@ async fn an_awaited_turn_starts_no_follow_up() {
             "no plugin turn starts"
         );
     }
+}
+
+#[tokio::test]
+async fn plugin_ask_overrides_an_internal_turns_allow_override() {
+    let mut h = ReactorTestHarness::new().await;
+    h.agent_manager
+        .set_plugin_approval(&h.session_id, "alpha", PluginApproval::Ask, None)
+        .await
+        .unwrap();
+    h.agent_manager
+        .slot(&h.session_id)
+        .set_follow_up(crate::agent_manager::slot::FollowUpTurn {
+            content: "continue".into(),
+            plugin: "alpha".into(),
+        });
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-1", "bash", serde_json::json!({"command": "pwd"})),
+        TurnEvent::Done {
+            stop_reason: StopReason::EndTurn,
+        },
+    ]);
+
+    h.agent_manager
+        .send_message(
+            &h.session_id,
+            "start".into(),
+            &h.event_tx,
+            true,
+            Some(PermissionMode::Allow),
+        )
+        .await
+        .unwrap();
+    events_until_turn_finished(&mut h.event_rx).await;
+
+    let prompt = timeout(Duration::from_secs(5), async {
+        loop {
+            let event = h.event_rx.recv().await.unwrap();
+            if event.event == "interaction_requested" {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("plugin turn must ask even when session allows");
+    let id = prompt.data["request_id"].as_str().unwrap();
+    let pending = h.agent_manager.list_all_pending_permissions();
+    assert_eq!(pending[0].2.plugin.as_deref(), Some("alpha"));
+    h.agent_manager
+        .respond_to_permission(&h.session_id, id, PermResponse::deny())
+        .unwrap();
+    events_until_turn_finished(&mut h.event_rx).await;
 }

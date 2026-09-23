@@ -492,6 +492,7 @@ type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
 interface PermRequest {
   kind: 'permission';
+  plugin?: string;
   action_type: PermActionType;
   tokens: string[];
   tool_name?: string;

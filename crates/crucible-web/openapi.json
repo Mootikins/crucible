@@ -2972,6 +2972,111 @@
         }
       }
     },
+    "/api/session/{id}/config/plugin-approvals": {
+      "get": {
+        "operationId": "list_plugin_approvals",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session/{id}/config/plugins/{plugin}/approval": {
+      "get": {
+        "operationId": "get_plugin_approval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "plugin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginApprovalResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "set_plugin_approval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "plugin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPluginApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/session/{id}/config/precognition": {
       "get": {
         "operationId": "get_precognition",
@@ -7463,6 +7568,47 @@
         ],
         "description": "One leaf `config.save` refuses, and what pins it."
       },
+      "PluginApproval": {
+        "type": "string",
+        "description": "A permission floor a plugin can add to its turns.",
+        "enum": [
+          "inherit",
+          "ask",
+          "stop"
+        ]
+      },
+      "PluginApprovalResponse": {
+        "type": "object",
+        "required": [
+          "plugin",
+          "approval"
+        ],
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "approval": {
+            "$ref": "#/components/schemas/PluginApproval"
+          }
+        }
+      },
+      "PluginApprovalsResponse": {
+        "type": "object",
+        "required": [
+          "approvals"
+        ],
+        "properties": {
+          "approvals": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PluginApproval"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "PluginCommandRow": {
         "type": "object",
         "description": "One executable primitive a plugin declared, and the arguments it takes.\n\n**A deliberate reshape, so it keeps its own struct.** The daemon builds a\nrow from `crucible_core::traits::tools::ToolDefinition`, but it sends three\nof that type's seven fields — `name`, `description` and `parameters` — and\nadds three the command registry owns: the declaring `plugin`, the\n`hint`, and the declared `effect`. `category`, `returns`, `examples` and\n`required_permissions` never reach a client. Re-exporting `ToolDefinition`\nwould therefore promise four keys the wire does not carry, which is why\nthis is not one of the types to derive `ToSchema` on in `crucible-core`.",
@@ -9292,6 +9438,17 @@
         "properties": {
           "mode": {
             "type": "string"
+          }
+        }
+      },
+      "SetPluginApprovalRequest": {
+        "type": "object",
+        "required": [
+          "approval"
+        ],
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/PluginApproval"
           }
         }
       },

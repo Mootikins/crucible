@@ -145,6 +145,9 @@ rpc_methods! {
     SessionGetContextStrategy = "session.get_context_strategy",
     SessionSetPrecognition = "session.set_precognition",
     SessionGetPrecognition = "session.get_precognition",
+    SessionSetPluginApproval = "session.set_plugin_approval",
+    SessionGetPluginApproval = "session.get_plugin_approval",
+    SessionListPluginApprovals = "session.list_plugin_approvals",
     SessionInjectContext = "session.inject_context",
     SessionTestInteraction = "session.test_interaction",
     SessionFork = "session.fork",
@@ -736,6 +739,28 @@ impl RpcDispatcher {
                     req.clone(),
                     &self.ctx.agents,
                     &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionSetPluginApproval => forward!(
+                id,
+                crate::server::session::handle_session_set_plugin_approval(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            RpcMethod::SessionGetPluginApproval => forward!(
+                id,
+                crate::server::session::handle_session_get_plugin_approval(
+                    req.clone(),
+                    &self.ctx.agents
+                )
+            ),
+            RpcMethod::SessionListPluginApprovals => forward!(
+                id,
+                crate::server::session::handle_session_list_plugin_approvals(
+                    req.clone(),
+                    &self.ctx.agents
                 )
             ),
 

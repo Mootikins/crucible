@@ -413,8 +413,11 @@ fn backend_api_paths(root: &Path) -> BTreeSet<String> {
 ///
 /// The pair is compiler-checked all the same — the method is an `RpcMethod`
 /// variant, so a deleted method breaks this file rather than silencing it.
-const NON_KNOB_GUARDED: &[(&str, RpcMethod)] =
-    &[("agent_option", RpcMethod::SessionSetAgentOption)];
+const NON_KNOB_GUARDED: &[(&str, RpcMethod)] = &[
+    ("agent_option", RpcMethod::SessionSetAgentOption),
+    // One setting per plugin name, not one scalar advertised by list_knobs.
+    ("plugin_approval", RpcMethod::SessionSetPluginApproval),
+];
 
 /// `session.set_*` methods that mutate session SCOPE rather than configure the
 /// agent. They share the prefix but are not knobs, and neither belongs under
@@ -502,6 +505,10 @@ const WEB_KNOB_ROUTES: &[(&str, &str)] = &[
         "/api/session/{}/config/context-strategy",
     ),
     ("precognition", "/api/session/{}/config/precognition"),
+    (
+        "plugin_approval",
+        "/api/session/{}/config/plugins/{}/approval",
+    ),
     // One path serves both directions — GET lists them, POST sets one —
     // because the value belongs to the agent and is read back from its list.
     ("agent_option", "/api/session/{}/config/agent-options"),
@@ -604,7 +611,9 @@ const TUI_KEY_LEDGER: &[&str] = &["agent_option"];
 
 /// Exempt permanently, with a reason: `mode` has Shift-Tab and `:mode`, and a
 /// mode switch changes tool policy rather than a scalar setting.
-const TUI_KEY_EXEMPT: &[&str] = &["mode"];
+// Plugin approval takes a plugin name as well as a value. The engine command
+// and status menu own that control, not the scalar `:set` classifier.
+const TUI_KEY_EXEMPT: &[&str] = &["mode", "plugin_approval"];
 
 /// A knob the daemon advertises must be reachable from the TUI as well as the
 /// web.

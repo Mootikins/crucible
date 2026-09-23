@@ -541,6 +541,9 @@ pub(crate) fn normalize_interaction(data: &serde_json::Value) -> serde_json::Val
                 out["pattern"] = json!(pattern);
             }
         }
+        if let Some(plugin) = request.get("plugin") {
+            out["plugin"] = plugin.clone();
+        }
         return out;
     }
 

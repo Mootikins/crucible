@@ -30,7 +30,7 @@ mod types;
 pub use types::{
     ChildLedgerRef, Comment, CommentAnchor, CommentAuthor, CommentSide, ComposedHunk,
     ContextStrategy, HunkId, Integrity, Interval, InvalidSessionId, IsolationRecord,
-    IsolationRequirement, Ledger, LineRange, PhysicalRoot, RecordingMode, RootBase, RootInterval,
-    RootStatus, Session, SessionAgent, SessionId, SessionState, SessionSummary, SessionType, Skip,
-    SkipKind, SnapshotId,
+    IsolationRequirement, Ledger, LineRange, PhysicalRoot, PluginApproval, RecordingMode, RootBase,
+    RootInterval, RootStatus, Session, SessionAgent, SessionId, SessionState, SessionSummary,
+    SessionType, Skip, SkipKind, SnapshotId,
 };

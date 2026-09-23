@@ -11,14 +11,19 @@ import {
   getSessionStatus,
   listAgentOptions,
   listKnobs,
+  listPluginApprovals,
   setAgentOption,
   setContextStrategy,
   setPrecognition,
+  setPluginApproval,
+  type PluginApproval,
   type SessionStatusSlot,
 } from '@/lib/api';
 import type { AgentConfigOptions, SessionKnobSupport } from '@/lib/types';
 import { getQueryClient } from './client';
 import { keys } from './keys';
+
+export type { PluginApproval } from '@/lib/api';
 
 /**
  * What one session may be configured to do, and the writes that configure it.
@@ -185,6 +190,28 @@ export function useSetContextStrategy(): UseMutationResult<
         client.setQueryData<string | null>(keys.sessionContextStrategy(id), strategy);
         return client.invalidateQueries({ queryKey: keys.sessionContextStrategy(id) });
       },
+    }),
+    () => getQueryClient(),
+  );
+}
+
+export function usePluginApprovals(
+  id: Accessor<string | null>,
+): UseQueryResult<Record<string, PluginApproval>, Error> {
+  return sessionQuery(id, keys.sessionPluginApprovals, listPluginApprovals);
+}
+
+export function useSetPluginApproval(): UseMutationResult<
+  void,
+  Error,
+  { id: string; plugin: string; approval: PluginApproval }
+> {
+  return useMutation(
+    () => ({
+      mutationFn: ({ id, plugin, approval }: { id: string; plugin: string; approval: PluginApproval }) =>
+        setPluginApproval(id, plugin, approval),
+      onSuccess: (_result: void, { id }: { id: string; plugin: string; approval: PluginApproval }) =>
+        getQueryClient().invalidateQueries({ queryKey: keys.sessionPluginApprovals(id) }),
     }),
     () => getQueryClient(),
   );

@@ -151,13 +151,14 @@ struct AcpGate {
     /// stance applies.
     no_modes: crucible_lua::ModeRegistry,
     no_mcp: std::collections::HashSet<String>,
+    sessions: Arc<crate::session_manager::SessionManager>,
 }
 
 impl AcpGate {
     /// What one decision reads, for the turn `turn`.
     fn context<'a>(
         &'a self,
-        turn: &TurnGate,
+        turn: &'a TurnGate,
         engine: &'a PermissionEngine,
     ) -> PermissionContext<'a> {
         PermissionContext {
@@ -165,6 +166,14 @@ impl AcpGate {
             tool_policy: self.tool_policy.as_ref(),
             engine,
             permission_override: turn.permission_override,
+            plugin: turn.active_plugin.as_deref(),
+            plugin_approval: (turn.active_plugin.as_deref())
+                .and_then(|plugin| {
+                    self.sessions
+                        .get_session(&self.session_id)
+                        .map(|s| s.plugin_approval(plugin))
+                })
+                .unwrap_or_default(),
             patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
             slot: Some(&self.slot),
             hooks: self.hooks.as_ref(),
@@ -392,6 +401,7 @@ impl AgentManager {
                 mcp_server_decides: AtomicBool::new(false),
                 no_modes: crucible_lua::ModeRegistry::new(),
                 no_mcp: std::collections::HashSet::new(),
+                sessions: self.session_manager.clone(),
             }),
         }
     }
@@ -829,6 +839,16 @@ impl StreamContext {
             tool_policy: config.tool_policy.as_ref(),
             engine: &self.permission_engine,
             permission_override: self.permission_override,
+            plugin: self.plugin_name.as_deref(),
+            plugin_approval: self
+                .plugin_name
+                .as_deref()
+                .and_then(|plugin| {
+                    self.session_manager
+                        .get_session(&self.session_id)
+                        .map(|s| s.plugin_approval(plugin))
+                })
+                .unwrap_or_default(),
             patterns: (self.whitelists_dir.as_deref())
                 .map(|dir| (dir, self.workspace_path.as_path())),
             slot: Some(&self.slot),
@@ -1059,6 +1079,7 @@ mod acp_tool_policy_tests {
             mcp_server_decides: AtomicBool::new(false),
             no_modes: crucible_lua::ModeRegistry::new(),
             no_mcp: std::collections::HashSet::new(),
+            sessions: crate::test_support::temp_session_manager(),
             tool_policy: Some(
                 card.iter()
                     .map(|(name, policy)| ((*name).to_string(), *policy))
@@ -1132,6 +1153,7 @@ mod acp_tool_policy_tests {
             mcp_server_decides: AtomicBool::new(false),
             no_modes: crucible_lua::ModeRegistry::new(),
             no_mcp: std::collections::HashSet::new(),
+            sessions: crate::test_support::temp_session_manager(),
         };
         let options: Vec<agent_client_protocol::schema::v1::PermissionOption> =
             serde_json::from_value(options()).expect("the options parse");
@@ -1643,6 +1665,7 @@ mod acp_permission_handler_tests {
     };
     use crucible_core::agent::{ToolPolicy, ToolPolicyMap};
     use crucible_core::interaction::PermResponse;
+    use crucible_core::session::{PluginApproval, SessionType};
     use std::time::Duration;
 
     const SESSION: &str = "acp-perm-session";
@@ -2042,6 +2065,47 @@ mod acp_permission_handler_tests {
             ended_id(&mut event_rx).await,
             id,
             "a dropped wait ends the prompt"
+        );
+    }
+
+    #[tokio::test]
+    async fn plugin_ask_prompts_an_acp_call_that_the_override_would_allow() {
+        let sessions = temp_session_manager();
+        let session = sessions
+            .create_session(
+                SessionType::Chat,
+                vec![crate::test_support::kiln_name("kiln")],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let session_id = session.id.to_string();
+        let am = create_test_agent_manager(sessions);
+        am.set_plugin_approval(&session_id, "alpha", PluginApproval::Ask, None)
+            .await
+            .unwrap();
+        am.slot(&session_id).set_turn_gate(TurnGate {
+            is_interactive: true,
+            permission_override: Some(PermissionMode::Allow),
+            active_plugin: Some("alpha".into()),
+            ..Default::default()
+        });
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = am
+            .build_acp_permissions(&session_id, &event_tx, std::path::Path::new("/w"), None)
+            .handler();
+
+        let pending = tokio::spawn(ask(&handle));
+        let id = prompt_id(&mut event_rx).await;
+        let prompts = am.list_all_pending_permissions();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].2.plugin.as_deref(), Some("alpha"));
+        am.respond_to_permission(&session_id, &id, PermResponse::allow())
+            .unwrap();
+        assert_eq!(
+            selected(&pending.await.unwrap()).as_deref(),
+            Some("allow_once")
         );
     }
 

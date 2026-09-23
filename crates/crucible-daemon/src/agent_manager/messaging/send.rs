@@ -22,6 +22,7 @@ fn outcome_to_status(outcome: StreamOutcome) -> (TurnStatus, Option<StopReason>,
 pub(crate) struct TurnRequest<'a> {
     /// Who asked for the turn. A plugin turn has no caller to notify.
     pub origin: TurnOrigin,
+    pub plugin_name: Option<String>,
     /// The review comments that the message attaches, as the daemon rendered
     /// them. `server::diff_context::review_context` builds this text.
     pub review_context: Option<String>,
@@ -47,6 +48,7 @@ impl AgentManager {
             content,
             TurnRequest {
                 origin: TurnOrigin::User,
+                plugin_name: None,
                 review_context: None,
                 event_tx,
                 is_interactive,
@@ -73,6 +75,7 @@ impl AgentManager {
             content,
             TurnRequest {
                 origin: TurnOrigin::User,
+                plugin_name: None,
                 review_context,
                 event_tx,
                 is_interactive,
@@ -102,6 +105,7 @@ impl AgentManager {
                 content,
                 TurnRequest {
                     origin: TurnOrigin::User,
+                    plugin_name: None,
                     review_context: None,
                     event_tx,
                     is_interactive,
@@ -125,7 +129,7 @@ impl AgentManager {
     fn start_follow_up_turn(
         self: &Arc<Self>,
         session_id: String,
-        content: String,
+        follow_up: crate::agent_manager::slot::FollowUpTurn,
         event_tx: broadcast::Sender<SessionEventMessage>,
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
@@ -139,9 +143,10 @@ impl AgentManager {
             if let Err(e) = manager
                 .send_message_inner(
                     &session_id,
-                    content,
+                    follow_up.content,
                     TurnRequest {
                         origin: TurnOrigin::Plugin,
+                        plugin_name: Some(follow_up.plugin),
                         review_context: None,
                         event_tx: &event_tx,
                         is_interactive,
@@ -168,6 +173,7 @@ impl AgentManager {
     ) -> Result<String, AgentError> {
         let TurnRequest {
             origin,
+            plugin_name,
             review_context,
             event_tx,
             is_interactive,
@@ -462,6 +468,11 @@ impl AgentManager {
             // One block holds both injections, so it keeps the tag of each.
             (Some(review), Some(mut files)) => {
                 files.content = format!("{review}\n\n{}", files.content);
+                // The combined block has two envelopes. Clearing the single
+                // attachment kind keeps the context tagger from stripping the
+                // review envelope while it wraps this new system message.
+                files.metadata.kind = None;
+                files.metadata.source = None;
                 Some(files.with_tag(crate::diff::context::KIND))
             }
         };
@@ -522,6 +533,7 @@ impl AgentManager {
                 is_interactive,
                 permission_override,
                 origin,
+                active_plugin: plugin_name.clone(),
             });
         // The turn proposal ends with the turn, on every exit path below.
         let proposals = self.proposals.clone();
@@ -569,6 +581,7 @@ impl AgentManager {
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,
+            plugin_name: plugin_name.clone(),
             session_manager: self.session_manager.clone(),
             precognition_message,
             attachment_message,

@@ -936,6 +936,32 @@ export async function listKnobs(sessionId: string): Promise<SessionKnobSupport> 
   );
 }
 
+export type PluginApproval = components['schemas']['PluginApproval'];
+
+/** Read the persisted approval floors for this session's plugins. */
+export async function listPluginApprovals(sessionId: string): Promise<Record<string, PluginApproval>> {
+  return decode(
+    await client.GET('/api/session/{id}/config/plugin-approvals', {
+      params: { path: { id: sessionId } },
+    }),
+    'Failed to load plugin approvals',
+  ).approvals;
+}
+
+export async function setPluginApproval(
+  sessionId: string,
+  plugin: string,
+  approval: PluginApproval,
+): Promise<void> {
+  expectOk(
+    await client.PUT('/api/session/{id}/config/plugins/{plugin}/approval', {
+      params: { path: { id: sessionId, plugin } },
+      body: { approval },
+    }),
+    'Failed to set plugin approval',
+  );
+}
+
 /**
  * The settings this session's external agent advertised for itself.
  *

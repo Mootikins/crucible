@@ -1,4 +1,5 @@
 mod acp_knob_reads;
+mod approval;
 mod list;
 mod mode;
 mod mode_regression;

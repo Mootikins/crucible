@@ -680,6 +680,7 @@ fn golden_interaction_requested() {
         diffs: Vec::new(),
         call: None,
         layer: None,
+        plugin: None,
     });
     let m = SessionEventMessage::interaction_requested("s1", "r-1", &request);
     assert_eq!(

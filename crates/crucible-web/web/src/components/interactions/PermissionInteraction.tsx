@@ -122,7 +122,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
           {chipLabel()}
         </span>
         <span class="text-floor uppercase tracking-wider text-muted-dark font-semibold">
-          Permission Required
+          {props.request.plugin ? `${props.request.plugin} requests permission` : 'Permission Required'}
         </span>
       </div>
 

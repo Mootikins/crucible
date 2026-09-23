@@ -263,6 +263,7 @@ pub(crate) struct PendingPermission {
 #[derive(Clone)]
 struct StreamContext {
     session_id: String,
+    plugin_name: Option<String>,
     message_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
     workspace_path: PathBuf,

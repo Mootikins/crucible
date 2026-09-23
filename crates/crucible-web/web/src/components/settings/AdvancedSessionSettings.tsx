@@ -11,11 +11,11 @@
 // backend route; `routes/session_config/tests.rs` proves each route round-trips
 // its value under the daemon's field name. This file is the last leg: without it
 // the API is wider than the UI, which is reachable-but-unreachable.
-import { Component, createSignal } from 'solid-js';
+import { Component, For, createSignal } from 'solid-js';
 
 import { Sliders } from '@/lib/icons';
 import { useSessionSafe } from '@/contexts/SessionContext';
-import { useGetContextStrategy, useSetContextStrategy } from '@/lib/query/session-config';
+import { useGetContextStrategy, usePluginApprovals, useSetContextStrategy, useSetPluginApproval, type PluginApproval } from '@/lib/query/session-config';
 
 import { SettingRow, SettingsSectionState } from './primitives';
 
@@ -42,10 +42,12 @@ export const AdvancedSessionSettingsSection: Component = () => {
   const strategyQuery = useGetContextStrategy(sessionId);
   const contextStrategy = () => strategyQuery.data ?? '';
   const setStrategy = useSetContextStrategy();
+  const approvals = usePluginApprovals(sessionId);
+  const setApproval = useSetPluginApproval();
 
   /** The failure of one write, which is not the failure of the read. */
   const [writeError, setWriteError] = createSignal<string | null>(null);
-  const error = () => writeError() ?? strategyQuery.error?.message ?? null;
+  const error = () => writeError() ?? strategyQuery.error?.message ?? approvals.error?.message ?? null;
 
   const options = (known: string[], current: string) =>
     current && !known.includes(current) ? [current, ...known] : known;
@@ -87,6 +89,32 @@ export const AdvancedSessionSettingsSection: Component = () => {
           ))}
         </select>
       </SettingRow>
+
+      <For each={Object.entries(approvals.data ?? {})}>
+        {([plugin, approval]) => (
+          <SettingRow label={plugin} description="Permission for turns started by this plugin">
+            <select
+              value={approval}
+              data-testid={`plugin-approval-${plugin}`}
+              onChange={async (e) => {
+                const id = sessionId();
+                if (!id) return;
+                setWriteError(null);
+                try {
+                  await setApproval.mutateAsync({ id, plugin, approval: (e.target as HTMLSelectElement).value as PluginApproval });
+                } catch (err) {
+                  setWriteError(err instanceof Error ? err.message : 'Failed to set plugin approval');
+                }
+              }}
+              class={`cru-select ${inputClass} w-32`}
+            >
+              <option value="inherit">Inherit</option>
+              <option value="ask">Ask</option>
+              <option value="stop">Stop</option>
+            </select>
+          </SettingRow>
+        )}
+      </For>
 
     </SettingsSectionState>
   );

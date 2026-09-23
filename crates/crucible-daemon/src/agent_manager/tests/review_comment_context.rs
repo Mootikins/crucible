@@ -376,7 +376,11 @@ async fn an_acp_turn_keeps_the_review_tag_next_to_a_file_attachment() {
 
     let review = tagged(&messages);
     assert_eq!(review.len(), 1, "the review block keeps its tag");
-    assert!(review[0].contains("<system-message kind=\"review-comment\""));
+    assert!(
+        review[0].contains("<system-message kind=\"review-comment\""),
+        "{:?}",
+        review[0]
+    );
     let all = messages.lock().unwrap().clone().unwrap();
     assert!(
         all.iter().any(|m| m.content.contains("attached text")

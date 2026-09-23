@@ -580,6 +580,80 @@ impl AgentManager {
         Ok(agent_config.precognition_enabled)
     }
 
+    pub async fn set_plugin_approval(
+        &self,
+        session_id: &str,
+        plugin: &str,
+        approval: crucible_core::session::PluginApproval,
+        event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
+    ) -> Result<(), AgentError> {
+        if plugin.is_empty() {
+            return Err(AgentError::InvalidConfig(
+                "plugin name must not be empty".into(),
+            ));
+        }
+        self.session_manager
+            .modify_session(session_id, |session| {
+                session.set_plugin_approval(plugin, approval);
+                true
+            })
+            .await?;
+        if let Some(tx) = event_tx {
+            emit_event(
+                tx,
+                SessionEventMessage::new(
+                    session_id,
+                    "plugin_approval_changed",
+                    serde_json::json!({"plugin": plugin, "approval": approval.as_str()}),
+                ),
+            );
+        }
+        Ok(())
+    }
+
+    async fn read_approval_session(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::session::Session, AgentError> {
+        self.session_manager
+            .read_session(session_id)
+            .await?
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))
+    }
+
+    pub async fn get_plugin_approval(
+        &self,
+        session_id: &str,
+        plugin: &str,
+    ) -> Result<crucible_core::session::PluginApproval, AgentError> {
+        Ok(self
+            .read_approval_session(session_id)
+            .await?
+            .plugin_approval(plugin))
+    }
+
+    pub async fn list_plugin_approvals(
+        &self,
+        session_id: &str,
+    ) -> Result<
+        std::collections::BTreeMap<String, crucible_core::session::PluginApproval>,
+        AgentError,
+    > {
+        let mut approvals = self
+            .read_approval_session(session_id)
+            .await?
+            .plugin_approvals;
+        if let Some(loader) = &self.plugin_loader {
+            let loader = loader.lock().await;
+            if let Some(loader) = loader.as_ref() {
+                for name in loader.loaded_plugin_names() {
+                    approvals.entry(name).or_default();
+                }
+            }
+        }
+        Ok(approvals)
+    }
+
     pub async fn add_notification(
         &self,
         session_id: &str,

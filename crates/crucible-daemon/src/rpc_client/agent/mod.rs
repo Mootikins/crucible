@@ -43,6 +43,8 @@ pub struct DaemonAgentHandle {
     pub(super) cached_model: Option<String>,
     pub(super) cached_context_strategy: Option<String>,
     pub(super) cached_precognition: Option<bool>,
+    pub(super) cached_plugin_approvals:
+        std::collections::BTreeMap<String, crucible_core::session::PluginApproval>,
     /// The kiln NAME a `/clear` re-create should attach. Names, not paths:
     /// the daemon resolves them against its `[kilns]` registry.
     pub(super) kiln: Option<crucible_core::config::KilnName>,
@@ -74,6 +76,7 @@ impl DaemonAgentHandle {
             cached_model: None,
             cached_context_strategy: None,
             cached_precognition: None,
+            cached_plugin_approvals: Default::default(),
             kiln: None,
             workspace: None,
             cached_agent_config: None,
@@ -198,6 +201,10 @@ impl DaemonAgentHandle {
             .ok()
             .flatten();
         self.cached_precognition = client.session_get_precognition(session_id).await.ok();
+        self.cached_plugin_approvals = client
+            .session_list_plugin_approvals(session_id)
+            .await
+            .unwrap_or_default();
     }
 
     pub fn session_id(&self) -> &str {

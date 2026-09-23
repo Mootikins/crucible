@@ -72,7 +72,7 @@ pub(crate) struct SessionSlot {
     /// a queued user message. The content waits here until the turn that
     /// produced it releases the request slot. A user cancel clears it: the
     /// user stopped the work, so the plugin's follow-up is stopped too.
-    follow_up: Mutex<Option<String>>,
+    follow_up: Mutex<Option<FollowUpTurn>>,
     /// How the turn that runs now may decide a permission. The turn start
     /// writes it. The ACP permission handler reads it for each call, because
     /// the handler lives as long as the cached agent handle and a later turn
@@ -118,6 +118,14 @@ pub(crate) struct TurnGate {
     pub permission_override: Option<crucible_core::config::components::permissions::PermissionMode>,
     /// Who asked for the turn. The render of a prompt reads it.
     pub origin: crucible_core::turn::TurnOrigin,
+    pub active_plugin: Option<String>,
+}
+
+/// The turn that a `turn:complete` handler of `plugin` asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FollowUpTurn {
+    pub content: String,
+    pub plugin: String,
 }
 
 /// Serializes injection acceptance with the next turn's assembly boundary.
@@ -409,17 +417,17 @@ impl SessionSlot {
 
     /// Stage the turn a `turn:complete` handler asked for, replacing any
     /// earlier one. Last writer wins, as the handler pass itself does.
-    pub(crate) fn set_follow_up(&self, content: String) {
-        *self.lock_follow_up() = Some(content);
+    pub(crate) fn set_follow_up(&self, turn: FollowUpTurn) {
+        *self.lock_follow_up() = Some(turn);
     }
 
     /// Take the staged turn. Draining rather than reading is the contract:
     /// one request makes one turn.
-    pub(crate) fn take_follow_up(&self) -> Option<String> {
+    pub(crate) fn take_follow_up(&self) -> Option<FollowUpTurn> {
         self.lock_follow_up().take()
     }
 
-    fn lock_follow_up(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+    fn lock_follow_up(&self) -> std::sync::MutexGuard<'_, Option<FollowUpTurn>> {
         self.follow_up
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

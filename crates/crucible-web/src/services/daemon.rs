@@ -607,6 +607,24 @@ impl ReconnectingDaemon {
     }
 
     forward_rpc! {
+        Once SessionSetPluginApproval =>
+        session_set_plugin_approval(session_id: &str, plugin: &str, approval: crucible_core::session::PluginApproval)
+        -> () = session_set_plugin_approval(&session_id, &plugin, approval);
+    }
+
+    forward_rpc! {
+        Safe SessionGetPluginApproval =>
+        session_get_plugin_approval(session_id: &str, plugin: &str)
+        -> crucible_core::session::PluginApproval = session_get_plugin_approval(&session_id, &plugin);
+    }
+
+    forward_rpc! {
+        Safe SessionListPluginApprovals =>
+        session_list_plugin_approvals(session_id: &str)
+        -> std::collections::BTreeMap<String, crucible_core::session::PluginApproval> = session_list_plugin_approvals(&session_id);
+    }
+
+    forward_rpc! {
         Once ProjectRegister =>
         project_register(path: &Path)
         -> crucible_core::Project = project_register(&path);
