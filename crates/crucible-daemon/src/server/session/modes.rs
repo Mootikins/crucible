@@ -219,10 +219,9 @@ mod stored_session_tests {
         let storage = Arc::new(FileSessionStorage::new(FileSessionStorage::root_for(
             tmp.path(),
         )));
-        let writer = SessionManager::with_storage(storage.clone());
         let mut session = Session::new(SessionType::Chat, vec![]);
         session.agent = Some(crate::test_fixtures::test_session_agent());
-        writer.update_session(&session).await.unwrap();
+        storage.save(&session).await.unwrap();
         let reader = Arc::new(SessionManager::with_storage(storage));
         assert!(reader.get_session(session.id.as_ref()).is_none());
         (session.id.to_string(), reader)
@@ -330,8 +329,10 @@ mod writes_tests {
         let sm = Arc::new(SessionManager::with_storage(storage(tmp)));
         let mut session = Session::new(SessionType::Chat, vec![]);
         session.agent = Some(crate::test_fixtures::test_session_agent());
-        sm.update_session(&session).await.unwrap();
-        (session.id.to_string(), sm)
+        sm.storage().save(&session).await.unwrap();
+        let id = session.id.to_string();
+        sm.register_transient(session);
+        (id, sm)
     }
 
     fn registry() -> crucible_lua::ModeRegistry {

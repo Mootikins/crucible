@@ -15,18 +15,18 @@ use std::sync::Mutex as StdMutex;
 /// Session storage that parks the next `save` until the test releases it.
 ///
 /// The barrier `switch_model` needs: its slot check and its cache invalidation
-/// sit either side of `update_session().await`, so parking that write suspends
+/// sit either side of `modify_session().await`, so parking that write suspends
 /// it in exactly the state the race requires — check passed, nothing persisted,
 /// nothing invalidated. Arm once with [`Self::arm`]; every other save is
 /// straight through, because the send path writes too.
-struct GatedStorage {
+pub(super) struct GatedStorage {
     inner: FileSessionStorage,
     gate: StdMutex<Option<oneshot::Receiver<()>>>,
     entered: StdMutex<Option<oneshot::Sender<()>>>,
 }
 
 impl GatedStorage {
-    fn new(sessions_root: PathBuf) -> Self {
+    pub(super) fn new(sessions_root: PathBuf) -> Self {
         Self {
             inner: FileSessionStorage::new(sessions_root),
             gate: StdMutex::new(None),
@@ -36,7 +36,7 @@ impl GatedStorage {
 
     /// Park the next save. Returns a receiver that resolves when it has parked,
     /// and a sender that releases it.
-    fn arm(&self) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+    pub(super) fn arm(&self) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
         let (release_tx, release_rx) = oneshot::channel();
         let (entered_tx, entered_rx) = oneshot::channel();
         *self.gate.lock().unwrap() = Some(release_rx);
@@ -123,7 +123,7 @@ impl SessionStorage for GatedStorage {
 ///
 /// Two channels drive it and there are no sleeps. The storage gate is what makes
 /// step 1-before-step-2 achievable: `switch_model`'s slot check and its cache
-/// invalidation sit either side of one `update_session().await`, so parking that
+/// invalidation sit either side of one `modify_session().await`, so parking that
 /// write is the only barrier that suspends it in the required state. That also
 /// means this test needs no access to anything private — it runs the real
 /// `send_message_notified` and the real `switch_model`, which is what makes the

@@ -19,7 +19,13 @@ async fn lua_and_rpc_forks_inherit_scope_config_and_run_with_the_selected_histor
     parent
         .variables
         .insert("project_rule".into(), serde_json::json!("preserved"));
-    sm.update_session(&parent).await.unwrap();
+    sm.modify_session(&parent.id, |live| {
+        live.isolation = parent.isolation.clone();
+        live.variables = parent.variables.clone();
+        true
+    })
+    .await
+    .unwrap();
     let mut config = test_agent();
     config.system_prompt = "Inherited instructions".into();
     config.context_budget = Some(8192);

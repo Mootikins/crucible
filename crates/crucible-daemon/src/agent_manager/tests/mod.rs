@@ -958,6 +958,7 @@ mod init_lua;
 mod init_lua_defaults;
 mod learning_loop;
 mod lifecycle;
+mod lost_update;
 mod messaging;
 mod models;
 mod models_discovery;

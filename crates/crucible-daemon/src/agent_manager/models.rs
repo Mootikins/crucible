@@ -137,7 +137,7 @@ impl AgentManager {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
-        let mut session = self
+        let session = self
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
@@ -177,11 +177,8 @@ impl AgentManager {
             // the actual LLM call (the agent owns model selection), but the
             // stored value keeps `session.get` and the TUI status accurate.
             agent_config.model = model_id.to_string();
-            session.agent = Some(agent_config.clone());
-            self.session_manager
-                .update_session(&session)
-                .await
-                .map_err(AgentError::Session)?;
+            self.modify_agent(session_id, |live| live.model = model_id.to_string())
+                .await?;
 
             if let Some(tx) = event_tx {
                 if !emit_event(
@@ -236,12 +233,14 @@ impl AgentManager {
 
         self.refuse_untrusted_for_attached_kilns(&session, &agent_config)?;
 
-        session.agent = Some(agent_config.clone());
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
+        // Only the fields this switch owns; a mode or knob set meanwhile stays.
+        self.modify_agent(session_id, |live| {
+            live.provider = agent_config.provider;
+            live.provider_key = agent_config.provider_key.clone();
+            live.endpoint = agent_config.endpoint.clone();
+            live.model = agent_config.model.clone();
+        })
+        .await?;
 
         self.slot(session_id).invalidate_agent();
 
@@ -445,14 +444,14 @@ impl AgentManager {
         on_updated: OnUpdated,
     ) -> Result<(), AgentError>
     where
-        Mutate: FnOnce(&mut SessionAgent) -> Result<(), AgentError>,
+        Mutate: FnOnce(&mut SessionAgent),
         OnUpdated: FnOnce(),
     {
         if self.request_state.contains_key(session_id) {
             return Err(AgentError::ConcurrentRequest(session_id.to_string()));
         }
 
-        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
         let is_acp = agent_config.agent_type == "acp";
 
         // A setting the session's agent cannot carry is refused, not stored.
@@ -468,13 +467,7 @@ impl AgentManager {
             )));
         }
 
-        mutator(&mut agent_config)?;
-        session.agent = Some(agent_config);
-
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
+        self.modify_agent(session_id, mutator).await?;
 
         // Eviction exists so the next turn rebuilds a handle that baked the
         // old value in. An ACP handle bakes in none of these fields — it is
@@ -505,6 +498,26 @@ impl AgentManager {
         Ok(())
     }
 
+    /// Change the live agent config in place and persist it. See
+    /// [`SessionManager::modify_session`] for why the change must not be made
+    /// on a copy.
+    async fn modify_agent(
+        &self,
+        session_id: &str,
+        change: impl FnOnce(&mut SessionAgent),
+    ) -> Result<crucible_core::session::Session, AgentError> {
+        self.session_manager
+            .modify_session(session_id, |live| match live.agent.as_mut() {
+                Some(agent) => {
+                    change(agent);
+                    true
+                }
+                None => false,
+            })
+            .await?
+            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))
+    }
+
     pub fn get_mode(&self, session_id: &str) -> Result<Option<String>, AgentError> {
         let (_, agent_config) = self.get_session_with_agent(session_id)?;
         Ok(agent_config.mode)
@@ -523,10 +536,7 @@ impl AgentManager {
             "precognition_toggled",
             serde_json::json!({ "enabled": enabled }),
             "Failed to emit precognition_toggled event (no subscribers)",
-            |agent_config| {
-                agent_config.precognition_enabled = enabled;
-                Ok(())
-            },
+            |agent_config| agent_config.precognition_enabled = enabled,
             || {
                 info!(
                     session_id = %session_id,
@@ -549,12 +559,13 @@ impl AgentManager {
         notification: crucible_core::types::Notification,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
-        let mut session = self.get_session(session_id)?;
-
-        session.notifications.add(notification.clone());
-
+        // An absent session answers `SessionNotFound`, which the RPC layer maps.
+        self.get_session(session_id)?;
         self.session_manager
-            .update_session(&session)
+            .modify_session(session_id, |live| {
+                live.notifications.add(notification.clone());
+                true
+            })
             .await
             .map_err(AgentError::Session)?;
 
@@ -599,16 +610,17 @@ impl AgentManager {
         notification_id: &str,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<bool, AgentError> {
-        let mut session = self.get_session(session_id)?;
-
-        let success = session.notifications.dismiss(notification_id);
+        self.get_session(session_id)?;
+        let success = self
+            .session_manager
+            .modify_session(session_id, |live| {
+                live.notifications.dismiss(notification_id)
+            })
+            .await
+            .map_err(AgentError::Session)?
+            .is_some();
 
         if success {
-            self.session_manager
-                .update_session(&session)
-                .await
-                .map_err(AgentError::Session)?;
-
             info!(
                 session_id = %session_id,
                 notification_id = %notification_id,
@@ -647,17 +659,14 @@ impl AgentManager {
         session_id: &str,
         window: usize,
     ) -> Result<(), AgentError> {
-        let (mut session, mut agent_config) = self.get_session_with_agent(session_id)?;
+        let (_, agent_config) = self.get_session_with_agent(session_id)?;
         if agent_config.context_budget == Some(window) {
             return Ok(());
         }
-        agent_config.context_budget = Some(window);
-        session.agent = Some(agent_config);
         self.invalidate_agent_cache(session_id);
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)
+        self.modify_agent(session_id, |live| live.context_budget = Some(window))
+            .await?;
+        Ok(())
     }
 
     pub async fn set_context_strategy(
@@ -674,10 +683,7 @@ impl AgentManager {
             "context_strategy_changed",
             serde_json::json!({ "context_strategy": strategy_str }),
             "Failed to emit context_strategy_changed event (no subscribers)",
-            |agent_config| {
-                agent_config.context_strategy = strategy.clone();
-                Ok(())
-            },
+            |agent_config| agent_config.context_strategy = strategy.clone(),
             || {
                 info!(
                     session_id = %session_id,
@@ -946,15 +952,8 @@ impl AgentManager {
             )));
         }
 
-        let mut session = self
-            .session_manager
-            .get_session(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        let mut agent_config = session
-            .agent
-            .clone()
-            .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
+        // Refuse an absent session or agent before the live handle changes.
+        self.get_session_with_agent(session_id)?;
 
         // Apply to the live handle when it's NOT busy serving a turn. A turn
         // in flight holds the cached handle's mutex for the whole agent loop
@@ -1002,12 +1001,8 @@ impl AgentManager {
                 }
             }
         }
-        agent_config.mode = Some(mode_id.to_string());
-        session.agent = Some(agent_config);
-        self.session_manager
-            .update_session(&session)
-            .await
-            .map_err(AgentError::Session)?;
+        self.modify_agent(session_id, |live| live.mode = Some(mode_id.to_string()))
+            .await?;
 
         if let Some(tx) = event_tx {
             if !emit_event(tx, SessionEventMessage::mode_changed(session_id, mode_id)) {

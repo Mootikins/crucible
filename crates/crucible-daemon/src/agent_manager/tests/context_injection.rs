@@ -150,9 +150,12 @@ async fn injected_context_reaches_the_next_turn_once_and_survives_rebuild() {
     assert_eq!(content[injected - 1], "reply");
     assert_eq!(content[injected + 1], "second");
 
-    let mut external = sm.get_session(&session.id).unwrap();
-    external.agent.as_mut().unwrap().agent_type = "acp".into();
-    sm.update_session(&external).await.unwrap();
+    sm.modify_session(&session.id, |live| {
+        live.agent.as_mut().unwrap().agent_type = "acp".into();
+        true
+    })
+    .await
+    .unwrap();
     let before = std::fs::read(session.jsonl_path(sm.sessions_root())).unwrap();
     for role in ["system", "user", "assistant", "tool"] {
         let result = crate::server::session::inject_context_impl(

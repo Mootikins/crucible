@@ -578,11 +578,33 @@ impl SessionManager {
         self.sessions.insert(session.id.clone(), session);
     }
 
-    pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
-        let _guard = self.persist_guard(&session.id).await;
-        self.storage.save(session).await?;
-        self.sessions.insert(session.id.clone(), session.clone());
-        Ok(())
+    /// Change the live session under its persist guard, then persist it.
+    ///
+    /// `change` returns whether it changed anything; `false` skips the write
+    /// and returns `None`. The change reads the live entry after the guard is
+    /// held, so it sees every earlier writer. A caller that saved a whole copy
+    /// it read before the guard put back each field another writer changed in
+    /// that gap: a title set just after create came back as `None`.
+    ///
+    /// Memory changes only after the save succeeds. The write-back skips an
+    /// entry that is gone, because `delete_session` evicts without the guard.
+    pub async fn modify_session(
+        &self,
+        session_id: &str,
+        change: impl FnOnce(&mut Session) -> bool,
+    ) -> Result<Option<Session>, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
+        let mut session = self
+            .get_session(session_id)
+            .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
+        if !change(&mut session) {
+            return Ok(None);
+        }
+        self.storage.save(&session).await?;
+        if let Some(mut live) = self.sessions.get_mut(session_id) {
+            *live = session.clone();
+        }
+        Ok(Some(session))
     }
 
     /// List all active sessions.

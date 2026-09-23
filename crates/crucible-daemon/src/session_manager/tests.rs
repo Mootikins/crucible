@@ -661,7 +661,7 @@ impl SessionStorage for FailingSaveStorage {
 }
 
 #[tokio::test]
-async fn test_update_session_does_not_modify_memory_on_storage_failure() {
+async fn test_modify_session_does_not_modify_memory_on_storage_failure() {
     let tmp = TempDir::new().unwrap();
     let storage = Arc::new(FailingSaveStorage(tmp.path().join("sessions")));
     let manager = SessionManager::with_storage(storage);
@@ -671,13 +671,15 @@ async fn test_update_session_does_not_modify_memory_on_storage_failure() {
     let session_id = session.id.clone();
     manager.sessions.insert(session_id.clone(), session.clone());
 
-    let mut modified = session.clone();
-    modified.title = Some("Updated Title".to_string());
-
-    let result = manager.update_session(&modified).await;
+    let result = manager
+        .modify_session(&session_id, |live| {
+            live.title = Some("Updated Title".to_string());
+            true
+        })
+        .await;
     assert!(
         result.is_err(),
-        "update_session should fail when storage fails"
+        "modify_session should fail when storage fails"
     );
 
     let in_memory = manager.get_session(&session_id).unwrap();

@@ -154,23 +154,23 @@ impl AgentManager {
         &self,
         session_id: &str,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
-        apply: impl FnOnce(&mut Session) -> Result<bool, AgentError>,
+        apply: impl FnOnce(&mut Session) -> bool,
     ) -> Result<Session, AgentError> {
         let _slot =
             RequestSlotGuard::acquire(self.request_state.clone(), session_id, &self.activity)?;
-        let mut session = self
+        let current = self
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
 
-        if !apply(&mut session)? {
-            return Ok(session);
-        }
-
-        self.session_manager
-            .update_session(&session)
+        let changed = self
+            .session_manager
+            .modify_session(session_id, apply)
             .await
             .map_err(AgentError::Session)?;
+        let Some(session) = changed else {
+            return Ok(current);
+        };
         self.invalidate_scope_caches(session_id);
         self.emit_scope_changed(event_tx, &session);
         Ok(session)
@@ -184,10 +184,8 @@ impl AgentManager {
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
         let kiln = kiln.clone();
-        self.mutate_scope(session_id, event_tx, move |session| {
-            Ok(session.add_kiln(kiln))
-        })
-        .await
+        self.mutate_scope(session_id, event_tx, move |session| session.add_kiln(kiln))
+            .await
     }
 
     /// Detach a kiln. Any kiln may go, including the one the session was
@@ -198,12 +196,8 @@ impl AgentManager {
         kiln: &KilnName,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        self.mutate_scope(
-            session_id,
-            event_tx,
-            |session| Ok(session.remove_kiln(kiln)),
-        )
-        .await
+        self.mutate_scope(session_id, event_tx, |session| session.remove_kiln(kiln))
+            .await
     }
 
     /// Refuse a workspace change: a session's workspace is fixed at creation.

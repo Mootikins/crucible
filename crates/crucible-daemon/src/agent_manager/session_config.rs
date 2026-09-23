@@ -135,7 +135,7 @@ impl AgentManager {
         session_id: &str,
         agent: SessionAgent,
     ) -> Result<(), AgentError> {
-        let mut session = self
+        let session = self
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
@@ -152,13 +152,15 @@ impl AgentManager {
         self.refuse_untrusted_for_attached_kilns(&session, &agent)?;
 
         let agent = self.apply_session_defaults(session_id, agent);
-        session.agent = Some(agent.clone());
         // The VM may just have run the start hooks; save what they stored
         // with this write instead of racing the scheduled one.
-        session.variables = self.slot(session_id).variables().snapshot();
-
+        let variables = self.slot(session_id).variables().snapshot();
         self.session_manager
-            .update_session(&session)
+            .modify_session(session_id, |live| {
+                live.agent = Some(agent.clone());
+                live.variables = variables;
+                true
+            })
             .await
             .map_err(AgentError::Session)?;
 
@@ -175,23 +177,23 @@ impl AgentManager {
 
 /// Copy the slot's variable map into the session and save it. A no-op when
 /// the session already holds the same map.
-async fn persist_variables(
+pub(super) async fn persist_variables(
     session_manager: &SessionManager,
     slot: &slot::SessionSlot,
     session_id: &str,
 ) -> Result<(), AgentError> {
-    let mut session = session_manager
-        .get_session(session_id)
-        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
     let variables = slot.variables().snapshot();
-    if session.variables == variables {
-        return Ok(());
-    }
-    session.variables = variables;
     session_manager
-        .update_session(&session)
+        .modify_session(session_id, |live| {
+            if live.variables == variables {
+                return false;
+            }
+            live.variables = variables;
+            true
+        })
         .await
-        .map_err(AgentError::Session)
+        .map_err(AgentError::Session)?;
+    Ok(())
 }
 
 /// The values a session starts from before any hook runs.

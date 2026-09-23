@@ -59,7 +59,7 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
     );
 
     let session_manager = temp_session_manager();
-    let mut session = session_manager
+    let session = session_manager
         .create_session(
             SessionType::Chat,
             vec![crate::test_support::kiln_name("kiln")],
@@ -69,8 +69,14 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
         .await
         .unwrap();
     // The same second write `session.create` does for the isolation opt-in.
-    session.isolation = Some(serde_json::json!("rust"));
-    session_manager.update_session(&session).await.unwrap();
+    let session = session_manager
+        .modify_session(&session.id, |live| {
+            live.isolation = Some(serde_json::json!("rust"));
+            true
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
     let agent_manager = create_test_agent_manager(session_manager.clone());
     agent_manager.set_plugin_handlers(vm.plugin_handlers(), vm.plugin_lua());

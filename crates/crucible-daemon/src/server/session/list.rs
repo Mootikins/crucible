@@ -348,7 +348,8 @@ mod tests {
         body: &str,
     ) -> String {
         let session = Session::new(SessionType::Chat, kilns);
-        sm.update_session(&session).await.unwrap();
+        sm.storage().save(&session).await.unwrap();
+        sm.register_transient(session.clone());
         let dir = sm.session_dir(&session.id);
         tokio::fs::create_dir_all(&dir).await.unwrap();
         tokio::fs::write(dir.join("session.jsonl"), body)

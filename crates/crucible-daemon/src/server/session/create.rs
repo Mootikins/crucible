@@ -277,10 +277,14 @@ impl RpcContext {
             .clone()
             .filter(|_| session_type == SessionType::Plugin);
         if isolation.is_some() || plugin.is_some() {
-            session.isolation = isolation;
-            session.plugin = plugin;
+            session.isolation = isolation.clone();
+            session.plugin = plugin.clone();
             self.sessions
-                .update_session(&session)
+                .modify_session(&session.id, |live| {
+                    live.isolation = isolation;
+                    live.plugin = plugin;
+                    true
+                })
                 .await
                 .map_err(|e| SessionCreateError::Internal(e.into()))?;
         }

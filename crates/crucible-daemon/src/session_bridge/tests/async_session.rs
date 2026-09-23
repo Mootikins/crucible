@@ -107,7 +107,10 @@ async fn lua_fork_refuses_requested_or_claimed_isolation_without_creating_a_chil
         }
         bridge
             .session_manager
-            .update_session(&parent)
+            .modify_session(&parent.id, |live| {
+                live.isolation = parent.isolation.clone();
+                true
+            })
             .await
             .unwrap();
         lua.load(

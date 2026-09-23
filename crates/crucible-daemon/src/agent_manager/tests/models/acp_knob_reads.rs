@@ -186,13 +186,15 @@ async fn acp_session() -> (Arc<AgentManager>, Arc<SessionManager>, String) {
         tool_policy: None,
     };
 
-    let mut session = session_manager
+    let session = session_manager
         .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .expect("session");
-    session.agent = Some(agent);
     session_manager
-        .update_session(&session)
+        .modify_session(&session.id, |live| {
+            live.agent = Some(agent);
+            true
+        })
         .await
         .expect("persist agent");
 

@@ -665,7 +665,7 @@ impl AgentManager {
     /// 1. `switch_model` reads the slot, finds it free (no turn yet), proceeds.
     /// 2. A turn claims the slot (`send_message_inner`, before this call) and
     ///    this function misses the cache and starts the slow build.
-    /// 3. `switch_model` finishes its `update_session().await` — a storage
+    /// 3. `switch_model` finishes its `modify_session().await` — a storage
     ///    write, and the whole window — persists model B, then invalidates the
     ///    agent cache, which is still empty, so it removes **nothing**. It
     ///    reports success.
@@ -733,17 +733,12 @@ impl AgentManager {
         // answer `None` and skip this. A changed id (a resume that fell
         // back to `session/new`) overwrites the stale one.
         if let Some(acp_id) = agent.acp_session_id() {
-            if let Some(mut session) = self.session_manager.get_session(session_id) {
-                if session.acp_session_id.as_deref() != Some(acp_id.as_str()) {
-                    session.acp_session_id = Some(acp_id);
-                    if let Err(e) = self.session_manager.update_session(&session).await {
-                        tracing::warn!(
-                            session_id = %session_id,
-                            error = %e,
-                            "The ACP session id was not persisted; resume will start fresh"
-                        );
-                    }
-                }
+            if let Err(e) = self.persist_acp_session_id(session_id, acp_id).await {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "The ACP session id was not persisted; resume will start fresh"
+                );
             }
         }
 
@@ -803,6 +798,25 @@ impl AgentManager {
         }
 
         Ok(agent)
+    }
+
+    /// Store the id the ACP agent gave this session, so the next handle build
+    /// can send `session/resume`. A no-op when the stored id is the same.
+    pub(crate) async fn persist_acp_session_id(
+        &self,
+        session_id: &str,
+        acp_id: String,
+    ) -> Result<(), SessionError> {
+        self.session_manager
+            .modify_session(session_id, |live| {
+                if live.acp_session_id.as_deref() == Some(acp_id.as_str()) {
+                    return false;
+                }
+                live.acp_session_id = Some(acp_id);
+                true
+            })
+            .await?;
+        Ok(())
     }
 
     /// Bring the session's agent handle up without sending a message.
