@@ -228,8 +228,8 @@ pub use check::{
 };
 pub use handlers::{
     clear_source, execute_permission_hooks, execute_tool_before_execute_hooks,
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, install_registry,
-    interpret_handler_result, register_cru_clear_api, register_cru_on_api,
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, execute_tool_render,
+    install_registry, interpret_handler_result, register_cru_clear_api, register_cru_on_api,
     register_permission_hook_api, registry_of, ClearFilter, EventOutcome, Firing,
     LuaScriptHandlerRegistry, PermissionHookResult, PermissionRequest, Registration,
     RegistrationSpec, ScriptHandlerResult, SessionScope, ToolBeforeExecuteEvent,

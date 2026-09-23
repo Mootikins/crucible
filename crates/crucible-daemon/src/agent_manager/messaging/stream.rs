@@ -16,7 +16,7 @@ use crucible_core::protocol::session_events::ContextLimitSource;
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
-use crucible_core::types::ToolSource;
+use crucible_core::types::{CanonicalToolCall, ToolSource};
 use crucible_lua::StageId;
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
@@ -369,6 +369,18 @@ impl AgentManager {
                     if agent_owns_tools {
                         saw_tool_activity = true;
                         acp_tool_args.insert(id.clone(), args.clone());
+                        let mut call = call.map_or_else(
+                            || CanonicalToolCall::crucible_tool(&name, &args),
+                            |call| *call,
+                        );
+                        super::tool_hooks::render_call(
+                            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+                            &stream_ctx.session_id,
+                            &mut call,
+                            &args,
+                            stream_ctx.origin,
+                        )
+                        .await;
                         {
                             let mut tree = stream_ctx.conversation_tree.lock().await;
                             let parent = tree.current();
@@ -406,7 +418,7 @@ impl AgentManager {
                                         })
                                     }),
                                 None,
-                                call.map(|call| *call),
+                                Some(call),
                                 // The ACP agent ran its own gate in its own
                                 // process; we granted nothing here.
                                 None,
@@ -674,10 +686,22 @@ impl AgentManager {
                         );
                     }
                 }
-                TurnEvent::ToolCallUpdate { id, call } => {
+                TurnEvent::ToolCallUpdate { id, mut call } => {
                     // An ACP agent sent the arguments or the diff of a call
                     // in a later frame. Pass the new canonical call through,
-                    // so subscribers can update the existing tool entry.
+                    // with a new render, so subscribers can update the
+                    // existing tool entry.
+                    let args = (call.raw.as_ref())
+                        .and_then(|raw| raw.raw_input.clone())
+                        .unwrap_or_default();
+                    super::tool_hooks::render_call(
+                        stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+                        &stream_ctx.session_id,
+                        &mut call,
+                        &args,
+                        stream_ctx.origin,
+                    )
+                    .await;
                     if !emit_event(
                         &stream_ctx.event_tx,
                         SessionEventMessage::tool_call_update(&stream_ctx.session_id, &id, *call),

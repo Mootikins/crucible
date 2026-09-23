@@ -63,7 +63,7 @@ pub use before_execute::{
 pub use cru_clear::register_cru_clear_api;
 pub use cru_on::register_cru_on_api;
 pub use display_hooks::{
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, execute_tool_render,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
     ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };

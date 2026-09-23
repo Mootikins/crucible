@@ -75,6 +75,52 @@ impl DisplayStage for ToolDisplayCompleteEvent {
     }
 }
 
+/// Set the render of `call`: the Lua render of its kind, else the fallback.
+///
+/// The daemon renders a call once for each event that carries it and once
+/// for its prompt, so every client reads the same table. A render that fails
+/// gives the fallback, which shows every field of the call.
+pub(crate) async fn render_call(
+    handlers: Option<&crate::agent_manager::vm_pass::PluginHandlers>,
+    session_id: &str,
+    call: &mut crucible_core::types::CanonicalToolCall,
+    args: &serde_json::Value,
+    origin: crucible_core::turn::TurnOrigin,
+) {
+    let render = match handlers {
+        Some((registry, lua)) => crucible_lua::execute_tool_render(
+            lua,
+            registry,
+            Some(session_id),
+            call,
+            args,
+            origin,
+        )
+        .await
+        .unwrap_or_else(|error| {
+            warn!(session_id, kind = %call.kind, %error, "tool:render failed, using the fallback");
+            None
+        }),
+        None => None,
+    };
+    call.render =
+        Some(render.unwrap_or_else(|| crucible_core::types::ToolRender::fallback(call, args)));
+}
+
+impl StreamContext {
+    /// The canonical call of a Crucible tool, with its render.
+    pub(super) async fn rendered_call(
+        &self,
+        name: &str,
+        args: &serde_json::Value,
+    ) -> crucible_core::types::CanonicalToolCall {
+        let mut call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
+        let handlers = self.agent_stream_config.plugin_handlers.as_ref();
+        render_call(handlers, &self.session_id, &mut call, args, self.origin).await;
+        call
+    }
+}
+
 /// Resolve the display hints for one stage from the handler VM's handlers,
 /// then the plugin VM's. A hook error falls back to the default metadata.
 pub(super) async fn resolve_hints<E: DisplayStage>(

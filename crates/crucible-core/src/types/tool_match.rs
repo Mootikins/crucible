@@ -187,6 +187,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         agent: None,
         raw: None,
         primary: None,
+        render: None,
     };
 
     // 1. Diff content.

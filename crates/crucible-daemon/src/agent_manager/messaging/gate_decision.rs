@@ -120,18 +120,27 @@ pub(crate) fn card_refusal(
 /// Decide one tool call, and ask the user when no layer decides.
 ///
 /// `args` are the JSON arguments of `call`. `request` makes the prompt; it
-/// runs only when the user is asked.
+/// runs only when the user is asked. The prompt also gets the call, with its
+/// render, and the layer that asked.
 pub(crate) async fn decide_permission(
     ctx: &PermissionContext<'_>,
     call: &CanonicalToolCall,
     args: &serde_json::Value,
     request: impl FnOnce() -> PermRequest,
 ) -> Decision {
-    let prompt = match decide_unprompted(ctx, call, args) {
+    let (prompt, layer) = match decide_unprompted(ctx, call, args) {
         Ok(decision) => return decision,
-        Err(prompt) => prompt,
+        Err(asked) => asked,
     };
-    let response = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request()).await;
+    let request = PermRequest {
+        call: Some(Box::new(CanonicalToolCall {
+            diffs: Vec::new(),
+            ..call.clone()
+        })),
+        layer: Some(layer),
+        ..request()
+    };
+    let response = prompt_user(prompt.slot, ctx.session_id, prompt.event_tx, request).await;
 
     if response.allowed {
         let file = ctx.patterns.and_then(|(dir, project)| {
@@ -155,7 +164,7 @@ pub(crate) async fn decide_permission(
 }
 
 /// Every layer but the prompt, in the order of the policy. `Err` is the
-/// prompt that must decide the call.
+/// prompt that must decide the call, and the layer that asks.
 ///
 /// 1. A card `deny` refuses.
 /// 2. An operator `deny` refuses, also for a card `allow`: an untrusted kiln
@@ -176,7 +185,7 @@ fn decide_unprompted<'a>(
     ctx: &PermissionContext<'a>,
     call: &CanonicalToolCall,
     args: &serde_json::Value,
-) -> Result<Decision, Prompt<'a>> {
+) -> Result<Decision, (Prompt<'a>, String)> {
     let tool = call.tool.as_str();
     let card = card_policy(ctx.tool_policy, call);
     if let Some(reason) = card_refusal(ctx.tool_policy, call) {
@@ -245,8 +254,15 @@ fn decide_unprompted<'a>(
         return Ok(decision);
     }
 
+    // A card `ask` or an operator `ask` rule makes a read-only tool ask.
+    // Otherwise the mode did not decide.
+    let layer = match (card, asked_about) {
+        (Some(ToolPolicy::Ask), _) => "agent card policy".to_string(),
+        (_, true) => "permissions config".to_string(),
+        _ => format!("{} mode", ctx.mode),
+    };
     match ctx.prompt {
-        Some(prompt) => Err(prompt),
+        Some(prompt) => Err((prompt, layer)),
         None => Ok(Decision::Deny(format!(
             "Permission required for '{tool}' but this session runs non-interactively. \
              Allow it via a permission pattern, Lua permission hook, or permissions config."

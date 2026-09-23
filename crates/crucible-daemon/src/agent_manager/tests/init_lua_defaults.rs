@@ -1075,6 +1075,7 @@ async fn the_lua_layers_decide_an_acp_request() {
                 is_interactive: true,
                 permission_override: None,
                 mode: mode.to_string(),
+                ..Default::default()
             });
         let outcome =
             tokio::time::timeout(std::time::Duration::from_secs(5), handle(call, options()))
@@ -1088,4 +1089,182 @@ async fn the_lua_layers_decide_an_acp_request() {
         );
         assert!(event_rx.try_recv().is_err(), "{layer} asks nobody");
     }
+}
+
+/// Render `call` with the handlers of `vm`, as the daemon renders a tool
+/// call event.
+async fn render(
+    vm: &crate::daemon_plugins::DaemonPluginLoader,
+    mut call: crucible_core::types::CanonicalToolCall,
+    args: serde_json::Value,
+) -> crucible_core::types::ToolRender {
+    let handlers = (vm.plugin_handlers(), vm.plugin_lua());
+    crate::agent_manager::messaging::tool_hooks::render_call(
+        Some(&handlers),
+        "test-session",
+        &mut call,
+        &args,
+        crucible_core::turn::TurnOrigin::User,
+    )
+    .await;
+    call.render.expect("render_call always sets a render")
+}
+
+/// An ACP call with `raw` as its wire fields, classified with no key table.
+fn acp_call(raw: serde_json::Value) -> crucible_core::types::CanonicalToolCall {
+    crucible_core::types::classify_acp(serde_json::from_value(raw).unwrap(), &[])
+}
+
+/// Each built-in kind but `tool` renders through the Lua defaults, with the
+/// field of its kind as the line.
+#[tokio::test]
+async fn each_builtin_kind_renders_through_the_lua_defaults() {
+    use crucible_core::types::CanonicalToolCall;
+    use serde_json::json;
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+    let crucible =
+        |name: &str, args: serde_json::Value| (CanonicalToolCall::crucible_tool(name, &args), args);
+    let cases = [
+        (
+            crucible("bash", json!({ "command": "ls -la" })),
+            "command",
+            "ls -la",
+        ),
+        (
+            crucible("write_file", json!({ "path": "a.md" })),
+            "file_edit",
+            "a.md",
+        ),
+        (
+            crucible("read_file", json!({ "path": "b.md" })),
+            "file_read",
+            "b.md",
+        ),
+        (
+            crucible("semantic_search", json!({ "query": "links" })),
+            "search",
+            "links",
+        ),
+        (
+            crucible("fetch", json!({ "url": "https://a.test" })),
+            "fetch",
+            "https://a.test",
+        ),
+        (
+            (
+                acp_call(json!({ "name": "mcp__github__create_pr", "title": "Create PR" })),
+                json!(null),
+            ),
+            "mcp_tool",
+            "Create PR",
+        ),
+    ];
+    for ((call, args), kind, line) in cases {
+        assert_eq!(call.kind, kind);
+        let render = render(&vm, call, args).await;
+        assert_eq!(render.line.as_deref(), Some(line), "{kind}");
+        assert!(render.fields.is_empty(), "{kind}: the fallback did not run");
+    }
+}
+
+/// The completeness gate: each kind that the matchers or the shipped agent
+/// key tables give has a Lua render, except `tool`, which the fallback
+/// renders.
+#[tokio::test]
+async fn each_kind_has_a_render_or_uses_the_fallback() {
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+    let table_kinds: Vec<String> = vm
+        .plugin_lua()
+        .load(
+            r#"
+            local kinds = {}
+            for _, agent in cru.config.get("acp").agents do
+              for _, entry in agent.tools or {} do
+                table.insert(kinds, entry.kind)
+              end
+            end
+            return kinds
+            "#,
+        )
+        .eval()
+        .expect("the key tables read");
+    assert!(!table_kinds.is_empty(), "the shipped key tables name kinds");
+    let kinds = crucible_core::types::CanonicalToolCall::KINDS
+        .iter()
+        .map(|k| k.to_string())
+        .chain(table_kinds);
+    let registry = vm.plugin_handlers();
+    for kind in kinds {
+        let renders = registry.for_hook(
+            crucible_lua::StageId::ToolRender.into(),
+            Some(&kind),
+            crucible_lua::Firing::Sessionless,
+        );
+        assert_eq!(
+            renders.is_empty(),
+            kind == "tool",
+            "kind `{kind}` needs a render in runtime/defaults/init.luau, or the fallback"
+        );
+    }
+}
+
+/// A plugin adds a kind and its render. The render gets the origin of the
+/// turn. A kind with no render gets the fallback.
+#[tokio::test]
+async fn a_plugin_renders_its_own_kind() {
+    let plugin = r#"
+        cru.on("tool:render", { pattern = "delegate" }, function(ctx, call)
+          return {
+            line = call.raw.title,
+            fields = { { label = "origin", value = call.origin.kind } },
+          }
+        end)
+    "#;
+    let mut call = acp_call(serde_json::json!({ "title": "Task: fix the bug" }));
+    call.kind = "delegate".to_string();
+
+    let (vm, _am, _sm, _id) = session_with_lua("").await;
+    let fallback = render(&vm, call.clone(), serde_json::Value::Null).await;
+    assert_eq!(
+        fallback.fields[0].value, "delegate",
+        "the fallback keeps the kind"
+    );
+
+    let (vm, _am, _sm, _id) = session_with_lua(plugin).await;
+    let render = render(&vm, call, serde_json::Value::Null).await;
+    assert_eq!(render.line.as_deref(), Some("Task: fix the bug"));
+    assert_eq!(render.fields[0].value, "user");
+}
+
+/// The last render of a kind wins, so a user file replaces a shipped render.
+#[tokio::test]
+async fn a_user_render_replaces_the_shipped_one() {
+    let (vm, _am, _sm, _id) = session_with_lua(
+        r#"
+        cru.on("tool:render", { pattern = "command" }, function(ctx, call)
+          return { line = "$ " .. call.command }
+        end)
+        "#,
+    )
+    .await;
+    let args = serde_json::json!({ "command": "ls" });
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args);
+    assert_eq!(render(&vm, call, args).await.line.as_deref(), Some("$ ls"));
+}
+
+/// A render that fails gives the fallback, which shows every field.
+#[tokio::test]
+async fn a_failing_render_gives_the_fallback() {
+    let (vm, _am, _sm, _id) = session_with_lua(
+        r#"
+        cru.on("tool:render", { pattern = "command" }, function(ctx, call)
+          error("broken render")
+        end)
+        "#,
+    )
+    .await;
+    let args = serde_json::json!({ "command": "ls" });
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args);
+    let render = render(&vm, call, args).await;
+    assert_eq!(render.fields[0].value, "command");
 }

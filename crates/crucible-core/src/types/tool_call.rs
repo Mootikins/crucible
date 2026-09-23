@@ -5,7 +5,9 @@
 //! A kind is an open name, not a closed enum. The ACP boundary and Crucible's
 //! own tools produce the same type, so one hook can match both.
 //!
-//! This type is data, not a rendering. Each UI decides how to draw it.
+//! The call is data. Its [`ToolRender`] is display data that a render
+//! function makes from the call in the daemon. Each client draws the render
+//! in its own way.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -62,9 +64,100 @@ pub struct CanonicalToolCall {
     /// replace it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<String>,
+    /// What the render function of the kind says about the call. The daemon
+    /// sets it before the call goes on the wire. `None` in a transcript from
+    /// before the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<ToolRender>,
+}
+
+/// Display data for one tool call. A render function makes it: a Lua
+/// function for a kind, or [`ToolRender::fallback`].
+///
+/// It holds meaning, not terminal text and not HTML. Each client draws the
+/// line and the fields in its own way.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolRender {
+    /// The one line that says what the call does, for example a command
+    /// line, a path, a URL or a query.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    /// The other facts of the call, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<RenderField>,
+}
+
+/// One fact of a [`ToolRender`]. The value is JSON, so a client can draw a
+/// structured value, for example `rawInput`, in its own way.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenderField {
+    pub label: String,
+    pub value: Value,
+}
+
+impl ToolRender {
+    /// The render of a kind that has no render function, and of each call
+    /// when a render function fails.
+    ///
+    /// It shows every field of the call and never hides one: the kind, the
+    /// tool, and the ACP title, name, kind, `rawInput`, locations and
+    /// content. `args` is the `rawInput` of a Crucible tool. It never shows
+    /// the call as another kind.
+    pub fn fallback(call: &CanonicalToolCall, args: &Value) -> Self {
+        let raw = call.raw.as_ref();
+        let input = raw.and_then(|r| r.raw_input.as_ref()).unwrap_or(args);
+        let mut fields = vec![
+            field("kind", Value::from(call.kind.as_str())),
+            field("tool", Value::from(call.tool.as_str())),
+        ];
+        if let Some(raw) = raw {
+            let json = serde_json::to_value(raw).unwrap_or_default();
+            for (key, label) in [
+                ("title", "title"),
+                ("name", "name"),
+                ("kind", "acp kind"),
+                ("locations", "locations"),
+                ("content", "content"),
+            ] {
+                if let Some(value) = json.get(key) {
+                    fields.push(field(label, value.clone()));
+                }
+            }
+        }
+        if !input.is_null() {
+            fields.push(field("rawInput", input.clone()));
+        }
+        // The line is the title, or else the first plain value of the input,
+        // so the one-line form of an unknown tool still says something.
+        let line = raw.and_then(|r| r.title.clone()).or_else(|| match input {
+            Value::Object(map) => map.values().find_map(scalar_to_string),
+            other => scalar_to_string(other),
+        });
+        Self { line, fields }
+    }
+}
+
+fn field(label: &str, value: Value) -> RenderField {
+    RenderField {
+        label: label.to_string(),
+        value,
+    }
 }
 
 impl CanonicalToolCall {
+    /// The kinds that [`Self::crucible_tool`] and the default ACP matcher
+    /// give. The Lua defaults render each one but `tool`, which
+    /// [`ToolRender::fallback`] renders. A plugin can add a kind.
+    pub const KINDS: &'static [&'static str] = &[
+        "command",
+        "file_edit",
+        "file_read",
+        "mcp_tool",
+        "fetch",
+        "search",
+        "tool",
+    ];
+
     /// Tool names whose payload is a shell command line.
     ///
     /// Matched exactly, or as the tail of an MCP-prefixed name
@@ -113,6 +206,7 @@ impl CanonicalToolCall {
             agent: None,
             raw: None,
             primary,
+            render: None,
         };
 
         if let Some(command) = shell_command(tool_name, args) {
@@ -427,5 +521,48 @@ mod tests {
         assert_eq!(d.kind, "path");
         assert_eq!(d.tool, "");
         assert_eq!(d.primary.as_deref(), Some("a.rs"));
+    }
+
+    /// The fallback shows every field of an ACP call and keeps its kind.
+    #[test]
+    fn the_fallback_shows_every_field_of_the_call() {
+        let raw: crate::types::RawToolCall = serde_json::from_value(json!({
+            "title": "Do a thing",
+            "name": "thing",
+            "kind": "other",
+            "rawInput": { "x": 1 },
+            "locations": [{ "path": "/w/a.rs" }],
+            "content": [{ "type": "content", "content": { "type": "text", "text": "hi" } }],
+        }))
+        .unwrap();
+        let call = crate::types::classify_acp(raw, &[]);
+        let render = ToolRender::fallback(&call, &Value::Null);
+
+        let labels: Vec<&str> = render.fields.iter().map(|f| f.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "kind",
+                "tool",
+                "title",
+                "name",
+                "acp kind",
+                "locations",
+                "content",
+                "rawInput"
+            ]
+        );
+        assert_eq!(render.fields[0].value, "tool", "never another kind");
+        assert_eq!(render.line.as_deref(), Some("Do a thing"));
+    }
+
+    /// A Crucible tool has no ACP fields. Its arguments are its `rawInput`,
+    /// and its first plain argument is its line.
+    #[test]
+    fn the_fallback_of_a_crucible_tool_shows_its_arguments() {
+        let args = json!({ "count": 42 });
+        let render = ToolRender::fallback(&of("count_things", &args), &args);
+        assert_eq!(render.line.as_deref(), Some("42"));
+        assert_eq!(render.fields.last().unwrap().value, args);
     }
 }

@@ -560,14 +560,12 @@ mod tests {
                 assert_eq!(title, "read_file");
                 assert_eq!(arguments, Some(serde_json::json!({ "path": "foo.rs" })));
                 // `SessionEventMessage::tool_call` computes the display
-                // projection itself; it grants no permission and proposes no
-                // diffs.
-                assert_eq!(
-                    display,
-                    Some(serde_json::json!({
-                        "kind": "file_read", "tool": "read_file", "paths": ["foo.rs"], "primary": "foo.rs"
-                    }))
-                );
+                // projection and its fallback render itself; it grants no
+                // permission and proposes no diffs.
+                let display = display.expect("the event carries the call");
+                assert_eq!(display["kind"], "file_read");
+                assert_eq!(display["render"]["line"], "foo.rs");
+                assert!(display.get("diffs").is_none());
                 assert_eq!(auto_approved, None);
             }
             other => panic!("expected ToolCall, got {other:?}"),

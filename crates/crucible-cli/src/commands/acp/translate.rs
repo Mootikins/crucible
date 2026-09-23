@@ -678,7 +678,7 @@ mod tests {
                 name: "search_notes".into(),
                 args: json!({}),
             },
-            diffs: vec![],
+            ..PermRequest::bash(["x"])
         };
         let req = InteractionRequest::Permission(perm);
         let tc = interaction_tool_call("r1", &req);

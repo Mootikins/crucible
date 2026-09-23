@@ -192,6 +192,51 @@ cru.permissions.on_request(function(request)
   return nil
 end)
 
+-- The renders of the built-in tool kinds
+--
+-- A render turns one tool call into display data: a `line` that says what
+-- the call does, and `fields`, a list of { label = ..., value = ... }. It
+-- returns no terminal text and no HTML. The TUI and the web draw the same
+-- data, each in its own way. The daemon runs the render for each tool call
+-- event and for each permission prompt.
+--
+-- The pattern is the kind. The call has kind, tool, command, paths, url,
+-- query, diffs, agent, raw (the ACP title, name, kind, rawInput, locations
+-- and content), args, and origin ({ kind = "user" } or { kind = "plugin" }).
+-- The last render of a kind wins, so a render in your init.lua or in a
+-- plugin replaces a render here. A kind with no render, and a render that
+-- fails, gets the fallback of the daemon: it shows every field of the call
+-- under the kind `tool`.
+--
+--   cru.on("tool:render", { pattern = "delegate" }, function(ctx, call)
+--     return { line = call.raw and call.raw.title }
+--   end)
+local function title_of(call): string?
+  return call.raw and call.raw.title
+end
+
+cru.on("tool:render", { pattern = "command" }, function(ctx, call)
+  return { line = call.command }
+end)
+
+for _, kind in { "file_edit", "file_read" } do
+  cru.on("tool:render", { pattern = kind }, function(ctx, call)
+    return { line = table.concat(call.paths or {}, ", ") }
+  end)
+end
+
+cru.on("tool:render", { pattern = "fetch" }, function(ctx, call)
+  return { line = call.url or title_of(call) }
+end)
+
+cru.on("tool:render", { pattern = "search" }, function(ctx, call)
+  return { line = call.query or title_of(call) }
+end)
+
+cru.on("tool:render", { pattern = "mcp_tool" }, function(ctx, call)
+  return { line = title_of(call) }
+end)
+
 -- The key tables of the built-in ACP agents
 --
 -- An ACP agent sends a tool call in its own form. The daemon turns each call

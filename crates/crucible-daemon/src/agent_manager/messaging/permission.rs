@@ -126,10 +126,21 @@ impl AcpGate {
     /// user, not the agent: the protocol has no field for it.
     async fn decide(
         &self,
-        call: CanonicalToolCall,
+        mut call: CanonicalToolCall,
         options: &[agent_client_protocol::schema::v1::PermissionOption],
     ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
         let turn = self.slot.turn_gate();
+        let args = (call.raw.as_ref())
+            .and_then(|raw| raw.raw_input.clone())
+            .unwrap_or(serde_json::Value::Null);
+        super::tool_hooks::render_call(
+            self.hooks.as_ref(),
+            &self.session_id,
+            &mut call,
+            &args,
+            turn.origin,
+        )
+        .await;
         let no_mcp = std::collections::HashSet::new();
         let ctx = PermissionContext {
             session_id: &self.session_id,
@@ -146,9 +157,6 @@ impl AcpGate {
                 event_tx: &self.event_tx,
             }),
         };
-        let args = (call.raw.as_ref())
-            .and_then(|raw| raw.raw_input.clone())
-            .unwrap_or(serde_json::Value::Null);
         let decision =
             decide_permission(&ctx, &call, &args, || acp_prompt_request(&call, &args)).await;
         select_option(options, decision.allowed())
@@ -1327,6 +1335,66 @@ mod acp_permission_handler_tests {
                 .expect("an override answers without a prompt");
             assert_eq!(selected(&outcome).as_deref(), Some(expected), "{mode:?}");
         }
+    }
+
+    /// The prompt shows everything that is known: the render, the agent, the
+    /// raw tool name, the diff and the layer that asked.
+    #[tokio::test]
+    async fn the_prompt_shows_the_agent_the_raw_name_the_diff_and_the_layer() {
+        use crucible_core::interaction::InteractionRequest;
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+        am.slot(SESSION).set_turn_gate(TurnGate {
+            is_interactive: true,
+            mode: "ask".to_string(),
+            ..Default::default()
+        });
+        let request: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "acp-wire-session",
+            "toolCall": {
+                "toolCallId": "call-1",
+                "title": "Edit a.rs",
+                "kind": "edit",
+                "name": "Edit",
+                "content": [{ "type": "diff", "path": "/w/a.rs", "oldText": "a", "newText": "b" }],
+            },
+            "options": [{ "optionId": "reject_once", "name": "No", "kind": "reject_once" }],
+        }))
+        .unwrap();
+        let mut call = crucible_core::types::classify_acp(
+            crucible_core::types::RawToolCall::from(&request.tool_call),
+            &[],
+        );
+        call.agent = Some("claude".to_string());
+
+        let pending = tokio::spawn(handle(call, request.options));
+        let event = loop {
+            let msg = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
+                .await
+                .expect("the handler must prompt")
+                .expect("event channel open");
+            if msg.event == "interaction_requested" {
+                break msg;
+            }
+        };
+        let InteractionRequest::Permission(asked) =
+            serde_json::from_value(event.data["request"].clone()).expect("a permission request")
+        else {
+            panic!("the prompt must be a permission request");
+        };
+        let call = asked.call.expect("the prompt carries the call");
+        assert_eq!(call.agent.as_deref(), Some("claude"));
+        assert_eq!(call.raw.and_then(|raw| raw.name).as_deref(), Some("Edit"));
+        assert!(call.render.is_some(), "the prompt carries the render");
+        assert!(call.diffs.is_empty(), "the request holds the diff once");
+        assert_eq!(asked.diffs[0].path, "/w/a.rs");
+        assert_eq!(asked.layer.as_deref(), Some("ask mode"));
+
+        let id = event.data["request_id"].as_str().unwrap().to_string();
+        am.respond_to_permission(SESSION, &id, PermResponse::deny())
+            .unwrap();
+        pending.await.unwrap();
     }
 
     /// A cancel of the turn answers the waiting prompt with a denial at once,

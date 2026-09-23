@@ -1237,6 +1237,11 @@ async fn each_tool_frame_gives_its_canonical_call() {
             assert_eq!((*a, *l), (agent, line), "the table follows the fixtures");
             let fields: serde_json::Value = serde_json::from_str(fields).unwrap();
             assert_eq!(got, fields, "{agent}.jsonl:{line}");
+            let kind = got["kind"].as_str().unwrap();
+            assert!(
+                crucible_core::types::CanonicalToolCall::KINDS.contains(&kind),
+                "{kind} is missing from CanonicalToolCall::KINDS, so no render gate covers it"
+            );
         }
     }
     assert!(want.next().is_none(), "each row names a frame");

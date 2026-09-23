@@ -464,7 +464,14 @@ fn golden_tool_call_minimal() {
             "call_id": "c-1",
             "tool": "read_file",
             "args": {"path": "/tmp/x"},
-            "display": {"kind": "file_read", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x"},
+            "display": {
+                "kind": "file_read", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x",
+                "render": {"line": "/tmp/x", "fields": [
+                    {"label": "kind", "value": "file_read"},
+                    {"label": "tool", "value": "read_file"},
+                    {"label": "rawInput", "value": {"path": "/tmp/x"}},
+                ]},
+            },
         })
     );
 }
@@ -503,7 +510,12 @@ fn golden_tool_call_maximal() {
             "display": {
                 "kind": "file_edit", "tool": "edit_file", "paths": ["src/a.rs"],
                 "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
-                "primary": "src/a.rs (lua)"
+                "primary": "src/a.rs (lua)",
+                "render": {"line": "src/a.rs", "fields": [
+                    {"label": "kind", "value": "file_edit"},
+                    {"label": "tool", "value": "edit_file"},
+                    {"label": "rawInput", "value": {"path": "src/a.rs"}},
+                ]},
             },
             "auto_approved": "mode:auto",
         })
@@ -531,7 +543,13 @@ fn golden_tool_call_update() {
             "display": {
                 "kind": "tool", "tool": "Edit", "paths": ["src/a.rs"],
                 "raw": {"name": "Edit", "rawInput": {"file_path": "src/a.rs"}},
-                "primary": "src/a.rs"
+                "primary": "src/a.rs",
+                "render": {"line": "src/a.rs", "fields": [
+                    {"label": "kind", "value": "tool"},
+                    {"label": "tool", "value": "Edit"},
+                    {"label": "name", "value": "Edit"},
+                    {"label": "rawInput", "value": {"file_path": "src/a.rs"}},
+                ]},
             },
         })
     );
@@ -665,6 +683,8 @@ fn golden_interaction_requested() {
             tokens: vec!["ls".into()],
         },
         diffs: Vec::new(),
+        call: None,
+        layer: None,
     });
     let m = SessionEventMessage::interaction_requested("s1", "r-1", &request);
     assert_eq!(

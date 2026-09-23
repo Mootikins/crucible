@@ -8,7 +8,7 @@ pub(crate) mod review_capture;
 mod send;
 pub(in crate::agent_manager) mod stream;
 mod tool_call;
-mod tool_hooks;
+pub(in crate::agent_manager) mod tool_hooks;
 
 impl AgentManager {
     fn format_tool_source(source: &ToolSource) -> String {

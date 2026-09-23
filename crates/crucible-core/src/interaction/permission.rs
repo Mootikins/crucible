@@ -62,7 +62,7 @@ pub enum PermAction {
 ///
 /// Supports token-based pattern building for vim-style permission UIs
 /// where users can expand/contract the permission scope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PermRequest {
     /// The action requiring permission.
     pub action: PermAction,
@@ -75,6 +75,18 @@ pub struct PermRequest {
     /// requests without this field deserialize as `vec![]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diffs: Vec<FileDiff>,
+
+    /// The canonical call, with its render, its agent and its raw tool
+    /// name, so the prompt shows everything that is known. Its `diffs` are
+    /// empty: the request holds them once, in `diffs`. `None` for a request
+    /// that is not about a tool call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call: Option<Box<CanonicalToolCall>>,
+
+    /// The permission layer that asked the user, for example
+    /// `permissions config` or `ask mode`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
 }
 
 impl PermRequest {
@@ -89,6 +101,8 @@ impl PermRequest {
                 tokens: tokens.into_iter().map(Into::into).collect(),
             },
             diffs: Vec::new(),
+            call: None,
+            layer: None,
         }
     }
 
@@ -103,6 +117,8 @@ impl PermRequest {
                 segments: segments.into_iter().map(Into::into).collect(),
             },
             diffs: Vec::new(),
+            call: None,
+            layer: None,
         }
     }
 
@@ -117,6 +133,8 @@ impl PermRequest {
                 segments: segments.into_iter().map(Into::into).collect(),
             },
             diffs: Vec::new(),
+            call: None,
+            layer: None,
         }
     }
 
@@ -128,6 +146,8 @@ impl PermRequest {
                 args,
             },
             diffs: Vec::new(),
+            call: None,
+            layer: None,
         }
     }
 

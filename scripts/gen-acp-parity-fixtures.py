@@ -60,15 +60,23 @@ ARGS_ACP = {
 }
 
 
-def display(tool, kind, diffs=None, raw=None):
+def display(tool, kind, diffs=None, raw=None, args=None):
     """The canonical call. The diffs of a call ride in it, and an ACP call
-    keeps the fields of its frames as `raw`."""
+    keeps the fields of its frames as `raw`. The capture runs with no Lua VM,
+    so the render is the fallback of `ToolRender::fallback`: every field."""
     out = {"kind": kind, "tool": tool, "paths": ["greeting.rs"]}
     if diffs:
         out["diffs"] = diffs
     if raw:
         out["raw"] = raw
     out["primary"] = "greeting.rs"
+    fields = [{"label": "kind", "value": kind}, {"label": "tool", "value": tool}]
+    for key, label in (("name", "name"), ("kind", "acp kind"), ("content", "content")):
+        if raw and key in raw:
+            fields.append({"label": label, "value": raw[key]})
+    raw_input = raw["rawInput"] if raw else args
+    fields.append({"label": "rawInput", "value": raw_input})
+    out["render"] = {"line": "greeting.rs", "fields": fields}
     return out
 
 
@@ -145,6 +153,9 @@ internal = common_head + [
                 "kind": "permission",
                 "action": {"type": "tool", "name": "edit_file", "args": ARGS},
                 "diffs": DIFFS,
+                # The prompt holds the diffs once, so its call has none.
+                "call": display("edit_file", "file_edit", args=ARGS),
+                "layer": "ask mode",
             },
         },
     ),
@@ -159,7 +170,7 @@ internal = common_head + [
             "source": "Core",
             # The diffs are synthesized up-front by `tools::diff_synth` and
             # ride in the canonical call.
-            "display": display("edit_file", "file_edit", diffs=DIFFS),
+            "display": display("edit_file", "file_edit", diffs=DIFFS, args=ARGS),
         },
     ),
     (
@@ -278,7 +289,7 @@ read_internal = (
                 "args": READ_ARGS,
                 "description": "Read file contents. Returns content with line numbers.",
                 "source": "Core",
-                "display": display("read_file", "file_read"),
+                "display": display("read_file", "file_read", args=READ_ARGS),
             },
         ),
         (

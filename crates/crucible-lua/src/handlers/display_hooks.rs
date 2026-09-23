@@ -1,3 +1,5 @@
+use crucible_core::turn::TurnOrigin;
+use crucible_core::types::{CanonicalToolCall, ToolRender};
 use mlua::{Lua, Result as LuaResult};
 use serde_json::Value as JsonValue;
 
@@ -7,6 +9,7 @@ use super::script_handler::ScriptHandlerResult;
 
 pub const TOOL_DISPLAY_START_EVENT: &str = super::StageId::ToolDisplayStart.as_str();
 pub const TOOL_DISPLAY_COMPLETE_EVENT: &str = super::StageId::ToolDisplayComplete.as_str();
+pub const TOOL_RENDER_EVENT: &str = super::StageId::ToolRender.as_str();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolDisplayStartEvent {
@@ -128,6 +131,49 @@ pub async fn execute_tool_display_complete_hooks(
         }
     }
 
+    Ok(None)
+}
+
+/// Run the render function of `call.kind`.
+///
+/// The payload is the call, its `args` and the `origin` of the turn. The
+/// renders run from the last registration to the first, and the first
+/// answer wins, so a user file or a plugin replaces a shipped render.
+/// `None`: no render answered, and the caller uses
+/// [`ToolRender::fallback`]. An answer that is not a render is an error.
+pub async fn execute_tool_render(
+    lua: &Lua,
+    registry: &LuaScriptHandlerRegistry,
+    session_id: Option<&str>,
+    call: &CanonicalToolCall,
+    args: &JsonValue,
+    origin: TurnOrigin,
+) -> LuaResult<Option<ToolRender>> {
+    let handlers = registry.runtime_handlers_for(
+        TOOL_RENDER_EVENT,
+        Some(&call.kind),
+        super::Firing::of(session_id),
+    );
+    if handlers.is_empty() {
+        return Ok(None);
+    }
+    let mut payload = serde_json::to_value(call).map_err(mlua::Error::external)?;
+    payload["args"] = args.clone();
+    payload["origin"] = serde_json::json!({ "kind": origin });
+    for handler in handlers.into_iter().rev() {
+        let result =
+            execute_runtime_json_handler(lua, registry, handler.id, payload.clone(), session_id)
+                .await?;
+        if let ScriptHandlerResult::Transform(mut render) = result {
+            // An empty Lua table has no array form: `fields = {}` comes as `{}`.
+            if render["fields"].as_object().is_some_and(|m| m.is_empty()) {
+                render["fields"] = serde_json::json!([]);
+            }
+            return serde_json::from_value(render)
+                .map(Some)
+                .map_err(mlua::Error::external);
+        }
+    }
     Ok(None)
 }
 

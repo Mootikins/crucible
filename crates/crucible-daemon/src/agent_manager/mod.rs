@@ -307,6 +307,8 @@ struct StreamContext {
     /// bridge call is unwrapped — the agent handle that owns the canonical
     /// mode is not reachable from the tool-dispatch path.
     session_mode: String,
+    /// Who asked for this turn. The render function of a tool call reads it.
+    origin: crucible_core::turn::TurnOrigin,
     /// Whether a user can answer permission prompts for this turn. Delegated
     /// child sessions run non-interactive: a tool call that would prompt is
     /// denied immediately instead of hanging on a prompt nobody sees.

@@ -82,7 +82,7 @@ because a selection is a decision, not a patch.
 ## Event Types
 
 The complete set, and it is closed: `cru.on` raises on a name that is not
-here. Two Rust enums hold it — `StageId` for the thirteen turn-loop stages,
+here. Two Rust enums hold it — `StageId` for the fourteen turn-loop stages,
 `EventName` for the ten daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
 `the_documented_table_lists_every_hook` fails if this table and those enums
@@ -101,6 +101,7 @@ disagree.
 | `tool:before_execute` | immediately before execution, after permission |
 | `tool:display_start` | to customise how a running tool card renders |
 | `tool:display_complete` | to customise how a finished tool card renders |
+| `tool:render` | to give the display data of one kind of tool call |
 | `search:rerank` | over the merged search hits, before the cut to the caller's limit |
 | `index:blocks` | over a note's block rows, before the pipeline writes them |
 | `FileChanged` | a watched file was created or modified |
@@ -412,6 +413,36 @@ it.
 ### `tool:display_start` / `tool:display_complete`
 
 Fire around tool output display in the TUI. Use these to transform or filter how tool output is shown to the user (they don't affect the result returned to the agent).
+
+### `tool:render`
+
+A render function gives the display data of one kind of tool call. The
+pattern is the kind: `command`, `file_edit`, `file_read`, `mcp_tool`,
+`fetch`, `search`, `tool`, or a kind that an agent key table gives. The
+daemon runs the render once for each tool call event and once for each
+permission prompt, so the TUI, the web and `cru acp` read the same data.
+
+```lua
+cru.on("tool:render", { pattern = "delegate" }, function(ctx, call)
+  return {
+    line = call.raw and call.raw.title,
+    fields = { { label = "agent", value = call.agent } },
+  }
+end)
+```
+
+The call has `kind`, `tool`, `command`, `paths`, `url`, `query`, `diffs`,
+`agent`, `raw` (the ACP `title`, `name`, `kind`, `rawInput`, `locations` and
+`content`), `args`, and `origin` (`{ kind = "user" }` or
+`{ kind = "plugin" }`). Return a table with `line`, the one line that says
+what the call does, and `fields`, a list of `{ label, value }`. Return no
+terminal text and no HTML: each client draws the data in its own way.
+
+The last render of a kind wins, so a render in your `init.lua` or in a
+plugin replaces a shipped render. `runtime/defaults/init.luau` renders each
+built-in kind but `tool`. A kind with no render, and a render that fails,
+gets the fallback of the daemon. The fallback shows every field of the call
+and never shows the call as another kind.
 
 ### `tool:before_execute`
 

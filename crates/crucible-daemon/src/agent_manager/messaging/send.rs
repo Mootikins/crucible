@@ -522,6 +522,7 @@ impl AgentManager {
                 is_interactive,
                 permission_override,
                 mode: session_mode.clone(),
+                origin,
             });
         // The turn proposal ends with the turn, on every exit path below.
         let proposals = self.proposals.clone();
@@ -574,6 +575,7 @@ impl AgentManager {
             precognition_message,
             attachment_message,
             session_mode,
+            origin,
             is_interactive,
             // The same rules the ACP gate reads: the agent profile's, else
             // the global config.

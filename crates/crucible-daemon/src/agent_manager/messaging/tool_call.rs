@@ -433,13 +433,19 @@ impl AgentManager {
                 .await;
                 result.result = patched;
                 result.error = patched_error;
+                let call = stream_ctx.rendered_call(&tool_call.name, &args).await;
                 emit_event(
                     &stream_ctx.event_tx,
-                    SessionEventMessage::tool_call(
+                    SessionEventMessage::tool_call_with_metadata(
                         &stream_ctx.session_id,
                         &call_id,
                         &tool_call.name,
                         args.clone(),
+                        None,
+                        None,
+                        None,
+                        Some(call),
+                        None,
                     ),
                 );
                 let payload = tool_result_body(&result.result, result.error.as_deref());
@@ -497,7 +503,12 @@ impl AgentManager {
         //
         // The canonical call is made here, after the handlers above may have
         // rewritten the arguments, so the gate decides the call that runs.
-        let call = CanonicalToolCall::crucible_tool(&tool_call.name, &args);
+        // It is rendered before the gate, so the prompt and the event show
+        // the same render.
+        let call = CanonicalToolCall {
+            diffs,
+            ..stream_ctx.rendered_call(&tool_call.name, &args).await
+        };
         let request = || {
             let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, &args);
             PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs)
@@ -568,7 +579,7 @@ impl AgentManager {
                 description,
                 source,
                 lua_primary_arg,
-                Some(CanonicalToolCall { diffs, ..call }),
+                Some(call),
                 auto_approved.clone(),
             ),
         ) {

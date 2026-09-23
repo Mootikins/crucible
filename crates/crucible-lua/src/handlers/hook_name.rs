@@ -233,6 +233,9 @@ pub enum StageId {
     ToolDisplayStart,
     /// A tool call finished and its display is final.
     ToolDisplayComplete,
+    /// The render function of a kind: display data for one tool call. The
+    /// pattern is the kind. The last registration for a kind wins.
+    ToolRender,
     /// Over the merged search hits, before the cut to the caller's limit.
     SearchRerank,
     /// Over a note's block rows, before the pipeline writes them.
@@ -270,6 +273,7 @@ impl StageId {
         Self::ToolBeforeExecute,
         Self::ToolDisplayStart,
         Self::ToolDisplayComplete,
+        Self::ToolRender,
         Self::SearchRerank,
         Self::IndexBlocks,
         Self::PermissionRequest,
@@ -295,6 +299,7 @@ impl StageId {
             Self::ToolBeforeExecute => "tool:before_execute",
             Self::ToolDisplayStart => "tool:display_start",
             Self::ToolDisplayComplete => "tool:display_complete",
+            Self::ToolRender => "tool:render",
             Self::SearchRerank => "search:rerank",
             Self::IndexBlocks => "index:blocks",
             Self::PermissionRequest => "permission:request",
@@ -330,8 +335,10 @@ impl StageId {
             | Self::IndexBlocks
             | Self::ProviderAuth => TURN_STAGE_BUDGET,
             // A permission answer blocks the turn and the user, so it gets the
-            // short budget the gate already armed for it.
-            Self::PermissionRequest => PERMISSION_BUDGET,
+            // short budget the gate already armed for it. A render runs
+            // before each tool call event and each prompt, so it gets the
+            // same short budget.
+            Self::PermissionRequest | Self::ToolRender => PERMISSION_BUDGET,
             // `oci` pulls a container image in `session:start`, so a
             // turn-stage budget would break a shipped plugin.
             Self::SessionStart | Self::SessionEnd => LIFECYCLE_BUDGET,
@@ -369,6 +376,7 @@ impl StageId {
             | Self::ToolBeforeExecute
             | Self::ToolDisplayStart
             | Self::ToolDisplayComplete
+            | Self::ToolRender
             | Self::SearchRerank
             | Self::PermissionRequest
             | Self::SessionStart
@@ -478,6 +486,7 @@ impl HookName {
                 | StageId::ToolBeforeExecute
                 | StageId::ToolDisplayStart
                 | StageId::ToolDisplayComplete
+                | StageId::ToolRender
                 | StageId::SearchRerank
                 | StageId::IndexBlocks => None,
                 StageId::PermissionRequest => Some("cru.permissions.on_request"),

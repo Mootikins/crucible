@@ -241,6 +241,11 @@ impl SessionEventMessage {
         if let Some(pa) = lua_primary_arg.clone() {
             display.primary = Some(pa);
         }
+        // A caller with no Lua render still sends a render, so a client
+        // never has to rebuild the call.
+        if display.render.is_none() {
+            display.render = Some(crate::types::ToolRender::fallback(&display, &args));
+        }
         Self::typed(
             session_id,
             TurnPayload::ToolCall {
@@ -263,13 +268,16 @@ impl SessionEventMessage {
     pub fn tool_call_update(
         session_id: impl Into<String>,
         call_id: impl Into<String>,
-        call: crate::types::CanonicalToolCall,
+        mut call: crate::types::CanonicalToolCall,
     ) -> Self {
         let args = call
             .raw
             .as_ref()
             .and_then(|raw| raw.raw_input.clone())
             .unwrap_or(Value::Null);
+        if call.render.is_none() {
+            call.render = Some(crate::types::ToolRender::fallback(&call, &args));
+        }
         Self::typed(
             session_id,
             TurnPayload::ToolCallUpdate {
