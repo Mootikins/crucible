@@ -187,6 +187,56 @@ async fn lua_fork_refuses_requested_or_claimed_isolation_without_creating_a_chil
     );
 }
 
+/// A plugin can not move an isolated session onto an external agent that the
+/// sandbox can not contain. The RPC path refused this switch before, but the
+/// Lua bridge called `AgentManager::configure_agent` directly and did not.
+#[tokio::test]
+async fn lua_configure_agent_refuses_an_external_agent_on_an_isolated_session() {
+    let (tmp, bridge, lua) = rig();
+    let session = bridge
+        .session_manager
+        .create_session(SessionType::Chat, vec![], Some(tmp.path().into()), None)
+        .await
+        .unwrap();
+    bridge
+        .agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+    let registry = crucible_lua::IsolationRegistry::new();
+    bridge.agent_manager.set_isolation(registry.clone());
+    registry.claim(
+        &session.id,
+        crucible_lua::IsolationClaim {
+            plugin: "oci".into(),
+            exempt: Default::default(),
+            exec: Default::default(),
+        },
+    );
+    lua.globals().set("sid", session.id.to_string()).unwrap();
+    lua.load(
+        r#"
+        local ok, err = cru.session.configure_agent(sid, {
+            agent_type = "acp", provider = "ollama", model = "m", system_prompt = "",
+        })
+        assert(ok == nil and string.find(err, "oci"), tostring(err))
+    "#,
+    )
+    .exec_async()
+    .await
+    .unwrap();
+    assert_eq!(
+        bridge
+            .session_manager
+            .get_session(&session.id)
+            .and_then(|s| s.agent)
+            .map(|a| a.agent_type)
+            .as_deref(),
+        Some("internal"),
+        "the refused switch must leave the agent unchanged"
+    );
+}
+
 #[tokio::test]
 async fn lua_collection_covers_child_outcomes_and_mixed_job_ids() {
     let (tmp, bridge, lua) = rig();

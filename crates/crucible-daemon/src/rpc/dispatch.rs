@@ -1517,11 +1517,6 @@ impl RpcDispatcher {
         }
     }
 
-    /// The isolation registry, without waiting on the loader mutex.
-    async fn isolation_registry(&self) -> Option<crucible_lua::IsolationRegistry> {
-        self.ctx.session_lifecycle.isolation_registry().await
-    }
-
     /// Fire plugin `on_session_end` hooks, best-effort and exactly once.
     async fn fire_plugin_session_end(&self, session_id: &str) {
         self.ctx
@@ -1685,37 +1680,8 @@ impl RpcDispatcher {
     // ── Agent operation wrappers ─────────────────────────────────────────────
 
     async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        // Refuse switching to an agent the session's isolation claim cannot
-        // cover, BEFORE applying the config — after would leave the session
-        // already reconfigured when the error returns. The rule itself is
-        // `session_lifecycle::unenforceable_reason`, the same one the create
-        // path applies: a second copy here drifted once already, answering
-        // "no" to a switch that create answers "yes" to.
-        if let Some(requested_type) = req
-            .params
-            .get("agent")
-            .and_then(|a| a.get("agent_type"))
-            .and_then(|t| t.as_str())
-        {
-            let session_id = req
-                .params
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            let claim = match self.isolation_registry().await {
-                Some(registry) => registry.get(session_id),
-                None => None,
-            };
-            if let Some(reason) = claim.as_ref().and_then(|claim| {
-                crate::session_lifecycle::unenforceable_reason(claim, requested_type)
-            }) {
-                return Err(RpcError {
-                    code: INTERNAL_ERROR,
-                    message: format!("cannot switch this session to an external agent: {reason}"),
-                    data: None,
-                });
-            }
-        }
+        // `AgentManager::configure_agent` applies the isolation and trust
+        // gates, so the Lua bridge gets the same refusals as this handler.
         let resp =
             crate::server::session::handle_session_configure_agent(req.clone(), &self.ctx.agents)
                 .await;
@@ -2707,33 +2673,68 @@ mod tests {
     #[tokio::test]
     async fn switching_an_isolated_session_to_an_external_agent_is_refused() {
         let (ctx, _data_home) = test_context_with_loader();
-        {
-            let guard = ctx.plugin_loader.lock().await;
-            guard.as_ref().unwrap().isolation().claim(
-                "iso-1",
-                crucible_lua::IsolationClaim {
-                    plugin: "oci".to_string(),
-                    exempt: Default::default(),
-                    exec: Default::default(),
-                },
-            );
-        }
-        let dispatcher = RpcDispatcher::new(ctx);
+        let session_id = claimed_session(&ctx, crucible_lua::SandboxExec::default()).await;
+        let dispatcher = RpcDispatcher::new(ctx.clone());
 
-        let req = make_request(
-            "session.configure_agent",
-            serde_json::json!({
-                "session_id": "iso-1",
-                "agent": { "agent_type": "acp" },
-            }),
-        );
-        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        let resp = dispatcher
+            .dispatch(ClientId::new(), configure_acp_request(&session_id))
+            .await;
         let err = resp.error.expect("switch must be refused");
+        assert_eq!(err.code, INVALID_PARAMS, "the caller can fix this request");
         assert!(
             err.message.contains("cannot switch") && err.message.contains("oci"),
             "refusal must name the claiming plugin: {}",
             err.message
         );
+        assert!(
+            ctx.sessions
+                .get_session(&session_id)
+                .unwrap()
+                .agent
+                .is_none(),
+            "a refused switch must not save the agent"
+        );
+    }
+
+    /// A live session with an `oci` isolation claim, bound the way server
+    /// boot binds the registry: on the agent manager.
+    async fn claimed_session(ctx: &RpcContext, exec: crucible_lua::SandboxExec) -> String {
+        let session = ctx
+            .sessions
+            .create_session(
+                crucible_core::session::SessionType::Chat,
+                vec![],
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let registry = ctx.session_lifecycle.isolation_registry().await.unwrap();
+        ctx.agents.set_isolation(registry.clone());
+        registry.claim(
+            &session.id,
+            crucible_lua::IsolationClaim {
+                plugin: "oci".to_string(),
+                exempt: Default::default(),
+                exec,
+            },
+        );
+        session.id.to_string()
+    }
+
+    fn configure_acp_request(session_id: &str) -> Request {
+        make_request(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": session_id,
+                "agent": {
+                    "agent_type": "acp",
+                    "provider": "ollama",
+                    "model": "m",
+                    "system_prompt": "",
+                },
+            }),
+        )
     }
 
     /// The workspace axis is fail-closed at create.
@@ -2881,41 +2882,25 @@ mod tests {
     #[tokio::test]
     async fn switching_to_an_external_agent_the_sandbox_can_launch_is_allowed() {
         let (ctx, _data_home) = test_context_with_loader();
-        {
-            let guard = ctx.plugin_loader.lock().await;
-            guard.as_ref().unwrap().isolation().claim(
-                "iso-launchable",
-                crucible_lua::IsolationClaim {
-                    plugin: "oci".to_string(),
-                    exempt: Default::default(),
-                    exec: crucible_lua::SandboxExec {
-                        prefix: ["podman", "exec", "-i"]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect(),
-                        env: crucible_lua::SandboxEnv::Flag("-e".to_string()),
-                        suffix: vec!["crucible-iso-launchable".to_string()],
-                    },
-                },
-            );
-        }
+        let exec = crucible_lua::SandboxExec {
+            prefix: ["podman", "exec", "-i"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            env: crucible_lua::SandboxEnv::Flag("-e".to_string()),
+            suffix: vec!["crucible-iso-launchable".to_string()],
+        };
+        let session_id = claimed_session(&ctx, exec).await;
         let dispatcher = RpcDispatcher::new(ctx);
 
-        let req = make_request(
-            "session.configure_agent",
-            serde_json::json!({
-                "session_id": "iso-launchable",
-                "agent": { "agent_type": "acp" },
-            }),
+        let resp = dispatcher
+            .dispatch(ClientId::new(), configure_acp_request(&session_id))
+            .await;
+        assert!(
+            resp.error.is_none(),
+            "a claim that can launch into the sandbox must not be refused: {:?}",
+            resp.error
         );
-        let resp = dispatcher.dispatch(ClientId::new(), req).await;
-        if let Some(err) = resp.error {
-            assert!(
-                !err.message.contains("cannot switch"),
-                "a claim that can launch into the sandbox must not be refused: {}",
-                err.message
-            );
-        }
     }
 
     /// The create-time half of the same invariant, tested through the

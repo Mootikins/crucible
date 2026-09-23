@@ -140,6 +140,22 @@ impl AgentManager {
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
 
+        // Refuse an agent that the session's isolation claim can not contain.
+        // The gate lives here, not in one caller, because the RPC handler and
+        // the Lua bridge both reach this method. The check comes before the
+        // save, so a refusal leaves the session unchanged.
+        if let Some(reason) = self
+            .isolation()
+            .and_then(|registry| registry.get(session_id))
+            .and_then(|claim| {
+                crate::session_lifecycle::unenforceable_reason(&claim, &agent.agent_type)
+            })
+        {
+            return Err(AgentError::InvalidConfig(format!(
+                "cannot switch this session to an external agent: {reason}"
+            )));
+        }
+
         // The same gate `switch_model` applies, and for the same reason:
         // configure_agent is the other way a session's provider changes after
         // its kilns have already passed the attach-time trust check.

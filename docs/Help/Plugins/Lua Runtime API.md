@@ -500,7 +500,14 @@ cru.session.configure_agent(session_id, {
 })
 ```
 
-Returns `(true, nil)` on success.
+Returns `(true, nil)` on success. The daemon applies the same gates as the
+`session.configure_agent` RPC. It returns `(nil, err)` and keeps the old agent
+in two cases:
+
+- A plugin claims isolation for the session, and the new agent is external but
+  the plugin cannot launch it inside the sandbox.
+- The provider of the new agent does not have the trust level that an attached
+  kiln requires.
 
 ### cru.session.send_message(session_id, content)
 
