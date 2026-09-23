@@ -453,7 +453,7 @@ fn golden_tool_call_minimal() {
             "call_id": "c-1",
             "tool": "read_file",
             "args": {"path": "/tmp/x"},
-            "display": {"kind": "path", "primary": "/tmp/x"},
+            "display": {"kind": "path", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x"},
         })
     );
 }
@@ -483,7 +483,7 @@ fn golden_tool_call_maximal() {
             "description": "edits a file",
             "source": "builtin",
             "lua_primary_arg": "src/a.rs (lua)",
-            "display": {"kind": "path", "primary": "src/a.rs (lua)"},
+            "display": {"kind": "path", "tool": "edit", "paths": ["src/a.rs"], "primary": "src/a.rs (lua)"},
             "auto_approved": "mode:auto",
             "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
         })

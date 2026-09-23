@@ -179,25 +179,21 @@ impl InteractionModal {
                 // escaped newlines. Same projection the web renders from and
                 // the daemon words its deny messages with, so all three agree
                 // on what a call is about.
-                use crucible_core::types::{ToolDisplay, ToolDisplayKind};
-                let display = ToolDisplay::of(name, args);
-                let detail = match (display.kind, self.full_commands) {
-                    (ToolDisplayKind::Command, true) => display
-                        .primary
-                        .clone()
-                        .unwrap_or_else(|| prettify_tool_args_full(args)),
-                    (ToolDisplayKind::Command, false) => display
-                        .summary(60)
-                        .unwrap_or_else(|| prettify_tool_args(args)),
-                    (_, true) => format!("{} {}", name, prettify_tool_args_full(args)),
-                    (_, false) => format!("{} {}", name, prettify_tool_args(args)),
-                };
-                let label = if display.kind == ToolDisplayKind::Command {
-                    "BASH"
-                } else {
-                    "TOOL"
-                };
-                (label, detail, false)
+                let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
+                match (&call.command, self.full_commands) {
+                    (Some(command), true) => ("BASH", command.clone(), false),
+                    (Some(_), false) => ("BASH", call.summary(60).unwrap_or_default(), false),
+                    (None, true) => (
+                        "TOOL",
+                        format!("{} {}", name, prettify_tool_args_full(args)),
+                        false,
+                    ),
+                    (None, false) => (
+                        "TOOL",
+                        format!("{} {}", name, prettify_tool_args(args)),
+                        false,
+                    ),
+                }
             }
         };
 

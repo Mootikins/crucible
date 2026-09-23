@@ -22,7 +22,7 @@ pub mod notification;
 pub mod plugin_status;
 pub mod popup;
 pub mod provider_info;
-pub mod tool_display;
+pub mod tool_call;
 pub mod tool_ref;
 pub mod undo;
 // Re-export parser domain types
@@ -52,7 +52,7 @@ pub use crate::types::mode::{
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 
 // Re-export tool reference types
-pub use crate::types::tool_display::{ToolDisplay, ToolDisplayKind};
+pub use crate::types::tool_call::CanonicalToolCall;
 pub use crate::types::tool_ref::{ToolRef, ToolSource};
 
 // Re-export popup types

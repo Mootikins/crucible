@@ -244,7 +244,7 @@ impl SessionEventMessage {
         // of each keeping its own key-priority list. A Lua display hook's
         // `lua_primary_arg` overrides it — a plugin knows its own tool better
         // than a heuristic.
-        let mut display = crate::types::ToolDisplay::of(&tool_name, &args);
+        let mut display = crate::types::CanonicalToolCall::crucible_tool(&tool_name, &args);
         if let Some(pa) = lua_primary_arg.clone() {
             display.primary = Some(pa);
         }
@@ -257,7 +257,7 @@ impl SessionEventMessage {
                 description,
                 source,
                 lua_primary_arg,
-                display: Some(display),
+                display: Some(Box::new(display)),
                 auto_approved,
                 diffs,
             },

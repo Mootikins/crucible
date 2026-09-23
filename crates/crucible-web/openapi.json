@@ -4635,7 +4635,7 @@
               },
               "arguments": {},
               "display": {
-                "description": "The daemon's \"which argument matters\" projection, shared with the\nTUI. `Value` because `ToolDisplay` lives in `crucible-core`, which\ntakes no utoipa dependency (same deal as `stop_reason` below)."
+                "description": "The daemon's canonical tool call, shared with the TUI. `Value`\nbecause `CanonicalToolCall` lives in `crucible-core`, which\ntakes no utoipa dependency (same deal as `stop_reason` below)."
               },
               "auto_approved": {
                 "type": [

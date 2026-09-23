@@ -149,7 +149,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
           name: 'Bash',
           args: JSON.stringify({ command: 'ls' }),
           // The daemon's projection is what earns the Command block.
-          display: { kind: 'command', primary: 'ls' },
+          display: { kind: 'command', tool: 'Bash', command: 'ls', primary: 'ls' },
           result: 'foo\nbar',
         })}
       />

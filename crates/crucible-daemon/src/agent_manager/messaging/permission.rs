@@ -173,23 +173,19 @@ enum PatternKind {
 /// user is prompted again for ever, with no way to see why.
 ///
 /// They did disagree. [`PermRequest::suggested_pattern`] asks
-/// [`ToolDisplay`], which calls `shell`, `Bash` and `myserver__bash` shell
+/// [`CanonicalToolCall`], which calls `shell`, `Bash` and `myserver__bash` shell
 /// tools, so it offered a command line; the routing here compared the name to
 /// the literal `"bash"`, so every other command tool filed that command line
-/// as a tool-name rule. `ToolDisplay` is the single source of truth for what
-/// a command is, and both halves now read it. Never restate its list here —
+/// as a tool-name rule. `CanonicalToolCall` is the single source of truth for
+/// what a command is, and both halves now read it. Never restate its list here —
 /// a second list is exactly what drifted.
 ///
 /// The projection reads the arguments, not the name alone, which is what
 /// keeps the two halves aligned in the awkward case too: a `shell` call with
 /// no `command` argument is not a command to `suggested_pattern` either, so
 /// both file it as a tool rule.
-#[deny(
-    clippy::wildcard_enum_match_arm,
-    clippy::match_wildcard_for_single_variants
-)]
 fn pattern_kind(tool_name: &str, args: &serde_json::Value) -> PatternKind {
-    use crucible_core::types::{ToolDisplay, ToolDisplayKind};
+    use crucible_core::types::CanonicalToolCall;
 
     // Not a command: a path tool matches on its path, anything else on its
     // name. Both are decided by the name alone.
@@ -201,11 +197,9 @@ fn pattern_kind(tool_name: &str, args: &serde_json::Value) -> PatternKind {
         }
     };
 
-    let display = ToolDisplay::of(tool_name, args);
-    match display.kind {
-        ToolDisplayKind::Command => display.primary.map_or_else(by_name, PatternKind::Bash),
-        ToolDisplayKind::Path | ToolDisplayKind::Query | ToolDisplayKind::Other => by_name(),
-    }
+    CanonicalToolCall::crucible_tool(tool_name, args)
+        .command
+        .map_or_else(by_name, PatternKind::Bash)
 }
 
 /// The text the permission engine matches its rules against: the shell
@@ -1136,7 +1130,7 @@ impl AgentManager {
         tool_name: &str,
         args: &serde_json::Value,
     ) -> String {
-        crucible_core::types::ToolDisplay::of(tool_name, args)
+        crucible_core::types::CanonicalToolCall::crucible_tool(tool_name, args)
             .summary(50)
             .unwrap_or_default()
     }

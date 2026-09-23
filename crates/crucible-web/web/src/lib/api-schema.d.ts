@@ -2215,8 +2215,8 @@ export interface components {
              */
             diffs?: unknown;
             /**
-             * @description The daemon's "which argument matters" projection, shared with the
-             *     TUI. `Value` because `ToolDisplay` lives in `crucible-core`, which
+             * @description The daemon's canonical tool call, shared with the TUI. `Value`
+             *     because `CanonicalToolCall` lives in `crucible-core`, which
              *     takes no utoipa dependency (same deal as `stop_reason` below).
              */
             display?: unknown;

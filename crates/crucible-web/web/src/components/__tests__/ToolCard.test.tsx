@@ -225,7 +225,7 @@ describe('ToolCard — bash command rendering', () => {
     makeTool({
       name: 'bash',
       args: JSON.stringify({ command, ...extra }),
-      display: { kind: 'command', primary: command },
+      display: { kind: 'command', tool: 'bash', command, primary: command },
     });
 
   it('renders a bash command as a shell line, not JSON', () => {
@@ -575,7 +575,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'run_task',
           args: JSON.stringify({ command: 'build', path: '/repo' }),
-          display: { kind: 'command', primary: 'make build' },
+          display: { kind: 'command', tool: 'run_task', primary: 'make build' },
         })}
       />
     ));
@@ -591,7 +591,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'semantic_search',
           args: JSON.stringify({ query: 'wikilinks' }),
-          display: { kind: 'query', primary: 'wikilinks' },
+          display: { kind: 'query', tool: 'semantic_search', query: 'wikilinks', primary: 'wikilinks' },
         })}
       />
     ));
@@ -604,7 +604,12 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'bash',
           args: JSON.stringify({ command: 'cd /tmp\ngrep -r foo .' }),
-          display: { kind: 'command', primary: 'cd /tmp\ngrep -r foo .' },
+          display: {
+            kind: 'command',
+            tool: 'bash',
+            command: 'cd /tmp\ngrep -r foo .',
+            primary: 'cd /tmp\ngrep -r foo .',
+          },
         })}
       />
     ));

@@ -39,7 +39,7 @@ use crate::events::session_event::ScriptingEvent;
 use crate::interaction::{InteractionRequest, InteractionResponse};
 use crate::traits::chat::PrecognitionNoteInfo;
 use crate::types::acp::FileDiff;
-use crate::types::ToolDisplay;
+use crate::types::CanonicalToolCall;
 
 /// Turn-stream events, adjacently tagged so the enum's serialization *is* the
 /// `{event, data}` pair the envelope carries.
@@ -125,17 +125,17 @@ pub enum TurnPayload {
         source: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         lua_primary_arg: Option<String>,
-        /// One projection of "which argument matters", computed by
+        /// The canonical tool call, computed by
         /// `SessionEventMessage::tool_call_with_metadata` so the TUI and the web
         /// render the same answer instead of each keeping its own key-priority
-        /// list. A Lua display hook's `lua_primary_arg` overrides it.
+        /// list. A Lua display hook's `lua_primary_arg` overrides its `primary`.
         ///
         /// Every producer in this workspace sets it. `None` means the event came
         /// from something else — a recording made before the field existed (only
         /// 7 of 97 recorded `tool_call` lines carry it), or a foreign emitter —
         /// and the consumer falls back to its own heuristic.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        display: Option<ToolDisplay>,
+        display: Option<Box<CanonicalToolCall>>,
         /// Which layer granted permission without asking, if any. Rides on this
         /// event rather than a follow-up: the gate decides BEFORE the card is
         /// emitted, so a separate event would only make the marker pop in late.

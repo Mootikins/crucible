@@ -534,7 +534,7 @@ pub fn format_tool_args(args: &str) -> String {
 ///
 /// Delegates to the shared projection so the TUI, the web and the daemon's
 /// deny messages all name the same argument. Newlines collapse because this
-/// is one row: `ToolDisplay::summary` keeps the first line, and the full text
+/// is one row: `CanonicalToolCall::summary` keeps the first line, and the full text
 /// is in the expanded view.
 pub fn format_primary_arg_for(tool_name: &str, args: &str) -> String {
     if args.is_empty() || args == "{}" {
@@ -543,7 +543,7 @@ pub fn format_primary_arg_for(tool_name: &str, args: &str) -> String {
     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) else {
         return String::new();
     };
-    crucible_core::types::ToolDisplay::of(tool_name, &parsed)
+    crucible_core::types::CanonicalToolCall::crucible_tool(tool_name, &parsed)
         .primary
         .map(|p| p.replace('\n', " ").replace('\r', ""))
         .unwrap_or_default()

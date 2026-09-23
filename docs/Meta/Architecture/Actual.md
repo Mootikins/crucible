@@ -1020,7 +1020,7 @@ commands only as a count and has no renderer for `cru.plugin.set_status` slots.
 | `Drawer`, `PopupOverlay`, `InputArea` | `crucible-oil/src/components/{drawer.rs:39; popup.rs:8; input_area.rs:29}` | Component set; `InputArea` has no caller |
 | `ChatEvent` | `crucible-web/src/events.rs:7` | SSE projection for the browser |
 
-The web frontend mirrors `ToolDisplay`, `ProviderInfo`, `ModeDescriptor`,
+The web frontend mirrors `CanonicalToolCall`, `ProviderInfo`, `ModeDescriptor`,
 `Notification`, `PopupEntry`, `PanelItem`, `PermRequest`, `AskBatchRequest`,
 `AskBatchResponse`, `FsEntry`, `FsListing` in `crucible-web/web/src/lib/types.ts`.
 

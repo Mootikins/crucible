@@ -20,8 +20,8 @@ pub enum ChatEvent {
         title: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         arguments: Option<serde_json::Value>,
-        /// The daemon's "which argument matters" projection, shared with the
-        /// TUI. `Value` because `ToolDisplay` lives in `crucible-core`, which
+        /// The daemon's canonical tool call, shared with the TUI. `Value`
+        /// because `CanonicalToolCall` lives in `crucible-core`, which
         /// takes no utoipa dependency (same deal as `stop_reason` below).
         #[serde(skip_serializing_if = "Option::is_none")]
         display: Option<serde_json::Value>,
@@ -576,7 +576,9 @@ mod tests {
                 // diffs.
                 assert_eq!(
                     display,
-                    Some(serde_json::json!({ "kind": "path", "primary": "foo.rs" }))
+                    Some(serde_json::json!({
+                        "kind": "path", "tool": "read_file", "paths": ["foo.rs"], "primary": "foo.rs"
+                    }))
                 );
                 assert_eq!(auto_approved, None);
                 assert_eq!(diffs, None);
@@ -596,7 +598,7 @@ mod tests {
             "Edit",
             serde_json::json!({ "file_path": "a.rs", "old_string": "x", "new_string": "y" }),
         );
-        event.data["display"] = serde_json::json!({ "kind": "path", "primary": "a.rs" });
+        event.data["display"] = serde_json::json!({ "kind": "path", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" });
         event.data["auto_approved"] = serde_json::json!("auto mode");
         event.data["diffs"] = serde_json::json!([
             { "path": "a.rs", "old_content": "x", "new_content": "y" }
@@ -613,7 +615,9 @@ mod tests {
                 assert_eq!(id, "call-2");
                 assert_eq!(
                     display,
-                    Some(serde_json::json!({ "kind": "path", "primary": "a.rs" }))
+                    Some(
+                        serde_json::json!({ "kind": "path", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" })
+                    )
                 );
                 assert_eq!(auto_approved, Some("auto mode".to_string()));
                 assert_eq!(

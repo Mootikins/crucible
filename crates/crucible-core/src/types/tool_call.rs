@@ -1,26 +1,13 @@
-//! What a tool call *is*, for display purposes — one projection, computed
-//! once by the daemon and rendered by every UI.
+//! The canonical tool call: one description of a tool call, which the daemon
+//! computes once. The TUI, the web, the permission gate and the deny messages
+//! read it, so they agree on what a call is.
 //!
-//! ## Why this exists
+//! A kind is an open name, not a closed enum. The ACP boundary and Crucible's
+//! own tools produce the same type, so one hook can match both.
 //!
-//! "Which argument of this tool call is the interesting one" was answered
-//! independently in six places: the web `ToolCard`'s icon heuristic, its
-//! one-line summary, its shell-tool detection, the web permission prompt's
-//! argument formatting, the TUI's `prettify_tool_args`, and the daemon's
-//! `brief_resource_description`. Six key-priority lists, drifting apart, and
-//! the only one a plugin could influence was the Lua display hint.
-//!
-//! The knowledge is display-agnostic and the daemon already has it, so it
-//! belongs here — "daemon owns business logic, views are thin". A UI asks
-//! *how to render*, not *what matters*.
-//!
-//! ## What this is NOT
-//!
-//! Not a widget, and not a rendering. It says a bash call's payload is a
-//! command and hands over the command text; whether that becomes a `$`-marked
-//! block, a truncated status line, or a one-line summary is each UI's
-//! business. The shared contract is DATA.
+//! This type is data, not a rendering. Each UI decides how to draw it.
 
+use agent_client_protocol_schema::v1::ToolCall as AcpToolCall;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -30,33 +17,42 @@ use serde_json::Value;
 /// status row for those calls.
 const PATH_KEYS: &[&str] = &["file_path", "filePath", "path", "file", "note", "name"];
 
-/// Argument keys that carry a search/query string, in priority order.
-const QUERY_KEYS: &[&str] = &["pattern", "query", "url"];
+/// Argument keys that carry a search query, in priority order.
+const QUERY_KEYS: &[&str] = &["pattern", "query"];
 
-/// The shape of a tool call's payload, as far as display is concerned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ToolDisplayKind {
-    /// A shell command line. Render as a command, with newlines intact.
-    Command,
-    /// A filesystem path.
-    Path,
-    /// A search pattern, query or URL.
-    Query,
-    /// Nothing recognised; `primary` is a best-effort first string, if any.
-    Other,
-}
-
-/// A tool call projected for display.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolDisplay {
-    pub kind: ToolDisplayKind,
-    /// The argument worth showing, if one could be identified.
+/// One tool call, classified.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CanonicalToolCall {
+    /// The open kind name, for example `command` or `path`.
+    pub kind: String,
+    /// The canonical tool name. A display object from before this field has
+    /// no name, so the default keeps an old transcript readable.
+    #[serde(default)]
+    pub tool: String,
+    /// The shell command line, for a `command` call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// The filesystem targets of the call.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    /// The ACP agent that made the call. `None` for Crucible's own tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// The wire form of an ACP call, for display and debugging. No policy
+    /// reads it. `None` for Crucible's own tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<AcpToolCall>,
+    /// The argument that a UI shows on one line. A Lua display hook can
+    /// replace it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<String>,
 }
 
-impl ToolDisplay {
+impl CanonicalToolCall {
     /// Tool names whose payload is a shell command line.
     ///
     /// Matched exactly, or as the tail of an MCP-prefixed name
@@ -77,46 +73,61 @@ impl ToolDisplay {
         "terminal",
     ];
 
-    /// Project a tool call.
+    /// Classify a call to one of Crucible's own tools.
     ///
     /// `args` is the raw argument object. A non-object (a bare string, or
-    /// nothing) yields `Other` with the string as `primary` where that makes
+    /// nothing) yields `other` with the string as `primary` where that makes
     /// sense — some agents pass a single positional argument.
-    pub fn of(tool_name: &str, args: &Value) -> Self {
+    pub fn crucible_tool(tool_name: &str, args: &Value) -> Self {
+        let call = |kind: &str, primary: Option<String>| Self {
+            kind: kind.to_string(),
+            tool: tool_name.to_string(),
+            command: None,
+            paths: Vec::new(),
+            url: None,
+            query: None,
+            agent: None,
+            raw: None,
+            primary,
+        };
+
         if let Some(command) = shell_command(tool_name, args) {
             return Self {
-                kind: ToolDisplayKind::Command,
-                primary: Some(command),
+                command: Some(command.clone()),
+                ..call("command", Some(command))
             };
         }
 
         let Some(map) = args.as_object() else {
-            return Self {
-                kind: ToolDisplayKind::Other,
-                primary: args.as_str().filter(|s| !s.is_empty()).map(str::to_string),
-            };
+            return call(
+                "other",
+                args.as_str().filter(|s| !s.is_empty()).map(str::to_string),
+            );
         };
 
         if let Some(path) = first_string(map, PATH_KEYS) {
             return Self {
-                kind: ToolDisplayKind::Path,
-                primary: Some(path),
+                paths: vec![path.clone()],
+                ..call("path", Some(path))
             };
         }
         if let Some(query) = first_string(map, QUERY_KEYS) {
             return Self {
-                kind: ToolDisplayKind::Query,
-                primary: Some(query),
+                query: Some(query.clone()),
+                ..call("query", Some(query))
+            };
+        }
+        if let Some(url) = first_string(map, &["url"]) {
+            return Self {
+                url: Some(url.clone()),
+                ..call("query", Some(url))
             };
         }
 
         // Nothing recognised: any non-empty value beats showing the caller a
         // bare tool name with no context. Scalars are stringified — a call
         // whose only argument is `{"count": 42}` should still say "42".
-        Self {
-            kind: ToolDisplayKind::Other,
-            primary: map.values().find_map(scalar_to_string),
-        }
+        call("other", map.values().find_map(scalar_to_string))
     }
 
     /// A one-line form, truncated on character boundaries.
@@ -137,7 +148,7 @@ impl ToolDisplay {
 
 fn is_shell_tool(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
-    ToolDisplay::COMMAND_TOOL_NAMES
+    CanonicalToolCall::COMMAND_TOOL_NAMES
         .iter()
         .any(|t| lower == *t || lower.ends_with(&format!("__{t}")))
 }
@@ -177,18 +188,24 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn of(tool_name: &str, args: &Value) -> CanonicalToolCall {
+        CanonicalToolCall::crucible_tool(tool_name, args)
+    }
+
     #[test]
     fn a_shell_call_projects_as_a_command() {
-        let d = ToolDisplay::of("bash", &json!({"command": "ls -la"}));
-        assert_eq!(d.kind, ToolDisplayKind::Command);
+        let d = of("bash", &json!({"command": "ls -la"}));
+        assert_eq!(d.kind, "command");
+        assert_eq!(d.tool, "bash");
+        assert_eq!(d.command.as_deref(), Some("ls -la"));
         assert_eq!(d.primary.as_deref(), Some("ls -la"));
     }
 
     #[test]
     fn shell_detection_is_case_insensitive_and_survives_mcp_prefixes() {
         for name in ["Bash", "BASH", "myserver__bash", "shell"] {
-            let d = ToolDisplay::of(name, &json!({"command": "ls"}));
-            assert_eq!(d.kind, ToolDisplayKind::Command, "{name} should be shell");
+            let d = of(name, &json!({"command": "ls"}));
+            assert_eq!(d.kind, "command", "{name} should be shell");
         }
     }
 
@@ -196,81 +213,99 @@ mod tests {
     /// merely takes a `command` argument is not a shell.
     #[test]
     fn a_non_shell_tool_with_a_command_arg_is_not_a_command() {
-        let d = ToolDisplay::of("run_task", &json!({"command": "build"}));
-        assert_ne!(d.kind, ToolDisplayKind::Command);
+        let d = of("run_task", &json!({"command": "build"}));
+        assert_ne!(d.kind, "command");
+        assert_eq!(d.command, None);
     }
 
     #[test]
     fn a_shell_call_without_a_command_falls_through() {
-        let d = ToolDisplay::of("bash", &json!({"script": "x"}));
-        assert_ne!(d.kind, ToolDisplayKind::Command);
+        let d = of("bash", &json!({"script": "x"}));
+        assert_ne!(d.kind, "command");
     }
 
     #[test]
     fn paths_outrank_queries() {
-        let d = ToolDisplay::of("grep", &json!({"pattern": "foo", "path": "src/lib.rs"}));
-        assert_eq!(d.kind, ToolDisplayKind::Path);
+        let d = of("grep", &json!({"pattern": "foo", "path": "src/lib.rs"}));
+        assert_eq!(d.kind, "path");
+        assert_eq!(d.paths, ["src/lib.rs"]);
+        assert_eq!(d.query, None);
         assert_eq!(d.primary.as_deref(), Some("src/lib.rs"));
     }
 
     #[test]
     fn a_query_is_recognised_when_no_path_is_present() {
-        let d = ToolDisplay::of("semantic_search", &json!({"query": "wikilinks"}));
-        assert_eq!(d.kind, ToolDisplayKind::Query);
+        let d = of("semantic_search", &json!({"query": "wikilinks"}));
+        assert_eq!(d.kind, "query");
+        assert_eq!(d.query.as_deref(), Some("wikilinks"));
         assert_eq!(d.primary.as_deref(), Some("wikilinks"));
+    }
+
+    /// A query key outranks `url`, as it did when both were query keys.
+    #[test]
+    fn a_url_is_recognised_when_no_query_is_present() {
+        let d = of("fetch", &json!({"url": "https://a.test"}));
+        assert_eq!(d.kind, "query");
+        assert_eq!(d.url.as_deref(), Some("https://a.test"));
+        assert_eq!(d.primary.as_deref(), Some("https://a.test"));
+
+        let d = of("fetch", &json!({"url": "https://a.test", "query": "q"}));
+        assert_eq!(d.primary.as_deref(), Some("q"));
+        assert_eq!(d.url, None);
     }
 
     #[test]
     fn an_unrecognised_shape_still_offers_a_string() {
-        let d = ToolDisplay::of("mystery", &json!({"whatever": "something"}));
-        assert_eq!(d.kind, ToolDisplayKind::Other);
+        let d = of("mystery", &json!({"whatever": "something"}));
+        assert_eq!(d.kind, "other");
         assert_eq!(d.primary.as_deref(), Some("something"));
     }
 
     #[test]
     fn empty_strings_do_not_count_as_a_primary() {
-        let d = ToolDisplay::of("write_file", &json!({"path": "", "query": ""}));
-        assert_eq!(d.kind, ToolDisplayKind::Other);
+        let d = of("write_file", &json!({"path": "", "query": ""}));
+        assert_eq!(d.kind, "other");
         assert_eq!(d.primary, None);
+        assert!(d.paths.is_empty());
     }
 
     /// Agents are inconsistent about casing; the TUI heuristic this replaced
     /// accepted camelCase, so dropping it would blank those status rows.
     #[test]
     fn camel_case_file_path_is_recognised() {
-        let d = ToolDisplay::of("Read", &json!({"filePath": "/home/u/x.rs"}));
-        assert_eq!(d.kind, ToolDisplayKind::Path);
+        let d = of("Read", &json!({"filePath": "/home/u/x.rs"}));
+        assert_eq!(d.kind, "path");
         assert_eq!(d.primary.as_deref(), Some("/home/u/x.rs"));
     }
 
     #[test]
     fn a_scalar_argument_is_stringified() {
-        let d = ToolDisplay::of("count_things", &json!({"count": 42}));
+        let d = of("count_things", &json!({"count": 42}));
         assert_eq!(d.primary.as_deref(), Some("42"));
     }
 
     /// A nested object on a one-line status row is noise, not information.
     #[test]
     fn structured_values_are_not_used_as_a_primary() {
-        let d = ToolDisplay::of("x", &json!({"opts": {"a": 1}, "items": [1, 2]}));
+        let d = of("x", &json!({"opts": {"a": 1}, "items": [1, 2]}));
         assert_eq!(d.primary, None);
     }
 
     #[test]
     fn no_args_yields_no_primary() {
-        let d = ToolDisplay::of("noop", &json!({}));
+        let d = of("noop", &json!({}));
         assert_eq!(d.primary, None);
     }
 
     #[test]
     fn a_bare_string_argument_is_used_as_the_primary() {
-        let d = ToolDisplay::of("echo", &json!("hello"));
+        let d = of("echo", &json!("hello"));
         assert_eq!(d.primary.as_deref(), Some("hello"));
     }
 
     #[test]
     fn summary_truncates_and_marks_it() {
-        let d = ToolDisplay::of("bash", &json!({"command": "a".repeat(80)}));
+        let d = of("bash", &json!({"command": "a".repeat(80)}));
         let s = d.summary(20).unwrap();
         assert_eq!(s.chars().count(), 21, "20 chars plus the ellipsis");
         assert!(s.ends_with('…'));
@@ -279,7 +314,7 @@ mod tests {
     /// A status row has one line; the full command lives in the expanded view.
     #[test]
     fn summary_collapses_a_multi_line_command_to_its_first_line() {
-        let d = ToolDisplay::of("bash", &json!({"command": "cd /tmp\ngrep -r foo ."}));
+        let d = of("bash", &json!({"command": "cd /tmp\ngrep -r foo ."}));
         let s = d.summary(100).unwrap();
         assert_eq!(s, "cd /tmp…");
         assert!(!s.contains('\n'));
@@ -287,32 +322,41 @@ mod tests {
 
     #[test]
     fn summary_leaves_a_short_single_line_alone() {
-        let d = ToolDisplay::of("bash", &json!({"command": "ls -la"}));
+        let d = of("bash", &json!({"command": "ls -la"}));
         assert_eq!(d.summary(100).as_deref(), Some("ls -la"));
     }
 
     /// Truncation counts CHARACTERS: slicing bytes would panic mid-codepoint.
     #[test]
     fn summary_truncates_on_character_boundaries() {
-        let d = ToolDisplay::of("bash", &json!({"command": "é".repeat(50)}));
+        let d = of("bash", &json!({"command": "é".repeat(50)}));
         let s = d.summary(10).unwrap();
         assert_eq!(s.chars().count(), 11);
     }
 
+    /// Absent fields are omitted rather than sent as null, so a UI checking
+    /// for a field's presence behaves the same as one checking its value.
     #[test]
-    fn kind_serializes_lowercase_for_the_wire() {
-        let d = ToolDisplay::of("bash", &json!({"command": "ls"}));
-        let json = serde_json::to_value(&d).unwrap();
-        assert_eq!(json["kind"], "command");
-        assert_eq!(json["primary"], "ls");
+    fn the_wire_form_carries_only_the_fields_that_are_set() {
+        let d = of("bash", &json!({"command": "ls"}));
+        assert_eq!(
+            serde_json::to_value(&d).unwrap(),
+            json!({"kind": "command", "tool": "bash", "command": "ls", "primary": "ls"})
+        );
+        let d = of("noop", &json!({}));
+        assert_eq!(
+            serde_json::to_value(&d).unwrap(),
+            json!({"kind": "other", "tool": "noop"})
+        );
     }
 
-    /// `primary: None` is omitted rather than sent as null, so a UI checking
-    /// for the field's presence behaves the same as one checking its value.
+    /// A transcript written before this type holds `{kind, primary}` only.
     #[test]
-    fn an_absent_primary_is_omitted_from_the_wire() {
-        let d = ToolDisplay::of("noop", &json!({}));
-        let json = serde_json::to_value(&d).unwrap();
-        assert!(json.get("primary").is_none());
+    fn an_old_display_object_still_loads() {
+        let d: CanonicalToolCall =
+            serde_json::from_value(json!({"kind": "path", "primary": "a.rs"})).unwrap();
+        assert_eq!(d.kind, "path");
+        assert_eq!(d.tool, "");
+        assert_eq!(d.primary.as_deref(), Some("a.rs"));
     }
 }

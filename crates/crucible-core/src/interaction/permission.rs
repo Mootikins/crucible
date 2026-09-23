@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::types::acp::FileDiff;
-use crate::types::{ToolDisplay, ToolDisplayKind};
+use crate::types::CanonicalToolCall;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Permission Request/Response
@@ -178,10 +178,9 @@ impl PermRequest {
                 }
             }
             PermAction::Tool { name, args } => {
-                let display = ToolDisplay::of(name, args);
-                match (display.kind, display.primary) {
-                    (ToolDisplayKind::Command, Some(command)) => Self::bash_suggestion(&command),
-                    _ => match name.find('_') {
+                match CanonicalToolCall::crucible_tool(name, args).command {
+                    Some(command) => Self::bash_suggestion(&command),
+                    None => match name.find('_') {
                         Some(prefix_end) => format!("{}_*", &name[..prefix_end]),
                         None => name.clone(),
                     },

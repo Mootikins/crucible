@@ -1272,7 +1272,7 @@ mod plugin_permission_tests {
 /// not only for the one named exactly `bash`.
 ///
 /// The suggestion and the routing are two halves of one click. The suggestion
-/// asks [`ToolDisplay`], which calls `shell`, `Bash` and `myserver__bash`
+/// asks [`CanonicalToolCall`], which calls `shell`, `Bash` and `myserver__bash`
 /// commands; the routing compared the name to the literal `"bash"`. So a
 /// click on any other command tool filed a shell command line as a tool-NAME
 /// rule, which `matches_tool` can never answer: the user was prompted again
@@ -1282,9 +1282,9 @@ mod plugin_permission_tests {
 /// covered here without an edit.
 mod always_allow_covers_every_command_tool {
     use super::*;
-    use crucible_core::types::{ToolDisplay, ToolDisplayKind};
+    use crucible_core::types::CanonicalToolCall;
 
-    /// Every spelling of `base` that `ToolDisplay` classifies as a command.
+    /// Every spelling of `base` that `CanonicalToolCall` classifies as a command.
     fn spellings(base: &str) -> Vec<String> {
         vec![
             base.to_string(),
@@ -1297,11 +1297,11 @@ mod always_allow_covers_every_command_tool {
     fn a_grant_permits_the_same_call_again() {
         let args = serde_json::json!({"command": "ls -la"});
 
-        for base in ToolDisplay::COMMAND_TOOL_NAMES {
+        for base in CanonicalToolCall::COMMAND_TOOL_NAMES {
             for name in spellings(base) {
                 assert_eq!(
-                    ToolDisplay::of(&name, &args).kind,
-                    ToolDisplayKind::Command,
+                    CanonicalToolCall::crucible_tool(&name, &args).kind,
+                    "command",
                     "{name} must be a command for this test to mean anything",
                 );
 

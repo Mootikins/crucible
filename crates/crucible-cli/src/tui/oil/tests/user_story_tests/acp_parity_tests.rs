@@ -546,8 +546,8 @@ fn an_internal_permission_modal_names_the_real_tool() {
 #[test]
 fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
     // The divergence's boundary: for `ToolKind::Execute` the modal renders the
-    // command line and drops the tool name entirely (`ToolDisplayKind::Command`
-    // in `render_perm_interaction`), so the coarse `bash` never reaches the
+    // command line and drops the tool name entirely (a `CanonicalToolCall` with
+    // a `command` in `render_perm_interaction`), so the coarse `bash` never reaches the
     // screen and this path costs nothing. Pinned so a change that started
     // printing the derived name — `bash (command="…")` — shows up as a
     // *behaviour* change rather than as cosmetics.

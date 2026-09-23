@@ -50,7 +50,7 @@ NEW = "hello, world"
 DIFFS = [{"path": "greeting.rs", "old_content": OLD, "new_content": NEW}]
 ARGS = {"path": "greeting.rs", "old_string": "hello", "new_string": "hello, world"}
 # A delegated Claude Code edit arrives as `rawInput` keyed `file_path`, not
-# `path`. Both are in `ToolDisplay`'s `PATH_KEYS`, so the card shows
+# `path`. Both are in `CanonicalToolCall`'s `PATH_KEYS`, so the card shows
 # `greeting.rs` either way — keeping each side's real key means the pair tests
 # that rather than assuming it.
 ARGS_ACP = {
@@ -58,7 +58,12 @@ ARGS_ACP = {
     "old_string": "hello",
     "new_string": "hello, world",
 }
-DISPLAY = {"kind": "path", "primary": "greeting.rs"}
+
+
+def display(tool):
+    return {"kind": "path", "tool": tool, "paths": ["greeting.rs"], "primary": "greeting.rs"}
+
+
 PREAMBLE = "I'll fix the greeting."
 CODA = " Done."
 FULL = PREAMBLE + CODA
@@ -135,7 +140,7 @@ internal = common_head + [
             # Registry description: `tool_call.rs` looks this up for Core tools.
             "description": "Edit file by replacing text. old_string must match exactly.",
             "source": "Core",
-            "display": DISPLAY,
+            "display": display("edit_file"),
             # Synthesized up-front by `tools::diff_synth` and carried on the card.
             "diffs": DIFFS,
         },
@@ -169,7 +174,7 @@ delegated = common_head + [
             "tool": "Edit File",
             "args": ARGS_ACP,
             "source": "Acp:claude",
-            "display": DISPLAY,
+            "display": display("Edit File"),
         },
     ),
     # The late diff: Claude Code attaches `ToolCallContent::Diff` in a follow-up
@@ -200,7 +205,7 @@ READ_CODA = " That's the greeting."
 READ_FULL = READ_PREAMBLE + READ_CODA
 READ_ARGS = {"path": "greeting.rs"}
 # A delegated Claude Code read arrives as `rawInput` keyed `file_path`. Both
-# keys are in `ToolDisplay`'s `PATH_KEYS`, so the card shows `greeting.rs`
+# keys are in `CanonicalToolCall`'s `PATH_KEYS`, so the card shows `greeting.rs`
 # either way — keeping the real key on each side tests that rather than
 # assuming it.
 READ_ARGS_ACP = {"file_path": "greeting.rs"}
@@ -243,7 +248,7 @@ read_internal = (
                 "args": READ_ARGS,
                 "description": "Read file contents. Returns content with line numbers.",
                 "source": "Core",
-                "display": DISPLAY,
+                "display": display("read_file"),
             },
         ),
         (
@@ -274,7 +279,7 @@ read_delegated = (
                 "tool": "Read File",
                 "args": READ_ARGS_ACP,
                 "source": "Acp:claude",
-                "display": DISPLAY,
+                "display": display("Read File"),
             },
         ),
         (

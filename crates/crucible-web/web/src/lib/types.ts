@@ -225,7 +225,7 @@ export interface ToolCallDisplay {
    * keeping its own key-priority list. Optional: replayed transcripts and
    * older daemons predate the field, so every consumer needs a fallback.
    */
-  display?: ToolDisplay;
+  display?: CanonicalToolCall;
   /**
    * Set when the permission gate granted this call without asking. Rendered
    * so an auto-approved call is distinguishable from one that never needed
@@ -241,9 +241,18 @@ export interface ToolCallDisplay {
   diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
 }
 
-/** What a tool call is about, for display. Mirrors `crucible_core::types::ToolDisplay`. */
-interface ToolDisplay {
-  kind: 'command' | 'path' | 'query' | 'other';
+/** The canonical tool call. Mirrors `crucible_core::types::CanonicalToolCall`. */
+interface CanonicalToolCall {
+  /** An open kind name, for example `command` or `path`. */
+  kind: string;
+  tool: string;
+  command?: string;
+  paths?: string[];
+  url?: string;
+  query?: string;
+  agent?: string;
+  /** The ACP wire form, for display and debugging only. */
+  raw?: unknown;
   primary?: string;
 }
 
