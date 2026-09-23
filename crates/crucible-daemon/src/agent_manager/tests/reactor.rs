@@ -240,15 +240,13 @@ async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
         "wire tool_result should carry terminate=true so UI can render the badge"
     );
 
-    let ended = h.wait_for("ended").await;
-    assert!(
-        ended.data["reason"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("terminate"),
-        "ended reason should mention terminate, got: {:?}",
-        ended.data
-    );
+    // The turn ends after the batch: it never returns to the model, so no
+    // `message_complete` comes before `turn_finished`.
+    let first = h
+        .wait_for_first_of(&["message_complete", "turn_finished"])
+        .await;
+    assert_eq!(first.event, "turn_finished", "got: {:?}", first.data);
+    assert_eq!(first.data["status"], "completed");
 }
 
 #[tokio::test]
@@ -279,36 +277,13 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
 
     h.send("test").await;
 
-    // Mixed batch should NOT terminate. Stronger assertion than just
-    // "message_complete arrives": assert we never see an `ended` event
-    // carrying the terminate reason. Without this, the test would pass
-    // even if the conjunctive check were broken (e.g. firing
-    // unconditionally) — message_complete still arrives because Done
-    // gets emitted as well — and the bug would slip through.
-    let mut saw_terminate_ended = false;
-    let complete = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        loop {
-            match h.event_rx.recv().await {
-                Ok(event) if event.event == "ended" => {
-                    let reason = event.data["reason"].as_str().unwrap_or_default();
-                    if reason.contains("terminate") {
-                        saw_terminate_ended = true;
-                    }
-                }
-                Ok(event) if event.event == "message_complete" => return event,
-                Ok(_) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(err) => panic!("event channel closed: {err}"),
-            }
-        }
-    })
-    .await
-    .expect("timed out waiting for message_complete");
-
-    assert!(
-        !saw_terminate_ended,
-        "mixed batch should not emit terminate-reason ended; saw: {complete:?}"
-    );
+    // Mixed batch should NOT terminate: the loop returns to the model, so
+    // `message_complete` comes before `turn_finished`. A terminated turn
+    // sends `turn_finished` with no `message_complete` first.
+    let first = h
+        .wait_for_first_of(&["message_complete", "turn_finished"])
+        .await;
+    assert_eq!(first.event, "message_complete", "got: {:?}", first.data);
 }
 
 /// A hook registered by a *plugin* must actually fire on a tool call.

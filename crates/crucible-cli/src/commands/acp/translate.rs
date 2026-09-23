@@ -105,9 +105,8 @@ pub fn classify_event(event: &SessionEvent) -> TurnStep {
             .unwrap_or(TurnStep::Ignore),
         "tool_call" => classify_tool_call(event),
         "tool_result" => classify_tool_result(event),
-        // `message_complete` seals one reply and `ended` only tells why a
-        // turn stopped early. `turn_finished` is the one event that ends the
-        // turn.
+        // `message_complete` seals one reply. `turn_finished` is the one
+        // event that ends the turn.
         "turn_finished" => match event.payload() {
             Ok(SessionEventPayload::Turn(TurnPayload::TurnFinished {
                 status,
@@ -446,20 +445,6 @@ mod tests {
             json!({"total_tokens": 5, "stop_reason": "max_tokens"}),
         ));
         assert!(matches!(step, TurnStep::Ignore), "got {step:?}");
-    }
-
-    /// `ended` does not end the turn and its text is not read: a reason with
-    /// "cancel" or "error: " in it gives no stop reason.
-    #[test]
-    fn ended_does_not_finish_the_turn_whatever_its_text() {
-        for reason in [
-            "cancelled",
-            "cancelled by handler: x",
-            "error: cancel failed",
-        ] {
-            let step = classify_event(&event("ended", json!({"reason": reason})));
-            assert!(matches!(step, TurnStep::Ignore), "{reason}: got {step:?}");
-        }
     }
 
     fn finished(data: serde_json::Value) -> TurnEnd {

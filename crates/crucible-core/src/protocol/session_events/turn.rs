@@ -184,14 +184,9 @@ pub enum TurnPayload {
         #[serde(default)]
         terminate: bool,
     },
-    Ended {
-        #[serde(default)]
-        reason: String,
-    },
     /// The whole turn is over. The daemon sends it exactly once for each
     /// turn, as the last event of the turn, after the request slot is free.
-    /// A client ends a turn on this event, not on `message_complete` or on
-    /// `ended`.
+    /// A client ends a turn on this event, not on `message_complete`.
     ///
     /// `status` has no default: an event that does not say how the turn
     /// ended tells a client nothing.
@@ -280,7 +275,7 @@ impl TurnPayload {
     /// where one exists.
     ///
     /// The transport and scripting vocabularies are disjoint by design (see the
-    /// parent module), and they spell ten of the same events differently.
+    /// parent module), and they spell nine of the same events differently.
     /// `cru.on("tool_called")` and the web's `tool_call` SSE frame are the
     /// same event; nothing said so before, so a plugin author reading the SSE
     /// stream learned the wrong name.
@@ -296,7 +291,6 @@ impl TurnPayload {
             Self::MessageComplete { .. } => ScriptingEvent::AgentResponded,
             Self::ToolCall { .. } => ScriptingEvent::ToolCalled,
             Self::ToolResult { .. } => ScriptingEvent::ToolCompleted,
-            Self::Ended { .. } => ScriptingEvent::SessionEnded,
             Self::InteractionRequested { .. } => ScriptingEvent::InteractionRequested,
             Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted,
             Self::PrecognitionComplete { .. } => ScriptingEvent::PrecognitionComplete,
@@ -323,7 +317,6 @@ impl TurnPayload {
             | Self::MessageComplete { .. }
             | Self::ToolCall { .. }
             | Self::ToolResult { .. }
-            | Self::Ended { .. }
             // A replay needs to know where a turn ended and how.
             | Self::TurnFinished { .. }
             // Late ACP merges are part of the tool's record. claude-agent-acp

@@ -22,11 +22,6 @@ import { openSessionsList } from '../helpers/nav';
  * exercised by the live tier.
  */
 
-/** The frames `send.rs` emits when a turn is cancelled, on the SSE wire. */
-const ENDED_FRAME = {
-  type: 'session_event',
-  data: { type: 'session_event', event: 'ended', data: { reason: 'cancelled' } },
-};
 /** The one frame that ends the turn, whatever stopped it. */
 const TURN_FINISHED_FRAME = {
   type: 'turn_finished',
@@ -58,7 +53,7 @@ test.describe('WS-108 cancel a turn', () => {
         return route.fulfill({
           status: 200,
           headers: SSE_HEADERS,
-          body: createSSEStream([ENDED_FRAME, TURN_FINISHED_FRAME]),
+          body: createSSEStream([TURN_FINISHED_FRAME]),
         });
       }
       await new Promise(() => {}); // never resolves; closed when the context tears down

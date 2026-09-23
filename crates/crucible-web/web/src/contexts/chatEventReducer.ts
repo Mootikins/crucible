@@ -152,6 +152,14 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
     deps.setCurrentStreamingMessageId(null);
   };
 
+  const showError = (message: string, code: string) => {
+    deps.setError(`${message} (${code})`);
+    const messageId = deps.currentStreamingMessageId();
+    if (messageId) {
+      deps.updateMessage(messageId, { content: `Error: ${message}` });
+    }
+  };
+
   return (event: ChatEvent) => {
     switch (event.type) {
       case 'token': {
@@ -413,19 +421,16 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // The one event that ends the whole turn, for every status. A turn
         // that a cancel or a failure stopped sends no `message_complete`,
         // and this is what closes it — a cancel from ANOTHER client
-        // included.
+        // included. A failed turn also carries the reason in `error`.
+        if (event.status === 'failed' && event.error) {
+          showError(event.error, 'turn_failed');
+        }
         closeTurn();
         break;
       }
 
       case 'error': {
-        deps.setError(`${event.message} (${event.code})`);
-        const messageId = deps.currentStreamingMessageId();
-        if (messageId) {
-          deps.updateMessage(messageId, {
-            content: `Error: ${event.message}`,
-          });
-        }
+        showError(event.message, event.code);
         closeTurn();
         break;
       }
@@ -555,12 +560,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'session_event': {
-        // `ended` only tells why a turn stopped early. The `turn_finished`
-        // the daemon sends after it closes the turn for every subscriber.
-        if (event.event === 'ended') {
-          break;
-        }
-
         // Late file-diff content for a call already announced by a prior
         // `tool_call` (an ACP agent that announces without `rawInput`).
         // Same merge rule as the TUI: the update carries the call's full

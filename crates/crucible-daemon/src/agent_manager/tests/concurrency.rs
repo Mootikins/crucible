@@ -106,9 +106,9 @@ async fn cancel_during_streaming_emits_ended_event() {
     let cancelled = agent_manager.cancel(&session.id).await;
     assert!(cancelled, "cancel() should return true for active request");
 
-    let ended = next_event_or_skip(&mut event_rx, "ended").await;
-    assert_eq!(ended.session_id, session.id);
-    assert_eq!(ended.data["reason"], "cancelled");
+    let finished = next_event_or_skip(&mut event_rx, "turn_finished").await;
+    assert_eq!(finished.session_id, session.id);
+    assert_eq!(finished.data["status"], "cancelled");
 }
 
 /// A send must not slip into the window while cancel() is still winding a

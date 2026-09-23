@@ -556,7 +556,7 @@ Rust; `KilnFileKind::of` is the single file-kind predicate guarded by A2f in
 | `Request`, `Response`, `RpcError`, `RequestId` | `crucible-core/src/protocol/rpc/mod.rs:17,27,38,11` | JSON-RPC 2.0 envelope |
 | `SessionEvent` | `crucible-core/src/events/session_event/mod.rs` | Scripting vocabulary, 4 variants after plan T3-B7; Lua sees it as a flat table |
 | `InternalSessionEvent` | `crucible-core/src/events/session_event/internal.rs` | 7 variants boxed in `SessionEvent::Internal` (38 before plan T3-B7) |
-| `ScriptingEvent` | `crucible-core/src/events/session_event/mod.rs:75` | The ten names both vocabularies share |
+| `ScriptingEvent` | `crucible-core/src/events/session_event/mod.rs:75` | The nine names both vocabularies share |
 | `EventEmitter`, `NoOpEmitter`, `EmitOutcome` | `crucible-core/src/events/emitter.rs:293,366,151` | Emitter trait for the watch pipeline |
 | `EventRing` | `crucible-core/src/events/ring.rs:74` | Bounded ring; write-only in production |
 | `InteractionRequest`, `InteractionResponse`, `InteractionEvent` | `crucible-core/src/interaction/types.rs:380,479,540` | Seven request kinds a UI answers |

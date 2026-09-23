@@ -227,28 +227,10 @@ async fn consume_session_events<F, E>(
     }
 }
 
-/// Daemon reports fatal turn failures via `ended { reason: "error: ..." }`.
-/// Surface them as an `Error` ChatAppMsg so the status bar shows the cause.
-/// Shared by both live and replay paths — replay of an error-ending recording
-/// renders identically to a live session that ended with that error.
-fn promote_ended_error(
-    event: &crucible_daemon::SessionEvent,
-    tx: &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
-) {
-    if event.event == "ended" {
-        if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
-            if let Some(err) = reason.strip_prefix("error: ") {
-                let _ = tx.send(ChatAppMsg::Error(err.to_string()));
-            }
-        }
-    }
-}
-
 /// Unified session event consumer for both live and replay modes.
 ///
 /// Drains `event_rx`, filtering events for `session_id` and translating them
-/// through `SessionEventStream` into `ChatAppMsg`s on `msg_tx`. Both paths
-/// share the `ended: error: ...` → `ChatAppMsg::Error` promotion. Replay
+/// through `SessionEventStream` into `ChatAppMsg`s on `msg_tx`. Replay
 /// additionally terminates on `replay_complete`, emitting a final Status.
 ///
 /// `context_limit` is `Some(_)` for live (so `message_complete` can fill in
@@ -273,7 +255,6 @@ pub(crate) async fn session_event_consumer(
                 || event.session_id == SYSTEM_SESSION
         },
         |event, tx| {
-            promote_ended_error(event, tx);
             if event.event == "replay_complete" {
                 let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
                 return false;

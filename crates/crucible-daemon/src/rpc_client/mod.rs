@@ -15,7 +15,7 @@ mod error_ext;
 pub mod lifecycle;
 mod storage;
 
-pub use agent::{strip_chat_error_prefix, DaemonAgentHandle};
+pub use agent::DaemonAgentHandle;
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::NoteListRow;
 pub use client::{

@@ -219,13 +219,6 @@ fn event_tool_result_factory() {
 }
 
 #[test]
-fn event_ended_factory() {
-    let evt = SessionEventMessage::ended("s1", "user_cancel");
-    assert_eq!(evt.event, "ended");
-    assert_eq!(evt.data["reason"], "user_cancel");
-}
-
-#[test]
 fn event_model_switched_factory() {
     let evt = SessionEventMessage::model_switched("s1", "gpt-4o", "openai");
     assert_eq!(evt.event, "model_switched");
@@ -560,12 +553,6 @@ fn golden_tool_result_with_terminate() {
     );
 }
 
-#[test]
-fn golden_ended() {
-    let m = SessionEventMessage::ended("s1", "complete");
-    assert_eq!(wire(&m, "ended"), serde_json::json!({"reason": "complete"}));
-}
-
 /// Three shapes: no usage at all, usage without cache, usage with cache.
 #[test]
 fn golden_message_complete_three_shapes() {
@@ -769,7 +756,6 @@ fn event_msg_type_always_event() {
         SessionEventMessage::thinking("s1", "x"),
         SessionEventMessage::tool_call("s1", "c", "t", Value::Null),
         SessionEventMessage::tool_result("s1", "c", "t", Value::Null),
-        SessionEventMessage::ended("s1", "done"),
         SessionEventMessage::model_switched("s1", "m", "p"),
         SessionEventMessage::message_complete("s1", "m", "r", None, None),
         SessionEventMessage::user_message("s1", "m", "c"),

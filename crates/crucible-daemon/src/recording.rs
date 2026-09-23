@@ -169,7 +169,6 @@ mod tests {
             SessionEventMessage::user_message("session-1", "msg-1", "hello"),
             SessionEventMessage::message_complete("session-1", "msg-2", "done", None, None),
             SessionEventMessage::model_switched("session-1", "gpt-5", "openai"),
-            SessionEventMessage::ended("session-1", "complete"),
             SessionEventMessage::new("session-1", "custom_event", json!({ "x": 1 })),
         ];
 
@@ -202,7 +201,6 @@ mod tests {
         assert!(names.contains(&"user_message"));
         assert!(names.contains(&"message_complete"));
         assert!(names.contains(&"model_switched"));
-        assert!(names.contains(&"ended"));
         assert!(names.contains(&"custom_event"));
 
         let mut prev_seq = 0;

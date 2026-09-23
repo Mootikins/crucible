@@ -200,15 +200,10 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
     expect(ctx.messages().find((m) => m.thinking)?.thinking?.isStreaming).toBe(true);
 
     await ctx.cancelStream();
-    // The daemon records `ended` and then `turn_finished` BEFORE the cancel
-    // call resolves, and every subscriber receives both. The reducer's
-    // `turn_finished` case closes the turn, not this client's cancel button.
-    // Emit the frames the daemon sends.
-    stream().emit('session_event', {
-      type: 'session_event',
-      event: 'ended',
-      data: { reason: 'cancelled' },
-    });
+    // The daemon records `turn_finished` BEFORE the cancel call resolves,
+    // and every subscriber receives it. The reducer's `turn_finished` case
+    // closes the turn, not this client's cancel button. Emit the frame the
+    // daemon sends.
     stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
 
     // No message_complete arrives for a cancelled turn, so the thinking
@@ -223,21 +218,15 @@ describe('ChatContext closes a cancelled turn cleanly', () => {
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['first', 'second']));
   });
 
-  it('a foreign cancel (ended without a local cancel call) closes the turn too', async () => {
+  it('a foreign cancel (no local cancel call) closes the turn too', async () => {
     // T1's bug: a cancel issued from another client left THIS pane streaming
     // forever, because the old client-side patch only ever ran for a cancel
-    // this pane issued itself. The `turn_finished` after the recorded `ended`
-    // reaches every subscriber.
+    // this pane issued itself. The `turn_finished` reaches every subscriber.
     const ctx = mountProvider();
 
     void ctx.sendMessage('foreign');
     await waitFor(() => expect(sentTurns.map((t) => t.content)).toEqual(['foreign']));
     stream().emit('token', { type: 'token', content: 'partial' });
-    stream().emit('session_event', {
-      type: 'session_event',
-      event: 'ended',
-      data: { reason: 'cancelled' },
-    });
     stream().emit('turn_finished', { type: 'turn_finished', status: 'cancelled' });
 
     await waitFor(() => expect(ctx.isStreaming()).toBe(false));

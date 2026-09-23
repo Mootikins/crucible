@@ -227,15 +227,6 @@ impl AgentManager {
                     error = %e,
                     "Agent failed to start turn"
                 );
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::ended(&stream_ctx.session_id, format!("error: {e}")),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "No subscribers for turn-start error event"
-                    );
-                }
                 return StreamOutcome::Failed(format!("agent failed to start turn: {e}"));
             }
         };
@@ -751,18 +742,6 @@ impl AgentManager {
                         && batch_terminate_signals.iter().all(|t| *t);
                     batch_terminate_signals.clear();
                     if should_terminate {
-                        if !emit_event(
-                            &stream_ctx.event_tx,
-                            SessionEventMessage::ended(
-                                &stream_ctx.session_id,
-                                "tool requested terminate".to_string(),
-                            ),
-                        ) {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                "No subscribers for terminate ended event"
-                            );
-                        }
                         // A tool-requested terminate is a deliberate end of
                         // turn, not a failure.
                         return StreamOutcome::Completed(None);
@@ -842,15 +821,6 @@ impl AgentManager {
                         error = %e,
                         "Agent turn error"
                     );
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::ended(&stream_ctx.session_id, format!("error: {e}")),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            "No subscribers for error event"
-                        );
-                    }
                     return StreamOutcome::Failed(format!("agent turn error: {e}"));
                 }
             }
@@ -870,15 +840,6 @@ impl AgentManager {
                 session_id = %stream_ctx.session_id,
                 "LLM stream completed with no content and no tool calls"
             );
-            if !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::ended(&stream_ctx.session_id, error_reason.clone()),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "No subscribers for empty-response ended event"
-                );
-            }
             return StreamOutcome::Failed(error_reason);
         }
 

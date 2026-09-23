@@ -112,7 +112,7 @@ pub enum ChatEvent {
     },
 
     /// The whole turn is over. The browser ends the turn on this event, not
-    /// on `message_complete` and not on `ended`.
+    /// on `message_complete`. A failed turn carries its reason in `error`.
     ///
     /// `status` and `stop_reason` are strings in the document for the same
     /// reason as `stop_reason` above. The values are `TurnStatus` and
@@ -376,18 +376,6 @@ impl ChatEvent {
                         .map(str::to_string),
                 },
 
-                // `ended` carries the turn's failure as an `"error: "`-prefixed
-                // reason; nothing else on the wire produces `ChatEvent::Error`,
-                // so without this arm a browser user saw a stalled turn where
-                // the TUI showed a message.
-                TurnPayload::Ended { ref reason } => match chat_error_from_ended_reason(reason) {
-                    Some(message) => ChatEvent::Error {
-                        code: "turn_failed".to_string(),
-                        message: message.to_string(),
-                    },
-                    None => passthrough(),
-                },
-
                 TurnPayload::TurnFinished {
                     status,
                     stop_reason,
@@ -467,14 +455,6 @@ impl ChatEvent {
             _ => passthrough(),
         }
     }
-}
-
-/// The message inside an `"error: "`-prefixed `ended` reason, with the
-/// `ChatError` `Display` prefix stripped.
-fn chat_error_from_ended_reason(reason: &str) -> Option<&str> {
-    reason
-        .strip_prefix("error: ")
-        .map(crucible_daemon::rpc_client::strip_chat_error_prefix)
 }
 
 /// Flatten a daemon `interaction_requested` payload into the shape the
@@ -1011,43 +991,15 @@ mod tests {
     //   `bun run typecheck` fails both for a name that is not a variant and
     //   for a variant the tuple forgot.
 
-    /// `ended` with an `"error: "` reason is the only thing on the wire that
-    /// produces `ChatEvent::Error`. Before this, `ChatEvent::Error` was
-    /// unreachable and the reducer's `case 'error'` never fired from the server,
-    /// so a browser user saw a stalled turn where the TUI showed a message.
-    #[test]
-    fn an_ended_turn_that_failed_becomes_an_error_event() {
-        let event = SessionEventMessage::ended("s1", "error: Communication error: LLM timeout");
-        match ChatEvent::from_daemon_event(&event) {
-            ChatEvent::Error { code, message } => {
-                assert_eq!(code, "turn_failed");
-                // The ChatError Display prefix is stripped, same as convert.rs.
-                assert_eq!(message, "LLM timeout");
-            }
-            other => panic!("expected Error, got {other:?}"),
-        }
-    }
-
     /// The browser reads the passthrough under the key `event`, the same
     /// key the daemon envelope uses. The key `event_type` is gone.
     #[test]
     fn a_passthrough_serializes_the_daemon_event_name_under_event() {
-        let event = SessionEventMessage::ended("s1", "complete");
+        let event = SessionEventMessage::new("s1", "custom_event", serde_json::json!({}));
         let json = serde_json::to_value(ChatEvent::from_daemon_event(&event)).unwrap();
         assert_eq!(json["type"], "session_event");
-        assert_eq!(json["event"], "ended");
+        assert_eq!(json["event"], "custom_event");
         assert!(json.get("event_type").is_none(), "{json}");
-    }
-
-    /// A clean `ended` is not an error, and the browser still sees the raw
-    /// envelope through the passthrough.
-    #[test]
-    fn a_clean_ended_turn_stays_a_passthrough() {
-        let event = SessionEventMessage::ended("s1", "complete");
-        match ChatEvent::from_daemon_event(&event) {
-            ChatEvent::SessionEvent { event, .. } => assert_eq!(event, "ended"),
-            other => panic!("expected passthrough, got {other:?}"),
-        }
     }
 
     /// `turn_finished` reaches the browser as its own frame with the daemon's

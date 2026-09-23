@@ -352,15 +352,6 @@ impl SessionEventMessage {
         )
     }
 
-    pub fn ended(session_id: impl Into<String>, reason: impl Into<String>) -> Self {
-        Self::typed(
-            session_id,
-            TurnPayload::Ended {
-                reason: reason.into(),
-            },
-        )
-    }
-
     /// The whole turn is over. See [`TurnPayload::TurnFinished`].
     pub fn turn_finished(
         session_id: impl Into<String>,

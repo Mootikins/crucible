@@ -99,26 +99,6 @@ fn token_usage(
     })
 }
 
-/// Strip the `ChatError` `Display` prefix an `ended` reason may carry, so the
-/// event surfaces one clean message.
-pub fn strip_chat_error_prefix(inner: &str) -> &str {
-    const PREFIXES: &[&str] = &[
-        "Connection error: ",
-        "Communication error: ",
-        "Mode change error: ",
-        "Command execution failed: ",
-        "Invalid input: ",
-        "Agent not available: ",
-        "Internal error: ",
-        "Invalid mode: ",
-        "Operation not supported: ",
-    ];
-    PREFIXES
-        .iter()
-        .find_map(|p| inner.strip_prefix(p))
-        .unwrap_or(inner)
-}
-
 /// Convert a `SessionEvent` into zero or more `TurnEvent`s.
 ///
 /// Daemon-proxy path: the daemon runs the tool loop internally, so the
@@ -249,9 +229,6 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
                 }
             }
         }
-        // `turn_finished` ends the turn. `ended` only tells why it stopped
-        // early, and the same turn sends `turn_finished` after it.
-        TurnPayload::Ended { .. } => Vec::new(),
         // `user_message` is the client's own input echoed back.
         TurnPayload::UserMessage { .. }
         // Segments are additive over `message_complete`'s full text; a
@@ -539,17 +516,6 @@ mod tests {
         }
     }
 
-    /// `ended` tells why a turn stopped early. The `turn_finished` that
-    /// follows it ends the turn, so `ended` itself yields nothing, also when
-    /// its text starts with "error: ".
-    #[test]
-    fn ended_yields_nothing() {
-        for reason in ["complete", "cancelled", "error: connection refused"] {
-            let out = session_event_to_turn_events(&event("ended", json!({ "reason": reason })));
-            assert!(out.is_empty(), "reason {reason:?}: got {out:?}");
-        }
-    }
-
     /// Each status of `turn_finished` has one ending.
     #[test]
     fn turn_finished_maps_each_status_to_its_ending() {
@@ -587,26 +553,6 @@ mod tests {
                 }
                 other => panic!("status {status}: expected an error, got {other:?}"),
             }
-        }
-    }
-
-    /// The display prefixes the browser strips from an `ended` reason.
-    #[test]
-    fn strip_chat_error_prefix_strips_each_display_prefix() {
-        let cases = &[
-            ("Connection error: refused", "refused"),
-            ("Communication error: LLM timeout", "LLM timeout"),
-            ("Mode change error: bad mode", "bad mode"),
-            ("Command execution failed: exit 1", "exit 1"),
-            ("Invalid input: missing field", "missing field"),
-            ("Agent not available: down", "down"),
-            ("Internal error: panic", "panic"),
-            ("Invalid mode: debug", "debug"),
-            ("Operation not supported: switch_model", "switch_model"),
-            ("no prefix here", "no prefix here"),
-        ];
-        for (inner, expected) in cases {
-            assert_eq!(strip_chat_error_prefix(inner), *expected, "{inner:?}");
         }
     }
 

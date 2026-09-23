@@ -36,7 +36,7 @@ use crate::text::truncate_bytes;
 pub use internal::InternalSessionEvent;
 pub use types::{FileChangeKind, NoteChangeType};
 
-/// The ten scripting names the transport vocabulary also has a payload for.
+/// The nine scripting names the transport vocabulary also has a payload for.
 ///
 /// Both vocabularies name these events, and they spell them differently:
 /// `cru.on("tool_called")` and the web's `tool_call` SSE frame are the
@@ -53,8 +53,8 @@ pub use types::{FileChangeKind, NoteChangeType};
 /// This is the **overlap**, not the whole scripting vocabulary: an event with
 /// no transport payload — `custom`, every [`InternalSessionEvent`] but one —
 /// keeps its literal in `event_type`. Nor is it the whole transport
-/// vocabulary: only three of the ten still have a [`SessionEvent`] variant.
-/// The other seven were scripting variants nothing ever constructed; plan
+/// vocabulary: only three of the nine still have a [`SessionEvent`] variant.
+/// The other six were scripting variants nothing ever constructed; plan
 /// T3-B7 removed them, and the names stay here because
 /// `as_scripting_event` still reports them for the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -72,8 +72,6 @@ pub enum ScriptingEvent {
     ToolCalled,
     /// A tool returned. Transport: `tool_result`.
     ToolCompleted,
-    /// The session ended. Transport: `ended`.
-    SessionEnded,
     /// A prompt is waiting on the client. Transport: `interaction_requested`.
     InteractionRequested,
     /// A prompt was answered. Transport: `interaction_completed`.
@@ -91,7 +89,6 @@ impl ScriptingEvent {
         Self::AgentResponded,
         Self::ToolCalled,
         Self::ToolCompleted,
-        Self::SessionEnded,
         Self::InteractionRequested,
         Self::InteractionCompleted,
         Self::PrecognitionComplete,
@@ -110,7 +107,6 @@ impl ScriptingEvent {
             Self::AgentResponded => "agent_responded",
             Self::ToolCalled => "tool_called",
             Self::ToolCompleted => "tool_completed",
-            Self::SessionEnded => "session_ended",
             Self::InteractionRequested => "interaction_requested",
             Self::InteractionCompleted => "interaction_completed",
             Self::PrecognitionComplete => "precognition_complete",

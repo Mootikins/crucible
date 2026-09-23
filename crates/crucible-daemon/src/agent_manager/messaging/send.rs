@@ -607,12 +607,6 @@ impl AgentManager {
                     // handler asked for stops with it. Dropping the stored
                     // content is the whole clear.
                     drop(slot.take_follow_up());
-                    if !emit_event(
-                        &event_tx_clone,
-                        SessionEventMessage::ended(&session_id_owned, "cancelled"),
-                    ) {
-                        warn!(session_id = %session_id_owned, "No subscribers for cancelled event");
-                    }
                     (TurnStatus::Cancelled, None, None)
                 }
                 outcome = stream_future => outcome_to_status(outcome),

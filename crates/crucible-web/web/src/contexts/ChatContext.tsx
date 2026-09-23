@@ -796,11 +796,11 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         await cancel.mutateAsync(props.sessionId);
       } catch (err) {
         console.error('Failed to cancel session:', err);
-        // The daemon is unreachable, so no `ended` event will arrive to
-        // close the turn — drop the streaming flags here or the spinner
+        // The daemon is unreachable, so no `turn_finished` event will arrive
+        // to close the turn — drop the streaming flags here or the spinner
         // spins forever. Any other path leaves the closing to the reducer's
-        // `ended` case, which every subscribed pane receives, including
-        // foreign cancellations this client never issued.
+        // `turn_finished` case, which every subscribed pane receives,
+        // including foreign cancellations this client never issued.
         setTranscriptStreaming(props.sessionId, false);
         patchTranscript(props.sessionId, { isLoading: false, currentStreamingMessageId: null });
       }

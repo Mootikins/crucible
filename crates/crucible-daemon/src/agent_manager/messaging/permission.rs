@@ -422,7 +422,7 @@ impl AgentManager {
     /// Run one registry's `pre_llm_call` handlers over the prompt, chained.
     ///
     /// Returns the transformed prompt and whether a handler cancelled — which
-    /// cancels the TURN: the caller emits the ended event and returns `None`,
+    /// cancels the TURN: the caller returns `None`,
     /// same as the reactor path and `transform_context`. (The old loop
     /// `break`-ed on Cancel and sent the prompt anyway — a cancel that
     /// didn't cancel.) Extracted so every caller shares
@@ -513,18 +513,6 @@ impl AgentManager {
         // above and transform_context. It used to merely stop the handler
         // chain and send the prompt anyway.
         if cancelled {
-            if !emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::ended(
-                    &stream_ctx.session_id,
-                    "cancelled by pre_llm_call handler".to_string(),
-                ),
-            ) {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    "No subscribers for cancelled event"
-                );
-            }
             return None;
         }
 
@@ -532,8 +520,7 @@ impl AgentManager {
     }
 
     /// Run one registry's `transform_context` handlers over the messages,
-    /// chained. `Err(())` means a handler cancelled the turn (the ended
-    /// event has already been emitted).
+    /// chained. `Err(())` means a handler cancelled the turn.
     async fn run_transform_context_handlers(
         stream_ctx: &StreamContext,
         registry: &crucible_lua::LuaScriptHandlerRegistry,
@@ -578,18 +565,6 @@ impl AgentManager {
                         reason = %reason,
                         "transform_context handler cancelled"
                     );
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::ended(
-                            &stream_ctx.session_id,
-                            format!("cancelled by handler: {}", handler.name),
-                        ),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            "No subscribers for cancelled event"
-                        );
-                    }
                     return Err(());
                 }
                 Ok(_) => {}

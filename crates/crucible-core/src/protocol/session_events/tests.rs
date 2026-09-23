@@ -363,9 +363,10 @@ fn every_recorded_event_decodes_into_a_typed_payload() {
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Pins the persist set against the list `should_persist` matched by hand
-/// before it became a typed match. The original nine names, plus the two ACP
-/// late-merge events (`tool_call_args_update`, `tool_call_diff_update`) whose
-/// absence erased claude-agent-acp's arguments from every replay.
+/// before it became a typed match. The original names, less the removed
+/// `ended`, plus the two ACP late-merge events (`tool_call_args_update`,
+/// `tool_call_diff_update`) whose absence erased claude-agent-acp's arguments
+/// from every replay.
 #[test]
 fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
     let persisted = [
@@ -376,7 +377,6 @@ fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
         "tool_call",
         "tool_result",
         "model_switched",
-        "ended",
         "precognition_complete",
         "tool_call_args_update",
         "tool_call_diff_update",
@@ -387,13 +387,9 @@ fn the_persist_set_is_unchanged_from_the_hand_written_name_list() {
         assert!(payload.is_persisted(), "{name} must be persisted");
     }
 
-    for name in ["text_delta", "post_llm_call", "context_injected", "ended"] {
+    for name in ["text_delta", "post_llm_call", "context_injected"] {
         let payload = SessionEventPayload::from_wire(name, &serde_json::json!({})).unwrap();
-        assert_eq!(
-            payload.is_persisted(),
-            name == "ended",
-            "{name} persist decision changed"
-        );
+        assert!(!payload.is_persisted(), "{name} persist decision changed");
     }
 }
 
@@ -531,7 +527,7 @@ fn every_scripting_name_is_one_an_event_reports() {
 /// Exhaustive on purpose: a variant added to the shared set must be placed
 /// here, or this does not compile. `None` is a name the wire reports through
 /// `as_scripting_event` with no scripting-side event behind it; plan T3-B7
-/// removed those seven variants because nothing constructed them.
+/// removed those variants because nothing constructed them.
 fn event_reporting(scripting: ScriptingEvent) -> Option<SessionEvent> {
     match scripting {
         ScriptingEvent::MessageReceived => Some(SessionEvent::MessageReceived {
@@ -556,7 +552,6 @@ fn event_reporting(scripting: ScriptingEvent) -> Option<SessionEvent> {
         | ScriptingEvent::AgentResponded
         | ScriptingEvent::ToolCalled
         | ScriptingEvent::ToolCompleted
-        | ScriptingEvent::SessionEnded
         | ScriptingEvent::InteractionCompleted => None,
     }
 }

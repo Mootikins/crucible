@@ -253,7 +253,6 @@ async fn test_should_persist_filters_correctly() {
         "tool_call",
         "tool_result",
         "model_switched",
-        "ended",
         // Without this the precognition badge cannot survive a reload: the
         // event is broadcast live and then lost, so a resumed transcript has
         // no record of what context was injected.

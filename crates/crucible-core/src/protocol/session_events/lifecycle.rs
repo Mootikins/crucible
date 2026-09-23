@@ -373,10 +373,6 @@ pub enum SystemPayload {
     /// audience is a client or plugin watching *every* session — a session
     /// list, for instance — which is by definition not attached to the session
     /// that just started.
-    ///
-    /// Not to be confused with [`TurnPayload::Ended`](super::TurnPayload) and
-    /// its `ended` wire name, which one attached client reads about its own
-    /// session. Both exist on purpose; they have different audiences.
     #[serde(rename = "session:created")]
     SessionCreated {
         #[serde(default)]

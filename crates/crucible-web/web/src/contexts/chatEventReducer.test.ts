@@ -943,18 +943,24 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0].args).toBe('');
   });
 
-  it('turn_finished: sweeps thinking, dangling tools, and stream flags after ended', () => {
-    // A cancelled turn never sees message_complete. `ended` only tells why
-    // the turn stopped and leaves the turn open. The `turn_finished` after
-    // it must leave the same clean state a completion would: no bubble
-    // streaming "Thinking…", no tool stuck "running", no stale streaming id.
+  it('turn_finished: a failed turn shows its error', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({ type: 'turn_finished', status: 'failed', error: 'agent turn error: LLM timeout' });
+    expect(h.state.error).toBe('agent turn error: LLM timeout (turn_failed)');
+    expect(h.state.messages[0].content).toBe('Error: agent turn error: LLM timeout');
+    expect(h.state.isStreaming).toBe(false);
+  });
+
+  it('turn_finished: sweeps thinking, dangling tools, and stream flags', () => {
+    // A cancelled turn never sees message_complete. The `turn_finished` must
+    // leave the same clean state a completion would: no bubble streaming
+    // "Thinking…", no tool stuck "running", no stale streaming id.
     const h = createHarness();
     h.setUp.streamingMessage('asst-1');
     h.state.isStreaming = true;
     h.reducer({ type: 'thinking', content: 'mid-reasoning' });
     h.reducer({ type: 'tool_call', id: 'call-9', title: 'bash' });
-    h.reducer({ type: 'session_event', event: 'ended', data: { reason: 'cancelled' } });
-    expect(h.state.isStreaming).toBe(true);
 
     h.reducer({ type: 'turn_finished', status: 'cancelled' });
     expect(h.state.messages.find((m) => m.thinking)?.thinking).toMatchObject({

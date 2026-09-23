@@ -347,7 +347,7 @@ async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
         }
-        if event.event == "message_complete" || event.event == "ended" {
+        if event.event == "message_complete" || event.event == "turn_finished" {
             break;
         }
     }

@@ -138,7 +138,7 @@ async fn agent_written_knowledge_is_indexed_and_reaches_a_new_sessions_provider(
             "{precognition:?}"
         );
         // Require success, not merely a request followed by a provider error.
-        let completed = first_event_of(&mut rx, &["message_complete", "ended"]).await;
+        let completed = first_event_of(&mut rx, &["message_complete", "turn_finished"]).await;
         assert_eq!(completed.event, "message_complete", "{completed:?}");
         let requests = server.received_requests().await.unwrap();
         let request: serde_json::Value =

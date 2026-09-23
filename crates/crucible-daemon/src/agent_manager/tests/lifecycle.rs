@@ -197,7 +197,7 @@ async fn test_broadcast_send_with_no_receivers_returns_error() {
 
     drop(_rx);
 
-    let result = tx.send(SessionEventMessage::ended("test-session", "cancelled"));
+    let result = tx.send(SessionEventMessage::text_delta("test-session", "hello"));
 
     assert!(
         result.is_err(),

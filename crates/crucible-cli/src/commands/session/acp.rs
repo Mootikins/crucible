@@ -511,19 +511,7 @@ pub(super) mod rpc {
             }
 
             if !print_event(&event, raw) {
-                match event.event.as_str() {
-                    "ended" => {
-                        let reason = event
-                            .data
-                            .get("reason")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        eprintln!("[ended] {}", reason);
-                    }
-                    other => {
-                        eprintln!("[{}] {:?}", other, event.data);
-                    }
-                }
+                eprintln!("[{}] {:?}", event.event, event.data);
             }
         }
     }
@@ -662,15 +650,7 @@ pub(super) mod rpc {
                     }
 
                     if !print_event(&event, raw) {
-                        match event.event.as_str() {
-                            "ended" => {
-                                eprintln!("[ended]");
-                                break;
-                            }
-                            other => {
-                                eprintln!("[{}]", other);
-                            }
-                        }
+                        eprintln!("[{}]", event.event);
                     }
                 }
                 None => {

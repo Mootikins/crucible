@@ -23,7 +23,7 @@
 //!
 //! | Group | Count | Module |
 //! |---|---|---|
-//! | [`TurnPayload`] | 16 | [`turn`] |
+//! | [`TurnPayload`] | 15 | [`turn`] |
 //! | [`SetupPayload`] | 7 | [`setup`] |
 //! | [`SettingsPayload`] | 18 | [`settings`] |
 //! | [`JobPayload`] | 7 | [`lifecycle`] |
@@ -57,14 +57,14 @@
 //! |---|---|---|
 //! | Serialization target | RPC socket, SSE, `session.jsonl`, `assets/fixtures/*.jsonl` | markdown session logs, Lua tables |
 //! | Back-compat constraint | recorded fixtures and persisted sessions on disk | `handlers/*.lua` in user kilns |
-//! | Vocabulary size | 70 | 14 wire-ish + 41 internal |
+//! | Vocabulary size | 69 | 14 wire-ish + 41 internal |
 //! | `tool_call` is called | `tool_call` | `tool_called` |
 //! | `tool_result` is called | `tool_result` | `tool_completed` |
 //! | `message_complete` is called | `message_complete` | `agent_responded` |
 //!
 //! Unifying them means either putting 41 internal-only variants on the wire or
 //! taking 41 hooks away from Lua. [`TurnPayload::as_scripting_event`] makes the
-//! ten-name overlap explicit and tested instead.
+//! nine-name overlap explicit and tested instead.
 //!
 //! # The reader stays tolerant; the writer becomes typed
 //!
@@ -132,7 +132,7 @@ pub enum Group {
 impl Group {
     pub fn of(event: &str) -> Option<Self> {
         Some(match event {
-            // Turn (16)
+            // Turn (15)
             "user_message"
             | "text_delta"
             | "thinking"
@@ -142,7 +142,6 @@ impl Group {
             | "tool_call_args_update"
             | "tool_call_diff_update"
             | "tool_result"
-            | "ended"
             | "turn_finished"
             | "interaction_requested"
             | "interaction_completed"

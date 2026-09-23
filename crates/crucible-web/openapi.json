@@ -4870,7 +4870,7 @@
           },
           {
             "type": "object",
-            "description": "The whole turn is over. The browser ends the turn on this event, not\non `message_complete` and not on `ended`.\n\n`status` and `stop_reason` are strings in the document for the same\nreason as `stop_reason` above. The values are `TurnStatus` and\n`StopReason`, serialised snake_case.",
+            "description": "The whole turn is over. The browser ends the turn on this event, not\non `message_complete`. A failed turn carries its reason in `error`.\n\n`status` and `stop_reason` are strings in the document for the same\nreason as `stop_reason` above. The values are `TurnStatus` and\n`StopReason`, serialised snake_case.",
             "required": [
               "status",
               "type"

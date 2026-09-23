@@ -1,7 +1,6 @@
 use super::super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 // ─── Setup-event translation (Task 1.3) ─────────────────────────────
 
@@ -316,49 +315,6 @@ fn translate_context_limit_resolved_updates_atomic_through_stream() {
     );
     assert_eq!(msgs.len(), 1);
     assert_eq!(limit.load(Ordering::Relaxed), 4096);
-}
-
-/// `ended { reason: "error: ..." }` must promote to `ChatAppMsg::Error`
-/// through the unified consumer regardless of mode (live vs replay).
-/// This is the Task 2.5 invariant: replay of an error-ending recording
-/// surfaces the error identically to a live session that hit it.
-#[tokio::test]
-async fn consumer_promotes_ended_error_in_both_modes() {
-    use serde_json::json;
-    use tokio::time::{timeout, Duration};
-
-    for context_limit in [None, Some(Arc::new(AtomicUsize::new(0)))] {
-        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-
-        let session_id = "test-session-ended-error".to_string();
-        let sid_clone = session_id.clone();
-        let ctx_limit = context_limit.clone();
-
-        let consumer = tokio::spawn(async move {
-            session_event_consumer(sid_clone, event_rx, msg_tx, ctx_limit).await;
-        });
-
-        event_tx
-            .send(crucible_daemon::SessionEvent::new(
-                session_id.clone(),
-                "ended".to_string(),
-                json!({ "reason": "error: LLM timeout" }),
-            ))
-            .unwrap();
-        drop(event_tx);
-
-        let msg = timeout(Duration::from_secs(1), msg_rx.recv())
-            .await
-            .expect("timely")
-            .expect("some msg");
-        match msg {
-            ChatAppMsg::Error(s) => assert_eq!(s, "LLM timeout"),
-            other => panic!("expected Error, got {:?}", other),
-        }
-
-        consumer.abort();
-    }
 }
 
 /// The auto-approval marker rides on `tool_call` rather than arriving as a

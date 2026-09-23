@@ -6,6 +6,7 @@ use crucible_core::protocol::session_events::{
     EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
     SystemPayload, ToolResultBody, TurnPayload,
 };
+use crucible_core::turn::TurnStatus;
 
 use super::OilChatRunner;
 
@@ -308,7 +309,13 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
         // `StreamCancelled`: that message also asks the daemon to cancel. A
         // turn that a cancel or a failure stopped sends no `message_complete`,
         // and this is what ends it — a cancel from ANOTHER client included.
-        TurnPayload::TurnFinished { .. } => vec![ChatAppMsg::StreamComplete],
+        // A failed turn also shows why it failed.
+        TurnPayload::TurnFinished { status, error, .. } => match (status, error) {
+            (TurnStatus::Failed, Some(error)) => {
+                vec![ChatAppMsg::Error(error), ChatAppMsg::StreamComplete]
+            }
+            _ => vec![ChatAppMsg::StreamComplete],
+        },
         TurnPayload::PrecognitionComplete {
             notes_count, notes, ..
         } => {
@@ -319,11 +326,9 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             }
         }
         // Rendered by other paths or not rendered at all: `segment_complete` is
-        // additive over `message_complete`'s text, `ended` is handled by the
-        // stateful wrapper, interactions ride their own channel, and the rest is
-        // context plumbing and telemetry.
+        // additive over `message_complete`'s text, interactions ride their own
+        // channel, and the rest is context plumbing and telemetry.
         TurnPayload::SegmentComplete { .. }
-        | TurnPayload::Ended { .. }
         | TurnPayload::InteractionRequested { .. }
         | TurnPayload::InteractionCompleted { .. }
         | TurnPayload::ContextInjected { .. }

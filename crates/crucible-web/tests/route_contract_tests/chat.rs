@@ -166,24 +166,6 @@ fn chat_event_from_daemon_tool_call() {
     assert_eq!(json["title"], "search");
 }
 
-/// There is no `error` event on the wire. A failed turn arrives as `ended` with
-/// an `"error: "`-prefixed reason, which is now what produces `ChatEvent::Error`
-/// — before, that variant was unreachable and the browser showed a stalled turn.
-#[test]
-fn chat_event_from_daemon_failed_turn_is_an_error() {
-    let daemon_event = crucible_daemon::SessionEvent::new(
-        "s1".to_string(),
-        "ended".to_string(),
-        json!({"reason": "error: Connection error: API down"}),
-    );
-    let event = ChatEvent::from_daemon_event(&daemon_event);
-    assert_eq!(event.event_name(), "error");
-
-    let json: Value = serde_json::to_value(&event).unwrap();
-    assert_eq!(json["code"], "turn_failed");
-    assert_eq!(json["message"], "API down");
-}
-
 /// The daemon's name is `message_complete`; `turn_complete` was an input arm
 /// nothing ever emitted and is gone.
 #[test]

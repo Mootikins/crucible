@@ -274,27 +274,14 @@ async fn owns_history_tool_only_turn_is_not_reported_as_an_empty_response() {
 
     h.send("write a.txt").await;
 
-    // The turn must reach `message_complete` without an error `ended` on the
-    // way — an empty `full_response` is correct here; an error is not.
-    timeout(Duration::from_secs(2), async {
-        loop {
-            match h.event_rx.recv().await {
-                Ok(event) if event.event == "ended" => {
-                    let reason = event.data["reason"].as_str().unwrap_or_default();
-                    assert!(
-                        !reason.starts_with("error:"),
-                        "a delegated turn that only ran tools ended in error: {reason}"
-                    );
-                }
-                Ok(event) if event.event == "message_complete" => return,
-                Ok(_) => continue,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(err) => panic!("event channel closed: {err}"),
-            }
-        }
-    })
-    .await
-    .expect("timed out waiting for message_complete on a tool-only delegated turn");
+    // The turn completes. An empty `full_response` is correct here; an
+    // error is not.
+    let finished = h.wait_for("turn_finished").await;
+    assert_eq!(
+        finished.data["status"], "completed",
+        "got: {:?}",
+        finished.data
+    );
 }
 
 /// A `tool_result` handler must fire for tool calls an ACP-style agent ran
@@ -534,30 +521,13 @@ async fn test_execute_agent_stream_empty_response_emits_error_event() {
 
     let _ = h.wait_for("user_message").await;
 
-    let mut saw_message_complete = false;
-    let ended = timeout(Duration::from_secs(2), async {
-        loop {
-            match h.event_rx.recv().await {
-                Ok(event) if event.event == "message_complete" => saw_message_complete = true,
-                Ok(event) if event.event == "ended" => return event,
-                Ok(_) => continue,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(err) => panic!("event channel closed while waiting for ended: {err}"),
-            }
-        }
-    })
-    .await
-    .expect("timed out waiting for ended event");
-
-    assert!(
-        !saw_message_complete,
-        "unexpected message_complete before error ended"
-    );
-    let ended_reason = ended.data["reason"].as_str().unwrap_or_default();
-    assert!(
-        ended_reason.starts_with("error:"),
-        "expected error ended event, got: {ended_reason}"
-    );
+    let first = h
+        .wait_for_first_of(&["message_complete", "turn_finished"])
+        .await;
+    assert_eq!(first.event, "turn_finished", "got: {:?}", first.data);
+    assert_eq!(first.data["status"], "failed");
+    let error = first.data["error"].as_str().unwrap_or_default();
+    assert!(error.starts_with("error:"), "got: {error}");
 }
 
 #[tokio::test]
@@ -577,36 +547,14 @@ async fn test_execute_agent_stream_tool_call_only_is_not_error() {
 
     let _ = h.wait_for("user_message").await;
 
-    let mut saw_error_ended = false;
-    let complete = timeout(Duration::from_secs(2), async {
-        loop {
-            match h.event_rx.recv().await {
-                Ok(event) if event.event == "ended" => {
-                    let reason = event.data["reason"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    if reason.starts_with("error:") {
-                        saw_error_ended = true;
-                    }
-                }
-                Ok(event) if event.event == "message_complete" => return event,
-                Ok(_) => continue,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(err) => {
-                    panic!("event channel closed while waiting for message_complete: {err}")
-                }
-            }
-        }
-    })
-    .await
-    .expect("timed out waiting for message_complete");
-
+    let complete = h.wait_for("message_complete").await;
     assert_eq!(complete.data["message_id"], message_id);
     assert_eq!(complete.data["full_response"], "");
-    assert!(
-        !saw_error_ended,
-        "unexpected error ended event before message_complete in tool-call-only flow"
+    let finished = h.wait_for("turn_finished").await;
+    assert_eq!(
+        finished.data["status"], "completed",
+        "got: {:?}",
+        finished.data
     );
 }
 
@@ -764,19 +712,14 @@ async fn a_turn_runs_more_tool_rounds_than_the_old_cap() {
     h.send("test").await;
     let _ = h.wait_for("user_message").await;
 
-    let mut saw_error_ended = false;
     let complete = timeout(Duration::from_secs(10), async {
         loop {
             match h.event_rx.recv().await {
-                Ok(event) if event.event == "ended" => {
-                    if event.data["reason"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .starts_with("error:")
-                    {
-                        saw_error_ended = true;
-                    }
-                }
+                // A turn that ends before `message_complete` did not complete.
+                Ok(event) if event.event == "turn_finished" => panic!(
+                    "{ROUNDS} tool rounds must complete normally, with no cap error: {:?}",
+                    event.data
+                ),
                 Ok(event) if event.event == "message_complete" => return event,
                 Ok(_) => continue,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -787,10 +730,6 @@ async fn a_turn_runs_more_tool_rounds_than_the_old_cap() {
     .await
     .expect("timed out waiting for message_complete");
 
-    assert!(
-        !saw_error_ended,
-        "{ROUNDS} tool rounds must complete normally, with no cap error"
-    );
     assert!(
         complete.data["full_response"]
             .as_str()

@@ -35,6 +35,27 @@ fn every_turn_finished_status_ends_the_turn() {
     }
 }
 
+/// A failed turn says why. The console shows the error that `turn_finished`
+/// carries, so the turn does not stop with no cause on the screen.
+#[test]
+fn a_failed_turn_shows_its_error() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "hello");
+    relay_session_turn(
+        &mut story,
+        &[(
+            "turn_finished",
+            json!({"status": "failed", "error": "agent turn error: LLM timeout"}),
+        )],
+    );
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains("agent turn error: LLM timeout"),
+        "the console must show why the turn failed:\n{frame}"
+    );
+}
+
 /// The turn a `turn:complete` handler asks for reads as a turn of its own:
 /// its message and its reply both render, under the first turn's reply.
 #[test]
