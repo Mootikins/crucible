@@ -89,7 +89,8 @@ comment box opens under it. A drag over the text opens the same box: the range
 takes the whole lines at the two ends of the drag, and a wrapped line counts as
 one line. A removed row at an end of the drag brings its chunk into the range.
 During the drag, only the tint of the lines shows the range. A click opens no
-box, and **Cancel** leaves the text selected, so that you can copy it.
+box, and **Cancel** selects the whole lines of the range, so that you can copy
+them.
 **Comment** stores the comment and attaches it to
 the chat that the pane header names. It stays disabled until the box has text.
 The composer of that chat then shows a chip, for example `server.rs L17–19`,

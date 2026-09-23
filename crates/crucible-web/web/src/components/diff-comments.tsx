@@ -14,8 +14,9 @@
  * A drag over the text opens the same box. CodeMirror selects the text, and
  * the drag takes the whole lines of its two ends. The browser selection hides
  * during the drag, so only the tint shows the range. A drag that ends with no
- * comment leaves the text selected, so the user can copy it: a click selects
- * nothing and opens no box, and Cancel shows the selection again.
+ * comment leaves text selected, so the user can copy it: a click selects
+ * nothing and opens no box, and Cancel selects the lines of the range. A
+ * comment range is always whole lines, so no character position is kept.
  *
  * A removed row of the unified view has no line of its own in the editor. The
  * gutter numbers it with its line in the base text, as a patch does. A base
@@ -531,16 +532,17 @@ class BoxWidget extends WidgetType {
     const card = block.appendChild(document.createElement('div'));
     card.className = 'cm-diff-comment-box';
     const close = () => view.dispatch({ effects: setDraft.of(null) });
-    // The text field takes the focus after the mount, and the editor then
-    // moves its selection into the box. The selection of a text drag is
-    // still here, so the box keeps it. Cancel gives it back to the browser,
-    // so that the text is selected for a copy.
-    const kept = view.state.selection.main;
+    // The text field takes the focus after the mount, and the browser then
+    // loses the selection of a text drag. Cancel selects the whole lines of
+    // the range, so that the user can copy them. A gutter drag selects no
+    // text, so its Cancel selects nothing.
+    const fromText = !view.state.selection.main.empty;
     const cancel = () => {
       close();
-      if (kept.empty) return;
-      const from = view.domAtPos(kept.anchor);
-      const to = view.domAtPos(kept.head);
+      if (!fromText) return;
+      const doc = view.state.doc;
+      const from = view.domAtPos(doc.line(this.span.first).from);
+      const to = view.domAtPos(doc.line(Math.min(doc.lines, this.span.last)).to);
       document.getSelection()?.setBaseAndExtent(from.node, from.offset, to.node, to.offset);
     };
     const dispose = render(
