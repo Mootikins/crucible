@@ -4,50 +4,9 @@ use crucible_core::config::components::permissions::{
 };
 use crucible_core::types::CanonicalToolCall;
 use crucible_lua::StageId;
-use std::future::Future;
 use std::ops::ControlFlow;
 
 use crate::agent_manager::vm_pass::run_handlers;
-
-/// Serializer that ensures only one permission prompt is in-flight at a time
-/// per ACP session.
-///
-/// **Why:** ACP clients (Claude Code, etc.) invoke our permission handler
-/// concurrently for parallel tool batches. Without serialization, all N
-/// `interaction_requested` events emit at once and pile up in the TUI's
-/// queue — the user perceives them as "batched" instead of as "each
-/// permission prompt arriving as the corresponding tool finishes".
-///
-/// Holding the lock across the entire prompt+await window means that
-/// caller N+1 waits for caller N's response before its own
-/// `interaction_requested` event is emitted, so the TUI sees prompts
-/// one-at-a-time even though the ACP client called us in parallel.
-///
-/// **UX consequence:** if the user walks away from a prompt and it hits
-/// the 300 s timeout, queued callers stay blocked for the full timeout
-/// before they get a chance to fire. That's the deliberate tradeoff —
-/// silent batching was worse — but worth knowing if you're debugging
-/// "why did my second prompt take 5 minutes to appear?".
-#[derive(Clone, Default)]
-pub(super) struct PermissionSerializer {
-    inner: Arc<tokio::sync::Mutex<()>>,
-}
-
-impl PermissionSerializer {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Run `fut` while holding the serializer lock. Subsequent calls on the
-    /// same serializer queue behind this one.
-    pub async fn run<F, R>(&self, fut: F) -> R
-    where
-        F: Future<Output = R>,
-    {
-        let _guard = self.inner.lock().await;
-        fut.await
-    }
-}
 
 /// Which of a [`PatternStore`]'s three rule tables owns a tool call.
 ///
@@ -152,6 +111,49 @@ async fn decide_acp_permission(
     select_option(options, &response)
 }
 
+/// Put one prompt to the user and wait for the answer.
+///
+/// The one prompt of every gate: register the prompt in the session, emit
+/// `interaction_requested`, wait, and clean up.
+///
+/// One prompt at a time for each session. An ACP agent asks about a
+/// parallel tool batch with concurrent calls. If all of them emit at once,
+/// the prompts pile up in the TUI queue, and the user sees them as a batch
+/// and not as one prompt for each tool. The session lock is held across the
+/// whole wait, so caller N+1 emits only after caller N has its answer.
+///
+/// A queued caller therefore waits while an earlier prompt waits. If the
+/// user leaves a prompt until the 300 s timeout, the next prompt appears
+/// only after that timeout. A cancel of the turn drops every pending prompt
+/// of the session (`AgentManager::cancel`), which answers the wait with a
+/// denial at once.
+pub(in crate::agent_manager) async fn prompt_user(
+    slot: &crate::agent_manager::slot::SessionSlot,
+    session_id: &str,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    request: PermRequest,
+) -> PermResponse {
+    let _one_at_a_time = slot.prompt_lock().await;
+    let interaction = InteractionRequest::Permission(request.clone());
+    let (permission_id, response_rx) = slot.register_permission(request);
+    if !emit_event(
+        event_tx,
+        SessionEventMessage::interaction_requested(session_id, &permission_id, &interaction),
+    ) {
+        debug!(session_id = %session_id, "no subscribers for the permission prompt");
+    }
+
+    let reason = match tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await
+    {
+        Ok(Ok(response)) => return response,
+        Ok(Err(_)) => "Permission request channel closed before response",
+        Err(_) => "Permission request timed out",
+    };
+    slot.take_permission(&permission_id);
+    debug!(session_id = %session_id, permission_id = %permission_id, reason, "permission prompt ended with no answer");
+    PermResponse::deny_with_reason(reason)
+}
+
 impl AgentManager {
     pub(super) fn build_acp_permission_handler(
         &self,
@@ -165,66 +167,11 @@ impl AgentManager {
         let slot = self.slot(session_id);
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
-        let serializer = PermissionSerializer::new();
-
-        let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
+        let ask_callback: PermissionPromptCallback = Arc::new(move |request: PermRequest| {
             let slot = slot.clone();
-            let session_id_owned = session_id_owned.clone();
-            let event_tx_owned = event_tx_owned.clone();
-            let serializer = serializer.clone();
-
-            Box::pin(async move {
-                serializer
-                    .run(async move {
-                        let (permission_id, response_rx) =
-                            slot.register_permission(perm_request.clone());
-
-                        let interaction_request = InteractionRequest::Permission(perm_request);
-                        if !emit_event(
-                            &event_tx_owned,
-                            SessionEventMessage::interaction_requested(
-                                &session_id_owned,
-                                &permission_id,
-                                &interaction_request,
-                            ),
-                        ) {
-                            tracing::debug!(
-                                "Failed to emit interaction_requested event (no subscribers)"
-                            );
-                        }
-
-                        let result =
-                            tokio::time::timeout(std::time::Duration::from_secs(300), response_rx)
-                                .await;
-
-                        match result {
-                            Ok(Ok(response)) => response,
-                            Ok(Err(_)) => {
-                                slot.take_permission(&permission_id);
-                                tracing::debug!(
-                                    permission_id = %permission_id,
-                                    session_id = %session_id_owned,
-                                    "permission channel closed before response"
-                                );
-                                PermResponse::deny_with_reason(
-                                    "Permission request channel closed before response".to_string(),
-                                )
-                            }
-                            Err(_) => {
-                                slot.take_permission(&permission_id);
-                                tracing::debug!(
-                                    permission_id = %permission_id,
-                                    session_id = %session_id_owned,
-                                    "permission request timed out"
-                                );
-                                PermResponse::deny_with_reason(
-                                    "Permission request timed out".to_string(),
-                                )
-                            }
-                        }
-                    })
-                    .await
-            })
+            let session_id = session_id_owned.clone();
+            let event_tx = event_tx_owned.clone();
+            Box::pin(async move { prompt_user(&slot, &session_id, &event_tx, request).await })
         });
 
         // Priority: CLI override > agent-specific > global config.
@@ -726,140 +673,40 @@ impl AgentManager {
                 }
 
                 let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, args);
-                let perm_request =
-                    PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
-                let interaction_request = InteractionRequest::Permission(perm_request.clone());
-                let (permission_id, response_rx) =
-                    stream_ctx.slot.register_permission(perm_request);
-
-                debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    permission_id = %permission_id,
-                    "Emitting permission request for destructive tool"
-                );
-
-                if !emit_event(
+                let request = PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
+                let response = prompt_user(
+                    &stream_ctx.slot,
+                    &stream_ctx.session_id,
                     &stream_ctx.event_tx,
-                    SessionEventMessage::interaction_requested(
-                        &stream_ctx.session_id,
-                        &permission_id,
-                        &interaction_request,
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        "No subscribers for permission request event"
-                    );
-                }
+                    request,
+                )
+                .await;
 
-                debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    permission_id = %permission_id,
-                    "Waiting for permission response"
-                );
-
-                // Bounded wait (parity with the ACP gate's 300 s): an
-                // unanswered prompt must not wedge the turn forever.
-                let response_result =
-                    tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
-                let (permission_granted, deny_reason) = match response_result {
-                    Err(_elapsed) => {
-                        stream_ctx.slot.take_permission(&permission_id);
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            permission_id = %permission_id,
-                            "Permission prompt timed out, treating as deny"
-                        );
-                        (false, Some("permission prompt timed out".to_string()))
+                if response.allowed {
+                    let file = (stream_ctx.whitelists_dir.as_deref()).and_then(|dir| {
+                        PatternStore::store_file_in(dir, response.scope, &project_path)
+                    });
+                    if let Some((pattern, file)) = response.pattern.as_deref().zip(file) {
+                        if let Err(e) = Self::store_pattern_to(&file, call, pattern) {
+                            warn!(session_id = %stream_ctx.session_id, pattern, error = %e, "Failed to store pattern");
+                        }
                     }
-                    Ok(response_rx_result) => match response_rx_result {
-                        Ok(response) => {
-                            debug!(
-                                session_id = %stream_ctx.session_id,
-                                tool = %tool_call.name,
-                                permission_id = %permission_id,
-                                allowed = response.allowed,
-                                pattern = ?response.pattern,
-                                "Permission response received"
-                            );
-
-                            if response.allowed {
-                                if let Some(ref pattern) = response.pattern {
-                                    if let Some(file) =
-                                        stream_ctx.whitelists_dir.as_deref().and_then(|dir| {
-                                            PatternStore::store_file_in(
-                                                dir,
-                                                response.scope,
-                                                &project_path,
-                                            )
-                                        })
-                                    {
-                                        if let Err(e) = Self::store_pattern_to(&file, call, pattern)
-                                        {
-                                            warn!(
-                                                session_id = %stream_ctx.session_id,
-                                                tool = %tool_call.name,
-                                                pattern = %pattern,
-                                                error = %e,
-                                                "Failed to store pattern"
-                                            );
-                                        } else {
-                                            info!(
-                                                session_id = %stream_ctx.session_id,
-                                                tool = %tool_call.name,
-                                                pattern = %pattern,
-                                                "Pattern stored for future use"
-                                            );
-                                        }
-                                    }
-                                }
-                                (true, None)
-                            } else {
-                                (false, response.reason)
-                            }
-                        }
-                        Err(_) => {
-                            warn!(
-                                session_id = %stream_ctx.session_id,
-                                tool = %tool_call.name,
-                                permission_id = %permission_id,
-                                "Permission channel dropped, treating as deny"
-                            );
-                            (false, None)
-                        }
-                    },
-                };
-
-                if permission_granted {
                     // The user was asked and said yes: nothing was granted on
                     // their behalf, so there is nothing to mark.
                     return Ok(None);
                 }
 
                 let resource_desc = Self::brief_resource_description(&tool_call.name, args);
-                let error_msg = if let Some(reason) = &deny_reason {
-                    format!(
-                        "User denied permission to {} {}. Feedback: {}",
-                        tool_call.name, resource_desc, reason
-                    )
-                } else {
-                    format!(
-                        "User denied permission to {} {}",
-                        tool_call.name, resource_desc
-                    )
-                };
-
-                debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    error = %error_msg,
-                    "Permission denied"
-                );
-                Err(error_msg)
+                Err(match &response.reason {
+                    Some(reason) => format!(
+                        "User denied permission to {} {resource_desc}. Feedback: {reason}",
+                        tool_call.name
+                    ),
+                    None => format!(
+                        "User denied permission to {} {resource_desc}",
+                        tool_call.name
+                    ),
+                })
             }
         }
     }
@@ -1011,114 +858,6 @@ pub(in crate::agent_manager) fn resolve_effective_permission_config(
             Some(config)
         }
         None => agent_permissions.or(global_permission_config),
-    }
-}
-
-#[cfg(test)]
-mod permission_serializer_tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[tokio::test]
-    async fn serializer_lets_single_caller_through() {
-        let s = PermissionSerializer::new();
-        let result = s.run(async { 42 }).await;
-        assert_eq!(result, 42);
-    }
-
-    #[tokio::test]
-    async fn serializer_runs_concurrent_calls_one_at_a_time() {
-        // Three concurrent callers must execute strictly serially.
-        // Track in-flight count: it must never exceed 1.
-        let s = PermissionSerializer::new();
-        let in_flight = Arc::new(AtomicUsize::new(0));
-        let max_seen = Arc::new(AtomicUsize::new(0));
-
-        let mut handles = Vec::new();
-        for _ in 0..3 {
-            let s = s.clone();
-            let in_flight = in_flight.clone();
-            let max_seen = max_seen.clone();
-            handles.push(tokio::spawn(async move {
-                s.run(async {
-                    let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
-                    let mut prev = max_seen.load(Ordering::SeqCst);
-                    while n > prev {
-                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
-                        {
-                            Ok(_) => break,
-                            Err(actual) => prev = actual,
-                        }
-                    }
-                    // Hold the section briefly so concurrent callers stack up.
-                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-                    in_flight.fetch_sub(1, Ordering::SeqCst);
-                })
-                .await;
-            }));
-        }
-        for h in handles {
-            h.await.unwrap();
-        }
-
-        assert_eq!(
-            max_seen.load(Ordering::SeqCst),
-            1,
-            "concurrent callers must execute one at a time, but the in-flight high-water mark was higher"
-        );
-    }
-
-    #[tokio::test]
-    async fn serializer_releases_lock_after_completion() {
-        // Once one call completes, the next one must be able to proceed.
-        let s = PermissionSerializer::new();
-        s.run(async {}).await;
-        // Must complete without deadlock.
-        let started = std::time::Instant::now();
-        s.run(async {}).await;
-        assert!(started.elapsed() < std::time::Duration::from_secs(1));
-    }
-
-    #[tokio::test]
-    async fn separate_serializers_do_not_block_each_other() {
-        // Per-session serialization: two distinct serializers should NOT
-        // queue behind each other.
-        let a = PermissionSerializer::new();
-        let b = PermissionSerializer::new();
-        let in_flight = Arc::new(AtomicUsize::new(0));
-        let max_seen = Arc::new(AtomicUsize::new(0));
-
-        let task = |s: PermissionSerializer| {
-            let in_flight = in_flight.clone();
-            let max_seen = max_seen.clone();
-            tokio::spawn(async move {
-                s.run(async {
-                    let n = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
-                    let mut prev = max_seen.load(Ordering::SeqCst);
-                    while n > prev {
-                        match max_seen.compare_exchange(prev, n, Ordering::SeqCst, Ordering::SeqCst)
-                        {
-                            Ok(_) => break,
-                            Err(actual) => prev = actual,
-                        }
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    in_flight.fetch_sub(1, Ordering::SeqCst);
-                })
-                .await;
-            })
-        };
-
-        let h1 = task(a);
-        let h2 = task(b);
-        h1.await.unwrap();
-        h2.await.unwrap();
-
-        assert_eq!(
-            max_seen.load(Ordering::SeqCst),
-            2,
-            "different serializers must not block each other; both should run concurrently"
-        );
     }
 }
 
@@ -1655,6 +1394,26 @@ mod acp_permission_handler_tests {
                 .expect("join");
             assert_eq!(selected(&outcome).as_deref(), Some(expected));
         }
+    }
+
+    /// A cancel of the turn answers the waiting prompt with a denial at once,
+    /// and the prompt leaves the registry.
+    #[tokio::test]
+    async fn a_cancel_answers_the_waiting_prompt() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        let pending = tokio::spawn(ask(&handle));
+        let _id = prompt_id(&mut event_rx).await;
+        am.cancel(SESSION).await;
+
+        let outcome = tokio::time::timeout(Duration::from_secs(5), pending)
+            .await
+            .expect("the cancel must answer the prompt")
+            .expect("join");
+        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(am.list_all_pending_permissions().is_empty());
     }
 
     /// Nobody answers. After 300 s the handler rejects the call. It does not

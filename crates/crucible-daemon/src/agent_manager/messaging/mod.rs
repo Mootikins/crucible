@@ -37,8 +37,8 @@ impl AgentManager {
         }
 
         // Drop any pending permission `oneshot::Sender`s for this session so
-        // their receivers Err out immediately and any callers blocked inside
-        // `PermissionSerializer::run` release the per-session lock. Without
+        // their receivers Err out immediately and the caller parked in
+        // `prompt_user` releases the per-session prompt lock. Without
         // this, partial cancel (user hits Esc) leaves prompts dangling for
         // the full 300 s timeout, blocking subsequent prompts behind them.
         let dropped_pending = self

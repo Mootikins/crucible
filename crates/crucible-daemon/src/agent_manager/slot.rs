@@ -81,6 +81,9 @@ pub(crate) struct SessionSlot {
     /// one outer lock, inserting a prompt here would block a dispatcher read on
     /// an unrelated session.
     permissions: Mutex<HashMap<PermissionId, PendingPermission>>,
+    /// Held across one permission prompt, so the session shows one prompt at
+    /// a time. See `messaging::permission::prompt_user`.
+    prompt_lock: tokio::sync::Mutex<()>,
     /// Non-permission interactions this session is waiting on answers to.
     ///
     /// Kept apart from `permissions` rather than folded into it because the
@@ -422,6 +425,11 @@ impl SessionSlot {
         (id, response_rx)
     }
 
+    /// Wait for this session's prompt turn. The guard is the turn.
+    pub(crate) async fn prompt_lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.prompt_lock.lock().await
+    }
+
     /// Whether the permission registry — not the interaction one — owns `id`.
     ///
     /// The routing predicate: a reply belongs to whichever map holds its id,
@@ -448,9 +456,9 @@ impl SessionSlot {
     /// Drop every pending prompt's sender, returning how many there were.
     ///
     /// The teardown that matters on cancel: each dropped sender makes its
-    /// receiver `Err` at once, releasing callers parked inside
-    /// `PermissionSerializer::run`. Without it a partial cancel leaves prompts
-    /// dangling for the full 300 s timeout with the serializer lock held.
+    /// receiver `Err` at once, releasing the caller parked in `prompt_user`
+    /// and the callers queued behind its prompt lock. Without it a partial
+    /// cancel leaves prompts dangling for the full 300 s timeout.
     pub(crate) fn drop_permissions(&self) -> usize {
         let mut permissions = self.lock_permissions();
         let count = permissions.len();

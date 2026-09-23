@@ -36,7 +36,7 @@ impl AgentManager {
     /// to the other six [`InteractionRequest`] variants: mint an id, register
     /// the waiter, emit `interaction_requested`, await the oneshot.
     ///
-    /// Deliberately **not** run through `PermissionSerializer`. That exists so
+    /// Deliberately **not** run through the prompt lock of `prompt_user`. That exists so
     /// permission modals open one at a time in arrival order, which is right
     /// for a gate the agent is blocked on and wrong here — two plugins asking
     /// unrelated questions must not queue behind each other, and a plugin that
