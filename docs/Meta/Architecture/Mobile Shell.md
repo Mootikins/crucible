@@ -562,6 +562,9 @@ seconds after its last edit everywhere, so one key serves both shells.
   default alone would reach no one. `SETTINGS_VERSION` 2 turns a stored 0 into 2
   once; a user who wants it off turns it off again, and that choice is kept.
 - **`Ctrl+S` and `:w` still save at once.** Autosave only removes the need.
+- **The disk-changed banner pauses it.** An autosave under the banner is a
+  Merge the user did not click. `FileViewerPanel` reads the banner's flag
+  before it arms the timer (WS-323).
 
 `maxLineWidth` does not need one. A narrow viewport already clamps the column,
 so the compact shell can ignore the setting rather than store a second value.

@@ -123,6 +123,11 @@ exists nowhere else.
 **Merge** saves. The save carries your base text, so the ordinary case merges and
 lands. A merge that leaves regions opens the conflict view.
 
+Autosave stops while the banner shows. An autosave at that time would merge
+without your click, so the banner says `Autosave paused until you choose`. Your
+edits stay in the buffer and the editor sends nothing. After you choose, autosave
+starts again. The banner does not show this text when autosave is off.
+
 ## What this never does
 
 - A write carrying a base is merged or refused when that base moved. Legacy

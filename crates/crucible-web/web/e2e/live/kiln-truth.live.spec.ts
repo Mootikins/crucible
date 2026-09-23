@@ -585,4 +585,92 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     await expect(page.locator('.cm-content')).toContainText('and my unsent edit');
     expect(readFileSync(notePath, 'utf-8')).toBe('# Watched\n\nANOTHER WRITER GOT HERE\n');
   });
+
+  /**
+   * WS-323: autosave waits while the banner offers its choice.
+   *
+   * An autosave in that time is a Merge the user did not click, and the banner
+   * would offer a choice that no longer exists. The page clock stops before
+   * the keystroke, so the autosave timer cannot fire before the banner shows.
+   * The spec then moves the clock past the autosave delay.
+   */
+  test('WS-323: autosave waits while the banner shows, and resumes after the choice', async ({
+    page,
+  }, testInfo) => {
+    const baseURL = state.baseURL!;
+    // One note per run, so a repeat on another worker never writes this one.
+    const name = `Paused-${testInfo.workerIndex}-${testInfo.repeatEachIndex}.md`;
+    const notePath = path.join(state.kilnDir!, name);
+    const theirs = '# Paused\n\nANOTHER WRITER GOT HERE\n';
+    writeFileSync(notePath, '# Paused\n\nthe first text\n');
+
+    // Autosave stays on, at the two seconds the product ships.
+    await pinEditorSettings(page, { autosaveSeconds: 2, vimMode: false });
+    await page.clock.install();
+    await page.goto(baseURL);
+    await appReady(page);
+
+    await busEmit(page, 'openFile', { path: notePath, name });
+    await expect(page.locator('.cm-content')).toContainText('the first text');
+
+    // Every write this page sends. A save from the paused autosave would count
+    // here, before the save of the user's choice.
+    let puts = 0;
+    page.on('request', (req) => {
+      if (req.method() === 'PUT' && req.url().includes('/api/kiln/file')) puts += 1;
+    });
+
+    await page.clock.pauseAt(Date.now() + 1_000);
+    await page.locator('.cm-content').first().click();
+    // The heading line: two lines away from the other writer's, so the
+    // daemon merges the two without a conflict region.
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('End');
+    await page.keyboard.type(' and my unsent edit');
+    await expect(page.locator('.cm-content')).toContainText('and my unsent edit');
+
+    writeFileSync(notePath, theirs);
+    await expect(page.getByTestId('disk-changed-banner')).toBeVisible({ timeout: 5_000 });
+
+    // Past the autosave delay, and nothing went out.
+    await page.clock.runFor(3_000);
+    expect(readFileSync(notePath, 'utf-8')).toBe(theirs);
+    expect(puts).toBe(0);
+    await expect(page.getByTestId('disk-changed-autosave-paused')).toHaveText(
+      'Autosave paused until you choose',
+    );
+
+    // The choice. Its save is the first write this page sends.
+    const merged = page.waitForResponse(
+      (res) => res.request().method() === 'PUT' && res.url().includes('/api/kiln/file'),
+    );
+    // The watcher echoes the merge, and the clean buffer reads the note again.
+    // A keystroke before that read would meet the echo as a second writer.
+    const echoRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/kiln/file?') &&
+        res.url().includes(encodeURIComponent(name)),
+    );
+    await page.getByTestId('disk-changed-merge').click();
+    expect((await merged).status()).toBe(200);
+    await expect(page.getByTestId('disk-changed-banner')).toBeHidden();
+    expect(puts).toBe(1);
+    const afterMerge = readFileSync(notePath, 'utf-8');
+    expect(afterMerge).toContain('ANOTHER WRITER GOT HERE');
+    expect(afterMerge).toContain('and my unsent edit');
+
+    // After the choice, autosave works as before.
+    await echoRead;
+    const autosaved = page.waitForResponse(
+      (res) => res.request().method() === 'PUT' && res.url().includes('/api/kiln/file'),
+    );
+    await page.locator('.cm-content').first().click();
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('End');
+    await page.keyboard.type(' then more');
+    await page.clock.runFor(2_500);
+    expect((await autosaved).status()).toBe(200);
+    expect(readFileSync(notePath, 'utf-8')).toContain('then more');
+  });
 });

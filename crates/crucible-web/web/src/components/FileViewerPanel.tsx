@@ -202,16 +202,20 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // resets the timer via the content dependency). 0 disables. Only a file
   // inside a kiln qualifies: a project file — code, config — saves by hand,
   // because a save there can fire watchers and builds mid-edit.
+  const autosaveOn = () =>
+    settings.editor.autosaveSeconds > 0 && !!owningKiln(props.filePath);
+
+  // The disk-changed banner pauses autosave. A save there is a Merge the user
+  // did not click, and the banner would offer a choice that no longer exists.
+  // The banner's own flag is the pause, so the two cannot disagree.
   createEffect(() => {
-    const seconds = settings.editor.autosaveSeconds;
     const file = fileData();
-    if (!seconds || seconds <= 0 || !file?.dirty) return;
-    if (!owningKiln(props.filePath)) return;
+    if (!autosaveOn() || !file?.dirty || file.changedOnDisk) return;
     // Depend on content so every keystroke restarts the countdown.
     void file.content;
     const timer = window.setTimeout(() => {
       if (props.filePath) void saveFile(props.filePath);
-    }, seconds * 1000);
+    }, settings.editor.autosaveSeconds * 1000);
     onCleanup(() => window.clearTimeout(timer));
   });
 
@@ -296,7 +300,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
       </Show>
 
       {/* The kiln watcher moved this note while the buffer held unsent edits.
-          Both texts exist and only the user can choose: Reload takes the
+          Both texts exist and only the user can choose, so autosave waits
+          for the choice (see the autosave effect). Reload takes the
           disk's (asking first, the bytes here exist nowhere else), Merge is
           the ordinary save, which carries this buffer's base text so the
           route merges the two instead of refusing the write. */}
@@ -308,6 +313,14 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
           <AlertTriangle class="w-3.5 h-3.5 text-attention shrink-0" />
           <span class="text-shell-ink">This note changed on disk</span>
           <span class="text-muted-dark">— your unsaved edits are still here</span>
+          <Show when={autosaveOn()}>
+            <span aria-hidden="true" class="text-muted-dark">
+              ·
+            </span>
+            <span data-testid="disk-changed-autosave-paused" class="text-muted-dark">
+              Autosave paused until you choose
+            </span>
+          </Show>
           <button
             data-testid="disk-changed-reload"
             onClick={() => props.filePath && void reloadFile(props.filePath)}

@@ -25,6 +25,13 @@ let openFilesValue: {
   baseHash: string;
   changedOnDisk?: boolean;
 }[] = [];
+/** Swaps the open files and tells the panel, for a test that needs the
+ * panel to react to a later state. A plain assignment is not seen. */
+const [openFilesVersion, bumpOpenFiles] = createSignal(0);
+const setOpenFiles = (next: typeof openFilesValue) => {
+  openFilesValue = next;
+  bumpOpenFiles((v) => v + 1);
+};
 let activeFileValue: string | null = null;
 let autosaveSeconds = 0;
 let vimMode = true;
@@ -49,7 +56,7 @@ let kilnsValue: { path: string; name?: string }[] = [{ path: '/kiln', name: 'kil
 
 vi.mock('@/contexts/EditorContext', () => ({
   useEditorSafe: () => ({
-    openFiles: () => openFilesValue,
+    openFiles: () => (openFilesVersion(), openFilesValue),
     activeFile: () => activeFileValue,
     openFile: openFileSpy,
     closeFile: vi.fn(),
@@ -297,6 +304,38 @@ describe('FileViewerPanel — save UX', () => {
     render(() => <FileViewerPanel filePath={projectFile} />);
     vi.advanceTimersByTime(10_000);
     expect(saveFile).not.toHaveBeenCalled();
+  });
+
+  // The banner offers a choice between two texts. An autosave in that time
+  // is a Merge the user did not click, so autosave waits for the choice.
+  it('pauses autosave while the disk-changed banner shows, and resumes after the choice', () => {
+    autosaveSeconds = 2;
+    setOpenFiles([
+      { path: FILE_PATH, content: 'mine', dirty: true, baseHash: 'h1', changedOnDisk: true },
+    ]);
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+
+    vi.advanceTimersByTime(10_000);
+    expect(saveFile).not.toHaveBeenCalled();
+    expect(screen.getByTestId('disk-changed-autosave-paused')).toHaveTextContent(
+      'Autosave paused until you choose',
+    );
+
+    // The user chooses. The choice clears the banner, and the next edit
+    // autosaves as before.
+    setOpenFiles([{ path: FILE_PATH, content: 'mine, then more', dirty: true, baseHash: 'h2' }]);
+    vi.advanceTimersByTime(2100);
+    expect(saveFile).toHaveBeenCalledWith(FILE_PATH);
+  });
+
+  it('does not say autosave is paused when autosave is off', () => {
+    autosaveSeconds = 0;
+    setOpenFiles([
+      { path: FILE_PATH, content: 'mine', dirty: true, baseHash: 'h1', changedOnDisk: true },
+    ]);
+    render(() => <FileViewerPanel filePath={FILE_PATH} />);
+    expect(screen.getByTestId('disk-changed-banner')).toBeInTheDocument();
+    expect(screen.queryByTestId('disk-changed-autosave-paused')).toBeNull();
   });
 
   it('autosave stays off at 0 seconds', () => {
