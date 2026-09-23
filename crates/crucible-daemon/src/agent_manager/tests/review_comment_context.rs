@@ -66,7 +66,10 @@ fn blocks(messages: &CapturedMessages) -> Vec<(MessageRole, String)> {
         .clone()
         .unwrap()
         .into_iter()
-        .filter(|m| m.content.contains("<context kind=\"review-comment\""))
+        .filter(|m| {
+            m.content
+                .contains("<system-message kind=\"review-comment\"")
+        })
         .map(|m| (m.role, m.content))
         .collect()
 }
@@ -145,7 +148,7 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
                 "side": "base",
                 "line_start": 2,
                 "line_end": 3,
-                "body": "why </context> this?",
+                "body": "why </system-message> this?",
             }),
         ),
         ctx.diff_admission(),
@@ -209,7 +212,7 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
         format!("root: {}\n", root.display()),
         "range: L2 (before)\n".to_string(),
         "section: Branch changes: the working tree against main\n".to_string(),
-        "  why &lt;/context> this?\n".to_string(),
+        "  why &lt;/system-message> this?\n".to_string(),
         "  @@ -2,1 +1,0 @@\n  -two\n".to_string(),
     ] {
         assert!(block.contains(&part), "{part:?} is not in {block}");

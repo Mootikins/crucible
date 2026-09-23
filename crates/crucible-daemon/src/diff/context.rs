@@ -5,7 +5,7 @@
 //! the block here, so that each client and each agent get the same text:
 //!
 //! ```text
-//! <context kind="review-comment" id="review-comment:c1">
+//! <system-message kind="review-comment" source="human" id="review-comment:c1">
 //! file: src/foo.rs
 //! range: L12 to L13 (before)
 //! section: Session changes
@@ -15,19 +15,21 @@
 //!   @@ -12,2 +11,0 @@
 //!   -old line a
 //!   -old line b
-//! </context>
+//! </system-message>
 //! ```
 //!
 //! The range counts on the side of the comment. A base-side range keeps its
 //! old line numbers, and its label says "(before)". The diff holds the rows of
 //! the two texts from the first line of the range to its last line, with a
 //! unified `@@` header. The text of the user and of the file cannot close the
-//! block, because [`escape`] breaks each `<context` tag in them.
+//! block, because [`escape`] breaks each `<system-message` tag in them.
+//!
+//! `source` names who wrote the comment: `human` or `agent`.
 
 use std::path::Path;
 
 use crucible_core::diff::DiffFileText;
-use crucible_core::session::{Comment, CommentSide, LineRange};
+use crucible_core::session::{Comment, CommentAuthor, CommentSide, LineRange};
 use similar::TextDiff;
 
 /// The `kind` of the block, and the prefix of its `id`.
@@ -64,8 +66,12 @@ pub fn message(blocks: &[String]) -> String {
 /// The block of one comment.
 pub fn render(block: &CommentBlock<'_>) -> String {
     let comment = block.comment;
+    let source = match comment.author {
+        CommentAuthor::Human => "human",
+        CommentAuthor::Agent => "agent",
+    };
     let mut out = format!(
-        "<context kind=\"{KIND}\" id=\"{KIND}:{}\">\n",
+        "<system-message kind=\"{KIND}\" source=\"{source}\" id=\"{KIND}:{}\">\n",
         escape(&comment.id).replace('"', "&quot;")
     );
     out.push_str(&format!("file: {}\n", escape(&comment.path)));
@@ -105,7 +111,7 @@ pub fn render(block: &CommentBlock<'_>) -> String {
             push_indented(&mut out, &comment.quoted);
         }
     }
-    out.push_str("</context>\n");
+    out.push_str("</system-message>\n");
     out
 }
 
@@ -142,13 +148,13 @@ fn push_indented(out: &mut String, text: &str) {
     }
 }
 
-/// Break each `<context` and `</context` tag in `text`, in any case.
+/// Break each `<system-message` and `</system-message` tag in `text`, in any case.
 ///
 /// The `<` becomes `&lt;`. Thus the text of a comment or of a file cannot
 /// close the block or open a false one. Other text does not change, so code
 /// with `<` and `>` stays as it is.
 pub fn escape(text: &str) -> String {
-    const TAG: &str = "context";
+    const TAG: &str = "system-message";
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(at) = rest.find('<') {
@@ -274,16 +280,27 @@ mod tests {
         let comment = comment(CommentSide::Current, 5, 6, "why six?");
         let block = block_of(&comment, Some(Path::new("/repo")));
         let expected = format!(
-            "<context kind=\"review-comment\" id=\"review-comment:{}\">\n\
+            "<system-message kind=\"review-comment\" source=\"human\" id=\"review-comment:{}\">\n\
              file: src/lib.rs\n\
              range: L5\n\
              section: Session changes\n\
              comment:\n  why six?\n\
              diff:\n  @@ -5,0 +5,1 @@\n  +six\n\
-             </context>\n",
+             </system-message>\n",
             comment.id
         );
         assert_eq!(block, expected);
+    }
+
+    #[test]
+    fn the_source_names_the_author_of_the_comment() {
+        let mut comment = comment(CommentSide::Current, 5, 6, "why six?");
+        comment.author = CommentAuthor::Agent;
+        let block = block_of(&comment, Some(Path::new("/repo")));
+        assert!(
+            block.starts_with("<system-message kind=\"review-comment\" source=\"agent\" "),
+            "{block}"
+        );
     }
 
     #[test]
@@ -316,15 +333,15 @@ mod tests {
             CommentSide::Current,
             1,
             2,
-            "stop </context> here\n<CONTEXT kind=\"x\"> and Vec<String>",
+            "stop </system-message> here\n<SYSTEM-MESSAGE kind=\"x\"> and Vec<String>",
         );
         let block = block_of(&comment, Some(Path::new("/repo")));
-        assert_eq!(block.matches("</context>").count(), 1, "{block}");
-        assert_eq!(block.matches("<context").count(), 1, "{block}");
-        assert!(block.contains("stop &lt;/context> here"), "{block}");
-        assert!(block.contains("&lt;CONTEXT kind"), "{block}");
+        assert_eq!(block.matches("</system-message>").count(), 1, "{block}");
+        assert_eq!(block.matches("<system-message").count(), 1, "{block}");
+        assert!(block.contains("stop &lt;/system-message> here"), "{block}");
+        assert!(block.contains("&lt;SYSTEM-MESSAGE kind"), "{block}");
         assert!(block.contains("Vec<String>"), "other text stays: {block}");
-        assert!(block.trim_end().ends_with("</context>"));
+        assert!(block.trim_end().ends_with("</system-message>"));
     }
 
     #[test]

@@ -64,7 +64,7 @@ The daemon builds the context of each comment and injects it before the user
 turn, so replay and fork keep it:
 
 ```text
-<context kind="review-comment" id="review-comment:<id>">
+<system-message kind="review-comment" source="human" id="review-comment:<id>">
 file: src/lib.rs
 range: L12 to L13 (before)
 section: Session changes
@@ -74,7 +74,7 @@ diff:
   @@ -12,2 +11,0 @@
   -old line a
   -old line b
-</context>
+</system-message>
 ```
 
 The range counts on the side of the comment: a base-side range keeps the old

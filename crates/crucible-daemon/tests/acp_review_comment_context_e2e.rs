@@ -1,7 +1,7 @@
 //! An attached review comment on the ACP path, asserted on the ACP wire.
 //!
 //! A chat message can attach a stored review comment. The daemon resolves the
-//! reference and builds a `<context kind="review-comment">` block. The two
+//! reference and builds a `<system-message kind="review-comment">` block. The two
 //! agent kinds then take different routes, and that difference is the whole
 //! point of this file:
 //!
@@ -302,7 +302,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
 
     for part in [
         format!(
-            "<context kind=\"review-comment\" id=\"review-comment:{}\">",
+            "<system-message kind=\"review-comment\" source=\"human\" id=\"review-comment:{}\">",
             reference.id
         ),
         "file: a.rs\n".to_string(),
@@ -311,7 +311,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
         format!("  {COMMENT_BODY}\n"),
         "  -two\n".to_string(),
         "  +TWO\n".to_string(),
-        "</context>".to_string(),
+        "</system-message>".to_string(),
         USER_MESSAGE.to_string(),
     ] {
         assert!(
@@ -321,7 +321,7 @@ async fn an_attached_comment_reaches_the_acp_wire_prompt() {
     }
     // The block frames the message, so it precedes it.
     assert!(
-        prompt.find("<context").unwrap() < prompt.find(USER_MESSAGE).unwrap(),
+        prompt.find("<system-message").unwrap() < prompt.find(USER_MESSAGE).unwrap(),
         "the block must come before the user content; the agent received: {prompt:?}"
     );
 
@@ -437,7 +437,7 @@ async fn only_the_internal_route_writes_the_block_into_the_stored_history() {
         .as_str()
         .expect("the stored block is text");
     assert!(
-        stored.contains("<context kind=\"review-comment\"") && stored.contains(COMMENT_BODY),
+        stored.contains("<system-message kind=\"review-comment\"") && stored.contains(COMMENT_BODY),
         "the stored block is the review comment: {stored:?}"
     );
 
