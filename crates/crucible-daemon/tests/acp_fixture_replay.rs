@@ -746,3 +746,41 @@ fn gemini_fixture_is_a_truncated_stub_not_yet_replayable() {
         "gemini capture is expected to contain no agent responses at all"
     );
 }
+
+/// The frames in `tests/fixtures/acp/tool_frames/` come from adapter source,
+/// not from a live capture. This test makes sure that each frame decodes as
+/// the SDK type that the client decodes it as.
+#[test]
+fn each_tool_frame_decodes_as_its_sdk_type() {
+    use agent_client_protocol::schema::v1::{
+        RequestPermissionRequest, SessionNotification, SessionUpdate,
+    };
+
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/acp/tool_frames");
+    for entry in std::fs::read_dir(&dir).expect("the tool_frames directory exists") {
+        let path = entry.expect("a directory entry").path();
+        let text = std::fs::read_to_string(&path).expect("the fixture reads");
+        // The first line is the header that names the source.
+        for (n, line) in text.lines().enumerate().skip(1) {
+            let at = format!("{}:{}", path.display(), n + 1);
+            let record: serde_json::Value = serde_json::from_str(line).expect(&at);
+            let params = record["frame"]["params"].clone();
+            match record["frame"]["method"].as_str() {
+                Some("session/update") => {
+                    let note: SessionNotification = serde_json::from_value(params).expect(&at);
+                    assert!(
+                        matches!(
+                            note.update,
+                            SessionUpdate::ToolCall(_) | SessionUpdate::ToolCallUpdate(_)
+                        ),
+                        "{at}: not a tool frame"
+                    );
+                }
+                Some("session/request_permission") => {
+                    let _: RequestPermissionRequest = serde_json::from_value(params).expect(&at);
+                }
+                other => panic!("{at}: unexpected method {other:?}"),
+            }
+        }
+    }
+}
