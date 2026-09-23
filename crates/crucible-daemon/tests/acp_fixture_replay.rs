@@ -69,8 +69,7 @@ enum ChunkShape {
     Thinking,
     ToolStart,
     ToolEnd,
-    ToolDiffUpdate,
-    ToolArgsUpdate,
+    ToolUpdate,
     ContextWindow,
 }
 
@@ -80,8 +79,7 @@ fn shape_of(chunk: &StreamingChunk) -> ChunkShape {
         StreamingChunk::Thinking(_) => ChunkShape::Thinking,
         StreamingChunk::ToolStart { .. } => ChunkShape::ToolStart,
         StreamingChunk::ToolEnd { .. } => ChunkShape::ToolEnd,
-        StreamingChunk::ToolDiffUpdate { .. } => ChunkShape::ToolDiffUpdate,
-        StreamingChunk::ToolArgsUpdate { .. } => ChunkShape::ToolArgsUpdate,
+        StreamingChunk::ToolUpdate { .. } => ChunkShape::ToolUpdate,
         StreamingChunk::ContextWindow { .. } => ChunkShape::ContextWindow,
     }
 }
@@ -819,8 +817,8 @@ fn key_table(
 }
 
 /// Classify each frame in one tool_frames fixture. Each item is the line
-/// number and the typed fields of the canonical call, without `raw` and
-/// `primary`.
+/// number and the typed fields of the canonical call, without `raw`,
+/// `primary` and `diffs`.
 fn classify_fixture(
     agent: &str,
     table: &[crucible_core::types::AgentKeys],
@@ -861,6 +859,7 @@ fn classify_fixture(
             let fields = v.as_object_mut().unwrap();
             fields.remove("raw");
             fields.remove("primary");
+            fields.remove("diffs");
             (n + 1, v)
         })
         .collect()
@@ -868,7 +867,8 @@ fn classify_fixture(
 
 /// The canonical call that the default matcher gives for each frame, with
 /// the key table of the agent. A line of a status-only update gives the
-/// fallback `tool`, because the frame names nothing. A command or file kind
+/// fallback `tool`, because the frame names nothing. A call that nothing
+/// names gets its kind as its name. A command or file kind
 /// with no command line or no path also gives `tool`. Step 4 merges updates
 /// into one call, so these rows show one frame each.
 const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
@@ -876,60 +876,60 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "claude",
         3,
-        r#"{"kind":"command","tool":"","command":"ls src"}"#,
+        r#"{"kind":"command","tool":"command","command":"ls src"}"#,
     ),
     (
         "claude",
         4,
-        r#"{"kind":"command","tool":"","command":"ls src"}"#,
+        r#"{"kind":"command","tool":"command","command":"ls src"}"#,
     ),
     (
         "claude",
         5,
         r#"{"kind":"command","tool":"Bash","command":"ls src"}"#,
     ),
-    ("claude", 6, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 7, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 6, r#"{"kind":"tool","tool":"tool"}"#),
+    ("claude", 7, r#"{"kind":"tool","tool":"tool"}"#),
     ("claude", 8, r#"{"kind":"tool","tool":"Edit"}"#),
     (
         "claude",
         9,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
     (
         "claude",
         10,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
     (
         "claude",
         11,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
     (
         "claude",
         12,
         r#"{"kind":"file_edit","tool":"Edit","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
-    ("claude", 13, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 13, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "claude",
         14,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
     ("claude", 15, r#"{"kind":"tool","tool":"Read"}"#),
     (
         "claude",
         16,
-        r#"{"kind":"file_read","tool":"","paths":["/etc/hosts"]}"#,
+        r#"{"kind":"file_read","tool":"file_read","paths":["/etc/hosts"]}"#,
     ),
     (
         "claude",
         17,
         r#"{"kind":"file_read","tool":"Read","paths":["/etc/hosts"]}"#,
     ),
-    ("claude", 18, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 19, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 18, r#"{"kind":"tool","tool":"tool"}"#),
+    ("claude", 19, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "claude",
         20,
@@ -945,228 +945,228 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
         22,
         r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
     ),
-    ("claude", 23, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 24, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 23, r#"{"kind":"tool","tool":"tool"}"#),
+    ("claude", 24, r#"{"kind":"tool","tool":"tool"}"#),
     ("claude", 25, r#"{"kind":"fetch","tool":"WebSearch"}"#),
     (
         "claude",
         26,
-        r#"{"kind":"search","tool":"","query":"acp spec"}"#,
+        r#"{"kind":"search","tool":"search","query":"acp spec"}"#,
     ),
     (
         "claude",
         27,
         r#"{"kind":"search","tool":"WebSearch","query":"acp spec"}"#,
     ),
-    ("claude", 28, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 29, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 28, r#"{"kind":"tool","tool":"tool"}"#),
+    ("claude", 29, r#"{"kind":"tool","tool":"tool"}"#),
     ("claude", 30, r#"{"kind":"fetch","tool":"WebFetch"}"#),
     (
         "claude",
         31,
-        r#"{"kind":"fetch","tool":"","url":"https://example.com"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://example.com"}"#,
     ),
     (
         "claude",
         32,
-        r#"{"kind":"fetch","tool":"","url":"https://example.com"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://example.com"}"#,
     ),
     (
         "claude",
         33,
         r#"{"kind":"fetch","tool":"WebFetch","url":"https://example.com"}"#,
     ),
-    ("claude", 34, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 35, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 34, r#"{"kind":"tool","tool":"tool"}"#),
+    ("claude", 35, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "codex-rust",
         2,
-        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test"}"#,
     ),
     (
         "codex-rust",
         3,
-        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test"}"#,
     ),
-    ("codex-rust", 4, r#"{"kind":"tool","tool":""}"#),
+    ("codex-rust", 4, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "codex-rust",
         5,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
     (
         "codex-rust",
         6,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
     (
         "codex-rust",
         7,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
     (
         "codex-rust",
         8,
-        r#"{"kind":"file_read","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_read","tool":"file_read","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
-    ("codex-rust", 9, r#"{"kind":"tool","tool":""}"#),
+    ("codex-rust", 9, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "codex-rust",
         10,
         r#"{"kind":"mcp_tool","tool":"search_notes","query":"rust"}"#,
     ),
-    ("codex-rust", 11, r#"{"kind":"mcp_tool","tool":""}"#),
-    ("codex-rust", 12, r#"{"kind":"tool","tool":""}"#),
-    ("codex-rust", 13, r#"{"kind":"fetch","tool":""}"#),
+    ("codex-rust", 11, r#"{"kind":"mcp_tool","tool":"mcp_tool"}"#),
+    ("codex-rust", 12, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-rust", 13, r#"{"kind":"fetch","tool":"fetch"}"#),
     (
         "codex-rust",
         14,
-        r#"{"kind":"search","tool":"","query":"rust acp"}"#,
+        r#"{"kind":"search","tool":"search","query":"rust acp"}"#,
     ),
-    ("codex-rust", 15, r#"{"kind":"tool","tool":""}"#),
-    ("codex-rust", 16, r#"{"kind":"fetch","tool":""}"#),
+    ("codex-rust", 15, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-rust", 16, r#"{"kind":"fetch","tool":"fetch"}"#),
     (
         "codex-rust",
         17,
-        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
     ),
-    ("codex-rust", 18, r#"{"kind":"tool","tool":""}"#),
+    ("codex-rust", 18, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "codex-ts",
         2,
-        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test"}"#,
     ),
     (
         "codex-ts",
         3,
-        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test"}"#,
     ),
-    ("codex-ts", 4, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 4, r#"{"kind":"tool","tool":"tool"}"#),
     ("codex-ts", 5, r#"{"kind":"tool","tool":"exec_command"}"#),
     (
         "codex-ts",
         6,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
     (
         "codex-ts",
         7,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
-    ("codex-ts", 8, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 8, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "codex-ts",
         9,
         r#"{"kind":"file_read","tool":"exec_command","paths":["/home/user/project/src/lib.rs"]}"#,
     ),
-    ("codex-ts", 10, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 10, r#"{"kind":"tool","tool":"tool"}"#),
     ("codex-ts", 11, r#"{"kind":"tool","tool":"exec_command"}"#),
     (
         "codex-ts",
         12,
         r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
     ),
-    ("codex-ts", 13, r#"{"kind":"tool","tool":""}"#),
-    ("codex-ts", 14, r#"{"kind":"tool","tool":""}"#),
-    ("codex-ts", 15, r#"{"kind":"tool","tool":""}"#),
-    ("codex-ts", 16, r#"{"kind":"search","tool":""}"#),
+    ("codex-ts", 13, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-ts", 14, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-ts", 15, r#"{"kind":"tool","tool":"tool"}"#),
+    ("codex-ts", 16, r#"{"kind":"search","tool":"search"}"#),
     (
         "codex-ts",
         17,
-        r#"{"kind":"search","tool":"","query":"rust acp"}"#,
+        r#"{"kind":"search","tool":"search","query":"rust acp"}"#,
     ),
-    ("codex-ts", 18, r#"{"kind":"search","tool":""}"#),
+    ("codex-ts", 18, r#"{"kind":"search","tool":"search"}"#),
     (
         "codex-ts",
         19,
-        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
     ),
     (
         "gemini",
         2,
-        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         3,
-        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         4,
-        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+        r#"{"kind":"command","tool":"command","command":"ls -la src"}"#,
     ),
     (
         "gemini",
         5,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         6,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         7,
-        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/home/user/proj/config.py"]}"#,
     ),
     (
         "gemini",
         8,
-        r#"{"kind":"file_read","tool":"","paths":["/home/user/proj/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"file_read","paths":["/home/user/proj/src/main.rs"]}"#,
     ),
     (
         "gemini",
         9,
-        r#"{"kind":"file_read","tool":"","paths":["/home/user/proj/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"file_read","paths":["/home/user/proj/src/main.rs"]}"#,
     ),
-    ("gemini", 10, r#"{"kind":"tool","tool":""}"#),
-    ("gemini", 11, r#"{"kind":"tool","tool":""}"#),
-    ("gemini", 12, r#"{"kind":"tool","tool":""}"#),
-    ("gemini", 13, r#"{"kind":"search","tool":""}"#),
-    ("gemini", 14, r#"{"kind":"search","tool":""}"#),
-    ("gemini", 15, r#"{"kind":"fetch","tool":""}"#),
-    ("gemini", 16, r#"{"kind":"fetch","tool":""}"#),
-    ("gemini", 17, r#"{"kind":"fetch","tool":""}"#),
+    ("gemini", 10, r#"{"kind":"tool","tool":"tool"}"#),
+    ("gemini", 11, r#"{"kind":"tool","tool":"tool"}"#),
+    ("gemini", 12, r#"{"kind":"tool","tool":"tool"}"#),
+    ("gemini", 13, r#"{"kind":"search","tool":"search"}"#),
+    ("gemini", 14, r#"{"kind":"search","tool":"search"}"#),
+    ("gemini", 15, r#"{"kind":"fetch","tool":"fetch"}"#),
+    ("gemini", 16, r#"{"kind":"fetch","tool":"fetch"}"#),
+    ("gemini", 17, r#"{"kind":"fetch","tool":"fetch"}"#),
     (
         "antigravity",
         2,
-        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test -p app"}"#,
     ),
     (
         "antigravity",
         3,
-        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test -p app"}"#,
     ),
     (
         "antigravity",
         4,
-        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+        r#"{"kind":"command","tool":"command","command":"cargo test -p app"}"#,
     ),
-    ("antigravity", 5, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 5, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         6,
-        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
     ),
     (
         "antigravity",
         7,
-        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
     ),
     (
         "antigravity",
         8,
-        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+        r#"{"kind":"file_edit","tool":"file_edit","paths":["/work/app/src/lib.rs"]}"#,
     ),
-    ("antigravity", 9, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 9, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         10,
-        r#"{"kind":"file_read","tool":"","paths":["/work/app/src/main.rs"]}"#,
+        r#"{"kind":"file_read","tool":"file_read","paths":["/work/app/src/main.rs"]}"#,
     ),
-    ("antigravity", 11, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 11, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         12,
@@ -1182,39 +1182,39 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
         14,
         r#"{"kind":"mcp_tool","tool":"github_get_issue"}"#,
     ),
-    ("antigravity", 15, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 15, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         16,
-        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
     ),
     (
         "antigravity",
         17,
-        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
     ),
     (
         "antigravity",
         18,
-        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+        r#"{"kind":"search","tool":"search","query":"acp tool call schema"}"#,
     ),
-    ("antigravity", 19, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 19, r#"{"kind":"tool","tool":"tool"}"#),
     (
         "antigravity",
         20,
-        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
     (
         "antigravity",
         21,
-        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
     (
         "antigravity",
         22,
-        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+        r#"{"kind":"fetch","tool":"fetch","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
     ),
-    ("antigravity", 23, r#"{"kind":"tool","tool":""}"#),
+    ("antigravity", 23, r#"{"kind":"tool","tool":"tool"}"#),
 ];
 
 /// The fixtures run through the key tables of the shipped Lua defaults. Both
@@ -1265,4 +1265,194 @@ async fn a_user_key_table_replaces_the_shipped_one() {
     };
     assert_eq!(key_table(&acp, "gemini"), vec![want]);
     assert_eq!(key_table(&acp, "codex"), key_table(&shipped, "codex"));
+}
+
+/// What one turn over a tool_frames case showed: the canonical call of each
+/// permission request, and each chunk of the turn.
+struct JoinedTurn {
+    asked: Vec<crucible_core::types::CanonicalToolCall>,
+    chunks: Vec<StreamingChunk>,
+}
+
+impl JoinedTurn {
+    /// The canonical call of each `ToolStart`, in stream order.
+    fn started(&self) -> Vec<&crucible_core::types::CanonicalToolCall> {
+        self.chunks
+            .iter()
+            .filter_map(|chunk| match chunk {
+                StreamingChunk::ToolStart { call, .. } => Some(call),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Run one turn of a real client over the frames of `case` in the
+/// tool_frames fixture of `agent`, in fixture order, with the key table of
+/// `profile`. The agent waits for the answer to each permission request
+/// before it sends the next frame, as both codex adapters do.
+async fn joined_turn(agent: &str, profile: &str, case: &str) -> JoinedTurn {
+    use agent_client_protocol::schema::v1::{
+        PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
+    };
+    use crucible_daemon::acp::client::{ClientConfig, PermissionRequestHandler};
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/acp/tool_frames")
+        .join(format!("{agent}.jsonl"));
+    let frames: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .expect("the fixture reads")
+        .lines()
+        .skip(1)
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|record| record["case"] == case)
+        .map(|record| record["frame"].clone())
+        .collect();
+    assert!(!frames.is_empty(), "{agent}.jsonl has the case {case}");
+
+    let asked: Arc<Mutex<Vec<crucible_core::types::CanonicalToolCall>>> = Arc::default();
+    let recorder = Arc::clone(&asked);
+    let permission: PermissionRequestHandler = Arc::new(move |call, options| {
+        recorder.lock().unwrap().push(call);
+        let allow = options
+            .iter()
+            .find(|o| o.kind == PermissionOptionKind::AllowOnce)
+            .expect("the agent offers allow_once")
+            .option_id
+            .clone();
+        Box::pin(async move {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(allow))
+        })
+    });
+
+    let (client_end, agent_end) = tokio::io::duplex(256 * 1024);
+    let (client_read, client_write) = tokio::io::split(client_end);
+    let (agent_read, mut agent_write) = tokio::io::split(agent_end);
+    let config = ClientConfig {
+        tools: key_table(&boot_acp_config("").await, profile),
+        ..ClientConfig::default()
+    };
+    let client = CrucibleAcpClient::connect(
+        config,
+        ByteStreams::new(client_write.compat_write(), client_read.compat()),
+        agent,
+        Some(permission),
+    )
+    .await
+    .expect("the client connects");
+
+    let (out, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel();
+    let turn = client.prompt(
+        PromptRequest::new("sess-1".to_string(), vec![ContentBlock::from("go")]),
+        &out,
+    );
+    let agent_side = async move {
+        let mut lines = BufReader::new(agent_read).lines();
+        let prompt: serde_json::Value = serde_json::from_str(
+            &lines
+                .next_line()
+                .await
+                .unwrap()
+                .expect("the client sends the prompt"),
+        )
+        .unwrap();
+        for frame in frames {
+            let is_request = frame.get("id").is_some();
+            agent_write
+                .write_all(format!("{frame}\n").as_bytes())
+                .await
+                .unwrap();
+            if is_request {
+                let reply: serde_json::Value = serde_json::from_str(
+                    &lines
+                        .next_line()
+                        .await
+                        .unwrap()
+                        .expect("the client answers"),
+                )
+                .unwrap();
+                assert!(reply.get("result").is_some(), "the client answers: {reply}");
+            }
+        }
+        let done = serde_json::json!({
+            "jsonrpc": "2.0", "id": prompt["id"], "result": {"stopReason": "end_turn"}
+        });
+        agent_write
+            .write_all(format!("{done}\n").as_bytes())
+            .await
+            .unwrap();
+    };
+    let (result, ()) = tokio::join!(turn, agent_side);
+    result.expect("the turn ends");
+    drop(out);
+
+    let mut chunks = Vec::new();
+    while let Ok(chunk) = chunk_rx.try_recv() {
+        chunks.push(chunk);
+    }
+    let asked = asked.lock().unwrap().clone();
+    JoinedTurn { asked, chunks }
+}
+
+/// The Rust codex adapter asks before it sends the `tool_call`. The request
+/// is decided on its own fields, and the call that follows joins the same
+/// entry: one card, with the diff and the command of the request.
+#[tokio::test]
+async fn an_old_codex_request_before_its_tool_call_joins_one_entry() {
+    let turn = joined_turn("codex-rust", "codex", "file_edit").await;
+
+    let [asked] = turn.asked.as_slice() else {
+        panic!("one permission request, got {:?}", turn.asked)
+    };
+    assert_eq!(asked.kind, "file_edit");
+    assert_eq!(asked.diffs.len(), 1, "the request carries its own diff");
+
+    let [started] = turn.started()[..] else {
+        panic!("one card for one toolCallId, got {:?}", turn.chunks)
+    };
+    assert_eq!(started.kind, "file_edit");
+    assert_eq!(started.paths, ["/home/user/project/src/lib.rs"]);
+    assert_eq!(started.diffs.len(), 1);
+
+    let shell = joined_turn("codex-rust", "codex", "shell").await;
+    assert_eq!(shell.asked[0].command.as_deref(), Some("cargo test"));
+    let [started] = shell.started()[..] else {
+        panic!("one card for one toolCallId, got {:?}", shell.chunks)
+    };
+    assert_eq!(started.command.as_deref(), Some("cargo test"));
+}
+
+/// The TypeScript codex adapter sends the diff only in the `tool_call`. Its
+/// permission request has no diff, so the request gets the diff of the
+/// earlier frame (rule 5).
+#[tokio::test]
+async fn a_new_codex_request_with_no_diff_gets_the_diff_of_its_tool_call() {
+    let turn = joined_turn("codex-ts", "codex", "file_edit").await;
+
+    let [asked] = turn.asked.as_slice() else {
+        panic!("one permission request, got {:?}", turn.asked)
+    };
+    assert_eq!(asked.kind, "file_edit");
+    assert_eq!(asked.paths, ["/home/user/project/src/lib.rs"]);
+    let [diff] = asked.diffs.as_slice() else {
+        panic!("the request joins the diff of its tool_call: {asked:?}")
+    };
+    assert_eq!(diff.new_content, "fn b() {}\nfn c() {}\n");
+    assert_eq!(
+        asked.raw.as_ref().and_then(|raw| raw.title.as_deref()),
+        Some("Edit files"),
+        "a field that the request sets wins"
+    );
+}
+
+/// The TypeScript codex adapter asks about an MCP call with `kind` alone.
+/// The tool comes from the `tool_call` before it, and the card shows the
+/// same canonical tool.
+#[tokio::test]
+async fn a_new_codex_mcp_request_gets_the_tool_of_its_tool_call() {
+    let turn = joined_turn("codex-ts", "codex", "mcp_tool").await;
+    assert_eq!(turn.asked[0].tool, "search_notes");
+    assert_eq!(turn.started()[0].tool, "search_notes");
 }

@@ -85,25 +85,18 @@ pub enum ChatAppMsg {
         /// row instead of appearing after it.
         auto_approved: Option<String>,
     },
-    /// **Event** (daemon → TUI): Late file-diff content for an
-    /// already-announced tool call (e.g. ACP agents like Claude Code
-    /// that defer diffs until after the initial `tool_call` frame).
-    /// The TUI merges `diffs` into the existing `CachedToolCall` keyed
-    /// by `call_id`.
-    ToolCallDiffUpdate {
-        call_id: String,
-        diffs: Vec<FileDiff>,
-    },
-    /// **Event** (daemon → TUI): Late arguments for an already-announced
-    /// tool call. claude-agent-acp sends the initial `tool_call` frame
-    /// without `rawInput` and only supplies it in a follow-up frame; the
-    /// TUI fills in the existing `CachedToolCall`'s args keyed by
-    /// `call_id`.
-    ToolCallArgsUpdate {
+    /// **Event** (daemon → TUI): A new canonical form of an
+    /// already-announced tool call. An ACP agent can send the arguments or
+    /// the diff of a call in a later frame. The TUI updates the existing
+    /// `CachedToolCall` keyed by `call_id`.
+    ToolCallUpdate {
         call_id: String,
         /// JSON-serialized arguments, same representation as
-        /// [`Self::ToolCall`]'s `args`.
-        args: String,
+        /// [`Self::ToolCall`]'s `args`. `None` keeps the args of the card.
+        args: Option<String>,
+        /// The diffs of the new canonical call. `None` when the update has
+        /// no canonical call: a transcript line from before the field.
+        diffs: Option<Vec<FileDiff>>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {
@@ -412,8 +405,7 @@ impl ChatAppMsg {
             Self::TextDelta(_)
             | Self::ThinkingDelta(_)
             | Self::ToolCall { .. }
-            | Self::ToolCallDiffUpdate { .. }
-            | Self::ToolCallArgsUpdate { .. }
+            | Self::ToolCallUpdate { .. }
             | Self::ToolResultDelta { .. }
             | Self::ToolResultComplete { .. }
             | Self::ToolResultError { .. }

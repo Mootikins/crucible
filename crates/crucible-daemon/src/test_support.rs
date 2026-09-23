@@ -325,7 +325,7 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
                         id: "call-1".to_string(),
                         name: "noop".to_string(),
                         args: serde_json::Value::Null,
-                        diffs: Vec::new(),
+                        call: None,
                     };
                     yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
                 }

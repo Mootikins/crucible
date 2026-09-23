@@ -559,7 +559,7 @@ impl ContainerList {
     }
 
     /// Update the most recent tool with the given call_id (without
-    /// requiring the tool name). Used for ACP `tool_call_diff_update`
+    /// requiring the tool name). Used for ACP `tool_call_update`
     /// events that key only on call_id.
     pub fn update_tool_by_call_id(&mut self, call_id: &str, f: impl FnOnce(&mut CachedToolCall)) {
         for (node, revision) in self.entries_mut().rev() {

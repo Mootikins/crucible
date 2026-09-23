@@ -743,7 +743,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
                     id: "call-1".to_string(),
                     name: "read_file".to_string(),
                     args: serde_json::json!({"path": "probe.txt"}),
-                    diffs: Vec::new(),
+                    call: None,
                 };
                 yield TurnEvent::ToolBatchEnd;
                 if let Some(rx) = inbound.as_mut() {
@@ -978,7 +978,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
                     id: "call-bash".to_string(),
                     name: "bash".to_string(),
                     args: serde_json::json!({"command": "echo hi"}),
-                    diffs: Vec::new(),
+                    call: None,
                 };
                 yield TurnEvent::ToolBatchEnd;
                 if let Some(rx) = inbound.as_mut() {

@@ -1,21 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { toolDiffsFromWire } from '../tool-diffs';
-import type { ToolCallDisplay } from '../types';
+import type { FileDiffWire, ToolCallDisplay } from '../types';
 
-type WireDiffs = ToolCallDisplay['diffs'];
+type WireDiffs = FileDiffWire[] | undefined;
 
-function call(overrides: Partial<ToolCallDisplay>): ToolCallDisplay {
-  return {
-    id: 'tc-1',
-    name: 'Edit',
-    args: '{}',
-    status: 'complete',
-    ...overrides,
-  };
-}
-
-function wire(overrides: Partial<ToolCallDisplay>): WireDiffs {
-  return call(overrides).diffs;
+/** The diffs of a card's canonical call, as the card passes them on. */
+function wire(overrides: { status?: ToolCallDisplay['status']; diffs?: WireDiffs }): WireDiffs {
+  return overrides.diffs;
 }
 
 describe('toolDiffsFromWire — converting the daemon projection', () => {
@@ -96,7 +87,7 @@ describe('toolDiffsFromWire — converting the daemon projection', () => {
       { path: 42, old_content: null, new_content: 'nope' },
       { path: 'also-bad' },
     ];
-    expect(toolDiffsFromWire(wire({ diffs: malformed as ToolCallDisplay['diffs'] }))).toEqual([
+    expect(toolDiffsFromWire(wire({ diffs: malformed as WireDiffs }))).toEqual([
       { kind: 'single', fileName: 'ok', oldContent: 'x', newContent: 'y' },
     ]);
   });

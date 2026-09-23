@@ -50,7 +50,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
             old_string: 'fn old() { 0 }',
             new_string: 'fn new() { 1 }',
           }),
-          diffs: [{ path: 'foo.rs', old_content: 'fn old() { 0 }', new_content: 'fn new() { 1 }' }],
+          display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: 'foo.rs', old_content: 'fn old() { 0 }', new_content: 'fn new() { 1 }' }] },
           result: 'edited',
         })}
       />
@@ -84,7 +84,7 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
             file_path: 'new.py',
             content: 'def hello():\n    return 42',
           }),
-          diffs: [{ path: 'new.py', old_content: null, new_content: 'def hello():\n    return 42' }],
+          display: { kind: 'file_edit', tool: 'Write', diffs: [{ path: 'new.py', old_content: null, new_content: 'def hello():\n    return 42' }] },
           result: 'wrote',
         })}
       />
@@ -116,10 +116,10 @@ describe('ToolCard integration — real DiffViewer + Shiki', () => {
               { old_string: 'const b = 3', new_string: 'const b = 4' },
             ],
           }),
-          diffs: [
+          display: { kind: 'file_edit', tool: 'MultiEdit', diffs: [
             { path: 'mod.ts', old_content: 'const a = 1', new_content: 'const a = 2' },
             { path: 'mod.ts', old_content: 'const b = 3', new_content: 'const b = 4' },
-          ],
+          ] },
           result: 'multi-edited',
         })}
       />

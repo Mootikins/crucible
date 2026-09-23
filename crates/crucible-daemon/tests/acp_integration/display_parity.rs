@@ -25,6 +25,11 @@ use crate::support::{connect, prompt_with, MockScript, Step};
 use crucible_daemon::acp::StreamingChunk;
 use serde_json::json;
 
+/// The `rawInput` of a canonical ACP call, when a frame sent one.
+fn raw_input(call: &crucible_core::types::CanonicalToolCall) -> Option<&serde_json::Value> {
+    call.raw.as_ref().and_then(|raw| raw.raw_input.as_ref())
+}
+
 /// A `tool_call` step whose `content` array carries one
 /// `ToolCallContent::Diff` entry — exercises the path that surfaces ACP
 /// file-mutation previews into the TUI scrollback.
@@ -106,15 +111,13 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
         .expect("should have received ToolStart chunk");
 
     match tool_start {
-        StreamingChunk::ToolStart {
-            name,
-            id,
-            arguments,
-            ..
-        } => {
-            assert_eq!(name, "Semantic Search", "MCP prefix should be humanized");
+        StreamingChunk::ToolStart { id, call } => {
+            assert_eq!(
+                call.tool, "semantic_search",
+                "a Crucible MCP call is named by the Crucible tool"
+            );
             assert_eq!(id, "tool-42");
-            let args = arguments.as_ref().expect("arguments should be Some");
+            let args = raw_input(call).expect("arguments should be Some");
             assert_eq!(args["query"], "rust async patterns");
             assert_eq!(args["limit"], 5);
         }
@@ -150,9 +153,9 @@ async fn tool_start_without_arguments_has_none() {
         .expect("should have ToolStart");
 
     match tool_start {
-        StreamingChunk::ToolStart { arguments, .. } => {
+        StreamingChunk::ToolStart { call, .. } => {
             assert!(
-                arguments.is_none(),
+                raw_input(call).is_none(),
                 "arguments should be None when not provided"
             );
         }
@@ -198,10 +201,8 @@ async fn tool_start_complex_arguments_preserved() {
         .expect("should have ToolStart");
 
     match tool_start {
-        StreamingChunk::ToolStart { arguments, .. } => {
-            let args = arguments
-                .as_ref()
-                .expect("complex args should survive roundtrip");
+        StreamingChunk::ToolStart { call, .. } => {
+            let args = raw_input(call).expect("complex args should survive roundtrip");
             assert_eq!(
                 *args, expected_args,
                 "nested JSON should be fully preserved"
@@ -253,10 +254,10 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
         .expect("should have ToolStart");
 
     match tool_start {
-        StreamingChunk::ToolStart { id, diffs, .. } => {
+        StreamingChunk::ToolStart { id, call } => {
             assert_eq!(id, "tool-d1");
-            assert_eq!(diffs.len(), 1, "should forward exactly one diff");
-            let diff = &diffs[0];
+            assert_eq!(call.diffs.len(), 1, "should forward exactly one diff");
+            let diff = &call.diffs[0];
             assert_eq!(diff.path, "/tmp/foo.rs");
             assert_eq!(diff.old_content.as_deref(), Some("fn old() {}\n"));
             assert_eq!(diff.new_content, "fn new() {}\n");
@@ -266,7 +267,7 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
 }
 
 #[tokio::test]
-async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
+async fn tool_call_update_with_late_diffs_emits_a_tool_update() {
     // Regression: when an ACP agent (e.g. Claude Code) sends an empty
     // `tool_call` notification first and then attaches diffs via a later
     // `tool_call_update` frame, the diffs must reach the TUI as a live
@@ -317,29 +318,29 @@ async fn tool_call_update_with_late_diffs_emits_diff_update_chunk() {
         .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
         .expect("should have ToolStart chunk");
     match tool_start {
-        StreamingChunk::ToolStart { id, diffs, .. } => {
+        StreamingChunk::ToolStart { id, call } => {
             assert_eq!(id, "tool-ld1");
             assert!(
-                diffs.is_empty(),
+                call.diffs.is_empty(),
                 "initial ToolStart should have no diffs (agent deferred them)"
             );
         }
         _ => unreachable!(),
     }
 
-    // The late diffs must surface as a follow-up ToolDiffUpdate chunk.
+    // The late diffs must surface in a follow-up ToolUpdate chunk.
     let diff_update = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. }))
+        .find(|c| matches!(c, StreamingChunk::ToolUpdate { .. }))
         .expect(
-            "should emit a ToolDiffUpdate chunk when a tool_call_update \
+            "should emit a ToolUpdate chunk when a tool_call_update \
              carries diffs for an already-announced tool",
         );
     match diff_update {
-        StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
-            assert_eq!(call_id, "tool-ld1");
-            assert_eq!(diffs.len(), 1, "should carry exactly one diff");
-            let diff = &diffs[0];
+        StreamingChunk::ToolUpdate { id, call } => {
+            assert_eq!(id, "tool-ld1");
+            assert_eq!(call.diffs.len(), 1, "should carry exactly one diff");
+            let diff = &call.diffs[0];
             assert_eq!(diff.path, "/tmp/late.rs");
             assert_eq!(diff.old_content.as_deref(), Some("fn old() {}\n"));
             assert_eq!(diff.new_content, "fn new() {}\n");

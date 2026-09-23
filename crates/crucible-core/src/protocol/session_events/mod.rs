@@ -132,15 +132,17 @@ pub enum Group {
 impl Group {
     pub fn of(event: &str) -> Option<Self> {
         Some(match event {
-            // Turn (15)
+            // Turn (14, and one old name)
             "user_message"
             | "text_delta"
             | "thinking"
             | "segment_complete"
             | "message_complete"
             | "tool_call"
+            | "tool_call_update"
+            // The name of `tool_call_update` before it carried the canonical
+            // call. Old transcripts hold it; `TurnPayload` reads it by alias.
             | "tool_call_args_update"
-            | "tool_call_diff_update"
             | "tool_result"
             | "turn_finished"
             | "interaction_requested"

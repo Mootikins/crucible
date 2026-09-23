@@ -123,7 +123,7 @@ async fn test_prompt_with_streamed_tool_call() {
     assert!(
         chunks.lock().unwrap().iter().any(|chunk| matches!(
             chunk,
-            StreamingChunk::ToolStart { name, .. } if name == "Mock Tool"
+            StreamingChunk::ToolStart { call, .. } if call.tool == "tool"
         )),
         "the tool call must reach the stream as a ToolStart chunk"
     );
@@ -133,7 +133,8 @@ async fn test_prompt_with_streamed_tool_call() {
     );
     assert_eq!(
         crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
-        vec!["Mock Tool"]
+        vec!["tool"],
+        "a call that only a title describes gets the fallback name"
     );
     assert_eq!(
         response.stop_reason,

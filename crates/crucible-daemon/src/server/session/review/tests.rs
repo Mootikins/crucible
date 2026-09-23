@@ -161,7 +161,7 @@ impl crucible_core::turn::Agent for NoteWritingAgent {
                     "path": "Socket rules.md",
                     "content": NOTE_TEXT,
                 }),
-                diffs: Vec::new(),
+                call: None,
             };
             yield TurnEvent::ToolBatchEnd;
             if let Some(rx) = inbound.as_mut() {

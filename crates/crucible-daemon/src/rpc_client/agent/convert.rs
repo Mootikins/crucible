@@ -140,7 +140,7 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
             call_id,
             tool,
             args,
-            diffs,
+            display,
             ..
         } => {
             // A tool call with no name cannot be rendered or matched against a
@@ -152,7 +152,7 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
                 id: call_id,
                 name: tool,
                 args,
-                diffs,
+                call: display,
             }]
         }
         TurnPayload::ToolResult {
@@ -235,8 +235,7 @@ pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEven
         // `TurnEvent` consumer accumulates deltas and would double-count.
         | TurnPayload::SegmentComplete { .. }
         // Merge-into-existing-card updates with no `TurnEvent` equivalent.
-        | TurnPayload::ToolCallArgsUpdate { .. }
-        | TurnPayload::ToolCallDiffUpdate { .. }
+        | TurnPayload::ToolCallUpdate { .. }
         // Interactions ride a separate channel (see `event_router`).
         | TurnPayload::InteractionRequested { .. }
         | TurnPayload::InteractionCompleted { .. }
@@ -345,19 +344,21 @@ mod tests {
         // field that isn't a Vec<FileDiff> (older clients, schema bugs,
         // hand-edited replay logs), we must not panic — just log and emit
         // an empty Vec so the rest of the TurnEvent stays usable. The
-        // tolerance now lives on `TurnPayload::ToolCall::diffs`
-        // (`lenient_diffs`), shared with the TUI translator.
+        // tolerance lives on `CanonicalToolCall::diffs` (`lenient_diffs`),
+        // shared with the TUI translator.
         let out = session_event_to_turn_events(&event(
             "tool_call",
             json!({
                 "call_id": "tc-1",
                 "tool": "edit_file",
                 "args": {},
-                "diffs": "this is not a list"
+                "display": {"kind": "file_edit", "tool": "edit_file", "diffs": "this is not a list"}
             }),
         ));
         match out.as_slice() {
-            [TurnEvent::ToolCall { diffs, .. }] => assert!(diffs.is_empty()),
+            [TurnEvent::ToolCall {
+                call: Some(call), ..
+            }] => assert!(call.diffs.is_empty()),
             other => panic!("expected single ToolCall, got {other:?}"),
         }
     }
@@ -370,17 +371,19 @@ mod tests {
                 "call_id": "tc-1",
                 "tool": "edit_file",
                 "args": {},
-                "diffs": [{
+                "display": {"kind": "file_edit", "tool": "edit_file", "diffs": [{
                     "path": "/tmp/foo.rs",
                     "old_content": "fn old() {}",
                     "new_content": "fn new() {}"
-                }]
+                }]}
             }),
         ));
         match out.as_slice() {
-            [TurnEvent::ToolCall { diffs, .. }] => {
-                assert_eq!(diffs.len(), 1);
-                assert_eq!(diffs[0].path, "/tmp/foo.rs");
+            [TurnEvent::ToolCall {
+                call: Some(call), ..
+            }] => {
+                assert_eq!(call.diffs.len(), 1);
+                assert_eq!(call.diffs[0].path, "/tmp/foo.rs");
             }
             other => panic!("expected single ToolCall, got {other:?}"),
         }

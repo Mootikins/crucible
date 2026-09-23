@@ -214,18 +214,13 @@ impl SessionEventMessage {
         args: Value,
     ) -> Self {
         Self::tool_call_with_metadata(
-            session_id,
-            call_id,
-            tool,
-            args,
-            None,
-            None,
-            None,
-            Vec::new(),
-            None,
+            session_id, call_id, tool, args, None, None, None, None, None,
         )
     }
 
+    /// A `tool_call` event. `call` is the canonical call when the agent
+    /// layer classified it. `None` classifies `tool` and `args` as a
+    /// Crucible tool here, so the TUI and the web read one answer.
     #[allow(clippy::too_many_arguments)]
     pub fn tool_call_with_metadata(
         session_id: impl Into<String>,
@@ -235,16 +230,14 @@ impl SessionEventMessage {
         description: Option<String>,
         source: Option<String>,
         lua_primary_arg: Option<String>,
-        diffs: Vec<crate::types::acp::FileDiff>,
+        call: Option<crate::types::CanonicalToolCall>,
         auto_approved: Option<String>,
     ) -> Self {
         let tool_name = tool.into();
-        // One projection of "which argument matters", computed here rather than
-        // in the payload so the TUI and the web render the same answer instead
-        // of each keeping its own key-priority list. A Lua display hook's
-        // `lua_primary_arg` overrides it — a plugin knows its own tool better
-        // than a heuristic.
-        let mut display = crate::types::CanonicalToolCall::crucible_tool(&tool_name, &args);
+        // A Lua display hook's `lua_primary_arg` overrides `primary`: a
+        // plugin knows its own tool better than a heuristic.
+        let mut display = call
+            .unwrap_or_else(|| crate::types::CanonicalToolCall::crucible_tool(&tool_name, &args));
         if let Some(pa) = lua_primary_arg.clone() {
             display.primary = Some(pa);
         }
@@ -259,45 +252,30 @@ impl SessionEventMessage {
                 lua_primary_arg,
                 display: Some(Box::new(display)),
                 auto_approved,
-                diffs,
             },
         )
     }
 
-    /// Late file-diff content for a tool call that was already announced
-    /// via a prior `tool_call` event. Produced when an ACP agent (e.g.
-    /// Claude Code) defers diff content until a follow-up
-    /// `ToolCallUpdate` frame. Subscribers should merge `diffs` into the
-    /// existing tool entry keyed by `call_id`.
-    pub fn tool_call_diff_update(
+    /// A new canonical form of a tool call that a prior `tool_call` event
+    /// announced. An ACP agent can send the arguments or the diff of a call
+    /// in a later frame. Subscribers replace the args and the display of
+    /// the entry with `call_id`.
+    pub fn tool_call_update(
         session_id: impl Into<String>,
         call_id: impl Into<String>,
-        diffs: Vec<crate::types::acp::FileDiff>,
+        call: crate::types::CanonicalToolCall,
     ) -> Self {
+        let args = call
+            .raw
+            .as_ref()
+            .and_then(|raw| raw.raw_input.clone())
+            .unwrap_or(Value::Null);
         Self::typed(
             session_id,
-            TurnPayload::ToolCallDiffUpdate {
-                call_id: call_id.into(),
-                diffs,
-            },
-        )
-    }
-
-    /// Late arguments for a tool call that was already announced via a prior
-    /// `tool_call` event. Produced when an ACP agent (e.g. Claude Code)
-    /// announces the call without `rawInput` and only supplies it in a
-    /// follow-up `ToolCallUpdate` frame. Subscribers should merge `args` into
-    /// the existing tool entry keyed by `call_id`.
-    pub fn tool_call_args_update(
-        session_id: impl Into<String>,
-        call_id: impl Into<String>,
-        args: serde_json::Value,
-    ) -> Self {
-        Self::typed(
-            session_id,
-            TurnPayload::ToolCallArgsUpdate {
+            TurnPayload::ToolCallUpdate {
                 call_id: call_id.into(),
                 args,
+                display: Some(Box::new(call)),
             },
         )
     }

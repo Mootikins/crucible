@@ -127,7 +127,7 @@ fn tool_calls_with_different_ids_are_both_recorded() {
 
 // =========================================================================
 // Late-diff predicate tests
-// Verify ToolCallUpdate carrying changed diffs emits a ToolDiffUpdate chunk,
+// Verify ToolCallUpdate carrying changed diffs emits a ToolUpdate chunk,
 // and that an unchanged repeat does NOT — preventing visual flashes when
 // agents send idempotent tool_call updates.
 // =========================================================================
@@ -139,7 +139,7 @@ fn capture_apply(
     let notification: SessionNotification =
         serde_json::from_value(notification_json).expect("notification should deserialize");
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    apply_update(notification.update, state, &tx);
+    apply_update(notification.update, state, &tx, &[]);
     let mut chunks = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
         chunks.push(chunk);
@@ -148,7 +148,7 @@ fn capture_apply(
 }
 
 #[test]
-fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
+fn tool_call_update_with_changed_diffs_emits_a_tool_update() {
     let mut state = StreamingState::default();
 
     // Initial tool_call with empty diffs (Claude Code defers diffs).
@@ -185,16 +185,16 @@ fn tool_call_update_with_changed_diffs_emits_diff_update_chunk() {
 
     assert!(
         chunks.iter().any(|c| matches!(c,
-            StreamingChunk::ToolDiffUpdate { call_id, diffs }
-                if call_id == "tool-1" && diffs.len() == 1
+            StreamingChunk::ToolUpdate { id, call }
+                if id == "tool-1" && call.diffs.len() == 1
         )),
-        "expected ToolDiffUpdate for changed diffs, got: {:?}",
+        "expected ToolUpdate for changed diffs, got: {:?}",
         chunks
     );
 }
 
 #[test]
-fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
+fn tool_call_update_with_unchanged_diffs_does_not_emit_a_tool_update() {
     let mut state = StreamingState::default();
 
     let initial_diff = json!([{
@@ -234,14 +234,14 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
     assert!(
         !chunks
             .iter()
-            .any(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. })),
-        "expected no ToolDiffUpdate for unchanged diff, got: {:?}",
+            .any(|c| matches!(c, StreamingChunk::ToolUpdate { .. })),
+        "expected no ToolUpdate for unchanged diff, got: {:?}",
         chunks
     );
 }
 
 /// An update for an unseen id that carries a title announces the call
-/// itself, with the diffs on the `ToolStart`. No `ToolDiffUpdate` follows,
+/// itself, with the diffs on the `ToolStart`. No `ToolUpdate` follows,
 /// because nothing was announced before it.
 #[test]
 fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() {
@@ -267,12 +267,14 @@ fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() 
 
     assert_eq!(chunks.len(), 1, "got {chunks:?}");
     match &chunks[0] {
-        StreamingChunk::ToolStart {
-            id, name, diffs, ..
-        } => {
+        StreamingChunk::ToolStart { id, call } => {
             assert_eq!(id, "ghost-1");
-            assert_eq!(name, "Edit File");
-            assert_eq!(diffs.len(), 1);
+            assert_eq!(call.kind, "file_edit");
+            assert_eq!(
+                call.tool, "file_edit",
+                "the canonical name of an unnamed edit"
+            );
+            assert_eq!(call.diffs.len(), 1);
         }
         other => panic!("expected ToolStart, got {other:?}"),
     }
@@ -305,17 +307,15 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
     assert!(chunks.is_empty(), "got {chunks:?}");
     assert_eq!(state.tool_calls.len(), 1);
 
-    // The turn ends. The flush announces the call under the placeholder
-    // label, with the diff it held, and then closes it with the stop reason.
+    // The turn ends. The flush announces the call under its canonical name,
+    // with the diff it held, and then closes it with the stop reason.
     let flushed = state.tool_calls.flush("end_turn");
     assert_eq!(flushed.len(), 2, "got {flushed:?}");
     match &flushed[0] {
-        StreamingChunk::ToolStart {
-            id, name, diffs, ..
-        } => {
+        StreamingChunk::ToolStart { id, call } => {
             assert_eq!(id, "ghost-1");
-            assert_eq!(name, "Unnamed tool");
-            assert_eq!(diffs.len(), 1);
+            assert_eq!(call.tool, "file_edit");
+            assert_eq!(call.diffs.len(), 1);
         }
         other => panic!("expected ToolStart, got {other:?}"),
     }
@@ -327,7 +327,7 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
             error,
         } => {
             assert_eq!(id, "ghost-1");
-            assert_eq!(name, "Unnamed tool");
+            assert_eq!(name, "file_edit");
             assert_eq!(result, &None);
             assert_eq!(error.as_deref(), Some("turn ended: end_turn"));
         }
@@ -335,8 +335,9 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
     }
 }
 
-/// A `ToolEnd` carries the name of its call, so the handle does not keep a
-/// name table of its own.
+/// A `ToolEnd` carries the canonical name of its call, so the handle does
+/// not keep a name table of its own. A call to Crucible's own MCP server is
+/// named by the Crucible tool.
 #[test]
 fn tool_end_carries_the_name_of_its_call() {
     let mut state = StreamingState::default();
@@ -369,7 +370,7 @@ fn tool_end_carries_the_name_of_its_call() {
         chunks,
         vec![StreamingChunk::ToolEnd {
             id: "tool-7".into(),
-            name: "Read Note".into(),
+            name: "read_note".into(),
             result: Some("the note body".into()),
             error: None,
         }]
@@ -646,12 +647,12 @@ fn failed_tool_error_text_is_sanitized_and_capped() {
 
 /// claude-agent-acp announces a tool call with no `rawInput` and only
 /// supplies the arguments in a later `tool_call_update`. Those late args must
-/// be re-emitted the way late diffs are — otherwise every downstream surface
+/// reach the stream in a new canonical call — otherwise every downstream surface
 /// (session log, recording, TUI card) shows `args: {}` forever, which is
 /// exactly what made the demo recording's failed `read_note` calls
 /// undiagnosable.
 #[test]
-fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
+fn tool_call_update_with_late_raw_input_emits_a_tool_update() {
     let mut state = StreamingState::default();
 
     capture_apply(
@@ -680,18 +681,20 @@ fn tool_call_update_with_late_raw_input_emits_args_update_chunk() {
 
     assert!(
         chunks.iter().any(|c| matches!(c,
-            StreamingChunk::ToolArgsUpdate { call_id, arguments }
-                if call_id == "tool-1"
-                    && arguments == &json!({"path": "Concepts/Target.md"})
+            StreamingChunk::ToolUpdate { id, call }
+                if id == "tool-1"
+                    && call.raw.as_ref().and_then(|r| r.raw_input.as_ref())
+                        == Some(&json!({"path": "Concepts/Target.md"}))
+                    && call.paths == ["Concepts/Target.md"]
         )),
-        "expected ToolArgsUpdate for late rawInput, got: {chunks:?}"
+        "expected ToolUpdate for late rawInput, got: {chunks:?}"
     );
 }
 
 /// An update repeating the arguments the call was announced with is silent —
 /// re-emitting an identical snapshot has no informational gain.
 #[test]
-fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
+fn tool_call_update_with_unchanged_raw_input_does_not_emit_a_tool_update() {
     let mut state = StreamingState::default();
 
     capture_apply(
@@ -722,7 +725,7 @@ fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
     assert!(
         !chunks
             .iter()
-            .any(|c| matches!(c, StreamingChunk::ToolArgsUpdate { .. })),
+            .any(|c| matches!(c, StreamingChunk::ToolUpdate { .. })),
         "unchanged rawInput must not re-emit, got: {chunks:?}"
     );
 }

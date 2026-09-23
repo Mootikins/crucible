@@ -73,6 +73,27 @@ function upsertSubagentEvent(
  * so a reload derives the same state the live transcript showed — not a
  * blanket 'complete' the events never said.
  */
+/**
+ * Apply one `tool_call_update` to a card: new args when the update has
+ * any, and the new canonical call when the update has one. The history
+ * loader applies the same rule, so a reloaded card equals the live one.
+ */
+export function mergeToolCallUpdate(
+  tool: ToolCallDisplay,
+  data: { args?: unknown; display?: unknown },
+): ToolCallDisplay {
+  const args = data.args;
+  const hasArgs =
+    args !== undefined
+    && args !== null
+    && !(typeof args === 'object' && Object.keys(args).length === 0);
+  return {
+    ...tool,
+    ...(hasArgs ? { args: JSON.stringify(args) } : {}),
+    ...(data.display ? { display: data.display as ToolCallDisplay['display'] } : {}),
+  };
+}
+
 export function finalizeDanglingTool(tool: ToolCallDisplay): ToolCallDisplay {
   const hasResult = tool.result != null && tool.result !== '';
   return {
@@ -216,9 +237,6 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
           // Decided before this event was emitted, so the marker renders with
           // the card instead of appearing a beat later.
           autoApproved: 'auto_approved' in event ? (event.auto_approved as string) : undefined,
-          // The call's proposed edits, decided by the daemon — not re-derived
-          // here from the tool name.
-          diffs: 'diffs' in event ? (event.diffs as ToolCallDisplay['diffs']) : undefined,
         });
         break;
       }
@@ -560,34 +578,16 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'session_event': {
-        // Late file-diff content for a call already announced by a prior
-        // `tool_call` (an ACP agent that announces without `rawInput`).
-        // Same merge rule as the TUI: the update carries the call's full
-        // diff set, so it replaces — and an empty/missing set is a no-op,
-        // not a wipe.
-        if (event.event === 'tool_call_diff_update') {
-          const data = event.data as { call_id?: unknown; diffs?: ToolCallDisplay['diffs'] } | null;
+        // A new canonical form of a call that a prior `tool_call` announced:
+        // an ACP agent can send the arguments or the diff of a call in a
+        // later frame. The update replaces the canonical call of the card.
+        // An empty object or null as `args` carries nothing worth disturbing
+        // the existing card for, so it keeps the args it has.
+        if (event.event === 'tool_call_update') {
+          const data = event.data as { call_id?: unknown; args?: unknown; display?: unknown } | null;
           const callId = typeof data?.call_id === 'string' ? data.call_id : undefined;
-          if (callId && data && Array.isArray(data.diffs) && data.diffs.length > 0) {
-            deps.updateToolMessage(callId, (tool) => ({ ...tool, diffs: data.diffs }));
-          }
-          break;
-        }
-
-        // Late arguments for a call already announced by a prior `tool_call`
-        // (claude-agent-acp announces without `rawInput` and supplies them in
-        // a follow-up frame). Same merge rule as the TUI: an empty object or
-        // null carries nothing worth disturbing the existing card for.
-        if (event.event === 'tool_call_args_update') {
-          const data = event.data as { call_id?: unknown; args?: unknown } | null;
-          const callId = typeof data?.call_id === 'string' ? data.call_id : undefined;
-          const args = data?.args;
-          const hasArgs =
-            args !== undefined
-            && args !== null
-            && !(typeof args === 'object' && Object.keys(args).length === 0);
-          if (callId && data && hasArgs) {
-            deps.updateToolMessage(callId, (tool) => ({ ...tool, args: JSON.stringify(args) }));
+          if (callId && data) {
+            deps.updateToolMessage(callId, (tool) => mergeToolCallUpdate(tool, data));
           }
           break;
         }

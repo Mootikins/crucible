@@ -22,6 +22,10 @@ pub struct ClientConfig {
 
     /// Timeout for agent operations (in milliseconds)
     pub timeout_ms: Option<u64>,
+
+    /// The key table of the agent, from the `tools` field of its profile.
+    /// Empty means the default matcher alone classifies the tool calls.
+    pub tools: Vec<crucible_core::types::AgentKeys>,
 }
 
 #[derive(Default)]

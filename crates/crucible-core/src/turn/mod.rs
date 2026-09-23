@@ -42,17 +42,16 @@ pub enum TurnEvent {
 
     /// Model invoked a tool. Outbound only (agent → runtime).
     ///
-    /// `diffs` carries protocol-agnostic file modification previews when the
-    /// agent layer can derive them (e.g. ACP `ToolCallContent::Diff` frames,
-    /// or args-based synthesis for native tools). Empty by default; the field
-    /// is omitted from the serialized form when empty for back-compat with
-    /// older daemons/agents.
+    /// `call` is the canonical call when the agent layer classified it: an
+    /// ACP call from its frames, or a Crucible tool call with the diff that
+    /// the provider layer made. `None` means that the runtime classifies it
+    /// from `name` and `args` as a Crucible tool, with no diff.
     ToolCall {
         id: String,
         name: String,
         args: serde_json::Value,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        diffs: Vec<crate::types::acp::FileDiff>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call: Option<Box<crate::types::CanonicalToolCall>>,
     },
 
     /// Result of a tool call.
@@ -69,32 +68,16 @@ pub enum TurnEvent {
         error: Option<String>,
     },
 
-    /// File-diff content that arrived after the corresponding `ToolCall`
-    /// was already emitted. ACP agents like Claude Code send the initial
-    /// `tool_call` notification with empty `content` and only attach
-    /// `ToolCallContent::Diff` entries via a follow-up `tool_call_update`
-    /// frame; this variant carries those late diffs to the runtime so it
-    /// can forward them to subscribers (the TUI merges them into the
-    /// existing scrollback entry by `id`).
+    /// A new canonical form of a `ToolCall` that was already emitted. An
+    /// ACP agent can send the arguments or the diff of a call in a later
+    /// frame, so the call can change after the agent announced it.
+    /// Subscribers replace the call of the entry with this `id`.
     ///
     /// Outbound only (agent → runtime). Does not advance tool depth and
     /// does not trigger tool dispatch.
-    ToolCallDiffUpdate {
+    ToolCallUpdate {
         id: String,
-        diffs: Vec<crate::types::acp::FileDiff>,
-    },
-
-    /// Arguments that arrived after the corresponding `ToolCall` was
-    /// already emitted. claude-agent-acp sends the initial `tool_call`
-    /// notification without `rawInput` and only supplies it in a follow-up
-    /// `tool_call_update` frame; subscribers merge the arguments into the
-    /// existing tool entry by `id`.
-    ///
-    /// Outbound only (agent → runtime). Does not advance tool depth and
-    /// does not trigger tool dispatch.
-    ToolCallArgsUpdate {
-        id: String,
-        arguments: serde_json::Value,
+        call: Box<crate::types::CanonicalToolCall>,
     },
 
     /// Marker that all `ToolCall`s from the current chat completion

@@ -176,11 +176,18 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             source,
             lua_primary_arg,
             auto_approved,
-            diffs,
+            display,
             ..
         } => {
+            // The card title is the canonical tool name. A recording without
+            // `display` falls back to the name on the event.
+            let name = display
+                .as_ref()
+                .and_then(|d| non_empty(d.tool.clone()))
+                .or_else(|| non_empty(tool))
+                .unwrap_or_else(|| "tool".to_string());
             vec![ChatAppMsg::ToolCall {
-                name: non_empty(tool).unwrap_or_else(|| "tool".to_string()),
+                name,
                 args: if args.is_null() {
                     String::new()
                 } else {
@@ -193,33 +200,32 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 description: None,
                 source,
                 lua_primary_arg,
-                diffs,
+                diffs: display.map(|d| d.diffs).unwrap_or_default(),
                 auto_approved,
             }]
         }
-        TurnPayload::ToolCallDiffUpdate { call_id, diffs } => {
+        TurnPayload::ToolCallUpdate {
+            call_id,
+            args,
+            display,
+        } => {
             let Some(call_id) = non_empty(call_id) else {
                 return Vec::new();
             };
-            if diffs.is_empty() {
+            // An empty or null payload carries nothing worth disturbing the
+            // existing card for, so the card keeps its args.
+            let args = (!args.is_null() && args != serde_json::json!({}))
+                .then(|| serde_json::to_string(&args).unwrap_or_default())
+                .filter(|a| !a.is_empty());
+            let diffs = display.map(|d| d.diffs);
+            if args.is_none() && diffs.is_none() {
                 return Vec::new();
             }
-            vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
-        }
-        TurnPayload::ToolCallArgsUpdate { call_id, args } => {
-            let Some(call_id) = non_empty(call_id) else {
-                return Vec::new();
-            };
-            // Same noise filter as the diff path: an empty or null payload
-            // carries nothing worth disturbing the existing card for.
-            if args.is_null() || args == serde_json::json!({}) {
-                return Vec::new();
-            }
-            let args = serde_json::to_string(&args).unwrap_or_default();
-            if args.is_empty() {
-                return Vec::new();
-            }
-            vec![ChatAppMsg::ToolCallArgsUpdate { call_id, args }]
+            vec![ChatAppMsg::ToolCallUpdate {
+                call_id,
+                args,
+                diffs,
+            }]
         }
         TurnPayload::ToolResult {
             call_id,

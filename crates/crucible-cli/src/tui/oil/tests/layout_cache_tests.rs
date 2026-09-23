@@ -175,9 +175,10 @@ fn a_tool_card_that_runs_gets_output_and_finishes_matches_a_fresh_layout() {
         call_id: Some("edit-1".into()),
     });
     let before = twin.frame(&mut app);
-    app.on_message(ChatAppMsg::ToolCallDiffUpdate {
+    app.on_message(ChatAppMsg::ToolCallUpdate {
         call_id: "edit-1".into(),
-        diffs: vec![edit_diff()],
+        args: None,
+        diffs: Some(vec![edit_diff()]),
     });
     let after = twin.frame(&mut app);
     assert!(

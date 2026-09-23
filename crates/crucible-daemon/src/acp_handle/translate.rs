@@ -102,23 +102,19 @@ impl From<crate::acp::streaming::StreamingChunk> for crucible_core::turn::TurnEv
                 tracing::debug!(used, limit, "ACP agent reported its context window");
                 TurnEvent::ContextWindow { used, limit }
             }
-            StreamingChunk::ToolStart {
-                name,
-                id,
-                arguments,
-                diffs,
-            } => {
+            StreamingChunk::ToolStart { id, call } => {
                 tracing::info!(
-                    tool = %name,
+                    tool = %call.tool,
+                    kind = %call.kind,
                     tool_id = %id,
-                    diff_count = diffs.len(),
+                    diff_count = call.diffs.len(),
                     "ACP tool call started"
                 );
                 TurnEvent::ToolCall {
                     id,
-                    name,
-                    args: arguments.unwrap_or(serde_json::Value::Null),
-                    diffs,
+                    name: call.tool.clone(),
+                    args: raw_input(&call),
+                    call: Some(Box::new(call)),
                 }
             }
             StreamingChunk::ToolEnd {
@@ -140,19 +136,24 @@ impl From<crate::acp::streaming::StreamingChunk> for crucible_core::turn::TurnEv
                     error,
                 }
             }
-            StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
-                tracing::debug!(tool_id = %call_id, diff_count = diffs.len(), "ACP late diff update");
-                TurnEvent::ToolCallDiffUpdate { id: call_id, diffs }
-            }
-            StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
-                tracing::debug!(tool_id = %call_id, "ACP late args update");
-                TurnEvent::ToolCallArgsUpdate {
-                    id: call_id,
-                    arguments,
+            StreamingChunk::ToolUpdate { id, call } => {
+                tracing::debug!(tool_id = %id, diff_count = call.diffs.len(), "ACP tool call update");
+                TurnEvent::ToolCallUpdate {
+                    id,
+                    call: Box::new(call),
                 }
             }
         }
     }
+}
+
+/// The arguments of an ACP call: its `rawInput`, or `Null` when no frame
+/// sent one.
+fn raw_input(call: &crucible_core::types::CanonicalToolCall) -> serde_json::Value {
+    call.raw
+        .as_ref()
+        .and_then(|raw| raw.raw_input.clone())
+        .unwrap_or(serde_json::Value::Null)
 }
 
 /// Build the prompt text sent to an ACP agent for one turn.
@@ -357,6 +358,20 @@ mod tests {
 
     /// Every `StreamingChunk` variant maps to exactly one `TurnEvent`.
     ///
+    /// A canonical `Read` call, as the ACP client makes it.
+    fn read_call(raw_input: Option<serde_json::Value>) -> crucible_core::types::CanonicalToolCall {
+        crucible_core::types::classify_acp(
+            serde_json::from_value(serde_json::json!({
+                "name": "Read",
+                "kind": "read",
+                "locations": [{"path": "/a"}],
+                "rawInput": raw_input,
+            }))
+            .expect("a raw tool call"),
+            &[],
+        )
+    }
+
     /// The match below has no wildcard, so a new chunk variant fails to
     /// compile here until someone writes down its event.
     #[test]
@@ -369,10 +384,8 @@ mod tests {
             StreamingChunk::Thinking("hmm".into()),
             StreamingChunk::ContextWindow { used: 3, limit: 10 },
             StreamingChunk::ToolStart {
-                name: "Read".into(),
                 id: "t1".into(),
-                arguments: None,
-                diffs: vec![],
+                call: read_call(None),
             },
             StreamingChunk::ToolEnd {
                 id: "t1".into(),
@@ -380,13 +393,9 @@ mod tests {
                 result: Some("out".into()),
                 error: None,
             },
-            StreamingChunk::ToolDiffUpdate {
-                call_id: "t1".into(),
-                diffs: vec![],
-            },
-            StreamingChunk::ToolArgsUpdate {
-                call_id: "t1".into(),
-                arguments: serde_json::json!({"path": "a"}),
+            StreamingChunk::ToolUpdate {
+                id: "t1".into(),
+                call: read_call(Some(serde_json::json!({"path": "a"}))),
             },
         ];
 
@@ -397,8 +406,7 @@ mod tests {
                 StreamingChunk::ContextWindow { .. } => "ContextWindow",
                 StreamingChunk::ToolStart { .. } => "ToolCall",
                 StreamingChunk::ToolEnd { .. } => "ToolResult",
-                StreamingChunk::ToolDiffUpdate { .. } => "ToolCallDiffUpdate",
-                StreamingChunk::ToolArgsUpdate { .. } => "ToolCallArgsUpdate",
+                StreamingChunk::ToolUpdate { .. } => "ToolCallUpdate",
             };
             let event = TurnEvent::from(chunk);
             let actual_shape = match &event {
@@ -414,9 +422,15 @@ mod tests {
                     assert_eq!((*used, *limit), (3, 10));
                     "ContextWindow"
                 }
-                TurnEvent::ToolCall { id, name, args, .. } => {
+                TurnEvent::ToolCall {
+                    id,
+                    name,
+                    args,
+                    call,
+                } => {
                     assert_eq!((id.as_str(), name.as_str()), ("t1", "Read"));
                     assert!(args.is_null(), "absent arguments become Null");
+                    assert_eq!(call.as_ref().map(|c| c.kind.as_str()), Some("file_read"));
                     "ToolCall"
                 }
                 TurnEvent::ToolResult {
@@ -430,14 +444,10 @@ mod tests {
                     assert!(error.is_none());
                     "ToolResult"
                 }
-                TurnEvent::ToolCallDiffUpdate { id, .. } => {
+                TurnEvent::ToolCallUpdate { id, call } => {
                     assert_eq!(id, "t1");
-                    "ToolCallDiffUpdate"
-                }
-                TurnEvent::ToolCallArgsUpdate { id, arguments } => {
-                    assert_eq!(id, "t1");
-                    assert_eq!(arguments["path"], "a");
-                    "ToolCallArgsUpdate"
+                    assert_eq!(raw_input(call)["path"], "a");
+                    "ToolCallUpdate"
                 }
                 other => panic!("no chunk maps to {other:?}"),
             };

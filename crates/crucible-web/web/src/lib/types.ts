@@ -232,13 +232,13 @@ export interface ToolCallDisplay {
    * permission — in auto mode, that difference is the whole audit trail.
    */
   autoApproved?: string;
-  /**
-   * The call's proposed file edits, straight from the daemon's `FileDiff`
-   * projection (`old_content: null` = whole-file write). The card renders its
-   * diff from this; it no longer re-derives one from the tool name and
-   * arguments. Absent on events that carry no diffs.
-   */
-  diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
+}
+
+/** One proposed file edit. Mirrors `crucible_core::types::acp::FileDiff`. */
+export interface FileDiffWire {
+  path: string;
+  old_content: string | null;
+  new_content: string;
 }
 
 /** The canonical tool call. Mirrors `crucible_core::types::CanonicalToolCall`. */
@@ -251,6 +251,9 @@ interface CanonicalToolCall {
   paths?: string[];
   url?: string;
   query?: string;
+  /** The call's proposed file edits (`old_content: null` = whole-file
+   * write). */
+  diffs?: FileDiffWire[];
   agent?: string;
   /** The fields of an ACP call, for display and debugging only. */
   raw?: RawToolCall;

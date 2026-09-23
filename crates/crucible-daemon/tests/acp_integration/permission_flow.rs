@@ -16,9 +16,10 @@ use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_updat
 use crate::support::parity::capture_chunks;
 use crate::support::{connect, logged, prompt_with, read_log, MockScript, Step};
 use agent_client_protocol::schema::v1::{
-    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, SelectedPermissionOutcome, ToolKind,
+    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, SelectedPermissionOutcome, ToolKind,
 };
+use crucible_core::types::CanonicalToolCall;
 use crucible_daemon::acp::client::PermissionRequestHandler;
 use crucible_daemon::acp::{ClientError, StreamingChunk, TurnSummary};
 use serde_json::{json, Value};
@@ -93,10 +94,9 @@ fn assert_permission_reply(answer: &Value, outcome: &str, option_id: Option<&str
 
 /// Build a permission handler that always approves by selecting the first allow option.
 fn always_approve_handler() -> PermissionRequestHandler {
-    Arc::new(|request| {
+    Arc::new(|_call, options: Vec<PermissionOption>| {
         Box::pin(async move {
-            let option_id = request
-                .options
+            let option_id = options
                 .iter()
                 .find(|o| {
                     matches!(
@@ -105,26 +105,33 @@ fn always_approve_handler() -> PermissionRequestHandler {
                     )
                 })
                 .map(|o| o.option_id.clone())
-                .unwrap_or_else(|| request.options[0].option_id.clone());
+                .unwrap_or_else(|| options[0].option_id.clone());
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
         })
     })
 }
 
+/// One request as the permission path gets it: the canonical call and the
+/// options of the agent.
+type Asked = (CanonicalToolCall, Vec<PermissionOption>);
+
+/// The wire title of an asked call, which these tests use to tell the
+/// requests apart.
+fn title(call: &CanonicalToolCall) -> Option<&str> {
+    call.raw.as_ref().and_then(|raw| raw.title.as_deref())
+}
+
 /// Build a permission handler that records all requests for later inspection,
 /// then approves by selecting the first option.
-fn recording_handler() -> (
-    PermissionRequestHandler,
-    Arc<Mutex<Vec<RequestPermissionRequest>>>,
-) {
-    let recorded: Arc<Mutex<Vec<RequestPermissionRequest>>> = Arc::new(Mutex::new(Vec::new()));
+fn recording_handler() -> (PermissionRequestHandler, Arc<Mutex<Vec<Asked>>>) {
+    let recorded: Arc<Mutex<Vec<Asked>>> = Arc::new(Mutex::new(Vec::new()));
     let recorded_clone = Arc::clone(&recorded);
 
-    let handler: PermissionRequestHandler = Arc::new(move |request| {
+    let handler: PermissionRequestHandler = Arc::new(move |call, options| {
         let recorded = recorded_clone.clone();
         Box::pin(async move {
-            recorded.lock().unwrap().push(request.clone());
-            let option_id = request.options[0].option_id.clone();
+            let option_id = options[0].option_id.clone();
+            recorded.lock().unwrap().push((call, options));
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
         })
     });
@@ -154,14 +161,13 @@ async fn acp_permission_handler_receives_correct_request_details() {
     let requests = recorded.lock().unwrap();
     assert_eq!(requests.len(), 1, "handler should have been called once");
 
-    let req = &requests[0];
-    assert_eq!(req.session_id.to_string(), "ses-details");
-    assert_eq!(req.tool_call.tool_call_id.0.as_ref(), "tool-exec-1");
-    assert_eq!(req.options.len(), 2);
-    assert_eq!(req.options[0].option_id.0.as_ref(), "allow_once");
-    assert_eq!(req.options[0].kind, PermissionOptionKind::AllowOnce);
-    assert_eq!(req.options[1].option_id.0.as_ref(), "reject_once");
-    assert_eq!(req.options[1].kind, PermissionOptionKind::RejectOnce);
+    let (call, options) = &requests[0];
+    assert_eq!(title(call), Some("execute_command"));
+    assert_eq!(options.len(), 2);
+    assert_eq!(options[0].option_id.0.as_ref(), "allow_once");
+    assert_eq!(options[0].kind, PermissionOptionKind::AllowOnce);
+    assert_eq!(options[1].option_id.0.as_ref(), "reject_once");
+    assert_eq!(options[1].kind, PermissionOptionKind::RejectOnce);
 
     assert_eq!(replies.len(), 1, "one request, one reply: {replies:?}");
     assert_permission_reply(&replies[0], "selected", Some("allow_once"));
@@ -209,7 +215,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
     let captured = chunks.lock().unwrap();
     assert_eq!(
         crate::support::parity::tool_names_of(&captured),
-        vec!["Read File"]
+        vec!["tool"]
     );
     let chunk_kinds: Vec<&str> = captured
         .iter()
@@ -251,7 +257,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
     assert!(summary.announced_any);
     assert_eq!(
         crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
-        vec!["Bash"]
+        vec!["tool"]
     );
 }
 
@@ -261,7 +267,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
 async fn acp_permission_denied_sends_cancelled_response_to_agent() {
     let denied = Arc::new(Mutex::new(false));
     let denied_clone = Arc::clone(&denied);
-    let handler: PermissionRequestHandler = Arc::new(move |_request| {
+    let handler: PermissionRequestHandler = Arc::new(move |_call, _options| {
         let denied = denied_clone.clone();
         Box::pin(async move {
             *denied.lock().unwrap() = true;
@@ -346,14 +352,8 @@ async fn acp_multiple_permission_requests_in_single_turn() {
 
     let requests = recorded.lock().unwrap();
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        requests[0].tool_call.tool_call_id.0.as_ref(),
-        "tool-bash-m1"
-    );
-    assert_eq!(
-        requests[1].tool_call.tool_call_id.0.as_ref(),
-        "tool-write-m1"
-    );
+    assert_eq!(title(&requests[0].0), Some("bash"));
+    assert_eq!(title(&requests[1].0), Some("write_file"));
 
     assert_eq!(replies.len(), 2, "two requests, two replies: {replies:?}");
     assert_permission_reply(&replies[0], "selected", Some("allow_once"));
@@ -362,7 +362,7 @@ async fn acp_multiple_permission_requests_in_single_turn() {
     assert!(summary.announced_any);
     assert_eq!(
         crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
-        vec!["Bash", "Write File"]
+        vec!["tool", "tool"]
     );
 }
 
@@ -376,20 +376,20 @@ async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind()
     // The handler reads only `kind`, the way the daemon's gate does. An
     // answer therefore proves the kind survived, and that the unknown id
     // did not stop the request.
-    let handler: PermissionRequestHandler = Arc::new(|request| {
-        Box::pin(async move {
-            if request.tool_call.fields.kind != Some(ToolKind::Execute) {
-                return RequestPermissionOutcome::Cancelled;
-            }
-            let option_id = request
-                .options
-                .iter()
-                .find(|o| o.kind == PermissionOptionKind::AllowOnce)
-                .map(|o| o.option_id.clone())
-                .expect("hermes always offers allow_once");
-            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
-        })
-    });
+    let handler: PermissionRequestHandler =
+        Arc::new(|call: CanonicalToolCall, options: Vec<PermissionOption>| {
+            Box::pin(async move {
+                if call.raw.as_ref().and_then(|raw| raw.kind) != Some(ToolKind::Execute) {
+                    return RequestPermissionOutcome::Cancelled;
+                }
+                let option_id = options
+                    .iter()
+                    .find(|o| o.kind == PermissionOptionKind::AllowOnce)
+                    .map(|o| o.option_id.clone())
+                    .expect("hermes always offers allow_once");
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
+            })
+        });
 
     let (turn, replies) = permission_turn(
         2000,
@@ -439,7 +439,7 @@ async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind()
 #[tokio::test]
 async fn a_dropped_turn_answers_a_pending_permission_request_with_cancelled() {
     // The user never answers.
-    let handler: PermissionRequestHandler = Arc::new(|_| Box::pin(std::future::pending()));
+    let handler: PermissionRequestHandler = Arc::new(|_, _| Box::pin(std::future::pending()));
     let log_dir = tempfile::TempDir::new().unwrap();
     let log = log_dir.path().join("agent.jsonl");
     // The question is open when the text arrives. The mock agent waits for

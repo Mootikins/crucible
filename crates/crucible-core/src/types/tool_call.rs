@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::acp::FileDiff;
 use super::tool_match::RawToolCall;
 
 /// Argument keys that name a filesystem target, in priority order.
@@ -42,6 +43,14 @@ pub struct CanonicalToolCall {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    /// The file changes of the call. An ACP call has the diff content of its
+    /// frames. A Crucible tool call has the diff that `diff_synth` makes.
+    #[serde(
+        default,
+        deserialize_with = "lenient_diffs",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub diffs: Vec<FileDiff>,
     /// The ACP agent that made the call. `None` for Crucible's own tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
@@ -100,6 +109,7 @@ impl CanonicalToolCall {
             paths: Vec::new(),
             url: None,
             query: None,
+            diffs: Vec::new(),
             agent: None,
             raw: None,
             primary,
@@ -161,6 +171,31 @@ impl CanonicalToolCall {
             Some(format!("{truncated}…"))
         } else {
             Some(truncated)
+        }
+    }
+}
+
+/// Deserialize `diffs` tolerantly: a value that is not a `Vec<FileDiff>`
+/// gives an empty Vec, and the rest of the call still loads. A tool card is
+/// worth a render without its diff, so a malformed diff must not drop the
+/// whole event.
+fn lenient_diffs<'de, D>(deserializer: D) -> Result<Vec<FileDiff>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Value::deserialize(deserializer)?;
+    if raw.is_null() {
+        return Ok(Vec::new());
+    }
+    match serde_json::from_value(raw.clone()) {
+        Ok(diffs) => Ok(diffs),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                raw = %raw,
+                "a tool call carried a malformed `diffs` field; continuing with an empty Vec",
+            );
+            Ok(Vec::new())
         }
     }
 }

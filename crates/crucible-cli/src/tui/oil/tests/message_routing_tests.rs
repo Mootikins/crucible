@@ -174,12 +174,12 @@ fn tool_call_creates_tool_group() {
 }
 
 #[test]
-fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
+fn tool_call_update_replaces_empty_diffs_with_late_content() {
     use crucible_core::types::acp::FileDiff;
 
     // Simulates the ACP late-diff flow (Claude Code): the daemon
     // first emits a ToolCall with empty diffs, then a follow-up
-    // ToolCallDiffUpdate carries the diff content.
+    // ToolCallUpdate carries the diff content.
     let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ToolCall {
         name: "edit_file".into(),
@@ -197,16 +197,17 @@ fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
         Some("fn old() {}\n".to_string()),
         "fn new() {}\n",
     )];
-    app.on_message(ChatAppMsg::ToolCallDiffUpdate {
+    app.on_message(ChatAppMsg::ToolCallUpdate {
         call_id: "late-1".into(),
-        diffs: diffs.clone(),
+        args: None,
+        diffs: Some(diffs.clone()),
     });
 
     let nodes = app.container_list.nodes();
     if let crate::tui::oil::containers::ChatNode::ToolGroup { tools } = &nodes[0] {
         assert_eq!(
             tools[0].diffs, diffs,
-            "late ToolCallDiffUpdate must populate diffs on the matching tool"
+            "late ToolCallUpdate must populate diffs on the matching tool"
         );
     } else {
         panic!("expected ToolGroup node");
@@ -214,7 +215,7 @@ fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
 }
 
 #[test]
-fn tool_call_diff_update_for_unknown_call_id_is_a_noop() {
+fn tool_call_update_for_unknown_call_id_is_a_noop() {
     use crucible_core::types::acp::FileDiff;
 
     let mut app = OilChatApp::default();
@@ -224,9 +225,10 @@ fn tool_call_diff_update_for_unknown_call_id_is_a_noop() {
         "fn anything() {}\n",
     )];
     // No prior ToolCall — should silently skip without panicking.
-    app.on_message(ChatAppMsg::ToolCallDiffUpdate {
+    app.on_message(ChatAppMsg::ToolCallUpdate {
         call_id: "ghost".into(),
-        diffs,
+        args: None,
+        diffs: Some(diffs),
     });
     assert_eq!(
         app.container_list.len(),

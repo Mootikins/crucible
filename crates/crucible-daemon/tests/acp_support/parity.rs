@@ -46,12 +46,11 @@ pub enum EventShape {
         name: String,
         is_error: bool,
     },
-    ToolCallDiffUpdate {
+    /// A new canonical call for an announced tool call. The diff paths are
+    /// the diffs of the new call.
+    ToolCallUpdate {
         call: String,
         diff_paths: Vec<String>,
-    },
-    ToolCallArgsUpdate {
-        call: String,
     },
     ToolBatchEnd,
     Usage,
@@ -126,12 +125,12 @@ impl ShapeProjector {
         Some(match ev {
             TurnEvent::TextDelta(t) => EventShape::Text(t.clone()),
             TurnEvent::Thinking(t) => EventShape::Thinking(t.clone()),
-            TurnEvent::ToolCall {
-                id, name, diffs, ..
-            } => EventShape::ToolCall {
+            TurnEvent::ToolCall { id, name, call, .. } => EventShape::ToolCall {
                 call: self.ordinal(id),
                 name: name.clone(),
-                diff_paths: diff_paths(diffs),
+                diff_paths: call
+                    .as_ref()
+                    .map_or_else(Vec::new, |c| diff_paths(&c.diffs)),
             },
             TurnEvent::ToolResult {
                 id, name, error, ..
@@ -140,12 +139,9 @@ impl ShapeProjector {
                 name: name.clone(),
                 is_error: error.is_some(),
             },
-            TurnEvent::ToolCallDiffUpdate { id, diffs } => EventShape::ToolCallDiffUpdate {
+            TurnEvent::ToolCallUpdate { id, call } => EventShape::ToolCallUpdate {
                 call: self.ordinal(id),
-                diff_paths: diff_paths(diffs),
-            },
-            TurnEvent::ToolCallArgsUpdate { id, .. } => EventShape::ToolCallArgsUpdate {
-                call: self.ordinal(id),
+                diff_paths: diff_paths(&call.diffs),
             },
             TurnEvent::ToolBatchEnd => EventShape::ToolBatchEnd,
             TurnEvent::Usage(_) => EventShape::Usage,
@@ -182,8 +178,7 @@ pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str 
         StreamingChunk::Thinking(_) => "thinking",
         StreamingChunk::ToolStart { .. } => "tool_start",
         StreamingChunk::ToolEnd { .. } => "tool_end",
-        StreamingChunk::ToolDiffUpdate { .. } => "tool_diff_update",
-        StreamingChunk::ToolArgsUpdate { .. } => "tool_args_update",
+        StreamingChunk::ToolUpdate { .. } => "tool_update",
         StreamingChunk::ContextWindow { .. } => "context_window",
     }
 }
@@ -210,7 +205,7 @@ pub fn tool_names_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> Vec<Str
     chunks
         .iter()
         .filter_map(|chunk| match chunk {
-            crucible_daemon::acp::StreamingChunk::ToolStart { name, .. } => Some(name.clone()),
+            crucible_daemon::acp::StreamingChunk::ToolStart { call, .. } => Some(call.tool.clone()),
             _ => None,
         })
         .collect()
@@ -283,7 +278,18 @@ mod tests {
             id: id.into(),
             name: name.into(),
             args: serde_json::json!({"path": "README.md"}),
+            call: Some(Box::new(with_diffs(name, diffs))),
+        }
+    }
+
+    /// A canonical call of `name` with `diffs`.
+    fn with_diffs(name: &str, diffs: Vec<FileDiff>) -> crucible_core::types::CanonicalToolCall {
+        crucible_core::types::CanonicalToolCall {
             diffs,
+            ..crucible_core::types::CanonicalToolCall::crucible_tool(
+                name,
+                &serde_json::json!({"path": "README.md"}),
+            )
         }
     }
 
@@ -459,18 +465,18 @@ mod tests {
         // renders differently from a correct one and must project differently.
         let correlated = shapes(futures::stream::iter(vec![
             tool_call("toolu_01", "edit_file", Vec::new()),
-            TurnEvent::ToolCallDiffUpdate {
+            TurnEvent::ToolCallUpdate {
                 id: "toolu_01".into(),
-                diffs: vec![diff("src/main.rs")],
+                call: Box::new(with_diffs("edit_file", vec![diff("src/main.rs")])),
             },
         ]))
         .await;
 
         let mismatched = shapes(futures::stream::iter(vec![
             tool_call("toolu_01", "edit_file", Vec::new()),
-            TurnEvent::ToolCallDiffUpdate {
+            TurnEvent::ToolCallUpdate {
                 id: "toolu_99".into(),
-                diffs: vec![diff("src/main.rs")],
+                call: Box::new(with_diffs("edit_file", vec![diff("src/main.rs")])),
             },
         ]))
         .await;
@@ -482,14 +488,14 @@ mod tests {
         );
         assert_eq!(
             correlated.last(),
-            Some(&EventShape::ToolCallDiffUpdate {
+            Some(&EventShape::ToolCallUpdate {
                 call: "call#0".into(),
                 diff_paths: vec!["src/main.rs".into()],
             })
         );
         assert_eq!(
             mismatched.last(),
-            Some(&EventShape::ToolCallDiffUpdate {
+            Some(&EventShape::ToolCallUpdate {
                 call: "call#1".into(),
                 diff_paths: vec!["src/main.rs".into()],
             })

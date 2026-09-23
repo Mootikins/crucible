@@ -1,4 +1,4 @@
-import type { ToolCallDisplay } from './types';
+import type { FileDiffWire } from './types';
 
 export type ToolDiff =
   | { kind: 'single'; fileName: string; oldContent: string; newContent: string }
@@ -12,10 +12,10 @@ export type ToolDiff =
  * own entry. `old_content: null` is a whole-file write (empty old side),
  * matching the shape `DiffViewer` renders for "no previous content".
  *
- * `diffs` arrives `undefined` when the event carries none (or the transcript
- * entry predates the field).
+ * `diffs` are the diffs of the canonical call. They arrive `undefined` when
+ * the call carries none (or the transcript entry predates the field).
  */
-export function toolDiffsFromWire(diffs?: ToolCallDisplay['diffs']): ToolDiff[] {
+export function toolDiffsFromWire(diffs?: FileDiffWire[]): ToolDiff[] {
   const raw = diffs ?? [];
   const out: ToolDiff[] = [];
   for (const d of raw) {

@@ -583,7 +583,10 @@ impl AgentManager {
                 description,
                 source,
                 lua_primary_arg,
-                diffs,
+                Some(crucible_core::types::CanonicalToolCall {
+                    diffs,
+                    ..crucible_core::types::CanonicalToolCall::crucible_tool(&tool_call.name, &args)
+                }),
                 auto_approved.clone(),
             ),
         ) {

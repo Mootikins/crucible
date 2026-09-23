@@ -443,20 +443,20 @@ async fn acp_whitespace_only_turn_reports_empty_stop_reason() {
 }
 
 /// B4: a result for a call that no frame named is announced under the
-/// placeholder label, and then reported.
+/// fallback name `tool`, and then reported.
 ///
 /// A bare `tool_call_update{status: completed}` — no title, no rawInput, no
 /// diff — is not a fault. The ACP spec gives no order between `tool_call` and
 /// `tool_call_update`, many agents send only updates, and the v2 spec makes
 /// the update an upsert. The client holds the result until the turn ends,
-/// announces the call under the placeholder label, as Zed does, and then
+/// announces the call under the fallback name `tool`, and then
 /// emits the result. So the row reaches `session.jsonl`, `recording.jsonl`,
 /// Lua `tool_result` handlers and `send_and_collect`, and the renderer has a
 /// card for the result to land on.
 ///
 /// The name is never read from the payload: `rawOutput` is agent-authored.
 #[tokio::test]
-async fn acp_bare_orphaned_tool_end_is_announced_under_the_placeholder_label() {
+async fn acp_bare_orphaned_tool_end_is_announced_under_the_fallback_name() {
     let shapes = acp_shapes_for_orphaned_tool_end("bare").await;
 
     assert_eq!(
@@ -465,19 +465,19 @@ async fn acp_bare_orphaned_tool_end_is_announced_under_the_placeholder_label() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "Unnamed tool".into(),
+                name: "tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Unnamed tool".into(),
+                name: "tool".into(),
                 is_error: false,
             },
             EventShape::ToolBatchEnd,
             EventShape::Done(StopReason::EndTurn),
         ],
-        "a bare orphaned result must be announced once under the placeholder \
-         label, before its result, and close the batch; got {shapes:#?}"
+        "a bare orphaned result must be announced once under the fallback name \
+         `tool`, before its result, and close the batch; got {shapes:#?}"
     );
 }
 
@@ -495,12 +495,12 @@ async fn acp_call_with_no_completion_is_closed_when_the_turn_ends() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "Open Tool".into(),
+                name: "tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Open Tool".into(),
+                name: "tool".into(),
                 is_error: true,
             },
             EventShape::ToolBatchEnd,
@@ -527,19 +527,19 @@ async fn acp_orphaned_tool_end_with_a_late_title_reports_the_real_name() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "Late Named Tool".into(),
+                name: "tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Late Named Tool".into(),
+                name: "tool".into(),
                 is_error: false,
             },
             EventShape::ToolBatchEnd,
             EventShape::Done(StopReason::EndTurn),
         ],
         "a late-titled orphan must be announced before its result and named \
-         from the announcement, with the same humanized spelling the live \
+         from the announcement, with the canonical name the live \
          path uses; got {shapes:#?}"
     );
 }
@@ -565,17 +565,17 @@ async fn acp_repeated_completion_for_an_announced_call_keeps_its_name() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "Repeated Tool".into(),
+                name: "tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Repeated Tool".into(),
+                name: "tool".into(),
                 is_error: false,
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Repeated Tool".into(),
+                name: "tool".into(),
                 is_error: false,
             },
             EventShape::ToolBatchEnd,
@@ -601,12 +601,12 @@ async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
             EventShape::Text("Done".into()),
             EventShape::ToolCall {
                 call: "call#0".into(),
-                name: "Late Call".into(),
+                name: "tool".into(),
                 diff_paths: vec![],
             },
             EventShape::ToolResult {
                 call: "call#0".into(),
-                name: "Late Call".into(),
+                name: "tool".into(),
                 is_error: false,
             },
             EventShape::ToolBatchEnd,

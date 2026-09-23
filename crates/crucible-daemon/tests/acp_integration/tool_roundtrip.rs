@@ -71,15 +71,18 @@ async fn test_acp_tool_roundtrip_read_file() {
         .expect("should have ToolStart chunk");
 
     match tool_start {
-        StreamingChunk::ToolStart {
-            name,
-            id,
-            arguments,
-            ..
-        } => {
-            assert_eq!(name, "Read File", "tool name should be humanized");
+        StreamingChunk::ToolStart { id, call } => {
+            assert_eq!(
+                call.tool, "tool",
+                "a title is prose, so an unnamed call gets the fallback name"
+            );
+            assert_eq!(call.paths, ["/tmp/test.md"]);
             assert_eq!(id, "tc-read-1");
-            let args = arguments.as_ref().expect("arguments should be present");
+            let args = call
+                .raw
+                .as_ref()
+                .and_then(|raw| raw.raw_input.as_ref())
+                .expect("arguments should be present");
             assert_eq!(args["path"], "/tmp/test.md");
         }
         _ => unreachable!(),
@@ -116,11 +119,13 @@ async fn test_acp_tool_roundtrip_read_file() {
         .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
         .expect("should have ToolStart chunk");
     match tool_start {
-        StreamingChunk::ToolStart {
-            name, arguments, ..
-        } => {
-            assert_eq!(name, "Read File");
-            let arguments = arguments.as_ref().expect("the call carries arguments");
+        StreamingChunk::ToolStart { call, .. } => {
+            assert_eq!(call.tool, "tool");
+            let arguments = call
+                .raw
+                .as_ref()
+                .and_then(|raw| raw.raw_input.as_ref())
+                .expect("the call carries arguments");
             assert_eq!(arguments["path"], "/tmp/test.md");
         }
         _ => unreachable!(),
@@ -207,7 +212,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     assert!(summary.announced_any, "should have two tool calls");
     assert_eq!(
         crate::support::parity::tool_names_of(&captured),
-        vec!["Semantic Search", "Read File"]
+        vec!["semantic_search", "tool"]
     );
 
     // Verify content accumulates text from between and after tools
@@ -340,7 +345,7 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     assert!(summary.announced_any);
     assert_eq!(
         crate::support::parity::tool_names_of(&captured),
-        vec!["List Notes"]
+        vec!["list_notes"]
     );
 
     host.shutdown().await;
@@ -392,6 +397,6 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
     assert!(summary.announced_any);
     assert_eq!(
         crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
-        vec!["Grep"]
+        vec!["tool"]
     );
 }

@@ -4635,7 +4635,7 @@
               },
               "arguments": {},
               "display": {
-                "description": "The daemon's canonical tool call, shared with the TUI. `Value`\nbecause `CanonicalToolCall` lives in `crucible-core`, which\ntakes no utoipa dependency (same deal as `stop_reason` below)."
+                "description": "The daemon's canonical tool call, shared with the TUI. Its\n`diffs` are the proposed file edits of the call. `Value` because\n`CanonicalToolCall` lives in `crucible-core`, which takes no\nutoipa dependency (same deal as `stop_reason` below)."
               },
               "auto_approved": {
                 "type": [
@@ -4643,9 +4643,6 @@
                   "null"
                 ],
                 "description": "Which layer granted permission without asking, if any."
-              },
-              "diffs": {
-                "description": "Proposed file edits as `FileDiff` objects (`{path, old_content,\nnew_content}`); `old_content: null` means a whole-file write. The\nbrowser renders the card's diff from this instead of re-deriving\none from the tool name and arguments."
               },
               "type": {
                 "type": "string",

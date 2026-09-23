@@ -29,7 +29,7 @@ pub(super) mod script {
             id: id.to_string(),
             name: name.to_string(),
             args,
-            diffs: Vec::new(),
+            call: None,
         }
     }
 

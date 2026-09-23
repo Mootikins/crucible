@@ -28,7 +28,6 @@ fn chat_event_tool_call_event_name() {
         arguments: None,
         display: None,
         auto_approved: None,
-        diffs: None,
     };
     assert_eq!(event.event_name(), "tool_call");
 }

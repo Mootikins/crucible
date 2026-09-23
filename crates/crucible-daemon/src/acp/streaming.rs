@@ -9,7 +9,7 @@
 //! - **Open/Closed**: Extensible for different output formats
 //! - **Dependency Inversion**: Uses core types, protocol-agnostic
 
-use crucible_core::types::acp::FileDiff;
+use crucible_core::types::CanonicalToolCall;
 
 /// A streaming chunk from an ACP agent.
 ///
@@ -21,46 +21,24 @@ pub enum StreamingChunk {
     Text(String),
     /// Agent is thinking (for agents that expose thinking)
     Thinking(String),
-    /// A tool is being called
-    ToolStart {
-        name: String,
-        id: String,
-        arguments: Option<serde_json::Value>,
-        /// The file diffs the call carried when the client announced it.
-        /// Empty when no frame had attached a diff yet; a diff that arrives
-        /// in a later `ToolCallUpdate` comes as a `ToolDiffUpdate`.
-        diffs: Vec<FileDiff>,
-    },
+    /// A tool is being called. `call` is the canonical call of the merged
+    /// frames so far.
+    ToolStart { id: String, call: CanonicalToolCall },
     /// Tool execution completed.
     ///
-    /// `name` is the name the matching `ToolStart` carried. The client
-    /// announces every call before it completes it, so the consumer keeps
-    /// no name table of its own.
+    /// `name` is the canonical name of the call. The client announces every
+    /// call before it completes it, so the consumer keeps no name table of
+    /// its own.
     ToolEnd {
         id: String,
         name: String,
         result: Option<String>,
         error: Option<String>,
     },
-    /// Diffs that arrived in a `ToolCallUpdate` after the matching
-    /// `ToolStart` was already announced. ACP agents like Claude Code
-    /// send the initial `tool_call` notification with empty `content`
-    /// and only attach `ToolCallContent::Diff` entries via a follow-up
-    /// `tool_call_update` frame; this variant carries those late diffs
-    /// to the daemon outer loop so they reach the TUI.
-    ToolDiffUpdate {
-        call_id: String,
-        diffs: Vec<FileDiff>,
-    },
-    /// Arguments that arrived in a `ToolCallUpdate` after the matching
-    /// `ToolStart` was already announced. claude-agent-acp sends the initial
-    /// `tool_call` notification without `rawInput` and only supplies it in a
-    /// follow-up frame; without this variant every downstream surface
-    /// (session log, recording, TUI card) records the call as `args: {}`.
-    ToolArgsUpdate {
-        call_id: String,
-        arguments: serde_json::Value,
-    },
+    /// A new canonical call for a `ToolStart` that the client already
+    /// announced. claude-agent-acp sends the `tool_call` without `rawInput`
+    /// and without its diff, and sends both in a later `tool_call_update`.
+    ToolUpdate { id: String, call: CanonicalToolCall },
     /// The agent's report of its own context window: tokens currently
     /// occupying it and its total size, from a `usage_update` session update.
     ///

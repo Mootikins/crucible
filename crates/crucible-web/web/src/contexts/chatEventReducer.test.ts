@@ -863,84 +863,64 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.error).toMatch(/incomplete/i);
   });
 
-  it('tool_call: carries the daemon display, auto-approval and diffs onto the card', () => {
+  it('tool_call: carries the daemon display, with its diffs, and auto-approval onto the card', () => {
     const h = createHarness();
+    const display = {
+      kind: 'file_edit',
+      tool: 'Edit',
+      paths: ['a.rs'],
+      diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
+      primary: 'a.rs',
+    };
     h.reducer({
       type: 'tool_call',
       id: 'call-1',
       title: 'Edit',
       arguments: { file_path: 'a.rs' },
-      display: { kind: 'file_edit', tool: 'Edit', paths: ['a.rs'], primary: 'a.rs' },
+      display,
       auto_approved: 'auto mode',
-      diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
     });
     const tool = h.tools()[0];
-    expect(tool.display).toEqual({ kind: 'file_edit', tool: 'Edit', paths: ['a.rs'], primary: 'a.rs' });
+    expect(tool.display).toEqual(display);
     expect(tool.autoApproved).toBe('auto mode');
-    expect(tool.diffs).toEqual([{ path: 'a.rs', old_content: 'x', new_content: 'y' }]);
   });
 
-  it('session_event tool_call_diff_update: replaces the call diff set', () => {
-    // ACP agents can announce a call without rawInput and supply the diffs
-    // later; the update carries the call's FULL diff set.
+  it('session_event tool_call_update: replaces the canonical call and the args of the card', () => {
+    // ACP agents can announce a call without rawInput and supply the args and
+    // the diffs later; the update carries the call's new canonical form.
     const h = createHarness();
     h.reducer({ type: 'tool_call', id: 'call-7', title: 'acp_edit' });
+    const display = {
+      kind: 'file_edit',
+      tool: 'Edit',
+      diffs: [{ path: 'b.rs', old_content: null, new_content: 'new' }],
+    };
     h.reducer({
       type: 'session_event',
-      event: 'tool_call_diff_update',
-      data: { call_id: 'call-7', diffs: [{ path: 'b.rs', old_content: null, new_content: 'new' }] },
+      event: 'tool_call_update',
+      data: { call_id: 'call-7', args: { file_path: 'b.rs' }, display },
     });
-    expect(h.tools()[0].diffs).toEqual([
-      { path: 'b.rs', old_content: null, new_content: 'new' },
-    ]);
+    expect(h.tools()[0].display).toEqual(display);
+    expect(h.tools()[0].args).toBe(JSON.stringify({ file_path: 'b.rs' }));
   });
 
-  it('session_event tool_call_diff_update: empty or missing diffs is a no-op, not a wipe', () => {
+  it('session_event tool_call_update: empty or missing args and no display leave the card alone', () => {
     const h = createHarness();
-    h.reducer({
-      type: 'tool_call',
-      id: 'call-7',
-      title: 'acp_edit',
+    const display = {
+      kind: 'file_edit',
+      tool: 'Edit',
       diffs: [{ path: 'b.rs', old_content: 'keep', new_content: 'me' }],
-    });
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_diff_update',
-      data: { call_id: 'call-7', diffs: [] },
-    });
-    h.reducer({ type: 'session_event', event: 'tool_call_diff_update', data: { call_id: 'call-7' } });
-    expect(h.tools()[0].diffs).toEqual([{ path: 'b.rs', old_content: 'keep', new_content: 'me' }]);
-  });
-
-  it('session_event tool_call_args_update: merges the late ACP arguments into the card', () => {
-    // claude-agent-acp announces the call without rawInput and supplies the
-    // arguments in a follow-up frame; without this merge the card shows no
-    // arguments at all.
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Terminal' });
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_args_update',
-      data: { call_id: 'call-8', args: { command: 'ls crates' } },
-    });
-    expect(h.tools()[0].args).toBe(JSON.stringify({ command: 'ls crates' }));
-  });
-
-  it('session_event tool_call_args_update: empty or missing args leave the card alone', () => {
-    const h = createHarness();
-    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Terminal' });
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_args_update',
-      data: { call_id: 'call-8', args: {} },
-    });
-    h.reducer({
-      type: 'session_event',
-      event: 'tool_call_args_update',
-      data: { call_id: 'call-8', args: null },
-    });
-    h.reducer({ type: 'session_event', event: 'tool_call_args_update', data: { call_id: 'call-8' } });
+    };
+    h.reducer({ type: 'tool_call', id: 'call-8', title: 'Edit', display });
+    for (const args of [{}, null, undefined]) {
+      h.reducer({
+        type: 'session_event',
+        event: 'tool_call_update',
+        data: { call_id: 'call-8', args },
+      });
+    }
     expect(h.tools()[0].args).toBe('');
+    expect(h.tools()[0].display).toEqual(display);
   });
 
   it('turn_finished: a failed turn shows its error', () => {

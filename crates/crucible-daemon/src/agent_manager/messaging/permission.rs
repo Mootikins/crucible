@@ -8,99 +8,6 @@ use std::ops::ControlFlow;
 
 use crate::agent_manager::vm_pass::run_handlers;
 
-/// The MCP prefixes an agent puts in front of a Crucible tool's name.
-///
-/// The prefix comes from the server name Crucible announces in
-/// `session/new`, and each agent has its own form for it.
-const CRUCIBLE_MCP_PREFIXES: &[&str] = &[
-    // claude-agent-acp, and every MCP client that follows the Claude Code
-    // naming: `mcp__<server>__<tool>`.
-    "mcp__crucible__",
-    // codex-acp: `mcp.<server>.<tool>`.
-    "mcp.crucible.",
-];
-
-/// The tool name the policy keys an ACP tool call on.
-///
-/// **The agent sends the name.** Schema 1.9.1 makes `ToolCall.name` a stable
-/// field, and an ACP agent puts the programmatic tool name there: `Bash`,
-/// `Edit`, `mcp__crucible__read_note`. ONE key answers for every tool an
-/// agent asks about — its own, Crucible's, another MCP server's — so the
-/// operator writes a rule against the name they see, and the daemon needs no
-/// translation table.
-///
-/// A Crucible tool loses its MCP prefix here, so the card and the
-/// `[permissions]` rules use one key, `read_note`, whether an ACP agent or
-/// the daemon's own tool path runs it. Another server's tool keeps its whole
-/// name: Crucible does not own that name, and stripping the prefix would let
-/// `mcp__evil__read_note` take a rule written about Crucible's `read_note`.
-///
-/// The name IS grounds for the read-only exemption, unlike the `kind` below:
-/// keyed by its internal name, Crucible's `read_note` is the same tool the
-/// daemon's own agents run, and it skips the prompt for the same reason. An
-/// agent that mislabels a call buys nothing by it — it runs its own tools in
-/// its own process, so it would simply not ask.
-///
-/// The fallbacks, in order:
-///
-/// 1. the `name` the agent sent, less a Crucible MCP prefix;
-/// 2. failing that, `kind`.
-///
-/// The step between the two is not here: an agent that asks about an MCP
-/// tool without naming it (codex-acp does) is answered from the `tool_call`
-/// frame that announced the same `toolCallId`, and the ACP client fills
-/// `name` in from what it saw before this runs. See
-/// `acp::client::announced_tool_name`.
-///
-/// `title` is never read as a name. It is prose for a person — `"Read
-/// src/main.rs"` — and keying on it made every `[permissions]` rule inert.
-fn acp_permission_tool_name(
-    fields: &agent_client_protocol::schema::v1::ToolCallUpdateFields,
-) -> String {
-    let Some(name) = fields.name.as_deref() else {
-        return acp_tool_name(fields);
-    };
-    CRUCIBLE_MCP_PREFIXES
-        .iter()
-        .find_map(|prefix| name.strip_prefix(prefix))
-        .unwrap_or(name)
-        .to_string()
-}
-
-/// The coarse name of a tool call the agent did not name.
-///
-/// `kind` is then the only tool identity on the wire, so rules match against
-/// it. The names chosen are the engine's own file-operation grammar (`read`,
-/// `edit`, `write`, `delete` — see `is_file_tool`) plus `bash`, so an
-/// operator writes the same patterns they already write elsewhere.
-///
-/// A `kind` the agent supplies is **not** grounds for the read-only
-/// exemption: see [`crate::agent_manager::is_safe`], which may only widen on
-/// something the daemon itself knows. An ACP tool matches rules and is
-/// otherwise asked about.
-fn acp_tool_name(fields: &agent_client_protocol::schema::v1::ToolCallUpdateFields) -> String {
-    use agent_client_protocol::schema::v1::ToolKind;
-    match fields.kind {
-        Some(ToolKind::Read) => "read",
-        Some(ToolKind::Edit) => "edit",
-        Some(ToolKind::Delete) => "delete",
-        // No `move` in the engine's grammar, and a move is a write.
-        Some(ToolKind::Move) => "write",
-        Some(ToolKind::Search) => "search",
-        Some(ToolKind::Execute) => "bash",
-        Some(ToolKind::Fetch) => "fetch",
-        Some(ToolKind::Think) => "think",
-        Some(ToolKind::SwitchMode) => "switch_mode",
-        // `Other` is ACP's default, so an agent that sets no kind lands here
-        // too — as does any variant a later schema adds, since `ToolKind` is
-        // `#[non_exhaustive]` and a kind we cannot classify must not be
-        // guessed at. Deliberately not a file-operation name: an unidentified
-        // call must not inherit a rule written for one that is identified.
-        Some(ToolKind::Other) | Some(_) | None => "acp_tool",
-    }
-    .to_string()
-}
-
 /// Serializer that ensures only one permission prompt is in-flight at a time
 /// per ACP session.
 ///
@@ -246,6 +153,12 @@ fn select_option(
 /// A free function, not a closure body: this IS the ACP half of the tool
 /// policy, and a test drives it with the frames the real agents send.
 ///
+/// `call` is the canonical call that the ACP client joined from the request
+/// and the earlier frames of its `toolCallId`. The policy keys on its
+/// canonical `tool`: the name the agent sent, a Crucible tool without its
+/// MCP prefix, or the kind of a call that nothing names. The diff of the
+/// prompt is the diff of the call.
+///
 /// The card policy goes INTO the gate rather than answering ahead of it. The
 /// two halves used to disagree about the same session's `tool_policy` — an
 /// ACP agent's card `allow` walked past an operator `deny` that the daemon's
@@ -257,22 +170,18 @@ fn select_option(
 async fn decide_acp_permission(
     gate: &DaemonPermissionGate,
     tool_policy: Option<&crucible_core::agent::ToolPolicyMap>,
-    request: agent_client_protocol::schema::v1::RequestPermissionRequest,
+    call: crucible_core::types::CanonicalToolCall,
+    options: &[agent_client_protocol::schema::v1::PermissionOption],
 ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
-    let tool_name = acp_permission_tool_name(&request.tool_call.fields);
-    let card_policy = tool_policy.and_then(|map| map.get(&tool_name)).copied();
-
-    let args = request
-        .tool_call
-        .fields
-        .raw_input
-        .clone()
+    let card_policy = tool_policy.and_then(|map| map.get(&call.tool)).copied();
+    let args = call
+        .raw
+        .and_then(|raw| raw.raw_input)
         .unwrap_or(serde_json::Value::Null);
-    let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_name, &args);
-    let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
+    let permission = PermRequest::tool(call.tool, args).with_diffs(call.diffs);
 
     let response = gate.request_permission(permission, card_policy).await;
-    select_option(&request.options, &response)
+    select_option(options, &response)
 }
 
 impl AgentManager {
@@ -366,16 +275,14 @@ impl AgentManager {
 
         let tool_policy = tool_policy.map(Arc::new);
 
-        Arc::new(
-            move |request: agent_client_protocol::schema::v1::RequestPermissionRequest| {
-                let gate = gate.clone();
-                let tool_policy = tool_policy.clone();
+        Arc::new(move |call, options| {
+            let gate = gate.clone();
+            let tool_policy = tool_policy.clone();
 
-                Box::pin(async move {
-                    decide_acp_permission(&gate, tool_policy.as_deref(), request).await
-                })
-            },
-        )
+            Box::pin(async move {
+                decide_acp_permission(&gate, tool_policy.as_deref(), call, &options).await
+            })
+        })
     }
 
     /// Run one registry's `pre_llm_call` handlers over the prompt, chained.
@@ -1358,148 +1265,54 @@ mod permission_serializer_tests {
 }
 
 #[cfg(test)]
-mod acp_tool_name_tests {
+mod acp_permission_tests {
     use super::*;
     use agent_client_protocol::schema::v1::{
-        PermissionOption, PermissionOptionKind, RequestPermissionOutcome, ToolCallUpdateFields,
-        ToolKind,
+        PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
     };
     use crucible_core::interaction::PermRequest;
+    use crucible_core::types::{classify_acp, CanonicalToolCall};
 
-    fn fields(kind: Option<ToolKind>, title: &str) -> ToolCallUpdateFields {
-        // `ToolCallUpdateFields` is `#[non_exhaustive]`, so it is built by
-        // mutation rather than a struct literal.
-        let mut f = ToolCallUpdateFields::default();
-        f.kind = kind;
-        f.title = Some(title.to_string());
-        f
+    /// The canonical call of an ACP frame that names no tool.
+    fn unnamed(kind: &str, title: &str) -> CanonicalToolCall {
+        classify_acp(
+            serde_json::from_value(serde_json::json!({
+                "kind": kind,
+                "title": title,
+                "locations": [{"path": "src/main.rs"}],
+            }))
+            .expect("a raw tool call"),
+            &[],
+        )
     }
 
-    /// A tool call the agent named, and nothing else.
-    fn named(name: &str) -> ToolCallUpdateFields {
-        let mut f = ToolCallUpdateFields::default();
-        f.name = Some(name.to_string());
-        f
-    }
-
-    /// A Crucible tool loses the MCP prefix its server name made, so ONE key
-    /// answers for the ACP agent and for the daemon's own tool path.
+    /// An operator's rule blocks an ACP call that names no tool. The rule
+    /// names the canonical kind, which is the name of such a call.
     ///
-    /// Both wire forms are pinned: `mcp__<server>__<tool>` is what
-    /// claude-agent-acp sends, `mcp.<server>.<tool>` what codex-acp does.
-    #[test]
-    fn a_crucible_tool_is_keyed_by_its_internal_name() {
-        assert_eq!(
-            acp_permission_tool_name(&named("mcp__crucible__read_note")),
-            "read_note"
-        );
-        assert_eq!(
-            acp_permission_tool_name(&named("mcp.crucible.read_note")),
-            "read_note"
-        );
-    }
-
-    /// Another server's tool keeps its whole name. Crucible does not own that
-    /// name, and stripping the prefix would let `mcp__evil__read_note` take a
-    /// rule written about Crucible's own `read_note`.
-    #[test]
-    fn another_mcp_server_keeps_its_whole_name() {
-        assert_eq!(
-            acp_permission_tool_name(&named("mcp__github__create_pr")),
-            "mcp__github__create_pr"
-        );
-        assert_eq!(
-            acp_permission_tool_name(&named("mcp__evil__read_note")),
-            "mcp__evil__read_note"
-        );
-    }
-
-    /// The agent's own tool is keyed by the name it sends, untouched.
-    #[test]
-    fn an_agent_tool_is_keyed_by_the_name_the_agent_sends() {
-        assert_eq!(acp_permission_tool_name(&named("Bash")), "Bash");
-        assert_eq!(acp_permission_tool_name(&named("Edit")), "Edit");
-    }
-
-    /// The name outranks the kind. A named MCP call whose `kind` is
-    /// `execute` must not be keyed as `bash`.
-    #[test]
-    fn the_name_outranks_the_kind() {
-        let mut f = named("mcp.crucible.read_note");
-        f.kind = Some(ToolKind::Execute);
-        assert_eq!(acp_permission_tool_name(&f), "read_note");
-    }
-
-    /// An agent that names no tool falls back to the coarse kind.
-    #[test]
-    fn an_unnamed_call_falls_back_to_the_kind() {
-        assert_eq!(
-            acp_permission_tool_name(&fields(Some(ToolKind::Execute), "Run cargo test")),
-            "bash"
-        );
-        assert_eq!(
-            acp_permission_tool_name(&fields(None, "Something")),
-            "acp_tool"
-        );
-    }
-
-    /// The gate must key on something an operator can write a rule against.
-    ///
-    /// It keyed on `title` — `"Read src/main.rs"` — which is prose. No
-    /// `[permissions]` entry naming a tool could ever match it, so the entire
-    /// permission config was inert for ACP-hosted agents.
-    #[test]
-    fn the_tool_name_comes_from_the_kind_not_the_prose_title() {
-        assert_eq!(
-            acp_tool_name(&fields(Some(ToolKind::Edit), "Edit src/main.rs")),
-            "edit"
-        );
-        assert_eq!(
-            acp_tool_name(&fields(Some(ToolKind::Execute), "Run cargo test")),
-            "bash"
-        );
-        assert_eq!(
-            acp_tool_name(&fields(Some(ToolKind::Read), "Read README")),
-            "read"
-        );
-    }
-
-    /// An unclassified call gets a name no file rule matches, rather than
-    /// being guessed into one.
-    #[test]
-    fn an_unidentified_call_does_not_inherit_a_file_rule() {
-        assert_eq!(acp_tool_name(&fields(None, "Something")), "acp_tool");
-        assert_eq!(
-            acp_tool_name(&fields(Some(ToolKind::Other), "Something")),
-            "acp_tool"
-        );
-    }
-
-    /// The point of all of it: an operator's rule now blocks an ACP call.
-    ///
-    /// Asserted through the gate rather than on the mapping alone, because a
+    /// Asserted through the gate rather than on the name alone, because a
     /// name that is correct and that no rule is evaluated against is the
-    /// failure this fixes.
+    /// failure this guards.
     #[tokio::test]
     async fn an_operator_rule_blocks_an_acp_tool_call() {
         let config = PermissionConfig {
             default: PermissionMode::Allow,
-            deny: vec!["edit:*".to_string()],
+            deny: vec!["file_edit:*".to_string()],
             ..Default::default()
         };
         let gate = DaemonPermissionGate::new(Some(config), true);
 
-        let name = acp_tool_name(&fields(Some(ToolKind::Edit), "Edit src/main.rs"));
+        let call = unnamed("edit", "Edit src/main.rs");
+        assert_eq!(call.tool, "file_edit", "the prose title is never the name");
         let response = gate
             .request_permission(
-                PermRequest::tool(name, serde_json::json!({"path": "src/main.rs"})),
+                PermRequest::tool(call.tool, serde_json::json!({"path": "src/main.rs"})),
                 None,
             )
             .await;
 
         assert!(
             !response.allowed,
-            "deny = [\"edit:*\"] must reach an ACP edit"
+            "deny = [\"file_edit:*\"] must reach an ACP edit"
         );
     }
 
@@ -1508,10 +1321,10 @@ mod acp_tool_name_tests {
     #[tokio::test]
     async fn a_read_kind_does_not_skip_the_prompt() {
         let gate = DaemonPermissionGate::new(None, true);
-        let name = acp_tool_name(&fields(Some(ToolKind::Read), "Read /etc/passwd"));
+        let call = unnamed("read", "Read /etc/passwd");
 
         let response = gate
-            .request_permission(PermRequest::tool(name, serde_json::json!({})), None)
+            .request_permission(PermRequest::tool(call.tool, serde_json::json!({})), None)
             .await;
 
         assert!(
@@ -1641,8 +1454,8 @@ mod acp_tool_policy_tests {
     }
 
     /// What codex-acp sends for an MCP approval: `kind: "execute"` and NO
-    /// name. The ACP client fills `name` in from the `tool_call` frame that
-    /// announced the same id, so `joined_name` is what that join produced.
+    /// name. The ACP client joins the request to the `tool_call` frame that
+    /// announced the same id, so `joined_name` is the name that join gave.
     fn codex_request(joined_name: Option<&str>) -> RequestPermissionRequest {
         let mut tool_call = serde_json::json!({
             "toolCallId": "call-1",
@@ -1681,7 +1494,12 @@ mod acp_tool_policy_tests {
             .iter()
             .map(|(name, policy)| ((*name).to_string(), *policy))
             .collect();
-        let outcome = decide_acp_permission(&gate, Some(&policy), request).await;
+        // The ACP client hands the permission path the canonical call.
+        let call = crucible_core::types::classify_acp(
+            crucible_core::types::RawToolCall::from(&request.tool_call),
+            &[],
+        );
+        let outcome = decide_acp_permission(&gate, Some(&policy), call, &request.options).await;
         Asked {
             outcome,
             prompts: prompts.load(Ordering::SeqCst),
@@ -1759,18 +1577,18 @@ mod acp_tool_policy_tests {
     }
 
     /// A codex MCP approval carries `kind: "execute"` and no name of its own.
-    /// It must not be keyed as `bash`.
+    /// It must not be keyed as a shell command.
     ///
-    /// The coarse mapping turns every `execute` kind into `bash`, so a rule
-    /// about the shell decided a note read, and a rule about the note read
-    /// decided nothing.
+    /// A coarse mapping of the kind makes every `execute` a command, so a
+    /// rule about the shell decided a note read, and a rule about the note
+    /// read decided nothing.
     #[tokio::test]
-    async fn a_codex_mcp_approval_is_not_a_bash_call() {
+    async fn a_codex_mcp_approval_is_not_a_command() {
         let joined = || codex_request(Some("mcp.crucible.read_note"));
 
-        let as_bash = decide(joined(), &[("bash", ToolPolicy::Deny)], None).await;
+        let as_command = decide(joined(), &[("command", ToolPolicy::Deny)], None).await;
         assert!(
-            as_bash.allowed(),
+            as_command.allowed(),
             "a rule about the shell must not decide an MCP note read"
         );
 
@@ -1783,7 +1601,7 @@ mod acp_tool_policy_tests {
     }
 
     /// With no name at all — no `tool_call` frame ever announced this id —
-    /// the coarse kind is the last resort, and the call is asked about.
+    /// the fallback name is the last resort, and the call is asked about.
     #[tokio::test]
     async fn an_unnamed_call_still_reaches_the_gate() {
         let asked = decide(codex_request(None), &[], None).await;
@@ -1824,7 +1642,7 @@ mod acp_permission_handler_tests {
 
     const SESSION: &str = "acp-perm-session";
 
-    /// An ACP `bash` call that offers exactly one allow and one reject.
+    /// An ACP command call that offers exactly one allow and one reject.
     fn execute_request() -> RequestPermissionRequest {
         let mut fields = ToolCallUpdateFields::default();
         fields.kind = Some(ToolKind::Execute);
@@ -1851,8 +1669,22 @@ mod acp_permission_handler_tests {
         }
     }
 
+    /// The call names no tool, so its canonical name is its kind.
     fn policy(stance: ToolPolicy) -> ToolPolicyMap {
-        ToolPolicyMap::from([("bash".to_string(), stance)])
+        ToolPolicyMap::from([("command".to_string(), stance)])
+    }
+
+    /// Ask `handle` about [`execute_request`], as the ACP client does: with
+    /// the canonical call and the options of the agent.
+    fn ask(
+        handle: &crate::acp::client::PermissionRequestHandler,
+    ) -> crate::acp::client::PermissionOutcomeFuture {
+        let request = execute_request();
+        let call = crucible_core::types::classify_acp(
+            crucible_core::types::RawToolCall::from(&request.tool_call),
+            &[],
+        );
+        handle(call, request.options)
     }
 
     /// Build the handler for an interactive session with no override.
@@ -1880,14 +1712,14 @@ mod acp_permission_handler_tests {
         }
     }
 
-    /// A card that allows `bash` answers the call. No prompt appears.
+    /// A card that allows `command` answers the call. No prompt appears.
     #[tokio::test]
     async fn a_declared_allow_selects_allow_once_without_a_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Allow)));
 
-        let outcome = handle(execute_request()).await;
+        let outcome = ask(&handle).await;
 
         assert_eq!(selected(&outcome).as_deref(), Some("allow_once"));
         assert!(
@@ -1897,14 +1729,14 @@ mod acp_permission_handler_tests {
         assert!(am.list_all_pending_permissions().is_empty());
     }
 
-    /// A card that denies `bash` refuses the call. No prompt appears.
+    /// A card that denies `command` refuses the call. No prompt appears.
     #[tokio::test]
     async fn a_declared_deny_selects_reject_once_without_a_prompt() {
         let am = create_test_agent_manager(temp_session_manager());
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let handle = handler(&am, &event_tx, Some(policy(ToolPolicy::Deny)));
 
-        let outcome = handle(execute_request()).await;
+        let outcome = ask(&handle).await;
 
         assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
         assert!(
@@ -1925,7 +1757,7 @@ mod acp_permission_handler_tests {
             (PermResponse::allow(), "allow_once"),
             (PermResponse::deny(), "reject_once"),
         ] {
-            let pending = tokio::spawn(handle(execute_request()));
+            let pending = tokio::spawn(ask(&handle));
             let id = prompt_id(&mut event_rx).await;
             am.respond_to_permission(SESSION, &id, answer)
                 .expect("the prompt must be in the session registry");
@@ -1946,7 +1778,7 @@ mod acp_permission_handler_tests {
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let handle = handler(&am, &event_tx, None);
 
-        let pending = tokio::spawn(handle(execute_request()));
+        let pending = tokio::spawn(ask(&handle));
         let _id = prompt_id(&mut event_rx).await;
         assert_eq!(am.list_all_pending_permissions().len(), 1);
 

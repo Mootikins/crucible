@@ -72,7 +72,7 @@ pub(crate) fn announce_tool_call(
 
 /// Simulate a delegated agent attaching file diffs to a tool call it already
 /// announced — ACP's `tool_call_update` carrying `ToolCallContent::Diff`, which
-/// the daemon forwards as a `tool_call_diff_update` event keyed only on
+/// the daemon forwards as a `tool_call_update` event keyed only on
 /// `call_id`. Only ACP produces this; the internal agent synthesizes its diffs
 /// up front and ships them on the `tool_call` itself.
 pub(crate) fn attach_late_diff(
@@ -82,13 +82,14 @@ pub(crate) fn attach_late_diff(
     old_content: &str,
     new_content: &str,
 ) {
-    story.send(ChatAppMsg::ToolCallDiffUpdate {
+    story.send(ChatAppMsg::ToolCallUpdate {
         call_id: call_id.to_string(),
-        diffs: vec![FileDiff::from_contents(
+        args: None,
+        diffs: Some(vec![FileDiff::from_contents(
             path.to_string(),
             Some(old_content.to_string()),
             new_content.to_string(),
-        )],
+        )]),
     });
 }
 

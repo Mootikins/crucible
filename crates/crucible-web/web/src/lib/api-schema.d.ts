@@ -2208,16 +2208,10 @@ export interface components {
             /** @description Which layer granted permission without asking, if any. */
             auto_approved?: string | null;
             /**
-             * @description Proposed file edits as `FileDiff` objects (`{path, old_content,
-             *     new_content}`); `old_content: null` means a whole-file write. The
-             *     browser renders the card's diff from this instead of re-deriving
-             *     one from the tool name and arguments.
-             */
-            diffs?: unknown;
-            /**
-             * @description The daemon's canonical tool call, shared with the TUI. `Value`
-             *     because `CanonicalToolCall` lives in `crucible-core`, which
-             *     takes no utoipa dependency (same deal as `stop_reason` below).
+             * @description The daemon's canonical tool call, shared with the TUI. Its
+             *     `diffs` are the proposed file edits of the call. `Value` because
+             *     `CanonicalToolCall` lives in `crucible-core`, which takes no
+             *     utoipa dependency (same deal as `stop_reason` below).
              */
             display?: unknown;
             id: string;

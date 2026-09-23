@@ -124,7 +124,7 @@ impl CachedToolCall {
     /// Replace the tool's file-diff snapshot. Used when ACP agents
     /// (e.g. Claude Code) defer diff content until after the initial
     /// tool_call frame and surface it via a follow-up
-    /// `tool_call_diff_update` event.
+    /// `tool_call_update` event.
     pub fn set_diffs(&mut self, diffs: Vec<FileDiff>) {
         self.diffs = diffs;
     }
@@ -132,7 +132,7 @@ impl CachedToolCall {
     /// Replace the tool's argument snapshot. Same deferred-content story as
     /// [`Self::set_diffs`], but for `rawInput`: ACP agents announce the call
     /// with no arguments and supply them via a follow-up
-    /// `tool_call_args_update` event.
+    /// `tool_call_update` event.
     pub fn set_args(&mut self, args: &str) {
         self.args = Arc::from(args);
     }

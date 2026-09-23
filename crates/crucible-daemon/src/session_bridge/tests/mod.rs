@@ -134,7 +134,7 @@ impl crucible_core::turn::Agent for BashCallingAgent {
                 id: "call-1".to_string(),
                 name: "bash".to_string(),
                 args: serde_json::json!({"command": "rm -rf /"}),
-                diffs: Vec::new(),
+                call: None,
             };
             yield TurnEvent::ToolBatchEnd;
             if let Some(rx) = inbound.as_mut() {

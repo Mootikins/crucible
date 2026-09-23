@@ -73,6 +73,12 @@ fn read_args_acp() -> Value {
     serde_json::json!({ "file_path": "greeting.rs" })
 }
 
+/// The canonical call that the ACP client makes of these frame fields, with
+/// no agent key table.
+fn acp_call(raw: Value) -> crucible_core::types::CanonicalToolCall {
+    crucible_core::types::classify_acp(serde_json::from_value(raw).expect("a raw tool call"), &[])
+}
+
 fn fixtures_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures")
 }
@@ -190,7 +196,10 @@ async fn internal_edit_fixture_matches_a_live_capture() {
             id: "call-edit-1".to_string(),
             name: "edit_file".to_string(),
             args: edit_args(),
-            diffs,
+            call: Some(Box::new(crucible_core::types::CanonicalToolCall {
+                diffs,
+                ..crucible_core::types::CanonicalToolCall::crucible_tool("edit_file", &edit_args())
+            })),
         },
         script::text(" Done."),
     ]);
@@ -240,8 +249,16 @@ async fn internal_edit_fixture_matches_a_live_capture() {
 async fn delegated_edit_fixture_matches_a_live_capture() {
     let mut h = ReactorTestHarness::new().await;
     std::fs::write(h.workspace().join("greeting.rs"), GREETING).unwrap();
-    let diffs: Vec<FileDiff> =
-        crate::tools::diff_synth::synthesize_diffs("edit_file", &edit_args());
+    // The ACP client classifies the frames; the mock supplies what it would.
+    // Claude Code announces the call with empty content and attaches the
+    // diff in a follow-up `tool_call_update`.
+    let announced = acp_call(serde_json::json!({
+        "name": "Edit File", "kind": "edit", "rawInput": edit_args_acp(),
+    }));
+    let updated = acp_call(serde_json::json!({
+        "name": "Edit File", "kind": "edit", "rawInput": edit_args_acp(),
+        "content": [{"type": "diff", "path": "greeting.rs", "oldText": "hello", "newText": "hello, world"}],
+    }));
 
     configure_delegated(&h).await;
     h.inject_agent(Box::new(OwnsToolsMockAgent {
@@ -251,13 +268,11 @@ async fn delegated_edit_fixture_matches_a_live_capture() {
                 id: "call-edit-1".to_string(),
                 name: "Edit File".to_string(),
                 args: edit_args_acp(),
-                // Claude Code announces the call with empty content and
-                // attaches the diff in a follow-up `tool_call_update`.
-                diffs: Vec::new(),
+                call: Some(Box::new(announced)),
             },
-            TurnEvent::ToolCallDiffUpdate {
+            TurnEvent::ToolCallUpdate {
                 id: "call-edit-1".to_string(),
-                diffs,
+                call: Box::new(updated),
             },
             script::tool_result("call-edit-1", "Edit File", "Replaced 1 occurrence(s)"),
             script::text(" Done."),
@@ -287,7 +302,7 @@ async fn internal_read_fixture_matches_a_live_capture() {
             id: "call-read-1".to_string(),
             name: "read_file".to_string(),
             args: read_args(),
-            diffs: Vec::new(),
+            call: None,
         },
         script::text(" That's the greeting."),
     ]);
@@ -316,7 +331,9 @@ async fn delegated_read_fixture_matches_a_live_capture() {
                 id: "call-read-1".to_string(),
                 name: "Read File".to_string(),
                 args: read_args_acp(),
-                diffs: Vec::new(),
+                call: Some(Box::new(acp_call(serde_json::json!({
+                    "name": "Read File", "kind": "read", "rawInput": read_args_acp(),
+                })))),
             },
             script::tool_result("call-read-1", "Read File", READ_OUTPUT),
             script::text(" That's the greeting."),

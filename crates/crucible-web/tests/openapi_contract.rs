@@ -207,7 +207,6 @@ fn one_chat_event_per_variant() -> Vec<ChatEvent> {
             arguments: None,
             display: None,
             auto_approved: None,
-            diffs: None,
         },
         ChatEvent::ToolResult {
             id: String::new(),

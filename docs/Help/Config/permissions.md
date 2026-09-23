@@ -141,9 +141,10 @@ prefixed names (`gh_search_code`), and so on.
   invocation of this tool) the reliable pattern, and path-shaped patterns unreliable.
 
 **External ACP agents** (sessions gated by `acp.agents.<name>.permissions`, or by the
-global config as their fallback) are checked under **the tool name the agent sends**.
-One rule decides a tool whether an external agent or Crucible's own agent calls it.
-Three cases, in this order:
+global config as their fallback) are checked under **the canonical tool name** of the
+call. Crucible makes one canonical call from the permission request and the earlier
+frames of the same `toolCallId`. One rule decides a tool whether an external agent or
+Crucible's own agent calls it. Three cases, in this order:
 
 1. **A Crucible tool.** The agent's MCP client adds a prefix to it —
    `mcp__crucible__read_note`, or `mcp.crucible.read_note` — and Crucible strips that
@@ -152,10 +153,10 @@ Three cases, in this order:
    write it as the agent sends it: `mcp__github__create_pr:*`, `Bash:*` for `claude`,
    `exec_command:*` for `codex`. Run the agent once and read the tool name off the
    permission prompt if you are unsure.
-3. **A call the agent does not name.** Only then does the coarse ACP *kind* stand in,
-   under a fixed name — `read`, `edit`, `delete`, `write` (a move), `search`, `bash`
-   (execute), `fetch`, `think`, `switch_mode`, or `acp_tool` (any call whose kind is
-   unset or unrecognized).
+3. **A call the agent does not name.** Only then does the canonical *kind* stand in as
+   the name — `command`, `file_edit`, `file_read`, `mcp_tool`, `fetch`, `search`, or
+   `tool` (a call that Crucible cannot classify). The agent's key table in
+   [[Help/Config/acp]] can give such a call a name.
 
 The input is the raw JSON arguments even for a shell tool, so this path gates by tool
 name (`read_note:*`, `Bash:*`) but **not** by command or path — `bash:cargo *` and

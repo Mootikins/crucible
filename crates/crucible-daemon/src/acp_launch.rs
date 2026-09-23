@@ -28,7 +28,7 @@ pub(crate) fn build_client_config(
 ) -> Result<ClientConfig, AcpHandleError> {
     let agent_name = agent_config.agent_name.as_deref().unwrap_or("acp");
 
-    let (command, args, mut env_vars) =
+    let (command, args, mut env_vars, tools) =
         resolve_agent_command(agent_name, agent_config, acp_config)?;
 
     // A sandboxed session runs the agent INSIDE its container rather than
@@ -74,6 +74,7 @@ pub(crate) fn build_client_config(
             Some(env_vars)
         },
         timeout_ms: Some(timeout_ms),
+        tools,
     })
 }
 
@@ -113,8 +114,14 @@ fn sandbox_env_argv(
     Ok(argv)
 }
 
-/// Resolved command, arguments, and environment variables for an ACP agent.
-type ResolvedCommand = (String, Vec<String>, Vec<(String, String)>);
+/// Resolved command, arguments, environment variables and key table for an
+/// ACP agent.
+type ResolvedCommand = (
+    String,
+    Vec<String>,
+    Vec<(String, String)>,
+    Vec<crucible_core::types::AgentKeys>,
+);
 
 /// Resolve agent name to (command, args, env_vars) through the one profile
 /// resolver in `acp::discovery`.
@@ -155,7 +162,12 @@ fn resolve_agent_command(
         }
     }
 
-    Ok((command, profile.args.unwrap_or_default(), env_vars))
+    Ok((
+        command,
+        profile.args.unwrap_or_default(),
+        env_vars,
+        profile.tools,
+    ))
 }
 
 #[cfg(test)]
@@ -219,7 +231,7 @@ mod tests {
     #[test]
     fn test_resolve_known_agent() {
         let config = test_session_agent("opencode");
-        let (cmd, args, env) = resolve_agent_command("opencode", &config, None).unwrap();
+        let (cmd, args, env, _) = resolve_agent_command("opencode", &config, None).unwrap();
         assert_eq!(cmd, "opencode");
         assert_eq!(args, vec!["acp"]);
         assert!(env.is_empty());
@@ -227,7 +239,7 @@ mod tests {
     #[test]
     fn gemini_is_launched_in_acp_mode() {
         let config = test_session_agent("gemini");
-        let (cmd, args, _) = resolve_agent_command("gemini", &config, None).unwrap();
+        let (cmd, args, _, _) = resolve_agent_command("gemini", &config, None).unwrap();
         assert_eq!(cmd, "gemini");
         // Without the flag, Gemini CLI starts its interactive UI and never
         // answers `initialize`.
@@ -236,7 +248,7 @@ mod tests {
     #[test]
     fn test_resolve_claude_agent() {
         let config = test_session_agent("claude");
-        let (cmd, args, _) = resolve_agent_command("claude", &config, None).unwrap();
+        let (cmd, args, _, _) = resolve_agent_command("claude", &config, None).unwrap();
         assert_eq!(cmd, "npx");
         assert_eq!(args, vec!["@agentclientprotocol/claude-agent-acp"]);
     }
@@ -278,7 +290,7 @@ mod tests {
             .env_overrides
             .insert("OPENCODE_MODEL".to_string(), "ollama/llama3.2".to_string());
 
-        let (_, _, env) = resolve_agent_command("opencode", &config, None).unwrap();
+        let (_, _, env, _) = resolve_agent_command("opencode", &config, None).unwrap();
         assert_eq!(env.len(), 1);
         assert_eq!(
             env[0],
@@ -305,7 +317,7 @@ mod tests {
             .insert("OPENCODE_MODEL".to_string(), "from-profile".to_string());
         acp_config.agents.insert("opencode".to_string(), profile);
 
-        let (_, _, env) = resolve_agent_command("opencode", &agent, Some(&acp_config)).unwrap();
+        let (_, _, env, _) = resolve_agent_command("opencode", &agent, Some(&acp_config)).unwrap();
 
         assert_eq!(
             env,
@@ -324,7 +336,7 @@ mod tests {
         };
         acp_config.agents.insert("opencode".to_string(), profile);
 
-        let (cmd, _, _) = resolve_agent_command("opencode", &config, Some(&acp_config)).unwrap();
+        let (cmd, _, _, _) = resolve_agent_command("opencode", &config, Some(&acp_config)).unwrap();
         assert_eq!(cmd, "/usr/local/bin/opencode");
     }
     /// A profile named after a built-in keeps the built-in command and adds
@@ -341,7 +353,7 @@ mod tests {
             },
         );
 
-        let (cmd, args, _) = resolve_agent_command("cursor", &agent, Some(&acp_config)).unwrap();
+        let (cmd, args, _, _) = resolve_agent_command("cursor", &agent, Some(&acp_config)).unwrap();
 
         assert_eq!(cmd, "cursor-agent");
         assert_eq!(args, vec!["acp", "--fast"]);

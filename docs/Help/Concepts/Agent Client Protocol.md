@@ -85,10 +85,16 @@ The client renders updates in real time (TUI streaming, web SSE, etc.) and can c
 
 The agent reports tool calls as an upsert keyed by `toolCallId`. The spec sets no order
 between `tool_call` and `tool_call_update`: an update can arrive before its call, and some
-agents send only updates. To model this, Crucible keeps one tool-call table per turn.
-Crucible announces each call once, at the first update that carries a name. At the end of
-the turn, Crucible announces each nameless call under the label "Unnamed tool", and closes
-each call that has no completion with an error that names the stop reason.
+agents send only updates. To model this, Crucible keeps one tool-call table per turn. Each
+entry holds the merged fields of the frames and the canonical call that Crucible makes of
+them. Crucible announces each call once, at the first frame that carries a title. A later
+frame that changes the canonical call, for example a late diff, updates the card. At the end
+of the turn, Crucible announces each untitled call under its canonical name, and closes each
+call that has no completion with an error that names the stop reason.
+
+A `session/request_permission` joins the entry of its `toolCallId`, before or after the
+`tool_call`. A field that the request does not set, for example the diff, comes from the
+earlier frames. The card and the prompt show the canonical tool name.
 
 ## Permissions
 

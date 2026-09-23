@@ -90,7 +90,7 @@ const editTool = (): ToolCallDisplay => ({
   name: 'Edit',
   status: 'complete',
   args: JSON.stringify({ file_path: '/proj/app.ts' }),
-  diffs: [{ path: '/proj/app.ts', old_content: 'let x = 1;', new_content: 'let x = 42;' }],
+  display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: '/proj/app.ts', old_content: 'let x = 1;', new_content: 'let x = 42;' }] },
 });
 
 describe('ToolCard — collapsed header', () => {
@@ -100,6 +100,19 @@ describe('ToolCard — collapsed header', () => {
     // Arguments section title is only rendered when expanded
     expect(screen.queryByText('Arguments')).not.toBeInTheDocument();
     expect(screen.queryByText('Result')).not.toBeInTheDocument();
+  });
+
+  it('titles the card with the canonical tool of the call', () => {
+    render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'Run cargo test',
+          display: { kind: 'command', tool: 'Bash', command: 'cargo test', primary: 'cargo test' },
+        })}
+      />
+    ));
+    expect(screen.getByText('Bash')).toBeInTheDocument();
+    expect(screen.queryByText('Run cargo test')).not.toBeInTheDocument();
   });
 
   it('exposes collapsed/expanded state via aria-expanded', () => {
@@ -328,7 +341,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
-          diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }],
+          display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }] },
           result: 'edited',
         })}
       />
@@ -344,7 +357,7 @@ describe('ToolCard — diff rendering', () => {
       <ToolCard
         toolCall={call({
           name: 'Write',
-          diffs: [{ path: 'src/new.ts', old_content: null, new_content: 'hello' }],
+          display: { kind: 'file_edit', tool: 'Write', diffs: [{ path: 'src/new.ts', old_content: null, new_content: 'hello' }] },
           result: 'wrote',
         })}
       />
@@ -359,10 +372,10 @@ describe('ToolCard — diff rendering', () => {
       <ToolCard
         toolCall={call({
           name: 'MultiEdit',
-          diffs: [
+          display: { kind: 'file_edit', tool: 'MultiEdit', diffs: [
             { path: 'src/a.rs', old_content: 'a', new_content: 'b' },
             { path: 'src/a.rs', old_content: 'c', new_content: 'd' },
-          ],
+          ] },
           result: 'multi-edited',
         })}
       />
@@ -377,10 +390,10 @@ describe('ToolCard — diff rendering', () => {
       <ToolCard
         toolCall={call({
           name: 'some_acp_editor',
-          diffs: [
+          display: { kind: 'file_edit', tool: 'some_acp_editor', diffs: [
             { path: 'src/a.rs', old_content: 'a', new_content: 'b' },
             { path: 'src/b.rs', old_content: null, new_content: 'new file' },
-          ],
+          ] },
         })}
       />
     ));
@@ -400,7 +413,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           status: 'running',
-          diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }],
+          display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }] },
         })}
       />
     ));
@@ -430,7 +443,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           status: 'error',
-          diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }],
+          display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: 'a', old_content: 'x', new_content: 'y' }] },
           result: 'string not found',
         })}
       />
@@ -454,7 +467,7 @@ describe('ToolCard — diff rendering', () => {
         toolCall={call({
           name: 'Edit',
           args: JSON.stringify({ file_path: 'src/a.rs', old_string: 'x', new_string: 'y' }),
-          diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }],
+          display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: 'src/a.rs', old_content: 'x', new_content: 'y' }] },
           result: 'edited',
         })}
       />

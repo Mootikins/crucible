@@ -104,6 +104,10 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // no summary line; the expanded card still renders the full args.
   const display = createMemo(() => props.toolCall.display);
 
+  // The title is the canonical tool name. A recording without `display`
+  // shows the name on the event.
+  const toolName = createMemo(() => display()?.tool || props.toolCall.name);
+
   const bashCommand = createMemo(() =>
     display()?.kind === 'command' ? (display()!.primary ?? null) : null,
   );
@@ -132,7 +136,9 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // about which argument matters.
   const argSummary = createMemo(() => display()?.primary?.split('\n')[0] ?? null);
 
-  const diffs = createMemo(() => toolDiffsFromWire(props.toolCall?.diffs));
+  // The call's proposed edits ride in the canonical call. The card renders
+  // them; it does not derive a diff from the tool name and arguments.
+  const diffs = createMemo(() => toolDiffsFromWire(display()?.diffs));
 
   // The session record of the chat holds every change of the session, this
   // call's change too. The diff pane opens on the record, focused on the file.
@@ -181,11 +187,11 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
         class="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-hover-wash transition-colors text-left"
       >
         <Dynamic
-          component={iconForTool(props.toolCall.name)}
+          component={iconForTool(toolName())}
           class="w-3.5 h-3.5 flex-shrink-0 text-muted"
         />
         <span class="flex-shrink-0 max-w-[45%] text-xs font-medium text-shell-ink truncate font-mono">
-          {props.toolCall.name}
+          {toolName()}
         </span>
         <span class="flex-1 min-w-0 text-floor text-muted-dark truncate font-mono">
           {argSummary() ?? ''}

@@ -2,28 +2,30 @@
 //!
 //! The ACP spec gives no order between `tool_call` and `tool_call_update`.
 //! Many agents send only updates, and some send a completed update before the
-//! call that names it. So the client keeps one entry per `toolCallId` and
-//! merges every frame into it. The entry decides what the turn stream sees:
+//! call that names it. So the client keeps one entry per `toolCallId`. The
+//! entry holds the merged fields of every frame (a [`RawToolCall`]) and their
+//! classification (a [`CanonicalToolCall`]). A frame that changes the fields
+//! makes a new classification. The entry decides what the turn stream sees:
 //!
 //! - An entry is announced at most once, at the first frame that gives it a
-//!   name. The TUI cannot rename a card, so a second announcement would show
-//!   two cards for one call.
-//! - A completion for an entry with no name is held until the name arrives,
-//!   or until the turn ends. Then the entry is announced under a fixed
-//!   placeholder label, as Zed does, and the held result follows it.
+//!   title. A later change of the canonical call comes as `ToolUpdate`.
+//! - A completion for an entry with no title is held until the title arrives,
+//!   or until the turn ends. Then the entry is announced under its canonical
+//!   name, and the held result follows it.
 //! - At the end of the turn, an announced entry with no completion gets a
 //!   failed result, so a card does not stay open forever.
+//! - A `session/request_permission` joins the entry of its `toolCallId`. The
+//!   request can come before the `tool_call` (codex-acp in Rust) or after it
+//!   (codex-acp in TypeScript), so both orders join.
 
-use agent_client_protocol::schema::v1::{ToolCall, ToolCallStatus, ToolCallUpdate};
-use serde_json::Value;
+use agent_client_protocol::schema::v1::{
+    ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate,
+};
 
 use super::CrucibleAcpClient;
-use crate::acp::streaming::{humanize_tool_title, StreamingChunk};
+use crate::acp::streaming::StreamingChunk;
 use crucible_core::text::sanitize_single_line;
-use crucible_core::types::acp::FileDiff;
-
-/// The name of a call that no frame named before the turn ended.
-pub(super) const PLACEHOLDER_TOOL_NAME: &str = "Unnamed tool";
+use crucible_core::types::{classify_acp, AgentKeys, CanonicalToolCall, RawToolCall};
 
 /// How many still-unnamed tool results one turn will hold.
 ///
@@ -57,13 +59,27 @@ impl HeldResult {
     }
 }
 
+/// The fields of one frame, with the one-line labels sanitized.
+///
+/// A title and a name are labels that say what the agent does, so they get
+/// the single-line form: a newline or a bidi override in them makes the card
+/// claim one action and perform another.
+pub(super) fn frame_fields(mut raw: RawToolCall) -> RawToolCall {
+    raw.title = raw.title.map(|t| sanitize_single_line(&t));
+    raw.name = raw.name.map(|n| sanitize_single_line(&n));
+    raw
+}
+
 #[derive(Debug)]
 struct Entry {
     id: String,
-    /// The sanitized wire title. `None` until a frame carries one.
-    title: Option<String>,
-    args: Option<Value>,
-    diffs: Vec<FileDiff>,
+    /// The merged fields of the frames.
+    raw: RawToolCall,
+    /// `raw`, classified.
+    call: CanonicalToolCall,
+    /// A `session/update` frame named this id. An entry that only a
+    /// permission request made gets no card.
+    seen: bool,
     announced: bool,
     completions: u32,
     held: Option<HeldResult>,
@@ -73,20 +89,32 @@ impl Entry {
     fn new(id: String) -> Self {
         Self {
             id,
-            title: None,
-            args: None,
-            diffs: Vec::new(),
+            raw: RawToolCall::default(),
+            call: classify_acp(RawToolCall::default(), &[]),
+            seen: false,
             announced: false,
             completions: 0,
             held: None,
         }
     }
 
+    /// The name the stream shows: the canonical tool name.
     fn name(&self) -> String {
-        self.title
-            .as_deref()
-            .map(humanize_tool_title)
-            .unwrap_or_else(|| PLACEHOLDER_TOOL_NAME.to_string())
+        self.call.tool.clone()
+    }
+
+    /// Merge a frame and classify the call again. An announced entry reports
+    /// a changed call.
+    fn merge(&mut self, frame: RawToolCall, keys: &[AgentKeys], out: &mut Vec<StreamingChunk>) {
+        self.raw.merge(frame);
+        let call = classify_acp(self.raw.clone(), keys);
+        if self.announced && call != self.call {
+            out.push(StreamingChunk::ToolUpdate {
+                id: self.id.clone(),
+                call: call.clone(),
+            });
+        }
+        self.call = call;
     }
 
     /// Emit `ToolStart`, and then the held completion when there is one.
@@ -97,10 +125,8 @@ impl Entry {
     fn announce(&mut self, out: &mut Vec<StreamingChunk>) -> usize {
         self.announced = true;
         out.push(StreamingChunk::ToolStart {
-            name: self.name(),
             id: self.id.clone(),
-            arguments: self.args.clone(),
-            diffs: self.diffs.clone(),
+            call: self.call.clone(),
         });
         match self.held.take() {
             Some(held) => {
@@ -116,33 +142,6 @@ impl Entry {
             }
             None => 0,
         }
-    }
-
-    /// Merge new arguments; an announced entry reports a change.
-    fn merge_args(&mut self, args: Option<Value>, out: &mut Vec<StreamingChunk>) {
-        let Some(args) = args else { return };
-        if self.announced && self.args.as_ref() != Some(&args) {
-            out.push(StreamingChunk::ToolArgsUpdate {
-                call_id: self.id.clone(),
-                arguments: args.clone(),
-            });
-        }
-        self.args = Some(args);
-    }
-
-    /// Merge new diffs; an announced entry reports a change. An empty list
-    /// says nothing about the diffs, so it does not clear the ones held.
-    fn merge_diffs(&mut self, diffs: Vec<FileDiff>, out: &mut Vec<StreamingChunk>) {
-        if diffs.is_empty() {
-            return;
-        }
-        if self.announced && self.diffs != diffs {
-            out.push(StreamingChunk::ToolDiffUpdate {
-                call_id: self.id.clone(),
-                diffs: diffs.clone(),
-            });
-        }
-        self.diffs = diffs;
     }
 }
 
@@ -170,43 +169,36 @@ impl ToolCallTable {
     }
 
     /// Merge a `tool_call` frame. The chunks it returns go to the callback.
-    pub(super) fn upsert_call(&mut self, call: ToolCall) -> Vec<StreamingChunk> {
+    pub(super) fn upsert_call(
+        &mut self,
+        call: ToolCall,
+        keys: &[AgentKeys],
+    ) -> Vec<StreamingChunk> {
         let mut out = Vec::new();
-        // A title is a one-line label that names what the agent does, so it
-        // gets the single-line form: a newline or a bidi override in it makes
-        // the card claim one action and perform another.
-        let title = sanitize_single_line(&call.title);
-        let diffs = diffs_from_content(call.content.iter());
-        let id = call.tool_call_id.to_string();
-        let entry = self.entry_mut(&id);
-
-        if entry.announced {
-            entry.merge_args(call.raw_input, &mut out);
-            entry.merge_diffs(diffs, &mut out);
-            return out;
+        let frame = frame_fields(RawToolCall::from(&call));
+        let entry = self.entry_mut(&call.tool_call_id.to_string());
+        entry.seen = true;
+        entry.merge(frame, keys, &mut out);
+        // The agent's own `tool_call` announces the call, also when no frame
+        // gave a title before it.
+        if !entry.announced {
+            let released = entry.announce(&mut out);
+            self.held_bytes -= released;
         }
-
-        // The agent's own `tool_call` names the call. A title that an update
-        // set before it loses, because the call is the primary source.
-        entry.title = Some(title);
-        if call.raw_input.is_some() {
-            entry.args = call.raw_input;
-        }
-        if !diffs.is_empty() {
-            entry.diffs = diffs;
-        }
-        let released = entry.announce(&mut out);
-        self.held_bytes -= released;
         out
     }
 
     /// Merge a `tool_call_update` frame. The chunks it returns go to the
     /// callback.
-    pub(super) fn upsert_update(&mut self, update: ToolCallUpdate) -> Vec<StreamingChunk> {
+    pub(super) fn upsert_update(
+        &mut self,
+        update: ToolCallUpdate,
+        keys: &[AgentKeys],
+    ) -> Vec<StreamingChunk> {
         let mut out = Vec::new();
         let id = update.tool_call_id.to_string();
+        let mut frame = frame_fields(RawToolCall::from(&update));
         let fields = update.fields;
-        let diffs = diffs_from_content(fields.content.iter().flatten());
         let completed = matches!(
             fields.status,
             Some(ToolCallStatus::Completed | ToolCallStatus::Failed)
@@ -220,20 +212,23 @@ impl ToolCallTable {
                 content,
             ),
         });
+        // The content of a completion is the result, not the call. A diff in
+        // it still describes the call, so the content stays only with a diff.
+        let has_diff = frame
+            .content
+            .iter()
+            .any(|c| matches!(c, ToolCallContent::Diff(_)));
+        if completed && !has_diff {
+            frame.content.clear();
+        }
 
         let held_count = self.held_count();
         let mut held_bytes = self.held_bytes;
         let entry = self.entry_mut(&id);
+        entry.seen = true;
+        entry.merge(frame, keys, &mut out);
 
-        if let Some(title) = fields.title.as_deref() {
-            if entry.title.is_none() {
-                entry.title = Some(sanitize_single_line(title));
-            }
-        }
-        entry.merge_args(fields.raw_input, &mut out);
-        entry.merge_diffs(diffs, &mut out);
-
-        if !entry.announced && entry.title.is_some() {
+        if !entry.announced && entry.raw.title.is_some() {
             held_bytes -= entry.announce(&mut out);
         }
 
@@ -254,16 +249,45 @@ impl ToolCallTable {
         out
     }
 
-    /// Close the turn. Every unannounced entry is announced under the
-    /// placeholder label, and every entry with no completion gets a failed
-    /// result that names the stop reason.
+    /// The canonical call that a `session/request_permission` asks about.
+    ///
+    /// The request joins the entry of its `toolCallId`. A field that the
+    /// request sets wins, because the agent asks about what the request says.
+    /// A field that it does not set comes from the earlier frames: the
+    /// TypeScript codex adapter sends the diff only in the `tool_call`.
+    ///
+    /// A request that comes before any frame of its id stays in the entry,
+    /// so the later frames merge into it. A request after a frame changes
+    /// nothing in the entry, because the card shows what the frames said.
+    pub(super) fn permission_call(
+        &mut self,
+        request: &ToolCallUpdate,
+        keys: &[AgentKeys],
+    ) -> CanonicalToolCall {
+        let frame = frame_fields(RawToolCall::from(request));
+        let entry = self.entry_mut(&request.tool_call_id.to_string());
+        let mut joined = entry.raw.clone();
+        joined.merge(frame);
+        let call = classify_acp(joined.clone(), keys);
+        if !entry.seen {
+            entry.raw = joined;
+            entry.call = call.clone();
+        }
+        call
+    }
+
+    /// Close the turn. Every unannounced entry is announced under its
+    /// canonical name, and every entry with no completion gets a failed
+    /// result that names the stop reason. An entry that only a permission
+    /// request made is not a call that the agent reported, so it gets no
+    /// card.
     pub(super) fn flush(&mut self, stop_reason: &str) -> Vec<StreamingChunk> {
         let mut out = Vec::new();
-        for entry in &mut self.entries {
+        for entry in self.entries.iter_mut().filter(|e| e.seen) {
             if !entry.announced {
                 tracing::debug!(
                     tool_id = %entry.id,
-                    "ACP never named this tool call; announcing it under the placeholder"
+                    "ACP never gave this tool call a title; announcing it under its canonical name"
                 );
                 entry.announce(&mut out);
             }
@@ -307,7 +331,7 @@ impl ToolCallTable {
     }
 
     /// Whether the turn announced at least one call. After `flush` this is
-    /// true for every non-empty table.
+    /// true for every table with a call that the agent reported.
     pub(super) fn announced_any(&self) -> bool {
         self.entries.iter().any(|entry| entry.announced)
     }
@@ -318,23 +342,13 @@ impl ToolCallTable {
         self.entries.len()
     }
 
-    /// The sanitized wire titles in arrival order, for tests that inspect
-    /// the table. An unnamed call reads as `PLACEHOLDER_TOOL_NAME`.
-    #[cfg(test)]
-    pub(super) fn titles(&self) -> Vec<&str> {
-        self.entries
-            .iter()
-            .map(|entry| entry.title.as_deref().unwrap_or(PLACEHOLDER_TOOL_NAME))
-            .collect()
-    }
-
     /// The arguments of one call, for tests that inspect the table.
     #[cfg(test)]
-    pub(super) fn args_of(&self, id: &str) -> Option<&Value> {
+    pub(super) fn args_of(&self, id: &str) -> Option<&serde_json::Value> {
         self.entries
             .iter()
             .find(|entry| entry.id == id)
-            .and_then(|entry| entry.args.as_ref())
+            .and_then(|entry| entry.raw.raw_input.as_ref())
     }
 }
 
@@ -389,41 +403,10 @@ fn hold(entry: &mut Entry, completion: HeldResult, held_count: usize, held_bytes
     entry.held = Some(completion);
 }
 
-/// The file diffs in a tool call's content, with oversize diffs dropped.
-///
-/// Both the `tool_call` frame and the `tool_call_update` frame carry diffs in
-/// the same `ToolCallContent::Diff` shape, so both read them here.
-fn diffs_from_content<'a>(
-    content: impl Iterator<Item = &'a agent_client_protocol::schema::v1::ToolCallContent>,
-) -> Vec<FileDiff> {
-    use agent_client_protocol::schema::v1::ToolCallContent;
-    content
-        .filter_map(|c| match c {
-            ToolCallContent::Diff(diff) => Some(FileDiff::from_contents(
-                diff.path.to_string_lossy().to_string(),
-                diff.old_text.clone(),
-                diff.new_text.clone(),
-            )),
-            _ => None,
-        })
-        .filter(|d| {
-            if d.is_oversize() {
-                tracing::debug!(
-                    path = %d.path,
-                    "ACP-supplied diff exceeded MAX_DIFF_BYTES; dropping at edge"
-                );
-                false
-            } else {
-                true
-            }
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     fn call(value: Value) -> ToolCall {
         serde_json::from_value(value).expect("tool_call deserializes")
@@ -441,19 +424,27 @@ mod tests {
         }))
     }
 
+    /// The tables here have no agent key table: the default matcher alone.
+    fn upsert_call(table: &mut ToolCallTable, value: Value) -> Vec<StreamingChunk> {
+        table.upsert_call(call(value), &[])
+    }
+
+    fn upsert_update(table: &mut ToolCallTable, frame: ToolCallUpdate) -> Vec<StreamingChunk> {
+        table.upsert_update(frame, &[])
+    }
+
     fn shapes(chunks: &[StreamingChunk]) -> Vec<String> {
         chunks
             .iter()
             .map(|c| match c {
-                StreamingChunk::ToolStart { name, id, .. } => format!("start {id} {name}"),
+                StreamingChunk::ToolStart { id, call } => format!("start {id} {}", call.tool),
                 StreamingChunk::ToolEnd {
                     id,
                     name,
                     result,
                     error,
                 } => format!("end {id} {name} {result:?} {error:?}"),
-                StreamingChunk::ToolArgsUpdate { call_id, .. } => format!("args {call_id}"),
-                StreamingChunk::ToolDiffUpdate { call_id, .. } => format!("diffs {call_id}"),
+                StreamingChunk::ToolUpdate { id, .. } => format!("update {id}"),
                 other => format!("{other:?}"),
             })
             .collect()
@@ -463,20 +454,24 @@ mod tests {
     fn update_before_call_is_named_by_the_call() {
         let mut table = ToolCallTable::default();
 
-        let first = table.upsert_update(completed("t1", "four"));
+        let first = upsert_update(&mut table, completed("t1", "four"));
         assert!(
             first.is_empty(),
             "an unnamed completion must wait; got {first:?}"
         );
 
-        let second = table.upsert_call(call(json!({
-            "toolCallId": "t1",
-            "title": "late_call",
-            "rawInput": {"q": "2+2"},
-        })));
+        let second = upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "t1",
+                "title": "Late call",
+                "name": "late_call",
+                "rawInput": {"q": "2+2"},
+            }),
+        );
         assert_eq!(
             shapes(&second),
-            vec!["start t1 Late Call", "end t1 Late Call Some(\"four\") None"]
+            vec!["start t1 late_call", "end t1 late_call Some(\"four\") None"]
         );
         assert!(table.flush("end_turn").is_empty());
     }
@@ -485,34 +480,38 @@ mod tests {
     fn update_with_title_for_unseen_id_announces_it() {
         let mut table = ToolCallTable::default();
 
-        let chunks = table.upsert_update(update(json!({
-            "toolCallId": "t1",
-            "title": "late_named_tool",
-            "status": "completed",
-            "rawOutput": "done",
-        })));
+        let chunks = upsert_update(
+            &mut table,
+            update(json!({
+                "toolCallId": "t1",
+                "title": "Late named tool",
+                "name": "late_named_tool",
+                "status": "completed",
+                "rawOutput": "done",
+            })),
+        );
         assert_eq!(
             shapes(&chunks),
             vec![
-                "start t1 Late Named Tool",
-                "end t1 Late Named Tool Some(\"done\") None"
+                "start t1 late_named_tool",
+                "end t1 late_named_tool Some(\"done\") None"
             ]
         );
     }
 
+    /// A call that no frame names is announced under the fallback name
+    /// `tool`, the canonical name of an unclassified call.
     #[test]
-    fn bare_update_for_unseen_id_is_announced_at_flush_under_the_placeholder() {
+    fn bare_update_for_unseen_id_is_announced_at_flush_under_the_fallback_name() {
         let mut table = ToolCallTable::default();
 
-        assert!(table
-            .upsert_update(completed("t1", "orphaned output"))
-            .is_empty());
+        assert!(upsert_update(&mut table, completed("t1", "orphaned output")).is_empty());
 
         assert_eq!(
             shapes(&table.flush("end_turn")),
             vec![
-                format!("start t1 {PLACEHOLDER_TOOL_NAME}"),
-                format!("end t1 {PLACEHOLDER_TOOL_NAME} Some(\"orphaned output\") None"),
+                "start t1 tool".to_string(),
+                "end t1 tool Some(\"orphaned output\") None".to_string(),
             ]
         );
     }
@@ -520,18 +519,21 @@ mod tests {
     #[test]
     fn repeat_completion_keeps_the_name() {
         let mut table = ToolCallTable::default();
-        table.upsert_call(call(json!({"toolCallId": "t1", "title": "repeated_tool"})));
+        upsert_call(
+            &mut table,
+            json!({"toolCallId": "t1", "title": "Repeated", "name": "repeated_tool"}),
+        );
 
-        let first = table.upsert_update(completed("t1", "PARTIAL"));
-        let second = table.upsert_update(completed("t1", "FINAL"));
+        let first = upsert_update(&mut table, completed("t1", "PARTIAL"));
+        let second = upsert_update(&mut table, completed("t1", "FINAL"));
 
         assert_eq!(
             shapes(&first),
-            vec!["end t1 Repeated Tool Some(\"PARTIAL\") None"]
+            vec!["end t1 repeated_tool Some(\"PARTIAL\") None"]
         );
         assert_eq!(
             shapes(&second),
-            vec!["end t1 Repeated Tool Some(\"FINAL\") None"]
+            vec!["end t1 repeated_tool Some(\"FINAL\") None"]
         );
         assert!(table.flush("end_turn").is_empty());
     }
@@ -539,72 +541,228 @@ mod tests {
     #[test]
     fn a_call_is_announced_once_even_when_the_agent_repeats_it() {
         let mut table = ToolCallTable::default();
-        let first = table.upsert_call(call(json!({"toolCallId": "t1", "title": "read"})));
-        let second = table.upsert_call(call(json!({"toolCallId": "t1", "title": "read"})));
+        let frame = json!({"toolCallId": "t1", "title": "Read", "name": "read"});
+        let first = upsert_call(&mut table, frame.clone());
+        let second = upsert_call(&mut table, frame);
 
-        assert_eq!(shapes(&first), vec!["start t1 Read"]);
+        assert_eq!(shapes(&first), vec!["start t1 read"]);
         assert!(second.is_empty(), "got {second:?}");
     }
 
+    /// A frame that changes nothing emits nothing. A frame that changes the
+    /// arguments or the diff emits one update with the new canonical call.
     #[test]
-    fn late_call_for_an_announced_entry_emits_only_changed_args_and_diffs() {
+    fn a_late_frame_for_an_announced_entry_emits_only_a_changed_call() {
         let mut table = ToolCallTable::default();
         let diff = json!({"type": "diff", "path": "/x.rs", "oldText": "a\n", "newText": "b\n"});
-        table.upsert_update(update(json!({
-            "toolCallId": "t1",
-            "title": "edit_file",
-            "rawInput": {"path": "/x.rs"},
-            "content": [diff],
-        })));
+        upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "t1",
+                "title": "edit_file",
+                "rawInput": {"path": "/x.rs"},
+                "content": [diff],
+            }),
+        );
 
-        let same = table.upsert_call(call(json!({
-            "toolCallId": "t1",
-            "title": "edit_file",
-            "rawInput": {"path": "/x.rs"},
-            "content": [diff],
-        })));
+        let same = upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "t1",
+                "title": "edit_file",
+                "rawInput": {"path": "/x.rs"},
+                "content": [diff],
+            }),
+        );
         assert!(
             same.is_empty(),
             "unchanged values must not re-emit; got {same:?}"
         );
 
-        let changed = table.upsert_call(call(json!({
-            "toolCallId": "t1",
-            "title": "edit_file",
-            "rawInput": {"path": "/y.rs"},
-            "content": [{"type": "diff", "path": "/y.rs", "oldText": "a\n", "newText": "c\n"}],
-        })));
-        assert_eq!(shapes(&changed), vec!["args t1", "diffs t1"]);
+        let changed = upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "t1",
+                "title": "edit_file",
+                "rawInput": {"path": "/y.rs"},
+                "content": [{"type": "diff", "path": "/y.rs", "oldText": "a\n", "newText": "c\n"}],
+            }),
+        );
+        assert_eq!(shapes(&changed), vec!["update t1"]);
+        let StreamingChunk::ToolUpdate { call, .. } = &changed[0] else {
+            unreachable!()
+        };
+        assert_eq!(call.paths, ["/y.rs"]);
+        assert_eq!(call.diffs.len(), 1);
+        assert_eq!(call.diffs[0].new_content, "c\n");
+    }
+
+    /// The text of a completion is the result. It must not replace the diff
+    /// that the call carries, or the card loses its diff when the call ends.
+    #[test]
+    fn the_text_of_a_completion_does_not_replace_the_diff_of_the_call() {
+        let mut table = ToolCallTable::default();
+        upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "t1",
+                "title": "Edit",
+                "kind": "edit",
+                "content": [{"type": "diff", "path": "/x.rs", "oldText": "a\n", "newText": "b\n"}],
+            }),
+        );
+        let end = upsert_update(
+            &mut table,
+            update(json!({
+                "toolCallId": "t1",
+                "status": "completed",
+                "content": [{"type": "content", "content": {"type": "text", "text": "done"}}],
+            })),
+        );
+        assert_eq!(
+            shapes(&end),
+            vec!["end t1 file_edit Some(\"done\") None"],
+            "a completion with only text changes no field of the call"
+        );
     }
 
     #[test]
     fn an_announced_call_with_no_completion_is_closed_at_flush() {
         let mut table = ToolCallTable::default();
-        table.upsert_call(call(json!({"toolCallId": "t1", "title": "slow_tool"})));
+        upsert_call(
+            &mut table,
+            json!({"toolCallId": "t1", "title": "Slow", "name": "slow_tool"}),
+        );
 
         assert_eq!(
             shapes(&table.flush("cancelled")),
-            vec!["end t1 Slow Tool None Some(\"turn ended: cancelled\")"]
+            vec!["end t1 slow_tool None Some(\"turn ended: cancelled\")"]
         );
     }
 
     #[test]
     fn an_update_with_a_diff_and_no_title_waits_for_flush() {
         let mut table = ToolCallTable::default();
-        let chunks = table.upsert_update(update(json!({
-            "toolCallId": "t1",
-            "content": [{"type": "diff", "path": "/y.rs", "oldText": "a\n", "newText": "b\n"}],
-        })));
+        let chunks = upsert_update(
+            &mut table,
+            update(json!({
+                "toolCallId": "t1",
+                "content": [{"type": "diff", "path": "/y.rs", "oldText": "a\n", "newText": "b\n"}],
+            })),
+        );
         assert!(chunks.is_empty(), "got {chunks:?}");
 
         let flushed = table.flush("end_turn");
         match &flushed[0] {
-            StreamingChunk::ToolStart { name, diffs, .. } => {
-                assert_eq!(name, PLACEHOLDER_TOOL_NAME);
-                assert_eq!(diffs.len(), 1);
+            StreamingChunk::ToolStart { call, .. } => {
+                assert_eq!(call.tool, "file_edit");
+                assert_eq!(call.diffs.len(), 1);
             }
             other => panic!("expected ToolStart, got {other:?}"),
         }
+    }
+
+    /// The permission request of the TypeScript codex adapter has no diff.
+    /// The diff comes from the `tool_call` before it.
+    #[test]
+    fn a_request_with_no_diff_gets_the_diff_of_the_earlier_tool_call() {
+        let mut table = ToolCallTable::default();
+        upsert_call(
+            &mut table,
+            json!({
+                "toolCallId": "p1",
+                "title": "Editing files",
+                "kind": "edit",
+                "content": [{"type": "diff", "path": "/a.rs", "oldText": "a\n", "newText": "b\n"}],
+            }),
+        );
+
+        let asked = table.permission_call(
+            &update(json!({
+                "toolCallId": "p1",
+                "kind": "edit",
+                "title": "Edit files",
+                "locations": [{"path": "/a.rs"}],
+            })),
+            &[],
+        );
+        assert_eq!(asked.kind, "file_edit");
+        assert_eq!(asked.diffs.len(), 1, "the diff joins by toolCallId");
+        assert_eq!(asked.diffs[0].new_content, "b\n");
+        assert_eq!(
+            asked.raw.as_ref().and_then(|r| r.title.as_deref()),
+            Some("Edit files"),
+            "a field that the request sets wins"
+        );
+
+        let other = table.permission_call(&update(json!({"toolCallId": "p2"})), &[]);
+        assert!(other.diffs.is_empty(), "another id joins nothing");
+    }
+
+    /// The Rust codex adapter asks before it sends the `tool_call`. The
+    /// request starts the entry, the call merges into it, and the card
+    /// comes once, from the call.
+    #[test]
+    fn a_request_before_its_tool_call_joins_the_same_entry() {
+        let mut table = ToolCallTable::default();
+        let asked = table.permission_call(
+            &update(json!({
+                "toolCallId": "s1",
+                "kind": "execute",
+                "title": "cargo test",
+                "rawInput": {"command": ["/bin/zsh", "-lc", "cargo test"]},
+            })),
+            &[],
+        );
+        assert_eq!(asked.command.as_deref(), Some("cargo test"));
+
+        let started = upsert_call(
+            &mut table,
+            json!({"toolCallId": "s1", "title": "cargo test", "kind": "execute"}),
+        );
+        assert_eq!(table.len(), 1, "one entry for one toolCallId");
+        let [StreamingChunk::ToolStart { call, .. }] = started.as_slice() else {
+            panic!("expected one ToolStart, got {started:?}")
+        };
+        assert_eq!(
+            call.command.as_deref(),
+            Some("cargo test"),
+            "the call keeps what the request said"
+        );
+    }
+
+    /// A request that the user rejects has no `tool_call` after it. It is not
+    /// a call that the agent reported, so the turn shows no card for it.
+    #[test]
+    fn a_request_alone_gets_no_card() {
+        let mut table = ToolCallTable::default();
+        table.permission_call(
+            &update(json!({"toolCallId": "r1", "title": "rm -rf /"})),
+            &[],
+        );
+
+        assert!(table.flush("end_turn").is_empty());
+        assert!(!table.announced_any());
+    }
+
+    /// A request after the frames asks about the joined call, and the card
+    /// keeps what the frames said.
+    #[test]
+    fn a_request_after_the_frames_does_not_change_the_card() {
+        let mut table = ToolCallTable::default();
+        upsert_call(
+            &mut table,
+            json!({"toolCallId": "m1", "title": "Tool: srv/search", "rawInput": {"q": "x"}}),
+        );
+        table.permission_call(
+            &update(json!({"toolCallId": "m1", "title": "Approve MCP tool call", "rawInput": {}})),
+            &[],
+        );
+        let changed = upsert_call(
+            &mut table,
+            json!({"toolCallId": "m1", "title": "Tool: srv/search", "rawInput": {"q": "x"}}),
+        );
+        assert!(changed.is_empty(), "got {changed:?}");
     }
 
     fn held_ids(table: &ToolCallTable) -> Vec<String> {
@@ -624,7 +782,7 @@ mod tests {
         let chunk = "x".repeat(MAX_HELD_RESULT_BYTES / 4);
 
         for i in 0..MAX_HELD_RESULTS {
-            table.upsert_update(completed(&format!("t{i}"), &chunk));
+            upsert_update(&mut table, completed(&format!("t{i}"), &chunk));
         }
 
         assert_eq!(held_ids(&table), vec!["t0", "t1", "t2", "t3"]);
@@ -634,7 +792,7 @@ mod tests {
     fn the_count_cap_still_bounds_a_flood_of_tiny_results() {
         let mut table = ToolCallTable::default();
         for i in 0..MAX_HELD_RESULTS * 2 {
-            table.upsert_update(completed(&format!("t{i}"), "ok"));
+            upsert_update(&mut table, completed(&format!("t{i}"), "ok"));
         }
         assert_eq!(held_ids(&table).len(), MAX_HELD_RESULTS);
     }
@@ -642,7 +800,10 @@ mod tests {
     #[test]
     fn one_oversized_result_is_refused_outright() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("huge", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)));
+        upsert_update(
+            &mut table,
+            completed("huge", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)),
+        );
         assert!(held_ids(&table).is_empty());
     }
 
@@ -650,9 +811,15 @@ mod tests {
     #[test]
     fn an_oversized_result_does_not_poison_the_ones_after_it() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("huge", &"x".repeat(u16::MAX as usize)));
-        table.upsert_update(completed("big", &"x".repeat(MAX_HELD_RESULT_BYTES)));
-        table.upsert_update(completed("small", "ok"));
+        upsert_update(
+            &mut table,
+            completed("huge", &"x".repeat(u16::MAX as usize)),
+        );
+        upsert_update(
+            &mut table,
+            completed("big", &"x".repeat(MAX_HELD_RESULT_BYTES)),
+        );
+        upsert_update(&mut table, completed("small", "ok"));
         assert_eq!(held_ids(&table), vec!["huge", "small"]);
     }
 
@@ -660,12 +827,15 @@ mod tests {
     #[test]
     fn a_refused_hold_is_reported_as_an_error_at_flush() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("huge", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)));
+        upsert_update(
+            &mut table,
+            completed("huge", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)),
+        );
 
         let flushed = table.flush("end_turn");
         assert_eq!(
             shapes(&flushed)[1],
-            format!("end huge {PLACEHOLDER_TOOL_NAME} None Some({HELD_RESULT_DROPPED:?})")
+            format!("end huge tool None Some({HELD_RESULT_DROPPED:?})")
         );
     }
 
@@ -675,9 +845,9 @@ mod tests {
     fn a_repeated_held_completion_replaces_the_earlier_one() {
         let mut table = ToolCallTable::default();
         let half = "x".repeat(MAX_HELD_RESULT_BYTES / 2);
-        table.upsert_update(completed("t1", &half));
-        table.upsert_update(completed("t1", &half));
-        table.upsert_update(completed("t2", &half));
+        upsert_update(&mut table, completed("t1", &half));
+        upsert_update(&mut table, completed("t1", &half));
+        upsert_update(&mut table, completed("t2", &half));
 
         assert_eq!(held_ids(&table), vec!["t1", "t2"]);
         assert_eq!(
@@ -695,9 +865,12 @@ mod tests {
         let mut table = ToolCallTable::default();
         let big = "x".repeat(MAX_HELD_RESULT_BYTES / 2 + 1);
 
-        table.upsert_update(completed("t1", &big));
-        table.upsert_call(call(json!({"toolCallId": "t1", "title": "late_call"})));
-        table.upsert_update(completed("t2", &big));
+        upsert_update(&mut table, completed("t1", &big));
+        upsert_call(
+            &mut table,
+            json!({"toolCallId": "t1", "title": "late_call"}),
+        );
+        upsert_update(&mut table, completed("t2", &big));
 
         assert_eq!(held_ids(&table), vec!["t2"]);
     }
@@ -711,15 +884,18 @@ mod tests {
         let mut table = ToolCallTable::default();
         let big = "x".repeat(MAX_HELD_RESULT_BYTES / 2 + 1);
 
-        table.upsert_update(completed("t1", &big));
-        table.upsert_update(completed("t1", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)));
-        table.upsert_update(completed("t2", &big));
+        upsert_update(&mut table, completed("t1", &big));
+        upsert_update(
+            &mut table,
+            completed("t1", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)),
+        );
+        upsert_update(&mut table, completed("t2", &big));
 
         assert_eq!(held_ids(&table), vec!["t2"]);
         let flushed = table.flush("end_turn");
         assert_eq!(
             shapes(&flushed)[1],
-            format!("end t1 {PLACEHOLDER_TOOL_NAME} None Some({HELD_RESULT_DROPPED:?})")
+            format!("end t1 tool None Some({HELD_RESULT_DROPPED:?})")
         );
     }
 
@@ -729,8 +905,8 @@ mod tests {
     #[test]
     fn a_table_dropped_mid_turn_reports_each_held_result_once() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("t1", "one"));
-        table.upsert_update(completed("t2", "two"));
+        upsert_update(&mut table, completed("t1", "one"));
+        upsert_update(&mut table, completed("t2", "two"));
 
         assert_eq!(table.log_dropped(), 2);
         assert_eq!(table.log_dropped(), 0, "a second pass reports nothing");
@@ -741,7 +917,7 @@ mod tests {
     #[test]
     fn a_flushed_table_has_nothing_left_to_report() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("t1", "one"));
+        upsert_update(&mut table, completed("t1", "one"));
         table.flush("end_turn");
 
         assert_eq!(table.log_dropped(), 0);
@@ -750,8 +926,8 @@ mod tests {
     #[test]
     fn flush_announces_entries_in_first_seen_order() {
         let mut table = ToolCallTable::default();
-        table.upsert_update(completed("b", "1"));
-        table.upsert_update(completed("a", "2"));
+        upsert_update(&mut table, completed("b", "1"));
+        upsert_update(&mut table, completed("a", "2"));
 
         let ids: Vec<String> = table
             .flush("end_turn")

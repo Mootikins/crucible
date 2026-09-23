@@ -55,7 +55,7 @@ import {
   type QueuedTurn,
 } from './transcriptStore';
 import { bootstrapSessionWithFallback } from './sessionBootstrap';
-import { finalizeDanglingTool } from './chatEventReducer';
+import { finalizeDanglingTool, mergeToolCallUpdate } from './chatEventReducer';
 import { FALLBACK_MODES } from '@/components/ChatModeControl';
 
 interface ChatProviderProps {
@@ -301,29 +301,17 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
               ? { display: data.display as ToolCallDisplay['display'] }
               : {}),
             ...(typeof data.auto_approved === 'string' ? { autoApproved: data.auto_approved } : {}),
-            ...(Array.isArray(data.diffs) ? { diffs: data.diffs as ToolCallDisplay['diffs'] } : {}),
           },
         });
-      } else if (evt.event === 'tool_call_args_update' || evt.event === 'tool_call_diff_update') {
-        // Late ACP merges, now persisted: claude-agent-acp announces the call
-        // without args/diffs and supplies them in a follow-up frame. Merge
-        // into the existing entry exactly as the live reducer does, so a
-        // reloaded card carries the arguments the agent actually ran with.
-        const callId = String(data.call_id ?? '');
-        const target = findToolMessage(callId);
+      } else if (evt.event === 'tool_call_update' || evt.event === 'tool_call_args_update') {
+        // Late ACP changes, persisted: an agent sends the arguments or the
+        // diff of a call in a later frame. Merge into the existing entry
+        // exactly as the live reducer does, so a reloaded card carries what
+        // the agent actually ran. A transcript from before `tool_call_update`
+        // has `tool_call_args_update` lines with args only.
+        const target = findToolMessage(String(data.call_id ?? ''));
         if (target?.toolCall) {
-          if (evt.event === 'tool_call_args_update') {
-            const args = data.args;
-            const hasArgs =
-              args !== undefined &&
-              args !== null &&
-              !(typeof args === 'object' && Object.keys(args).length === 0);
-            if (hasArgs) {
-              target.toolCall = { ...target.toolCall, args: JSON.stringify(args) };
-            }
-          } else if (Array.isArray(data.diffs) && data.diffs.length > 0) {
-            target.toolCall = { ...target.toolCall, diffs: data.diffs as ToolCallDisplay['diffs'] };
-          }
+          target.toolCall = mergeToolCallUpdate(target.toolCall, data);
         }
       } else if (evt.event === 'tool_result' || evt.event === 'tool_result_error') {
         const callId = String(data.call_id ?? '');

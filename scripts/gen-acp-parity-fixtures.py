@@ -60,8 +60,25 @@ ARGS_ACP = {
 }
 
 
-def display(tool, kind):
-    return {"kind": kind, "tool": tool, "paths": ["greeting.rs"], "primary": "greeting.rs"}
+def display(tool, kind, diffs=None, raw=None):
+    """The canonical call. The diffs of a call ride in it, and an ACP call
+    keeps the fields of its frames as `raw`."""
+    out = {"kind": kind, "tool": tool, "paths": ["greeting.rs"]}
+    if diffs:
+        out["diffs"] = diffs
+    if raw:
+        out["raw"] = raw
+    out["primary"] = "greeting.rs"
+    return out
+
+
+# The frame fields the ACP client merged for the delegated edit. The late
+# frame adds the diff content.
+RAW_EDIT = {"name": "Edit File", "kind": "edit", "rawInput": ARGS_ACP}
+RAW_EDIT_DIFF = dict(
+    RAW_EDIT,
+    content=[{"type": "diff", "path": "greeting.rs", "oldText": OLD, "newText": NEW}],
+)
 
 
 PREAMBLE = "I'll fix the greeting."
@@ -119,7 +136,7 @@ internal = common_head + [
     # marker — only a rule/card grant does. The request carries the same
     # synthesized diffs the card does: `handle_permission_request` builds
     # `PermRequest::tool(..).with_diffs(synthesize_diffs(..))`, the same call
-    # that put `diffs` on the `tool_call`.
+    # that put `diffs` in the canonical call of the `tool_call`.
     (
         "interaction_requested",
         {
@@ -140,9 +157,9 @@ internal = common_head + [
             # Registry description: `tool_call.rs` looks this up for Core tools.
             "description": "Edit file by replacing text. old_string must match exactly.",
             "source": "Core",
-            "display": display("edit_file", "file_edit"),
-            # Synthesized up-front by `tools::diff_synth` and carried on the card.
-            "diffs": DIFFS,
+            # The diffs are synthesized up-front by `tools::diff_synth` and
+            # ride in the canonical call.
+            "display": display("edit_file", "file_edit", diffs=DIFFS),
         },
     ),
     (
@@ -162,25 +179,38 @@ internal = common_head + [
 
 delegated = common_head + [
     # No `interaction_requested`: the delegated agent ran its own gate in its
-    # own process. No `description` and no `diffs` either — `stream.rs`'s
-    # `agent_owns_tools` arm has neither, and Claude Code sends the initial
-    # `tool_call` notification with empty content.
+    # own process. No `description` and no diffs either — `stream.rs`'s
+    # `agent_owns_tools` arm has no description, and Claude Code sends the
+    # initial `tool_call` notification with empty content.
     (
         "tool_call",
         {
             "call_id": "call-edit-1",
-            # ACP carries no tool name on the wire, only a prose `title`; the
-            # client stores `humanize_tool_title(title)` as the name.
+            # The canonical tool name of the call that the ACP client
+            # classified from the frames.
             "tool": "Edit File",
             "args": ARGS_ACP,
             "source": "Acp:claude",
-            "display": display("Edit File", "file_read"),
+            "display": display("Edit File", "file_edit", raw=RAW_EDIT),
         },
     ),
     # The late diff: Claude Code attaches `ToolCallContent::Diff` in a follow-up
-    # `tool_call_update`, which becomes `StreamingChunk::ToolDiffUpdate` →
-    # `TurnEvent::ToolCallDiffUpdate` → this event.
-    ("tool_call_diff_update", {"call_id": "call-edit-1", "diffs": DIFFS}),
+    # `tool_call_update`. The client classifies the merged frames again, and
+    # `StreamingChunk::ToolUpdate` → `TurnEvent::ToolCallUpdate` → this event
+    # carries the new canonical call.
+    (
+        "tool_call_update",
+        {
+            "call_id": "call-edit-1",
+            "args": ARGS_ACP,
+            "display": display(
+                "Edit File",
+                "file_edit",
+                diffs=[{"path": "greeting.rs", "old_content": OLD, "new_content": NEW}],
+                raw=RAW_EDIT_DIFF,
+            ),
+        },
+    ),
     (
         "tool_result",
         {
@@ -272,14 +302,17 @@ read_delegated = (
             "tool_call",
             {
                 "call_id": "call-read-1",
-                # `mcp__crucible__read_file` is what a delegated agent calls to
-                # reach Crucible's own read tool over MCP; the client stores
-                # `humanize_tool_title` of it, i.e. `Read File`. Same tool, same
-                # output, a different string on the wire — which is A4.
+                # The canonical tool name that the agent sent. Same tool, same
+                # output as `read_file`, a different string on the wire —
+                # which is A4.
                 "tool": "Read File",
                 "args": READ_ARGS_ACP,
                 "source": "Acp:claude",
-                "display": display("Read File", "file_read"),
+                "display": display(
+                    "Read File",
+                    "file_read",
+                    raw={"name": "Read File", "kind": "read", "rawInput": READ_ARGS_ACP},
+                ),
             },
         ),
         (

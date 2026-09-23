@@ -91,7 +91,7 @@ impl crucible_core::turn::Agent for OneToolAgent {
                 id: "call-1".to_string(),
                 name: tool.to_string(),
                 args,
-                diffs: Vec::new(),
+                call: None,
             };
             yield TurnEvent::ToolBatchEnd;
             if let Some(rx) = inbound.as_mut() {

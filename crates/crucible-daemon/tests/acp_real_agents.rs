@@ -86,6 +86,7 @@ async fn assert_profile_completes_handshake(name: &str) {
         working_dir: Some(workspace.path().to_path_buf()),
         env_vars: Some(profile.env.clone().into_iter().collect()),
         timeout_ms: Some(HANDSHAKE_TIMEOUT.as_millis() as u64),
+        tools: profile.tools.clone(),
     };
 
     let mut client = CrucibleAcpClient::spawn(config, name, None)

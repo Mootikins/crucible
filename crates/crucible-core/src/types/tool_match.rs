@@ -23,6 +23,7 @@ use agent_client_protocol_schema::v1::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::acp::FileDiff;
 use super::tool_call::CanonicalToolCall;
 
 /// The fields of an ACP tool call that a matcher or a display can read.
@@ -74,6 +75,34 @@ impl From<&ToolCallUpdate> for RawToolCall {
             locations: f.locations.clone().unwrap_or_default(),
             content: f.content.clone().unwrap_or_default(),
             meta: update.meta.clone().map(Value::Object),
+        }
+    }
+}
+
+impl RawToolCall {
+    /// Merge a later frame into this call. Each field that the frame sets
+    /// replaces the field here. An empty list sets nothing, so a frame
+    /// without `locations` or `content` keeps the ones that came before.
+    pub fn merge(&mut self, frame: RawToolCall) {
+        let RawToolCall {
+            title,
+            name,
+            kind,
+            raw_input,
+            locations,
+            content,
+            meta,
+        } = frame;
+        self.title = title.or(self.title.take());
+        self.name = name.or(self.name.take());
+        self.kind = kind.or(self.kind.take());
+        self.raw_input = raw_input.or(self.raw_input.take());
+        self.meta = meta.or(self.meta.take());
+        if !locations.is_empty() {
+            self.locations = locations;
+        }
+        if !content.is_empty() {
+            self.content = content;
         }
     }
 }
@@ -142,6 +171,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
     // One hook must match a native call and an MCP call of one Crucible tool.
     if let Some(tool) = mcp_name.as_deref().and_then(crucible_mcp_tool) {
         let mut call = CanonicalToolCall::crucible_tool(tool, &input);
+        call.diffs = file_diffs(&raw.content);
         call.raw = Some(raw);
         return call;
     }
@@ -153,6 +183,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         paths: Vec::new(),
         url: None,
         query: None,
+        diffs: Vec::new(),
         agent: None,
         raw: None,
         primary: None,
@@ -171,6 +202,7 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         call.kind = "file_edit".into();
         call.paths = diff_paths;
     }
+    call.diffs = file_diffs(&raw.content);
 
     // 2. An MCP tool name.
     if call.kind.is_empty() && mcp_name.is_some() {
@@ -236,12 +268,14 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         _ => {}
     }
 
+    // A call that nothing names gets its kind as the name, so a UI and a
+    // rule always have a name to show or to match.
     call.tool = entries
         .iter()
         .find_map(|e| first_string(&whole, &input, &e.tool))
         .or(mcp_name)
         .or_else(|| raw.name.clone())
-        .unwrap_or_default();
+        .unwrap_or_else(|| call.kind.clone());
     call.primary = call
         .command
         .clone()
@@ -251,6 +285,24 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         .or_else(|| raw.title.clone());
     call.raw = Some(raw);
     call
+}
+
+/// The file diffs in the content of a call. A diff over
+/// [`MAX_DIFF_BYTES`](super::acp::MAX_DIFF_BYTES) is dropped, so no UI must
+/// hold or draw it.
+fn file_diffs(content: &[ToolCallContent]) -> Vec<FileDiff> {
+    content
+        .iter()
+        .filter_map(|c| match c {
+            ToolCallContent::Diff(d) => Some(FileDiff::from_contents(
+                d.path.display().to_string(),
+                d.old_text.clone(),
+                d.new_text.clone(),
+            )),
+            _ => None,
+        })
+        .filter(|d| !d.is_oversize())
+        .collect()
 }
 
 /// The Crucible tool that an MCP name of Crucible's own server names.
@@ -471,7 +523,7 @@ mod tests {
     fn the_fallback_kind_is_tool() {
         let c = classify_acp(raw(json!({"title": "Something"})), &[]);
         assert_eq!(c.kind, "tool");
-        assert_eq!(c.tool, "");
+        assert_eq!(c.tool, "tool", "a call with no name is named by its kind");
         assert_eq!(c.primary.as_deref(), Some("Something"));
     }
 

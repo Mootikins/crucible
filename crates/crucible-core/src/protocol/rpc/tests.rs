@@ -296,15 +296,19 @@ fn tool_call_with_diffs_roundtrip() {
     ];
 
     // Wire-side construction (daemon path).
+    let args = serde_json::json!({"path": "src/foo.rs"});
     let evt = SessionEventMessage::tool_call_with_metadata(
         "s1",
         "call-1",
         "edit",
-        serde_json::json!({"path": "src/foo.rs"}),
+        args.clone(),
         None,
         None,
         None,
-        diffs.clone(),
+        Some(crate::types::CanonicalToolCall {
+            diffs: diffs.clone(),
+            ..crate::types::CanonicalToolCall::crucible_tool("edit", &args)
+        }),
         None,
     );
 
@@ -316,12 +320,16 @@ fn tool_call_with_diffs_roundtrip() {
     let parsed_diffs: Vec<FileDiff> = serde_json::from_value(
         parsed
             .data
-            .get("diffs")
+            .pointer("/display/diffs")
             .cloned()
-            .expect("diffs key must round-trip"),
+            .expect("the diffs of the canonical call must round-trip"),
     )
     .expect("diffs must deserialize as Vec<FileDiff>");
     assert_eq!(parsed_diffs, diffs);
+    assert!(
+        parsed.data.get("diffs").is_none(),
+        "the diffs ride only in the canonical call"
+    );
 }
 
 #[test]
@@ -363,19 +371,22 @@ fn turn_event_tool_call_diffs_roundtrip_json() {
         Some("a\n".to_string()),
         "b\n",
     )];
+    let args = serde_json::json!({"path": "src/foo.rs"});
     let ev = TurnEvent::ToolCall {
         id: "call-1".into(),
         name: "edit".into(),
-        args: serde_json::json!({"path": "src/foo.rs"}),
-        diffs: diffs.clone(),
+        args: args.clone(),
+        call: Some(Box::new(crate::types::CanonicalToolCall {
+            diffs: diffs.clone(),
+            ..crate::types::CanonicalToolCall::crucible_tool("edit", &args)
+        })),
     };
     let s = serde_json::to_string(&ev).unwrap();
     let r: TurnEvent = serde_json::from_str(&s).unwrap();
     match r {
         TurnEvent::ToolCall {
-            diffs: parsed_diffs,
-            ..
-        } => assert_eq!(parsed_diffs, diffs),
+            call: Some(call), ..
+        } => assert_eq!(call.diffs, diffs),
         other => panic!("wrong variant: {other:?}"),
     }
 }
@@ -387,7 +398,7 @@ fn turn_event_tool_call_legacy_json_parses_with_empty_diffs() {
     let json = r#"{"ToolCall":{"id":"c","name":"t","args":null}}"#;
     let r: TurnEvent = serde_json::from_str(json).unwrap();
     match r {
-        TurnEvent::ToolCall { diffs, .. } => assert!(diffs.is_empty()),
+        TurnEvent::ToolCall { call, .. } => assert!(call.is_none()),
         other => panic!("wrong variant: {other:?}"),
     }
 }
@@ -471,7 +482,13 @@ fn golden_tool_call_maximal() {
         Some("edits a file".into()),
         Some("builtin".into()),
         Some("src/a.rs (lua)".into()),
-        vec![FileDiff::new("src/a.rs", "new\n")],
+        Some(crate::types::CanonicalToolCall {
+            diffs: vec![FileDiff::new("src/a.rs", "new\n")],
+            ..crate::types::CanonicalToolCall::crucible_tool(
+                "edit_file",
+                &serde_json::json!({"path": "src/a.rs"}),
+            )
+        }),
         Some("mode:auto".into()),
     );
     assert_eq!(
@@ -483,37 +500,64 @@ fn golden_tool_call_maximal() {
             "description": "edits a file",
             "source": "builtin",
             "lua_primary_arg": "src/a.rs (lua)",
-            "display": {"kind": "file_edit", "tool": "edit_file", "paths": ["src/a.rs"], "primary": "src/a.rs (lua)"},
+            "display": {
+                "kind": "file_edit", "tool": "edit_file", "paths": ["src/a.rs"],
+                "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
+                "primary": "src/a.rs (lua)"
+            },
             "auto_approved": "mode:auto",
-            "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
         })
     );
 }
 
+/// The update carries the new canonical call and its `rawInput` as `args`.
 #[test]
-fn golden_tool_call_args_update() {
-    let m = SessionEventMessage::tool_call_args_update("s1", "c-1", serde_json::json!({"a": 1}));
-    assert_eq!(
-        wire(&m, "tool_call_args_update"),
-        serde_json::json!({"call_id": "c-1", "args": {"a": 1}})
+fn golden_tool_call_update() {
+    use crate::types::{classify_acp, RawToolCall};
+    let call = classify_acp(
+        RawToolCall {
+            name: Some("Edit".into()),
+            raw_input: Some(serde_json::json!({"file_path": "src/a.rs"})),
+            ..RawToolCall::default()
+        },
+        &[],
     );
-}
-
-#[test]
-fn golden_tool_call_diff_update() {
-    use crate::types::acp::FileDiff;
-    let m = SessionEventMessage::tool_call_diff_update(
-        "s1",
-        "c-1",
-        vec![FileDiff::new("src/a.rs", "x\n")],
-    );
+    let m = SessionEventMessage::tool_call_update("s1", "c-1", call);
     assert_eq!(
-        wire(&m, "tool_call_diff_update"),
+        wire(&m, "tool_call_update"),
         serde_json::json!({
             "call_id": "c-1",
-            "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "x\n"}],
+            "args": {"file_path": "src/a.rs"},
+            "display": {
+                "kind": "tool", "tool": "Edit", "paths": ["src/a.rs"],
+                "raw": {"name": "Edit", "rawInput": {"file_path": "src/a.rs"}},
+                "primary": "src/a.rs"
+            },
         })
     );
+}
+
+/// A transcript from before `tool_call_update` has `tool_call_args_update`
+/// lines. They still load, so a resumed card keeps its arguments.
+#[test]
+fn an_old_args_update_line_loads_as_a_tool_call_update() {
+    let payload = crate::protocol::SessionEventPayload::from_wire(
+        "tool_call_args_update",
+        &serde_json::json!({"call_id": "c-1", "args": {"a": 1}}),
+    )
+    .expect("the old line decodes");
+    match payload {
+        crate::protocol::SessionEventPayload::Turn(TurnPayload::ToolCallUpdate {
+            call_id,
+            args,
+            display,
+        }) => {
+            assert_eq!(call_id, "c-1");
+            assert_eq!(args, serde_json::json!({"a": 1}));
+            assert!(display.is_none());
+        }
+        other => panic!("expected ToolCallUpdate, got {other:?}"),
+    }
 }
 
 /// `terminate` is serialized even when false — an existing subscriber reads

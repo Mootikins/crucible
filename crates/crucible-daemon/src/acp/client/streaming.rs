@@ -3,6 +3,7 @@ use std::time::Duration;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, PromptRequest, PromptResponse, SessionId, SessionUpdate,
 };
+use crucible_core::types::AgentKeys;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -173,8 +174,8 @@ impl CrucibleAcpClient {
     /// deadline the client sends `session/cancel` and returns a timeout.
     ///
     /// The SDK dispatches every update that comes before the response before
-    /// it gives the response. So the updates that are in the channel when
-    /// the response comes are all of the turn.
+    /// it gives the response. The notification handler applies each update
+    /// when it comes, so the turn state is complete when the response comes.
     pub async fn prompt(
         &self,
         request: PromptRequest,
@@ -197,17 +198,12 @@ impl CrucibleAcpClient {
             }
         };
         let session_id = request.session_id.clone();
-        let (updates_tx, mut updates) = mpsc::unbounded_channel();
         let cancel = CancellationToken::new();
-        {
-            let mut shared = super::lock(&self.shared);
-            shared.turn = Some(super::Turn {
-                updates: updates_tx,
-                cancel: cancel.clone(),
-            });
-            // The tool names of the turn that ended answer nothing now.
-            shared.tool_names.clear();
-        }
+        super::lock(&self.shared).turn = Some(super::Turn {
+            out: out.clone(),
+            state: StreamingState::default(),
+            cancel: cancel.clone(),
+        });
         let _slot = TurnSlot(&self.shared);
 
         let limit = self
@@ -220,11 +216,8 @@ impl CrucibleAcpClient {
         let response = self.cx.send_request(request).block_task();
         tokio::pin!(response);
 
-        let mut state = StreamingState::default();
         let result = loop {
             tokio::select! {
-                biased;
-                Some(update) = updates.recv() => apply_update(update, &mut state, out),
                 () = out.closed(), if !cancel.is_cancelled() => {
                     tracing::debug!(%session_id, "Turn dropped; sending session/cancel to ACP agent");
                     cancel.cancel();
@@ -240,9 +233,6 @@ impl CrucibleAcpClient {
                 }
             }
         };
-        while let Ok(update) = updates.try_recv() {
-            apply_update(update, &mut state, out);
-        }
 
         let response = result.map_err(|error| {
             if super::connection_lost(&error) {
@@ -258,13 +248,17 @@ impl CrucibleAcpClient {
 
         // The turn is over: name every call the agent never named, and close
         // every call it never completed.
-        for chunk in state
+        let Some(mut turn) = super::lock(&self.shared).turn.take() else {
+            return Err(ClientError::Session("the turn state is gone".into()));
+        };
+        for chunk in turn
+            .state
             .tool_calls
             .flush(&stop_reason_label(response.stop_reason))
         {
             let _ = out.send(chunk);
         }
-        Ok((state.summary(), response))
+        Ok((turn.state.summary(), response))
     }
 
     /// Send `session/cancel`. The agent must end the turn with `cancelled`.
@@ -284,6 +278,7 @@ pub(super) fn apply_update(
     update: SessionUpdate,
     state: &mut StreamingState,
     out: &mpsc::UnboundedSender<StreamingChunk>,
+    keys: &[AgentKeys],
 ) {
     let emit = |chunk| {
         let _ = out.send(chunk);
@@ -327,14 +322,14 @@ pub(super) fn apply_update(
         SessionUpdate::ToolCall(tool_call) => {
             state
                 .tool_calls
-                .upsert_call(tool_call)
+                .upsert_call(tool_call, keys)
                 .into_iter()
                 .for_each(emit);
         }
         SessionUpdate::ToolCallUpdate(update) => {
             state
                 .tool_calls
-                .upsert_update(update)
+                .upsert_update(update, keys)
                 .into_iter()
                 .for_each(emit);
         }

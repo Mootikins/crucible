@@ -8,6 +8,7 @@ use crucible_core::traits::TokenUsage;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 use crucible_core::types::mode::default_internal_modes;
+use crucible_core::types::CanonicalToolCall;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use genai::chat::{
@@ -175,12 +176,15 @@ impl ToolCallEmitter {
         // Pure helper — returns an empty Vec for unknown tools, malformed
         // args, or oversized content. Mirrors the permission flow's
         // synthesis at `agent_manager::messaging::permission`.
-        let diffs = crate::tools::diff_synth::synthesize_diffs(&tc.fn_name, &normalized_args);
+        let call = CanonicalToolCall {
+            diffs: crate::tools::diff_synth::synthesize_diffs(&tc.fn_name, &normalized_args),
+            ..CanonicalToolCall::crucible_tool(&tc.fn_name, &normalized_args)
+        };
         Some(TurnEvent::ToolCall {
             id: tc.call_id,
             name: tc.fn_name,
             args: normalized_args,
-            diffs,
+            call: Some(Box::new(call)),
         })
     }
 
@@ -1837,7 +1841,10 @@ mod tests {
         };
         let ev = e.try_emit(raw).expect("must emit ToolCall");
         match ev {
-            TurnEvent::ToolCall { diffs, .. } => {
+            TurnEvent::ToolCall {
+                call: Some(call), ..
+            } => {
+                let diffs = &call.diffs;
                 assert_eq!(diffs.len(), 1, "should synthesize one FileDiff");
                 let diff = &diffs[0];
                 // synthesize_diffs resolves relative paths against
@@ -1864,7 +1871,10 @@ mod tests {
         let mut e = ToolCallEmitter::new();
         let ev = e.try_emit(tc("call-1", "bash")).expect("must emit");
         match ev {
-            TurnEvent::ToolCall { diffs, .. } => {
+            TurnEvent::ToolCall {
+                call: Some(call), ..
+            } => {
+                let diffs = &call.diffs;
                 assert!(
                     diffs.is_empty(),
                     "non-file-mutating tools must not synthesize diffs"
@@ -2841,7 +2851,7 @@ mod tests {
             id: "call_1".to_string(),
             name: "search".to_string(),
             args: serde_json::Value::Null,
-            diffs: Vec::new(),
+            call: None,
         }
     }
 

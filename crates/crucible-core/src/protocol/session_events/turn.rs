@@ -1,4 +1,4 @@
-//! The turn stream: the sixteen events a session emits while a turn runs.
+//! The turn stream: the fourteen events a session emits while a turn runs.
 //!
 //! This is the group [`Systems`](../../../../../docs/Meta/Analysis/Systems.md)
 //! §Presentation Parity Boundary describes in prose. `TurnPayload`'s variant
@@ -38,7 +38,6 @@ use serde_json::Value;
 use crate::events::session_event::ScriptingEvent;
 use crate::interaction::{InteractionRequest, InteractionResponse};
 use crate::traits::chat::PrecognitionNoteInfo;
-use crate::types::acp::FileDiff;
 use crate::types::CanonicalToolCall;
 
 /// Turn-stream events, adjacently tagged so the enum's serialization *is* the
@@ -141,31 +140,23 @@ pub enum TurnPayload {
         /// emitted, so a separate event would only make the marker pop in late.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         auto_approved: Option<String>,
-        #[serde(
-            default,
-            deserialize_with = "lenient_diffs",
-            skip_serializing_if = "Vec::is_empty"
-        )]
-        diffs: Vec<FileDiff>,
     },
-    /// Late arguments for a tool call already announced by a prior `tool_call`.
-    /// Produced when an ACP agent announces the call without `rawInput` and
-    /// only supplies it in a follow-up `ToolCallUpdate` frame. Subscribers
-    /// merge `args` into the existing entry keyed by `call_id`.
-    ToolCallArgsUpdate {
+    /// A new canonical form of a tool call that a prior `tool_call` already
+    /// announced. An ACP agent can send the arguments or the diff of a call
+    /// in a later frame. Subscribers replace `args` and `display` of the
+    /// entry with `call_id`.
+    ///
+    /// A transcript from before this event has `tool_call_args_update` lines,
+    /// with `args` and no `display`. The alias reads them, so a resumed
+    /// card keeps its arguments.
+    #[serde(alias = "tool_call_args_update")]
+    ToolCallUpdate {
         #[serde(default)]
         call_id: String,
         #[serde(default)]
         args: Value,
-    },
-    /// Late file-diff content for a tool call already announced by a prior
-    /// `tool_call`. Subscribers merge `diffs` into the existing entry keyed by
-    /// `call_id`.
-    ToolCallDiffUpdate {
-        #[serde(default)]
-        call_id: String,
-        #[serde(default, deserialize_with = "lenient_diffs")]
-        diffs: Vec<FileDiff>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display: Option<Box<CanonicalToolCall>>,
     },
     /// `terminate` is serialized even when `false` — an existing subscriber
     /// reads `data.terminate` unconditionally. Do NOT add
@@ -241,35 +232,6 @@ pub enum TurnPayload {
     },
 }
 
-/// Deserialize `diffs` tolerantly: a value that is not a `Vec<FileDiff>` yields
-/// an empty Vec instead of failing the whole payload.
-///
-/// The two consumers this replaces both did exactly that — log and carry on with
-/// an empty Vec — because a tool card is still worth rendering without its
-/// diffs. Making the decode strict would have turned a cosmetic degradation into
-/// a dropped tool call, which is a behaviour change smuggled in under a typing
-/// change.
-fn lenient_diffs<'de, D>(deserializer: D) -> Result<Vec<FileDiff>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let raw = Value::deserialize(deserializer)?;
-    if raw.is_null() {
-        return Ok(Vec::new());
-    }
-    match serde_json::from_value(raw.clone()) {
-        Ok(diffs) => Ok(diffs),
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                raw = %raw,
-                "session event carried a malformed `diffs` field; continuing with an empty Vec",
-            );
-            Ok(Vec::new())
-        }
-    }
-}
-
 impl TurnPayload {
     /// The [`ScriptingEvent`] a Lua handler sees for this transport event,
     /// where one exists.
@@ -295,8 +257,7 @@ impl TurnPayload {
             Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted,
             Self::PrecognitionComplete { .. } => ScriptingEvent::PrecognitionComplete,
             Self::SegmentComplete { .. }
-            | Self::ToolCallArgsUpdate { .. }
-            | Self::ToolCallDiffUpdate { .. }
+            | Self::ToolCallUpdate { .. }
             | Self::ContextInjected { .. }
             | Self::PostLlmCall { .. }
             | Self::TurnFinished { .. } => return None,
@@ -320,12 +281,11 @@ impl TurnPayload {
             // A replay needs to know where a turn ended and how.
             | Self::TurnFinished { .. }
             // Late ACP merges are part of the tool's record. claude-agent-acp
-            // announces the call without `rawInput`/diffs and supplies them in
+            // announces the call without `rawInput` or a diff and supplies them in
             // a follow-up frame; dropping the update left every replayed
             // transcript — web and TUI alike — with a card whose args read
             // `{}` forever.
-            | Self::ToolCallArgsUpdate { .. }
-            | Self::ToolCallDiffUpdate { .. }
+            | Self::ToolCallUpdate { .. }
             // What context was injected is part of the turn's record, not just
             // a live notification: without it a resumed transcript cannot say
             // which notes the answer was grounded in, and re-deriving it later

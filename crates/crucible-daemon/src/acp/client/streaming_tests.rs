@@ -23,7 +23,7 @@ fn thought_chunks_stay_out_of_the_answer_text() {
         }
     }))
     .expect("valid agent_thought_chunk notification");
-    apply_update(thought.update, &mut state, &tx);
+    apply_update(thought.update, &mut state, &tx, &[]);
 
     // The same words then arrive as the answer. If the thought had been
     // appended to `accumulated_text`, the resend guard would drop it.
@@ -35,7 +35,7 @@ fn thought_chunks_stay_out_of_the_answer_text() {
         }
     }))
     .expect("valid agent_message_chunk notification");
-    apply_update(answer.update, &mut state, &tx);
+    apply_update(answer.update, &mut state, &tx, &[]);
     drop(tx);
 
     let mut chunks = Vec::new();
@@ -83,7 +83,7 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
             "update": { "sessionUpdate": kind, "content": { "type": "text", "text": text } }
         }))
         .expect("valid notification");
-        apply_update(notification.update, &mut state, &tx);
+        apply_update(notification.update, &mut state, &tx, &[]);
     }
 
     let tool: SessionNotification = serde_json::from_value(serde_json::json!({
@@ -92,11 +92,12 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
             "sessionUpdate": "tool_call",
             "toolCallId": "t1",
             "title": "read\u{202E}txt.exe",
+            "name": "read\u{202E}txt.exe",
             "status": "pending"
         }
     }))
     .expect("valid tool_call notification");
-    apply_update(tool.update, &mut state, &tx);
+    apply_update(tool.update, &mut state, &tx, &[]);
     drop(tx);
 
     let mut chunks = Vec::new();
@@ -105,29 +106,30 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
     }
 
     let clean = "a2Jbcde";
+    let [thinking, text, StreamingChunk::ToolStart { call, .. }] = chunks.as_slice() else {
+        panic!("expected thinking, text and one tool start, got {chunks:?}")
+    };
     assert_eq!(
-        chunks,
-        vec![
-            StreamingChunk::Thinking(clean.to_string()),
-            StreamingChunk::Text(clean.to_string()),
-            StreamingChunk::ToolStart {
-                name: "Readtxt.exe".to_string(),
-                id: "t1".to_string(),
-                arguments: None,
-                diffs: vec![],
-            },
-        ],
+        (thinking, text),
+        (
+            &StreamingChunk::Thinking(clean.to_string()),
+            &StreamingChunk::Text(clean.to_string())
+        ),
         "agent-controlled text reached the turn stream unsanitised"
+    );
+    assert_eq!(
+        call.tool, "readtxt.exe",
+        "the tool name kept its bidi override"
+    );
+    assert_eq!(
+        call.raw.as_ref().and_then(|raw| raw.title.as_deref()),
+        Some("readtxt.exe"),
+        "the recorded tool title kept its bidi override"
     );
     let persisted = &state.accumulated_text;
     assert_eq!(
         persisted, clean,
         "the accumulated answer kept its control characters: {persisted:?}"
-    );
-    assert_eq!(
-        state.tool_calls.titles(),
-        vec!["readtxt.exe"],
-        "the recorded tool title kept its bidi override"
     );
 }
 
@@ -149,7 +151,7 @@ fn newlines_and_tabs_survive_sanitising_of_agent_prose() {
         }
     }))
     .expect("valid agent_message_chunk notification");
-    apply_update(notification.update, &mut state, &tx);
+    apply_update(notification.update, &mut state, &tx, &[]);
     drop(tx);
 
     assert_eq!(

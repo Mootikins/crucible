@@ -23,7 +23,7 @@ function editCall(over: Partial<ToolCallDisplay> = {}): ToolCallDisplay {
     callId: 'call-1',
     name: 'Edit',
     args: JSON.stringify({ file_path: '/repo/src/a.rs', old_string: 'a', new_string: 'b' }),
-    diffs: [{ path: '/repo/src/a.rs', old_content: 'a', new_content: 'b' }],
+    display: { kind: 'file_edit', tool: 'Edit', diffs: [{ path: '/repo/src/a.rs', old_content: 'a', new_content: 'b' }] },
     status: 'complete',
     result: 'ok',
     ...over,
