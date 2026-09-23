@@ -119,6 +119,7 @@ pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), Lu
         ("proposals", StatusItem::Proposals),
         ("status", StatusItem::Status),
         ("notification", StatusItem::Notification),
+        ("items", StatusItem::List),
         ("align", StatusItem::Align),
         // `spacer` is the old name for the same thing; kept so existing configs
         // and muscle memory keep working.

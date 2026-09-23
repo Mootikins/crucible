@@ -1272,6 +1272,30 @@ through `hue-7`. An unknown name uses `info`. Without `color`, warning and
 error levels use their semantic groups; other slots get a stable hue from the
 plugin name. The TUI and web resolve the same group name in their own palettes.
 
+### cru.statusline.item(opts) / cru.statusline.publish(session_id, items)
+
+Publish one ordered list for a session. `publish` replaces the previous list
+atomically; an empty list clears it. The same list feeds `sl.items` in the TUI
+and the web composer's status slot.
+
+```lua
+local sl = cru.statusline
+sl.publish(session.id, {
+  sl.item{ id = "forecast", text = "Rain soon", priority = 40,
+           plugin = "weather", color = "hue-4" },
+  sl.item{ id = "goal-approval", text = "goal asks", priority = 10,
+           plugin = "goal", color = "warn", action = "plugin_approval" },
+})
+```
+
+Each `id` must be nonempty and unique within the list. Lower priorities appear
+first (0–255; default 128). Text is cleaned to one line and capped at 50
+characters. `pinned = true` keeps an item visible when space runs out; the
+engine also pins `plugin_approval` and `plugin_turn` actions. An omitted color
+uses the plugin's stable hue. The clients use the action name to open an engine
+control, not a plugin supplied command string. The TUI's `:status` picker shows
+every item, including those behind its `+N` overflow.
+
 ## Publications
 
 ### cru.plugin.publish(key, value)

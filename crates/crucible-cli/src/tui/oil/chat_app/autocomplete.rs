@@ -436,6 +436,20 @@ impl OilChatApp {
         use super::state::PickSource;
 
         match source {
+            PickSource::Status => self
+                .status_items
+                .iter()
+                .filter(|entry| {
+                    filter.is_empty()
+                        || entry.text.to_lowercase().contains(&filter.to_lowercase())
+                        || entry.id.to_lowercase().contains(&filter.to_lowercase())
+                })
+                .map(|entry| PopupItemNode {
+                    label: format!("{} [{}]", entry.text, entry.id),
+                    description: Some(entry.plugin.clone()),
+                    kind: Some("status".into()),
+                })
+                .collect(),
             PickSource::Notes => Self::filter_to_popup_items(&self.kiln_notes, filter, "note", 50),
             PickSource::Files => {
                 Self::filter_to_popup_items(&self.workspace_files, filter, "file", 50)
@@ -532,6 +546,9 @@ impl OilChatApp {
                     }
                     PickSource::Commands => {
                         self.set_input(label);
+                    }
+                    PickSource::Status => {
+                        self.set_input("");
                     }
                 }
             }

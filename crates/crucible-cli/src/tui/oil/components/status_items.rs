@@ -200,6 +200,60 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
 
         StatusItem::Status => text_frag(ctx.data.status.clone()),
 
+        StatusItem::List => {
+            let entries = &ctx.data.status_items;
+            let info: Vec<_> = entries.iter().filter(|entry| !entry.pinned).collect();
+            let pinned: Vec<_> = entries.iter().filter(|entry| entry.pinned).collect();
+            let pinned_width: usize = pinned
+                .iter()
+                .map(|entry| entry.text.chars().count() + 1)
+                .sum();
+            let budget = ctx.data.status_width.max(1).saturating_sub(pinned_width);
+            let mut used = 0;
+            let mut visible = 0;
+            for entry in &info {
+                let next = visible + 1;
+                let hidden = info.len() - next;
+                let overflow_width = if hidden > 0 {
+                    hidden.to_string().len() + 2
+                } else {
+                    0
+                };
+                let width = entry.text.chars().count() + 1;
+                if used + width + overflow_width > budget {
+                    break;
+                }
+                used += width;
+                visible = next;
+            }
+            let mut fragments = Vec::new();
+            for entry in info.iter().take(visible) {
+                let group =
+                    crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
+                fragments.push(Fragment::new(
+                    format!("{} ", entry.text),
+                    Style::new().fg(theme::status_color::color(group, theme::active())),
+                ));
+            }
+            let hidden = info.len() - visible;
+            if hidden > 0 {
+                fragments.push(Fragment::badge(
+                    format!("+{hidden} "),
+                    Style::new()
+                        .fg(theme::active().resolve_color(theme::active().colors.text_muted)),
+                ));
+            }
+            for entry in pinned {
+                let group =
+                    crucible_core::status_color::StatusColorGroup::from_name(&entry.color_group);
+                fragments.push(Fragment::badge(
+                    format!("{} ", entry.text),
+                    Style::new().fg(theme::status_color::color(group, theme::active())),
+                ));
+            }
+            fragments
+        }
+
         // Renders as message plus a reversed severity badge, or — with no
         // active toast — one badge per pending count. Both shapes are carried
         // over from the pre-item renderer.
@@ -359,7 +413,41 @@ mod tests {
             cache_hit_rate: None,
             background_tasks: 0,
             proposals: 0,
+            status_items: Vec::new(),
+            status_width: 40,
         }
+    }
+
+    #[test]
+    fn status_list_keeps_pins_and_counts_hidden_information() {
+        let mut data = data();
+        data.status_width = 12;
+        data.status_items = [
+            ("one", false),
+            ("two", false),
+            ("three", false),
+            ("ask", true),
+        ]
+        .into_iter()
+        .map(|(id, pinned)| crucible_core::types::StatusDisplayItem {
+            id: id.into(),
+            text: id.into(),
+            priority: 10,
+            color_group: if pinned { "warn" } else { "info" }.into(),
+            action: None,
+            pinned,
+            plugin: "test".into(),
+        })
+        .collect();
+        let rendered = render(&[StatusItem::List], &data, false);
+        assert!(
+            rendered.contains("ask"),
+            "pinned control must stay visible: {rendered}"
+        );
+        assert!(
+            rendered.contains("+2"),
+            "hidden information needs an overflow count: {rendered}"
+        );
     }
 
     #[test]

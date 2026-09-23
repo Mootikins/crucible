@@ -242,6 +242,13 @@ impl OilChatApp {
             ReplCommand::Diff => Action::Send(ChatAppMsg::OpenDiff(arg.map(str::to_string))),
             // The daemon holds the proposals, so the fetch is the runner's.
             ReplCommand::Proposals => Action::Send(ChatAppMsg::FetchProposals { open: true }),
+            ReplCommand::Status => self.open_picker(Some("status")),
+            ReplCommand::PluginMode => {
+                // TODO(plugin-turns): replace this with the daemon's approval
+                // mode list once that branch lands on this one.
+                self.add_system_message("Plugin approval controls will appear here when the session plugin-mode API is available.".into());
+                Action::Continue
+            }
             ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue
@@ -926,9 +933,10 @@ impl OilChatApp {
             Some("notes" | "note") => PickSource::Notes,
             Some("commands" | "command" | "cmd") => PickSource::Commands,
             Some("files" | "file") => PickSource::Files,
+            Some("status" | "statuses") => PickSource::Status,
             Some(unknown) => {
                 self.add_notification(crucible_core::types::Notification::warning(format!(
-                    "Unknown pick source: '{}'. Valid: notes, commands, files, all",
+                    "Unknown pick source: '{}'. Valid: notes, commands, files, status, all",
                     unknown
                 )));
                 return Action::Continue;

@@ -39,6 +39,8 @@ pub(super) enum ReplCommand {
     Diff,
     /// List the proposals in the Inbox full-screen.
     Proposals,
+    Status,
+    PluginMode,
 }
 
 impl ReplCommand {
@@ -62,6 +64,8 @@ impl ReplCommand {
         Self::Surfaces,
         Self::Diff,
         Self::Proposals,
+        Self::Status,
+        Self::PluginMode,
     ];
 
     /// The word after `:` that runs this command.
@@ -85,6 +89,8 @@ impl ReplCommand {
             Self::Surfaces => "surfaces",
             Self::Diff => "diff",
             Self::Proposals => "proposals",
+            Self::Status => "status",
+            Self::PluginMode => "plugin-mode",
         }
     }
 
@@ -108,7 +114,9 @@ impl ReplCommand {
             | Self::Lua
             | Self::Surfaces
             | Self::Diff
-            | Self::Proposals => &[],
+            | Self::Proposals
+            | Self::Status
+            | Self::PluginMode => &[],
         }
     }
 
@@ -133,6 +141,8 @@ impl ReplCommand {
             Self::Surfaces => ":surfaces [name]",
             Self::Diff => ":diff [base]",
             Self::Proposals => ":proposals",
+            Self::Status => ":status",
+            Self::PluginMode => ":plugin-mode",
         }
     }
 
@@ -157,6 +167,8 @@ impl ReplCommand {
             Self::Surfaces => "Open a plugin surface (lists them with no name)",
             Self::Diff => "Show the branch diff against the default branch or [base]",
             Self::Proposals => "List the proposals that wait for a decision, with their diffs",
+            Self::Status => "Open every status item, including overflow",
+            Self::PluginMode => "Open plugin approval controls",
         }
     }
 
@@ -180,7 +192,9 @@ impl ReplCommand {
             | Self::Lua
             | Self::Surfaces
             | Self::Diff
-            | Self::Proposals => "core",
+            | Self::Proposals
+            | Self::Status
+            | Self::PluginMode => "core",
         }
     }
 
@@ -210,6 +224,8 @@ impl ReplCommand {
             Self::Surfaces => ":surfaces",
             Self::Diff => ":diff",
             Self::Proposals => ":proposals",
+            Self::Status => ":status",
+            Self::PluginMode => ":plugin-mode",
         }
     }
 

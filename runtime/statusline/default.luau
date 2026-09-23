@@ -42,6 +42,8 @@ local layout: { [string]: any } = {
       sl.tasks,
       -- The proposals that wait for a decision. This renders nothing at 0.
       sl.proposals,
+      -- Structured session status, including pinned plugin controls.
+      sl.items,
       -- A notification takes the right-hand slot while it is showing, and
       -- context usage takes it back afterwards.
       sl.any(sl.notification, sl.context),

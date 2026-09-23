@@ -166,6 +166,8 @@ pub enum ChatAppMsg {
     ModesLoaded(Vec<crucible_core::types::mode::ModeDescriptor>),
     /// **Event** (daemon → TUI): Plugin status loaded.
     PluginStatusLoaded(Vec<PluginStatusEntry>),
+    /// **Event** (daemon → TUI): Replacement status item list.
+    StatusItemsLoaded(Vec<crucible_core::types::StatusDisplayItem>),
     /// **Command** (TUI → daemon): Set maximum tool-call iterations per turn.
     /// **Command** (TUI → daemon): Set execution timeout in seconds per turn.
     /// **Command** (TUI → daemon): Set context token budget.
@@ -441,7 +443,8 @@ impl ChatAppMsg {
             | Self::SetPrecognition(_)
             | Self::SetPluginTurnLimit(_)
             | Self::PluginApproval { .. }
-            | Self::PluginStatusLoaded(_) => MsgCategory::Config,
+            | Self::PluginStatusLoaded(_)
+            | Self::StatusItemsLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }
             | Self::SubagentCompleted { .. }

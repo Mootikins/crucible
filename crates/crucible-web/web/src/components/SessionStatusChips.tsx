@@ -1,4 +1,5 @@
-import { Component, For, Show } from 'solid-js';
+import { Component, For, Show, createSignal, onMount } from 'solid-js';
+import { getBus } from '@/lib/bus';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
 import { useSessionStatus } from '@/lib/query/session-config';
@@ -44,6 +45,8 @@ const legacyGroup = (level: string): string => {
 };
 
 export const SessionStatusChips: Component = () => {
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  onMount(() => getBus().on('openPluginApproval', () => setMenuOpen(true)));
   const { currentSession } = useSessionSafe();
 
   const sessionId = () => currentSession()?.session_id;
@@ -58,7 +61,7 @@ export const SessionStatusChips: Component = () => {
   // session's chips cannot linger over a new one while its read is in flight,
   // and a refused read is no chips rather than a notification.
   const status = useSessionStatus(() => sessionId() ?? null);
-  const slots = () => status.data ?? [];
+  const slots = () => [...(status.data ?? [])].sort((a, b) => (a.priority ?? 128) - (b.priority ?? 128));
 
   // The EFFECTIVE write mode, from the mode descriptor of the daemon.
   //
@@ -78,24 +81,37 @@ export const SessionStatusChips: Component = () => {
 
   // The write mode is not a chip, because the mode control already says
   // "proposes". It stays on the wrapper as data for tests and plugins.
-  const anything = () => slots().length > 0 || writes() !== null;
+  const anything = () => slots().length > 0 || writes() !== null || menuOpen();
+  const controlPlugins = () => [...new Set(slots().filter((slot) => slot.action === 'plugin_approval').map((slot) => slot.plugin))];
 
   return (
     <Show when={anything()}>
       <div class="contents" data-testid="session-status" data-writes={writes() ?? undefined}>
         <For each={slots()}>
           {(slot) => (
-            <span
+            <button
+              type="button"
               class="session-status-color inline-flex items-center px-2 py-0.5 rounded-md border text-floor"
               data-status-color={slot.color_group ?? legacyGroup(slot.level)}
+              data-pinned={slot.pinned ?? false}
+              data-action={slot.action ?? undefined}
               title={`${slot.text} — ${slot.plugin}`}
               data-testid={`session-status-${slot.key}`}
+              onClick={() => setMenuOpen(true)}
             >
               {slot.text}
               {progressSuffix(slot.progress)}
-            </span>
+            </button>
           )}
         </For>
+        <Show when={menuOpen()}>
+          <div role="dialog" aria-label="Plugin approval" class="fixed bottom-16 right-6 z-50 rounded-lg border border-edge bg-surface p-3 shadow-xl" onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}>
+            <div class="flex items-center justify-between gap-4"><strong>Plugin approval</strong><button type="button" aria-label="Close plugin approval" onClick={() => setMenuOpen(false)}>×</button></div>
+            {/* TODO(plugin-turns): bind these choices to the session knob when that branch lands. */}
+            <For each={controlPlugins()}>{(plugin) => <div class="mt-2"><div>{plugin}</div><div class="text-floor-muted">inherit · ask · stop</div></div>}</For>
+            <Show when={controlPlugins().length === 0}><p class="text-floor-muted">No plugin approval controls are active.</p></Show>
+          </div>
+        </Show>
       </div>
     </Show>
   );

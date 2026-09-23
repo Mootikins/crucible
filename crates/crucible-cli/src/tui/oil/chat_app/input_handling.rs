@@ -250,6 +250,22 @@ impl OilChatApp {
                     Action::Continue
                 }
             }
+            AutocompleteKind::Pick {
+                source: super::state::PickSource::Status,
+            } => {
+                self.input.handle(InputAction::Clear);
+                if let Some(entry) = self
+                    .status_items
+                    .iter()
+                    .find(|entry| format!("{} [{}]", entry.text, entry.id) == label)
+                {
+                    if entry.action.as_deref() == Some("plugin_approval") {
+                        return self.handle_repl_command(":plugin-mode");
+                    }
+                    self.add_system_message(format!("{}: {}", entry.plugin, entry.text));
+                }
+                Action::Continue
+            }
             _ => Action::Continue,
         }
     }

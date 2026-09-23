@@ -327,7 +327,10 @@ exactly this vocabulary — it is the real default the daemon evaluates, not an
 illustration, so it is the best starting point for your own.
 
 Built-in items — `mode`, `model`, `context`, `cache`, `status`, `notification` —
-are evaluated by the TUI every frame and cost no RPC. Bare strings are literal
+are evaluated by the TUI every frame and cost no RPC. `sl.items` places the
+session's published status list; the daemon pushes replacements when it changes.
+Pinned items stay visible, while extra informational items fold into `+N`.
+The `:status` picker lists every item, including those folded away. Bare strings are literal
 text. `sl.align` splits the bar; one gives left/right, two give left/centre/right.
 
 ### Conditionals

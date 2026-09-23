@@ -148,6 +148,14 @@ const App: Component = () => {
       keywords: ['export', 'session', 'markdown'],
       action: () => setIsExportDialogOpen(true),
     },
+    {
+      id: 'session-plugin-approval',
+      label: 'Plugin Approval',
+      description: 'Review approval modes for plugins that start turns.',
+      category: 'Session',
+      keywords: ['plugin', 'approval', 'ask', 'stop'],
+      action: () => getBus().emit('openPluginApproval', {}),
+    },
 
     {
       id: 'open-settings',

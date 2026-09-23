@@ -4467,12 +4467,17 @@ export interface components {
          *     avoid.
          */
         SessionStatusSlot: {
+            /** @description An engine method this item opens, if any. */
+            action?: string | null;
             /** @description Named status group; the browser maps it through its own CSS theme. */
             color_group: string;
+            /** @description Stable item id. `key` remains as an alias for older clients. */
+            id: string;
             /** @description What the slot is about. The plugin chooses it. */
             key: string;
             /** @description How loud the line is, such as `info` or `warn`. */
             level: string;
+            pinned: boolean;
             /** @description Which plugin published the slot. */
             plugin: string;
             /**
@@ -4488,6 +4493,11 @@ export interface components {
              *     rather than optional.
              */
             progress: unknown;
+            /**
+             * Format: int32
+             * @description Smaller priorities appear first; pinned items remain visible in overflow.
+             */
+            priority: number;
             /** @description The line to draw. */
             text: string;
         };

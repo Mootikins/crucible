@@ -125,6 +125,7 @@ pub enum PickSource {
     Notes,
     Commands,
     Files,
+    Status,
 }
 
 /// Message queue state — message counter and Ctrl-C tracking

@@ -1282,6 +1282,18 @@ impl Server {
                     tracing::warn!("statusline change notifier was already installed");
                 }
             }
+            {
+                let event_tx = self.rpc_context.event_tx.clone();
+                let status = loader.status();
+                let read = status.clone();
+                if !status.set_change_notifier(std::sync::Arc::new(move |session_id: &str| {
+                    crate::server::ui_broadcast::broadcast_status_items_changed(
+                        &event_tx, &read, session_id,
+                    );
+                })) {
+                    tracing::warn!("status item change notifier was already installed");
+                }
+            }
             if let Err(e) = loader.register_context_attach(self.agent_manager.context_attach()) {
                 tracing::warn!(error = %e, "failed to register cru.context.attach on the plugin VM");
             }

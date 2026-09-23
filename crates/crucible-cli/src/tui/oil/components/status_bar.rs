@@ -55,6 +55,9 @@ pub struct StatusBar {
     /// Proposals that wait for a decision of the user. A proposal belongs to
     /// no session, so the daemon counts them for every client.
     pub proposals: usize,
+    pub status_items: Vec<crucible_core::types::StatusDisplayItem>,
+    /// Available cells for `sl.items` in this frame.
+    pub status_width: usize,
 }
 
 impl StatusBar {

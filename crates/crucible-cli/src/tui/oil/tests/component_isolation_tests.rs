@@ -99,6 +99,35 @@ mod status_bar_tests {
     use super::*;
 
     #[test]
+    fn snapshot_status_items_overflow_narrow() {
+        let mut bar = StatusBar::new().mode("ask").model("glm-4.7");
+        bar.status_width = 12;
+        bar.status_items = [
+            ("one", false),
+            ("two", false),
+            ("three", false),
+            ("ask", true),
+        ]
+        .into_iter()
+        .map(|(id, pinned)| crucible_core::types::StatusDisplayItem {
+            id: id.into(),
+            text: id.into(),
+            priority: 10,
+            color_group: if pinned { "warn" } else { "hue-4" }.into(),
+            action: None,
+            pinned,
+            plugin: "test".into(),
+        })
+        .collect();
+        let plain = render_configured_bar(&bar, 40);
+        assert!(plain.contains("+2") && plain.contains("ask"), "{plain}");
+        assert_snapshot!(
+            "statusline_status_items_overflow_narrow_40",
+            render_configured_bar_ansi(&bar, 40)
+        );
+    }
+
+    #[test]
     fn snapshot_named_status_colors() {
         use crate::tui::oil::components::status_items::{render_bar, ItemContext};
         use crucible_lua::statusline_items::StatusItem;

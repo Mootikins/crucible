@@ -469,6 +469,7 @@ fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
             crate::tui::oil::theme::apply_ui_config(&config);
             vec![ChatAppMsg::StyleChanged]
         }
+        SystemPayload::StatusItemsChanged { status } => vec![ChatAppMsg::StatusItemsLoaded(status)],
         // A surface moved. Re-request it rather than carrying rows on the event:
         // the event says *what* changed, and the fetch answers with the content,
         // which is why `SurfaceChanged` has a version and no rows.

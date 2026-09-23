@@ -75,6 +75,7 @@ pub struct OilChatApp {
     /// MCP servers known to the daemon
     mcp_servers: Vec<McpServerDisplay>,
     plugin_status: Vec<PluginStatusEntry>,
+    status_items: Vec<crucible_core::types::StatusDisplayItem>,
     /// Available models fetched from the provider
     available_models: Vec<String>,
     /// Fetch-state of the model list
@@ -302,7 +303,7 @@ impl OilChatApp {
         // which footer surface is up — a modal or the messages drawer replaces
         // the command panel, not the window chrome around it.
         use crucible_lua::statusline_items::Region;
-        let status = self.build_status_component();
+        let status = self.build_status_component(ctx.terminal_size.0 as usize);
         // Neither region may hold the input — `Layout::from_wire` strips a stray
         // one — so an empty node here is unreachable, not a fallback.
         let top = status.render_region(Region::Top, || Node::Empty);
@@ -449,6 +450,10 @@ impl OilChatApp {
         self.plugin_status = entries;
     }
 
+    pub(crate) fn set_status_items(&mut self, items: Vec<crucible_core::types::StatusDisplayItem>) {
+        self.status_items = items;
+    }
+
     /// Tests seed the model list without a daemon round trip.
     #[cfg(test)]
     pub(crate) fn set_available_models(&mut self, models: Vec<String>) {
@@ -530,7 +535,7 @@ impl OilChatApp {
         CommandPanel {
             turn_indicator: indicator,
             input,
-            status: self.build_status_component(),
+            status: self.build_status_component(term_width),
         }
     }
 
@@ -538,7 +543,7 @@ impl OilChatApp {
     ///
     /// Bars at different anchors must agree, so they all read one snapshot
     /// rather than each rebuilding from `self`.
-    fn build_status_component(&self) -> StatusComponent<'_> {
+    fn build_status_component(&self, terminal_width: usize) -> StatusComponent<'_> {
         let mut status = StatusComponent::new()
             .mode(&self.mode)
             .proposes(self.mode_proposes())
@@ -548,6 +553,7 @@ impl OilChatApp {
             .streaming(self.container_list.is_streaming())
             .background_tasks(self.container_list.background_task_count())
             .proposals(self.proposal_count)
+            .status_items(&self.status_items, terminal_width / 2)
             .status(&self.status);
         if let Some((text, kind)) = self.notification_area.active_toast(self.frame_time) {
             status = status.toast(text, kind);

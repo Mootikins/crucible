@@ -22,6 +22,7 @@ pub mod notification;
 pub mod plugin_status;
 pub mod popup;
 pub mod provider_info;
+pub mod status_item;
 pub mod tool_call;
 pub mod tool_match;
 pub mod tool_ref;
@@ -73,6 +74,7 @@ pub use crate::types::provider_info::ProviderInfo;
 
 // Re-export plugin status entry (used by session-setup events)
 pub use crate::types::plugin_status::PluginStatusEntry;
+pub use crate::types::status_item::StatusDisplayItem;
 
 // NOTE: `mcp_status::McpServerInfo` is intentionally NOT re-exported at
 // `types::` top-level to avoid collision with `traits::mcp::McpServerInfo`

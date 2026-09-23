@@ -138,6 +138,9 @@ function routeSessionSubEvent(
     case 'review_changed':
       scheduleReviewInvalidation(client, sessionId);
       break;
+    case 'status_items_changed':
+      void client.invalidateQueries({ queryKey: keys.sessionStatus(sessionId) });
+      break;
 
     // `stream_gap` tells the user their transcript has a hole, which the pane
     // reducer surfaces. No cached key is wrong because of it.

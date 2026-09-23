@@ -19,6 +19,8 @@ use utoipa::ToSchema;
 /// avoid.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(super) struct SessionStatusSlot {
+    /// Stable item id. `key` remains as an alias for older clients.
+    id: String,
     /// What the slot is about. The plugin chooses it.
     key: String,
     /// Which plugin published the slot.
@@ -40,6 +42,11 @@ pub(super) struct SessionStatusSlot {
     progress: serde_json::Value,
     /// Named status group; the browser maps it through its own CSS theme.
     color_group: String,
+    /// Smaller priorities appear first; pinned items remain visible in overflow.
+    priority: u8,
+    /// An engine method this item opens, if any.
+    action: Option<String>,
+    pinned: bool,
 }
 
 /// What `GET /api/session/{id}/status` answers.
@@ -97,8 +104,12 @@ mod tests {
         let slots: SessionStatusResponse =
             serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
         assert_eq!(slots.status[0].key, "oci");
+        assert_eq!(slots.status[0].id, "oci");
         assert_eq!(slots.status[1].plugin, "weather");
         assert_eq!(json["status"][0]["color_group"], "hue-4");
+        assert_eq!(json["status"][0]["priority"], 30);
+        assert_eq!(json["status"][0]["action"], "plugin_approval");
+        assert_eq!(json["status"][0]["pinned"], true);
     }
 
     /// The daemon's `progress` — a fraction, `"indeterminate"`, or `null` for

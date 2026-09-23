@@ -221,6 +221,7 @@ impl OilChatApp {
             ChatAppMsg::PluginStatusLoaded(entries) => {
                 self.plugin_status = entries;
             }
+            ChatAppMsg::StatusItemsLoaded(items) => self.status_items = items,
             // Command-only: side effects handled by chat_runner::process_action
             ChatAppMsg::SetContextBudget(_)
             | ChatAppMsg::SetContextStrategy(_)

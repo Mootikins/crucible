@@ -294,6 +294,11 @@ pub enum SystemPayload {
     /// addressed to one session therefore omits the member rather than carrying
     /// an empty set.
     UiStyleChanged(Value),
+    /// Replacement status list for one session. Clients can paint the payload
+    /// immediately; attach uses `session.status` for the initial snapshot.
+    StatusItemsChanged {
+        status: Vec<crate::types::StatusDisplayItem>,
+    },
     /// A subscriber fell far enough behind the broadcast ring that events were
     /// overwritten before it read them, and `dropped` of them are gone for good.
     ///

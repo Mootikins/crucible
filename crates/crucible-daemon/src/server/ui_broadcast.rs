@@ -73,10 +73,45 @@ pub fn broadcast_style_changed(
     }
 }
 
+pub fn broadcast_status_items_changed(
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+    status: &crucible_lua::StatusRegistry,
+    session_id: &str,
+) {
+    let msg = SessionEventMessage::typed(
+        session_id,
+        crucible_core::protocol::session_events::SystemPayload::StatusItemsChanged {
+            status: status.display_items(session_id),
+        },
+    );
+    if !emit_event(event_tx, msg) {
+        debug!("status item change had no subscribers");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::subscription::{SubscriptionManager, WILDCARD_SESSION};
+
+    #[test]
+    fn lua_status_publish_reaches_the_session_event_bus_with_the_new_list() {
+        let (tx, mut rx) = broadcast::channel(8);
+        let registry = crucible_lua::StatusRegistry::new();
+        let send = tx.clone();
+        let read = registry.clone();
+        assert!(registry.set_change_notifier(std::sync::Arc::new(move |id| {
+            broadcast_status_items_changed(&send, &read, id);
+        })));
+        let lua = mlua::Lua::new();
+        crucible_lua::register_status_module(&lua, registry).unwrap();
+        lua.load(r#"cru.statusline.publish('s1', {cru.statusline.item{id='a', text='ready', color='ok'}})"#)
+            .exec().unwrap();
+        let event = rx.try_recv().expect("the daemon emitted the change");
+        assert_eq!(event.session_id, "s1");
+        assert_eq!(event.event, "status_items_changed");
+        assert_eq!(event.data["status"][0]["text"], "ready");
+    }
 
     /// The bug this constant exists to prevent, pinned.
     ///

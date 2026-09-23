@@ -10,6 +10,7 @@
 //! knowing what plugins exist.
 
 use crucible_core::status_color::{plugin_hue, StatusColorGroup};
+use crucible_core::types::StatusDisplayItem;
 use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -43,10 +44,30 @@ pub struct StatusEntry {
     pub level: String,
     /// Named color resolved by each client through its active status theme.
     pub color_group: StatusColorGroup,
+    /// Smaller values appear first. Pins are laid out separately by clients.
+    pub priority: u8,
+    /// Engine method selected by this item, if it is interactive.
+    pub action: Option<String>,
+    /// A pinned item must remain visible when the status strip overflows.
+    pub pinned: bool,
     /// Progress of the work this slot describes, if it is work at all.
     ///
     /// `None` is a state ("sandboxed: alpine"), not a stalled bar.
     pub progress: Option<Progress>,
+}
+
+impl StatusEntry {
+    pub fn display(&self, id: String) -> StatusDisplayItem {
+        StatusDisplayItem {
+            id,
+            text: self.text.clone(),
+            priority: self.priority,
+            color_group: self.color_group.name().into(),
+            action: self.action.clone(),
+            pinned: self.pinned,
+            plugin: self.plugin.clone(),
+        }
+    }
 }
 
 /// Status slots per session, keyed within a session.
@@ -56,6 +77,7 @@ pub struct StatusEntry {
 #[derive(Debug, Clone, Default)]
 pub struct StatusRegistry {
     entries: Arc<Mutex<HashMap<String, HashMap<String, StatusEntry>>>>,
+    on_change: crate::host_hook::HostHook<crate::statusline_exprs::ChangeNotifier>,
 }
 
 impl StatusRegistry {
@@ -63,25 +85,62 @@ impl StatusRegistry {
         Self::default()
     }
 
+    #[must_use]
+    pub fn set_change_notifier(&self, notifier: crate::statusline_exprs::ChangeNotifier) -> bool {
+        self.on_change.install(notifier)
+    }
+
+    fn notify(&self, session_id: &str) {
+        if let Some(notify) = self.on_change.get() {
+            notify(session_id);
+        }
+    }
+
     pub fn set(&self, session_id: &str, key: &str, entry: StatusEntry) {
-        if let Ok(mut g) = self.entries.lock() {
+        let changed = if let Ok(mut g) = self.entries.lock() {
             g.entry(session_id.to_string())
                 .or_default()
-                .insert(key.to_string(), entry);
+                .insert(key.to_string(), entry.clone())
+                != Some(entry)
+        } else {
+            false
+        };
+        if changed {
+            self.notify(session_id);
+        }
+    }
+
+    /// Replace one session's complete authored list atomically.
+    pub fn publish(&self, session_id: &str, items: Vec<(String, StatusEntry)>) {
+        let changed = if let Ok(mut g) = self.entries.lock() {
+            let replacement: HashMap<_, _> = items.into_iter().collect();
+            g.insert(session_id.to_string(), replacement.clone()) != Some(replacement)
+        } else {
+            false
+        };
+        if changed {
+            self.notify(session_id);
         }
     }
 
     /// Remove one slot. Setting empty text is *not* the same as clearing —
     /// a plugin that wants the slot gone should say so.
     pub fn clear(&self, session_id: &str, key: &str) {
-        if let Ok(mut g) = self.entries.lock() {
+        let removed = if let Ok(mut g) = self.entries.lock() {
             if let Some(session) = g.get_mut(session_id) {
-                session.remove(key);
+                session.remove(key).is_some()
+            } else {
+                false
             }
+        } else {
+            false
+        };
+        if removed {
+            self.notify(session_id);
         }
     }
 
-    /// Every slot for a session, sorted by key so the render order is stable
+    /// Every slot for a session, sorted by priority and key so the render order is stable
     /// rather than hash order — a status bar that reshuffles on every update
     /// is worse than no status bar.
     pub fn get(&self, session_id: &str) -> Vec<(String, StatusEntry)> {
@@ -95,8 +154,15 @@ impl StatusRegistry {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out.sort_by(|a, b| a.1.priority.cmp(&b.1.priority).then_with(|| a.0.cmp(&b.0)));
         out
+    }
+
+    pub fn display_items(&self, session_id: &str) -> Vec<StatusDisplayItem> {
+        self.get(session_id)
+            .into_iter()
+            .map(|(id, entry)| entry.display(id))
+            .collect()
     }
 
     /// Drop a session's slots. Called at session end so a finished session's
@@ -177,6 +243,9 @@ pub fn register_status_module(
                     text,
                     level,
                     color_group,
+                    priority: 128,
+                    action: None,
+                    pinned: false,
                     progress,
                 },
             );
@@ -186,6 +255,7 @@ pub fn register_status_module(
 
     // `session` and `key` name the slot; nothing else is read. Setting empty
     // text is *not* the same as clearing, which is why this exists.
+    let publish_registry = registry.clone();
     let clear_registry = registry;
     ns.func(
         "clear_status",
@@ -198,6 +268,67 @@ pub fn register_status_module(
                 .get("key")
                 .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `key` is required"))?;
             clear_registry.clear(&session, &key);
+            Ok(())
+        },
+    )?;
+
+    // A single list authoring surface for the TUI and web. `item` keeps Lua
+    // config readable; `publish` validates the whole replacement before it
+    // reaches the registry, so a malformed list never erases the old one.
+    let statusline = crate::lua_util::get_or_create_module(lua, "statusline")?;
+    let mut sl = crate::host_registry::Ns::over(lua, "cru.statusline", statusline);
+    sl.func(
+        "item",
+        "(item: { id: string, text: string, priority: number?, color: string?, action: string?, pinned: boolean?, plugin: string? }) -> any",
+        |_, item: Table| Ok(item),
+    )?;
+    sl.func(
+        "publish",
+        "(session: string, items: any) -> ()",
+        move |_, (session, items): (String, Table)| {
+            let mut published = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            for value in items.sequence_values::<Table>() {
+                let item = value?;
+                let id: String = item
+                    .get("id")
+                    .map_err(|_| mlua::Error::runtime("status item id is required"))?;
+                if id.is_empty() || !seen.insert(id.clone()) {
+                    return Err(mlua::Error::runtime(format!(
+                        "duplicate or empty status item id: {id}"
+                    )));
+                }
+                let raw_text: String = item
+                    .get("text")
+                    .map_err(|_| mlua::Error::runtime("status item text is required"))?;
+                let text = crate::statusline_exprs::sanitize_uncapped(&raw_text)
+                    .chars()
+                    .take(50)
+                    .collect();
+                let plugin: String = item.get("plugin").unwrap_or_else(|_| "unknown".into());
+                let color_group = item
+                    .get::<String>("color")
+                    .map(|name| StatusColorGroup::from_name(&name))
+                    .unwrap_or_else(|_| plugin_hue(&plugin));
+                let priority = item.get::<i64>("priority").unwrap_or(128).clamp(0, 255) as u8;
+                let action: Option<String> = item.get("action").ok();
+                let pinned = item.get::<bool>("pinned").unwrap_or(false)
+                    || matches!(action.as_deref(), Some("plugin_approval" | "plugin_turn"));
+                published.push((
+                    id,
+                    StatusEntry {
+                        plugin,
+                        text,
+                        level: "info".into(),
+                        color_group,
+                        priority,
+                        action,
+                        pinned,
+                        progress: None,
+                    },
+                ));
+            }
+            publish_registry.publish(&session, published);
             Ok(())
         },
     )?;
@@ -230,12 +361,67 @@ mod tests {
         assert_eq!(reg.get("s1")[0].1.color_group, StatusColorGroup::Info);
     }
 
+    #[test]
+    fn lua_publishes_one_ordered_status_list_and_forces_control_pins() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        lua.load(
+            r#"
+            local sl = cru.statusline
+            sl.publish("s1", {
+              sl.item{ id="later", text="later", priority=40, plugin="weather" },
+              sl.item{ id="approval", text="goal asks", priority=20,
+                       color="warn", action="plugin_approval", pinned=false },
+              sl.item{ id="first", text="first", priority=10, color="hue-3" },
+            })
+        "#,
+        )
+        .exec()
+        .unwrap();
+        let items = reg.get("s1");
+        assert_eq!(
+            items.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            ["first", "approval", "later"]
+        );
+        assert_eq!(items[0].1.priority, 10);
+        assert_eq!(items[0].1.color_group, StatusColorGroup::Hue3);
+        assert!(items[1].1.pinned);
+        assert_eq!(items[1].1.action.as_deref(), Some("plugin_approval"));
+        lua.load(
+            r#"cru.statusline.publish("s1", { cru.statusline.item{ id="new", text="new" } })"#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(reg.get("s1").len(), 1, "publish replaces the whole list");
+        assert!(reg.get("other").is_empty());
+    }
+
+    #[test]
+    fn status_changes_notify_the_session_after_the_list_is_visible() {
+        let reg = StatusRegistry::new();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let notices = seen.clone();
+        let reader = reg.clone();
+        assert!(reg.set_change_notifier(std::sync::Arc::new(move |session| {
+            notices
+                .lock()
+                .unwrap()
+                .push((session.to_owned(), reader.get(session).len()));
+        })));
+        reg.publish("s1", vec![("one".into(), entry("one"))]);
+        reg.clear("s1", "one");
+        assert_eq!(*seen.lock().unwrap(), [("s1".into(), 1), ("s1".into(), 0)]);
+    }
+
     fn entry(text: &str) -> StatusEntry {
         StatusEntry {
             plugin: "oci".to_string(),
             text: text.to_string(),
             level: "info".to_string(),
             color_group: plugin_hue("oci"),
+            priority: 128,
+            action: None,
+            pinned: false,
             progress: None,
         }
     }

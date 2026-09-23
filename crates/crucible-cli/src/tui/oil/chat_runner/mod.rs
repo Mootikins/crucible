@@ -88,6 +88,7 @@ pub struct OilChatRunner {
     pub(super) mcp_servers: Vec<McpServerDisplay>,
     pub(super) connected_kilns: Vec<KilnSummary>,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
+    pub(super) status_items: Vec<crucible_core::types::StatusDisplayItem>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
     pub(super) slash_commands: Vec<(String, String)>,
@@ -148,6 +149,7 @@ impl OilChatRunner {
             mcp_servers: Vec::new(),
             connected_kilns: Vec::new(),
             plugin_status: Vec::new(),
+            status_items: Vec::new(),
             show_thinking: false,
             show_diffs: true,
             slash_commands: Vec::new(),
@@ -243,6 +245,14 @@ impl OilChatRunner {
     /// The kilns the startup banner names. Empty says so in as many words.
     pub fn with_connected_kilns(mut self, kilns: Vec<KilnSummary>) -> Self {
         self.connected_kilns = kilns;
+        self
+    }
+
+    pub fn with_status_items(
+        mut self,
+        items: Vec<crucible_core::types::StatusDisplayItem>,
+    ) -> Self {
+        self.status_items = items;
         self
     }
 

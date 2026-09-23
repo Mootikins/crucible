@@ -31,6 +31,8 @@ export type BusEvents = {
   newSession: { workspace?: string };
   /** Opens the command palette; `mode` picks the notes tree over commands. */
   openCommandPalette: { mode?: 'commands' | 'notes' };
+  /** Opens the session's plugin approval control. */
+  openPluginApproval: Record<string, never>;
   /**
    * Opens the branch diff of the root that the file tree shows. A `null`
    * head compares the working tree, and a named head compares that commit.

@@ -28,6 +28,7 @@ impl Default for OilChatApp {
             current_provider: "local".to_string(),
             mcp_servers: Vec::new(),
             plugin_status: Vec::new(),
+            status_items: Vec::new(),
             available_models: Vec::new(),
 
             model_list_state: ModelListState::NotLoaded,

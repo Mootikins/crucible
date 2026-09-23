@@ -638,6 +638,24 @@ async fn run_interactive_chat(
         false
     };
 
+    // Attach gets a snapshot before subscribing to changes. A status published
+    // before this TUI opened must appear on its first frame.
+    if let Some(client) = lua_client.as_ref() {
+        if let Ok(payload) = client.session_status(&lua_session_id).await {
+            let items = payload
+                .get("status")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    serde_json::from_value::<crucible_core::types::StatusDisplayItem>(item.clone())
+                        .ok()
+                })
+                .collect();
+            runner = runner.with_status_items(items);
+        }
+    }
+
     runner = runner.with_slash_commands(known_slash_commands());
 
     // Scratch home for TUI-side artifacts (saved shell output). Under the

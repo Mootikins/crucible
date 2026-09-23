@@ -196,6 +196,7 @@ impl Group {
             | "classification_required"
             | "process_complete"
             | "ui_style_changed"
+            | "status_items_changed"
             | "stream_gap"
             | "webhook:received"
             | "replay_complete"

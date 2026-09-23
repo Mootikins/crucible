@@ -61,6 +61,13 @@ function history(events: SessionHistoryResponse['history']): SessionHistoryRespo
 }
 
 describe('the session event route', () => {
+  it('refreshes the status list when Lua publishes a replacement', () => {
+    const source = openStream();
+    source.emit('session_event', {
+      type: 'session_event', event: 'status_items_changed', data: { status: [] },
+    });
+    expect(invalidated).toEqual([keys.sessionStatus(SESSION)]);
+  });
   it('leaves the cache alone for a token, which only the pane reducer folds', () => {
     const source = openStream();
 

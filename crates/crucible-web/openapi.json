@@ -9458,14 +9458,21 @@
         "type": "object",
         "description": "One keyed status slot a plugin published for a session.\n\n`key`, `plugin` and `level` stay plain strings rather than unions on\npurpose. The moment a client enumerates them, a new plugin needs a client\nchange to be visible at all, which is the thing this channel exists to\navoid.",
         "required": [
+          "id",
           "key",
           "plugin",
           "text",
           "level",
           "progress",
-          "color_group"
+          "color_group",
+          "priority",
+          "pinned"
         ],
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable item id. `key` remains as an alias for older clients."
+          },
           "key": {
             "type": "string",
             "description": "What the slot is about. The plugin chooses it."
@@ -9488,6 +9495,22 @@
           "color_group": {
             "type": "string",
             "description": "Named status group; the browser maps it through its own CSS theme."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Smaller priorities appear first; pinned items remain visible in overflow.",
+            "minimum": 0
+          },
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An engine method this item opens, if any."
+          },
+          "pinned": {
+            "type": "boolean"
           }
         }
       },

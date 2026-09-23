@@ -153,11 +153,15 @@ pub(crate) async fn handle_session_status(
                 None => serde_json::Value::Null,
             };
             serde_json::json!({
+                "id": key,
                 "key": key,
                 "plugin": e.plugin,
                 "text": e.text,
                 "level": e.level,
                 "color_group": e.color_group.name(),
+                "priority": e.priority,
+                "action": e.action,
+                "pinned": e.pinned,
                 "progress": progress,
             })
         })

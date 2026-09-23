@@ -813,11 +813,50 @@ fn proposal(state: crucible_core::proposal::ProposalState) -> crucible_core::pro
 /// The status line text of the app, with no input row.
 fn status_line(app: &OilChatApp) -> String {
     let rows = app
-        .build_status_component()
+        .build_status_component(120)
         .render_region(crucible_lua::statusline_items::Region::Prompt, || {
             crucible_oil::node::Node::Empty
         });
     crucible_oil::render::render_to_plain_text(&crucible_oil::node::col(rows), 120)
+}
+
+#[test]
+fn status_event_replaces_the_rendered_list_in_the_app() {
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::StatusItemsLoaded(vec![
+        crucible_core::types::StatusDisplayItem {
+            id: "goal".into(),
+            text: "goal asks".into(),
+            priority: 10,
+            color_group: "warn".into(),
+            action: Some("plugin_approval".into()),
+            pinned: true,
+            plugin: "goal".into(),
+        },
+    ]));
+    assert!(status_line(&app).contains("goal asks"));
+    app.on_message(ChatAppMsg::StatusItemsLoaded(vec![]));
+    assert!(!status_line(&app).contains("goal asks"));
+}
+
+#[test]
+fn status_command_opens_every_item_in_a_keyboard_picker() {
+    let mut app = OilChatApp::default();
+    app.set_status_items(vec![crucible_core::types::StatusDisplayItem {
+        id: "older".into(),
+        text: "older hidden status".into(),
+        priority: 40,
+        color_group: "info".into(),
+        action: None,
+        pinned: false,
+        plugin: "weather".into(),
+    }]);
+    app.handle_repl_command(":status");
+    assert!(app.popup.show);
+    assert!(app
+        .get_popup_items()
+        .iter()
+        .any(|item| item.label.contains("older hidden status")));
 }
 
 /// `:proposals` asks the runner to fetch and to open the view. The reducer

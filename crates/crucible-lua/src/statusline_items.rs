@@ -134,6 +134,8 @@ pub enum StatusItem {
     Proposals,
     Status,
     Notification,
+    /// The session's structured status list, placed as one statusline item.
+    List,
     Text(String),
     /// Alignment split. One pushes the rest right; two give left/centre/right.
     Align,
@@ -241,6 +243,7 @@ pub fn item_to_wire(item: &StatusItem) -> Json {
         StatusItem::Proposals => json!({ "t": "proposals" }),
         StatusItem::Status => json!({ "t": "status" }),
         StatusItem::Notification => json!({ "t": "notification" }),
+        StatusItem::List => json!({ "t": "list" }),
         StatusItem::Text(s) => json!({ "t": "text", "v": s }),
         StatusItem::Align => json!({ "t": "align" }),
         StatusItem::Any(items) => {
@@ -278,6 +281,7 @@ pub fn item_from_wire(v: &Json) -> Option<StatusItem> {
         "proposals" => StatusItem::Proposals,
         "status" => StatusItem::Status,
         "notification" => StatusItem::Notification,
+        "list" => StatusItem::List,
         "text" => StatusItem::Text(crate::statusline_exprs::sanitize_uncapped(
             v.get("v")?.as_str()?,
         )),
@@ -419,6 +423,7 @@ pub fn builtin_default() -> Layout {
                 StatusItem::Align,
                 StatusItem::Tasks,
                 StatusItem::Proposals,
+                StatusItem::List,
                 StatusItem::Any(vec![StatusItem::Notification, StatusItem::Context]),
             ]),
         ],

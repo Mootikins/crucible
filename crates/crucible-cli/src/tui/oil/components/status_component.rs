@@ -31,6 +31,8 @@ pub struct StatusComponent<'a> {
     pub background_tasks: usize,
     /// Proposals that wait for a decision, readable by `sl.proposals`.
     pub proposals: usize,
+    pub status_items: &'a [crucible_core::types::StatusDisplayItem],
+    pub status_width: usize,
 }
 
 impl<'a> StatusComponent<'a> {
@@ -83,6 +85,16 @@ impl<'a> StatusComponent<'a> {
         self
     }
 
+    pub fn status_items(
+        mut self,
+        items: &'a [crucible_core::types::StatusDisplayItem],
+        width: usize,
+    ) -> Self {
+        self.status_items = items;
+        self.status_width = width;
+        self
+    }
+
     pub fn proposals(mut self, count: usize) -> Self {
         self.proposals = count;
         self
@@ -111,6 +123,8 @@ impl<'a> StatusComponent<'a> {
             .background_tasks(self.background_tasks)
             .proposals(self.proposals);
         bar.cache_hit_rate = self.cache_hit_rate;
+        bar.status_items = self.status_items.to_vec();
+        bar.status_width = self.status_width;
         if let Some((text, kind)) = self.toast {
             bar = bar.toast(text, kind);
         }

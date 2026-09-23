@@ -7,6 +7,7 @@ import type { Session } from '@/lib/types';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
 import { installFakeEventSource } from '@/test-utils/sse';
+import { getBus } from '@/lib/bus';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
 vi.mock('@/contexts/SessionContext', () => ({
@@ -79,6 +80,15 @@ afterEach(() => {
 });
 
 describe('SessionStatusChips', () => {
+  it('opens the plugin approval control from the shared command route', async () => {
+    setCurrentSession(baseSession());
+    serve({ [STATUS]: () => ({ status: [{ id: 'ask', key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' }] }) });
+    render(() => <SessionStatusChips />);
+    await waitFor(() => expect(screen.getByTestId('session-status-ask')).toBeInTheDocument());
+    getBus().emit('openPluginApproval', {});
+    expect(screen.getByRole('dialog', { name: 'Plugin approval' })).toBeInTheDocument();
+    expect(screen.getByText('goal')).toBeInTheDocument();
+  });
   it('renders a slot from a plugin it has never heard of', async () => {
     // The anti-regression test for the generic-rendering rule: nothing in the
     // frontend knows what these keys mean. If a new plugin ever needs a code
@@ -158,6 +168,22 @@ describe('SessionStatusChips', () => {
     render(() => <SessionStatusChips />);
     const chip = await waitFor(() => screen.getByTestId('session-status-colored'));
     expect(chip).toHaveAttribute('data-status-color', 'hue-4');
+  });
+
+  it('keeps the authored priority order and marks pinned actions', async () => {
+    setCurrentSession(baseSession());
+    serve({
+      [STATUS]: () => ({ status: [
+        { id: 'later', key: 'later', plugin: 'weather', text: 'forecast', level: 'info', color_group: 'hue-2', priority: 80, pinned: false, action: null },
+        { id: 'ask', key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' },
+      ] }),
+    });
+    render(() => <SessionStatusChips />);
+    await waitFor(() => expect(screen.getByTestId('session-status-ask')).toBeInTheDocument());
+    const items = [...screen.getByTestId('session-status').querySelectorAll('[data-testid^="session-status-"]')];
+    expect(items.map((el) => el.getAttribute('data-testid'))).toEqual(['session-status-ask', 'session-status-later']);
+    expect(items[0]).toHaveAttribute('data-pinned', 'true');
+    expect(items[0]).toHaveAttribute('data-action', 'plugin_approval');
   });
 
   it('renders nothing when the session published no slots', async () => {
