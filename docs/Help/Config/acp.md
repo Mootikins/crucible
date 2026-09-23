@@ -60,6 +60,7 @@ The profile name is what you pass to `cru chat -a <name>`.
 | `description` | string | *(unset)* | Human-readable label |
 | `delegation` | table | *(unset)* | See the delegation sub-table below |
 | `permissions` | table | *(unset)* | Per-agent override of the global `permissions` |
+| `tools` | array of table | *(from the shipped defaults)* | The key table that classifies the agent's tool calls. See below |
 
 A profile that is not a built-in and defines no `command` is an error. Crucible does not
 run the profile name as a command, so a misspelled name fails with the name in the message.
@@ -163,6 +164,36 @@ cru.config.set({
 
 See [[Help/Config/permissions]] for pattern syntax and
 [[Help/Concepts/Permission Precedence]] for which layer wins when they disagree.
+
+### `acp.agents.<name>.tools`
+
+Each ACP agent sends a tool call in its own form. Crucible turns each call into one
+Crucible tool call with a kind (`command`, `file_edit`, `file_read`, `mcp_tool`, `fetch`,
+`search` or `tool`) and typed fields. The key table tells Crucible where an agent puts
+these fields. The shipped `runtime/defaults/init.luau` sets the tables of the built-in
+agents, and explains each field. A table that you set replaces the shipped table of that
+agent.
+
+Each entry applies to a call when all of its match fields match: `name` (the ACP tool
+name), `acp_kind` (the ACP kind) and `title` (plain text in the ACP title). Then the entry
+gives a `kind` and lists of keys for `args`, `tool`, `command`, `paths`, `url` and `query`.
+A key that starts with `/` is a JSON pointer into the whole call.
+
+```lua
+cru.config.set({
+    acp = {
+        agents = {
+            ["my-agent"] = {
+                command = "/usr/local/bin/my-agent",
+                tools = {
+                    { acp_kind = "execute", command = { "cmd" } },
+                    { title = "Fetch ", kind = "fetch", url = { "/rawInput/target" } },
+                },
+            },
+        },
+    },
+})
+```
 
 ## Full example
 

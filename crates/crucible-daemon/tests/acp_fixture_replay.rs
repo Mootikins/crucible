@@ -785,71 +785,46 @@ fn each_tool_frame_decodes_as_its_sdk_type() {
     }
 }
 
-/// The key table of each agent in the tool_frames fixtures. Step 3 of the
-/// pipeline loads these tables from Lua. Here they show what the data form
-/// can say about each agent.
-fn fixture_key_table(agent: &str) -> Vec<crucible_core::types::AgentKeys> {
-    use agent_client_protocol::schema::v1::ToolKind;
-    use crucible_core::types::AgentKeys;
-    let keys = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
-    let on_title = |title: &str, kind: &str| AgentKeys {
-        title: Some(title.into()),
-        kind: Some(kind.into()),
-        ..AgentKeys::default()
-    };
-    match agent {
-        "codex-rust" => vec![
-            AgentKeys {
-                tool: keys(&["/rawInput/tool"]),
-                query: keys(&["/rawInput/arguments/query"]),
-                ..on_title("Tool: ", "mcp_tool")
-            },
-            on_title("Approve MCP tool call", "mcp_tool"),
-            on_title("Searching for:", "search"),
-            AgentKeys {
-                url: keys(&["/rawInput/action/url"]),
-                ..on_title("Opening:", "fetch")
-            },
-        ],
-        "codex-ts" => vec![
-            AgentKeys {
-                title: Some("mcp.".into()),
-                query: keys(&["/rawInput/arguments/query"]),
-                ..AgentKeys::default()
-            },
-            on_title("Web search:", "search"),
-            AgentKeys {
-                url: keys(&["/rawInput/action/url"]),
-                ..on_title("Open page:", "fetch")
-            },
-        ],
-        "gemini" => vec![AgentKeys {
-            acp_kind: Some(ToolKind::Execute),
-            command: keys(&["/title"]),
-            ..AgentKeys::default()
-        }],
-        "antigravity" => vec![
-            AgentKeys {
-                command: keys(&["CommandLine", "command_line"]),
-                paths: keys(&["TargetFile", "absolute_path"]),
-                url: keys(&["Url"]),
-                ..AgentKeys::default()
-            },
-            AgentKeys {
-                acp_kind: Some(ToolKind::Other),
-                kind: Some("mcp_tool".into()),
-                tool: keys(&["/title"]),
-                ..AgentKeys::default()
-            },
-        ],
-        _ => Vec::new(),
-    }
+/// The ACP config after a boot that runs the shipped
+/// `runtime/defaults/init.luau` of this repository, then `init_lua`.
+async fn boot_acp_config(init_lua: &str) -> crucible_core::config::AcpConfig {
+    use crucible_daemon::daemon_plugins::{evaluate_boot_config_with_paths, PluginPathsFn};
+
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("init.lua"), init_lua).unwrap();
+    let no_plugins: PluginPathsFn = std::sync::Arc::new(|_| Vec::new());
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime");
+    let boot = evaluate_boot_config_with_paths(
+        Some(tmp.path().join("config.toml")),
+        None,
+        None,
+        no_plugins,
+        vec![runtime],
+    )
+    .await
+    .expect("the boot evaluates");
+    assert_eq!(boot.eval_error, None, "init.lua evaluates");
+    boot.config.acp
+}
+
+/// The key table of `agent`, as the agent profile resolves it.
+fn key_table(
+    acp: &crucible_core::config::AcpConfig,
+    agent: &str,
+) -> Vec<crucible_core::types::AgentKeys> {
+    crucible_daemon::acp::discovery::profile(agent, acp)
+        .expect("the profile resolves")
+        .expect("the agent is known")
+        .tools
 }
 
 /// Classify each frame in one tool_frames fixture. Each item is the line
 /// number and the typed fields of the canonical call, without `raw` and
 /// `primary`.
-fn classify_fixture(agent: &str) -> Vec<(usize, serde_json::Value)> {
+fn classify_fixture(
+    agent: &str,
+    table: &[crucible_core::types::AgentKeys],
+) -> Vec<(usize, serde_json::Value)> {
     use agent_client_protocol::schema::v1::{
         RequestPermissionRequest, SessionNotification, SessionUpdate,
     };
@@ -858,7 +833,6 @@ fn classify_fixture(agent: &str) -> Vec<(usize, serde_json::Value)> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/acp/tool_frames")
         .join(format!("{agent}.jsonl"));
-    let table = fixture_key_table(agent);
     let text = std::fs::read_to_string(&path).expect("the fixture reads");
     text.lines()
         .enumerate()
@@ -883,7 +857,7 @@ fn classify_fixture(agent: &str) -> Vec<(usize, serde_json::Value)> {
                         .tool_call,
                 ),
             };
-            let mut v = serde_json::to_value(classify_acp(raw, &table)).unwrap();
+            let mut v = serde_json::to_value(classify_acp(raw, table)).unwrap();
             let fields = v.as_object_mut().unwrap();
             fields.remove("raw");
             fields.remove("primary");
@@ -894,10 +868,11 @@ fn classify_fixture(agent: &str) -> Vec<(usize, serde_json::Value)> {
 
 /// The canonical call that the default matcher gives for each frame, with
 /// the key table of the agent. A line of a status-only update gives the
-/// fallback `tool`, because the frame names nothing. Step 4 merges updates
+/// fallback `tool`, because the frame names nothing. A command or file kind
+/// with no command line or no path also gives `tool`. Step 4 merges updates
 /// into one call, so these rows show one frame each.
 const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
-    ("claude", 2, r#"{"kind":"command","tool":"Bash"}"#),
+    ("claude", 2, r#"{"kind":"tool","tool":"Bash"}"#),
     (
         "claude",
         3,
@@ -915,7 +890,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     ),
     ("claude", 6, r#"{"kind":"tool","tool":""}"#),
     ("claude", 7, r#"{"kind":"tool","tool":""}"#),
-    ("claude", 8, r#"{"kind":"file_edit","tool":"Edit"}"#),
+    ("claude", 8, r#"{"kind":"tool","tool":"Edit"}"#),
     (
         "claude",
         9,
@@ -942,7 +917,7 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
         14,
         r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
     ),
-    ("claude", 15, r#"{"kind":"file_read","tool":"Read"}"#),
+    ("claude", 15, r#"{"kind":"tool","tool":"Read"}"#),
     (
         "claude",
         16,
@@ -1089,9 +1064,9 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     (
         "codex-ts",
         12,
-        r#"{"kind":"mcp_tool","tool":"search_notes","query":"rust"}"#,
+        r#"{"kind":"search","tool":"search_notes","query":"rust"}"#,
     ),
-    ("codex-ts", 13, r#"{"kind":"command","tool":""}"#),
+    ("codex-ts", 13, r#"{"kind":"tool","tool":""}"#),
     ("codex-ts", 14, r#"{"kind":"tool","tool":""}"#),
     ("codex-ts", 15, r#"{"kind":"tool","tool":""}"#),
     ("codex-ts", 16, r#"{"kind":"search","tool":""}"#),
@@ -1242,11 +1217,20 @@ const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
     ("antigravity", 23, r#"{"kind":"tool","tool":""}"#),
 ];
 
-#[test]
-fn each_tool_frame_gives_its_canonical_call() {
+/// The fixtures run through the key tables of the shipped Lua defaults. Both
+/// codex fixtures use the one table of the built-in `codex`.
+#[tokio::test]
+async fn each_tool_frame_gives_its_canonical_call() {
+    let acp = boot_acp_config("").await;
     let mut want = EXPECTED_CLASSES.iter();
-    for agent in ["claude", "codex-rust", "codex-ts", "gemini", "antigravity"] {
-        for (line, got) in classify_fixture(agent) {
+    for (agent, profile) in [
+        ("claude", "claude"),
+        ("codex-rust", "codex"),
+        ("codex-ts", "codex"),
+        ("gemini", "gemini"),
+        ("antigravity", "antigravity"),
+    ] {
+        for (line, got) in classify_fixture(agent, &key_table(&acp, profile)) {
             let (a, l, fields) = want.next().expect("a row for each frame");
             assert_eq!((*a, *l), (agent, line), "the table follows the fixtures");
             let fields: serde_json::Value = serde_json::from_str(fields).unwrap();
@@ -1254,4 +1238,31 @@ fn each_tool_frame_gives_its_canonical_call() {
         }
     }
     assert!(want.next().is_none(), "each row names a frame");
+}
+
+/// A table in the user's init.lua replaces the shipped table of that agent.
+/// The other agents keep their shipped tables.
+#[tokio::test]
+async fn a_user_key_table_replaces_the_shipped_one() {
+    use crucible_core::types::AgentKeys;
+
+    let shipped = boot_acp_config("").await;
+    assert!(
+        !key_table(&shipped, "gemini").is_empty(),
+        "gemini ships a table"
+    );
+
+    let acp = boot_acp_config(
+        r#"cru.config.set { acp = { agents = { gemini = { tools = {
+            { title = "Run ", tool = { "/title" } },
+        } } } } }"#,
+    )
+    .await;
+    let want = AgentKeys {
+        title: Some("Run ".into()),
+        tool: vec!["/title".into()],
+        ..AgentKeys::default()
+    };
+    assert_eq!(key_table(&acp, "gemini"), vec![want]);
+    assert_eq!(key_table(&acp, "codex"), key_table(&shipped, "codex"));
 }

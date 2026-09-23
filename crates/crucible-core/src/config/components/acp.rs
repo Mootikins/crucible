@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::config::components::permissions::PermissionConfig;
+use crate::types::AgentKeys;
 
 /// ACP configuration - practical settings for agent communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +100,11 @@ pub struct AgentProfile {
     /// `default = "allow"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<PermissionConfig>,
+    /// The key table that classifies the tool calls of this agent. The
+    /// shipped `runtime/defaults/init.luau` sets it for the built-in agents.
+    /// A table in the user's config replaces it whole.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<AgentKeys>,
 }
 
 fn default_streaming_timeout() -> u64 {

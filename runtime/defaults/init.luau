@@ -192,6 +192,95 @@ cru.permissions.on_request(function(request)
   return nil
 end)
 
+-- The key tables of the built-in ACP agents
+--
+-- An ACP agent sends a tool call in its own form. The daemon turns each call
+-- into one Crucible tool call with a kind (command, file_edit, file_read,
+-- mcp_tool, fetch, search or tool) and typed fields. The daemon reads the
+-- diff, the ACP kind and the locations first. Then it reads the agent's table
+-- here. Then it reads the usual keys (file_path, path, url, query).
+--
+-- Each entry applies to a call when all of its match fields match:
+--   name      the ACP tool name, exactly
+--   acp_kind  the ACP kind ("execute", "read", "other", ...)
+--   title     plain text that the ACP title contains (not a Lua pattern)
+-- Then the entry gives:
+--   kind                          the kind, if the ACP kind gives none
+--   args                          keys for the argument object, if the agent
+--                                 wraps it. The default is rawInput.
+--   tool, command, paths, url,    lists of keys. A key is a key of the
+--   query                         argument object, or a JSON pointer into the
+--                                 call ("/title", "/_meta/mcp/tool")
+--
+-- A call to Crucible's own MCP server (mcp__crucible__x or mcp.crucible.x)
+-- gets the kind of the native Crucible tool, so one hook matches both.
+--
+-- A table in your init.lua replaces the table of that agent whole:
+--
+--   cru.config.set { acp = { agents = { gemini = { tools = {
+--     { acp_kind = "execute", command = { "/title" } },
+--   } } } } }
+--
+-- Claude, opencode, cursor and hermes send the tool name and the usual keys,
+-- so they need no table.
+type AgentKeys = {
+  name: string?,
+  acp_kind: string?,
+  title: string?,
+  kind: string?,
+  args: { string }?,
+  tool: { string }?,
+  command: { string }?,
+  paths: { string }?,
+  url: { string }?,
+  query: { string }?,
+}
+
+-- Both codex adapters send an MCP call as { server, tool, arguments }.
+local codex_tools: { AgentKeys } = {
+  -- The Rust adapter.
+  {
+    title = "Tool: ",
+    kind = "mcp_tool",
+    args = { "/rawInput/arguments" },
+    tool = { "/rawInput/tool" },
+  },
+  { title = "Approve MCP tool call", kind = "mcp_tool" },
+  { title = "Searching for:", kind = "search" },
+  { title = "Opening:", kind = "fetch", url = { "/rawInput/action/url" } },
+  -- The TypeScript adapter.
+  { title = "mcp.", args = { "/rawInput/arguments" } },
+  { title = "Web search:", kind = "search" },
+  { title = "Open page:", kind = "fetch", url = { "/rawInput/action/url" } },
+}
+
+-- Gemini sends no tool name and no rawInput. The shell command is only in
+-- the title.
+local gemini_tools: { AgentKeys } = {
+  { acp_kind = "execute", command = { "/title" } },
+}
+
+-- Antigravity uses its own rawInput keys. It sends no tool name, and the
+-- title of an MCP call is "<server>_<tool>".
+local antigravity_tools: { AgentKeys } = {
+  {
+    command = { "CommandLine", "command_line" },
+    paths = { "TargetFile", "absolute_path" },
+    url = { "Url" },
+  },
+  { acp_kind = "other", kind = "mcp_tool", tool = { "/title" } },
+}
+
+cru.config.set({
+  acp = {
+    agents = {
+      codex = { tools = codex_tools },
+      gemini = { tools = gemini_tools },
+      antigravity = { tools = antigravity_tools },
+    },
+  },
+})
+
 -- The default system prompt is NOT set here.
 --
 -- It ships as `chat.system_prompt` in the config store, on the Default layer.

@@ -317,6 +317,7 @@ fn test_session_agent_from_profile_basic() {
         description: Some("Claude via profile".to_string()),
         delegation: None,
         permissions: None,
+        tools: Vec::new(),
     };
 
     let agent = SessionAgent::from_profile(&profile, "claude-custom");
@@ -379,6 +380,7 @@ fn test_session_agent_from_profile_with_delegation() {
         description: Some("Delegating agent".to_string()),
         delegation: Some(delegation),
         permissions: None,
+        tools: Vec::new(),
     };
 
     let agent = SessionAgent::from_profile(&profile, "delegator");

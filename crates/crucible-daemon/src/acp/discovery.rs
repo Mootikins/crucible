@@ -185,6 +185,8 @@ pub fn profile(name: &str, config: &AcpConfig) -> Result<Option<AgentProfile>> {
         resolved.permissions = Some(permissions.clone());
     }
     resolved.env.extend(configured.env.clone());
+    // A built-in has no table in Rust. The shipped Lua defaults set it.
+    resolved.tools = configured.tools.clone();
 
     if resolved.command.is_none() {
         return Err(anyhow!(
