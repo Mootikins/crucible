@@ -304,6 +304,76 @@ describe('the hunks', () => {
     expect(view.dom.querySelector('.cm-deletedChunk')).toBeNull();
   });
 
+  describe('an empty side has no line', () => {
+    // CodeMirror gives an empty text one empty line. A file with no text has
+    // no line, so the patch range of that side is `0,0` and no row shows.
+    const TEXT = 'x\ny\nz\n';
+    const setup = (original: string, doc: string): MergeViewSetup => ({
+      original,
+      path: 'a.txt',
+      collapse: { margin: 3, minSize: 4 },
+      hideFinalNewline: hidesFinalNewline(original, doc),
+      hunks: { current: doc, onToggle: () => undefined },
+    });
+
+    function unifiedOf(original: string, doc: string): EditorView {
+      const parent = document.createElement('div');
+      document.body.appendChild(parent);
+      view = new EditorView({
+        state: EditorState.create({ doc, extensions: mergeViewExtensions(setup(original, doc)) }),
+        parent,
+      });
+      return view;
+    }
+
+    function splitOf(original: string, doc: string): MergeView {
+      const parent = document.createElement('div');
+      document.body.appendChild(parent);
+      const both = { ...setup(original, doc), split: true };
+      return new MergeView({
+        a: { doc: original, extensions: mergeViewExtensions(both) },
+        b: { doc, extensions: mergeViewExtensions(both) },
+        parent,
+        collapseUnchanged: { margin: 3, minSize: 4 },
+      });
+    }
+
+    it('an added file, unified', () => {
+      const v = unifiedOf('', TEXT);
+      expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
+    });
+
+    it('an added file, split: the base editor shows no row', () => {
+      const merge = splitOf('', TEXT);
+      try {
+        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
+        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -0,0 +1,3 @@']);
+        expect(merge.a.dom.querySelectorAll('.cm-line')).toHaveLength(0);
+      } finally {
+        merge.destroy();
+      }
+    });
+
+    it('a deleted file, unified: the current side shows no row', () => {
+      const v = unifiedOf(TEXT, '');
+      expect(headers(v).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
+      expect(v.dom.querySelectorAll('.cm-line')).toHaveLength(0);
+      // The removed rows stay.
+      expect(v.dom.querySelectorAll('.cm-deletedChunk .cm-deletedLine')).toHaveLength(3);
+    });
+
+    it('a deleted file, split: the current editor shows no row', () => {
+      const merge = splitOf(TEXT, '');
+      try {
+        expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
+        expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -1,3 +0,0 @@']);
+        expect(merge.b.dom.querySelectorAll('.cm-line')).toHaveLength(0);
+      } finally {
+        merge.destroy();
+      }
+    });
+  });
+
   it('each editor of a split view names the same hunk', () => {
     // Line 10b comes after line 10: three lines of context on each side.
     // The pane gives both editors one setup, as `FileEditor` does. The editor

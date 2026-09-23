@@ -154,12 +154,13 @@ class NoLine extends WidgetType {
 const noLine = Decoration.replace({ block: true, widget: new NoLine() });
 
 /**
- * Replaces the empty last line with an empty block. A removed chunk at the end
- * of the text is a block of its own, so it stays in view.
+ * Replaces the empty last line with an empty block: the line after a final
+ * newline, or the one line that CodeMirror gives an empty text. A removed
+ * chunk at the end of the text is a block of its own, so it stays in view.
  */
 const finalNewline = EditorView.decorations.compute(['doc'], (state) => {
   const end = state.doc.length;
-  if (end === 0 || state.doc.sliceString(end - 1) !== '\n') return Decoration.none;
+  if (end > 0 && state.doc.sliceString(end - 1) !== '\n') return Decoration.none;
   return Decoration.set(noLine.range(end, end));
 });
 
@@ -303,9 +304,10 @@ export function diffHunks(state: EditorState, collapse: MergeCollapse): DiffHunk
     isA ? chunkLines(doc, c.fromA, c.toA) : chunkLines(doc, c.fromB, c.toB);
   const theirs = (c: Chunk) =>
     isA ? chunkLines(other, c.fromB, c.toB) : chunkLines(other, c.fromA, c.toA);
-  // The empty line after a final newline is not a line of the file.
+  // The empty line after a final newline is not a line of the file. Nor is
+  // the one line of an empty text: that side has no line, and its range is 0,0.
   let lastLine = doc.lines;
-  if (setup?.hideFinalNewline && lastLine > 1 && doc.line(lastLine).length === 0) lastLine--;
+  if (setup?.hideFinalNewline && doc.line(lastLine).length === 0) lastLine--;
 
   const hunks: DiffHunk[] = [];
   // Each chunk adds its line difference: the other side minus this side.
