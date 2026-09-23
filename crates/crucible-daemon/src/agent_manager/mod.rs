@@ -21,7 +21,7 @@ use crucible_core::config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
-use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
+use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
 use crucible_core::session::{ContextStrategy, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;

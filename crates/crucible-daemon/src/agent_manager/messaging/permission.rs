@@ -215,54 +215,28 @@ pub(super) fn engine_input(tool_name: &str, args: &serde_json::Value) -> String 
     }
 }
 
-/// Which ACP option a gate decision corresponds to.
+/// The agent option that carries the gate decision.
 ///
-/// `AllowAlways` only when the decision is one the user asked to be
-/// remembered — a saved pattern, or a scope wider than this single call.
-/// Anything else that was allowed is allowed once.
-fn outcome_kind(
-    response: &PermResponse,
-) -> agent_client_protocol::schema::v1::PermissionOptionKind {
-    use agent_client_protocol::schema::v1::PermissionOptionKind;
-
-    if !response.allowed {
-        return PermissionOptionKind::RejectOnce;
-    }
-    let remembered = response.pattern.is_some()
-        || matches!(
-            response.scope,
-            PermissionScope::Project | PermissionScope::User | PermissionScope::Session
-        );
-    if remembered {
-        PermissionOptionKind::AllowAlways
-    } else {
-        PermissionOptionKind::AllowOnce
-    }
-}
-
-/// The agent option that carries the gate decision `desired`.
-///
-/// An agent does not have to offer all four kinds. When the exact kind is
-/// absent, a narrower kind of the same decision stands in: `allow_always`
-/// falls back to `allow_once`, and one reject kind to the other. A one-time
-/// allow never takes `allow_always`, because that grant is wider than the
-/// user chose. `Cancelled` remains only for no usable option, because the
-/// agent then stops the whole turn.
+/// An allow always answers `allow_once`, also for a saved pattern or a wide
+/// scope. An agent can store `allow_always` and stop asking about the tool
+/// (gemini-cli does), and then Crucible has no gate for its later calls.
+/// Crucible keeps the grant itself. A one-time allow never takes
+/// `allow_always`, because that grant is wider than the user chose. A denial
+/// takes `reject_always` when the agent offers no `reject_once`. `Cancelled`
+/// remains only for no usable option, because the agent then stops the
+/// whole turn.
 fn select_option(
     options: &[agent_client_protocol::schema::v1::PermissionOption],
-    desired: agent_client_protocol::schema::v1::PermissionOptionKind,
+    response: &PermResponse,
 ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
     use agent_client_protocol::schema::v1::{
         PermissionOptionKind as Kind, RequestPermissionOutcome, SelectedPermissionOutcome,
     };
 
-    let acceptable: &[Kind] = match desired {
-        Kind::AllowAlways => &[Kind::AllowAlways, Kind::AllowOnce],
-        Kind::AllowOnce => &[Kind::AllowOnce],
-        Kind::RejectOnce => &[Kind::RejectOnce, Kind::RejectAlways],
-        Kind::RejectAlways => &[Kind::RejectAlways, Kind::RejectOnce],
-        // `outcome_kind` produces only the four kinds above.
-        _ => &[],
+    let acceptable: &[Kind] = if response.allowed {
+        &[Kind::AllowOnce]
+    } else {
+        &[Kind::RejectOnce, Kind::RejectAlways]
     };
 
     acceptable
@@ -307,7 +281,7 @@ async fn decide_acp_permission(
     let permission = PermRequest::tool(tool_name, args).with_diffs(diffs);
 
     let response = gate.request_permission(permission, card_policy).await;
-    select_option(&request.options, outcome_kind(&response))
+    select_option(&request.options, &response)
 }
 
 impl AgentManager {
@@ -1566,36 +1540,25 @@ mod acp_tool_name_tests {
         }
     }
 
-    /// The exact kind wins when the agent offers it.
+    /// A remembered grant still answers `allow_once`. An agent can store
+    /// `allow_always` and stop asking about the tool (gemini-cli does), and
+    /// then Crucible has no gate for the later calls of that tool.
     #[test]
-    fn the_option_of_the_exact_kind_is_selected() {
+    fn a_remembered_grant_answers_allow_once() {
         let options = [
             option("once", PermissionOptionKind::AllowOnce),
             option("always", PermissionOptionKind::AllowAlways),
             option("no", PermissionOptionKind::RejectOnce),
         ];
-        assert_eq!(
-            selected(select_option(&options, PermissionOptionKind::AllowAlways)).as_deref(),
-            Some("always")
-        );
-        assert_eq!(
-            selected(select_option(&options, PermissionOptionKind::AllowOnce)).as_deref(),
-            Some("once")
-        );
-    }
-
-    /// The user allowed the call for the session, and the agent offers only
-    /// `allow_once`. The call must run. `Cancelled` stopped the turn.
-    #[test]
-    fn an_allow_always_decision_takes_allow_once_when_the_agent_offers_only_that() {
-        let options = [
-            option("once", PermissionOptionKind::AllowOnce),
-            option("no", PermissionOptionKind::RejectOnce),
-        ];
-        assert_eq!(
-            selected(select_option(&options, PermissionOptionKind::AllowAlways)).as_deref(),
-            Some("once")
-        );
+        use crucible_core::interaction::PermissionScope;
+        for scope in [PermissionScope::Session, PermissionScope::Project] {
+            let response = PermResponse::allow_pattern("cargo test", scope);
+            assert_eq!(
+                selected(select_option(&options, &response)).as_deref(),
+                Some("once"),
+                "{scope:?}"
+            );
+        }
     }
 
     /// A one-time allow never takes `allow_always`. That option gives the
@@ -1607,7 +1570,7 @@ mod acp_tool_name_tests {
             option("no", PermissionOptionKind::RejectOnce),
         ];
         assert!(matches!(
-            select_option(&options, PermissionOptionKind::AllowOnce),
+            select_option(&options, &PermResponse::allow()),
             RequestPermissionOutcome::Cancelled
         ));
     }
@@ -1621,7 +1584,7 @@ mod acp_tool_name_tests {
             option("never", PermissionOptionKind::RejectAlways),
         ];
         assert_eq!(
-            selected(select_option(&options, PermissionOptionKind::RejectOnce)).as_deref(),
+            selected(select_option(&options, &PermResponse::deny())).as_deref(),
             Some("never")
         );
     }
@@ -1630,7 +1593,7 @@ mod acp_tool_name_tests {
     #[test]
     fn no_usable_option_is_cancelled() {
         assert!(matches!(
-            select_option(&[], PermissionOptionKind::RejectOnce),
+            select_option(&[], &PermResponse::deny()),
             RequestPermissionOutcome::Cancelled
         ));
     }
