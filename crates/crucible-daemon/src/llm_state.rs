@@ -144,7 +144,7 @@ impl LlmStateStore {
     ///
     /// Additive means nothing a live session already resolved changes. Seven
     /// call sites read the provider table on the trust path
-    /// (`resolve_provider_trust`, `check_attach_trust`), so an entry that
+    /// (`resolve_provider_trust`, `AgentManager::refuse_untrusted`), so an entry that
     /// mutates under a session opens a window between the attach check and the
     /// turn that uses it. Adding a key nothing has resolved opens no such
     /// window; changing one does.
@@ -256,7 +256,7 @@ impl LlmStateStore {
 /// the table safe to share.
 ///
 /// Seven call sites read this on the trust path (`resolve_provider_trust`,
-/// `check_attach_trust`). A table whose entries could change under a live
+/// `AgentManager::refuse_untrusted`). A table whose entries could change under a live
 /// session would open a window between the attach check and the turn that uses
 /// it — a TOCTOU on a security-relevant property. Because an addition never
 /// touches what a session already resolved, no such window exists. This is the

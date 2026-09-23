@@ -184,6 +184,69 @@ async fn switch_model_cannot_raise_provider_trust_past_an_attached_kiln() {
         .expect("staying on a local provider is fine");
 }
 
+/// The session's workspace classifies a kiln outside its own tree.
+///
+/// `<tmp>/ws/.crucible/project.toml` lists `<tmp>/elsewhere/notes` as
+/// confidential, and no project above the kiln classifies it. Delegation and
+/// retrieval read the session workspace first, so the two agent-change gates
+/// must read it too. A walk up from the kiln alone finds nothing here.
+#[tokio::test]
+async fn a_kiln_only_the_session_workspace_classifies_refuses_a_cloud_provider() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws");
+    let kiln = tmp.path().join("elsewhere").join("notes");
+    std::fs::create_dir_all(&kiln).unwrap();
+    std::fs::create_dir_all(workspace.join(".crucible")).unwrap();
+    std::fs::write(
+        workspace.join(".crucible").join("project.toml"),
+        format!(
+            "[[kilns]]\npath = \"{}\"\ndata_classification = \"confidential\"\n",
+            kiln.display()
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::trust_resolution::find_workspace_and_resolve_classification(&kiln),
+        None,
+        "precondition: only the session workspace classifies this kiln"
+    );
+
+    let session_manager = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("notes")],
+            Some(workspace),
+            None,
+        )
+        .await
+        .unwrap();
+    let am =
+        create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
+    am.configure_agent(&session.id, agent_on("local", BackendType::Ollama))
+        .await
+        .expect("a local provider clears a confidential kiln");
+
+    let err = am
+        .configure_agent(&session.id, agent_on("cloud", BackendType::OpenAI))
+        .await
+        .expect_err("configure_agent must read the session workspace");
+    assert!(
+        err.to_string()
+            .contains("insufficient for the attached kiln"),
+        "got: {err}"
+    );
+    let err = am
+        .switch_model(&session.id, "cloud/gpt-4o", None)
+        .await
+        .expect_err("switch_model must read the session workspace");
+    assert!(
+        err.to_string()
+            .contains("insufficient for the attached kiln"),
+        "got: {err}"
+    );
+}
+
 /// Trust follows the provider, not the presence of a name.
 ///
 /// `agent_name` on an internal agent is the deprecated agent-card alias (and

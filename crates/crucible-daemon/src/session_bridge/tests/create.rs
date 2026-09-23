@@ -376,11 +376,10 @@ fn confidential_card_kiln(tmp: &TempDir) -> (PathBuf, PathBuf, LlmConfig) {
 /// A card session's trust is its provider's, so a card on a local provider is
 /// admitted to a confidential kiln.
 ///
-/// Both trust gates have to agree for this to pass: the create-time one
-/// (`resolve_provider_trust_level_for_create`) and the runtime one
-/// (`resolve_provider_trust`, reached through `AgentManager::configure_agent`).
-/// They now share a discriminator — `agent_type` — and a card is an internal
-/// agent whichever gate is asking.
+/// Create and `AgentManager::configure_agent` both reach
+/// `AgentManager::refuse_untrusted`, which reads trust through
+/// `resolve_provider_trust`. Its discriminator is `agent_type`, and a card is
+/// an internal agent.
 ///
 /// What this pins is the end-to-end result, not the discriminator itself:
 /// `SessionAgent::from_card` clears `agent_name`, so a card session was already

@@ -586,7 +586,7 @@ impl AgentManager {
     ///
     /// Resolution and this gate therefore travel together, both on load. A
     /// refusal fails the turn rather than detaching the kiln, for the reason
-    /// `refuse_untrusted_for_kilns` gives: only the user can weigh dropping a
+    /// `refuse_untrusted_for_attached_kilns` gives: only the user can weigh dropping a
     /// corpus they are mid-conversation with.
     fn refuse_untrusted_on_revive(
         &self,

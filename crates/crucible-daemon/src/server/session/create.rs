@@ -163,23 +163,6 @@ impl RpcContext {
         // is gone with it.
         let isolation = params.isolation.clone();
 
-        let provider_trust_level = resolve_provider_trust_level_for_create(
-            params,
-            &self.llm_config.get().map(|c| (*c).clone()),
-        );
-        // Every kiln the session will hold, not only the one it was created
-        // with. The set is flat, so no member is the one that gets classified
-        // — and a confidential kiln arriving alongside the first used to reach
-        // no create-time trust check at all.
-        for kiln in &kiln_paths {
-            if let Some(classification) =
-                resolve_kiln_classification_for_create(kiln, workspace.as_ref())
-            {
-                validate_trust_level(provider_trust_level, classification)
-                    .map_err(SessionCreateError::Invalid)?;
-            }
-        }
-
         let recording_mode = params
             .recording_mode
             .as_deref()
@@ -187,8 +170,7 @@ impl RpcContext {
         let custom_recording_path = params.recording_path.as_deref().map(PathBuf::from);
 
         // Read locally — drives ACP vs internal branching in the setup task
-        // below. `resolve_provider_trust_level_for_create` above already reads
-        // this field for trust resolution.
+        // below, and the agent the trust gate checks.
         let agent_type = params
             .agent_type
             .clone()
@@ -228,26 +210,39 @@ impl RpcContext {
             if let Some(servers) = &params.mcp_servers {
                 agent.mcp_servers.clone_from(servers);
             }
-            // The resolved agent, against every kiln this session is about to
-            // hold — checked HERE, before `create_session` persists anything.
-            //
-            // `configure_agent` runs the same gate below, and running it only
-            // there was a bug: it fires after the session exists, so a refusal
-            // left an agent-less row on disk and in `session.list` answering
-            // `NoAgentConfigured` for good.
-            //
-            // One thing reaches this that `validate_trust_level` above cannot:
-            // that gate reads the *request's* provider, while a card's
-            // `provider:`/`specialty:` can override it — a local default
-            // resolving through a card onto a cloud provider passed the first
-            // gate on a provider it was no longer going to use.
-            self.agents
-                .refuse_untrusted_for_kilns(kiln_paths.iter(), &agent)
-                .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
             Some(agent)
         } else {
             None
         };
+
+        // The trust gate, against every kiln this session is about to hold,
+        // before `create_session` persists anything. A refusal after the save
+        // left an agent-less row that answered `NoAgentConfigured` for good.
+        //
+        // The gate checks an agent, not the request fields, so create reads
+        // the provider key through the same rule as every later gate. With
+        // `configure_agent`, that is the resolved agent, which a card can
+        // move onto another provider. Without it, it is the agent that the
+        // request describes; `session.configure_agent` later checks the
+        // agent that actually arrives.
+        let described_agent;
+        let gate_agent = match &resolved_agent {
+            Some(agent) => agent,
+            None => {
+                let mut agent = build_default_internal_agent(
+                    params,
+                    &self.llm_config.get().map(|c| (*c).clone()),
+                    self.mcp_config.as_ref(),
+                )
+                .map_err(SessionCreateError::Invalid)?;
+                agent.agent_type.clone_from(&agent_type);
+                described_agent = agent;
+                &described_agent
+            }
+        };
+        self.agents
+            .refuse_untrusted(Some(gate_agent), &kiln_paths, workspace.as_deref())
+            .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
 
         // Only a real workspace registers as a project. Falling back to the
         // kiln here used to register kiln/config dirs (e.g. ~/.crucible) as
@@ -524,60 +519,6 @@ fn build_default_internal_agent(
     }
 
     Ok(agent)
-}
-
-pub(crate) fn validate_trust_level(
-    provider_trust_level: TrustLevel,
-    classification: DataClassification,
-) -> Result<(), String> {
-    if provider_trust_level.satisfies(classification) {
-        return Ok(());
-    }
-
-    Err(format!(
-        "Provider trust level '{}' is insufficient for kiln data classification '{}'. Requires '{}' trust or higher.",
-        provider_trust_level,
-        classification,
-        classification.required_trust_level()
-    ))
-}
-
-pub(crate) fn resolve_provider_trust_level_for_create(
-    params: &crate::rpc_client::SessionCreateRequest,
-    llm_config: &Option<LlmConfig>,
-) -> TrustLevel {
-    if params.agent_type.as_deref() == Some("acp") {
-        return TrustLevel::Cloud;
-    }
-
-    if let Some(provider_key) = params.provider_key.as_deref() {
-        if let Some(config) = llm_config
-            .as_ref()
-            .and_then(|cfg| cfg.get_provider(provider_key))
-        {
-            return config.effective_trust_level();
-        }
-    }
-
-    if let Some(provider_name) = params.provider.as_deref() {
-        if let Ok(backend) = provider_name.parse::<crucible_core::config::BackendType>() {
-            return backend.default_trust_level();
-        }
-    }
-
-    llm_config
-        .as_ref()
-        .and_then(LlmConfig::default_provider)
-        .map(|(_, provider)| provider.effective_trust_level())
-        .unwrap_or(TrustLevel::Cloud)
-}
-
-pub(crate) fn resolve_kiln_classification_for_create(
-    kiln: &Path,
-    workspace: Option<&PathBuf>,
-) -> Option<DataClassification> {
-    let workspace_path = workspace.cloned().unwrap_or_else(|| kiln.to_path_buf());
-    crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
 
 #[cfg(test)]

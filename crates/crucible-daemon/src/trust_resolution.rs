@@ -70,9 +70,7 @@ pub(crate) fn resolve_session_classification(
 /// when nothing in the set is classified; callers keep their own handling of
 /// that, which is not the same as `Public`.
 ///
-/// The per-kiln resolver is the caller's, because the two that exist differ:
-/// live sessions walk up from the kiln when the workspace has no config, and
-/// create-time lookups do not.
+/// The caller supplies the per-kiln resolver.
 pub(crate) fn most_restrictive_classification(
     kilns: &[std::path::PathBuf],
     resolve: impl Fn(&Path) -> Option<DataClassification>,
@@ -118,8 +116,7 @@ pub(crate) fn resolve_provider_trust(
     // An ACP agent is an external process that picks its own model, so the
     // daemon cannot vouch for where the prompt ends up: Cloud.
     //
-    // Keyed on `agent_type`, the same discriminator create time uses
-    // (`resolve_provider_trust_level_for_create`) and the same one
+    // Keyed on `agent_type`, the same discriminator
     // `agent_factory`/`switch_model`/`scope` already branch on. Keying on
     // `agent_name.is_some()` instead — as this did — made trust follow the
     // presence of a *name* rather than the actual provider: an internal

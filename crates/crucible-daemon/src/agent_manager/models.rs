@@ -80,29 +80,34 @@ impl AgentManager {
         // classification — which is the reading that would let it buy a trust
         // upgrade it never earned.
         let kilns = self.session_manager.kiln_paths(&session.kilns);
-        self.refuse_untrusted_for_kilns(kilns.iter(), new_agent)
+        self.refuse_untrusted(Some(new_agent), &kilns, session.workspace.as_deref())
     }
 
-    /// The same refusal, against a kiln set rather than a live session.
+    /// The one trust gate: refuse an agent whose provider trust does not
+    /// clear each kiln in `kilns`.
     ///
-    /// `session.create` needs this before it has a `Session` to pass. Checking
-    /// after the session exists would be too late in a way that shows: the
-    /// session is persisted and listed by then, so a refusal would leave an
-    /// agent-less row behind that answers `NoAgentConfigured` for good — which
-    /// is exactly what `session.create` resolves the agent early to avoid.
-    pub(crate) fn refuse_untrusted_for_kilns<'a>(
+    /// Create, `configure_agent`, `switch_model`, fork, revive, delegation
+    /// and attach all call this, so each gate gives a kiln the same
+    /// classification. The classification comes from
+    /// `resolve_session_classification`, which retrieval also uses: the
+    /// project config of `workspace` first, then the nearest project above
+    /// the kiln. A workspace config can classify a kiln outside its own tree,
+    /// so a walk up from the kiln alone is not sufficient.
+    ///
+    /// `agent` is `None` for a session with no agent yet. Its future provider
+    /// is unknown, so it gets Cloud, the trust of an unknown provider key.
+    pub(crate) fn refuse_untrusted(
         &self,
-        kilns: impl Iterator<Item = &'a std::path::PathBuf>,
-        new_agent: &SessionAgent,
+        agent: Option<&SessionAgent>,
+        kilns: &[PathBuf],
+        workspace: Option<&Path>,
     ) -> Result<(), AgentError> {
-        let trust = crate::trust_resolution::resolve_provider_trust(
-            new_agent,
-            self.llm_config().as_deref(),
-        );
-
+        let trust = agent.map_or(crucible_core::config::TrustLevel::Cloud, |agent| {
+            self.resolve_agent_trust(agent)
+        });
         for kiln in kilns {
             let Some(classification) =
-                crate::trust_resolution::find_workspace_and_resolve_classification(kiln)
+                crate::trust_resolution::resolve_session_classification(workspace, kiln)
             else {
                 continue;
             };
@@ -111,8 +116,7 @@ impl AgentManager {
             }
             return Err(AgentError::InvalidConfig(format!(
                 "Provider trust level '{trust}' is insufficient for the attached kiln '{}' \
-                 (classification '{classification}'). Requires '{}' trust or higher. \
-                 Detach the kiln first if you want to switch.",
+                 (classification '{classification}'). Requires '{}' trust or higher.",
                 kiln.display(),
                 classification.required_trust_level()
             )));

@@ -111,6 +111,16 @@ path = "~/notes/personal-journal"
 data_classification = "confidential"
 ```
 
+Every trust check finds the classification of a kiln in the same way:
+
+1. The `project.toml` of the session's project. This file can classify a kiln
+   outside the project folder.
+2. If that file does not classify the kiln, the nearest project above the kiln
+   folder.
+
+Session creation, attach, model switch, agent change, fork, resume, delegation
+and search all use this rule.
+
 ## Practical Example
 
 Say you have three kilns and two providers. The providers go in the global config:

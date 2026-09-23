@@ -1,9 +1,7 @@
 use super::super::*;
 
-use super::create::validate_trust_level;
 use crate::agent_manager::AgentError;
 use crate::session_manager::KilnScope;
-use crate::trust_resolution::{find_workspace_and_resolve_classification, resolve_provider_trust};
 use crucible_core::config::{KilnName, RegistrationOrigin};
 use crucible_core::Session;
 
@@ -124,25 +122,6 @@ fn scope_error(req_id: Option<crucible_core::protocol::RequestId>, e: AgentError
     }
 }
 
-/// Attach-side trust gate: the session's provider must satisfy the target's
-/// data classification. Detach never needs this — removing scope can't leak.
-fn check_attach_trust(
-    sm: &Arc<SessionManager>,
-    llm_config: &Option<LlmConfig>,
-    session_id: &str,
-    classification: Option<DataClassification>,
-) -> Result<(), String> {
-    let Some(classification) = classification else {
-        return Ok(());
-    };
-    let trust = sm
-        .get_session(session_id)
-        .and_then(|s| s.agent)
-        .map(|agent| resolve_provider_trust(&agent, llm_config.as_ref()))
-        .unwrap_or(TrustLevel::Cloud);
-    validate_trust_level(trust, classification)
-}
-
 /// Turn the `kiln` parameter's raw text into a name.
 ///
 /// It used to be `kiln_path` — a directory the caller chose — and that is the
@@ -224,7 +203,6 @@ pub(crate) async fn handle_session_connect_kiln(
     am: &Arc<AgentManager>,
     km: &Arc<KilnManager>,
     kiln_state: &Arc<crate::kiln_state::KilnStateStore>,
-    llm_config: &Option<LlmConfig>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str).to_string();
@@ -241,10 +219,18 @@ pub(crate) async fn handle_session_connect_kiln(
 
     // Trust must gate before any side effect: resolving the classification only
     // reads the path's config (no open needed), so a rejected attach leaves the
-    // kiln untouched — never discoverable in kiln.list nor indexed.
-    let classification = find_workspace_and_resolve_classification(&kiln_path);
-    if let Err(message) = check_attach_trust(sm, llm_config, &session_id, classification) {
-        return Response::error(req.id, INVALID_PARAMS, message);
+    // kiln untouched — never discoverable in kiln.list nor indexed. Removing
+    // scope can not leak, so detach needs no such gate.
+    //
+    // A session with no agent (or no session) gates as Cloud; see
+    // `AgentManager::refuse_untrusted`.
+    let session = sm.get_session(&session_id);
+    if let Err(e) = am.refuse_untrusted(
+        session.as_ref().and_then(|s| s.agent.as_ref()),
+        std::slice::from_ref(&kiln_path),
+        session.as_ref().and_then(|s| s.workspace.as_deref()),
+    ) {
+        return Response::error(req.id, INVALID_PARAMS, e.to_string());
     }
 
     // Opening makes the kiln discoverable. A registered directory that will not

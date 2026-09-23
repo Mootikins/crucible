@@ -200,88 +200,6 @@ async fn untrusted_provider_internal_kiln_returns_error() {
     assert_eq!(sm.list_sessions().len(), 0);
 }
 
-// Tests for resolve_provider_trust_level_for_create
-#[test]
-fn provider_trust_acp_agent_always_cloud() {
-    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
-        "agent_type": "acp",
-        "kilns": ["/tmp/kiln"]
-    }))
-    .unwrap();
-    // Even with a Local-trust provider in config, ACP always returns Cloud
-    let llm_config = Some(build_llm_config_with_trust(
-        "local-provider",
-        crucible_core::config::BackendType::Mock,
-        Some(crucible_core::config::TrustLevel::Local),
-    ));
-    let result = resolve_provider_trust_level_for_create(&params, &llm_config);
-    assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
-}
-
-#[test]
-fn provider_trust_bare_backend_name_cloud() {
-    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
-        "provider": "ollama",
-        "kilns": ["/tmp/kiln"]
-    }))
-    .unwrap();
-    let result = resolve_provider_trust_level_for_create(&params, &None);
-    assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
-}
-
-#[test]
-fn provider_trust_bare_backend_name_local() {
-    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
-        "provider": "fastembed",
-        "kilns": ["/tmp/kiln"]
-    }))
-    .unwrap();
-    let result = resolve_provider_trust_level_for_create(&params, &None);
-    assert_eq!(result, crucible_core::config::TrustLevel::Local);
-}
-
-#[test]
-fn provider_trust_default_provider_fallback() {
-    // No agent_type, no provider_key, no provider → falls back to default provider in llm_config
-    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
-        "kilns": ["/tmp/kiln"]
-    }))
-    .unwrap();
-    // Build config where default provider is Local trust
-    let llm_config = Some(build_llm_config_with_trust(
-        "my-local",
-        crucible_core::config::BackendType::Mock,
-        Some(crucible_core::config::TrustLevel::Local),
-    ));
-    let result = resolve_provider_trust_level_for_create(&params, &llm_config);
-    assert_eq!(result, crucible_core::config::TrustLevel::Local);
-}
-
-// Tests for resolve_kiln_classification_for_create wrapper
-#[test]
-fn kiln_classification_workspace_none_returns_none() {
-    let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln).unwrap();
-    // No workspace.toml at kiln dir → returns None (no silent default)
-    let result = resolve_kiln_classification_for_create(&kiln, None);
-    assert_eq!(result, None);
-}
-
-#[test]
-fn kiln_classification_relative_path_matches() {
-    let tmp = TempDir::new().unwrap();
-    let workspace = tmp.path().join("workspace");
-    let kiln = workspace.join("notes");
-    std::fs::create_dir_all(&kiln).unwrap();
-    write_workspace_config(&workspace, "./notes", Some("internal"));
-    let result = resolve_kiln_classification_for_create(&kiln, Some(&workspace));
-    assert_eq!(
-        result,
-        Some(crucible_core::config::DataClassification::Internal)
-    );
-}
-
 /// Switching to a provider the kiln's classification does not permit is
 /// refused.
 ///
@@ -460,7 +378,7 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
 /// refused, and refused *before* anything is written.
 ///
 /// Two gates could catch this and only one is early enough.
-/// `validate_trust_level` used to classify the primary kiln alone, so a kiln
+/// The old create-time gate classified the primary kiln alone, so a kiln
 /// attached alongside it never reached the check — and `tools/search.rs` then
 /// passes `provider_trust: None` on the strength of "attached kilns pass the
 /// trust gate at attach time". The gate inside `configure_agent` does see the
@@ -537,4 +455,52 @@ async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_s
         0,
         "the refusal must not leave a session behind"
     );
+}
+
+/// Create reads the provider through the same rule as every later gate.
+///
+/// The request names a bare `mock` provider, and no configured provider has
+/// the key `mock`. The agent that such a request describes has the provider key
+/// `mock`, and `resolve_provider_trust` reads an unknown key as Cloud. The
+/// old create gate read the backend default instead (Local for `mock`), so an
+/// agentless create passed a gate that `configure_agent` then refused.
+#[tokio::test]
+async fn create_reads_a_bare_provider_name_as_the_runtime_gates_do() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("workspace");
+    let kiln = workspace.join("notes");
+    std::fs::create_dir_all(&kiln).unwrap();
+    write_workspace_config(&workspace, "./notes", Some("confidential"));
+
+    let llm_config = Some(build_llm_config(
+        "cloud",
+        crucible_core::config::BackendType::OpenAI,
+    ));
+    let request: Request = serde_json::from_value(json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "session.create",
+        "params": {
+            "type": "chat",
+            "kilns": ["notes"],
+            "workspace": workspace,
+            "provider": "mock",
+        }
+    }))
+    .unwrap();
+
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+    let km = Arc::new(KilnManager::new());
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config);
+    let ctx = RpcContext::for_test(km, sm.clone(), am, pm, event_tx, tmp.path().to_path_buf());
+
+    let response = handle_session_create(request, &ctx).await;
+    let error = response
+        .error
+        .expect("an unknown provider key is Cloud, below a confidential kiln");
+    assert_eq!(error.code, INVALID_PARAMS);
+    assert!(error.message.contains("insufficient"), "{}", error.message);
+    assert_eq!(sm.list_sessions().len(), 0);
 }

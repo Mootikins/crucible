@@ -694,7 +694,6 @@ impl RpcDispatcher {
                     &self.ctx.agents,
                     &self.ctx.kiln,
                     &self.ctx.kiln_state,
-                    &self.ctx.llm_config.get().map(|c| (*c).clone()),
                     &self.ctx.event_tx
                 )
             ),
@@ -2872,6 +2871,55 @@ mod tests {
             .unwrap()
             .agent
             .is_none());
+    }
+
+    /// `session.connect_kiln` reads the session workspace, as delegation and
+    /// retrieval do. Here the workspace `project.toml` is the only file that
+    /// classifies the kiln, because the kiln is outside the workspace tree.
+    /// The session has no agent, so its trust is Cloud.
+    #[tokio::test]
+    async fn connect_kiln_reads_the_classification_of_the_session_workspace() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workspace = tmp.path().join("ws");
+        let kiln = tmp.path().join("elsewhere").join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        std::fs::create_dir_all(workspace.join(".crucible")).unwrap();
+        std::fs::write(
+            workspace.join(".crucible").join("project.toml"),
+            format!(
+                "[[kilns]]\npath = \"{}\"\ndata_classification = \"confidential\"\n",
+                kiln.display()
+            ),
+        )
+        .unwrap();
+
+        let (ctx, _data_home) = test_context_with_kilns(&[("notes", &kiln)]);
+        let session = ctx
+            .sessions
+            .create_session(
+                crucible_core::session::SessionType::Chat,
+                vec![],
+                Some(workspace),
+                None,
+            )
+            .await
+            .unwrap();
+        let dispatcher = RpcDispatcher::new(ctx.clone());
+
+        let req = make_request(
+            "session.connect_kiln",
+            serde_json::json!({ "session_id": session.id, "kiln": "notes" }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        let err = resp.error.expect("the attach must be refused");
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(err.message.contains("insufficient"), "got: {}", err.message);
+        assert!(ctx
+            .sessions
+            .get_session(&session.id)
+            .unwrap()
+            .kilns
+            .is_empty());
     }
 
     /// The third case, and the one that separates "external" from
