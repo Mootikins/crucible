@@ -1,10 +1,11 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Page, type Response } from '@playwright/test';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readState } from './_state';
 import { appReady } from '../helpers/nav';
 import { busEmit } from '../helpers/bus';
 import { pinEditorSettings } from '../helpers/settings';
+import { holdFsEvents } from '../helpers/fs-hold';
 
 /**
  * Live tier — real `cru web` + daemon + TempDir kiln. Exercises the kiln/notes
@@ -673,4 +674,94 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     expect((await autosaved).status()).toBe(200);
     expect(readFileSync(notePath, 'utf-8')).toContain('then more');
   });
+
+  /**
+   * The watcher reports the editor's own save as well, and names no writer.
+   * The user types on after an autosave, and the report of that autosave
+   * arrives after the keystrokes. The report must not raise the banner: the
+   * banner would pause autosave over a change that is the user's own.
+   *
+   * The page clock owns the autosave timer. The spec holds the watcher
+   * events in the page, so the report arrives after the keystrokes.
+   */
+  async function autosaveThenType(page: Page, name: string, notePath: string) {
+    const fs = await holdFsEvents(page);
+    await pinEditorSettings(page, { autosaveSeconds: 2, vimMode: false });
+    await page.clock.install();
+    await page.goto(state.baseURL!);
+    await appReady(page);
+    await busEmit(page, 'openFile', { path: notePath, name });
+    await expect(page.locator('.cm-content')).toContainText('the first text');
+    await page.clock.pauseAt(Date.now() + 1_000);
+    await fs.hold();
+
+    const saved = page.waitForResponse(isNoteWrite);
+    await page.locator('.cm-content').first().click();
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('End');
+    await page.keyboard.type(' saved');
+    await page.clock.runFor(2_500);
+    expect((await saved).status()).toBe(200);
+    // The tab's dot goes away when the buffer takes the save's answer. Tabs of
+    // earlier tests stay open, so the dot is looked up on this note's tab.
+    const dirtyDot = page.locator('[data-tab-id]', { hasText: name }).getByTestId('tab-modified-dot');
+    await expect(dirtyDot).toBeHidden();
+    await expect.poll(() => fs.held(), { message: 'the watcher reports the save' }).toBeGreaterThan(0);
+
+    await page.keyboard.type(' and typed on');
+    await expect(dirtyDot).toBeVisible();
+    return fs;
+  }
+
+  test('WS-323: the report of the editor\'s own autosave raises no banner', async ({ page }, testInfo) => {
+    const name = `Echo-${testInfo.workerIndex}-${testInfo.repeatEachIndex}.md`;
+    const notePath = path.join(state.kilnDir!, name);
+    writeFileSync(notePath, '# Echo\n\nthe first text\n');
+    const fs = await autosaveThenType(page, name, notePath);
+
+    // The report decides by the disk: a banner, or a read of the note.
+    const echoRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/kiln/file?') &&
+        res.url().includes(encodeURIComponent(name)),
+    );
+    await fs.release();
+    const decided = await Promise.race([
+      echoRead.then(() => 'read'),
+      page.getByTestId('disk-changed-banner').waitFor().then(() => 'banner'),
+    ]);
+    expect(decided, 'the report of our own save raised the banner').toBe('read');
+
+    // Autosave goes on.
+    const autosaved = page.waitForResponse(isNoteWrite);
+    await page.clock.runFor(2_500);
+    expect((await autosaved).status()).toBe(200);
+    await expect(page.getByTestId('disk-changed-banner')).toBeHidden();
+    expect(readFileSync(notePath, 'utf-8')).toBe('# Echo saved and typed on\n\nthe first text\n');
+  });
+
+  test('WS-323: another writer right after the autosave still raises the banner', async ({ page }, testInfo) => {
+    const name = `NotEcho-${testInfo.workerIndex}-${testInfo.repeatEachIndex}.md`;
+    const notePath = path.join(state.kilnDir!, name);
+    const theirs = '# NotEcho\n\nANOTHER WRITER GOT HERE\n';
+    writeFileSync(notePath, '# NotEcho\n\nthe first text\n');
+    const fs = await autosaveThenType(page, name, notePath);
+
+    // A second write lands before the reports are released.
+    const before = await fs.held();
+    writeFileSync(notePath, theirs);
+    await expect.poll(() => fs.held(), { message: 'the watcher reports the other writer' }).toBeGreaterThan(before);
+    await fs.release();
+
+    await expect(page.getByTestId('disk-changed-banner')).toBeVisible();
+    await page.clock.runFor(3_000);
+    expect(readFileSync(notePath, 'utf-8')).toBe(theirs);
+    await expect(page.locator('.cm-content')).toContainText('saved and typed on');
+  });
 });
+
+/** The editor's whole write of a note. */
+function isNoteWrite(res: Response): boolean {
+  return res.request().method() === 'PUT' && res.url().includes('/api/kiln/file');
+}

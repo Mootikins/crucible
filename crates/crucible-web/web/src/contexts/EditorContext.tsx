@@ -386,6 +386,29 @@ export const EditorProvider: ParentComponent = (props) => {
   };
 
   /**
+   * A dirty buffer hears that its note changed. Is the change someone else's?
+   *
+   * The watcher report names a path and no writer, so this editor's own save
+   * comes back the same way. The user can type again before that report
+   * arrives, and the buffer is dirty then. The disk tells the two apart: after
+   * a save the buffer's base is the hash the daemon answered, so a disk that
+   * still holds the base holds nothing this buffer did not already take. The
+   * base is read after the answer, so a save that lands during the read counts.
+   * A read that fails or answers from the mirror cannot rule a writer out, so
+   * it raises the banner.
+   */
+  const flagIfDiskLeftBase = async (path: string) => {
+    try {
+      const { content_hash, fromMirror } = await readNote(path, await kilnOf(path));
+      const base = openFilesStore.find((f) => f.path === path)?.baseHash;
+      if (!fromMirror && content_hash === base) return;
+    } catch {
+      // Fall through to the banner.
+    }
+    flagChangedOnDisk(path);
+  };
+
+  /**
    * The kiln watcher names a path, and this editor holds it open.
    *
    * A move names both ends: the note left one path and arrived at the other,
@@ -402,15 +425,17 @@ export const EditorProvider: ParentComponent = (props) => {
     for (const path of paths) {
       const file = openFilesStore.find((f) => f.path === path);
       if (!file) continue;
-      // The user's text is the only copy there is: it is never replaced and
-      // never re-read behind them. They choose on the banner instead. A
+      // The user's text is the only copy there is: it is never replaced. They
+      // choose on the banner instead. A
       // buffer that went clean because its write QUEUED still holds writing
       // the daemon has not received, so it counts as dirty here.
       // A store that cannot be read at all (a private window, no IndexedDB)
       // cannot rule that writing out, so the question fails towards the
       // banner: it tells the user and loses nothing.
+      // A move is a change of path, not of bytes, so it always raises it.
       const queued = await hasQueuedWriting(path).catch(() => true);
-      if (file.dirty || queued) flagChangedOnDisk(path);
+      if (queued || (file.dirty && event.type === 'moved')) flagChangedOnDisk(path);
+      else if (file.dirty) void flagIfDiskLeftBase(path);
       else void refreshFromDisk(path);
     }
   };

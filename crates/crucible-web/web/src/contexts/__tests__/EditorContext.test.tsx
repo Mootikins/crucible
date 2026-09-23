@@ -59,6 +59,12 @@ const FS_STREAM = '/api/fs/events';
 /** The watcher sources still open — a root that closed no longer hears. */
 const openFsSources = () =>
   FakeEventSource.instances.filter((s) => s.url === FS_STREAM && !s.closed);
+/**
+ * Lets every promise that is already settled run its continuation. The read
+ * and the fetch mock answer in microtasks, so one macrotask turn is after all
+ * of them. It is a drain of the queue, not a wait for time.
+ */
+const drainPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 /** The disk spoke: one frame off the stream the panel and the editor share. */
 const diskSays = (event: FsEvent) => {
   const source = openFsSources().at(-1);
@@ -788,15 +794,60 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
   it('a dirty buffer keeps its text and says the disk moved', async () => {
     const editor = await openClean();
     editor.updateFileContent(PATH, 'my unsent text\n');
-    getFileContent.mockClear();
 
+    // Another writer: the disk no longer holds the buffer's base.
+    readHash = 'theirs';
     diskSays(CHANGED);
 
     await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
-    expect(fileState(editor).content).toBe('my unsent text\n');
+    expect(fileState(editor).content, 'the read never replaces the user\'s text').toBe(
+      'my unsent text\n',
+    );
     expect(fileState(editor).dirty).toBe(true);
     expect(fileState(editor).baseHash, 'the base is what a merge is made from').toBe('base-hash');
-    expect(getFileContent, 'no read behind the user\'s back').not.toHaveBeenCalled();
+  });
+
+  /**
+   * The watcher reports this editor's own save too, and the report names no
+   * writer. The user typed on after the save, so the buffer is dirty when the
+   * report arrives. The disk still holds the text the save left, so there is
+   * nothing to choose between: no banner, and autosave goes on.
+   */
+  it('the echo of this editor\'s own save raises no banner over the next keystrokes', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'mine\n');
+    await editor.saveFile(PATH);
+    expect(fileState(editor).baseHash).toBe('written');
+    editor.updateFileContent(PATH, 'mine, and more\n');
+
+    readHash = 'written';
+    getFileContent.mockClear();
+    diskSays(CHANGED);
+
+    // The decision is made: the banner went up, or the disk was read.
+    await waitFor(() =>
+      expect(fileState(editor).changedOnDisk || getFileContent.mock.calls.length > 0).toBe(true),
+    );
+    await drainPromises();
+    expect(fileState(editor).changedOnDisk, 'the disk holds this buffer\'s own save').toBeFalsy();
+    expect(fileState(editor).content).toBe('mine, and more\n');
+    expect(fileState(editor).dirty).toBe(true);
+  });
+
+  // The same moment, and another writer: the disk holds a text this buffer
+  // never saved, so the banner still says so.
+  it('another writer right after this editor\'s save still raises the banner', async () => {
+    const editor = await openClean();
+    editor.updateFileContent(PATH, 'mine\n');
+    await editor.saveFile(PATH);
+    editor.updateFileContent(PATH, 'mine, and more\n');
+
+    readHash = 'theirs';
+    diskSays(CHANGED);
+
+    await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
+    expect(fileState(editor).content, 'the user\'s text is never replaced').toBe('mine, and more\n');
+    expect(fileState(editor).baseHash, 'the base is what a merge is made from').toBe('written');
   });
 
   it('a note moved out from under a dirty buffer says the disk moved', async () => {
@@ -837,6 +888,7 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
   it('reload takes the disk text and the new base', async () => {
     const editor = await openClean();
     editor.updateFileContent(PATH, 'my unsent text\n');
+    readHash = 'theirs';
     diskSays(CHANGED);
     await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
 
@@ -857,6 +909,7 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
   it('reload asks before it discards unsaved edits', async () => {
     const editor = await openClean();
     editor.updateFileContent(PATH, 'my unsent text\n');
+    readHash = 'theirs';
     diskSays(CHANGED);
     await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
 
@@ -976,6 +1029,7 @@ describe('EditorContext — an open buffer hears the kiln watcher', () => {
   it('merge saves with the buffer\'s base text and clears the flag', async () => {
     const editor = await openClean();
     editor.updateFileContent(PATH, 'my unsent text\n');
+    readHash = 'theirs';
     diskSays(CHANGED);
     await waitFor(() => expect(fileState(editor).changedOnDisk).toBe(true));
 

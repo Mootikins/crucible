@@ -113,7 +113,9 @@ The editor listens to the kiln watcher while a note is open.
 
 - If your buffer is **clean**, it re-reads the note quietly and shows the new
   text.
-- If your buffer is **dirty**, nothing is taken from you. A banner says
+- If your buffer is **dirty**, nothing is taken from you. The editor reads the
+  note to find out who changed it. If the note still holds your last save, the
+  change is that save, and nothing shows. Otherwise a banner says
   `This note changed on disk — your unsaved edits are still here`, with two
   buttons.
 
