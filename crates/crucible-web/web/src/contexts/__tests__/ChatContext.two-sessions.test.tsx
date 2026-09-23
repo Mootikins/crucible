@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, waitFor } from '@solidjs/testing-library';
+import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { createEffect, createSignal } from 'solid-js';
 
 // Two panes, two sessions, one tree. The transcript of a session belongs to
@@ -37,6 +37,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount first. The library's own cleanup runs after this hook, so a pane
+  // still mounted here keeps its bind alive while the client and `fetch` go:
+  // it then reads through the real `fetch` and logs after the last test.
+  cleanup();
   env?.restore();
   resetSseForTests();
   // The transcript store is a module singleton keyed by session; forget it

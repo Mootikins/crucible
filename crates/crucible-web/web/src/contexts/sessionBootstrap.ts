@@ -45,8 +45,14 @@ export async function bootstrapSessionWithFallback({
   setChatMode,
   loadHistory,
 }: BootstrapSessionParams): Promise<void> {
+  // The reads below do not take the signal, so an answer can arrive after the
+  // pane rebinds or unmounts. That bind must stop: it would announce a session
+  // the pane left, and read and log for a pane that is gone.
+  const ended = (err?: unknown) =>
+    signal.aborted || (err instanceof Error && err.name === 'AbortError');
   try {
     const session = await fetchSessionOnce(sessionId);
+    if (ended()) return;
     setSessionTitle(session.title ?? null);
     // The daemon persists the session mode on the agent config; without this
     // a page reload silently shows "Normal" while the agent stays in plan.
@@ -60,9 +66,7 @@ export async function bootstrapSessionWithFallback({
     await loadHistory(session.session_id, signal);
     return;
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      return;
-    }
+    if (ended(err)) return;
   }
 
   // `session.get` failed, so the daemon has no live row — but history now
@@ -73,9 +77,7 @@ export async function bootstrapSessionWithFallback({
     announceSession(sessionId);
     await loadHistory(sessionId, signal);
   } catch (fallbackErr) {
-    if (fallbackErr instanceof Error && fallbackErr.name === 'AbortError') {
-      return;
-    }
+    if (ended(fallbackErr)) return;
     console.error('Failed to load session metadata:', fallbackErr);
   }
 }
