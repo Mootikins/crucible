@@ -227,7 +227,11 @@ fn write_daemon_config(home: &Path) -> Result<()> {
     // The variable is absent when the mock binary is not built; a test that
     // needs the mock then fails on its own missing-binary message.
     let mock_profile = option_env!("CARGO_BIN_EXE_mock-acp-agent")
-        .map(|mock| format!(", acp = {{ agents = {{ [{MOCK_ACP_PROFILE:?}] = {{ command = {mock:?} }} }} }}",))
+        .map(|mock| {
+            format!(
+                ", acp = {{ agents = {{ [{MOCK_ACP_PROFILE:?}] = {{ command = {mock:?} }} }} }}",
+            )
+        })
         .unwrap_or_default();
     std::fs::write(
         config_dir.join("init.lua"),
