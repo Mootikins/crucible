@@ -303,4 +303,32 @@ describe('the hunks', () => {
     view.dispatch({ effects: setHiddenHunks.of(() => true) });
     expect(view.dom.querySelector('.cm-deletedChunk')).toBeNull();
   });
+
+  it('each editor of a split view names the same hunk', () => {
+    // Line 10b comes after line 10: three lines of context on each side.
+    // The pane gives both editors one setup, as `FileEditor` does. The editor
+    // of the current side has no unified view to read the base text from.
+    const doc = ORIGINAL.replace('line 10', 'line 10\nline 10b');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const setup: MergeViewSetup = {
+      original: ORIGINAL,
+      path: 'src/a.rs',
+      split: true,
+      collapse: { margin: 3, minSize: 4 },
+      hunks: { current: doc, onToggle: () => undefined },
+    };
+    const merge = new MergeView({
+      a: { doc: ORIGINAL, extensions: mergeViewExtensions(setup) },
+      b: { doc, extensions: mergeViewExtensions(setup) },
+      parent,
+      collapseUnchanged: { margin: 3, minSize: 4 },
+    });
+    try {
+      expect(headers(merge.a).map((h) => h.textContent)).toEqual(['@@ -8,6 +8,7 @@']);
+      expect(headers(merge.b).map((h) => h.textContent)).toEqual(['@@ -8,6 +8,7 @@']);
+    } finally {
+      merge.destroy();
+    }
+  });
 });

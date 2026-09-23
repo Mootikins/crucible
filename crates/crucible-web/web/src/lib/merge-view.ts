@@ -23,7 +23,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { type Chunk, getChunks, getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
+import { type Chunk, getChunks, unifiedMergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '@/components/editor/CodeMirrorEditor';
 import { editorThemeExtension } from '@/components/editor/editor-theme';
 import { theme } from '@/lib/theme';
@@ -271,7 +271,11 @@ function chunkLines(doc: Text, from: number, to: number): number {
 interface HunkSetup {
   collapse: MergeCollapse;
   hideFinalNewline: boolean;
-  /** The text of the other side, for the editor of the base side. */
+  /**
+   * The two texts. Each editor counts the lines of the other side. The split
+   * view has no unified view, so an editor cannot read the base text from one.
+   */
+  base: Text;
   current: Text;
   onToggle: (label: string) => void;
 }
@@ -292,7 +296,7 @@ export function diffHunks(state: EditorState, collapse: MergeCollapse): DiffHunk
   const isA = found.side === 'a';
   const setup = state.facet(hunkSetup);
   const doc = state.doc;
-  const other = isA ? (setup?.current ?? Text.empty) : getOriginalDoc(state);
+  const other = (isA ? setup?.current : setup?.base) ?? Text.empty;
   const { margin } = collapse;
   const minSize = collapse.minSize ?? 4;
   const own = (c: Chunk) =>
@@ -518,6 +522,7 @@ function hunkExtensions(setup: MergeViewSetup): Extension {
     hunkSetup.of({
       collapse: setup.collapse,
       hideFinalNewline: !!setup.hideFinalNewline,
+      base: Text.of(setup.original.split('\n')),
       current: Text.of(setup.hunks.current.split('\n')),
       onToggle: setup.hunks.onToggle,
     }),
