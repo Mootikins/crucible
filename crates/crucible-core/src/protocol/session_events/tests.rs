@@ -563,7 +563,6 @@ fn a_transport_only_event_has_no_scripting_name() {
         response_summary: String::new(),
         model: String::new(),
         duration_ms: 0,
-        token_count: None,
     }
     .as_scripting_event()
     .is_none());

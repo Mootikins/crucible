@@ -173,8 +173,14 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     let _ = next_event_or_skip(&mut event_rx, "user_message").await;
     let event = next_event_or_skip(&mut event_rx, "precognition_complete").await;
 
-    assert_eq!(event.data["notes_count"], 0);
-    assert_eq!(event.data["query_summary"], "hello precognition");
+    // The whole payload, so a new or a lost wire field shows here.
+    assert_eq!(
+        event.data,
+        serde_json::json!({
+            "notes_count": 0,
+            "query_summary": "hello precognition",
+        })
+    );
 
     crate::embedding::clear_embedding_provider_cache();
 }

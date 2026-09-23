@@ -212,12 +212,13 @@ pub enum TurnPayload {
         notes_count: usize,
         #[serde(default)]
         query_summary: String,
-        /// Absent when the search produced nothing worth carrying. The
-        /// producer inserts it only when it has notes
-        /// (`agent_manager/mod.rs`), so the key must stay omissible.
+        /// Absent when the search found no notes. Older recordings carry
+        /// `[]` for that case, and the decode reads both.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         notes: Vec<PrecognitionNoteInfo>,
     },
+    /// The same payload goes to the subscribers and to the Lua
+    /// `post_llm_call` handlers (`messaging/stream.rs`).
     PostLlmCall {
         #[serde(default)]
         response_summary: String,
@@ -225,10 +226,6 @@ pub enum TurnPayload {
         model: String,
         #[serde(default)]
         duration_ms: u64,
-        /// Always serialized, including as `null` — the producer writes
-        /// `"token_count": null` today (`messaging/stream.rs`).
-        #[serde(default)]
-        token_count: Option<u64>,
     },
 }
 

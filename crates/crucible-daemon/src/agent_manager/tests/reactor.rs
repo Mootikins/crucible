@@ -151,6 +151,55 @@ async fn runtime_dispatch_post_llm_call_fires_handler() {
     assert!(fired);
 }
 
+/// The subscribers and the Lua handlers get one `post_llm_call` payload.
+///
+/// Before, the producer built the payload twice, and the two copies had
+/// different fields: `token_count` was only on the wire.
+#[tokio::test]
+async fn post_llm_call_gives_lua_the_payload_of_the_wire() {
+    let mut h = ReactorTestHarness::new().await;
+
+    let vm = h.load_daemon_lua(
+        r#"
+            post_llm_seen = nil
+            cru.on("post_llm_call", function(ctx, event)
+                post_llm_seen = string.format("%s|%s|%d|%s", event.response_summary,
+                    event.model, event.duration_ms, tostring(event.token_count))
+            end)
+        "#,
+    );
+
+    h.inject_streaming_agent(ReactorTestHarness::default_ok_events());
+    h.send("hello").await;
+
+    let wire = next_event_or_skip(&mut h.event_rx, "post_llm_call").await;
+    let data = wire.data.as_object().expect("an object payload");
+    let mut keys: Vec<&str> = data.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["duration_ms", "model", "response_summary"]);
+
+    let seen = timeout(Duration::from_secs(2), async {
+        loop {
+            let seen: Option<String> = vm.plugin_lua().load("return post_llm_seen").eval().unwrap();
+            if let Some(seen) = seen {
+                return seen;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for the post_llm_call handler");
+    assert_eq!(
+        seen,
+        format!(
+            "{}|{}|{}|nil",
+            data["response_summary"].as_str().unwrap(),
+            data["model"].as_str().unwrap(),
+            data["duration_ms"]
+        )
+    );
+}
+
 #[tokio::test]
 async fn reactor_lua_handler_discovery_empty_dir() {
     let mut h = ReactorTestHarness::new().await;

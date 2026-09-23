@@ -20,8 +20,9 @@ use crucible_core::config::components::permissions::{PermissionConfig, Permissio
 use crucible_core::config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
-use crucible_core::events::{InternalSessionEvent, SessionEvent};
+use crucible_core::events::SessionEvent;
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
+use crucible_core::protocol::TurnPayload;
 use crucible_core::session::{ContextStrategy, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
@@ -240,30 +241,14 @@ fn emit_precognition_event(
     event_tx: &broadcast::Sender<SessionEventMessage>,
     session_id: &str,
     query: &str,
-    notes_count: usize,
-    kilns_searched: usize,
-    kilns_failed: usize,
-    notes: Option<Vec<crucible_core::traits::chat::PrecognitionNoteInfo>>,
+    notes: Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
 ) {
-    let query_summary = query.chars().take(100).collect::<String>();
-    let event = SessionEvent::internal(InternalSessionEvent::PrecognitionComplete {
-        notes_count,
-        query_summary: query_summary.clone(),
-        kilns_searched,
-        kilns_filtered: 0,
-        kilns_failed,
-    });
-    let mut data = serde_json::json!({
-        "notes_count": notes_count,
-        "query_summary": query_summary,
-    });
-    if let Some(notes) = notes {
-        data["notes"] = serde_json::to_value(notes).unwrap_or_default();
-    }
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::new(session_id, event.event_type(), data),
-    ) {
+    let payload = TurnPayload::PrecognitionComplete {
+        notes_count: notes.len(),
+        query_summary: query.chars().take(100).collect(),
+        notes,
+    };
+    if !emit_event(event_tx, SessionEventMessage::typed(session_id, payload)) {
         warn!(
             session_id = %session_id,
             "No subscribers for precognition_complete event"

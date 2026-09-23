@@ -834,19 +834,20 @@ impl AgentManager {
             );
         }
 
-        if !emit_event(
-            &stream_ctx.event_tx,
-            SessionEventMessage::new(
-                &stream_ctx.session_id,
-                "post_llm_call",
-                serde_json::json!({
-                    "response_summary": &response_summary,
-                    "model": &stream_config.model,
-                    "duration_ms": duration_ms,
-                    "token_count": Option::<u64>::None,
-                }),
-            ),
-        ) {
+        // One payload goes to the subscribers and to the Lua handlers.
+        let post_llm = SessionEventMessage::typed(
+            &stream_ctx.session_id,
+            TurnPayload::PostLlmCall {
+                response_summary,
+                model: stream_config.model.clone(),
+                duration_ms,
+            },
+        );
+        let post_llm_event = SessionEvent::Custom {
+            name: post_llm.event.clone(),
+            payload: post_llm.data.clone(),
+        };
+        if !emit_event(&stream_ctx.event_tx, post_llm) {
             warn!(
                 session_id = %stream_ctx.session_id,
                 "No subscribers for post_llm_call event"
@@ -855,14 +856,6 @@ impl AgentManager {
 
         // Observational event, run against the handler VM with the
         // state lock released (plugin Lua may run for seconds).
-        let post_llm_event = SessionEvent::Custom {
-            name: "post_llm_call".to_string(),
-            payload: serde_json::json!({
-                "response_summary": &response_summary,
-                "model": &stream_config.model,
-                "duration_ms": duration_ms,
-            }),
-        };
         run_handlers(
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
             (),

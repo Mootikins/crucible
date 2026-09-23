@@ -384,8 +384,6 @@ impl AgentManager {
     ) -> Option<Vec<crucible_core::SearchResult>> {
         let provider_trust =
             resolve_provider_trust(params.agent_config, self.llm_config().as_deref());
-        let kilns_searched = params.sources.len();
-
         match search_across_kilns_with_stage(
             params.sources,
             params.query_embedding,
@@ -403,10 +401,7 @@ impl AgentManager {
                     params.event_tx,
                     params.session_id,
                     params.original_content,
-                    0,
-                    kilns_searched,
-                    1,
-                    None,
+                    Vec::new(),
                 );
                 None
             }
@@ -449,7 +444,7 @@ impl AgentManager {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
-                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1, None);
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
                 return None;
             }
         };
@@ -458,7 +453,7 @@ impl AgentManager {
             Ok(e) => e,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Precognition embedding failed");
-                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1, None);
+                emit_precognition_event(event_tx, session_id, original_content, Vec::new());
                 return None;
             }
         };
@@ -467,7 +462,7 @@ impl AgentManager {
         let kilns_searched = sources.len();
         if sources.is_empty() {
             warn!(session_id = %session_id, "No kiln opened for precognition");
-            emit_precognition_event(event_tx, session_id, original_content, 0, 0, 1, None);
+            emit_precognition_event(event_tx, session_id, original_content, Vec::new());
             return None;
         }
 
@@ -539,17 +534,7 @@ impl AgentManager {
             .await
         };
         let note_info = extract_note_info(&results, label_kilns);
-        let deduped_count = note_info.len();
-
-        emit_precognition_event(
-            event_tx,
-            session_id,
-            original_content,
-            deduped_count,
-            kilns_searched,
-            0,
-            Some(note_info),
-        );
+        emit_precognition_event(event_tx, session_id, original_content, note_info);
 
         // Empty context block (no results) → don't inject anything; the
         // empty message would just waste tokens.
