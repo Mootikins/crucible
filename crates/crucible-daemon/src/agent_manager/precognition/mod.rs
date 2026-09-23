@@ -101,12 +101,8 @@ impl AgentManager {
         }
     }
 
-    /// Pure formatter for the system-message body. No XML wrap for the
-    /// user message (the role on the ContextMessage already encodes
-    /// "system"); the `<system>...</system>` framing is kept because
-    /// it matches what prompt-engineering tutorials and existing
-    /// fixtures expect, and many models treat it as a hint that the
-    /// content is meta-instruction rather than chat history.
+    /// Pure formatter for the injected message body. The common injection
+    /// constructor adds the XML envelope after Lua has formatted the body.
     fn precognition_context_block(
         results: &[crucible_core::SearchResult],
         label_kilns: bool,
@@ -126,7 +122,7 @@ impl AgentManager {
         } else {
             format!("Found {} relevant notes:", results.len())
         };
-        let mut context = format!("<system>\n{heading}\n");
+        let mut context = format!("{heading}\n");
         for result in results {
             let title = result_title(result);
             // The registry name the user typed, or nothing. This used to be
@@ -156,7 +152,6 @@ impl AgentManager {
                 result.snippet.clone().unwrap_or_default()
             ));
         }
-        context.push_str("\n</system>");
         context
     }
 
@@ -416,9 +411,8 @@ impl AgentManager {
     /// to inject (no kiln, no embedding backend, search returned no
     /// results, or any failure — Precognition is best-effort).
     ///
-    /// Earlier this function returned the entire prompt with `<system>`
-    /// XML prepended; now it returns just the system message body
-    /// wrapped in a `ContextMessage::system`. The string-mutation path
+    /// Earlier this function returned the entire prompt with XML
+    /// prepended; now it returns a tagged context message. The string-mutation path
     /// was a workaround for the absence of a context-array seam.
     pub(super) async fn compute_precognition_message(
         &self,
@@ -548,7 +542,11 @@ impl AgentManager {
         // the precog content (translate, redact, summarize) without
         // tripping the re-prepend logic — as long as the handler
         // preserves the tag.
-        let mut msg = crucible_core::traits::ContextMessage::system(context_block);
+        let mut msg = crucible_core::traits::ContextMessage::injection(
+            "precognition",
+            "daemon",
+            context_block,
+        );
         msg.metadata.tags.push(PRECOGNITION_TAG.to_string());
         Some(msg)
     }

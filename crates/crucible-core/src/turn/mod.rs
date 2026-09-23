@@ -438,6 +438,56 @@ pub fn added_messages(before: &[ContextMessage], after: &[ContextMessage]) -> Ve
         .collect()
 }
 
+/// Wrap System-role blocks added by a context handler, leaving historical
+/// messages alone. Built-in injections already carry their own envelope.
+pub fn tag_new_system_messages(before: &[ContextMessage], after: &mut [ContextMessage]) {
+    use crate::traits::llm::MessageRole;
+
+    let mut unmatched: Vec<_> = before
+        .iter()
+        .filter(|m| m.role == MessageRole::System)
+        .map(|m| m.content.as_str())
+        .collect();
+    for message in after {
+        if message.role != MessageRole::System {
+            continue;
+        }
+        if let Some(index) = unmatched.iter().position(|text| *text == message.content) {
+            unmatched.swap_remove(index);
+        } else if !message.content.starts_with("<system-message ") {
+            let kind = message.metadata.kind.as_deref().unwrap_or("context");
+            let source = message.metadata.source.as_deref().unwrap_or("lua");
+            // A handler may prefix an existing tagged injection while
+            // retaining metadata. Remove its old envelope before putting
+            // the edited text inside the single final envelope.
+            let content = if message.metadata.kind.is_some() {
+                if let Some(start) = message.content.find("<system-message ") {
+                    let open = message.content[start..].find('>').map(|i| start + i + 1);
+                    let close = message.content.rfind("</system-message>");
+                    match (open, close) {
+                        (Some(open), Some(close)) if open <= close => format!(
+                            "{}{}{}",
+                            &message.content[..start],
+                            message.content[open..close].trim_matches('\n'),
+                            &message.content[close + "</system-message>".len()..]
+                        ),
+                        _ => message.content.clone(),
+                    }
+                } else {
+                    message.content.clone()
+                }
+            } else {
+                message.content.clone()
+            };
+            let tagged = ContextMessage::injection(kind, source, content);
+            message.content = tagged.content;
+            message.metadata.kind = tagged.metadata.kind;
+            message.metadata.source = tagged.metadata.source;
+            message.metadata.token_estimate = tagged.metadata.token_estimate;
+        }
+    }
+}
+
 /// A unified agent.
 ///
 /// Variation between agent kinds (ACP, internal genai, future backends)
@@ -521,6 +571,31 @@ macro_rules! impl_noop_agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_system_context_is_tagged_without_retagging_history() {
+        let old = ContextMessage::system("stable context");
+        let mut after = vec![old.clone(), ContextMessage::system("plugin context")];
+        tag_new_system_messages(std::slice::from_ref(&old), &mut after);
+        assert_eq!(after[0], old);
+        assert_eq!(after[1].metadata.kind.as_deref(), Some("context"));
+        assert_eq!(after[1].metadata.source.as_deref(), Some("lua"));
+        assert!(after[1]
+            .content
+            .starts_with("<system-message kind=\"context\" source=\"lua\">"));
+        tag_new_system_messages(&[old], &mut after);
+        assert_eq!(after[1].content.matches("<system-message").count(), 1);
+    }
+
+    #[test]
+    fn edited_tagged_context_keeps_one_envelope() {
+        let original = ContextMessage::injection("precognition", "daemon", "a note");
+        let mut edited = original.clone();
+        edited.content = format!("[redacted] {}", edited.content);
+        tag_new_system_messages(&[], std::slice::from_mut(&mut edited));
+        assert_eq!(edited.content.matches("<system-message ").count(), 1);
+        assert!(edited.content.contains("[redacted] a note"));
+    }
 
     /// This turn's Precognition goes in front of the whole history. Old
     /// system context from the history is not new, and only the new block

@@ -127,8 +127,9 @@ mod tests {
 
     #[test]
     fn injected_system_context_is_prepended_to_user_content() {
-        let precog = ContextMessage::system("KNOWLEDGE:\n- foo relates to bar")
-            .with_tag(crate::agent_manager::precognition::PRECOGNITION_TAG);
+        let precog =
+            ContextMessage::injection("precognition", "daemon", "KNOWLEDGE:\n- foo relates to bar")
+                .with_tag(crate::agent_manager::precognition::PRECOGNITION_TAG);
         let user = ContextMessage::user("What is foo?");
 
         let prompt = acp_prompt_text("What is foo?", &[precog, user]);
@@ -138,6 +139,7 @@ mod tests {
             "injected precognition context must reach the ACP prompt, got: {prompt:?}"
         );
         assert!(prompt.contains("What is foo?"));
+        assert!(prompt.contains("<system-message kind=\"precognition\" source=\"daemon\">"));
         // Injected context precedes the user's question.
         assert!(
             prompt.find("KNOWLEDGE").unwrap() < prompt.find("What is foo?").unwrap(),

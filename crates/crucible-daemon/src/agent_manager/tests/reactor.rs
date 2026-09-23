@@ -254,6 +254,12 @@ async fn runtime_transform_context_appends_system_message() {
             .map(|m| (&m.role, &m.content))
             .collect::<Vec<_>>()
     );
+    let injected = injected.unwrap();
+    assert_eq!(injected.metadata.kind.as_deref(), Some("context"));
+    assert_eq!(injected.metadata.source.as_deref(), Some("lua"));
+    assert!(injected
+        .content
+        .starts_with("<system-message kind=\"context\""));
 }
 
 #[tokio::test]

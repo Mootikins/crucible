@@ -570,6 +570,7 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
+        let prior = messages.clone();
         let mut current = messages;
 
         // Built-in producer: prepend the pre-computed Precognition
@@ -659,6 +660,8 @@ impl AgentManager {
                 current = with_precog;
             }
         }
+
+        crucible_core::turn::tag_new_system_messages(&prior, &mut current);
 
         Some(current)
     }

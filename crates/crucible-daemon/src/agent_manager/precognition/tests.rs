@@ -43,7 +43,7 @@ mod format_precognition_context_tests {
     }
 
     #[test]
-    fn precognition_context_block_single_result_has_system_tags() {
+    fn precognition_context_block_single_result_is_body_only() {
         let results = vec![make_result(
             "notes/Rust.md",
             0.85,
@@ -53,8 +53,8 @@ mod format_precognition_context_tests {
 
         let output = AgentManager::precognition_context_block(&results, false);
 
-        assert!(output.starts_with("<system>\n"));
-        assert!(output.contains("</system>"));
+        assert!(output.starts_with("Found 1 relevant notes:"));
+        assert!(!output.contains("<system>"));
         assert!(output.contains("Found 1 relevant notes:"));
         assert!(output.contains("## Rust"));
         assert!(output.contains("(similarity: 0.85)"));
@@ -111,8 +111,7 @@ mod format_precognition_context_tests {
 
         let output = AgentManager::precognition_context_block(&results, false);
 
-        assert!(output.contains("<system>"));
-        assert!(output.contains("</system>"));
+        assert!(!output.contains("<system>"));
         assert!(output.contains("## NoSnippet"));
     }
 
@@ -279,7 +278,7 @@ mod precognition_format_hook_tests {
 
         // Block is just the system content; ContextMessage role handles
         // the "this is a system message" semantic separately.
-        assert!(output.contains("<system>"));
+        assert!(!output.contains("<system>"));
         assert!(output.contains("Found 1 relevant notes:"));
         assert!(output.contains("Rust is a systems programming language."));
         // Original content is no longer concatenated into the block.

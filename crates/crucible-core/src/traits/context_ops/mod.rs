@@ -30,6 +30,12 @@ pub struct MessageMetadata {
     pub success: Option<bool>,
     /// Custom tags for filtering
     pub tags: Vec<String>,
+    /// The kind of daemon-injected message, separate from its conversation role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Who supplied an injected message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// A message in the conversation context with rich metadata
@@ -82,6 +88,27 @@ impl ContextMessage {
     /// Create a system message
     pub fn system(content: impl Into<String>) -> Self {
         Self::with_role(MessageRole::System, content)
+    }
+
+    /// Create one tagged injection while retaining its origin in metadata.
+    pub fn injection(kind: &str, source: &str, content: impl AsRef<str>) -> Self {
+        fn xml_attribute(value: &str) -> String {
+            value
+                .replace('&', "&amp;")
+                .replace('"', "&quot;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        }
+
+        let mut message = Self::system(format!(
+            "<system-message kind=\"{}\" source=\"{}\">\n{}\n</system-message>",
+            xml_attribute(kind),
+            xml_attribute(source),
+            content.as_ref()
+        ));
+        message.metadata.kind = Some(kind.to_owned());
+        message.metadata.source = Some(source.to_owned());
+        message
     }
 
     /// Create an assistant message with tool calls

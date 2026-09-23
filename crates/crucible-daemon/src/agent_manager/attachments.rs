@@ -101,10 +101,14 @@ pub(super) fn build_attachment_message(
         return None;
     }
 
-    let mut msg = ContextMessage::system(format!(
-        "The user attached these files with `@` in their message. \
-         Their contents are below — you do not need to read them again.\n{block}"
-    ));
+    let mut msg = ContextMessage::injection(
+        "attachment",
+        "user",
+        format!(
+            "The user attached these files with `@` in their message. \
+             Their contents are below — you do not need to read them again.\n{block}"
+        ),
+    );
     msg.metadata.tags.push(ATTACHMENT_TAG.to_string());
     Some(msg)
 }
@@ -381,6 +385,10 @@ mod tests {
         let msg = attach(ws.path(), "look at @notes.md, then stop")
             .expect("mention followed by a comma should resolve");
         assert!(msg.content.contains("BODY"));
+        assert!(msg
+            .content
+            .starts_with("<system-message kind=\"attachment\" source=\"user\">"));
+        assert_eq!(msg.metadata.kind.as_deref(), Some("attachment"));
     }
 
     #[test]

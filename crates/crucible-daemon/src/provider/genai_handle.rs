@@ -1198,6 +1198,12 @@ impl GenaiAgentHandle {
             .map(|m| match m.role {
                 MessageRole::User => ChatMessage::user(&m.content),
                 MessageRole::Assistant => ChatMessage::assistant(&m.content),
+                MessageRole::System
+                    if m.metadata.kind.is_some()
+                        && self.model.adapter_kind == genai::adapter::AdapterKind::Anthropic =>
+                {
+                    ChatMessage::user(&m.content)
+                }
                 MessageRole::System => ChatMessage::system(&m.content),
                 MessageRole::Tool | MessageRole::Function => {
                     // Minimal fallback; tool-role messages come back
@@ -2266,6 +2272,24 @@ mod tests {
             .model_iden("gpt-4o-mini")
             .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
         GenaiAgentHandle::new(client, model, "system", tools)
+    }
+
+    #[test]
+    fn injected_context_uses_conversation_role_for_each_adapter() {
+        let mut handle = test_handle_with_tools(Vec::new());
+        let injection =
+            crucible_core::traits::ContextMessage::injection("precognition", "daemon", "a note");
+        let ordinary = crucible_core::traits::ContextMessage::system("stable instructions");
+
+        handle.model = ModelIden::new(genai::adapter::AdapterKind::Anthropic, "claude-test");
+        let anthropic = handle.context_messages_to_chat(&[ordinary.clone(), injection.clone()]);
+        assert_eq!(anthropic[0].role, genai::chat::ChatRole::System);
+        assert_eq!(anthropic[1].role, genai::chat::ChatRole::User);
+        assert!(format!("{:?}", anthropic[1]).contains("<system-message"));
+
+        handle.model = ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-test");
+        let openai = handle.context_messages_to_chat(&[ordinary, injection]);
+        assert_eq!(openai[1].role, genai::chat::ChatRole::System);
     }
 
     /// Regression: a handle must accept a mode the Lua registry declares.

@@ -752,9 +752,15 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
         precog_msgs.len()
     );
     assert!(
-        precog_msgs[0].content.starts_with("[redacted] "),
+        precog_msgs[0]
+            .content
+            .starts_with("<system-message kind=\"precognition\" source=\"daemon\">\n[redacted] "),
         "mutated content should reach the agent, got: {}",
         precog_msgs[0].content
+    );
+    assert_eq!(
+        precog_msgs[0].content.matches("<system-message ").count(),
+        1
     );
 
     crate::embedding::clear_embedding_provider_cache();

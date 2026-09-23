@@ -1,6 +1,18 @@
 //! Tests for ContextMessage - the canonical message type
 
 use super::*;
+
+#[test]
+fn injected_context_has_one_tag_and_provenance() {
+    let msg = ContextMessage::injection("precognition", "daemon", "Found a note");
+    assert_eq!(msg.role, MessageRole::System);
+    assert_eq!(msg.metadata.kind.as_deref(), Some("precognition"));
+    assert_eq!(msg.metadata.source.as_deref(), Some("daemon"));
+    assert_eq!(
+        msg.content,
+        "<system-message kind=\"precognition\" source=\"daemon\">\nFound a note\n</system-message>"
+    );
+}
 use crate::traits::llm::ToolCall;
 
 #[test]
