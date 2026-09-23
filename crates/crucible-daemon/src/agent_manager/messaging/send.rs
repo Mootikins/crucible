@@ -466,9 +466,10 @@ impl AgentManager {
                 crucible_core::traits::ContextMessage::system(review)
                     .with_tag(crate::diff::context::KIND),
             ),
+            // One block holds both injections, so it keeps the tag of each.
             (Some(review), Some(mut files)) => {
                 files.content = format!("{review}\n\n{}", files.content);
-                Some(files)
+                Some(files.with_tag(crate::diff::context::KIND))
             }
         };
 

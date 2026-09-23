@@ -296,3 +296,91 @@ async fn an_attached_comment_reaches_the_agent_and_stays_in_the_history() {
         "the fork keeps the tag of each block"
     );
 }
+
+/// On an ACP turn the review block and the `@file` block go with the turn
+/// only. Each block keeps its own tag when the message has both.
+#[tokio::test]
+async fn an_acp_turn_keeps_the_review_tag_next_to_a_file_attachment() {
+    let repo = TempDir::new().unwrap();
+    crate::test_support::init_repo(repo.path(), &[("a.rs", "one\ntwo\nthree\n")]).await;
+    crate::test_support::git(repo.path(), &["branch", "-M", "main"]).await;
+    crate::test_support::git(repo.path(), &["checkout", "-q", "-b", "feature"]).await;
+    std::fs::write(repo.path().join("a.rs"), "one\nTWO\nthree\n").unwrap();
+
+    let sm = temp_session_manager();
+    let workspace = TempDir::new().unwrap();
+    std::fs::write(workspace.path().join("notes.md"), "attached text").unwrap();
+    let session = sm
+        .create_session(
+            SessionType::Chat,
+            vec![],
+            Some(workspace.path().into()),
+            None,
+        )
+        .await
+        .unwrap();
+    let am = create_test_agent_manager(sm.clone());
+    am.configure_agent(&session.id, test_agent()).await.unwrap();
+    sm.modify_session(&session.id, |live| {
+        live.agent.as_mut().unwrap().agent_type = "acp".into();
+        true
+    })
+    .await
+    .unwrap();
+    let messages = capture(&am, &session.id);
+    let projects = Arc::new(crate::project_manager::ProjectManager::new(
+        workspace.path().join("projects.json"),
+    ));
+    let root = projects.register(repo.path()).unwrap().path;
+    let (tx, mut rx) = broadcast::channel(256);
+    let ctx = crate::rpc::RpcContext::for_test(
+        am.kiln_manager.clone(),
+        sm.clone(),
+        am.clone(),
+        projects,
+        tx.clone(),
+        workspace.path().into(),
+    );
+    let source = serde_json::json!({ "kind": "branch", "root": root, "base": "", "head": null });
+    let stored = crate::server::diff_comments::handle_diff_comment(
+        request(
+            "diff.comment",
+            serde_json::json!({
+                "source": source, "path": "a.rs", "side": "base",
+                "line_start": 2, "line_end": 3, "body": "why?",
+            }),
+        ),
+        ctx.diff_admission(),
+        &tx,
+    )
+    .await;
+    let reply = stored.result.expect("the comment is stored");
+    let id = reply["comment"]["id"].as_str().unwrap().to_string();
+
+    let sent = crate::server::session::handle_session_send_message(
+        request(
+            "session.send_message",
+            serde_json::json!({
+                "session_id": session.id,
+                "content": "look at @notes.md",
+                "comments": [{ "id": id, "source": source }],
+            }),
+        ),
+        &am,
+        &tx,
+        ctx.diff_admission(),
+    )
+    .await;
+    assert!(sent.error.is_none(), "{:?}", sent.error);
+    finish_turn(&am, &sm, &session, &mut rx).await;
+
+    let review = tagged(&messages);
+    assert_eq!(review.len(), 1, "the review block keeps its tag");
+    assert!(review[0].contains("<system-message kind=\"review-comment\""));
+    let all = messages.lock().unwrap().clone().unwrap();
+    assert!(
+        all.iter().any(|m| m.content.contains("attached text")
+            && m.metadata.tags.iter().any(|t| t == "file_attachment")),
+        "the file block keeps its tag"
+    );
+}
