@@ -1,4 +1,4 @@
-//! Pure translation between the ACP wire and Crucible `TurnEvent`s.
+//! Pure translation between the ACP wire and Crucible turn values.
 //!
 //! Everything here is a free function over values the handle already holds, so
 //! the wire-shape decisions that drive rendering — what a turn stopped for,
@@ -10,7 +10,7 @@
 /// agent was stopped", and ACP puts it on the wire: an agent that has seen
 /// `session/cancel` MUST answer with `Cancelled`, so the response is where a
 /// cancelled delegated turn becomes observable. The client sends the cancel
-/// when `chunk_rx` drops, and then the stream body that would yield this
+/// when `event_rx` drops, and then the stream body that would yield this
 /// event is gone, so a stop reason from the client side has no reader.
 ///
 /// `MaxTokens` and `Refusal` now have variants of their own, and the internal
@@ -72,88 +72,6 @@ pub(super) fn turn_error(error: crate::acp::ClientError) -> crucible_core::turn:
             TurnError::AgentUnavailable(format!("ACP session error: {msg}"))
         }
     }
-}
-
-/// Map one client chunk onto one `TurnEvent`.
-///
-/// The client decides everything before a chunk reaches the handle: every
-/// `ToolEnd` follows a `ToolStart` for its id and carries that start's name.
-/// So this map is total and keeps no state. A new `StreamingChunk` variant
-/// with no `TurnEvent` fails to compile here, not at run time.
-impl From<crate::acp::streaming::StreamingChunk> for crucible_core::turn::TurnEvent {
-    fn from(chunk: crate::acp::streaming::StreamingChunk) -> Self {
-        use crate::acp::streaming::StreamingChunk;
-        use crucible_core::turn::TurnEvent;
-
-        match chunk {
-            StreamingChunk::Text(text) => {
-                tracing::debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
-                TurnEvent::TextDelta(text)
-            }
-            StreamingChunk::Thinking(text) => {
-                tracing::debug!(
-                    chunk_type = "thinking",
-                    len = text.len(),
-                    "ACP streaming chunk"
-                );
-                TurnEvent::Thinking(text)
-            }
-            StreamingChunk::ContextWindow { used, limit } => {
-                tracing::debug!(used, limit, "ACP agent reported its context window");
-                TurnEvent::ContextWindow { used, limit }
-            }
-            StreamingChunk::ToolStart { id, call } => {
-                tracing::info!(
-                    tool = %call.tool,
-                    kind = %call.kind,
-                    tool_id = %id,
-                    diff_count = call.diffs.len(),
-                    "ACP tool call started"
-                );
-                TurnEvent::ToolCall {
-                    id,
-                    name: call.tool.clone(),
-                    args: raw_input(&call),
-                    call: Some(Box::new(call)),
-                }
-            }
-            StreamingChunk::ToolEnd {
-                id,
-                name,
-                result,
-                error,
-            } => {
-                tracing::info!(
-                    tool = %name,
-                    tool_id = %id,
-                    has_error = error.is_some(),
-                    "ACP tool call completed"
-                );
-                TurnEvent::ToolResult {
-                    id,
-                    name,
-                    result: serde_json::Value::String(result.unwrap_or_default()),
-                    error,
-                }
-            }
-            StreamingChunk::ToolUpdate { id, call } => {
-                tracing::debug!(tool_id = %id, diff_count = call.diffs.len(), "ACP tool call update");
-                TurnEvent::ToolCallUpdate {
-                    id,
-                    call: Box::new(call),
-                }
-            }
-        }
-    }
-}
-
-/// The arguments of an ACP call: its `rawInput`, or `Null` when no frame
-/// sent one.
-fn raw_input(call: &crucible_core::types::CanonicalToolCall) -> serde_json::Value {
-    call.raw
-        .as_ref()
-        .and_then(|raw| raw.raw_input.clone())
-        .unwrap_or(serde_json::Value::Null)
 }
 
 /// Build the prompt text sent to an ACP agent for one turn.
@@ -351,107 +269,6 @@ mod tests {
             agent_client_protocol::schema::v1::StopReason::Refusal,
         ] {
             assert_eq!(turn_stop_reason(acp, false), StopReason::Empty, "{acp:?}");
-        }
-    }
-
-    // -- Chunk to event: one sample per variant --------------------------------
-
-    /// Every `StreamingChunk` variant maps to exactly one `TurnEvent`.
-    ///
-    /// A canonical `Read` call, as the ACP client makes it.
-    fn read_call(raw_input: Option<serde_json::Value>) -> crucible_core::types::CanonicalToolCall {
-        crucible_core::types::classify_acp(
-            serde_json::from_value(serde_json::json!({
-                "name": "Read",
-                "kind": "read",
-                "locations": [{"path": "/a"}],
-                "rawInput": raw_input,
-            }))
-            .expect("a raw tool call"),
-            &[],
-        )
-    }
-
-    /// The match below has no wildcard, so a new chunk variant fails to
-    /// compile here until someone writes down its event.
-    #[test]
-    fn every_streaming_chunk_maps_to_one_turn_event() {
-        use crate::acp::streaming::StreamingChunk;
-        use crucible_core::turn::TurnEvent;
-
-        let samples = [
-            StreamingChunk::Text("hi".into()),
-            StreamingChunk::Thinking("hmm".into()),
-            StreamingChunk::ContextWindow { used: 3, limit: 10 },
-            StreamingChunk::ToolStart {
-                id: "t1".into(),
-                call: read_call(None),
-            },
-            StreamingChunk::ToolEnd {
-                id: "t1".into(),
-                name: "Read".into(),
-                result: Some("out".into()),
-                error: None,
-            },
-            StreamingChunk::ToolUpdate {
-                id: "t1".into(),
-                call: read_call(Some(serde_json::json!({"path": "a"}))),
-            },
-        ];
-
-        for chunk in samples {
-            let expected_shape = match &chunk {
-                StreamingChunk::Text(_) => "TextDelta",
-                StreamingChunk::Thinking(_) => "Thinking",
-                StreamingChunk::ContextWindow { .. } => "ContextWindow",
-                StreamingChunk::ToolStart { .. } => "ToolCall",
-                StreamingChunk::ToolEnd { .. } => "ToolResult",
-                StreamingChunk::ToolUpdate { .. } => "ToolCallUpdate",
-            };
-            let event = TurnEvent::from(chunk);
-            let actual_shape = match &event {
-                TurnEvent::TextDelta(text) => {
-                    assert_eq!(text, "hi");
-                    "TextDelta"
-                }
-                TurnEvent::Thinking(text) => {
-                    assert_eq!(text, "hmm");
-                    "Thinking"
-                }
-                TurnEvent::ContextWindow { used, limit } => {
-                    assert_eq!((*used, *limit), (3, 10));
-                    "ContextWindow"
-                }
-                TurnEvent::ToolCall {
-                    id,
-                    name,
-                    args,
-                    call,
-                } => {
-                    assert_eq!((id.as_str(), name.as_str()), ("t1", "Read"));
-                    assert!(args.is_null(), "absent arguments become Null");
-                    assert_eq!(call.as_ref().map(|c| c.kind.as_str()), Some("file_read"));
-                    "ToolCall"
-                }
-                TurnEvent::ToolResult {
-                    id,
-                    name,
-                    result,
-                    error,
-                } => {
-                    assert_eq!((id.as_str(), name.as_str()), ("t1", "Read"));
-                    assert_eq!(result, &serde_json::Value::String("out".into()));
-                    assert!(error.is_none());
-                    "ToolResult"
-                }
-                TurnEvent::ToolCallUpdate { id, call } => {
-                    assert_eq!(id, "t1");
-                    assert_eq!(raw_input(call)["path"], "a");
-                    "ToolCallUpdate"
-                }
-                other => panic!("no chunk maps to {other:?}"),
-            };
-            assert_eq!(actual_shape, expected_shape);
         }
     }
 

@@ -46,8 +46,8 @@ fn thought_chunks_stay_out_of_the_answer_text() {
     assert_eq!(
         chunks,
         vec![
-            StreamingChunk::Thinking("weigh the options".to_string()),
-            StreamingChunk::Text("weigh the options".to_string()),
+            TurnEvent::Thinking("weigh the options".to_string()),
+            TurnEvent::TextDelta("weigh the options".to_string()),
         ],
         "reasoning and the answer share one accumulator, so one masked the other"
     );
@@ -106,14 +106,17 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
     }
 
     let clean = "a2Jbcde";
-    let [thinking, text, StreamingChunk::ToolStart { call, .. }] = chunks.as_slice() else {
+    let [thinking, text, TurnEvent::ToolCall {
+        call: Some(call), ..
+    }] = chunks.as_slice()
+    else {
         panic!("expected thinking, text and one tool start, got {chunks:?}")
     };
     assert_eq!(
         (thinking, text),
         (
-            &StreamingChunk::Thinking(clean.to_string()),
-            &StreamingChunk::Text(clean.to_string())
+            &TurnEvent::Thinking(clean.to_string()),
+            &TurnEvent::TextDelta(clean.to_string())
         ),
         "agent-controlled text reached the turn stream unsanitised"
     );
@@ -156,7 +159,7 @@ fn newlines_and_tabs_survive_sanitising_of_agent_prose() {
 
     assert_eq!(
         rx.try_recv().ok(),
-        Some(StreamingChunk::Text(prose.to_string())),
+        Some(TurnEvent::TextDelta(prose.to_string())),
         "sanitising flattened legitimate prose layout"
     );
 }

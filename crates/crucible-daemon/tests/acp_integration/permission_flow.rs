@@ -19,9 +19,10 @@ use agent_client_protocol::schema::v1::{
     PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
     RequestPermissionOutcome, SelectedPermissionOutcome, ToolKind,
 };
+use crucible_core::turn::TurnEvent;
 use crucible_core::types::CanonicalToolCall;
 use crucible_daemon::acp::client::PermissionRequestHandler;
-use crucible_daemon::acp::{ClientError, StreamingChunk, TurnSummary};
+use crucible_daemon::acp::{ClientError, TurnSummary};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
@@ -57,7 +58,7 @@ async fn permission_turn(
     handler: Option<PermissionRequestHandler>,
     request: PromptRequest,
     steps: Vec<Step>,
-    on_chunk: impl FnMut(StreamingChunk) -> bool,
+    on_chunk: impl FnMut(TurnEvent) -> bool,
 ) -> (
     Result<(TurnSummary, PromptResponse), ClientError>,
     Vec<Value>,

@@ -730,7 +730,7 @@ pub fn tool_call_update(id: &str, status: &str, raw_output: Option<Value>) -> St
 pub async fn prompt_with(
     client: &crucible_daemon::acp::CrucibleAcpClient,
     request: agent_client_protocol::schema::v1::PromptRequest,
-    mut on_chunk: impl FnMut(crucible_daemon::acp::StreamingChunk) -> bool,
+    mut on_chunk: impl FnMut(crucible_core::turn::TurnEvent) -> bool,
 ) -> Result<
     (
         crucible_daemon::acp::TurnSummary,

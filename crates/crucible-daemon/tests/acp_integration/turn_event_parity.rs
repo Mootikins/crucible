@@ -218,7 +218,7 @@ async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
 /// Claude Code, Gemini and every other conforming ACP agent stream reasoning as
 /// `session/update` `agent_thought_chunk` frames. The client matched
 /// `AgentMessageChunk` and let thought chunks fall into its terminal
-/// "ignoring session update" arm, so `StreamingChunk::Thinking` had **no
+/// "ignoring session update" arm, so `TurnEvent::Thinking` had **no
 /// production producer** and the whole
 /// `Thinking` → `TurnEvent::Thinking` → `thinking` SessionEvent →
 /// `ThinkingComponent` chain was dead on delegated sessions: the internal agent

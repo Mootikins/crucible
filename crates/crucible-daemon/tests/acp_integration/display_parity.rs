@@ -1,9 +1,9 @@
-//! `StreamingChunk` contract tests — verifies the ACP client's wire parsing
+//! `TurnEvent` contract tests — verifies the ACP client's wire parsing
 //! preserves tool call arguments, tool results, and handles missing token usage
 //! gracefully.
 //!
 //! **This file does not prove display parity, despite its name.** Everything
-//! here stops at [`StreamingChunk`], which sits *above* the `SessionEventMessage`
+//! here stops at [`TurnEvent`], which sits *above* the `SessionEventMessage`
 //! parity boundary and two layers upstream of anything a user sees. A green run
 //! says the ACP client parsed the agent's wire messages correctly; it says
 //! nothing about whether the resulting turn renders like an internal one. The
@@ -22,7 +22,7 @@
 use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
 use crate::support::parity::capture_chunks;
 use crate::support::{connect, prompt_with, MockScript, Step};
-use crucible_daemon::acp::StreamingChunk;
+use crucible_core::turn::TurnEvent;
 use serde_json::json;
 
 /// The `rawInput` of a canonical ACP call, when a frame sent one.
@@ -107,11 +107,15 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     let captured = chunks.lock().unwrap();
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have received ToolStart chunk");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have received ToolCall chunk");
 
     match tool_start {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(
                 call.tool, "semantic_search",
                 "a Crucible MCP call is named by the Crucible tool"
@@ -149,11 +153,13 @@ async fn tool_start_without_arguments_has_none() {
     let captured = chunks.lock().unwrap();
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall");
 
     match tool_start {
-        StreamingChunk::ToolStart { call, .. } => {
+        TurnEvent::ToolCall {
+            call: Some(call), ..
+        } => {
             assert!(
                 raw_input(call).is_none(),
                 "arguments should be None when not provided"
@@ -197,11 +203,13 @@ async fn tool_start_complex_arguments_preserved() {
     let captured = chunks.lock().unwrap();
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall");
 
     match tool_start {
-        StreamingChunk::ToolStart { call, .. } => {
+        TurnEvent::ToolCall {
+            call: Some(call), ..
+        } => {
             let args = raw_input(call).expect("complex args should survive roundtrip");
             assert_eq!(
                 *args, expected_args,
@@ -216,7 +224,7 @@ async fn tool_start_complex_arguments_preserved() {
 async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     // Regression: when an ACP `tool_call` notification carries a
     // `ToolCallContent::Diff` entry in its `content` array, the
-    // diff must surface on the live `StreamingChunk::ToolStart`
+    // diff must surface on the live `TurnEvent::ToolCall`
     // so the TUI can render it in scrollback as the call appears.
 
     let (chunks, callback) = capture_chunks();
@@ -250,11 +258,15 @@ async fn tool_start_forwards_diff_content_to_streaming_chunk() {
     let captured = chunks.lock().unwrap();
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall");
 
     match tool_start {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(id, "tool-d1");
             assert_eq!(call.diffs.len(), 1, "should forward exactly one diff");
             let diff = &call.diffs[0];
@@ -273,7 +285,7 @@ async fn tool_call_update_with_late_diffs_emits_a_tool_update() {
     // `tool_call_update` frame, the diffs must reach the TUI as a live
     // chunk — they were previously being silently dropped because the
     // post-stream replay in `acp_handle.rs` filters out tool ids that
-    // were already announced via `ToolStart`.
+    // were already announced via `ToolCall`.
 
     let (chunks, callback) = capture_chunks();
 
@@ -312,32 +324,36 @@ async fn tool_call_update_with_late_diffs_emits_a_tool_update() {
 
     let captured = chunks.lock().unwrap();
 
-    // The initial ToolStart should still be there, with empty diffs.
+    // The initial ToolCall should still be there, with empty diffs.
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart chunk");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall chunk");
     match tool_start {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(id, "tool-ld1");
             assert!(
                 call.diffs.is_empty(),
-                "initial ToolStart should have no diffs (agent deferred them)"
+                "initial ToolCall should have no diffs (agent deferred them)"
             );
         }
         _ => unreachable!(),
     }
 
-    // The late diffs must surface in a follow-up ToolUpdate chunk.
+    // The late diffs must surface in a follow-up ToolCallUpdate chunk.
     let diff_update = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolUpdate { .. }))
+        .find(|c| matches!(c, TurnEvent::ToolCallUpdate { .. }))
         .expect(
-            "should emit a ToolUpdate chunk when a tool_call_update \
+            "should emit a ToolCallUpdate chunk when a tool_call_update \
              carries diffs for an already-announced tool",
         );
     match diff_update {
-        StreamingChunk::ToolUpdate { id, call } => {
+        TurnEvent::ToolCallUpdate { id, call } => {
             assert_eq!(id, "tool-ld1");
             assert_eq!(call.diffs.len(), 1, "should carry exactly one diff");
             let diff = &call.diffs[0];
@@ -379,22 +395,21 @@ async fn tool_end_with_result_emits_chunk() {
 
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }));
-    assert!(tool_start.is_some(), "should have ToolStart");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }));
+    assert!(tool_start.is_some(), "should have ToolCall");
 
     let tool_end = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-        .expect("should have ToolEnd chunk");
+        .find(|c| matches!(c, TurnEvent::ToolResult { .. }))
+        .expect("should have ToolResult chunk");
 
     match tool_end {
-        StreamingChunk::ToolEnd {
+        TurnEvent::ToolResult {
             id, result, error, ..
         } => {
             assert_eq!(id, "tool-r1");
-            assert!(result.is_some(), "completed tool should have result");
             assert!(
-                result.as_ref().unwrap().contains("README"),
+                result.as_str().unwrap().contains("README"),
                 "result should contain the tool output"
             );
             assert!(error.is_none(), "successful tool should have no error");
@@ -436,11 +451,11 @@ async fn tool_end_with_error_emits_error_field() {
     let captured = chunks.lock().unwrap();
     let tool_end = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-        .expect("should have ToolEnd chunk for failed tool");
+        .find(|c| matches!(c, TurnEvent::ToolResult { .. }))
+        .expect("should have ToolResult chunk for failed tool");
 
     match tool_end {
-        StreamingChunk::ToolEnd { id, error, .. } => {
+        TurnEvent::ToolResult { id, error, .. } => {
             assert_eq!(id, "tool-e1");
             assert!(error.is_some(), "failed tool should have error");
             assert!(
@@ -477,11 +492,11 @@ async fn tool_end_failed_without_output_has_generic_error() {
     let captured = chunks.lock().unwrap();
     let tool_end = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-        .expect("should have ToolEnd for failed tool");
+        .find(|c| matches!(c, TurnEvent::ToolResult { .. }))
+        .expect("should have ToolResult for failed tool");
 
     match tool_end {
-        StreamingChunk::ToolEnd { error, .. } => {
+        TurnEvent::ToolResult { error, .. } => {
             assert!(
                 error.is_some(),
                 "failed tool with no output should still report error"

@@ -23,7 +23,6 @@ use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
 use crate::acp::client::{CrucibleAcpClient, PermissionRequestHandler};
 use crate::acp::session::ModelChoice;
-use crate::acp::streaming::StreamingChunk;
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
 use agent_client_protocol::schema::v1::{SetSessionConfigOptionRequest, SetSessionModeRequest};
@@ -376,7 +375,7 @@ impl AgentHandle for AcpAgentHandle {
 
     async fn cancel(&self) -> ChatResult<()> {
         // Cancellation is driven by the daemon dropping the turn stream, which
-        // the ACP client detects (the chunk channel closes) and answers by
+        // the ACP client detects (the event channel closes) and answers by
         // sending `session/cancel` to the agent. This handle method is not on
         // that path — the daemon never calls it — so it is a no-op.
         debug!("Cancel requested for ACP agent (handled via stream drop)");
@@ -513,8 +512,8 @@ impl SessionKnobs for AcpAgentHandle {
 
 // -- Native `Agent` impl ----------------------------------------------------
 //
-// ACP agents run their own tool loop server-side; this impl translates each
-// streaming chunk directly to a `TurnEvent`. No inbound channel is consumed
+// ACP agents run their own tool loop server-side; the client makes each
+// `TurnEvent`, and this impl passes it through. No inbound channel is consumed
 // (ACP observes, doesn't re-enter).
 
 #[async_trait]
@@ -554,7 +553,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
 
         // The stream owns the receiver, so a closed channel means that the
         // daemon dropped the turn. That is the one cancel path.
-        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<StreamingChunk>();
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<TurnEvent>();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let client = Arc::clone(&self.client);
         let prompt_request = agent_client_protocol::schema::v1::PromptRequest::new(
@@ -565,8 +564,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         );
 
         tokio::spawn(async move {
-            let result = client.prompt(prompt_request, &chunk_tx).await;
-            drop(chunk_tx);
+            let result = client.prompt(prompt_request, &event_tx).await;
+            drop(event_tx);
             let usage = result
                 .as_ref()
                 .ok()
@@ -581,12 +580,12 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         let model_slot = &mut self.model;
         let body = stream! {
             // The client already decided everything the stream needs to know:
-            // every `ToolEnd` follows a `ToolStart` for its id and carries the
-            // name that start carried, and the summary at the end says what
-            // the turn showed the user. So each chunk maps to one event
-            // through a total `From`, and the handle keeps no state of its own.
-            while let Some(chunk) = chunk_rx.recv().await {
-                yield TurnEvent::from(chunk);
+            // every `ToolResult` follows a `ToolCall` for its id and carries
+            // the name of that call, and the summary at the end says what the
+            // turn showed the user. So the handle passes each event through
+            // and keeps no state of its own.
+            while let Some(event) = event_rx.recv().await {
+                yield event;
             }
 
             match result_rx.await {

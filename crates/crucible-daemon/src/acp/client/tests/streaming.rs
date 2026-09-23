@@ -1,8 +1,9 @@
 use crate::acp::client::streaming::apply_update;
 use crate::acp::client::types::StreamingState;
 use crate::acp::client::CrucibleAcpClient;
-use crate::acp::streaming::{StreamingChunk, TurnSummary};
+use crate::acp::streaming::TurnSummary;
 use agent_client_protocol::schema::v1::SessionNotification;
+use crucible_core::turn::TurnEvent;
 use serde_json::json;
 
 #[test]
@@ -45,7 +46,7 @@ fn forwarded_text(chunks: &[&str]) -> Vec<String> {
         .iter()
         .flat_map(|text| capture_apply(&mut state, text_chunk(text)))
         .filter_map(|chunk| match chunk {
-            StreamingChunk::Text(text) => Some(text),
+            TurnEvent::TextDelta(text) => Some(text),
             _ => None,
         })
         .collect()
@@ -127,7 +128,7 @@ fn tool_calls_with_different_ids_are_both_recorded() {
 
 // =========================================================================
 // Late-diff predicate tests
-// Verify ToolCallUpdate carrying changed diffs emits a ToolUpdate chunk,
+// Verify ToolCallUpdate carrying changed diffs emits a ToolCallUpdate chunk,
 // and that an unchanged repeat does NOT — preventing visual flashes when
 // agents send idempotent tool_call updates.
 // =========================================================================
@@ -135,7 +136,7 @@ fn tool_calls_with_different_ids_are_both_recorded() {
 fn capture_apply(
     state: &mut StreamingState,
     notification_json: serde_json::Value,
-) -> Vec<StreamingChunk> {
+) -> Vec<TurnEvent> {
     let notification: SessionNotification =
         serde_json::from_value(notification_json).expect("notification should deserialize");
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -185,10 +186,10 @@ fn tool_call_update_with_changed_diffs_emits_a_tool_update() {
 
     assert!(
         chunks.iter().any(|c| matches!(c,
-            StreamingChunk::ToolUpdate { id, call }
+            TurnEvent::ToolCallUpdate { id, call }
                 if id == "tool-1" && call.diffs.len() == 1
         )),
-        "expected ToolUpdate for changed diffs, got: {:?}",
+        "expected ToolCallUpdate for changed diffs, got: {:?}",
         chunks
     );
 }
@@ -234,14 +235,14 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_a_tool_update() {
     assert!(
         !chunks
             .iter()
-            .any(|c| matches!(c, StreamingChunk::ToolUpdate { .. })),
-        "expected no ToolUpdate for unchanged diff, got: {:?}",
+            .any(|c| matches!(c, TurnEvent::ToolCallUpdate { .. })),
+        "expected no ToolCallUpdate for unchanged diff, got: {:?}",
         chunks
     );
 }
 
 /// An update for an unseen id that carries a title announces the call
-/// itself, with the diffs on the `ToolStart`. No `ToolUpdate` follows,
+/// itself, with the diffs on the `ToolCall`. No `ToolCallUpdate` follows,
 /// because nothing was announced before it.
 #[test]
 fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() {
@@ -267,7 +268,11 @@ fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() 
 
     assert_eq!(chunks.len(), 1, "got {chunks:?}");
     match &chunks[0] {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(id, "ghost-1");
             assert_eq!(call.kind, "file_edit");
             assert_eq!(
@@ -276,7 +281,7 @@ fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() 
             );
             assert_eq!(call.diffs.len(), 1);
         }
-        other => panic!("expected ToolStart, got {other:?}"),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
 }
 
@@ -312,15 +317,19 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
     let flushed = state.tool_calls.flush("end_turn");
     assert_eq!(flushed.len(), 2, "got {flushed:?}");
     match &flushed[0] {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(id, "ghost-1");
             assert_eq!(call.tool, "file_edit");
             assert_eq!(call.diffs.len(), 1);
         }
-        other => panic!("expected ToolStart, got {other:?}"),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     match &flushed[1] {
-        StreamingChunk::ToolEnd {
+        TurnEvent::ToolResult {
             id,
             name,
             result,
@@ -328,14 +337,14 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
         } => {
             assert_eq!(id, "ghost-1");
             assert_eq!(name, "file_edit");
-            assert_eq!(result, &None);
+            assert_eq!(result, "");
             assert_eq!(error.as_deref(), Some("turn ended: end_turn"));
         }
-        other => panic!("expected ToolEnd, got {other:?}"),
+        other => panic!("expected ToolResult, got {other:?}"),
     }
 }
 
-/// A `ToolEnd` carries the canonical name of its call, so the handle does
+/// A `ToolResult` carries the canonical name of its call, so the handle does
 /// not keep a name table of its own. A call to Crucible's own MCP server is
 /// named by the Crucible tool.
 #[test]
@@ -368,10 +377,10 @@ fn tool_end_carries_the_name_of_its_call() {
 
     assert_eq!(
         chunks,
-        vec![StreamingChunk::ToolEnd {
+        vec![TurnEvent::ToolResult {
             id: "tool-7".into(),
             name: "read_note".into(),
-            result: Some("the note body".into()),
+            result: json!("the note body"),
             error: None,
         }]
     );
@@ -681,13 +690,13 @@ fn tool_call_update_with_late_raw_input_emits_a_tool_update() {
 
     assert!(
         chunks.iter().any(|c| matches!(c,
-            StreamingChunk::ToolUpdate { id, call }
+            TurnEvent::ToolCallUpdate { id, call }
                 if id == "tool-1"
                     && call.raw.as_ref().and_then(|r| r.raw_input.as_ref())
                         == Some(&json!({"path": "Concepts/Target.md"}))
                     && call.paths == ["Concepts/Target.md"]
         )),
-        "expected ToolUpdate for late rawInput, got: {chunks:?}"
+        "expected ToolCallUpdate for late rawInput, got: {chunks:?}"
     );
 }
 
@@ -725,7 +734,7 @@ fn tool_call_update_with_unchanged_raw_input_does_not_emit_a_tool_update() {
     assert!(
         !chunks
             .iter()
-            .any(|c| matches!(c, StreamingChunk::ToolUpdate { .. })),
+            .any(|c| matches!(c, TurnEvent::ToolCallUpdate { .. })),
         "unchanged rawInput must not re-emit, got: {chunks:?}"
     );
 }
@@ -758,11 +767,11 @@ fn completed_update_without_raw_output_reads_content_text() {
     let end = chunks
         .iter()
         .find_map(|c| match c {
-            StreamingChunk::ToolEnd { result, error, .. } => Some((result.clone(), error.clone())),
+            TurnEvent::ToolResult { result, error, .. } => Some((result.clone(), error.clone())),
             _ => None,
         })
-        .expect("completed update must emit ToolEnd");
-    assert_eq!(end, (Some("line one\nline two".to_string()), None));
+        .expect("completed update must emit ToolResult");
+    assert_eq!(end, (json!("line one\nline two"), None));
 }
 
 /// A failed update with no `rawOutput` must read the reason from the
@@ -790,14 +799,14 @@ fn failed_update_without_raw_output_reads_content_text() {
     let end = chunks
         .iter()
         .find_map(|c| match c {
-            StreamingChunk::ToolEnd { result, error, .. } => Some((result.clone(), error.clone())),
+            TurnEvent::ToolResult { result, error, .. } => Some((result.clone(), error.clone())),
             _ => None,
         })
-        .expect("failed update must emit ToolEnd");
+        .expect("failed update must emit ToolResult");
     assert_eq!(
         end,
         (
-            Some("Error executing tool 'terminal': exit 2".to_string()),
+            json!("Error executing tool 'terminal': exit 2"),
             Some("Error executing tool 'terminal': exit 2".to_string())
         )
     );
@@ -826,11 +835,11 @@ fn raw_output_wins_over_content_when_both_exist() {
     let result = chunks
         .iter()
         .find_map(|c| match c {
-            StreamingChunk::ToolEnd { result, .. } => Some(result.clone()),
+            TurnEvent::ToolResult { result, .. } => Some(result.clone()),
             _ => None,
         })
-        .expect("completed update must emit ToolEnd");
-    assert_eq!(result.as_deref(), Some(r#"{"hits":3}"#));
+        .expect("completed update must emit ToolResult");
+    assert_eq!(result, r#"{"hits":3}"#);
 }
 
 /// Hermes drains a queued prompt inside one `session/prompt` reply. It then
@@ -849,10 +858,7 @@ fn user_message_chunk_emits_nothing_and_stays_out_of_the_answer() {
             }
         }),
     );
-    assert!(
-        chunks.is_empty(),
-        "a user chunk must emit no StreamingChunk"
-    );
+    assert!(chunks.is_empty(), "a user chunk must emit no TurnEvent");
     assert_eq!(state.accumulated_text, "");
     assert!(!state.produced_content);
 }
@@ -877,7 +883,7 @@ fn usage_update_emits_a_context_window_chunk() {
     );
     assert_eq!(
         chunks,
-        vec![StreamingChunk::ContextWindow {
+        vec![TurnEvent::ContextWindow {
             used: 22700,
             limit: 1_000_000
         }]
@@ -920,7 +926,7 @@ fn a_zero_used_usage_update_is_a_window() {
     );
     assert_eq!(
         chunks,
-        vec![StreamingChunk::ContextWindow {
+        vec![TurnEvent::ContextWindow {
             used: 0,
             limit: 200_000
         }]

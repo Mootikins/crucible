@@ -163,7 +163,7 @@ impl ShapeProjector {
     }
 }
 
-/// The wire-level kind of a [`StreamingChunk`], for tests that assert the
+/// The wire-level kind of a [`TurnEvent`], for tests that assert the
 /// *order* chunks arrived in rather than their payloads.
 ///
 /// Four call sites were carrying byte-identical copies of this match, so every
@@ -171,15 +171,16 @@ impl ShapeProjector {
 // `acp_support` is `#[path]`-included by several test binaries; only
 // `acp_integration` calls this one.
 #[allow(dead_code)]
-pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str {
-    use crucible_daemon::acp::StreamingChunk;
+pub fn chunk_kind(chunk: &crucible_core::turn::TurnEvent) -> &'static str {
+    use crucible_core::turn::TurnEvent;
     match chunk {
-        StreamingChunk::Text(_) => "text",
-        StreamingChunk::Thinking(_) => "thinking",
-        StreamingChunk::ToolStart { .. } => "tool_start",
-        StreamingChunk::ToolEnd { .. } => "tool_end",
-        StreamingChunk::ToolUpdate { .. } => "tool_update",
-        StreamingChunk::ContextWindow { .. } => "context_window",
+        TurnEvent::TextDelta(_) => "text",
+        TurnEvent::Thinking(_) => "thinking",
+        TurnEvent::ToolCall { .. } => "tool_start",
+        TurnEvent::ToolResult { .. } => "tool_end",
+        TurnEvent::ToolCallUpdate { .. } => "tool_update",
+        TurnEvent::ContextWindow { .. } => "context_window",
+        other => unreachable!("the ACP client does not send {other:?}"),
     }
 }
 
@@ -188,11 +189,11 @@ pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str 
 /// The ACP client returns no text of its own, so a test that asserts on the
 /// answer reads it from the chunks its callback captured.
 #[allow(dead_code)]
-pub fn text_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> String {
+pub fn text_of(chunks: &[crucible_core::turn::TurnEvent]) -> String {
     chunks
         .iter()
         .filter_map(|chunk| match chunk {
-            crucible_daemon::acp::StreamingChunk::Text(text) => Some(text.as_str()),
+            crucible_core::turn::TurnEvent::TextDelta(text) => Some(text.as_str()),
             _ => None,
         })
         .collect()
@@ -201,24 +202,26 @@ pub fn text_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> String {
 /// The names of the calls a turn announced, in stream order. The client
 /// returns no call list of its own, so a test reads them from the chunks.
 #[allow(dead_code)]
-pub fn tool_names_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> Vec<String> {
+pub fn tool_names_of(chunks: &[crucible_core::turn::TurnEvent]) -> Vec<String> {
     chunks
         .iter()
         .filter_map(|chunk| match chunk {
-            crucible_daemon::acp::StreamingChunk::ToolStart { call, .. } => Some(call.tool.clone()),
+            crucible_core::turn::TurnEvent::ToolCall {
+                call: Some(call), ..
+            } => Some(call.tool.clone()),
             _ => None,
         })
         .collect()
 }
 
 /// The chunks of one turn, as a callback collects them.
-pub type Captured = std::sync::Arc<std::sync::Mutex<Vec<crucible_daemon::acp::StreamingChunk>>>;
+pub type Captured = std::sync::Arc<std::sync::Mutex<Vec<crucible_core::turn::TurnEvent>>>;
 
 /// A callback that captures every chunk of one turn into the returned buffer.
 #[allow(dead_code)]
 pub fn capture_chunks() -> (
     Captured,
-    impl FnMut(crucible_daemon::acp::StreamingChunk) -> bool + Send,
+    impl FnMut(crucible_core::turn::TurnEvent) -> bool + Send,
 ) {
     let chunks = Captured::default();
     let chunks_cb = chunks.clone();

@@ -6,12 +6,12 @@ use crate::support::mcp_http::{mcp_http_open_session, mcp_http_request};
 use crate::support::mock_agent::{make_prompt_request, tool_call, tool_call_update};
 use crate::support::parity::capture_chunks;
 use crate::support::{connect, logged, prompt_with, MockScript, Step};
-use crucible_daemon::acp::StreamingChunk;
+use crucible_core::turn::TurnEvent;
 use serde_json::json;
 use std::sync::Arc;
 
 /// Verifies the full tool round-trip: agent calls read_file, the client receives
-/// ToolStart and ToolEnd chunks with the correct tool name, arguments, and result.
+/// ToolCall and ToolResult chunks with the correct tool name, arguments, and result.
 #[tokio::test]
 async fn test_acp_tool_roundtrip_read_file() {
     let (chunks, callback) = capture_chunks();
@@ -64,14 +64,18 @@ async fn test_acp_tool_roundtrip_read_file() {
         "chunks should arrive in order: text -> tool_start -> tool_end -> text"
     );
 
-    // Verify ToolStart has correct name, id, and arguments
+    // Verify ToolCall has correct name, id, and arguments
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart chunk");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall chunk");
 
     match tool_start {
-        StreamingChunk::ToolStart { id, call } => {
+        TurnEvent::ToolCall {
+            id,
+            call: Some(call),
+            ..
+        } => {
             assert_eq!(
                 call.tool, "tool",
                 "a title is prose, so an unnamed call gets the fallback name"
@@ -88,18 +92,18 @@ async fn test_acp_tool_roundtrip_read_file() {
         _ => unreachable!(),
     }
 
-    // Verify ToolEnd has result content
+    // Verify ToolResult has result content
     let tool_end = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolEnd { .. }))
-        .expect("should have ToolEnd chunk");
+        .find(|c| matches!(c, TurnEvent::ToolResult { .. }))
+        .expect("should have ToolResult chunk");
 
     match tool_end {
-        StreamingChunk::ToolEnd {
+        TurnEvent::ToolResult {
             id, result, error, ..
         } => {
             assert_eq!(id, "tc-read-1");
-            let result_text = result.as_ref().expect("completed tool should have result");
+            let result_text = result.as_str().expect("completed tool should have result");
             assert!(
                 result_text.contains("Test File"),
                 "result should contain file content"
@@ -116,10 +120,12 @@ async fn test_acp_tool_roundtrip_read_file() {
     // Verify the announced call
     let tool_start = captured
         .iter()
-        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
-        .expect("should have ToolStart chunk");
+        .find(|c| matches!(c, TurnEvent::ToolCall { .. }))
+        .expect("should have ToolCall chunk");
     match tool_start {
-        StreamingChunk::ToolStart { call, .. } => {
+        TurnEvent::ToolCall {
+            call: Some(call), ..
+        } => {
             assert_eq!(call.tool, "tool");
             let arguments = call
                 .raw
@@ -223,7 +229,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
 /// The test first asks the real in-process MCP host for the `list_notes`
 /// answer. The mock agent then takes the MCP url from the `session/new`
 /// frame that the client sent, and calls `list_notes` on the host. It also
-/// sends the host's answer as the raw output of its tool call. The `ToolEnd`
+/// sends the host's answer as the raw output of its tool call. The `ToolResult`
 /// chunk must carry exactly that answer.
 #[tokio::test]
 async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
@@ -328,17 +334,17 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
     let tool_end = captured
         .iter()
         .find_map(|c| match c {
-            StreamingChunk::ToolEnd {
+            TurnEvent::ToolResult {
                 id, result, error, ..
             } => Some((id, result, error)),
             _ => None,
         })
-        .expect("should have ToolEnd chunk");
+        .expect("should have ToolResult chunk");
     assert_eq!(tool_end.0, "tc-list-1");
     assert_eq!(
-        tool_end.1.as_deref(),
+        tool_end.1.as_str(),
         Some(tool_output.as_str()),
-        "ToolEnd must carry the MCP host's answer unchanged"
+        "ToolResult must carry the MCP host's answer unchanged"
     );
     assert!(tool_end.2.is_none());
 

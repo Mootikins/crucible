@@ -119,7 +119,7 @@ pub struct FunctionDefinition {
 }
 
 /// Token usage information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsage {
     /// Prompt tokens used
     pub prompt_tokens: u32,

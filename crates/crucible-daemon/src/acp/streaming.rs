@@ -9,48 +9,10 @@
 //! - **Open/Closed**: Extensible for different output formats
 //! - **Dependency Inversion**: Uses core types, protocol-agnostic
 
-use crucible_core::types::CanonicalToolCall;
-
-/// A streaming chunk from an ACP agent.
-///
-/// These events are emitted as they arrive from the agent,
-/// enabling real-time display of agent responses.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StreamingChunk {
-    /// Text content from the agent's response
-    Text(String),
-    /// Agent is thinking (for agents that expose thinking)
-    Thinking(String),
-    /// A tool is being called. `call` is the canonical call of the merged
-    /// frames so far.
-    ToolStart { id: String, call: CanonicalToolCall },
-    /// Tool execution completed.
-    ///
-    /// `name` is the canonical name of the call. The client announces every
-    /// call before it completes it, so the consumer keeps no name table of
-    /// its own.
-    ToolEnd {
-        id: String,
-        name: String,
-        result: Option<String>,
-        error: Option<String>,
-    },
-    /// A new canonical call for a `ToolStart` that the client already
-    /// announced. claude-agent-acp sends the `tool_call` without `rawInput`
-    /// and without its diff, and sends both in a later `tool_call_update`.
-    ToolUpdate { id: String, call: CanonicalToolCall },
-    /// The agent's report of its own context window: tokens currently
-    /// occupying it and its total size, from a `usage_update` session update.
-    ///
-    /// The daemon cannot derive either number for a delegated session — it has
-    /// no endpoint or model to query — so this is the only source (A3).
-    ContextWindow { used: u64, limit: u64 },
-}
-
 /// What one turn showed the user, for the stop reason and the batch end.
 ///
-/// The client counts this from the same chunks it sends to the callback, so
-/// the consumer does not count them a second time.
+/// The client counts this from the same events it sends to the turn stream,
+/// so the consumer does not count them a second time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TurnSummary {
     /// The turn produced text or a thought with a visible character.

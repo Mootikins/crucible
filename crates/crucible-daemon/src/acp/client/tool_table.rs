@@ -8,7 +8,7 @@
 //! makes a new classification. The entry decides what the turn stream sees:
 //!
 //! - An entry is announced at most once, at the first frame that gives it a
-//!   title. A later change of the canonical call comes as `ToolUpdate`.
+//!   title. A later change of the canonical call comes as `ToolCallUpdate`.
 //! - A completion for an entry with no title is held until the title arrives,
 //!   or until the turn ends. Then the entry is announced under its canonical
 //!   name, and the held result follows it.
@@ -23,8 +23,8 @@ use agent_client_protocol::schema::v1::{
 };
 
 use super::CrucibleAcpClient;
-use crate::acp::streaming::StreamingChunk;
 use crucible_core::text::sanitize_single_line;
+use crucible_core::turn::TurnEvent;
 use crucible_core::types::{classify_acp, AgentKeys, CanonicalToolCall, RawToolCall};
 
 /// How many still-unnamed tool results one turn will hold.
@@ -98,46 +98,51 @@ impl Entry {
         }
     }
 
-    /// The name the stream shows: the canonical tool name.
-    fn name(&self) -> String {
-        self.call.tool.clone()
+    /// The `ToolResult` event of this call, under its canonical name.
+    fn result(&self, result: Option<String>, error: Option<String>) -> TurnEvent {
+        TurnEvent::ToolResult {
+            id: self.id.clone(),
+            name: self.call.tool.clone(),
+            result: serde_json::Value::String(result.unwrap_or_default()),
+            error,
+        }
     }
 
     /// Merge a frame and classify the call again. An announced entry reports
     /// a changed call.
-    fn merge(&mut self, frame: RawToolCall, keys: &[AgentKeys], out: &mut Vec<StreamingChunk>) {
+    fn merge(&mut self, frame: RawToolCall, keys: &[AgentKeys], out: &mut Vec<TurnEvent>) {
         self.raw.merge(frame);
         let call = classify_acp(self.raw.clone(), keys);
         if self.announced && call != self.call {
-            out.push(StreamingChunk::ToolUpdate {
+            out.push(TurnEvent::ToolCallUpdate {
                 id: self.id.clone(),
-                call: call.clone(),
+                call: Box::new(call.clone()),
             });
         }
         self.call = call;
     }
 
-    /// Emit `ToolStart`, and then the held completion when there is one.
+    /// Emit `ToolCall`, and then the held completion when there is one.
     ///
     /// Returns the held bytes this released. The table must subtract them
     /// from its total, or the cap refuses later results against bytes that
     /// already left the table.
-    fn announce(&mut self, out: &mut Vec<StreamingChunk>) -> usize {
+    fn announce(&mut self, out: &mut Vec<TurnEvent>) -> usize {
         self.announced = true;
-        out.push(StreamingChunk::ToolStart {
+        out.push(TurnEvent::ToolCall {
             id: self.id.clone(),
-            call: self.call.clone(),
+            name: self.call.tool.clone(),
+            // The agent's `rawInput`, or `Null` when no frame sent one.
+            args: (self.call.raw.as_ref())
+                .and_then(|raw| raw.raw_input.clone())
+                .unwrap_or(serde_json::Value::Null),
+            call: Some(Box::new(self.call.clone())),
         });
         match self.held.take() {
             Some(held) => {
                 let released = held.bytes();
                 self.completions += 1;
-                out.push(StreamingChunk::ToolEnd {
-                    id: self.id.clone(),
-                    name: self.name(),
-                    result: held.result,
-                    error: held.error,
-                });
+                out.push(self.result(held.result, held.error));
                 released
             }
             None => 0,
@@ -169,11 +174,7 @@ impl ToolCallTable {
     }
 
     /// Merge a `tool_call` frame. The chunks it returns go to the callback.
-    pub(super) fn upsert_call(
-        &mut self,
-        call: ToolCall,
-        keys: &[AgentKeys],
-    ) -> Vec<StreamingChunk> {
+    pub(super) fn upsert_call(&mut self, call: ToolCall, keys: &[AgentKeys]) -> Vec<TurnEvent> {
         let mut out = Vec::new();
         let frame = frame_fields(RawToolCall::from(&call));
         let entry = self.entry_mut(&call.tool_call_id.to_string());
@@ -194,7 +195,7 @@ impl ToolCallTable {
         &mut self,
         update: ToolCallUpdate,
         keys: &[AgentKeys],
-    ) -> Vec<StreamingChunk> {
+    ) -> Vec<TurnEvent> {
         let mut out = Vec::new();
         let id = update.tool_call_id.to_string();
         let mut frame = frame_fields(RawToolCall::from(&update));
@@ -235,12 +236,7 @@ impl ToolCallTable {
         if let Some(completion) = completion {
             if entry.announced {
                 entry.completions += 1;
-                out.push(StreamingChunk::ToolEnd {
-                    id: entry.id.clone(),
-                    name: entry.name(),
-                    result: completion.result,
-                    error: completion.error,
-                });
+                out.push(entry.result(completion.result, completion.error));
             } else {
                 hold(entry, completion, held_count, &mut held_bytes);
             }
@@ -281,7 +277,7 @@ impl ToolCallTable {
     /// result that names the stop reason. An entry that only a permission
     /// request made is not a call that the agent reported, so it gets no
     /// card.
-    pub(super) fn flush(&mut self, stop_reason: &str) -> Vec<StreamingChunk> {
+    pub(super) fn flush(&mut self, stop_reason: &str) -> Vec<TurnEvent> {
         let mut out = Vec::new();
         for entry in self.entries.iter_mut().filter(|e| e.seen) {
             if !entry.announced {
@@ -293,12 +289,7 @@ impl ToolCallTable {
             }
             if entry.completions == 0 {
                 entry.completions += 1;
-                out.push(StreamingChunk::ToolEnd {
-                    id: entry.id.clone(),
-                    name: entry.name(),
-                    result: None,
-                    error: Some(format!("turn ended: {stop_reason}")),
-                });
+                out.push(entry.result(None, Some(format!("turn ended: {stop_reason}"))));
             }
         }
         self.held_bytes = 0;
@@ -425,29 +416,67 @@ mod tests {
     }
 
     /// The tables here have no agent key table: the default matcher alone.
-    fn upsert_call(table: &mut ToolCallTable, value: Value) -> Vec<StreamingChunk> {
+    fn upsert_call(table: &mut ToolCallTable, value: Value) -> Vec<TurnEvent> {
         table.upsert_call(call(value), &[])
     }
 
-    fn upsert_update(table: &mut ToolCallTable, frame: ToolCallUpdate) -> Vec<StreamingChunk> {
+    fn upsert_update(table: &mut ToolCallTable, frame: ToolCallUpdate) -> Vec<TurnEvent> {
         table.upsert_update(frame, &[])
     }
 
-    fn shapes(chunks: &[StreamingChunk]) -> Vec<String> {
+    fn shapes(chunks: &[TurnEvent]) -> Vec<String> {
         chunks
             .iter()
             .map(|c| match c {
-                StreamingChunk::ToolStart { id, call } => format!("start {id} {}", call.tool),
-                StreamingChunk::ToolEnd {
+                TurnEvent::ToolCall { id, name, .. } => format!("start {id} {name}"),
+                TurnEvent::ToolResult {
                     id,
                     name,
                     result,
                     error,
-                } => format!("end {id} {name} {result:?} {error:?}"),
-                StreamingChunk::ToolUpdate { id, .. } => format!("update {id}"),
+                } => format!("end {id} {name} {result} {error:?}"),
+                TurnEvent::ToolCallUpdate { id, .. } => format!("update {id}"),
                 other => format!("{other:?}"),
             })
             .collect()
+    }
+
+    /// The client makes the whole `TurnEvent`, so the stream passes it
+    /// through. A call carries its `rawInput` as its arguments, or `Null` when
+    /// no frame sent one. A result is the text of the completion.
+    #[test]
+    fn the_table_makes_the_turn_events_of_a_call() {
+        let mut table = ToolCallTable::default();
+
+        let bare = upsert_call(&mut table, json!({"toolCallId": "t1", "title": "Run"}));
+        let [TurnEvent::ToolCall {
+            name, args, call, ..
+        }] = bare.as_slice()
+        else {
+            panic!("expected one ToolCall, got {bare:?}")
+        };
+        assert_eq!(name, "tool");
+        assert_eq!(args, &Value::Null);
+        assert_eq!(call.as_ref().map(|call| call.tool.as_str()), Some("tool"));
+
+        let started = upsert_call(
+            &mut table,
+            json!({"toolCallId": "t2", "title": "Run", "rawInput": {"q": 1}}),
+        );
+        let [TurnEvent::ToolCall { args, .. }] = started.as_slice() else {
+            panic!("expected one ToolCall, got {started:?}")
+        };
+        assert_eq!(args, &json!({"q": 1}));
+
+        assert_eq!(
+            upsert_update(&mut table, completed("t2", "out")),
+            vec![TurnEvent::ToolResult {
+                id: "t2".into(),
+                name: "tool".into(),
+                result: json!("out"),
+                error: None,
+            }]
+        );
     }
 
     #[test]
@@ -471,7 +500,7 @@ mod tests {
         );
         assert_eq!(
             shapes(&second),
-            vec!["start t1 late_call", "end t1 late_call Some(\"four\") None"]
+            vec!["start t1 late_call", "end t1 late_call \"four\" None"]
         );
         assert!(table.flush("end_turn").is_empty());
     }
@@ -494,7 +523,7 @@ mod tests {
             shapes(&chunks),
             vec![
                 "start t1 late_named_tool",
-                "end t1 late_named_tool Some(\"done\") None"
+                "end t1 late_named_tool \"done\" None"
             ]
         );
     }
@@ -511,7 +540,7 @@ mod tests {
             shapes(&table.flush("end_turn")),
             vec![
                 "start t1 tool".to_string(),
-                "end t1 tool Some(\"orphaned output\") None".to_string(),
+                "end t1 tool \"orphaned output\" None".to_string(),
             ]
         );
     }
@@ -529,12 +558,9 @@ mod tests {
 
         assert_eq!(
             shapes(&first),
-            vec!["end t1 repeated_tool Some(\"PARTIAL\") None"]
+            vec!["end t1 repeated_tool \"PARTIAL\" None"]
         );
-        assert_eq!(
-            shapes(&second),
-            vec!["end t1 repeated_tool Some(\"FINAL\") None"]
-        );
+        assert_eq!(shapes(&second), vec!["end t1 repeated_tool \"FINAL\" None"]);
         assert!(table.flush("end_turn").is_empty());
     }
 
@@ -589,7 +615,7 @@ mod tests {
             }),
         );
         assert_eq!(shapes(&changed), vec!["update t1"]);
-        let StreamingChunk::ToolUpdate { call, .. } = &changed[0] else {
+        let TurnEvent::ToolCallUpdate { call, .. } = &changed[0] else {
             unreachable!()
         };
         assert_eq!(call.paths, ["/y.rs"]);
@@ -621,7 +647,7 @@ mod tests {
         );
         assert_eq!(
             shapes(&end),
-            vec!["end t1 file_edit Some(\"done\") None"],
+            vec!["end t1 file_edit \"done\" None"],
             "a completion with only text changes no field of the call"
         );
     }
@@ -636,7 +662,7 @@ mod tests {
 
         assert_eq!(
             shapes(&table.flush("cancelled")),
-            vec!["end t1 slow_tool None Some(\"turn ended: cancelled\")"]
+            vec!["end t1 slow_tool \"\" Some(\"turn ended: cancelled\")"]
         );
     }
 
@@ -654,11 +680,13 @@ mod tests {
 
         let flushed = table.flush("end_turn");
         match &flushed[0] {
-            StreamingChunk::ToolStart { call, .. } => {
+            TurnEvent::ToolCall {
+                call: Some(call), ..
+            } => {
                 assert_eq!(call.tool, "file_edit");
                 assert_eq!(call.diffs.len(), 1);
             }
-            other => panic!("expected ToolStart, got {other:?}"),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -721,8 +749,11 @@ mod tests {
             json!({"toolCallId": "s1", "title": "cargo test", "kind": "execute"}),
         );
         assert_eq!(table.len(), 1, "one entry for one toolCallId");
-        let [StreamingChunk::ToolStart { call, .. }] = started.as_slice() else {
-            panic!("expected one ToolStart, got {started:?}")
+        let [TurnEvent::ToolCall {
+            call: Some(call), ..
+        }] = started.as_slice()
+        else {
+            panic!("expected one ToolCall, got {started:?}")
         };
         assert_eq!(
             call.command.as_deref(),
@@ -835,7 +866,7 @@ mod tests {
         let flushed = table.flush("end_turn");
         assert_eq!(
             shapes(&flushed)[1],
-            format!("end huge tool None Some({HELD_RESULT_DROPPED:?})")
+            format!("end huge tool \"\" Some({HELD_RESULT_DROPPED:?})")
         );
     }
 
@@ -895,7 +926,7 @@ mod tests {
         let flushed = table.flush("end_turn");
         assert_eq!(
             shapes(&flushed)[1],
-            format!("end t1 tool None Some({HELD_RESULT_DROPPED:?})")
+            format!("end t1 tool \"\" Some({HELD_RESULT_DROPPED:?})")
         );
     }
 
@@ -933,7 +964,7 @@ mod tests {
             .flush("end_turn")
             .into_iter()
             .filter_map(|c| match c {
-                StreamingChunk::ToolStart { id, .. } => Some(id),
+                TurnEvent::ToolCall { id, .. } => Some(id),
                 _ => None,
             })
             .collect();

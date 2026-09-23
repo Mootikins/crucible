@@ -3,7 +3,7 @@
 //! The `agent-client-protocol` SDK owns the JSON-RPC framing, the request
 //! correlation and the inbound dispatch. This module owns what Crucible adds
 //! on top: the agent process, the handshake, the permission bridge, and the
-//! translation of a turn's session updates into [`StreamingChunk`]s.
+//! translation of a turn's session updates into [`TurnEvent`]s.
 //!
 //! The SDK connection runs on its own task. The client holds a clone of its
 //! [`ConnectionTo<Agent>`], so a request and a turn can run at the same time.
@@ -22,8 +22,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::acp::session::ModelChoice;
-use crate::acp::streaming::StreamingChunk;
 use crate::acp::{ClientError, Result};
+use crucible_core::turn::TurnEvent;
 use crucible_core::types::{classify_acp, AgentKeys, CanonicalToolCall, RawToolCall};
 
 mod connection;
@@ -60,7 +60,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(300);
 /// order of the wire. So a permission request finds every frame that the
 /// agent sent before it.
 struct Turn {
-    out: mpsc::UnboundedSender<StreamingChunk>,
+    out: mpsc::UnboundedSender<TurnEvent>,
     state: types::StreamingState,
     cancel: CancellationToken,
 }

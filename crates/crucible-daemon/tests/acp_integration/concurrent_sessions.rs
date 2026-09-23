@@ -1,6 +1,6 @@
 use crate::support::mock_agent::make_prompt_request;
 use crate::support::{connect, prompt_with, MockScript, Step};
-use crucible_daemon::acp::StreamingChunk;
+use crucible_core::turn::TurnEvent;
 
 const MAX_SUBAGENT_OUTPUT: usize = 10 * 1024 * 1024;
 
@@ -38,7 +38,7 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
     let stream_a = tokio::spawn(async move {
         let request = make_prompt_request("session-a", "stream A");
         prompt_with(&client_a, request, move |chunk| {
-            if let StreamingChunk::Text(text) = chunk {
+            if let TurnEvent::TextDelta(text) = chunk {
                 seen_a_cb.lock().unwrap().push(text);
             }
             true
@@ -51,7 +51,7 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
     let stream_b = tokio::spawn(async move {
         let request = make_prompt_request("session-b", "stream B");
         prompt_with(&client_b, request, move |chunk| {
-            if let StreamingChunk::Text(text) = chunk {
+            if let TurnEvent::TextDelta(text) = chunk {
                 seen_b_cb.lock().unwrap().push(text);
             }
             true

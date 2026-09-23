@@ -14,7 +14,7 @@ pub mod streaming;
 pub use client::CrucibleAcpClient;
 pub use discovery::is_agent_available;
 pub use session::AcpSession;
-pub use streaming::{humanize_tool_title, turn_usage, StreamingChunk, TurnSummary};
+pub use streaming::{humanize_tool_title, turn_usage, TurnSummary};
 
 // Error types
 mod error;

@@ -9,10 +9,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::types::StreamingState;
 use super::CrucibleAcpClient;
-use crate::acp::streaming::{StreamingChunk, TurnSummary};
+use crate::acp::streaming::TurnSummary;
 use crate::acp::{ClientError, Result};
 use crucible_core::text::{sanitize_multiline, sanitize_single_line};
-use crucible_core::turn::is_visible_content;
+use crucible_core::turn::{is_visible_content, TurnEvent};
 
 /// The wire spelling of a stop reason, for the error a call that never
 /// completed carries: `end_turn`, `cancelled`, and so on.
@@ -179,7 +179,7 @@ impl CrucibleAcpClient {
     pub async fn prompt(
         &self,
         request: PromptRequest,
-        out: &mpsc::UnboundedSender<StreamingChunk>,
+        out: &mpsc::UnboundedSender<TurnEvent>,
     ) -> Result<(TurnSummary, PromptResponse)> {
         // A dropped turn keeps the gate until the agent answers
         // `session/cancel`, so this turn waits for that end. A turn that the
@@ -277,7 +277,7 @@ impl CrucibleAcpClient {
 pub(super) fn apply_update(
     update: SessionUpdate,
     state: &mut StreamingState,
-    out: &mpsc::UnboundedSender<StreamingChunk>,
+    out: &mpsc::UnboundedSender<TurnEvent>,
     keys: &[AgentKeys],
 ) {
     let emit = |chunk| {
@@ -301,7 +301,7 @@ pub(super) fn apply_update(
                 }
                 state.append_text(&text);
                 state.produced_content |= is_visible_content(&text);
-                emit(StreamingChunk::Text(text));
+                emit(TurnEvent::TextDelta(text));
             }
             other => tracing::debug!("Ignoring non-text content block: {:?}", other),
         },
@@ -313,7 +313,7 @@ pub(super) fn apply_update(
             ContentBlock::Text(text_block) => {
                 let text = sanitize_multiline(&text_block.text);
                 state.produced_content |= is_visible_content(&text);
-                emit(StreamingChunk::Thinking(text));
+                emit(TurnEvent::Thinking(text));
             }
             other => tracing::debug!("Ignoring non-text thought block: {:?}", other),
         },
@@ -345,7 +345,7 @@ pub(super) fn apply_update(
         // Crucible shows a monetary figure.
         SessionUpdate::UsageUpdate(update) => {
             if update.size > 0 {
-                emit(StreamingChunk::ContextWindow {
+                emit(TurnEvent::ContextWindow {
                     used: update.used,
                     limit: update.size,
                 });

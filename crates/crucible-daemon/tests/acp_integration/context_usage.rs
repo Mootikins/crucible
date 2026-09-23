@@ -21,7 +21,7 @@
 //!
 //! These drive a real `AgentManager` over a real spawned `mock-acp-agent`, so
 //! the chain under test is the production one end to end: ACP wire frame →
-//! `acp/client/streaming.rs` → `StreamingChunk` → `acp_handle.rs` →
+//! `acp/client/streaming.rs` → `TurnEvent` → `acp_handle.rs` →
 //! `TurnEvent` → `agent_manager/messaging/stream.rs` → broadcast.
 use crucible_daemon::test_support::temp_session_manager;
 

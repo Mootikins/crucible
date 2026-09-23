@@ -32,7 +32,7 @@ use crate::traits::llm::TokenUsage;
 /// runtime back to the agent on the inbound channel.
 ///
 /// Terminal variants: `Done`, `Error`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TurnEvent {
     /// Incremental text delta from the model.
     TextDelta(String),
@@ -274,7 +274,7 @@ pub fn is_visible_content(text: &str) -> bool {
 /// mid-stream and is delivered through the event stream; an `AgentError`
 /// means the agent could not even begin a turn (e.g. connection refused
 /// before any frame was sent).
-#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, thiserror::Error)]
 pub enum TurnError {
     #[error("connection error: {0}")]
     Connection(String),

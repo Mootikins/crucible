@@ -7,7 +7,7 @@
 //! 4. Client accumulates chunks and returns complete response
 
 use crate::support::{connect, prompt_with, MockScript, Step};
-use crucible_daemon::acp::StreamingChunk;
+use crucible_core::turn::TurnEvent;
 use serde_json::json;
 
 /// Test that ChatSession properly handles streaming responses from agent
@@ -123,9 +123,9 @@ async fn test_prompt_with_streamed_tool_call() {
     assert!(
         chunks.lock().unwrap().iter().any(|chunk| matches!(
             chunk,
-            StreamingChunk::ToolStart { call, .. } if call.tool == "tool"
+            TurnEvent::ToolCall { call: Some(call), .. } if call.tool == "tool"
         )),
-        "the tool call must reach the stream as a ToolStart chunk"
+        "the tool call must reach the stream as a ToolCall chunk"
     );
     assert!(
         summary.announced_any,

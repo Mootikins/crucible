@@ -21,13 +21,13 @@
 //!
 //! ## Why [`ChunkShape`] is spelled out here
 //!
-//! `acp_support::parity::chunk_kind` already projects a `StreamingChunk` onto
+//! `acp_support::parity::chunk_kind` already projects a `TurnEvent` onto
 //! its variant name, which is exactly what [`shape_of`] below does — the two
 //! are structural twins, differing only in returning `&'static str` versus an
 //! enum. The duplication is not a design choice: `acp_support` is a
 //! `#[path]`-included module tree, and this binary does not include it. Reaching
 //! `chunk_kind` would mean pulling that tree into a test that needs none of the
-//! rest of it. If a third `StreamingChunk` projection appears, or this binary
+//! rest of it. If a third `TurnEvent` projection appears, or this binary
 //! grows a reason to include `acp_support` anyway, collapse them.
 //!
 //! [`coalesce`] has no counterpart there and is the part that carries judgement:
@@ -48,15 +48,16 @@ use agent_client_protocol::schema::v1::{
     TextContent,
 };
 use agent_client_protocol::ByteStreams;
+use crucible_core::turn::TurnEvent;
 use crucible_daemon::acp::client::replay::{ReplayFixture, ReplayOutcome};
-use crucible_daemon::acp::{CrucibleAcpClient, StreamingChunk};
+use crucible_daemon::acp::CrucibleAcpClient;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 // ---------------------------------------------------------------------------
 // Projection
 // ---------------------------------------------------------------------------
 
-/// The rendering-relevant discriminant of a [`StreamingChunk`].
+/// The rendering-relevant discriminant of a [`TurnEvent`].
 ///
 /// Chunk *boundaries* are an artifact of the agent's flush cadence — Claude
 /// splits "Hello to you!" across three notifications, one of them empty —
@@ -73,14 +74,15 @@ enum ChunkShape {
     ContextWindow,
 }
 
-fn shape_of(chunk: &StreamingChunk) -> ChunkShape {
+fn shape_of(chunk: &TurnEvent) -> ChunkShape {
     match chunk {
-        StreamingChunk::Text(_) => ChunkShape::Text,
-        StreamingChunk::Thinking(_) => ChunkShape::Thinking,
-        StreamingChunk::ToolStart { .. } => ChunkShape::ToolStart,
-        StreamingChunk::ToolEnd { .. } => ChunkShape::ToolEnd,
-        StreamingChunk::ToolUpdate { .. } => ChunkShape::ToolUpdate,
-        StreamingChunk::ContextWindow { .. } => ChunkShape::ContextWindow,
+        TurnEvent::TextDelta(_) => ChunkShape::Text,
+        TurnEvent::Thinking(_) => ChunkShape::Thinking,
+        TurnEvent::ToolCall { .. } => ChunkShape::ToolStart,
+        TurnEvent::ToolResult { .. } => ChunkShape::ToolEnd,
+        TurnEvent::ToolCallUpdate { .. } => ChunkShape::ToolUpdate,
+        TurnEvent::ContextWindow { .. } => ChunkShape::ContextWindow,
+        other => unreachable!("the ACP client does not send {other:?}"),
     }
 }
 
@@ -514,14 +516,14 @@ async fn run_case(case: &FixtureCase) {
     let mut text = String::new();
     let mut thinking = String::new();
     let mut windows: Vec<(u64, u64)> = Vec::new();
-    let mut tool_ends: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+    let mut tool_ends: Vec<(String, serde_json::Value, Option<String>)> = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
         shapes.push(shape_of(&chunk));
         match chunk {
-            StreamingChunk::Text(chunk_text) => text.push_str(&chunk_text),
-            StreamingChunk::Thinking(chunk_text) => thinking.push_str(&chunk_text),
-            StreamingChunk::ContextWindow { used, limit } => windows.push((used, limit)),
-            StreamingChunk::ToolEnd {
+            TurnEvent::TextDelta(chunk_text) => text.push_str(&chunk_text),
+            TurnEvent::Thinking(chunk_text) => thinking.push_str(&chunk_text),
+            TurnEvent::ContextWindow { used, limit } => windows.push((used, limit)),
+            TurnEvent::ToolResult {
                 name,
                 result,
                 error,
@@ -558,7 +560,7 @@ async fn run_case(case: &FixtureCase) {
                     let (name, result, error) = &tool_ends[0];
                     assert!(!name.is_empty(), "[{agent}] ToolEnd must carry a name");
                     let result = result
-                        .as_deref()
+                        .as_str()
                         .unwrap_or_else(|| panic!("[{agent}] ToolEnd carried no result"));
                     assert!(
                         result.contains(needle),
@@ -1271,7 +1273,7 @@ async fn a_user_key_table_replaces_the_shipped_one() {
 /// permission request, and each chunk of the turn.
 struct JoinedTurn {
     asked: Vec<crucible_core::types::CanonicalToolCall>,
-    chunks: Vec<StreamingChunk>,
+    chunks: Vec<TurnEvent>,
 }
 
 impl JoinedTurn {
@@ -1280,7 +1282,9 @@ impl JoinedTurn {
         self.chunks
             .iter()
             .filter_map(|chunk| match chunk {
-                StreamingChunk::ToolStart { call, .. } => Some(call),
+                TurnEvent::ToolCall {
+                    call: Some(call), ..
+                } => Some(&**call),
                 _ => None,
             })
             .collect()
