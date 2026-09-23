@@ -3,7 +3,6 @@ import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { SessionStatusChips } from '../SessionStatusChips';
 import { ChatProvider } from '@/contexts/ChatContext';
-import { __resetReviewStore } from '@/lib/review-store';
 import type { Session } from '@/lib/types';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import type { MockFetchAnswer } from '@/test-utils/mock-fetch';
@@ -74,7 +73,6 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   setCurrentSession(undefined);
-  __resetReviewStore();
   // The query cache outlives one case, so a fresh client per case keeps one
   // session's answer from serving the next one.
   env?.restore();

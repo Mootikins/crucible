@@ -34,13 +34,14 @@ import { keys } from './keys';
  * branch with 400 files therefore does not send 800 texts at once.
  */
 
-/** The files of one diffset, with their counts and no text. */
-export function useDiffset(source: Accessor<DiffsetSource>): UseQueryResult<Diffset, Error> {
+/** The files of one diffset, with their counts and no text. `null` reads nothing. */
+export function useDiffset(source: Accessor<DiffsetSource | null>): UseQueryResult<Diffset, Error> {
   return useQuery(() => {
     const value = source();
     return {
-      queryKey: keys.diffset(diffsetKey(value)),
-      queryFn: () => getDiffset(value),
+      queryKey: keys.diffset(value ? diffsetKey(value) : ''),
+      queryFn: () => getDiffset(value!),
+      enabled: value !== null,
     };
   }, getQueryClient);
 }
@@ -61,15 +62,16 @@ export function useDiffFile(
   }, getQueryClient);
 }
 
-/** The comments of one diffset, each with its outdated flag. */
+/** The comments of one diffset, each with its outdated flag. `null` reads nothing. */
 export function useDiffComments(
-  source: Accessor<DiffsetSource>,
+  source: Accessor<DiffsetSource | null>,
 ): UseQueryResult<ListedComment[], Error> {
   return useQuery(() => {
     const value = source();
     return {
-      queryKey: keys.diffComments(diffsetKey(value)),
-      queryFn: () => getDiffComments(value),
+      queryKey: keys.diffComments(value ? diffsetKey(value) : ''),
+      queryFn: () => getDiffComments(value!),
+      enabled: value !== null,
     };
   }, getQueryClient);
 }
@@ -94,10 +96,7 @@ export interface DiffCommentRef {
   commentId: string;
 }
 
-/**
- * Marks one comment resolved. The comments of its diffset then load again, and
- * a session record also loads the listing of its Changes panel again.
- */
+/** Marks one comment resolved. The comments of its diffset then load again. */
 export function useResolveDiffComment(): UseMutationResult<
   { comment_id: string },
   Error,
@@ -107,20 +106,14 @@ export function useResolveDiffComment(): UseMutationResult<
     () => ({
       mutationFn: ({ source, commentId }: DiffCommentRef) => resolveDiffComment(source, commentId),
       onSettled: (_reply, _error, { source }) =>
-        Promise.all([
-          getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
-          source.kind === 'session_record'
-            ? getQueryClient().invalidateQueries({ queryKey: keys.review(source.session) })
-            : undefined,
-        ]),
+        getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
     }),
     getQueryClient,
   );
 }
 
 /**
- * Removes one comment. The comments of its diffset then load again, and a
- * session record also loads the listing of its Changes panel again.
+ * Removes one comment. The comments of its diffset then load again.
  *
  * The chip in the composer and the comment in the pane are one thing: the
  * `×` of the chip calls this, and the comment leaves the pane.
@@ -134,12 +127,7 @@ export function useDeleteDiffComment(): UseMutationResult<
     () => ({
       mutationFn: ({ source, commentId }: DiffCommentRef) => deleteDiffComment(source, commentId),
       onSettled: (_reply, _error, { source }) =>
-        Promise.all([
-          getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
-          source.kind === 'session_record'
-            ? getQueryClient().invalidateQueries({ queryKey: keys.review(source.session) })
-            : undefined,
-        ]),
+        getQueryClient().invalidateQueries({ queryKey: keys.diffComments(diffsetKey(source)) }),
     }),
     getQueryClient,
   );

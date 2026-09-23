@@ -73,7 +73,6 @@ export const keys = {
   searchGrep: (root: string, q: string, glob?: string) =>
     ['search', 'grep', root, q, glob] as const,
   searchSessions: (q: string, kiln?: string) => ['search', 'sessions', q, kiln] as const,
-  review: (sessionId: string) => ['review', sessionId] as const,
   // One diffset, by the client key of its source (`diffsetKey`). The file
   // texts sit under it, so one invalidation of the diffset reaches them too.
   diffset: (key: string) => ['diff', key] as const,

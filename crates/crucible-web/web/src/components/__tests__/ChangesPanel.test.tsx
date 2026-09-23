@@ -55,7 +55,6 @@ vi.mock('@/stores/notificationStore', () => ({
 }));
 
 const { ChangesPanel } = await import('../ChangesPanel');
-const { __resetReviewStore } = await import('@/lib/review-store');
 const { __resetConflictStore, conflictStore } = await import('@/lib/conflicts');
 
 /** One note whose write the daemon could neither take nor merge. */
@@ -132,7 +131,6 @@ afterEach(() => {
   cleanup();
   setCurrentSession(undefined);
   device.compact = false;
-  __resetReviewStore();
   env.restore();
   vi.clearAllMocks();
 });

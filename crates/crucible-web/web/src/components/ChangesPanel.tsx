@@ -9,18 +9,25 @@
  *
  * Renders in the RIGHT edge region alongside Activity and Backlinks, which
  * puts it OUTSIDE the per-chat-tab `ChatProvider` — hence `useSessionSafe`
- * plus the global review store rather than `useChatSafe`, which would silently
- * hand back the inert fallback context.
+ * rather than `useChatSafe`, which would silently hand back the inert fallback
+ * context. It reads the same cache entries as the diff pane, and the route of
+ * the session stream keeps them current.
  */
-import { Component, For, Show, createMemo, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, on, onCleanup, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { notificationActions } from '@/stores/notificationStore';
-import { reviewActions, reviewStore, useReviewSession } from '@/lib/review-store';
+import {
+  invalidateDiffset,
+  useDiffComments,
+  useDiffset,
+  useResolveDiffComment,
+} from '@/lib/query/diff';
+import { sessionEvents } from '@/lib/query/sse';
 import { hit } from '@/lib/touch';
 import { conflictActions, conflictStore, openConflict } from '@/lib/conflicts';
-import type { DiffFileEntry } from '@/lib/diffset';
+import type { DiffFileEntry, DiffsetSource } from '@/lib/diffset';
 import { AlertTriangle, Check, RefreshCw } from '@/lib/icons';
 import { useProposals } from '@/lib/query/proposals';
 import { authorLabel } from '@/lib/proposal-api';
@@ -41,12 +48,27 @@ function groupByRoot(files: DiffFileEntry[]): { root: string; files: DiffFileEnt
 export const ChangesPanel: Component = () => {
   const { currentSession } = useSessionSafe();
   const sessionId = () => currentSession()?.session_id;
-  useReviewSession(sessionId);
+  const source = (): DiffsetSource | null => {
+    const id = sessionId();
+    return id ? { kind: 'session_record', session: id } : null;
+  };
+  // The route of the stream refreshes the record, and it runs only while
+  // somebody holds the stream. The panel can be open with no chat pane.
+  createEffect(
+    on(sessionId, (id) => {
+      if (id) onCleanup(sessionEvents(id).subscribe(() => {}));
+    }),
+  );
 
-  const state = () => reviewStore.session(sessionId());
-  const roots = createMemo(() => groupByRoot(state().files));
-
-  const openComments = createMemo(() => state().comments.filter((c) => !c.resolved));
+  const diffset = useDiffset(source);
+  const comments = useDiffComments(source);
+  const resolve = useResolveDiffComment();
+  const files = () => diffset.data?.files ?? [];
+  const loading = () => diffset.isFetching || comments.isFetching;
+  const roots = createMemo(() => groupByRoot(files()));
+  const openComments = createMemo(() =>
+    (comments.data ?? []).map((listed) => listed.comment).filter((c) => !c.resolved),
+  );
 
   // A conflict is a disposition of a note write, and this panel is where a
   // disposition is made. Read once on mount: the drain is what creates one,
@@ -67,20 +89,20 @@ export const ChangesPanel: Component = () => {
       <PanelHeader title="Changes" class="shrink-0">
         <div class="mt-1.5 flex items-center gap-2">
           <span class="text-floor text-muted-dark" data-testid="changes-count">
-            {state().files.length} {state().files.length === 1 ? 'file' : 'files'}
+            {files().length} {files().length === 1 ? 'file' : 'files'}
           </span>
           <button
             type="button"
             title="Refresh"
             data-testid="changes-refresh"
-            disabled={!sessionId() || state().loading}
+            disabled={!sessionId() || loading()}
             onClick={() => {
-              const id = sessionId();
-              if (id) void reviewActions.refresh(id);
+              const value = source();
+              if (value) void invalidateDiffset(value);
             }}
             class="ml-auto rounded p-1 text-muted-dark hover:text-shell-ink hover:bg-hover-wash disabled:opacity-50"
           >
-            <RefreshCw class={`w-3.5 h-3.5 ${state().loading ? 'animate-spin' : ''}`} />
+            <RefreshCw class={`w-3.5 h-3.5 ${loading() ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </PanelHeader>
@@ -176,15 +198,17 @@ export const ChangesPanel: Component = () => {
           when={sessionId()}
           fallback={<p class="p-3 text-xs text-muted-dark">No session selected.</p>}
         >
-          <Show when={state().error}>
-            <p class="px-3 py-2 text-xs text-error" data-testid="changes-error">
-              {state().error}
-            </p>
+          <Show when={diffset.error ?? comments.error}>
+            {(error) => (
+              <p class="px-3 py-2 text-xs text-error" data-testid="changes-error">
+                {error().message}
+              </p>
+            )}
           </Show>
 
-          <UnreadableRoots roots={state().unreadable_roots} />
+          <UnreadableRoots roots={diffset.data?.unreadable_roots ?? []} />
 
-          <Show when={state().loaded && state().files.length === 0}>
+          <Show when={diffset.data && files().length === 0}>
             <p class="p-3 text-xs text-muted-dark" data-testid="changes-empty">
               No changes in this session yet.
             </p>
@@ -254,13 +278,14 @@ export const ChangesPanel: Component = () => {
                       title="Resolve"
                       data-testid={`resolve-${comment.id}`}
                       onClick={() => {
-                        const id = sessionId();
-                        if (!id) return;
-                        void reviewActions
-                          .resolveComment(id, comment.id)
-                          .catch((e: Error) =>
-                            notificationActions.addNotification('error', e.message),
-                          );
+                        const value = source();
+                        if (!value) return;
+                        resolve.mutate(
+                          { source: value, commentId: comment.id },
+                          {
+                            onError: (e) => notificationActions.addNotification('error', e.message),
+                          },
+                        );
                       }}
                       class="shrink-0 rounded p-1 text-muted-dark hover:text-ok hover:bg-hover-wash"
                     >

@@ -7,7 +7,7 @@
  * never a second copy: a reload rebuilds it from the queue, and a resolution
  * that lands removes the entry rather than a row beside it.
  *
- * Global rather than context-bound for the reason `review-store.ts` is: its
+ * Global rather than context-bound, because its
  * consumers do not share a provider. The offline badge is in the phone's
  * chrome, the More sheet is in the shell, and the Changes panel renders in the
  * right edge region.

@@ -4,7 +4,7 @@
  * Four streams reach the browser: a session's chat events, surface changes,
  * filesystem changes, and plugin publications. Before this module each
  * consumer opened its own `EventSource`, so two panes on one session held two
- * streams and `review-store.ts` carried a hand-written refcount to stop a
+ * streams and the review store carried a hand-written refcount to stop a
  * third. Here every consumer of a stream shares one source: the first
  * `subscribe` opens it, the last unsubscribe closes it one microtask later,
  * and a `subscribe` after that close opens a fresh one.

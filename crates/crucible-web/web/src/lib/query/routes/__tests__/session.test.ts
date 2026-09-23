@@ -183,7 +183,7 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, REVIEW_INVALIDATE_DEBOUNCE_MS + 30));
 
-    expect(invalidated).toEqual([keys.review(SESSION)]);
+    expect(invalidated).toEqual([keys.diffset(`session-${SESSION}`)]);
   });
 
   // The negative: a session whose stream said nothing about the review keeps

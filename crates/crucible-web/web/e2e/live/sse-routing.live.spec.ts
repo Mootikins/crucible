@@ -17,7 +17,7 @@ import { centerGroupIds, chatTab, closeTab, mountChat, mountTab, openInNewPane, 
  * Four streams reach this browser — a session's chat events, surface changes,
  * filesystem changes and plugin publications — and before `lib/query/sse.ts`
  * each consumer opened its own. Two panes on one session held two sockets to
- * one daemon endpoint, and `review-store.ts` carried a hand-written refcount
+ * one daemon endpoint, and the review store carried a hand-written refcount
  * to stop a third.
  *
  * Counting `GET /api/chat/events/{id}` is half the claim. The other half is

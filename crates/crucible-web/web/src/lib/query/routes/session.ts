@@ -19,14 +19,15 @@ import type { QueryClient } from '@tanstack/solid-query';
 import type { ChatEvent } from '@/lib/types';
 import type { SessionHistoryResponse } from '@/lib/types';
 import { keys } from '../keys';
+import { diffsetKey } from '@/lib/diffset';
 import { setSessionEventRoute, type SessionRouteContext } from '../sse';
 
 /**
- * How long the route waits before it re-lists a review.
+ * How long the route waits before it re-lists a session record.
  *
- * The daemon fires several events per turn that each mean "the composed diff
- * may have moved" — one per tool call, and one per review action. Re-listing
- * on each is one round trip per edit for a diff that settles once.
+ * The daemon fires several events per turn that each mean "the record may
+ * have moved" — one per tool call, and one per review action. Re-listing on
+ * each is one round trip per edit for a diff that settles once.
  */
 export const REVIEW_INVALIDATE_DEBOUNCE_MS = 150;
 
@@ -41,7 +42,9 @@ function scheduleReviewInvalidation(client: QueryClient, sessionId: string): voi
     sessionId,
     setTimeout(() => {
       reviewTimers.delete(sessionId);
-      void client.invalidateQueries({ queryKey: keys.review(sessionId) });
+      // The files, their texts and the comments sit under this one key.
+      const key = diffsetKey({ kind: 'session_record', session: sessionId });
+      void client.invalidateQueries({ queryKey: keys.diffset(key) });
     }, REVIEW_INVALIDATE_DEBOUNCE_MS),
   );
 }
@@ -141,6 +144,17 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
     case 'message_complete':
     case 'error':
       void client.invalidateQueries({ queryKey: keys.sessionHistory(sessionId) });
+      if (event.type === 'message_complete') scheduleReviewInvalidation(client, sessionId);
+      break;
+
+    // No event says "the agent changed a file": `review_changed` fires for
+    // review actions only. A tool result can move the session record, and a
+    // reconnect can hide the events that did.
+    case 'tool_result':
+      scheduleReviewInvalidation(client, sessionId);
+      break;
+    case 'connection':
+      if (event.status === 'connected') scheduleReviewInvalidation(client, sessionId);
       break;
 
     case 'interaction_requested':
@@ -170,8 +184,8 @@ function routeSessionEvent(event: ChatEvent, context: SessionRouteContext): void
       routeSessionSubEvent(event, context);
       break;
 
-    // The rest are the stream itself (`token`, `thinking`, the tool events,
-    // `segment_complete`), the transport (`connection`) or per-pane state (the
+    // The rest are the stream itself (`token`, `thinking`, the other tool
+    // events, `segment_complete`) or per-pane state (the
     // subagent and delegation events, `precognition_result`).
     // One pane's reducer owns each of them.
     default:

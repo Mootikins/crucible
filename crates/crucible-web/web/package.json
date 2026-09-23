@@ -40,7 +40,6 @@
     "@replit/codemirror-vim": "^6.3.0",
     "@solid-primitives/event-bus": "^1.1.4",
     "@solid-primitives/keyed": "^1.5.3",
-    "@solid-primitives/rootless": "^1.5.4",
     "@tanstack/solid-query": "^5.103.0",
     "@thisbeyond/solid-dnd": "^0.7.5",
     "@xterm/addon-fit": "^0.11.0",
