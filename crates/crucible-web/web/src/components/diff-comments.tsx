@@ -2,10 +2,12 @@
  * Line comments in one editor of the diff pane.
  *
  * The editor gets its own line-number gutter. A hover on a number shows a
- * `+` button. A press on a number starts a range, a drag over more numbers
- * extends it, and the release opens the comment box under the last line of
- * the range. The drag and the open box tint the selected rows and their
- * numbers. The stored comments of the file show as blocks under their last
+ * `+` button over the right edge of the gutter, so the gutter keeps its width
+ * and the number stays readable. A press on a number starts a range, a drag
+ * over more numbers extends it, and the release opens the comment box under
+ * the last line of the range. The drag and the open box tint the selected
+ * rows and their numbers, removed rows inside the range included. The `+`
+ * hides while a drag or a box is open. The stored comments of the file show as blocks under their last
  * line, each with a Resolve button and, where the pane has a chat, an Attach
  * button that puts the comment back in the composer.
  *
@@ -178,12 +180,19 @@ class BaseLinesMarker extends GutterMarker {
     readonly count: number,
     /** The element of the removed chunk, when the editor drew it. */
     readonly chunk: HTMLElement | null,
+    readonly chosen: boolean,
   ) {
     super();
+    this.elementClass = chosen ? 'cm-diff-selected-number' : '';
   }
 
   eq(other: BaseLinesMarker): boolean {
-    return other.first === this.first && other.count === this.count && other.chunk === this.chunk;
+    return (
+      other.first === this.first &&
+      other.count === this.count &&
+      other.chunk === this.chunk &&
+      other.chosen === this.chosen
+    );
   }
 
   toDOM(): Node {
@@ -222,7 +231,8 @@ const observers = new WeakMap<HTMLElement, ResizeObserver>();
 
 /**
  * The base numbers of the removed chunk that a block widget draws, or null
- * for any other widget. The removed chunk of `@codemirror/merge` sits at the
+ * for any other widget. The chunk sits above a current line, so it is inside
+ * a range that holds that line and the line above it. The removed chunk of `@codemirror/merge` sits at the
  * start of its chunk in the current text. Its widget builds its element on
  * demand, and the spacer of the split view does not, so `buildDOM` tells the
  * two apart.
@@ -237,7 +247,10 @@ function baseLines(view: EditorView, widget: WidgetType, from: number): BaseLine
   const first = base.lineAt(chunk.fromA).number;
   const count = base.sliceString(chunk.fromA, chunk.endA).split('\n').length;
   const dom = (widget as { dom?: HTMLElement | null }).dom ?? null;
-  return new BaseLinesMarker(first, count, dom);
+  const span = selected(view.state.field(uiField));
+  const below = view.state.doc.lineAt(from).number;
+  const chosen = !!span && below > span.first && below <= span.last;
+  return new BaseLinesMarker(first, count, dom, chosen);
 }
 
 /**
@@ -266,7 +279,8 @@ const lineGutter = gutter({
     const ui = view.state.field(uiField);
     const span = selected(ui);
     const chosen = !!span && line >= span.first && line <= span.last;
-    return new LineMarker(line, ui.hover === line, chosen);
+    const busy = ui.drag !== null || ui.draft !== null;
+    return new LineMarker(line, !busy && ui.hover === line, chosen);
   },
   lineMarkerChange: (update) => update.startState.field(uiField) !== update.state.field(uiField),
   widgetMarker: (view, widget, block) => baseLines(view, widget, block.from),
@@ -524,7 +538,9 @@ const tint = (alpha: number) => `rgba(var(--cru-color-callout-info), ${alpha})`;
 
 const commentTheme = EditorView.theme({
   '.cm-diff-lines .cm-gutterElement': { cursor: 'pointer', userSelect: 'none' },
-  '.cm-diff-line': { position: 'relative', paddingLeft: '1.25em' },
+  // The `+` hangs out of the gutter, so the gutter must not clip it.
+  '.cm-gutter.cm-diff-lines': { overflow: 'visible' },
+  '.cm-diff-line': { position: 'relative' },
   '.cm-diff-base-lines': { cursor: 'default' },
   // The selected range. The numbers carry the strong tint and a bar. The
   // rows carry a light tint over their own, so a changed row keeps its tint.
@@ -534,11 +550,16 @@ const commentTheme = EditorView.theme({
     color: 'var(--color-shell-ink)',
   },
   '.cm-diff-line[aria-selected="true"]': { color: 'var(--color-shell-ink)', fontWeight: '600' },
+  // Over the right padding of the number, the change bar and the left padding
+  // of the row: 3 + 3 + 6 px. No digit and no text is under it.
   '.cm-diff-comment-add': {
     position: 'absolute',
-    left: '0',
+    zIndex: '1',
+    left: '100%',
     top: '0',
-    width: '1.1em',
+    width: '12px',
+    padding: '0',
+    border: 'none',
     lineHeight: 'inherit',
     borderRadius: 'var(--cru-radius-sm)',
     background: 'var(--color-primary)',
@@ -546,6 +567,10 @@ const commentTheme = EditorView.theme({
     textAlign: 'center',
   },
   '.cm-line.cm-diff-selected': { backgroundImage: `linear-gradient(${tint(0.14)}, ${tint(0.14)})` },
+  // A removed chunk between two selected lines is inside the range.
+  '.cm-line.cm-diff-selected + .cm-deletedChunk:has(+ .cm-line.cm-diff-selected)': {
+    backgroundImage: `linear-gradient(${tint(0.14)}, ${tint(0.14)})`,
+  },
   // The gap is padding on the block, never a margin on the card: see
   // `commentBlock`.
   '.cm-diff-comment-block': { padding: '4px 8px 4px 0' },

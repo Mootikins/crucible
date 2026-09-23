@@ -569,10 +569,44 @@ describe('DiffPanel', () => {
       ...section('src/a.rs').querySelectorAll('.cm-gutterElement.cm-diff-selected-number'),
     ];
     // The hovered number also holds the + button, so read the line it names.
-    expect(numbers.map((n) => n.querySelector<HTMLElement>('[data-line]')?.dataset.line)).toEqual([
-      '1',
-      '2',
-    ]);
+    // The base number of the removed row sits between 1 and 2, so it is in
+    // the range too.
+    expect(
+      numbers.map(
+        (n) =>
+          n.querySelector<HTMLElement>('[data-line]')?.dataset.line ??
+          n.querySelector<HTMLElement>('[data-testid^="diff-base-line-"]')?.textContent,
+      ),
+    ).toEqual(['1', '2', '2']);
+  });
+
+  it('a range that starts at a current line leaves the removed row above it out', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await press('src/a.rs', 2);
+    await release('src/a.rs', 2);
+    await within(section('src/a.rs')).findByTestId('diff-comment-box');
+
+    const base = section('src/a.rs').querySelector('[data-testid="diff-base-line-2"]');
+    expect(base?.closest('.cm-gutterElement')?.classList.contains('cm-diff-selected-number')).toBe(
+      false,
+    );
+  });
+
+  it('the add button hides while the comment box is open', async () => {
+    serve([entry('src/a.rs')]);
+    render(() => <DiffPanel source={source} />);
+
+    await press('src/a.rs', 2);
+    await release('src/a.rs', 2);
+    await within(section('src/a.rs')).findByTestId('diff-comment-box');
+    await over('src/a.rs', 3, 0);
+
+    await waitFor(async () =>
+      expect((await lineNumber('src/a.rs', 3)).parentElement).toBeInTheDocument(),
+    );
+    expect(within(section('src/a.rs')).queryByTestId('diff-comment-add')).toBeNull();
   });
 
   it('Resolve on a saved comment resolves it, and the comment leaves the list', async () => {
