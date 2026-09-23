@@ -350,6 +350,7 @@ mod tests {
             None,
             None,
             paths,
+            crate::test_support::repo_runtime_roots(),
         )
         .await
         .expect("the fixture config boots");

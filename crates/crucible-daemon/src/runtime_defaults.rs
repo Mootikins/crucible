@@ -130,18 +130,27 @@ fn defaults_candidates_from(
     candidates
 }
 
+/// The runtime roots of this machine, after the runtimepath entries:
+/// `$CRUCIBLE_RUNTIME`, then the exe-relative and bundled roots.
+///
+/// The boot takes these as a value. A test gives its own roots, so an
+/// installed tree cannot answer it.
+pub fn machine_runtime_roots() -> Vec<PathBuf> {
+    std::env::var_os("CRUCIBLE_RUNTIME")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(crucible_core::runtime_roots::for_current_exe())
+        .collect()
+}
+
 /// Load the defaults source, and say where it came from.
 ///
-/// An unreadable candidate is skipped rather than fatal — a half-installed
-/// runtime directory should degrade to the built-in copy, not leave sessions
-/// with no defaults at all.
-pub fn load_defaults(runtimepath: &[PathBuf]) -> (String, DefaultsSource) {
-    let env_runtime = std::env::var("CRUCIBLE_RUNTIME").ok();
-    load_defaults_from(
-        runtimepath,
-        env_runtime.as_deref(),
-        &crucible_core::runtime_roots::for_current_exe(),
-    )
+/// `roots` come after the runtimepath entries; production gives
+/// [`machine_runtime_roots`]. An unreadable candidate is skipped rather than
+/// fatal — a half-installed runtime directory should degrade to the built-in
+/// copy, not leave sessions with no defaults at all.
+pub fn load_defaults(runtimepath: &[PathBuf], roots: &[PathBuf]) -> (String, DefaultsSource) {
+    load_defaults_from(runtimepath, None, roots)
 }
 
 /// `load_defaults` with the environment supplied rather than read. See
@@ -250,7 +259,7 @@ mod tests {
         std::fs::create_dir_all(&defaults_dir).unwrap();
         std::fs::write(defaults_dir.join("init.lua"), "-- mine\n").unwrap();
 
-        let (source, origin) = load_defaults(&[tmp.path().to_path_buf()]);
+        let (source, origin) = load_defaults(&[tmp.path().to_path_buf()], &[]);
 
         assert_eq!(source, "-- mine\n");
         assert_eq!(

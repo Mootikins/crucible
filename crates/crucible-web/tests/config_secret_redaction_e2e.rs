@@ -98,6 +98,7 @@ async fn serve_daemon_over_web(home: &std::path::Path, config_source: &std::path
         None,
         None,
         Arc::new(|_| Vec::new()),
+        crucible_daemon::test_support::repo_runtime_roots(),
     )
     .await
     .expect("the boot evaluation");

@@ -11,7 +11,6 @@
 //! reason. A plugin's file is not config — the user did not write it and
 //! cannot fix its line — so a plugin that does not parse stays fail-open.
 
-use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::daemon_plugins::{evaluate_boot_config_with_paths, BootConfig, PluginPathsFn};
 use crucible_lua::PluginSource;
 use std::path::{Path, PathBuf};
@@ -36,128 +35,22 @@ fn write_config(tmp: &Path, settings: serde_json::Value, init_lua: &str) -> Path
     config_dir
 }
 
-/// Boot against the fixture. The plugin search is injected as a value, and
-/// the runtime tree is pinned to this checkout, so no test here reads the
-/// developer's real plugin directories or a tree a release install left on
-/// the machine.
+/// Boot against the fixture. The plugin search and the runtime roots are
+/// injected as values, so no test here reads the developer's plugin
+/// directories or an installed runtime tree.
 async fn boot(config_dir: &Path, plugin_root: Option<PathBuf>) -> anyhow::Result<BootConfig> {
-    let _pin = pin_the_runtime_to_this_repository();
-    boot_with_the_machines_runtime(config_dir, plugin_root).await
-}
-
-/// [`boot`] WITHOUT the runtime pin: the shipped defaults come from whatever
-/// tree the machine resolves, an installed one included.
-///
-/// Only [`an_installed_defaults_file_does_not_survive_the_rollback`] uses
-/// this, and it uses it to prove that the pin above has work to do.
-async fn boot_with_the_machines_runtime(
-    config_dir: &Path,
-    plugin_root: Option<PathBuf>,
-) -> anyhow::Result<BootConfig> {
     let paths: PluginPathsFn = Arc::new(move |_rtp: &[PathBuf]| match &plugin_root {
         Some(root) => vec![(root.clone(), PluginSource::EnvPath)],
         None => Vec::new(),
     });
-    evaluate_boot_config_with_paths(Some(config_dir.join("config.toml")), None, None, paths).await
-}
-
-/// This repository's `runtime/` tree — the defaults this build ships.
-///
-/// A test binary runs from `target/debug/deps`, so both exe-relative roots
-/// `runtime_roots::for_current_exe` builds are absent and resolution falls
-/// through to what a RELEASE INSTALL left in the user's directories. Those
-/// files belong to another build.
-fn repo_runtime_root() -> PathBuf {
-    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime"));
-    assert!(
-        root.join("defaults").join("init.luau").is_file(),
-        "the repository runtime tree must hold the shipped defaults: {}",
-        root.display()
-    );
-    root
-}
-
-/// Pin the defaults resolution to this repository while the guard lives.
-///
-/// `$CRUCIBLE_RUNTIME` outranks every root the resolver discovers. Hold the
-/// guard across the boot: the defaults file is read during the boot.
-#[must_use]
-fn pin_the_runtime_to_this_repository() -> EnvVarGuard {
-    EnvVarGuard::set(
-        "CRUCIBLE_RUNTIME",
-        repo_runtime_root().display().to_string(),
+    evaluate_boot_config_with_paths(
+        Some(config_dir.join("config.toml")),
+        None,
+        None,
+        paths,
+        crucible_daemon::test_support::repo_runtime_roots(),
     )
-}
-
-/// Plant a runtime tree at the roots an INSTALLED Crucible owns, and say
-/// which `default_kiln` its defaults file sets.
-///
-/// Both roots come from `dirs`, so the guards redirect them under `home` and
-/// nothing touches the developer's own directories.
-fn plant_an_installed_runtime(home: &Path) -> (&'static str, Vec<EnvVarGuard>) {
-    const KILN: &str = "from-an-installed-tree";
-    let guards = vec![
-        // An exported value on the developer's machine would outrank the
-        // planted tree and make the test prove nothing.
-        EnvVarGuard::remove("CRUCIBLE_RUNTIME"),
-        EnvVarGuard::set("XDG_CONFIG_HOME", home.join("config").display().to_string()),
-        EnvVarGuard::set("XDG_DATA_HOME", home.join("data").display().to_string()),
-    ];
-
-    let roots = [
-        crucible_core::runtime_roots::user_runtime(),
-        crucible_core::runtime_roots::bundled_runtime_dir(),
-    ];
-    for root in roots.into_iter().flatten() {
-        let defaults = root.join("defaults");
-        std::fs::create_dir_all(&defaults).unwrap();
-        std::fs::write(
-            defaults.join("init.luau"),
-            format!("cru.config.set({{ default_kiln = \"{KILN}\" }})\n"),
-        )
-        .unwrap();
-    }
-    (KILN, guards)
-}
-
-/// What a rollback lands on is the seed, and a tree a release install left
-/// on the machine is not part of it.
-///
-/// The defaults file runs before `init.lua` in the same VM, so a value it
-/// sets outlives the rollback and reads exactly like a seeded value. A test
-/// binary resolves no runtime tree of its own, so an installed one used to
-/// supply that file.
-///
-/// Both halves matter. The first proves the planted tree is a root the
-/// resolver reads, so the second cannot pass for the wrong reason.
-#[tokio::test]
-async fn an_installed_defaults_file_does_not_survive_the_rollback() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (planted_kiln, _guards) = plant_an_installed_runtime(tmp.path());
-    let config_dir = write_config(
-        tmp.path(),
-        serde_json::Value::Null,
-        "cru.config.set({ default_kiln = \"from-init\" })\nerror(\"boom\")\n",
-    );
-
-    let ambient = boot_with_the_machines_runtime(&config_dir, None)
-        .await
-        .expect("a config file that raises must still boot");
-    assert_eq!(
-        ambient.config.default_kiln.as_deref(),
-        Some(planted_kiln),
-        "precondition: the planted tree must be a root the resolver reads"
-    );
-
-    let booted = boot(&config_dir, None)
-        .await
-        .expect("a config file that raises must still boot");
-
-    assert_eq!(
-        booted.config.default_kiln, None,
-        "the seed a rollback lands on must come from this repository's \
-         defaults, not from an installed tree"
-    );
+    .await
 }
 
 /// A file that does not parse states no intent, so the boot stops and says

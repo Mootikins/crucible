@@ -443,6 +443,7 @@ async fn evaluate_config_check(
         None,
         None,
         plugin_paths,
+        crucible_daemon::runtime_defaults::machine_runtime_roots(),
     )
     .await
     {

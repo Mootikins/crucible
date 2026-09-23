@@ -258,6 +258,7 @@ async fn boot_and_activate(
         None,
         None,
         std::sync::Arc::clone(&paths),
+        crucible_daemon::test_support::repo_runtime_roots(),
     )
     .await
     .unwrap();

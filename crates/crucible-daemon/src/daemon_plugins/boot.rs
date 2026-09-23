@@ -186,17 +186,23 @@ pub async fn evaluate_boot_config(
         embedding_url,
         embedding_model,
         Arc::new(|rtp: &[PathBuf]| daemon_plugin_paths(rtp)),
+        crate::runtime_defaults::machine_runtime_roots(),
     )
     .await
 }
 
-/// [`evaluate_boot_config`] with the plugin-path resolution injected as a
-/// value — the hermetic door for tests.
+/// [`evaluate_boot_config`] with the plugin-path resolution and the runtime
+/// roots injected as values — the hermetic door for tests.
+///
+/// `runtime_roots` are where the shipped defaults file is found, after the
+/// runtimepath entries. Production gives
+/// [`crate::runtime_defaults::machine_runtime_roots`].
 pub async fn evaluate_boot_config_with_paths(
     config_file: Option<PathBuf>,
     embedding_url: Option<String>,
     embedding_model: Option<String>,
     plugin_paths: PluginPathsFn,
+    runtime_roots: Vec<PathBuf>,
 ) -> anyhow::Result<BootConfig> {
     // Step 1: the config root — the DIRECTORY the named file sits in, which
     // is where `init.lua` and `settings.json` are read from.
@@ -308,7 +314,7 @@ pub async fn evaluate_boot_config_with_paths(
         // the default prompt, the precognition formatter and the plan-mode
         // permission hook. `init.lua` runs after it, so overriding is
         // ordinary assignment and `cru.modes.auto = nil` removes.
-        load_shipped_defaults(lua, &seed_rtp);
+        load_shipped_defaults(lua, &seed_rtp, &runtime_roots);
 
         // Step 4: evaluate init.lua once, top to bottom, under the boot
         // deadline. EVERY error rolls back onto the seed ENTIRELY: the state
@@ -391,7 +397,7 @@ pub async fn evaluate_boot_config_with_paths(
         // every session with no system prompt, no declared modes and no
         // plan-mode deny hook — the defaults file is the only definition of
         // all three, and nothing else loads it.
-        load_shipped_defaults(lua, &seed_rtp);
+        load_shipped_defaults(lua, &seed_rtp, &runtime_roots);
         crucible_lua::config::register_ui_namespaces(lua)?;
     }
 
@@ -483,8 +489,8 @@ fn load_settings_layer(config_root: &Path) {
 /// once before `init.lua`, and again on the fresh VM the rollback builds when
 /// `init.lua` fails — because this file is the only definition of the default
 /// prompt, the shipped modes and the plan-mode deny hook.
-fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf]) {
-    let (src, origin) = crate::runtime_defaults::load_defaults(runtimepath);
+fn load_shipped_defaults(lua: &Lua, runtimepath: &[PathBuf], roots: &[PathBuf]) {
+    let (src, origin) = crate::runtime_defaults::load_defaults(runtimepath, roots);
     debug!(source = %origin, "Loading Lua defaults");
     // This file ships with the daemon, so its registrations are the host's
     // own. Naming the owner is what lets a later clear tell a shipped mode
@@ -860,62 +866,24 @@ mod tests {
         std::fs::write(dir.join("init.lua"), body).unwrap();
     }
 
-    /// This repository's `runtime/` tree — the defaults this build ships.
-    ///
-    /// A test binary runs from `target/debug/deps`, so both exe-relative roots
-    /// `runtime_roots::for_current_exe` builds point at directories that do not
-    /// exist. Resolution then falls through to what a RELEASE INSTALL left on
-    /// the machine: `~/.config/crucible/runtime` from `cru setup`, or the
-    /// version-stamped tree the installed binary extracted. Those files belong
-    /// to another build, and a test that asserts the shipped defaults must read
-    /// this checkout instead.
-    fn repo_runtime_root() -> PathBuf {
-        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../runtime"));
-        assert!(
-            root.join("defaults").join("init.luau").is_file(),
-            "the repository runtime tree must hold the shipped defaults: {}",
-            root.display()
-        );
-        root
-    }
-
-    /// Pin the defaults resolution to this repository for as long as the guard
-    /// lives.
-    ///
-    /// `$CRUCIBLE_RUNTIME` outranks every root the resolver discovers, so no
-    /// installed tree can answer while the guard is alive. Hold it across the
-    /// boot: `load_shipped_defaults` reads the file during the boot.
-    #[must_use]
-    fn pin_the_runtime_to_this_repository() -> EnvVarGuard {
-        EnvVarGuard::set(
-            "CRUCIBLE_RUNTIME",
-            repo_runtime_root().display().to_string(),
-        )
-    }
-
-    /// Boot on the fixture config, with the shipped defaults pinned to this
+    /// Boot on the fixture config, with the shipped defaults of this
     /// repository.
     async fn boot_with(config_root: &Path, init_lua: &str) -> BootConfig {
-        let _runtime = pin_the_runtime_to_this_repository();
-        boot_with_the_machines_runtime(config_root, init_lua).await
-    }
-
-    /// [`boot_with`] WITHOUT the pin: the defaults come from whatever tree the
-    /// machine resolves, an installed one included.
-    ///
-    /// Only [`the_machines_runtime_tree_answers_an_unpinned_boot`] uses this.
-    /// Every other test here states something about the SHIPPED defaults, and
-    /// an installed tree cannot prove that.
-    async fn boot_with_the_machines_runtime(config_root: &Path, init_lua: &str) -> BootConfig {
         std::fs::create_dir_all(config_root).unwrap();
         let config_file = config_root.join("config.toml");
         if !config_file.exists() {
             std::fs::write(&config_file, "").unwrap();
         }
         std::fs::write(config_root.join("init.lua"), init_lua).unwrap();
-        evaluate_boot_config_with_paths(Some(config_file), None, None, fixture_paths())
-            .await
-            .expect("boot must not error for a Lua-level failure")
+        evaluate_boot_config_with_paths(
+            Some(config_file),
+            None,
+            None,
+            fixture_paths(),
+            crate::test_support::repo_runtime_roots(),
+        )
+        .await
+        .expect("boot must not error for a Lua-level failure")
     }
 
     /// Plant a runtime tree at the roots an INSTALLED Crucible owns, and say
@@ -963,10 +931,8 @@ mod tests {
 
     /// An installed runtime tree must not answer a shipped-defaults test.
     ///
-    /// The gate every other test here rests on. `boot_with` pins the tree, so
-    /// the defaults come from this checkout and the planted tree loses. Delete
-    /// the pin and this test goes red: the machine's tree answers instead, and
-    /// its marker hook appears where the shipped hooks should be.
+    /// The boot reads only the runtime roots it is given, so the planted
+    /// tree loses to this checkout.
     #[tokio::test]
     async fn the_shipped_defaults_come_from_this_repository() {
         let tmp = tempfile::tempdir().unwrap();
@@ -985,24 +951,22 @@ mod tests {
         );
     }
 
-    /// The other half of the pair: the planted tree IS reachable.
-    ///
-    /// Without this, the test above could pass because the plant went to a
-    /// path no resolver reads — a gate that proves nothing. This one boots
-    /// with no pin, which is what a test did before the pin existed, and the
-    /// machine's tree wins.
-    #[tokio::test]
-    async fn the_machines_runtime_tree_answers_an_unpinned_boot() {
+    /// The other half of the pair: the machine roots DO reach the planted
+    /// tree, so the test above cannot pass because the plant went to a path
+    /// no resolver reads.
+    #[test]
+    fn the_machine_runtime_roots_reach_an_installed_tree() {
         let tmp = tempfile::tempdir().unwrap();
         let (marker, _guards) = plant_an_installed_runtime(tmp.path());
 
-        let boot = boot_with_the_machines_runtime(&tmp.path().join("config"), "").await;
+        let (source, _) = crate::runtime_defaults::load_defaults(
+            &[],
+            &crate::runtime_defaults::machine_runtime_roots(),
+        );
 
-        let names = hook_names(&boot);
         assert!(
-            names.contains(&marker.to_string()),
-            "the planted tree must be a root the resolver reads, or the pin \
-             above proves nothing: {names:?}"
+            source.contains(marker),
+            "the planted tree must be a root the machine resolves: {source}"
         );
     }
 
@@ -1154,6 +1118,7 @@ error("boom")
             None,
             None,
             fixture_paths(),
+            crate::test_support::repo_runtime_roots(),
         )
         .await
         .expect("fail-open boot");
@@ -1167,6 +1132,7 @@ error("boom")
             None,
             None,
             fixture_paths(),
+            crate::test_support::repo_runtime_roots(),
         )
         .await
         .expect("clean boot");
