@@ -49,15 +49,18 @@ async function commentBox(page: Page, file: Locator, line: number): Promise<Loca
 
 test('the fold of unchanged lines is a label between two hairlines', async ({ page }) => {
   const file = await openDiff(page);
-  const fold = await file.locator('.cm-collapsedLines').first().evaluate((el) => {
-    const own = getComputedStyle(el);
-    const before = getComputedStyle(el, '::before');
-    const after = getComputedStyle(el, '::after');
-    return {
-      background: own.backgroundColor,
-      rules: [before, after].map((s) => ({ content: s.content, height: s.height })),
-    };
-  });
+  const fold = await file
+    .locator('.cm-collapsedLines')
+    .first()
+    .evaluate((el) => {
+      const own = getComputedStyle(el);
+      const before = getComputedStyle(el, '::before');
+      const after = getComputedStyle(el, '::after');
+      return {
+        background: own.backgroundColor,
+        rules: [before, after].map((s) => ({ content: s.content, height: s.height })),
+      };
+    });
   expect(fold.background).toBe('rgba(0, 0, 0, 0)');
   expect(fold.rules).toEqual([
     { content: '""', height: '1px' },

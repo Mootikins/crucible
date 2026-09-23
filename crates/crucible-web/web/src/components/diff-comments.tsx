@@ -11,6 +11,12 @@
  * line, each with a Resolve button and, where the pane has a chat, an Attach
  * button that puts the comment back in the composer.
  *
+ * A drag over the text opens the same box. CodeMirror selects the text, and
+ * the drag takes the whole lines of its two ends. The browser selection hides
+ * during the drag, so only the tint shows the range. A drag that ends with no
+ * comment leaves the text selected, so the user can copy it: a click selects
+ * nothing and opens no box, and Cancel shows the selection again.
+ *
  * A removed row of the unified view has no line of its own in the editor. The
  * gutter numbers it with its line in the base text, as a patch does. A base
  * number does not take a comment, because the unified view comments on the
@@ -67,7 +73,7 @@ export interface CommentHost {
 interface CommentUi {
   /** The line under the pointer. */
   hover: number | null;
-  /** The range of a drag that has not ended. */
+  /** The rows of a drag that has not ended. See `dragSpan`. */
   drag: { anchor: number; head: number } | null;
   /** The range of the open comment box. */
   draft: LineSpan | null;
@@ -95,13 +101,25 @@ const uiField = StateField.define<CommentUi>({
   },
 });
 
+/**
+ * The lines of a drag from the row `anchor` to the row `head`.
+ *
+ * A row is a line number, or `n - 0.5` for a removed row of the chunk above
+ * line `n`. A comment takes whole lines of the current side, and the chunk is
+ * in the range only when the lines on both sides of it are. So a removed row
+ * at the top end of a drag takes the line above its chunk, and at the bottom
+ * end the line under it.
+ */
+export function dragSpan(anchor: number, head: number): LineSpan {
+  return {
+    first: Math.max(1, Math.floor(Math.min(anchor, head))),
+    last: Math.ceil(Math.max(anchor, head)),
+  };
+}
+
 /** The lines that show as selected: the drag, or else the open box. */
 function selected(ui: CommentUi): LineSpan | null {
-  if (ui.drag) {
-    const { anchor, head } = ui.drag;
-    return { first: Math.min(anchor, head), last: Math.max(anchor, head) };
-  }
-  return ui.draft;
+  return ui.drag ? dragSpan(ui.drag.anchor, ui.drag.head) : ui.draft;
 }
 
 /** "Line 5" or "Lines 5-7". */
@@ -263,6 +281,50 @@ function lineOf(event: Event): number | null {
   const target = event.target as Element | null;
   const el = target?.closest?.('[data-line]') as HTMLElement | null;
   return el ? Number(el.dataset.line) : null;
+}
+
+/**
+ * The row of the text under an event: a line, or a removed row as
+ * `n - 0.5` (see `dragSpan`). A wrapped line is one element, so all of it is
+ * one row. Null outside the rows of this editor, for example over a comment.
+ */
+function rowAt(view: EditorView, target: EventTarget | null): number | null {
+  const el = (target as Element | null)?.closest?.('.cm-line, .cm-deletedChunk');
+  if (!el || !view.contentDOM.contains(el)) return null;
+  const line = view.state.doc.lineAt(view.posAtDOM(el)).number;
+  return el.classList.contains('cm-deletedChunk') ? line - 0.5 : line;
+}
+
+/**
+ * A press on the text. CodeMirror selects the text as the pointer moves, and
+ * the drag follows the rows. A press while a box is open selects text only,
+ * so that the text of the box is safe.
+ */
+function startTextDrag(view: EditorView, event: MouseEvent): boolean {
+  const ui = view.state.field(uiField);
+  const anchor = rowAt(view, event.target);
+  if (event.button !== 0 || anchor === null || ui.drag || ui.draft) return false;
+  const move = (e: MouseEvent) => {
+    // A click selects nothing, so it is no drag.
+    if (view.state.selection.main.empty) return;
+    const drag = view.state.field(uiField).drag;
+    // Over a line number, the gutter moves the head itself.
+    const head = rowAt(view, e.target) ?? drag?.head ?? anchor;
+    if (drag?.head !== head) view.dispatch({ effects: setDrag.of({ anchor, head }) });
+  };
+  const release = (e: MouseEvent) => {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', release);
+    if (!view.dom.isConnected) return;
+    move(e);
+    endDrag(view);
+  };
+  // On the window, not the document: the listeners of CodeMirror on the
+  // document then select first, and the test of the selection above is current.
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', release);
+  // CodeMirror must still take the press, to select the text.
+  return false;
 }
 
 /** Ends a drag: the range becomes the range of the comment box. */
@@ -469,6 +531,18 @@ class BoxWidget extends WidgetType {
     const card = block.appendChild(document.createElement('div'));
     card.className = 'cm-diff-comment-box';
     const close = () => view.dispatch({ effects: setDraft.of(null) });
+    // The text field takes the focus after the mount, and the editor then
+    // moves its selection into the box. The selection of a text drag is
+    // still here, so the box keeps it. Cancel gives it back to the browser,
+    // so that the text is selected for a copy.
+    const kept = view.state.selection.main;
+    const cancel = () => {
+      close();
+      if (kept.empty) return;
+      const from = view.domAtPos(kept.anchor);
+      const to = view.domAtPos(kept.head);
+      document.getSelection()?.setBaseAndExtent(from.node, from.offset, to.node, to.offset);
+    };
     const dispose = render(
       () => (
         <CommentBox
@@ -478,7 +552,7 @@ class BoxWidget extends WidgetType {
             close();
           }}
           hasChat={this.host.chat() !== null}
-          onCancel={close}
+          onCancel={cancel}
         />
       ),
       card,
@@ -537,6 +611,11 @@ function decorations(state: EditorState, host: CommentHost): DecorationSet {
 const tint = (alpha: number) => `rgba(var(--cru-color-callout-info), ${alpha})`;
 
 const commentTheme = EditorView.theme({
+  // During a drag, only the tint shows the range. The selection is on whole
+  // lines, and the text of the browser selection is not.
+  '&.cm-diff-dragging .cm-content ::selection, &.cm-diff-dragging .cm-content::selection': {
+    background: 'transparent',
+  },
   '.cm-diff-lines .cm-gutterElement': { cursor: 'pointer', userSelect: 'none' },
   // The `+` hangs out of the gutter, so the gutter must not clip it.
   '.cm-gutter.cm-diff-lines': { overflow: 'visible' },
@@ -623,6 +702,10 @@ export function commentExtensions(host: CommentHost): Extension[] {
   return [
     uiField,
     lineGutter,
+    EditorView.domEventHandlers({ mousedown: (event, view) => startTextDrag(view, event) }),
+    EditorView.editorAttributes.compute([uiField], (state) => ({
+      class: state.field(uiField).drag ? 'cm-diff-dragging' : '',
+    })),
     EditorView.decorations.compute([uiField], (state) => decorations(state, host)),
     commentTheme,
   ];
