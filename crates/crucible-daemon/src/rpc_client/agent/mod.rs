@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crucible_core::interaction::InteractionEvent;
+use crucible_core::interaction::{InteractionEvent, InteractionRequest};
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{ChatError, ChatResult};
 use std::path::PathBuf;
@@ -94,13 +94,29 @@ impl DaemonAgentHandle {
         session_id: String,
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> Self {
+        Self::new_with_pending(client, session_id, event_rx, Vec::new())
+    }
+
+    fn new_with_pending(
+        client: Arc<DaemonClient>,
+        session_id: String,
+        event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+        pending: Vec<InteractionEvent>,
+    ) -> Self {
         let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
         let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
 
         let event_router_task = tokio::spawn(async move {
-            convert::event_router(event_rx, streaming_tx, interaction_tx, None, session_id_rx)
-                .await;
+            convert::event_router(
+                event_rx,
+                streaming_tx,
+                interaction_tx,
+                None,
+                session_id_rx,
+                pending,
+            )
+            .await;
         });
 
         Self::new_base(
@@ -129,7 +145,9 @@ impl DaemonAgentHandle {
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> ChatResult<Self> {
         Self::subscribe(&client, &session_id).await?;
-        let mut handle = Self::new(client.clone(), session_id.clone(), event_rx);
+        let pending = Self::fetch_pending(&client, &session_id).await;
+        let mut handle =
+            Self::new_with_pending(client.clone(), session_id.clone(), event_rx, pending);
         handle.fetch_cached_values(&client, &session_id).await;
         Ok(handle)
     }
@@ -148,6 +166,7 @@ impl DaemonAgentHandle {
         event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     ) -> ChatResult<Self> {
         Self::subscribe(&client, &session_id).await?;
+        let pending = Self::fetch_pending(&client, &session_id).await;
 
         let (streaming_tx, streaming_rx) = mpsc::unbounded_channel();
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
@@ -161,6 +180,7 @@ impl DaemonAgentHandle {
                 interaction_tx,
                 Some(raw_event_tx),
                 session_id_rx,
+                pending,
             )
             .await;
         });
@@ -186,6 +206,36 @@ impl DaemonAgentHandle {
             .map_err(|e| ChatError::Connection(format!("Failed to subscribe: {}", e)))?;
         tracing::info!(session_id = %session_id, "Successfully subscribed to session events");
         Ok(())
+    }
+
+    async fn fetch_pending(client: &DaemonClient, session_id: &str) -> Vec<InteractionEvent> {
+        let response = match client.session_pending_interactions().await {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(session_id = %session_id, error = %error, "Could not recover pending interactions");
+                return Vec::new();
+            }
+        };
+        Self::pending_from_response(&response, session_id)
+    }
+
+    fn pending_from_response(
+        response: &serde_json::Value,
+        session_id: &str,
+    ) -> Vec<InteractionEvent> {
+        response["pending"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry["session_id"].as_str() == Some(session_id))
+            .filter_map(|entry| {
+                Some(InteractionEvent {
+                    request_id: entry["request_id"].as_str()?.to_string(),
+                    request: serde_json::from_value::<InteractionRequest>(entry["request"].clone())
+                        .ok()?,
+                })
+            })
+            .collect()
     }
 
     /// Fetch initial cached values from daemon (best-effort, default to None on failure).
@@ -240,5 +290,53 @@ impl Drop for DaemonAgentHandle {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::interaction::{AskRequest, InteractionRequest};
+
+    #[tokio::test]
+    async fn pending_snapshot_reaches_the_tui_interaction_channel_once() {
+        let request = InteractionRequest::Ask(AskRequest::new("Which branch?"));
+        let response = serde_json::json!({"pending": [
+            {"session_id": "other", "request_id": "other-id", "request": request},
+            {"session_id": "wanted", "request_id": "ask-id", "request": request},
+        ]});
+        let pending = DaemonAgentHandle::pending_from_response(&response, "wanted");
+        assert_eq!(pending.len(), 1);
+
+        let (source_tx, event_rx) = mpsc::unbounded_channel();
+        let (stream_tx, _stream_rx) = mpsc::unbounded_channel();
+        let (interaction_tx, mut interaction_rx) = mpsc::unbounded_channel();
+        let (session_id_tx, session_id_rx) = tokio::sync::watch::channel("wanted".to_string());
+        let router = tokio::spawn(convert::event_router(
+            event_rx,
+            stream_tx,
+            interaction_tx,
+            None,
+            session_id_rx,
+            pending,
+        ));
+        let recovered = interaction_rx.recv().await.unwrap();
+        assert_eq!(recovered.request_id, "ask-id");
+        assert!(matches!(recovered.request, InteractionRequest::Ask(_)));
+
+        source_tx
+            .send(SessionEvent::new(
+                "wanted",
+                "interaction_requested",
+                serde_json::json!({"request_id": "ask-id", "request": request}),
+            ))
+            .unwrap();
+        drop(source_tx);
+        drop(session_id_tx);
+        router.await.unwrap();
+        assert!(
+            interaction_rx.try_recv().is_err(),
+            "the subscribe race must not open a second modal"
+        );
     }
 }

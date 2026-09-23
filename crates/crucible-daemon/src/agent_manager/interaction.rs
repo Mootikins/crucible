@@ -42,16 +42,14 @@ impl AgentManager {
     /// unrelated questions must not queue behind each other, and a plugin that
     /// asks from inside a permission handler would deadlock against it.
     ///
-    /// Returns [`InteractionResponse::Cancelled`] on timeout or on a dropped
-    /// sender. Both mean "nobody answered", and collapsing them is deliberate:
-    /// a caller that must tell them apart is asking the wrong question of a
-    /// UI that may have no user in front of it at all.
+    /// Returns [`InteractionResponse::Cancelled`] if the sender is dropped.
+    /// A prompt remains registered when no client is attached, so a later
+    /// attachment can fetch and answer it.
     pub async fn request_interaction(
         &self,
         session_id: &str,
         request: InteractionRequest,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-        timeout: std::time::Duration,
     ) -> Result<InteractionResponse, AgentError> {
         // Existence is checked before the id is minted so a bad session id is
         // an error rather than a request nothing will ever answer.
@@ -72,35 +70,21 @@ impl AgentManager {
             event_tx,
             SessionEventMessage::interaction_requested(session_id, &request_id, &request),
         ) {
-            // No client is listening, so nothing will ever answer. Reap the
-            // registration now instead of parking for the full timeout on a
-            // question nobody was shown.
-            slot.take_interaction(&request_id);
             debug!(
                 session_id = %session_id,
                 request_id = %request_id,
-                "no subscribers for interaction_requested; cancelling immediately"
+                "no subscribers for interaction_requested; waiting for attachment"
             );
-            return Ok(InteractionResponse::Cancelled);
         }
 
-        match tokio::time::timeout(timeout, response_rx).await {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(_)) => {
-                slot.take_interaction(&request_id);
-                debug!(
-                    session_id = %session_id,
-                    request_id = %request_id,
-                    "interaction channel closed before response"
-                );
-                Ok(InteractionResponse::Cancelled)
-            }
+        match response_rx.await {
+            Ok(response) => Ok(response),
             Err(_) => {
                 slot.take_interaction(&request_id);
                 debug!(
                     session_id = %session_id,
                     request_id = %request_id,
-                    "interaction request timed out"
+                    "interaction channel closed before response"
                 );
                 Ok(InteractionResponse::Cancelled)
             }

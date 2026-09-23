@@ -610,7 +610,7 @@ impl SessionManager {
         self.sessions.insert(session.id.clone(), session);
     }
 
-    /// Change the live session under its persist guard, then persist it.
+    /// Change a session under its persist guard, then persist it.
     ///
     /// `change` returns whether it changed anything; `false` skips the write
     /// and returns `None`. The change reads the live entry after the guard is
@@ -627,7 +627,8 @@ impl SessionManager {
     ) -> Result<Option<Session>, SessionError> {
         let _guard = self.persist_guard(session_id).await;
         let mut session = self
-            .get_session(session_id)
+            .read_session(session_id)
+            .await?
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
         if !change(&mut session) {
             return Ok(None);

@@ -27,7 +27,15 @@ pub(super) async fn event_router(
     interaction_tx: mpsc::UnboundedSender<InteractionEvent>,
     raw_event_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
     session_id_rx: tokio::sync::watch::Receiver<String>,
+    pending: Vec<InteractionEvent>,
 ) {
+    let mut seen = std::collections::HashSet::new();
+    for interaction in pending {
+        seen.insert(interaction.request_id.clone());
+        if interaction_tx.send(interaction).is_err() {
+            return;
+        }
+    }
     while let Some(event) = event_rx.recv().await {
         let current_session_id = session_id_rx.borrow().clone();
         if event.session_id != current_session_id {
@@ -49,6 +57,9 @@ pub(super) async fn event_router(
                     request_id,
                     request,
                 })) => {
+                    if seen.contains(&request_id) {
+                        continue;
+                    }
                     let interaction_event = InteractionEvent {
                         request_id: request_id.clone(),
                         request,

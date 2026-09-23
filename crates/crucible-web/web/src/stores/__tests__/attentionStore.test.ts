@@ -95,7 +95,7 @@ describe('attentionStore', () => {
 });
 
 describe('attentionStore — daemon aggregate (refresh)', () => {
-  it('surfaces polled pending interactions for sessions without a tab', async () => {
+  it('surfaces pending interactions for sessions without a tab', async () => {
     pending = [{ session_id: 's-remote', request_id: 'r1', request: { ...perm, id: 'r1' } }];
     await attentionActions.refresh();
 
@@ -106,7 +106,7 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
     });
   });
 
-  it('local (open tab) state shadows the polled entry for the same session', async () => {
+  it('local (open tab) state shadows the aggregate entry for the same session', async () => {
     pending = [
       { session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } },
       { session_id: 's2', request_id: 'r2', request: { ...perm, id: 'r2' } },
@@ -123,8 +123,8 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
     });
   });
 
-  it('resolving from the Inbox never shadows future polled pendings (no local tombstone)', async () => {
-    // First pending arrives via poll, answered from the Inbox.
+  it('resolving from the Inbox never shadows future pending requests (no local tombstone)', async () => {
+    // First pending arrives via aggregate read, answered from the Inbox.
     pending = [{ session_id: 's1', request_id: 'r1', request: { ...perm, id: 'r1' } }];
     await attentionActions.refresh();
     expect(attentionStore.attentionCount()).toBe(1);
@@ -151,7 +151,7 @@ describe('attentionStore — daemon aggregate (refresh)', () => {
 });
 
 describe('attentionStore — the shared aggregate', () => {
-  it('mirrors the shared list while polling runs, and stops with it', async () => {
+  it('mirrors the shared list while observed, and stops with it', async () => {
     // `startPolling` mounts an observer of `usePendingInteractions()`; the
     // interval, the visibility refetch and the invalidation the chat stream
     // triggers all belong to that query. An invalidation stands for all three

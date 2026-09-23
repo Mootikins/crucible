@@ -112,41 +112,6 @@ async fn options_reach_the_daemon_unaltered() {
 }
 
 #[tokio::test]
-async fn the_default_timeout_matches_the_permission_prompt() {
-    let api = Arc::new(MockDaemonApi::new());
-    let lua = lua_with(Arc::clone(&api));
-    lua.load(r#"cru.ui.ask("s1", { question = "q" })"#)
-        .exec_async()
-        .await
-        .unwrap();
-    assert_eq!(api.interaction_calls()[0].2, 300);
-}
-
-#[tokio::test]
-async fn a_timeout_option_overrides_the_default() {
-    let api = Arc::new(MockDaemonApi::new());
-    let lua = lua_with(Arc::clone(&api));
-    lua.load(r#"cru.ui.ask("s1", { question = "q", timeout = 5 })"#)
-        .exec_async()
-        .await
-        .unwrap();
-    assert_eq!(api.interaction_calls()[0].2, 5);
-}
-
-/// Zero would mean "give up before asking", which no caller means; it falls
-/// back rather than producing a request nobody can answer.
-#[tokio::test]
-async fn a_zero_timeout_falls_back_to_the_default() {
-    let api = Arc::new(MockDaemonApi::new());
-    let lua = lua_with(Arc::clone(&api));
-    lua.load(r#"cru.ui.ask("s1", { question = "q", timeout = 0 })"#)
-        .exec_async()
-        .await
-        .unwrap();
-    assert_eq!(api.interaction_calls()[0].2, 300);
-}
-
-#[tokio::test]
 async fn the_response_arrives_as_a_lua_table() {
     let api = Arc::new(MockDaemonApi::new());
     api.set_interaction_answer(json!({ "kind": "ask", "selected": [1] }));

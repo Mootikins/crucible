@@ -156,6 +156,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** all 7 InteractionRequest variants render; Esc cancels with a cancelled response; selection posts the right payload.
 **Tests:** T1 (all variants — exists), T2 (snapshots), T3 (interaction fixture — extend).
 
+### US-405: Recover a waiting prompt on attach
+**As a user**, when I open a session whose agent is waiting for an answer, the prompt appears before I type a new turn, even if it was raised more than five minutes ago.
+**Acceptance:** session attach subscribes, fetches pending interactions, routes this session's requests to the modal channel, and ignores a duplicate live event from the subscribe race. A prompt stays available until answered or cancelled.
+**Tests:** T1 (`rpc_client::agent::tests::pending_snapshot_reaches_the_tui_interaction_channel_once` and daemon prompt wait tests); T2 (`user_story_tests/permission_tests.rs::permission_modal_opens_and_shows_command` renders and answers the recovered channel's event shape).
+
 ### US-403: Diff preview
 **As a user**, file-op permissions show syntax-highlighted line/word diffs, side-by-side when wide, unified when narrow.
 **Acceptance:** create/delete/edit render distinctly; oversize falls back with a truncation footer; `:set perm.show_diff` controls initial visibility.

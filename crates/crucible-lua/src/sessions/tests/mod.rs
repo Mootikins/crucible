@@ -43,8 +43,8 @@ pub(super) struct MockDaemonApi {
     title_calls: StdMutex<Vec<(String, String)>>,
     /// What the next `set_mode` refuses with, if anything.
     mode_refusal: StdMutex<Option<String>>,
-    /// Every `request_interaction` call, as `(session_id, request, timeout)`.
-    interaction_calls: StdMutex<Vec<(String, serde_json::Value, u64)>>,
+    /// Every `request_interaction` call, as `(session_id, request)`.
+    interaction_calls: StdMutex<Vec<(String, serde_json::Value)>>,
     /// What the next `request_interaction` resolves to. Defaults to
     /// `{"kind":"cancelled"}` — the no-answer case, which is what a mock with
     /// no client attached honestly is.
@@ -120,7 +120,7 @@ impl MockDaemonApi {
     }
 
     /// Every `request_interaction` call this mock saw.
-    pub(super) fn interaction_calls(&self) -> Vec<(String, serde_json::Value, u64)> {
+    pub(super) fn interaction_calls(&self) -> Vec<(String, serde_json::Value)> {
         self.interaction_calls.lock().unwrap().clone()
     }
 
@@ -270,12 +270,11 @@ impl DaemonSessionApi for MockDaemonApi {
         &self,
         session_id: String,
         request: serde_json::Value,
-        timeout_secs: u64,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
         self.interaction_calls
             .lock()
             .unwrap()
-            .push((session_id, request, timeout_secs));
+            .push((session_id, request));
         let answer = self
             .interaction_answer
             .lock()

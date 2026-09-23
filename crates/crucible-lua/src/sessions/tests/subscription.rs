@@ -174,7 +174,6 @@ impl DaemonSessionApi for AsyncMockDaemonApi {
         &self,
         _: String,
         _: serde_json::Value,
-        _: u64,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
         unimplemented!()
     }

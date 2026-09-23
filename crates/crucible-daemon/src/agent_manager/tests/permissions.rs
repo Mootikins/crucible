@@ -1331,6 +1331,51 @@ mod plugin_permission_tests {
     use super::*;
     use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest};
 
+    #[tokio::test(start_paused = true)]
+    async fn a_prompt_waits_for_a_later_attached_client() {
+        let session_manager = temp_session_manager();
+        let session = crucible_core::session::Session::new(
+            crucible_core::session::SessionType::Chat,
+            Vec::new(),
+        );
+        let session_id = session.id.to_string();
+        session_manager.register_transient(session);
+        let am = Arc::new(create_test_agent_manager(session_manager));
+        let (event_tx, unsubscribed) = broadcast::channel(16);
+        drop(unsubscribed);
+        let asked = tokio::spawn({
+            let am = Arc::clone(&am);
+            let sid = session_id.clone();
+            async move {
+                am.request_interaction(
+                    &sid,
+                    InteractionRequest::Permission(PermRequest::bash(["ls"])),
+                    &event_tx,
+                )
+                .await
+            }
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(std::time::Duration::from_secs(301)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !asked.is_finished(),
+            "an unanswered prompt must stay pending"
+        );
+        let pending = am.list_all_pending_interactions();
+        assert_eq!(pending.len(), 1);
+        am.respond_to_interaction(
+            &session_id,
+            &pending[0].1,
+            InteractionResponse::Permission(PermResponse::allow()),
+        )
+        .unwrap();
+        assert!(matches!(
+            asked.await.unwrap().unwrap(),
+            InteractionResponse::Permission(response) if response.allowed
+        ));
+    }
+
     #[tokio::test]
     async fn a_plugin_permission_request_can_actually_be_answered() {
         let session_manager = temp_session_manager();
@@ -1350,10 +1395,7 @@ mod plugin_permission_tests {
         let asked = tokio::spawn({
             let am = Arc::clone(&am);
             let sid = session_id.clone();
-            async move {
-                am.request_interaction(&sid, request, &event_tx, std::time::Duration::from_secs(5))
-                    .await
-            }
+            async move { am.request_interaction(&sid, request, &event_tx).await }
         });
 
         // Take the id off the wire exactly as a client would.

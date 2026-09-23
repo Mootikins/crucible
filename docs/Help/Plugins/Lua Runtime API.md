@@ -925,11 +925,9 @@ The options table is the variant's own fields, passed through unchanged. A `kind
 
 ### Always handle `cancelled`
 
-A response of `{ kind = "cancelled" }` is a **successful** call that nobody answered. It happens when no client is attached, when the user dismisses the modal, and when the timeout elapses. On a headless daemon it is the common case, not the exception. It is a value to inspect, never an error to `pcall` around.
+A response of `{ kind = "cancelled" }` is a **successful** call: the user dismissed the modal or the request was cancelled. It is a value to inspect, never an error to `pcall` around.
 
-### Timeout
-
-`opts.timeout` is seconds to wait, default `300` — the same wait the permission prompt uses. A `timeout` of `0` falls back to the default rather than giving up before asking. The key is consumed by the binding and never reaches the request.
+A prompt waits without a time limit, including when no client is attached. A client that attaches later fetches pending prompts and can answer them.
 
 ### Which client answers
 

@@ -222,16 +222,13 @@ async fn a_resume_fallback_replaces_the_stale_stored_id_with_the_new_one() {
         .expect("configure the ACP agent");
 
     // A previous handle stored an id that the agent no longer knows.
-    let mut stored = session_manager
-        .get_session(&session.id)
-        .expect("the session exists");
-    stored.acp_session_id = Some("stale".to_string());
     session_manager
-        .storage()
-        .save(&stored)
+        .modify_session(&session.id, |stored| {
+            stored.acp_session_id = Some("stale".to_string());
+            true
+        })
         .await
         .expect("store the stale id");
-    session_manager.register_transient(stored);
 
     let (_id, done) = first
         .send_message_notified(&session.id, "first".to_string(), &event_tx, true, None)

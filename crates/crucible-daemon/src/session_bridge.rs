@@ -457,7 +457,6 @@ impl DaemonSessionApi for DaemonSessionBridge {
         &self,
         session_id: String,
         request: serde_json::Value,
-        timeout_secs: u64,
     ) -> BoxFut<serde_json::Value> {
         bridge_async!(
             self.agent_manager,
@@ -466,17 +465,12 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 // Decoded here rather than passed through as JSON so a
                 // malformed request fails at the plugin's call site with the
                 // serde path in the message, instead of reaching a client that
-                // cannot render it and timing out 300 s later.
+                // cannot render it and leaving a prompt nobody can answer.
                 let request: crucible_core::interaction::InteractionRequest =
                     serde_json::from_value(request)
                         .map_err(|e| format!("Invalid interaction request: {e}"))?;
                 let response = am
-                    .request_interaction(
-                        &session_id,
-                        request,
-                        &event_tx,
-                        std::time::Duration::from_secs(timeout_secs),
-                    )
+                    .request_interaction(&session_id, request, &event_tx)
                     .await
                     .map_err(|e| e.to_string())?;
                 serde_json::to_value(response)

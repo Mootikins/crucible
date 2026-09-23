@@ -58,9 +58,9 @@ function inRoot<T>(body: () => T): T {
 }
 
 describe('usePendingInteractions', () => {
-  it('is polled by the store and read by the panes from one request', async () => {
+  it('shares the initial aggregate read between readers', async () => {
     // The badge, the inbox and every chat pane asked the daemon for this
-    // aggregate. The store polled it; the panes each read it again on bind.
+    // aggregate. The store and Inbox share the initial answer.
     env = createTestQueryEnv({ [PENDING]: () => body([entry('s-1', 'r-1')]) });
 
     const readers = inRoot(() => ({
@@ -73,9 +73,7 @@ describe('usePendingInteractions', () => {
     expect(env.fetch.calls(PENDING)).toBe(1);
   });
 
-  it('asks again on its own every ten seconds', async () => {
-    // The fallback the stream cannot cover: a session with no open pane
-    // raises a request on a stream nothing is subscribed to.
+  it('does not poll after its initial read', async () => {
     vi.useFakeTimers();
     env = createTestQueryEnv({ [PENDING]: () => body([]) });
 
@@ -84,7 +82,7 @@ describe('usePendingInteractions', () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
 
-    await vi.waitFor(() => expect(env.fetch.calls(PENDING)).toBe(2));
+    expect(env.fetch.calls(PENDING)).toBe(1);
   });
 
   it('asks again when the stream says a request was raised', async () => {
@@ -108,22 +106,24 @@ describe('usePendingInteractions', () => {
     stop();
   });
 
-  it('answers a binding pane from the held list, without a second request', async () => {
-    env = createTestQueryEnv({ [PENDING]: () => body([entry('s-1', 'r-1')]) });
+  it('refreshes a binding pane even when the held list is stale', async () => {
+    let requestId = 'r-1';
+    env = createTestQueryEnv({ [PENDING]: () => body([entry('s-1', requestId)]) });
 
     const query = inRoot(() => usePendingInteractions());
     await vi.waitFor(() => expect(query.data).toHaveLength(1));
 
+    requestId = 'r-2';
     const held = await fetchPendingInteractionsOnce();
 
-    expect(held.map((e) => e.request_id)).toEqual(['r-1']);
-    expect(env.fetch.calls(PENDING)).toBe(1);
+    expect(held.map((e) => e.request_id)).toEqual(['r-2']);
+    expect(env.fetch.calls(PENDING)).toBe(2);
   });
 });
 
 describe('useRespondToInteraction', () => {
   it('takes the answered request out of the pending list at once', async () => {
-    // The daemon's aggregate lags the answer by up to one poll, so a list
+    // The daemon's aggregate can briefly lag the answer, so a list
     // that waited for a refetch would keep showing a card that is answered —
     // and the pane that read it would raise the card again on its next bind.
     env = createTestQueryEnv({

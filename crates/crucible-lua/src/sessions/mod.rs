@@ -261,13 +261,11 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// definition to keep in step.
     ///
     /// Resolves to a serialized `InteractionResponse`. `{"kind":"cancelled"}`
-    /// means nobody answered — no client attached, the user dismissed it, or
-    /// `timeout_secs` elapsed.
+    /// means the user dismissed it or the request was cancelled.
     fn request_interaction(
         &self,
         session_id: String,
         request: serde_json::Value,
-        timeout_secs: u64,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// Respond to a permission/interaction request.

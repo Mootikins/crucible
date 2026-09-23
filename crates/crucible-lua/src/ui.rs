@@ -4,7 +4,7 @@
 //! the daemon, and parks until a client answers. The seven variants are the
 //! closed set the TUI and the web both render; this module adds no eighth
 //! shape of its own, because a request no client knows how to draw is a
-//! plugin hanging until its timeout.
+//! plugin waiting for an answer the client cannot give.
 //!
 //! ## Why this is not `cru.session.ask`
 //!
@@ -26,8 +26,7 @@
 //!
 //! Every function returns `(response, nil)` or `(nil, err)`. A response of
 //! `{ kind = "cancelled" }` is a *successful* call that nobody answered —
-//! no client attached, the user dismissed the modal, or the timeout elapsed.
-//! Plugins must handle it; it is the common case on a headless daemon.
+//! the user dismissed the modal or the request was cancelled.
 
 use crate::error::LuaError;
 use crate::host_registry::Ns;
@@ -35,13 +34,6 @@ use crate::lua_util::gate_module_keys;
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
-
-/// Default seconds to wait for an answer.
-///
-/// Matches the permission prompt's 300 s rather than picking a second number:
-/// both are "a human is expected to look at a modal", and two different
-/// answers to that question is one more than the tree needs.
-const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
 /// The `InteractionRequest` variants, by their serde tag.
 ///
@@ -77,18 +69,6 @@ fn request_json(kind: &str, opts: Value) -> Result<serde_json::Value, mlua::Erro
     Ok(value)
 }
 
-/// Seconds to wait, from an options table's `timeout` key.
-fn timeout_from(opts: &Value) -> u64 {
-    let Value::Table(t) = opts else {
-        return DEFAULT_TIMEOUT_SECS;
-    };
-    t.get::<Option<u64>>("timeout")
-        .ok()
-        .flatten()
-        .filter(|secs| *secs > 0)
-        .unwrap_or(DEFAULT_TIMEOUT_SECS)
-}
-
 /// One entry of a popup or a panel: `crucible_core::types::PopupEntry`, which
 /// `PanelItem` is an alias of.
 const ENTRY: &str = "{ label: string, description: string?, data: any? }";
@@ -96,14 +76,11 @@ const ENTRY: &str = "{ label: string, description: string?, data: any? }";
 /// The Luau type of `cru.ui.<kind>`, or `None` for a kind nobody wrote one
 /// for.
 ///
-/// The options table is the variant's own body from `crucible_core`, plus
-/// `timeout`. It is passed straight through to serde (`request_json` stamps
+/// The options table is the variant's own body from `crucible_core`.
+/// It is passed straight through to serde (`request_json` stamps
 /// only `kind` on it), so a field this list does not name is a field the
 /// daemon rejects — which is why each shape is read off the struct rather
 /// than widened to `table`.
-///
-/// `timeout` is in SECONDS, and the key cannot say so without changing what
-/// `timeout_from` reads. Zero and absent both mean [`DEFAULT_TIMEOUT_SECS`].
 ///
 /// Every payload field of a RESPONSE is optional, including the ones that are
 /// required on the Rust struct: `{ kind = "cancelled" }` is a successful
@@ -113,7 +90,7 @@ fn declaration(kind: &str) -> Option<String> {
     let (options, response) = match kind {
         "ask" => (
             "{ question: string, choices: { string }?, multi_select: boolean?, \
-             allow_other: boolean?, timeout: number? }"
+             allow_other: boolean? }"
                 .to_string(),
             "{ kind: string, selected: { number }?, other: string? }".to_string(),
         ),
@@ -121,8 +98,7 @@ fn declaration(kind: &str) -> Option<String> {
             // `id` is a uuid the host mints when it is absent; `choices` is
             // required on `AskQuestion`, unlike `AskRequest`'s.
             "{ questions: { { header: string, question: string, choices: { string }, \
-             multi_select: boolean?, allow_other: boolean? } }, id: string?, \
-             timeout: number? }"
+             multi_select: boolean?, allow_other: boolean? } }, id: string? }"
                 .to_string(),
             "{ kind: string, id: string?, \
              answers: { { selected: { number }?, other: string? } }?, \
@@ -132,14 +108,14 @@ fn declaration(kind: &str) -> Option<String> {
         "edit" => (
             // `format` is `ArtifactFormat`: markdown (the default), code,
             // json or plain.
-            "{ content: string, format: string?, hint: string?, timeout: number? }".to_string(),
+            "{ content: string, format: string?, hint: string? }".to_string(),
             "{ kind: string, modified: string? }".to_string(),
         ),
         // A `show` has no response variant of its own — nothing to answer
         // with — so every answer is `{ kind = "cancelled" }`. The plugin
-        // waits for the client to dismiss it, or for the timeout.
+        // waits for the client to dismiss it.
         "show" => (
-            "{ content: string, format: string?, title: string?, timeout: number? }".to_string(),
+            "{ content: string, format: string?, title: string? }".to_string(),
             "{ kind: string }".to_string(),
         ),
         "permission" => (
@@ -147,7 +123,7 @@ fn declaration(kind: &str) -> Option<String> {
             // `tokens`, read and write carry `segments`, tool carries `name`
             // and `args`.
             "{ action: { type: string, tokens: { string }?, segments: { string }?, \
-             name: string?, args: any? }, diffs: { any }?, timeout: number? }"
+             name: string?, args: any? }, diffs: { any }? }"
                 .to_string(),
             // `scope` is `PermissionScope`: once (the default), session,
             // project or user.
@@ -156,10 +132,7 @@ fn declaration(kind: &str) -> Option<String> {
                 .to_string(),
         ),
         "popup" => (
-            format!(
-                "{{ title: string, entries: {{ {ENTRY} }}?, allow_other: boolean?, \
-                 timeout: number? }}"
-            ),
+            format!("{{ title: string, entries: {{ {ENTRY} }}?, allow_other: boolean? }}"),
             format!(
                 "{{ kind: string, selected_index: number?, selected_entry: {ENTRY}?, \
                  other: string? }}"
@@ -170,7 +143,7 @@ fn declaration(kind: &str) -> Option<String> {
                 "{{ header: string, items: {{ {ENTRY} }}?, \
                  hints: {{ filterable: boolean?, multi_select: boolean?, \
                  allow_other: boolean?, initial_selection: {{ number }}?, \
-                 initial_filter: string? }}?, timeout: number? }}"
+                 initial_filter: string? }}? }}"
             ),
             "{ kind: string, cancelled: boolean?, selected: { number }?, other: string? }"
                 .to_string(),
@@ -241,7 +214,6 @@ pub fn register_ui_module_with_api(
             move |lua, (session_id, opts): (String, Value)| {
                 let a = Arc::clone(&a);
                 async move {
-                    let timeout = timeout_from(&opts);
                     let request = match request_json(kind, opts) {
                         Ok(r) => r,
                         Err(e) => {
@@ -249,7 +221,7 @@ pub fn register_ui_module_with_api(
                             return Ok((Value::Nil, Value::String(err)));
                         }
                     };
-                    match a.request_interaction(session_id, request, timeout).await {
+                    match a.request_interaction(session_id, request).await {
                         Ok(response) => Ok((lua.to_value(&response)?, Value::Nil)),
                         Err(e) => {
                             let err = lua.create_string(&e)?;

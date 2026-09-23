@@ -536,7 +536,7 @@ impl SessionSlot {
     /// The teardown that matters on cancel: each dropped sender makes its
     /// receiver `Err` at once, releasing the caller parked in `prompt_user`
     /// and the callers queued behind its prompt lock. Without it a partial
-    /// cancel leaves prompts dangling for the full 300 s timeout.
+    /// cancel leaves prompts dangling.
     pub(crate) fn drop_permissions(&self) -> usize {
         let mut permissions = self.lock_permissions();
         let count = permissions.len();

@@ -14,21 +14,10 @@ import { keys } from './keys';
  * Every request the daemon is holding for a human, across sessions, and the
  * answer that clears one.
  *
- * Three readers asked for this aggregate separately: `attentionStore` polled
- * it every ten seconds for the header badge, the inbox drew the same entries,
- * and every chat pane read it once on bind to recover a request raised before
- * the page loaded. One key answers all three.
- *
- * The interval stays, at the same ten seconds, and it is a FALLBACK rather
- * than the mechanism. `lib/query/routes/session.ts` invalidates this key on
- * `interaction_requested`, so a session with an open pane raises its card at
- * once — but a session with NO open pane has no stream anyone is subscribed
- * to, and its request would otherwise reach the badge only when something
- * else happened to refetch.
+ * The header badge, Inbox, and chat panes share one aggregate. A pane reads
+ * it from the daemon on attach; the session event stream invalidates the key
+ * when a new request arrives. The query also refreshes on window focus.
  */
-
-/** The poll the store used to run by hand, kept at its own interval. */
-const POLL_INTERVAL_MS = 10_000;
 
 /** How long one answer is remembered when the daemon keeps listing it. */
 const ANSWERED_TTL_MS = 30_000;
@@ -96,8 +85,7 @@ async function fetchPending(): Promise<PendingInteractionEntry[]> {
  * `refetchOnWindowFocus` is on for this one key, against the app default: the
  * store also re-read the aggregate on `visibilitychange`, because a tab that
  * was hidden for an hour must not show an hour-old badge on the first glance.
- * The interval alone does not cover that — it does not run while the document
- * is hidden.
+ * The stream does not deliver events while the document is hidden.
  */
 export function usePendingInteractions(): UseQueryResult<PendingInteractionEntry[], Error> {
   return useQuery(
@@ -105,7 +93,6 @@ export function usePendingInteractions(): UseQueryResult<PendingInteractionEntry
       queryKey: keys.pendingInteractions(),
       queryFn: fetchPending,
       select: withoutAnswered,
-      refetchInterval: POLL_INTERVAL_MS,
       refetchOnWindowFocus: true,
     }),
     () => getQueryClient(),
@@ -118,16 +105,11 @@ export function usePendingInteractions(): UseQueryResult<PendingInteractionEntry
  * A chat pane binding to a session reads it once, to recover a request the
  * daemon raised before this page existed: the stream carries only NEW
  * requests, so without this the composer showed no card while the daemon
- * waited and every send was refused. It goes through the key the badge polls,
- * so a bind costs nothing while that answer is fresh.
+ * waited and every send was refused. A bind reads the daemon even when the
+ * aggregate has a cached answer, so an older cache cannot hide a prompt.
  */
 export function fetchPendingInteractionsOnce(): Promise<PendingInteractionEntry[]> {
-  return getQueryClient()
-    .ensureQueryData({
-      queryKey: keys.pendingInteractions(),
-      queryFn: fetchPending,
-    })
-    .then(withoutAnswered);
+  return refetchPendingInteractions();
 }
 
 /**
@@ -173,7 +155,7 @@ function dropPending(requestId: string): PendingInteractionEntry[] | undefined {
  *
  * The entry leaves the cached list at once and the list is NOT re-read
  * afterwards. That is the whole point of the patch: the daemon's aggregate
- * lags an answer by up to one poll, so a refetch here would put the answered
+ * may briefly lag an answer, so a refetch here would put the answered
  * request back — and a pane binding in that window would raise a card for a
  * request that is already answered.
  *

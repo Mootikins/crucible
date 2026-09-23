@@ -12,10 +12,8 @@ import { refetchPendingInteractions, usePendingInteractions } from '@/lib/query/
 //   session with an open tab — it also carries streaming state.
 // - `remote`: the daemon's aggregate (`GET /api/interactions/pending`,
 //   backed by session.pending_interactions), so sessions WITHOUT an open tab
-//   still raise the header badge and appear in the Inbox. The poll is no
-//   longer written here: `usePendingInteractions()` owns the request, its
-//   ten-second interval and its cache, and every other reader of that list
-//   shares them.
+//   still raise the header badge and appear in the Inbox. `usePendingInteractions()` owns the shared request and
+//   its cache; session events and window focus trigger fresh reads.
 //
 // Merge rule: a local entry shadows the remote one for the same session —
 // the subscribed tab sees interaction events the instant they happen and
@@ -60,7 +58,7 @@ function clear(sessionId: string): void {
 
 /** Mark one interaction answered (Inbox respond path). Updates whichever
  * layer holds it — never *creates* a local entry: a local tombstone with
- * `pendingInteraction: null` would permanently shadow every future polled
+ * `pendingInteraction: null` would permanently shadow every future
  * pending for that session (local shadows remote by design). */
 function resolveInteraction(sessionId: string, requestId: string): void {
   if (local[sessionId]?.pendingInteraction?.id === requestId) {
