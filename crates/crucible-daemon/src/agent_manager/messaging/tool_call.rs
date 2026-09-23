@@ -29,7 +29,7 @@ fn deny_tool_call(
     call_id: &str,
     tool_name: &str,
     error_msg: String,
-) -> Option<crucible_core::traits::chat::ChatToolResult> {
+) -> crucible_core::traits::chat::ChatToolResult {
     if !emit_event(
         &stream_ctx.event_tx,
         SessionEventMessage::tool_result(
@@ -45,9 +45,7 @@ fn deny_tool_call(
             "No subscribers for handler denied tool_result event"
         );
     }
-    Some(crucible_core::traits::chat::ChatToolResult::error(
-        tool_name, call_id, error_msg,
-    ))
+    crucible_core::traits::chat::ChatToolResult::error(tool_name, call_id, error_msg)
 }
 
 /// Whether code running under `source` may take a tool call over — return
@@ -148,12 +146,12 @@ async fn run_pre_tool_call_handlers(
                     reason = %reason,
                     "pre_tool_call handler cancelled"
                 );
-                return deny_tool_call(
+                return Some(deny_tool_call(
                     stream_ctx,
                     call_id,
                     tool_name,
                     format!("Tool blocked by cru.on handler: {}", reason),
-                );
+                ));
             }
             Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate })
                 if may_take_a_tool_call_over(lua, &handler.source) =>
@@ -236,7 +234,7 @@ async fn run_pre_tool_call_handlers(
                     error = %error,
                     "pre_tool_call handler error, denying tool (fail-closed)"
                 );
-                return deny_tool_call(
+                return Some(deny_tool_call(
                     stream_ctx,
                     call_id,
                     tool_name,
@@ -244,7 +242,7 @@ async fn run_pre_tool_call_handlers(
                         "Tool denied: pre_tool_call handler error in '{}': {error}",
                         handler.name
                     ),
-                );
+                ));
             }
         }
     }
@@ -263,7 +261,7 @@ impl AgentManager {
         tool_call: &crucible_core::traits::chat::ChatToolCall,
         diffs: Vec<FileDiff>,
         bracket: &mut Option<crate::review::CaptureHandle>,
-    ) -> Option<crucible_core::traits::chat::ChatToolResult> {
+    ) -> crucible_core::traits::chat::ChatToolResult {
         let call_id = tool_call
             .id
             .clone()
@@ -281,7 +279,7 @@ impl AgentManager {
                     unwrapped_call = inner;
                     &unwrapped_call
                 }
-                Err(result) => return Some(result),
+                Err(result) => return result,
             }
         } else {
             tool_call
@@ -461,7 +459,7 @@ impl AgentManager {
                     ),
                 );
             }
-            return Some(result);
+            return result;
         }
 
         // Default-deny for a session a plugin claimed isolation over.
@@ -527,11 +525,11 @@ impl AgentManager {
                         // Feed the SPECIFIC denial reason back to the model so
                         // it can adapt (config rule vs shell policy vs
                         // non-interactive).
-                        return Some(crucible_core::traits::chat::ChatToolResult::error(
+                        return crucible_core::traits::chat::ChatToolResult::error(
                             tool_call.name.clone(),
                             call_id.clone(),
                             deny_reason,
-                        ));
+                        );
                     }
                 }
             }
@@ -609,41 +607,18 @@ impl AgentManager {
         let hook_env_vars =
             super::tool_hooks::resolve_before_execute_env(stream_ctx, &before_event).await;
 
-        // ACP agents execute their own tools internally; Crucible only sees the
-        // tool_call / tool_result as notifications. If the tool isn't in our
-        // dispatcher, skip dispatch — the tool_call event was already emitted
-        // above (for TUI display), and the ACP ToolEnd chunk will emit the
-        // matching tool_result separately. Dispatching would produce a bogus
-        // "Unknown tool" error that the TUI would render as a failed call.
-        if !stream_ctx.tool_dispatcher.has_tool(&tool_call.name) {
-            // A tool reached via invoke_tool has no external agent to answer it
-            // — returning None would leave the model waiting for a result that
-            // never comes and stall the turn until the dispatch timeout. Return
-            // an error so the model can recover (e.g. re-run discover_tools). A
-            // genuine ACP tool (not unwrapped) still falls through to None so
-            // the external agent supplies the result.
-            match Self::missing_tool_result(was_unwrapped, &tool_call.name, &call_id) {
-                Some(result) => {
-                    emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_result(
-                            &stream_ctx.session_id,
-                            &call_id,
-                            &tool_call.name,
-                            serde_json::json!({ "error": result.error }),
-                        ),
-                    );
-                    return Some(result);
-                }
-                None => {
-                    debug!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        "Tool not in local dispatcher; leaving result to external agent"
-                    );
-                    return None;
-                }
-            }
+        // The model named a deferred tool through `invoke_tool` that does
+        // not exist. Say so, and point the model at `discover_tools`.
+        if was_unwrapped && !stream_ctx.tool_dispatcher.has_tool(&tool_call.name) {
+            return deny_tool_call(
+                stream_ctx,
+                &call_id,
+                &tool_call.name,
+                format!(
+                    "Tool not found: {}. Use discover_tools to list available tools.",
+                    tool_call.name
+                ),
+            );
         }
 
         // Most tools get the standard 30 s dispatch timeout. A blocking
@@ -781,13 +756,13 @@ impl AgentManager {
             );
         }
 
-        Some(crucible_core::traits::chat::ChatToolResult {
+        crucible_core::traits::chat::ChatToolResult {
             name: tool_call.name.clone(),
             result: result_str,
             error: error_str,
             call_id: Some(call_id),
             terminate: false,
-        })
+        }
     }
 
     /// Unwrap an `invoke_tool` bridge call into the inner `ChatToolCall`,
@@ -848,26 +823,6 @@ impl AgentManager {
             arguments: Some(inner_args),
             id: Some(call_id.to_string()),
         })
-    }
-
-    /// Decide the result for a tool the local dispatcher doesn't know. When the
-    /// call was unwrapped from `invoke_tool` (the model named a tool that isn't
-    /// available), return an error `ChatToolResult` so the turn completes rather
-    /// than hanging. Otherwise return `None` so an external ACP agent supplies
-    /// the result.
-    fn missing_tool_result(
-        was_unwrapped: bool,
-        name: &str,
-        call_id: &str,
-    ) -> Option<crucible_core::traits::chat::ChatToolResult> {
-        if !was_unwrapped {
-            return None;
-        }
-        Some(crucible_core::traits::chat::ChatToolResult::error(
-            name,
-            call_id,
-            format!("Tool not found: {name}. Use discover_tools to list available tools."),
-        ))
     }
 
     /// Spill large tool output to disk. Returns (absolute_path, filename).

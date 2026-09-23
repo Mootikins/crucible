@@ -1,6 +1,56 @@
 use super::*;
 use crate::test_support::temp_session_manager;
 
+/// A tool that the dispatcher does not know, driven through a turn.
+///
+/// The operator rule admits the name, so the call passes the gate and reaches
+/// the dispatcher. Return the `tool_result` payload that the model reads.
+async fn call_an_unknown_tool(tool: &str, args: serde_json::Value) -> serde_json::Value {
+    let config = PermissionConfig {
+        allow: vec!["no_such_tool:*".to_string()],
+        ..Default::default()
+    };
+    let mut h = ReactorTestHarness::with_permissions(Some(config)).await;
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-unknown", tool, args),
+        script::text("done"),
+        script::done(),
+    ]);
+    h.send("run tool").await;
+    let result = h.wait_for("tool_result").await;
+    assert_eq!(result.data["tool"], "no_such_tool");
+    h.wait_for("message_complete").await;
+    result.data["result"].clone()
+}
+
+/// An internal agent that names an unknown tool gets the dispatcher error.
+/// The views get a `tool_result` for the card.
+///
+/// Before, an ACP fallback gave no result for a name that the dispatcher did
+/// not know. No ACP call reaches the dispatch path, so only the internal agent
+/// took that path: its card got no `tool_result`, and the model read "tool
+/// dispatcher returned no result".
+#[tokio::test]
+async fn an_unknown_tool_answers_with_the_dispatcher_error() {
+    let payload = call_an_unknown_tool("no_such_tool", serde_json::json!({})).await;
+    assert_eq!(payload["error"], "Unknown tool: no_such_tool");
+}
+
+/// `invoke_tool` with an unknown inner tool keeps its own error. The error
+/// tells the model to use `discover_tools`.
+#[tokio::test]
+async fn an_unknown_tool_through_invoke_tool_points_at_discover_tools() {
+    let payload = call_an_unknown_tool(
+        "invoke_tool",
+        serde_json::json!({ "name": "no_such_tool", "args": {} }),
+    )
+    .await;
+    assert_eq!(
+        payload["error"],
+        "Tool not found: no_such_tool. Use discover_tools to list available tools."
+    );
+}
+
 #[tokio::test]
 async fn send_message_emits_text_delta_events_in_order() {
     let mut h = ReactorTestHarness::new().await;

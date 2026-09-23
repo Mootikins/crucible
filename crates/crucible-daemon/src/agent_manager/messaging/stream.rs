@@ -446,7 +446,7 @@ impl AgentManager {
 
                     // Dispatch (honoring blocked list + failure tracking).
                     let mut attempt: Option<usize> = None;
-                    let mut result = if blocked_tools.contains(&name) {
+                    let mut tool_result = if blocked_tools.contains(&name) {
                         let blocked_error = format!(
                             "Tool '{}' is blocked for this stream after repeated failures.",
                             name
@@ -468,11 +468,7 @@ impl AgentManager {
                             );
                         }
 
-                        Some(ChatToolResult::error(
-                            name.clone(),
-                            id.clone(),
-                            blocked_error,
-                        ))
+                        ChatToolResult::error(name.clone(), id.clone(), blocked_error)
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
                         // The review bracket is CLOSED here and OPENED inside
@@ -502,48 +498,38 @@ impl AgentManager {
                     let args_key =
                         serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
 
-                    if let Some(tool_result) = result.as_mut() {
-                        if let Some(error) = tool_result.error.as_mut() {
-                            let failure_key = (name.clone(), args_key.clone());
-                            if last_failure_key.as_ref() == Some(&failure_key) {
-                                consecutive_failure_count += 1;
-                            } else {
-                                consecutive_failure_count = 1;
-                                last_failure_key = Some(failure_key);
-                            }
+                    if let Some(error) = tool_result.error.as_mut() {
+                        let failure_key = (name.clone(), args_key.clone());
+                        if last_failure_key.as_ref() == Some(&failure_key) {
+                            consecutive_failure_count += 1;
+                        } else {
+                            consecutive_failure_count = 1;
+                            last_failure_key = Some(failure_key);
+                        }
 
-                            if attempt.is_some_and(|a| a >= 3)
-                                && tracker.is_repeat_failure(&name, &args, 3)
-                            {
-                                let attempt_val = attempt.unwrap_or_default();
-                                let annotation = format!(
+                        if attempt.is_some_and(|a| a >= 3)
+                            && tracker.is_repeat_failure(&name, &args, 3)
+                        {
+                            let attempt_val = attempt.unwrap_or_default();
+                            let annotation = format!(
                                     "Attempt {}. This tool has failed {} times with identical arguments. Try a different approach.",
                                     attempt_val, attempt_val
                                 );
-                                if !error.contains(&annotation) {
-                                    if !error.is_empty() {
-                                        error.push(' ');
-                                    }
-                                    error.push_str(&annotation);
+                            if !error.contains(&annotation) {
+                                if !error.is_empty() {
+                                    error.push(' ');
                                 }
+                                error.push_str(&annotation);
                             }
-
-                            if consecutive_failure_count >= 3 {
-                                blocked_tools.insert(name.clone());
-                            }
-                        } else {
-                            last_failure_key = None;
-                            consecutive_failure_count = 0;
                         }
-                    }
 
-                    let tool_result = result.unwrap_or_else(|| {
-                        ChatToolResult::error(
-                            name.clone(),
-                            id.clone(),
-                            "tool dispatcher returned no result",
-                        )
-                    });
+                        if consecutive_failure_count >= 3 {
+                            blocked_tools.insert(name.clone());
+                        }
+                    } else {
+                        last_failure_key = None;
+                        consecutive_failure_count = 0;
+                    }
 
                     // A delegation is attributed by the child's own ledger,
                     // not by a parent interval (see `needs_review_bracket`),

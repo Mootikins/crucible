@@ -81,27 +81,6 @@ fn unwrap_allows_plan_tool_in_plan_mode() {
     assert_eq!(inner.name, "semantic_search");
 }
 
-#[test]
-fn missing_tool_after_unwrap_yields_error_result_not_stall() {
-    // invoke_tool named a tool the dispatcher doesn't know: must return an
-    // error result (so the turn completes) rather than None (which stalls
-    // the turn waiting for a result that never arrives).
-    let result = AgentManager::missing_tool_result(true, "bogus_tool", "call-42")
-        .expect("unwrapped unknown tool must yield an error result");
-    assert_eq!(result.name, "bogus_tool");
-    assert_eq!(result.call_id.as_deref(), Some("call-42"));
-    let err = result.error.expect("must carry an error");
-    assert!(err.contains("bogus_tool"));
-    assert!(err.contains("discover_tools"));
-}
-
-#[test]
-fn missing_tool_without_unwrap_returns_none_for_external_agent() {
-    // A genuine ACP tool call (not unwrapped) still defers to the external
-    // agent — no synthetic error result.
-    assert!(AgentManager::missing_tool_result(false, "acp_tool", "call-42").is_none());
-}
-
 /// A plugin WITHOUT the declaration may not take a tool call over, and an
 /// unrecorded plugin is refused the same way.
 ///
