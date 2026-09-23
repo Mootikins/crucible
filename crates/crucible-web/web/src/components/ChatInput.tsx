@@ -216,6 +216,7 @@ export const ChatInput: Component = () => {
     {
       key: 'status',
       priority: 90,
+      dockRight: true,
       label: 'Status',
       value: '',
       render: 'custom',

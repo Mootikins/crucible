@@ -111,6 +111,14 @@ describe('ChipRow', () => {
     render(() => <ChipRow chips={[]} />);
     expect(screen.queryByTestId('composer-chip-row')).toBeNull();
   });
+
+  it('docks status at the right while model and mode stay in the ordinary row', () => {
+    render(() => <ChipRow chips={[...chips(), { key: 'status', label: 'Status', value: '', render: 'custom', dockRight: true, element: <span>●</span> }]} />);
+    const dock = screen.getByTestId('composer-chip-dock');
+    expect(dock).toHaveTextContent('●');
+    expect(dock).not.toContainElement(screen.getByTestId('row-model'));
+    expect(screen.getByTestId('composer-chip-row')).toContainElement(screen.getByTestId('chat-mode'));
+  });
 });
 
 /**

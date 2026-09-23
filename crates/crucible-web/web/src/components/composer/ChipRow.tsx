@@ -53,6 +53,8 @@ export interface ComposerChip {
    * An entry without one sorts last, in the order the surface listed it.
    */
   priority?: number;
+  /** Keep a compact transient group against the row's right edge. */
+  dockRight?: boolean;
   /** Absent on a static fact chip. */
   options?: ChipOption[];
   onSelect?: (value: string) => void;
@@ -205,15 +207,18 @@ export const ChipRow: Component<{
   // costs no frame and the user never sees it.
   const [measuring, setMeasuring] = createSignal(false);
   let rowRef: HTMLDivElement | undefined;
+  let dockRef: HTMLDivElement | undefined;
   let inMeasure = false;
 
   /** The chips that actually draw something, in priority order. */
+  const normalKeys = () => keys().filter((key) => !chipAt(key).dockRight);
+  const dockKey = () => keys().find((key) => chipAt(key).dockRight);
   const present = () => {
     const gone = new Set(absent());
-    return keys().filter((key) => !gone.has(key));
+    return normalKeys().filter((key) => !gone.has(key));
   };
   const drawn = () =>
-    measuring() ? keys() : [...present().slice(0, shown()), ...absent()];
+    measuring() ? normalKeys() : [...present().slice(0, shown()), ...absent()];
   // NOT gated on `measuring`. A full pass draws every chip for an instant,
   // and a fold button that unmounted for that instant was detached from the
   // document under the pointer — the click it was there to take went
@@ -232,7 +237,7 @@ export const ChipRow: Component<{
       });
       return;
     }
-    const order = keys();
+    const order = normalKeys();
     const empty: string[] = [];
     const widths: number[] = [];
     m.chips.forEach((width, i) => {
@@ -270,8 +275,8 @@ export const ChipRow: Component<{
   };
 
   const reading = (): ChipRowMeasurement => ({
-    row: rowRef?.clientWidth ?? 0,
-    chips: keys().map((key) => widths.get(key) ?? 0),
+    row: Math.max(0, (rowRef?.clientWidth ?? 0) - (dockRef?.offsetWidth ?? 0) - (dockRef?.offsetWidth ? GAP : 0)),
+    chips: normalKeys().map((key) => widths.get(key) ?? 0),
   });
 
   const remeasure = () => {
@@ -281,7 +286,7 @@ export const ChipRow: Component<{
     }
     if (!rowRef || inMeasure) return;
     cache(drawn());
-    if (keys().every((key) => widths.has(key))) {
+    if (normalKeys().every((key) => widths.has(key))) {
       fit(reading());
       return;
     }
@@ -298,7 +303,7 @@ export const ChipRow: Component<{
     inMeasure = true;
     setMeasuring(true);
     queueMicrotask(() => {
-      cache(keys());
+      cache(normalKeys());
       setMeasuring(false);
       inMeasure = false;
       if (rowRef) fit(reading());
@@ -311,15 +316,20 @@ export const ChipRow: Component<{
     // The row for the width the split is decided against, and every chip for
     // its own: a status chip that arrives once the daemon answers changes no
     // row width at all, and would otherwise never be counted.
-    const observer = new ResizeObserver(() => remeasure());
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(remeasure);
+    });
     observer.observe(rowRef);
+    if (dockRef) observer.observe(dockRef);
     createEffect(() => {
       for (const key of drawn()) {
         const el = chipRefs.get(key);
         if (el) observer.observe(el);
       }
     });
-    onCleanup(() => observer.disconnect());
+    onCleanup(() => { observer.disconnect(); cancelAnimationFrame(frame); });
   });
 
   // A chip whose text changed is a chip whose width changed, so the split has
@@ -339,12 +349,12 @@ export const ChipRow: Component<{
     <Show when={keys().length > 0}>
       <div
         ref={rowRef}
-        class="mt-1.5 flex flex-nowrap items-center gap-x-1 overflow-hidden"
+        class="mt-1.5 relative flex flex-nowrap items-center gap-x-1 overflow-hidden min-h-7"
         data-testid="composer-chip-row"
       >
         <For each={drawn()}>
           {(key) => (
-            <div class="flex shrink-0 items-center" ref={(el) => chipRefs.set(key, el)}>
+            <div class="flex shrink-0 items-center" data-chip-key={key} ref={(el) => chipRefs.set(key, el)}>
               <ChipItem chip={chipAt(key)} />
             </div>
           )}
@@ -352,6 +362,11 @@ export const ChipRow: Component<{
         <Show when={folded().length > 0}>
           <ChipFold keys={folded()} chip={chipAt} />
         </Show>
+        <Show when={dockKey()}>{(key) =>
+          <div ref={dockRef} class="absolute right-0 bottom-0 flex max-w-[48%] items-center" data-testid="composer-chip-dock">
+            <ChipItem chip={chipAt(key())} />
+          </div>
+        }</Show>
       </div>
     </Show>
   );
@@ -512,6 +527,7 @@ const ChipItem: Component<{ chip: ComposerChip }> = (props) => {
             never clipped — the row folds whole chips instead. */}
         <span
           class="inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-xs whitespace-nowrap text-shell-body"
+          tabIndex={chip().key === 'project' ? 0 : undefined}
           title={chip().title ?? `${chip().label}: ${chip().value || chip().defaultLabel || ''}`}
           data-testid={chip().testid}
         >

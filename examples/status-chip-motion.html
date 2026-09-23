@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crucible status motion studies</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font: 13px/1.5 Inter, ui-sans-serif, system-ui, sans-serif;
+    --canvas: #0e0d11;
+    --surface: #141318;
+    --overlay: #232128;
+    --hairline: #211f26;
+    --hairline-strong: #322f38;
+    --ink: #e7e4df;
+    --body: #c4c0ba;
+    --muted: #9f9ba5;
+    --quiet: #8d8990;
+    --focus: #e0653a;
+    --warn: #d4a72c;
+    --ok: #7bc47f;
+    --info: #a78bda;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 22px 60px; }
+  h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -.025em; }
+  .intro { margin: 0 0 24px; max-width: 75ch; color: var(--body); }
+  .key { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 20px; color: var(--muted); }
+  .key span { display: inline-flex; gap: 7px; align-items: center; }
+  .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color); }
+  .study { margin: 0 0 28px; }
+  .study-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 0 3px 8px; }
+  .study-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .study-head p { color: var(--quiet); margin: 0; font-size: 12px; }
+  .stage { position: relative; height: 196px; overflow: visible; border: 1px solid var(--hairline); border-radius: 10px; background: var(--canvas); }
+  .transcript { position: absolute; top: 22px; left: max(22px, calc((100% - 900px) / 2)); color: var(--body); }
+  .transcript strong { color: var(--ink); font-weight: 500; }
+  .transcript .meta { margin-top: 7px; color: var(--quiet); font-size: 11px; }
+  .composer-wrap { position: absolute; left: 16px; right: 16px; bottom: 13px; max-width: 900px; margin: auto; }
+  .composer { height: 46px; display: flex; align-items: center; padding: 0 13px 0 18px; border: 1px solid var(--hairline); border-radius: 9999px; background: var(--surface); color: var(--quiet); }
+  .composer .hint { flex: 1; }
+  .composer .mic { font-size: 17px; margin-right: 17px; color: var(--muted); }
+  .send { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #34323c; color: var(--muted); font-size: 18px; }
+  .chip-row { height: 28px; margin: 6px 8px 0; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 4px; color: var(--body); }
+  .mode { width: 28px; justify-content: center; border-radius: 50%; }
+  .chip .arrow { color: var(--quiet); font-size: 10px; }
+  .status-area { margin-left: auto; position: relative; height: 28px; min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
+  .status-trigger { appearance: none; border: 0; color: var(--body); background: transparent; cursor: pointer; font: inherit; padding: 0; display: flex; align-items: center; height: 28px; position: relative; }
+  .status-trigger:focus-visible, .menu-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .dot { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--color); box-shadow: 0 0 0 2px var(--canvas); }
+  .status-name { overflow: hidden; max-width: 0; opacity: 0; transform: translateX(-5px); transition: max-width 280ms cubic-bezier(.2,.8,.2,1), opacity 180ms ease, transform 280ms ease; color: var(--body); }
+  .cluster { position: relative; display: flex; align-items: center; min-width: 0; height: 28px; }
+  .cluster .status-trigger { flex: none; }
+  .menu { display: none; position: absolute; z-index: 10; bottom: 36px; right: 0; min-width: 220px; padding: 5px; border-radius: 9px; border: 1px solid var(--hairline-strong); background: var(--overlay); box-shadow: 0 9px 28px #0008; }
+  .menu.open { display: block; }
+  .menu-title { padding: 5px 8px; color: var(--quiet); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .menu-item { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 5px; color: var(--ink); background: transparent; padding: 8px; text-align: left; font: inherit; cursor: pointer; }
+  .menu-item:hover, .menu-item:focus-visible { background: #ffffff0d; }
+  .menu-item small { margin-left: auto; color: var(--quiet); }
+  /* A: the right edge is fixed; growth spends room to its left. */
+  .a .status-area { max-width: min(420px, calc(100% - 300px)); }
+  .a .cluster { overflow-x: auto; overflow-y: hidden; max-width: 100%; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .a .cluster::-webkit-scrollbar { display: none; }
+  .a .cluster .status-trigger { scroll-snap-align: end; }
+  .a .cluster .status-trigger { margin-left: -5px; transition: margin-left 280ms ease; }
+  .a .cluster .status-trigger:first-child { margin-left: 0; }
+  .a .status-trigger.pinned { flex: none; margin-left: -5px; transition: margin-left 280ms ease; }
+  .a .cluster .dot { width: 16px; height: 16px; border: 2px solid var(--canvas); box-shadow: none; }
+  .a .status-area:hover .status-trigger, .a .status-area:has(:focus-visible) .status-trigger, .a.preview .status-trigger, .a.tap-preview .status-trigger { margin-left: 7px; }
+  .a .status-area:hover .status-name, .a .status-area:has(:focus-visible) .status-name, .a.preview .status-name, .a.tap-preview .status-name { max-width: 94px; opacity: 1; transform: translateX(0); margin-left: 5px; }
+  .a .status-area:hover .status-trigger:not(:first-child), .a .status-area:has(:focus-visible) .status-trigger:not(:first-child), .a.preview .status-trigger:not(:first-child), .a.tap-preview .status-trigger:not(:first-child) { padding-right: 5px; }
+  /* C: the resting dots sit above the prompt, left aligned. */
+  .c .stage { height: 240px; }
+  .c .transcript { left: auto; right: 85px; }
+  .c .status-area { position: absolute; left: 12px; top: -42px; width: 76px; justify-content: flex-start; }
+  .c .cluster { width: 76px; }
+  .c .cluster .status-trigger { position: absolute; left: var(--left); z-index: 1; transition: transform 300ms cubic-bezier(.2,.8,.2,1), background 180ms, padding 300ms; border-radius: 9999px; }
+  .c .cluster .dot { width: 15px; height: 15px; border: 2px solid var(--canvas); box-shadow: none; }
+  .c .cluster:hover::before, .c .cluster:focus-within::before { content: ""; position: absolute; z-index: 0; left: -8px; bottom: 0; width: 180px; height: 160px; }
+  .c .cluster:hover .status-trigger, .c .cluster:focus-within .status-trigger, .c.preview .status-trigger { transform: translate(calc(-1 * var(--left)), calc(-1 * var(--rise))); padding: 5px 10px; height: 30px; background: var(--overlay); border: 1px solid var(--hairline-strong); box-shadow: 0 5px 16px #0005; }
+  .c .cluster:hover .status-name, .c .cluster:focus-within .status-name, .c.preview .status-name { max-width: 125px; opacity: 1; transform: translateX(0); margin-left: 7px; }
+  .c .cluster:hover .status-trigger:nth-child(1), .c .cluster:focus-within .status-trigger:nth-child(1), .c.preview .status-trigger:nth-child(1) { z-index: 4; }
+  .c .cluster:hover .status-trigger:nth-child(2), .c .cluster:focus-within .status-trigger:nth-child(2), .c.preview .status-trigger:nth-child(2) { z-index: 3; }
+  .c .cluster:hover .status-trigger:nth-child(3), .c .cluster:focus-within .status-trigger:nth-child(3), .c.preview .status-trigger:nth-child(3) { z-index: 2; }
+  .note { color: var(--quiet); font-size: 12px; margin: 7px 3px 0; }
+  @media (max-width: 650px) { main { padding: 18px 10px; } .study-head { display: block; } .study-head p { margin-top: 2px; } .chip.project, .chip.kiln { display: none; } .stage { height: 170px; } .transcript { left: 16px; } .composer-wrap { left: 9px; right: 9px; } .a .status-area { max-width: calc(100% - 130px); } .c .stage { height: 230px; } .c .transcript { left: auto; right: 18px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+</style>
+<main>
+  <h1>Status dots in the current composer</h1>
+  <p class="intro">A sits at the bottom right. Hover or focus to reveal labels; swipe or scroll horizontally to reach earlier items. On touch, one tap previews for three seconds and a second tap opens the menu.</p>
+  <div id="studies"></div>
+</main>
+<script>
+const designs = [
+  { id: 'a', title: 'A · Bottom-right stack', description: 'Growth goes left; overflow scrolls naturally.', note: 'Earlier items slip out of view on the left. Swipe horizontally or use a trackpad to bring them back.' },
+  { id: 'c', title: 'C · Left-side floating fan', description: 'Resting dots sit above the composer at its left edge.', note: 'The row stays untouched, but the expanded labels use space above the prompt.' },
+];
+const statuses = [
+  { name: 'sync idle', color: 'var(--info)' },
+  { name: 'review clear', color: 'var(--ok)' },
+  { name: 'index ready', color: 'var(--ok)' },
+  { name: 'loop running', color: 'var(--info)' },
+  { name: 'goal · ask', color: 'var(--warn)' },
+];
+const esc = (s) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+document.getElementById('studies').innerHTML = designs.map(({ id, title, description, note }) => `
+  <section class="study ${id}${new URLSearchParams(location.search).has('preview') ? ' preview' : ''}" data-study="${id}">
+    <div class="study-head"><h2>${title}</h2><p>${description}</p></div>
+    <div class="stage">
+      <div class="transcript"><strong>Here is the answer.</strong><div class="meta">↻ &nbsp; Sep 16, 6:28 AM &nbsp; 1,234 tokens</div></div>
+      <div class="composer-wrap">
+        <div class="composer"><span class="hint">Type a message...</span><span class="mic" aria-hidden="true">♩</span><span class="send" aria-hidden="true">↑</span></div>
+        <div class="chip-row"><span class="chip">llama3.2 <span class="arrow">⌄</span></span><span class="chip mode">c</span><span class="chip project">♧ project</span><span class="chip kiln">♙ my-kiln <span class="arrow">⌄</span></span>
+          <div class="status-area"><div class="cluster" role="group" aria-label="Plugin statuses; scroll horizontally for more">
+            ${(id === 'c' ? statuses.slice(-3) : statuses.slice(0, -1)).map((s, i) => `<button class="status-trigger" type="button" style="--left:${i * 13}px;--rise:${(3-i) * 31}px" aria-label="${esc(s.name)}; open status actions" aria-haspopup="menu" aria-expanded="false"><span class="dot" style="--color:${s.color}"></span><span class="status-name">${esc(s.name)}</span></button>`).join('')}
+          </div>${id === 'a' ? `<button class="status-trigger pinned" type="button" aria-label="goal · ask; open status actions" aria-haspopup="menu" aria-expanded="false"><span class="dot" style="--color:var(--warn)"></span><span class="status-name">goal · ask</span></button>` : ''}<div class="menu" role="menu"><div class="menu-title">Session status</div>${(id === 'c' ? statuses.slice(-3) : statuses).map(s => `<button class="menu-item" type="button" role="menuitem"><span class="dot" style="--color:${s.color}"></span>${esc(s.name)}<small>Open</small></button>`).join('')}</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">${note}</p>
+  </section>`).join('');
+for (const study of document.querySelectorAll('.study')) {
+  const menu = study.querySelector('.menu');
+  const area = study.querySelector('.status-area');
+  const cluster = study.querySelector('.cluster');
+  const triggers = [...study.querySelectorAll('.status-trigger')];
+  if (study.classList.contains('a')) {
+    let revealTimer;
+    const reveal = () => {
+      clearTimeout(revealTimer);
+      // The labels need their transition to finish before the scroll extent
+      // is final. Keep the rightmost status in view when preview begins.
+      revealTimer = setTimeout(() => { cluster.scrollLeft = cluster.scrollWidth; }, 310);
+    };
+    area.addEventListener('pointerenter', reveal);
+    area.addEventListener('focusin', reveal);
+    if (study.classList.contains('preview')) reveal();
+    let tapTimer;
+    let pointerType = '';
+    let touching = false;
+    const scheduleCollapse = () => {
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => {
+        if (touching || menu.classList.contains('open')) { scheduleCollapse(); return; }
+        study.classList.remove('tap-preview');
+        area.querySelector(':focus')?.blur();
+      }, 3000);
+    };
+    area.addEventListener('pointerdown', event => {
+      pointerType = event.pointerType;
+      if (pointerType === 'touch') touching = true;
+    });
+    area.addEventListener('pointerup', () => {
+      touching = false;
+      if (study.classList.contains('tap-preview')) scheduleCollapse();
+    });
+    area.addEventListener('pointercancel', () => { touching = false; });
+    study.holdTapPreview = () => {
+      study.classList.add('tap-preview');
+      reveal();
+      scheduleCollapse();
+    };
+    study.scheduleCollapse = scheduleCollapse;
+    study.isFirstTap = event => pointerType === 'touch' && event.detail > 0 && !study.classList.contains('tap-preview');
+  }
+  const close = () => {
+    menu.classList.remove('open');
+    triggers.forEach(t => t.setAttribute('aria-expanded', 'false'));
+    if (study.classList.contains('tap-preview')) study.scheduleCollapse?.();
+  };
+  triggers.forEach(trigger => trigger.addEventListener('click', event => {
+    if (study.isFirstTap?.(event)) { study.holdTapPreview(); return; }
+    const wasOpen = menu.classList.contains('open');
+    document.querySelectorAll('.menu.open').forEach(m => m.classList.remove('open'));
+    if (wasOpen) close();
+    else { menu.classList.add('open'); triggers.forEach(t => t.setAttribute('aria-expanded', 'true')); menu.querySelector('.menu-item').focus(); }
+  }));
+  study.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { close(); triggers[0].focus(); }
+    if (event.key === 'ArrowDown' && menu.classList.contains('open')) {
+      event.preventDefault(); const items = [...menu.querySelectorAll('.menu-item')]; items[(items.indexOf(document.activeElement) + 1) % items.length].focus();
+    }
+  });
+  document.addEventListener('pointerdown', event => { if (!study.contains(event.target)) close(); });
+}
+</script>
+</html>

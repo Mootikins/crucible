@@ -1,4 +1,5 @@
-import { Component, For, Show, createSignal, onMount } from 'solid-js';
+import { Component, For, Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { getBus } from '@/lib/bus';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useSessionModes } from '@/lib/query/modes';
@@ -45,74 +46,148 @@ const legacyGroup = (level: string): string => {
 };
 
 export const SessionStatusChips: Component = () => {
-  const [menuOpen, setMenuOpen] = createSignal(false);
-  onMount(() => getBus().on('openPluginApproval', () => setMenuOpen(true)));
   const { currentSession } = useSessionSafe();
-
   const sessionId = () => currentSession()?.session_id;
-  // The chat pane reads this same list for its mode control. This component
-  // used to fetch a second copy of it on every mount, and the two disagreed
-  // the moment one of them failed.
   const modes = useSessionModes(() => sessionId() ?? null);
-
-  // No SSE event carries plugin status, so the read hangs off the session id.
-  // Scoped to the ACTIVE session rather than polling every open one: this is a
-  // per-session daemon round trip. The key carries that id, so the previous
-  // session's chips cannot linger over a new one while its read is in flight,
-  // and a refused read is no chips rather than a notification.
   const status = useSessionStatus(() => sessionId() ?? null);
   const slots = () => [...(status.data ?? [])].sort((a, b) => (a.priority ?? 128) - (b.priority ?? 128));
-
-  // The EFFECTIVE write mode, from the mode descriptor of the daemon.
-  //
-  // This file never derives it from the mode id. The daemon degrades the
-  // configured value by what the agent can hold back: an ACP agent runs its
-  // tools in its own process, so its `propose` mode comes back as `apply`.
-  //
-  // It reads the query and holds no copy, so a session with no answer yet (a
-  // new one, or one whose list failed) reports no write mode, and not the
-  // write mode of the session before it.
+  type Slot = ReturnType<typeof slots>[number];
   const writes = (): ModeDescriptor['writes'] | null => {
     const listed = modes.data;
-    if (!listed) return null;
-    const current = listed.modes.find((mode) => mode.id === listed.current_mode_id);
-    return current?.writes ?? null;
+    return listed?.modes.find((mode) => mode.id === listed.current_mode_id)?.writes ?? null;
   };
+  const controls = () => [...new Set(slots().filter((s) => s.action === 'plugin_approval').map((s) => s.plugin))];
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const [approvalOpen, setApprovalOpen] = createSignal(false);
+  const [detail, setDetail] = createSignal<string | null>(null);
+  const [preview, setPreview] = createSignal(false);
+  const [maxWidth, setMaxWidth] = createSignal(420);
+  const [position, setPosition] = createSignal({ right: 16, bottom: 64 });
+  let area: HTMLDivElement | undefined;
+  let strip: HTMLDivElement | undefined;
+  let menu: HTMLDivElement | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  let touching = false;
+  let pointerType = '';
 
-  // The write mode is not a chip, because the mode control already says
-  // "proposes". It stays on the wrapper as data for tests and plugins.
-  const anything = () => slots().length > 0 || writes() !== null || menuOpen();
-  const controlPlugins = () => [...new Set(slots().filter((slot) => slot.action === 'plugin_approval').map((slot) => slot.plugin))];
-
-  return (
-    <Show when={anything()}>
-      <div class="contents" data-testid="session-status" data-writes={writes() ?? undefined}>
-        <For each={slots()}>
-          {(slot) => (
-            <button
-              type="button"
-              class="session-status-color inline-flex items-center px-2 py-0.5 rounded-md border text-floor"
-              data-status-color={slot.color_group ?? legacyGroup(slot.level)}
-              data-pinned={slot.pinned ?? false}
-              data-action={slot.action ?? undefined}
-              title={`${slot.text} — ${slot.plugin}`}
-              data-testid={`session-status-${slot.key}`}
-              onClick={() => setMenuOpen(true)}
-            >
-              {slot.text}
-              {progressSuffix(slot.progress)}
-            </button>
-          )}
-        </For>
-        <Show when={menuOpen()}>
-          <div role="dialog" aria-label="Plugin approval" class="fixed bottom-16 right-6 z-50 rounded-lg border border-edge bg-surface p-3 shadow-xl" onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}>
-            <div class="flex items-center justify-between gap-4"><strong>Plugin approval</strong><button type="button" aria-label="Close plugin approval" onClick={() => setMenuOpen(false)}>×</button></div>
-            {/* TODO(plugin-turns): bind these choices to the session knob when that branch lands. */}
-            <For each={controlPlugins()}>{(plugin) => <div class="mt-2"><div>{plugin}</div><div class="text-floor-muted">inherit · ask · stop</div></div>}</For>
-            <Show when={controlPlugins().length === 0}><p class="text-floor-muted">No plugin approval controls are active.</p></Show>
-          </div>
-        </Show>
-      </div>
-    </Show>
+  const scrollRight = () => { if (strip) strip.scrollLeft = strip.scrollWidth; };
+  const scrollAfterExpand = () => {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(scrollRight, 310);
+  };
+  const collapseLater = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (touching || menuOpen() || approvalOpen() || detail()) { collapseLater(); return; }
+      setPreview(false);
+      (document.activeElement as HTMLElement | null)?.blur();
+    }, 3000);
+  };
+  const expand = () => {
+    setPreview(true);
+    scrollAfterExpand();
+    collapseLater();
+  };
+  const openMenu = () => {
+    const rect = area?.getBoundingClientRect();
+    if (rect) setPosition({ right: Math.max(8, innerWidth - rect.right), bottom: Math.max(8, innerHeight - rect.top + 6) });
+    setMenuOpen(true);
+    queueMicrotask(() => menu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus());
+  };
+  const choose = (slot: Slot) => {
+    setMenuOpen(false);
+    if (slot.action === 'plugin_approval') setApprovalOpen(true);
+    else setDetail(`${slot.text} — ${slot.plugin}`);
+  };
+  const dot = (slot: Slot) => (
+    <button type="button" class="session-status-color status-dot-button"
+      data-status-color={slot.color_group ?? legacyGroup(slot.level)}
+      data-pinned={slot.pinned ?? false} data-action={slot.action ?? undefined}
+      data-testid={`session-status-${slot.key}`}
+      title={`${slot.text} — ${slot.plugin}`}
+      aria-label={`${slot.text} — ${slot.plugin}; open session status`}
+      aria-haspopup="menu" aria-expanded={menuOpen()}
+      onClick={(event) => {
+        if (pointerType === 'touch' && event.detail > 0 && !preview()) { expand(); return; }
+        openMenu();
+      }}>
+      <span class="status-dot" data-testid="status-dot" aria-hidden="true" />
+      <span class="status-dot-name">{slot.text}{progressSuffix(slot.progress)}</span>
+    </button>
   );
+
+  onMount(() => {
+    const off = getBus().on('openPluginApproval', () => setApprovalOpen(true));
+    const row = area?.parentElement?.parentElement;
+    const resize = () => setMaxWidth(Math.min(420, Math.max(80, (row?.clientWidth ?? 800) * .48)));
+    resize();
+    let frame = 0;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(resize);
+    });
+    if (row) observer?.observe(row);
+    const outside = (event: PointerEvent) => {
+      if (menuOpen() && !area?.contains(event.target as Node) && !menu?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false); setApprovalOpen(false); setDetail(null);
+      area?.querySelector<HTMLButtonElement>('button')?.focus();
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    onCleanup(() => {
+      off(); observer?.disconnect(); cancelAnimationFrame(frame);
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+      if (timer) clearTimeout(timer);
+      if (scrollTimer) clearTimeout(scrollTimer);
+    });
+  });
+
+  return <Show when={slots().length || writes() !== null || approvalOpen()}>
+    <div ref={area} class="session-status-area" classList={{ 'is-preview': preview() }}
+      data-testid="session-status" data-writes={writes() ?? undefined}
+      style={{ 'max-width': `${maxWidth()}px` }}
+      onPointerEnter={scrollAfterExpand} onFocusIn={scrollAfterExpand}
+      onPointerDown={(e) => { pointerType = e.pointerType; touching = e.pointerType === 'touch'; }}
+      onPointerUp={() => { touching = false; if (preview()) collapseLater(); }}
+      onPointerCancel={() => { touching = false; }}>
+      <div ref={strip} class="session-status-strip" data-testid="session-status-strip"
+        role="group" aria-label="Informational status; scroll horizontally for more">
+        <For each={slots().filter((s) => !s.pinned)}>{dot}</For>
+      </div>
+      <div class="session-status-pinned"><For each={slots().filter((s) => s.pinned)}>{dot}</For></div>
+    </div>
+    <Show when={menuOpen()}><Portal>
+      <div ref={menu} role="menu" aria-label="Session status" class="status-menu"
+        style={{ right: `${position().right}px`, bottom: `${position().bottom}px` }}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+          e.preventDefault();
+          const items = [...menu!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+          const next = (items.indexOf(document.activeElement as HTMLButtonElement) + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus();
+        }}>
+        <div class="status-menu-title">Session status</div>
+        <For each={slots()}>{(slot) => <button type="button" role="menuitem" class="status-menu-item" onClick={() => choose(slot)}>
+          <span class="session-status-color status-dot" data-status-color={slot.color_group ?? legacyGroup(slot.level)} aria-hidden="true" />
+          <span>{slot.text}</span><small>{slot.plugin}</small>
+        </button>}</For>
+      </div>
+    </Portal></Show>
+    <Show when={approvalOpen()}><Portal><div role="dialog" aria-label="Plugin approval" class="status-menu status-dialog"
+      style={{ right: `${position().right}px`, bottom: `${position().bottom}px` }}>
+      <div class="flex items-center justify-between gap-4"><strong>Plugin approval</strong><button type="button" aria-label="Close plugin approval" onClick={() => setApprovalOpen(false)}>×</button></div>
+      {/* TODO(plugin-turns): bind choices to the session knob when that branch lands. */}
+      <For each={controls()}>{(plugin) => <div class="mt-2"><div>{plugin}</div><div class="text-floor-muted">inherit · ask · stop</div></div>}</For>
+      <Show when={!controls().length}><p class="text-floor-muted">No plugin approval controls are active.</p></Show>
+    </div></Portal></Show>
+    <Show when={detail()}><Portal><div role="dialog" aria-label="Status detail" class="status-menu status-dialog"
+      style={{ right: `${position().right}px`, bottom: `${position().bottom}px` }}>
+      <div class="flex items-center justify-between gap-4"><strong>{detail()}</strong><button type="button" aria-label="Close status detail" onClick={() => setDetail(null)}>×</button></div>
+    </div></Portal></Show>
+  </Show>;
 };

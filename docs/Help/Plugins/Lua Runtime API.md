@@ -1296,6 +1296,13 @@ uses the plugin's stable hue. The clients use the action name to open an engine
 control, not a plugin supplied command string. The TUI's `:status` picker shows
 every item, including those behind its `+N` overflow.
 
+On the web composer, the same items appear at the right of the chip row as
+colored dots. Hover or keyboard focus reveals their text. Informational items
+scroll horizontally when expanded; pinned controls stay on the right. Click a
+dot to open the full status menu, including items outside the visible strip.
+On touch, the first tap previews names for three seconds and the next tap
+opens the menu. The menu's item opens its detail or engine control.
+
 ## Publications
 
 ### cru.plugin.publish(key, value)

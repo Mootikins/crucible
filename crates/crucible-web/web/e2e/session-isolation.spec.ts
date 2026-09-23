@@ -189,11 +189,12 @@ test('a second provider on an axis turns the menu into a drill-down', async ({ p
   });
 });
 
-test("plugin status slots render as chips the frontend doesn't interpret", async ({ page }) => {
+test("plugin status dots expand and expose the whole ordered list", async ({ page }) => {
   await setupBasicMocks(page, {
     sessionStatus: {
       status: [
-        { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info' },
+        { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info', priority: 10 },
+        { key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
       ],
     },
   });
@@ -201,9 +202,20 @@ test("plugin status slots render as chips the frontend doesn't interpret", async
   await appReady(page);
   await openSession(page, 'test-session-001');
 
-  // A key this frontend has never heard of still reaches the strip.
-  await expect(page.getByTestId('session-status-zarquon')).toContainText(
-    'flux capacitor charged',
-    { timeout: 15000 },
-  );
+  const dot = page.getByTestId('session-status-zarquon');
+  await expect(dot).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('composer-chip-dock')).toBeVisible();
+  await expect(dot.locator('.status-dot-name')).toHaveCSS('opacity', '0');
+  await dot.hover();
+  await expect(dot.locator('.status-dot-name')).toHaveCSS('opacity', '1');
+  await dot.click();
+  await expect(page.getByRole('menu', { name: 'Session status' }).getByRole('menuitem')).toHaveCount(2);
+  if (process.env.CAPTURE_STATUS_SCREENSHOT) {
+    await page.screenshot({ path: process.env.CAPTURE_STATUS_SCREENSHOT });
+  }
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 850, height: 720 });
+  await expect(page.getByTestId('composer-chip-dock')).toBeVisible();
+  await expect(page.getByTestId('model-picker-button')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Mode:/ })).toBeVisible();
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
+import { render, cleanup, waitFor, screen, fireEvent } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { SessionStatusChips } from '../SessionStatusChips';
 import { ChatProvider } from '@/contexts/ChatContext';
@@ -180,10 +180,44 @@ describe('SessionStatusChips', () => {
     });
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-status-ask')).toBeInTheDocument());
-    const items = [...screen.getByTestId('session-status').querySelectorAll('[data-testid^="session-status-"]')];
-    expect(items.map((el) => el.getAttribute('data-testid'))).toEqual(['session-status-ask', 'session-status-later']);
-    expect(items[0]).toHaveAttribute('data-pinned', 'true');
-    expect(items[0]).toHaveAttribute('data-action', 'plugin_approval');
+    const pinned = screen.getByTestId('session-status-ask');
+    expect(screen.getByTestId('session-status-strip')).not.toContainElement(pinned);
+    expect(pinned).toHaveAttribute('data-pinned', 'true');
+    expect(pinned).toHaveAttribute('data-action', 'plugin_approval');
+    pinned.click();
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['goal asksgoal', 'forecastweather']);
+  });
+
+  it('keeps pinned controls outside the scroll strip and offers every item in the menu', async () => {
+    setCurrentSession(baseSession());
+    serve({ [STATUS]: () => ({ status: [
+      { key: 'early', plugin: 'sync', text: 'sync idle', level: 'info', priority: 10 },
+      { key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
+      { key: 'late', plugin: 'index', text: 'index ready', level: 'ok', priority: 30 },
+    ] }) });
+    render(() => <SessionStatusChips />);
+    const strip = await waitFor(() => screen.getByTestId('session-status-strip'));
+    expect(strip).toContainElement(screen.getByTestId('session-status-early'));
+    expect(strip).toContainElement(screen.getByTestId('session-status-late'));
+    expect(strip).not.toContainElement(screen.getByTestId('session-status-ask'));
+    expect(screen.getByTestId('session-status-ask').querySelector('[data-testid="status-dot"]')).toBeInTheDocument();
+    screen.getByTestId('session-status-late').click();
+    expect(screen.getByRole('menu', { name: 'Session status' })).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+  });
+
+  it('uses a first touch tap for preview and a second tap for the full menu', async () => {
+    setCurrentSession(baseSession());
+    serve({ [STATUS]: () => ({ status: [{ key: 'sync', plugin: 'sync', text: 'sync idle', level: 'info' }] }) });
+    render(() => <SessionStatusChips />);
+    const chip = await waitFor(() => screen.getByTestId('session-status-sync'));
+    fireEvent.pointerDown(chip, { pointerType: 'touch' });
+    fireEvent.pointerUp(chip, { pointerType: 'touch' });
+    fireEvent.click(chip, { detail: 1 });
+    expect(screen.getByTestId('session-status')).toHaveClass('is-preview');
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(chip, { detail: 1 });
+    expect(screen.getByRole('menu', { name: 'Session status' })).toBeInTheDocument();
   });
 
   it('renders nothing when the session published no slots', async () => {
