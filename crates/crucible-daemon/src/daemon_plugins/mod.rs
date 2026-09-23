@@ -19,8 +19,6 @@ pub use boot::{
     boot_input_hash, evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig,
     PluginPathsFn,
 };
-#[cfg(test)]
-pub(crate) use bootstrap::normalize_git_url;
 pub use bootstrap::{
     bootstrap_entries, bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths,
     daemon_plugin_paths_from, declared_git_entry, default_daemon_plugin_paths, BootstrapOutcome,

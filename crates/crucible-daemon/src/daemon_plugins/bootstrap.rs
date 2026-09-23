@@ -183,40 +183,27 @@ pub async fn bootstrap_plugin_entry(
         return Ok(BootstrapOutcome::AlreadyPresent);
     }
 
-    let url = normalize_git_url(url).with_context(|| format!("rejecting plugin '{}'", name))?;
+    let url = crate::scm::normalize_clone_url(url)
+        .with_context(|| format!("rejecting plugin '{}'", name))?;
     info!("Cloning plugin '{}' from {}", name, url);
 
-    let mut cmd = tokio::process::Command::new("git");
-    cmd.arg("clone");
     // Shallow clone unless we need to check out a specific SHA later —
     // shallow clones often don't contain the target SHA.
+    let mut options = Vec::new();
     if pin.is_none() {
-        cmd.args(["--depth", "1"]);
+        options.extend(["--depth", "1"]);
     }
     if let Some(branch) = branch {
-        cmd.args(["--branch", branch]);
+        options.extend(["--branch", branch.as_str()]);
     }
-    // Defense-in-depth: `--` stops git from parsing any subsequent argv
-    // as flags, even if a future caller bypasses normalize_git_url.
-    cmd.arg("--").arg(&url).arg(&dest);
-
-    let output = cmd
-        .output()
+    crate::scm::clone_repo(&url, &dest, &options)
         .await
-        .with_context(|| format!("failed to spawn git clone for '{}'", name))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git clone failed for '{}': {}", name, stderr.trim());
-    }
+        .with_context(|| format!("git clone failed for '{}'", name))?;
 
     if let Some(pin) = pin {
-        let checkout = tokio::process::Command::new("git")
-            .args(["checkout", pin])
-            .current_dir(&dest)
-            .output()
-            .await
-            .with_context(|| format!("failed to spawn git checkout for pin '{}'", pin))?;
-        if !checkout.status.success() {
+        let checkout =
+            crate::scm::run_git(&dest, &["checkout", pin], crate::scm::GitOpts::default()).await;
+        if let Err(e) = checkout {
             // Roll back the cloned dir so retries don't get stuck on
             // a half-installed plugin. Warn loudly if rollback itself
             // fails — the user needs to know `dest` is dirty so they
@@ -230,13 +217,12 @@ pub async fn bootstrap_plugin_entry(
                      remove the directory manually before retrying"
                 );
             }
-            let stderr = String::from_utf8_lossy(&checkout.stderr);
             anyhow::bail!(
                 "git checkout failed for pin '{}' of plugin '{}' (manually remove {} if it still exists): {}",
                 pin,
                 name,
                 dest.display(),
-                stderr.trim()
+                e
             );
         }
     }
@@ -260,62 +246,4 @@ pub async fn bootstrap_plugins(entries: &[SpecEntry]) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-/// Normalize and validate a plugin git URL.
-///
-/// Accepted forms:
-/// - `https://...` / `http://...`
-/// - `ssh://git@host/repo[.git]`
-/// - `git@host:user/repo[.git]`
-/// - Bare `user/repo` shorthand (expanded to `https://github.com/user/repo.git`)
-///
-/// Rejected:
-/// - URLs starting with `-` (parsed as a git flag — CVE-2017-1000117 family)
-/// - URLs containing `::` (git external transport — RCE vector via `ext::sh ...`)
-/// - Other schemes (`file://`, `git://`, custom) — narrows the attack surface to
-///   forms with a vetted use case
-/// - Shorthand containing anything outside `[A-Za-z0-9._/-]` (defends against
-///   shell-quoting hazards if the value ever lands in a non-`exec`-style context)
-pub(crate) fn normalize_git_url(url: &str) -> anyhow::Result<String> {
-    if url.is_empty() {
-        anyhow::bail!("plugin URL is empty");
-    }
-    if url.starts_with('-') {
-        anyhow::bail!(
-            "plugin URL '{}' starts with '-' (would be parsed as a git flag)",
-            url
-        );
-    }
-    if url.contains("::") {
-        anyhow::bail!(
-            "plugin URL '{}' contains '::' (git external transport, disallowed)",
-            url
-        );
-    }
-
-    if url.starts_with("https://")
-        || url.starts_with("http://")
-        || url.starts_with("ssh://git@")
-        || url.starts_with("git@")
-    {
-        Ok(url.to_string())
-    } else if url.contains("://") {
-        anyhow::bail!(
-            "plugin URL '{}' uses unsupported scheme (allowed: https, http, ssh://git@, git@host:repo)",
-            url
-        )
-    } else {
-        if !url
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
-        {
-            anyhow::bail!(
-                "plugin shorthand '{}' must match [A-Za-z0-9._/-]+ (got '{}')",
-                url,
-                url
-            );
-        }
-        Ok(format!("https://github.com/{}.git", url))
-    }
 }

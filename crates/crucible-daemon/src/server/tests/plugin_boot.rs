@@ -64,7 +64,7 @@ async fn the_plugin_boot_binds_the_notification_hub_to_the_agent_manager_and_the
 
 /// A server over one fixture plugin `<rp>/plugins/<name>/init.luau` whose
 /// body sets the global `<name>_ran`, recorded in the installed manifest
-/// under `data_home`. The URL's scheme is one `normalize_git_url` refuses,
+/// under `data_home`. The URL's scheme is one `scm::normalize_clone_url` refuses,
 /// so the bootstrap clones nothing and touches no network; discovery finds
 /// the directory on the injected `runtimepath`.
 async fn server_with_installed_plugin(tmp: &TempDir, name: &str) -> Server {
@@ -259,7 +259,7 @@ async fn server_for_install(
 }
 
 /// `plugin.install` for `name`, through the handler. The URL's scheme is
-/// one `normalize_git_url` refuses, and the directory already exists, so
+/// one `scm::normalize_clone_url` refuses, and the directory already exists, so
 /// the bootstrap reports `AlreadyPresent` and no network is touched.
 async fn install_through_the_handler(server: &Server, name: &str) -> Response {
     let req = Request {

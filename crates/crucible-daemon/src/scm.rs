@@ -42,16 +42,21 @@ pub enum ScmError {
 // ── scm.clone helpers ────────────────────────────────────────────────────
 
 /// Validate and normalize a remote repository URL *before* git ever sees it.
+/// `scm.clone` and the plugin bootstrap both use this one validator.
 ///
 /// Accepted forms:
 /// - `https://…` / `http://…` — returned as-is.
 /// - scp-like ssh (`git@host:owner/repo(.git)`) — returned as-is.
-/// - shorthand `owner/repo` (exactly one `/`, no scheme) — rewritten to
-///   `https://github.com/owner/repo.git`.
+/// - `ssh://git@host[:port]/path` — returned as-is. A private plugin repo
+///   needs ssh, and only this form can give a port.
+/// - shorthand `owner/repo` (exactly one `/`, `[A-Za-z0-9._-]` only) —
+///   rewritten to `https://github.com/owner/repo.git`.
 ///
 /// Everything else is rejected: a leading `-` (could be read as a git flag),
-/// any whitespace, `file://` and bare local paths (this endpoint is for
-/// *remote* repos — local dirs go through `project.register`).
+/// `::` (git reads `<transport>::<address>` as a remote helper, and `ext::`
+/// runs a command), any whitespace, `file://` and bare local paths (this
+/// endpoint is for *remote* repos — local dirs go through `project.register`),
+/// other ssh forms and other schemes.
 pub fn normalize_clone_url(url: &str) -> Result<String, ScmError> {
     let reject = |why: &str| Err(ScmError::InvalidUrl(format!("{url}: {why}")));
 
@@ -64,8 +69,17 @@ pub fn normalize_clone_url(url: &str) -> Result<String, ScmError> {
     if url.starts_with('-') {
         return reject("starts with '-'");
     }
+    if url.contains("::") {
+        return reject("contains '::' (a git transport helper)");
+    }
     if url.starts_with("https://") || url.starts_with("http://") {
         return Ok(url.to_string());
+    }
+    if let Some(rest) = url.strip_prefix("ssh://git@") {
+        return match rest.split_once('/') {
+            Some((host, path)) if valid_ssh_host(host) && !path.is_empty() => Ok(url.to_string()),
+            _ => reject("ssh urls must be ssh://git@host/path"),
+        };
     }
     if url.starts_with("file://") {
         return reject("file:// urls are not remote repositories");
@@ -74,8 +88,10 @@ pub fn normalize_clone_url(url: &str) -> Result<String, ScmError> {
     // the first `:` and no URL scheme (`://`) anywhere.
     if !url.contains("://") {
         if let Some((before, after)) = url.split_once(':') {
-            if before.contains('@') && !before.contains('/') && !after.is_empty() {
-                return Ok(url.to_string());
+            if let Some((_, host)) = before.split_once('@') {
+                if !before.contains('/') && valid_ssh_host(host) && !after.is_empty() {
+                    return Ok(url.to_string());
+                }
             }
         }
     }
@@ -87,17 +103,24 @@ pub fn normalize_clone_url(url: &str) -> Result<String, ScmError> {
         return reject("unsupported url scheme");
     }
     // Shorthand `owner/repo` → GitHub https.
+    let shorthand_part = |part: &str| {
+        !part.is_empty()
+            && !part.starts_with(['-', '.'])
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
     if let Some((owner, repo)) = url.split_once('/') {
-        if !owner.is_empty()
-            && !repo.is_empty()
-            && !repo.contains('/')
-            && !owner.starts_with(['-', '.'])
-            && !repo.starts_with(['-', '.'])
-        {
+        if shorthand_part(owner) && shorthand_part(repo) {
             return Ok(format!("https://github.com/{owner}/{repo}.git"));
         }
     }
     reject("not a recognized remote repository url")
+}
+
+/// An ssh host that ssh cannot read as an option.
+fn valid_ssh_host(host: &str) -> bool {
+    !host.is_empty() && !host.starts_with('-')
 }
 
 /// Reject a repository directory name that would escape the projects dir or
@@ -202,12 +225,12 @@ pub fn resolve_session_scratch_dir(
     crucible_core::config::expand_tilde(raw, home)
 }
 
-/// Run `git clone -- <url> <dest>` with an argument vector (never a shell
-/// string). The `--` separator guarantees `url` and `dest` can't be read as
-/// flags. No timeout and no credential handling — cloning uses git's ambient
+/// Run `git clone <options> -- <url> <dest>` with an argument vector (never a
+/// shell string). The `--` separator guarantees `url` and `dest` can't be read
+/// as flags. `options` are the caller's own clone flags, such as `--depth 1`. No timeout and no credential handling — cloning uses git's ambient
 /// auth (ssh-agent / credential helper). On failure the error carries the last
 /// 10 lines of git's stderr.
-pub async fn clone_repo(url: &str, dest: &Path) -> Result<(), ScmError> {
+pub async fn clone_repo(url: &str, dest: &Path, options: &[&str]) -> Result<(), ScmError> {
     if dest.exists() {
         return Err(ScmError::DestExists(dest.to_string_lossy().to_string()));
     }
@@ -221,7 +244,11 @@ pub async fn clone_repo(url: &str, dest: &Path) -> Result<(), ScmError> {
         stderr_tail: Some(10),
         ..GitOpts::default()
     };
-    match run_git(parent, &["clone", "--", url, &dest_str], opts).await {
+    let args: Vec<&str> = std::iter::once("clone")
+        .chain(options.iter().copied())
+        .chain(["--", url, &dest_str])
+        .collect();
+    match run_git(parent, &args, opts).await {
         Ok(_) => Ok(()),
         Err(GitError::Spawn(e)) => Err(ScmError::Io(e)),
         Err(GitError::Failed { stderr, .. }) => Err(ScmError::Git("clone".to_string(), stderr)),
@@ -300,41 +327,73 @@ mod tests {
     use super::*;
     use crate::test_support::git;
 
-    #[test]
-    fn normalizes_https_and_ssh_urls_verbatim() {
-        assert_eq!(
-            normalize_clone_url("https://github.com/o/r.git").unwrap(),
-            "https://github.com/o/r.git"
-        );
-        assert_eq!(
-            normalize_clone_url("http://example.com/o/r").unwrap(),
-            "http://example.com/o/r"
-        );
-        assert_eq!(
-            normalize_clone_url("git@github.com:o/r.git").unwrap(),
-            "git@github.com:o/r.git"
-        );
+    /// Each URL and the one result that a git URL validator must give:
+    /// `Some(url)` for the URL that git gets, `None` for a refusal.
+    const URL_CASES: &[(&str, Option<&str>)] = &[
+        // Remote forms that the validator accepts.
+        (
+            "https://github.com/o/r.git",
+            Some("https://github.com/o/r.git"),
+        ),
+        ("http://example.com/o/r", Some("http://example.com/o/r")),
+        ("git@github.com:o/r.git", Some("git@github.com:o/r.git")),
+        ("ssh://git@host/o/r.git", Some("ssh://git@host/o/r.git")),
+        (
+            "ssh://git@host:2222/o/r.git",
+            Some("ssh://git@host:2222/o/r.git"),
+        ),
+        ("owner/repo", Some("https://github.com/owner/repo.git")),
+        // `<transport>::<address>`: the `ext::` transport runs a command.
+        ("ext::sh -c touch% /tmp/pwned", None),
+        ("ext::/tmp/evil.sh", None),
+        ("git@host::repo", None),
+        ("https://example.com/ext::evil", None),
+        ("fd::17/repo", None),
+        // Option injection.
+        ("--upload-pack=touch /tmp/pwned", None),
+        ("--upload-pack=evil", None),
+        ("-oProxyCommand=evil", None),
+        ("", None),
+        // Whitespace.
+        ("https://host/o/r .git", None),
+        ("https://host/o/r\n", None),
+        ("git@host:o/r --upload-pack=x", None),
+        ("user/with space", None),
+        // Local paths: git reads a path without a host from the disk.
+        ("file:///etc/passwd", None),
+        ("/etc/passwd", None),
+        ("./local/repo", None),
+        ("../repo", None),
+        ("~/repo", None),
+        ("git@host", None),
+        // Other schemes, and ssh forms other than `ssh://git@host/path`.
+        ("git://host/repo", None),
+        ("ftp://host/repo", None),
+        ("ssh://host/repo", None),
+        ("ssh://nobody@host/repo", None),
+        ("ssh://git@host", None),
+        ("ssh://git@-oProxyCommand=evil/repo", None),
+        // Shorthand is exactly `owner/repo` in `[A-Za-z0-9._-]`.
+        ("owner/repo/extra", None),
+        ("user/$(whoami)", None),
+        ("user/repo;rm", None),
+    ];
+
+    /// The rows where `validate` gives a result other than the table.
+    fn url_mismatches<E>(validate: impl Fn(&str) -> Result<String, E>) -> Vec<String> {
+        URL_CASES
+            .iter()
+            .filter_map(|&(url, want)| {
+                let got = validate(url).ok();
+                (got.as_deref() != want).then(|| format!("{url:?}: got {got:?}, want {want:?}"))
+            })
+            .collect()
     }
 
     #[test]
-    fn expands_shorthand_to_github_https() {
-        assert_eq!(
-            normalize_clone_url("owner/repo").unwrap(),
-            "https://github.com/owner/repo.git"
-        );
-    }
-
-    #[test]
-    fn rejects_hostile_clone_urls() {
-        assert!(normalize_clone_url("").is_err());
-        assert!(normalize_clone_url("-oProxyCommand=evil").is_err());
-        assert!(normalize_clone_url("has space/repo").is_err());
-        assert!(normalize_clone_url("file:///etc/passwd").is_err());
-        assert!(normalize_clone_url("/home/user/repo").is_err());
-        assert!(normalize_clone_url("./local/repo").is_err());
-        assert!(normalize_clone_url("~/repo").is_err());
-        assert!(normalize_clone_url("owner/repo/extra").is_err());
-        assert!(normalize_clone_url("ssh://host/repo").is_err());
+    fn git_url_validator_matches_the_table() {
+        let bad = url_mismatches(normalize_clone_url);
+        assert!(bad.is_empty(), "{bad:#?}");
     }
 
     #[test]
@@ -511,21 +570,34 @@ mod tests {
 
         // Clone it to a fresh destination that does not yet exist.
         let dest = tmp.path().join("clone");
-        clone_repo(&src_s, &dest).await.unwrap();
+        clone_repo(&src_s, &dest, &["--branch", "master"])
+            .await
+            .unwrap();
         assert!(dest.join("README.md").is_file());
         assert!(dest.join(".git").is_dir());
 
         // Cloning onto an existing path is refused.
         assert!(matches!(
-            clone_repo(&src_s, &dest).await,
+            clone_repo(&src_s, &dest, &[]).await,
             Err(ScmError::DestExists(_))
+        ));
+
+        // The caller's clone options reach git.
+        assert!(matches!(
+            clone_repo(
+                &src_s,
+                &tmp.path().join("no-branch"),
+                &["--branch", "absent"]
+            )
+            .await,
+            Err(ScmError::Git(_, _))
         ));
 
         // A bogus source surfaces git's stderr.
         let missing = tmp.path().join("nope");
         let out = tmp.path().join("out");
         assert!(matches!(
-            clone_repo(&missing.to_string_lossy(), &out).await,
+            clone_repo(&missing.to_string_lossy(), &out, &[]).await,
             Err(ScmError::Git(_, _))
         ));
     }

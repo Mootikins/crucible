@@ -782,7 +782,7 @@ pub(crate) async fn handle_scm_clone(
         );
     }
 
-    if let Err(e) = crate::scm::clone_repo(&url, &dest).await {
+    if let Err(e) = crate::scm::clone_repo(&url, &dest, &[]).await {
         return match e {
             crate::scm::ScmError::DestExists(_) => {
                 Response::error(req.id, INVALID_PARAMS, e.to_string())
