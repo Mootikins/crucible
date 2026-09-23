@@ -185,6 +185,10 @@ pub async fn bootstrap_plugin_entry(
 
     let url = crate::scm::normalize_clone_url(url)
         .with_context(|| format!("rejecting plugin '{}'", name))?;
+    // Refuse a bad pin before the clone, so that no clone needs a rollback.
+    if let Some(pin) = pin {
+        crate::scm::validate_pin(pin).with_context(|| format!("rejecting plugin '{}'", name))?;
+    }
     info!("Cloning plugin '{}' from {}", name, url);
 
     // Shallow clone unless we need to check out a specific SHA later —
@@ -201,9 +205,7 @@ pub async fn bootstrap_plugin_entry(
         .with_context(|| format!("git clone failed for '{}'", name))?;
 
     if let Some(pin) = pin {
-        let checkout =
-            crate::scm::run_git(&dest, &["checkout", pin], crate::scm::GitOpts::default()).await;
-        if let Err(e) = checkout {
+        if let Err(e) = crate::scm::checkout_pin(&dest, pin).await {
             // Roll back the cloned dir so retries don't get stuck on
             // a half-installed plugin. Warn loudly if rollback itself
             // fails — the user needs to know `dest` is dirty so they

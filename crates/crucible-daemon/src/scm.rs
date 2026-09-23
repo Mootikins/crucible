@@ -255,6 +255,37 @@ pub async fn clone_repo(url: &str, dest: &Path, options: &[&str]) -> Result<(), 
     }
 }
 
+/// Refuse a plugin pin that git could read as an option or a transport:
+/// empty, a leading `-`, whitespace or `::`.
+pub fn validate_pin(pin: &str) -> Result<(), ScmError> {
+    let reject = |why: &str| Err(ScmError::InvalidUrl(format!("pin {pin:?}: {why}")));
+    if pin.is_empty() {
+        return reject("empty");
+    }
+    if pin.starts_with('-') {
+        return reject("starts with '-'");
+    }
+    if pin.chars().any(char::is_whitespace) {
+        return reject("contains whitespace");
+    }
+    if pin.contains("::") {
+        return reject("contains '::'");
+    }
+    Ok(())
+}
+
+/// Check out `pin` (a SHA, tag or branch) in the repository at `repo`.
+/// `--end-of-options` stops git from reading the pin as an option, even for
+/// a pin that did not go through [`validate_pin`].
+pub(crate) async fn checkout_pin(repo: &Path, pin: &str) -> Result<(), ScmError> {
+    let args = ["checkout", "--end-of-options", pin];
+    match run_git(repo, &args, GitOpts::default()).await {
+        Ok(_) => Ok(()),
+        Err(GitError::Spawn(e)) => Err(ScmError::Io(e)),
+        Err(GitError::Failed { stderr, .. }) => Err(ScmError::Git("checkout".to_string(), stderr)),
+    }
+}
+
 /// Per-run settings for [`run_git`].
 #[derive(Clone, Copy, Default)]
 pub(crate) struct GitOpts<'a> {
@@ -536,6 +567,57 @@ mod tests {
             panic!("{err}");
         };
         assert!(stderr.lines().count() > 2, "{stderr}");
+    }
+
+    #[test]
+    fn validate_pin_refuses_a_pin_that_git_could_read_as_an_option() {
+        for pin in [
+            "-f",
+            "--orphan=x",
+            "--upload-pack=x",
+            "v1 -f",
+            "v1\n",
+            "ext::x",
+            "",
+        ] {
+            assert!(validate_pin(pin).is_err(), "pin {pin:?}");
+        }
+        for pin in ["v1", "main", "release/1.2", "0123abcd"] {
+            assert!(validate_pin(pin).is_ok(), "pin {pin:?}");
+        }
+    }
+
+    /// Git gets the pin as a revision, never as an option: `-f` does not
+    /// discard a change in the work tree.
+    #[tokio::test]
+    async fn checkout_pin_gives_git_the_pin_as_a_revision() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        git(repo, &["init", "-q", "-b", "master"]).await;
+        std::fs::write(repo.join("a"), "1").unwrap();
+        git(repo, &["add", "."]).await;
+        git(
+            repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "-m",
+                "one",
+            ],
+        )
+        .await;
+        git(repo, &["tag", "v1"]).await;
+        std::fs::write(repo.join("a"), "changed").unwrap();
+
+        let got = checkout_pin(repo, "-f").await;
+        assert!(matches!(got, Err(ScmError::Git(_, _))), "{got:?}");
+        assert_eq!(std::fs::read_to_string(repo.join("a")).unwrap(), "changed");
+
+        assert!(checkout_pin(repo, "v1").await.is_ok());
     }
 
     /// End-to-end clone against a real local fixture repo. `clone_repo` is
