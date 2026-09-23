@@ -82,7 +82,7 @@ afterEach(() => {
 describe('SessionStatusChips', () => {
   it('opens the plugin approval control from the shared command route', async () => {
     setCurrentSession(baseSession());
-    serve({ [STATUS]: () => ({ status: [{ id: 'ask', key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' }] }) });
+    serve({ [STATUS]: () => ({ status: [{ id: 'ask', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' }] }) });
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-status-ask')).toBeInTheDocument());
     getBus().emit('openPluginApproval', {});
@@ -175,7 +175,7 @@ describe('SessionStatusChips', () => {
     serve({
       [STATUS]: () => ({ status: [
         { id: 'later', key: 'later', plugin: 'weather', text: 'forecast', level: 'info', color_group: 'hue-2', priority: 80, pinned: false, action: null },
-        { id: 'ask', key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' },
+        { id: 'ask', key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 10, pinned: true, action: 'plugin_approval' },
       ] }),
     });
     render(() => <SessionStatusChips />);
@@ -185,14 +185,14 @@ describe('SessionStatusChips', () => {
     expect(pinned).toHaveAttribute('data-pinned', 'true');
     expect(pinned).toHaveAttribute('data-action', 'plugin_approval');
     pinned.click();
-    expect(screen.getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['goal asksgoal', 'forecastweather']);
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['goal · askgoal', 'forecastweather']);
   });
 
   it('keeps pinned controls outside the scroll strip and offers every item in the menu', async () => {
     setCurrentSession(baseSession());
     serve({ [STATUS]: () => ({ status: [
       { key: 'early', plugin: 'sync', text: 'sync idle', level: 'info', priority: 10 },
-      { key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
+      { key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
       { key: 'late', plugin: 'index', text: 'index ready', level: 'ok', priority: 30 },
     ] }) });
     render(() => <SessionStatusChips />);
@@ -206,7 +206,7 @@ describe('SessionStatusChips', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(3);
   });
 
-  it('uses a first touch tap for preview and a second tap for the full menu', async () => {
+  it('uses a first touch tap for preview and a second tap for that item', async () => {
     setCurrentSession(baseSession());
     serve({ [STATUS]: () => ({ status: [{ key: 'sync', plugin: 'sync', text: 'sync idle', level: 'info' }] }) });
     render(() => <SessionStatusChips />);
@@ -217,7 +217,8 @@ describe('SessionStatusChips', () => {
     expect(screen.getByTestId('session-status')).toHaveClass('is-preview');
     expect(screen.queryByRole('menu')).toBeNull();
     fireEvent.click(chip, { detail: 1 });
-    expect(screen.getByRole('menu', { name: 'Session status' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Status detail' })).toHaveTextContent('sync idle — sync');
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('renders nothing when the session published no slots', async () => {

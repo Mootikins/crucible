@@ -109,7 +109,13 @@ export const SessionStatusChips: Component = () => {
       aria-label={`${slot.text} — ${slot.plugin}; open session status`}
       aria-haspopup="menu" aria-expanded={menuOpen()}
       onClick={(event) => {
-        if (pointerType === 'touch' && event.detail > 0 && !preview()) { expand(); return; }
+        if (pointerType === 'touch' && event.detail > 0) {
+          if (!preview()) { expand(); return; }
+          const rect = area?.getBoundingClientRect();
+          if (rect) setPosition({ right: Math.max(8, innerWidth - rect.right), bottom: Math.max(8, innerHeight - rect.top + 6) });
+          choose(slot);
+          return;
+        }
         openMenu();
       }}>
       <span class="status-dot" data-testid="status-dot" aria-hidden="true" />

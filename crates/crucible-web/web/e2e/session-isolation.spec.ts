@@ -193,8 +193,8 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
   await setupBasicMocks(page, {
     sessionStatus: {
       status: [
-        { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info', priority: 10 },
-        { key: 'ask', plugin: 'goal', text: 'goal asks', level: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
+        { key: 'zarquon', plugin: 'zarquon', text: 'flux capacitor charged', level: 'info', color_group: 'warn', priority: 10 },
+        { key: 'ask', plugin: 'goal', text: 'goal · ask', level: 'warn', color_group: 'warn', priority: 20, pinned: true, action: 'plugin_approval' },
       ],
     },
   });
@@ -203,7 +203,13 @@ test("plugin status dots expand and expose the whole ordered list", async ({ pag
   await openSession(page, 'test-session-001');
 
   const dot = page.getByTestId('session-status-zarquon');
+  const pinned = page.getByTestId('session-status-ask');
   await expect(dot).toBeVisible({ timeout: 15000 });
+  await expect(pinned).toContainText('goal · ask');
+  await expect(page.locator('.session-status-pinned')).toHaveCSS('border-left-width', '1px');
+  await expect(pinned.locator('.status-dot')).not.toHaveCSS('box-shadow', 'none');
+  expect(await pinned.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe(await dot.locator('.status-dot').evaluate((el) => getComputedStyle(el).backgroundColor));
   await expect(page.getByTestId('composer-chip-dock')).toBeVisible();
   await expect(dot.locator('.status-dot-name')).toHaveCSS('opacity', '0');
   await dot.hover();

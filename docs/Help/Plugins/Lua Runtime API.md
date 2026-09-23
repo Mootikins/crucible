@@ -1283,7 +1283,7 @@ local sl = cru.statusline
 sl.publish(session.id, {
   sl.item{ id = "forecast", text = "Rain soon", priority = 40,
            plugin = "weather", color = "hue-4" },
-  sl.item{ id = "goal-approval", text = "goal asks", priority = 10,
+  sl.item{ id = "goal-approval", text = "goal · ask", priority = 10,
            plugin = "goal", color = "warn", action = "plugin_approval" },
 })
 ```
@@ -1298,10 +1298,13 @@ every item, including those behind its `+N` overflow.
 
 On the web composer, the same items appear at the right of the chip row as
 colored dots. Hover or keyboard focus reveals their text. Informational items
-scroll horizontally when expanded; pinned controls stay on the right. Click a
-dot to open the full status menu, including items outside the visible strip.
-On touch, the first tap previews names for three seconds and the next tap
-opens the menu. The menu's item opens its detail or engine control.
+scroll horizontally when expanded; pinned controls stay on the right, beyond
+a quiet divider. A neutral ring distinguishes pinned dots from informational
+dots with the same color. Click a dot to open the full status menu, including
+items outside the visible strip. On touch, the first tap previews names for
+three seconds and the next tap opens that item's detail or engine control.
+Numeric `priority` only orders items; `pinned` controls visibility. Lua owns
+the text, including the example label `goal · ask`.
 
 ## Publications
 

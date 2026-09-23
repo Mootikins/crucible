@@ -67,6 +67,8 @@
   .a .cluster .status-trigger { margin-left: -5px; transition: margin-left 280ms ease; }
   .a .cluster .status-trigger:first-child { margin-left: 0; }
   .a .status-trigger.pinned { flex: none; margin-left: -5px; transition: margin-left 280ms ease; }
+  .a .pinned-group { display: flex; align-items: center; height: 16px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--hairline-strong); }
+  .a .pinned-group .dot { box-shadow: 0 0 0 1px var(--muted); }
   .a .cluster .dot { width: 16px; height: 16px; border: 2px solid var(--canvas); box-shadow: none; }
   .a .status-area:hover .status-trigger, .a .status-area:has(:focus-visible) .status-trigger, .a.preview .status-trigger, .a.tap-preview .status-trigger { margin-left: 7px; }
   .a .status-area:hover .status-name, .a .status-area:has(:focus-visible) .status-name, .a.preview .status-name, .a.tap-preview .status-name { max-width: 94px; opacity: 1; transform: translateX(0); margin-left: 5px; }
@@ -90,7 +92,7 @@
 </style>
 <main>
   <h1>Status dots in the current composer</h1>
-  <p class="intro">A sits at the bottom right. Hover or focus to reveal labels; swipe or scroll horizontally to reach earlier items. On touch, one tap previews for three seconds and a second tap opens the menu.</p>
+  <p class="intro">A sits at the bottom right. Hover or focus to reveal labels; swipe or scroll horizontally to reach earlier items. On touch, one tap previews for three seconds and a second tap opens the tapped status.</p>
   <div id="studies"></div>
 </main>
 <script>
@@ -116,7 +118,7 @@ document.getElementById('studies').innerHTML = designs.map(({ id, title, descrip
         <div class="chip-row"><span class="chip">llama3.2 <span class="arrow">⌄</span></span><span class="chip mode">c</span><span class="chip project">♧ project</span><span class="chip kiln">♙ my-kiln <span class="arrow">⌄</span></span>
           <div class="status-area"><div class="cluster" role="group" aria-label="Plugin statuses; scroll horizontally for more">
             ${(id === 'c' ? statuses.slice(-3) : statuses.slice(0, -1)).map((s, i) => `<button class="status-trigger" type="button" style="--left:${i * 13}px;--rise:${(3-i) * 31}px" aria-label="${esc(s.name)}; open status actions" aria-haspopup="menu" aria-expanded="false"><span class="dot" style="--color:${s.color}"></span><span class="status-name">${esc(s.name)}</span></button>`).join('')}
-          </div>${id === 'a' ? `<button class="status-trigger pinned" type="button" aria-label="goal · ask; open status actions" aria-haspopup="menu" aria-expanded="false"><span class="dot" style="--color:var(--warn)"></span><span class="status-name">goal · ask</span></button>` : ''}<div class="menu" role="menu"><div class="menu-title">Session status</div>${(id === 'c' ? statuses.slice(-3) : statuses).map(s => `<button class="menu-item" type="button" role="menuitem"><span class="dot" style="--color:${s.color}"></span>${esc(s.name)}<small>Open</small></button>`).join('')}</div></div>
+          </div>${id === 'a' ? `<div class="pinned-group"><button class="status-trigger pinned" type="button" aria-label="goal · ask; open status actions" aria-haspopup="menu" aria-expanded="false"><span class="dot" style="--color:var(--warn)"></span><span class="status-name">goal · ask</span></button></div>` : ''}<div class="menu" role="menu"><div class="menu-title">Session status</div>${(id === 'c' ? statuses.slice(-3) : statuses).map(s => `<button class="menu-item" type="button" role="menuitem"><span class="dot" style="--color:${s.color}"></span>${esc(s.name)}<small>Open</small></button>`).join('')}</div><div class="menu item-popup" role="dialog" aria-label="Status detail"><div class="menu-title">Status detail</div><div class="item-popup-text"></div><button class="menu-item close-detail" type="button">Close</button></div></div>
         </div>
       </div>
     </div>
@@ -124,6 +126,7 @@ document.getElementById('studies').innerHTML = designs.map(({ id, title, descrip
   </section>`).join('');
 for (const study of document.querySelectorAll('.study')) {
   const menu = study.querySelector('.menu');
+  const itemPopup = study.querySelector('.item-popup');
   const area = study.querySelector('.status-area');
   const cluster = study.querySelector('.cluster');
   const triggers = [...study.querySelectorAll('.status-trigger')];
@@ -144,7 +147,7 @@ for (const study of document.querySelectorAll('.study')) {
     const scheduleCollapse = () => {
       clearTimeout(tapTimer);
       tapTimer = setTimeout(() => {
-        if (touching || menu.classList.contains('open')) { scheduleCollapse(); return; }
+        if (touching || menu.classList.contains('open') || itemPopup.classList.contains('open')) { scheduleCollapse(); return; }
         study.classList.remove('tap-preview');
         area.querySelector(':focus')?.blur();
       }, 3000);
@@ -165,19 +168,27 @@ for (const study of document.querySelectorAll('.study')) {
     };
     study.scheduleCollapse = scheduleCollapse;
     study.isFirstTap = event => pointerType === 'touch' && event.detail > 0 && !study.classList.contains('tap-preview');
+    study.isSecondTap = event => pointerType === 'touch' && event.detail > 0 && study.classList.contains('tap-preview');
   }
   const close = () => {
     menu.classList.remove('open');
+    itemPopup.classList.remove('open');
     triggers.forEach(t => t.setAttribute('aria-expanded', 'false'));
     if (study.classList.contains('tap-preview')) study.scheduleCollapse?.();
   };
   triggers.forEach(trigger => trigger.addEventListener('click', event => {
     if (study.isFirstTap?.(event)) { study.holdTapPreview(); return; }
+    if (study.isSecondTap?.(event)) {
+      itemPopup.querySelector('.item-popup-text').textContent = trigger.querySelector('.status-name').textContent;
+      itemPopup.classList.add('open');
+      return;
+    }
     const wasOpen = menu.classList.contains('open');
     document.querySelectorAll('.menu.open').forEach(m => m.classList.remove('open'));
     if (wasOpen) close();
     else { menu.classList.add('open'); triggers.forEach(t => t.setAttribute('aria-expanded', 'true')); menu.querySelector('.menu-item').focus(); }
   }));
+  itemPopup.querySelector('.close-detail').addEventListener('click', close);
   study.addEventListener('keydown', event => {
     if (event.key === 'Escape') { close(); triggers[0].focus(); }
     if (event.key === 'ArrowDown' && menu.classList.contains('open')) {

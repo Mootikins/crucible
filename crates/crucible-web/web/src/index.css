@@ -624,6 +624,8 @@
 .session-status-strip { display: flex; align-items: center; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
 .session-status-strip::-webkit-scrollbar { display: none; }
 .session-status-pinned { display: flex; flex: none; align-items: center; }
+.session-status-area:has(.session-status-strip .status-dot-button) .session-status-pinned:has(.status-dot-button) { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--cru-color-hairline-strong); }
+.session-status-pinned .status-dot { box-shadow: 0 0 0 1px var(--cru-color-muted-dark); }
 .status-dot-button { display: inline-flex; flex: none; align-items: center; height: 28px; padding: 0; margin-left: -5px; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 12px; transition: margin-left 280ms cubic-bezier(.2,.8,.2,1), padding-right 280ms ease; }
 .status-dot-button:first-child { margin-left: 0; }
 .status-dot-button:focus-visible, .status-menu-item:focus-visible { outline: 2px solid var(--cru-color-attention); outline-offset: 2px; }

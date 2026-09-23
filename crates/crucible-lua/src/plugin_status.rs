@@ -370,7 +370,7 @@ mod tests {
             local sl = cru.statusline
             sl.publish("s1", {
               sl.item{ id="later", text="later", priority=40, plugin="weather" },
-              sl.item{ id="approval", text="goal asks", priority=20,
+              sl.item{ id="approval", text="goal · ask", priority=20,
                        color="warn", action="plugin_approval", pinned=false },
               sl.item{ id="first", text="first", priority=10, color="hue-3" },
             })
