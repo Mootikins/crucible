@@ -802,8 +802,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 json!({"status": []})
             } else {
                 json!({"status": [
-                    {"key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info", "progress": null},
-                    {"key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn", "progress": 0.6},
+                    {"key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info", "progress": null, "color_group": "hue-4"},
+                    {"key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn", "progress": 0.6, "color_group": "warn"},
                 ]})
             }
         }

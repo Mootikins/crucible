@@ -3692,7 +3692,7 @@
     "/api/session/{id}/status": {
       "get": {
         "summary": "Proxy `session.status` verbatim.",
-        "description": "The daemon answers `{\"status\": [{key, plugin, text, level}, …]}`, sorted by\nkey. Nothing here reads a key: slots are keyed precisely so the chrome\nowner renders any plugin's state generically, and a match on a known key\nwould be this crate learning what one particular plugin does. Every future\nplugin gets the channel for free, so long as this stays a passthrough.\n\nA session that published nothing — the overwhelmingly common case, and any\nsession the daemon has never seen — comes back as an empty array, not an\nerror.",
+        "description": "The daemon answers `{\"status\": [{key, plugin, text, level, color_group}, …]}`, sorted by\nkey. Nothing here reads a key: slots are keyed precisely so the chrome\nowner renders any plugin's state generically, and a match on a known key\nwould be this crate learning what one particular plugin does. Every future\nplugin gets the channel for free, so long as this stays a passthrough.\n\nA session that published nothing — the overwhelmingly common case, and any\nsession the daemon has never seen — comes back as an empty array, not an\nerror.",
         "operationId": "session_status",
         "parameters": [
           {
@@ -9462,7 +9462,8 @@
           "plugin",
           "text",
           "level",
-          "progress"
+          "progress",
+          "color_group"
         ],
         "properties": {
           "key": {
@@ -9483,6 +9484,10 @@
           },
           "progress": {
             "description": "Progress of the slot's work: a fraction (`0.0..=1.0`), the literal\nstring `\"indeterminate\"`, or `null` when the slot describes a state\nrather than work (`crates/crucible-daemon/src/server/plugins.rs`).\n\n`null` must stay distinguishable from `0.0`: a bar pinned at zero\nreads as stalled, which a state slot such as \"sandboxed: alpine\" is\nnot. Opaque `serde_json::Value` rather than a typed union, the same\nchoice `PluginOptionValueResponse::value` makes for a plugin's opaque\noption value — the daemon always writes this key, so it is required\nrather than optional."
+          },
+          "color_group": {
+            "type": "string",
+            "description": "Named status group; the browser maps it through its own CSS theme."
           }
         }
       },

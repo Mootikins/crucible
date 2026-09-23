@@ -157,6 +157,7 @@ pub(crate) async fn handle_session_status(
                 "plugin": e.plugin,
                 "text": e.text,
                 "level": e.level,
+                "color_group": e.color_group.name(),
                 "progress": progress,
             })
         })

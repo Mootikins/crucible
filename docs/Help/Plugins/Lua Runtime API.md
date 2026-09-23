@@ -1254,7 +1254,9 @@ cru.plugin.set_status{
   session = session.id,      -- required
   key     = "oci",           -- required; one slot per key per session
   text    = "sandboxed: alpine:latest",  -- required; keep it short
+  plugin  = "oci",           -- optional; used for a stable default color
   level   = "info",          -- info | warn | error (default info)
+  color   = "hue-4",         -- optional named status color group
   progress = 0.4,            -- optional: fraction 0..1, or `true` for a spinner
 }
 
@@ -1265,6 +1267,10 @@ cru.plugin.clear_status{ session = session.id, key = "oci" }
 fraction complete, clamped to 0..1. Omit it for a state that is not work
 ("sandboxed: alpine"). Setting empty text is not the same as clearing —
 `clear_status` removes the slot. A session's slots are dropped when it ends.
+Status colors are named groups: `ok`, `warn`, `danger`, `info`, and `hue-0`
+through `hue-7`. An unknown name uses `info`. Without `color`, warning and
+error levels use their semantic groups; other slots get a stable hue from the
+plugin name. The TUI and web resolve the same group name in their own palettes.
 
 ## Publications
 

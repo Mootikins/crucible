@@ -26,6 +26,7 @@ pub mod exprs;
 pub mod geometry;
 pub mod groups;
 pub mod slot;
+pub mod status_color;
 
 pub mod remote;
 pub use remote::apply_ui_config;

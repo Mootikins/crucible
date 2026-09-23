@@ -600,6 +600,26 @@
   --shadow-2xl: var(--cru-shadow-2xl);
 }
 
+/* Named status groups use one web mapping. Unknown names inherit info. */
+.session-status-color {
+  --status-fg: var(--cru-color-precog);
+  color: var(--status-fg);
+  border-color: color-mix(in srgb, var(--status-fg) 40%, transparent);
+  background: color-mix(in srgb, var(--status-fg) 10%, transparent);
+}
+.session-status-color[data-status-color='ok'] { --status-fg: var(--cru-color-ok); }
+.session-status-color[data-status-color='warn'] { --status-fg: var(--cru-color-attention); }
+.session-status-color[data-status-color='danger'] { --status-fg: var(--cru-color-error); }
+.session-status-color[data-status-color='info'] { --status-fg: var(--cru-color-precog); }
+.session-status-color[data-status-color='hue-0'] { --status-fg: var(--cru-color-term-red); }
+.session-status-color[data-status-color='hue-1'] { --status-fg: var(--cru-color-canvas-orange); }
+.session-status-color[data-status-color='hue-2'] { --status-fg: var(--cru-color-term-yellow); }
+.session-status-color[data-status-color='hue-3'] { --status-fg: var(--cru-color-term-green); }
+.session-status-color[data-status-color='hue-4'] { --status-fg: var(--cru-color-term-cyan); }
+.session-status-color[data-status-color='hue-5'] { --status-fg: var(--cru-color-term-blue); }
+.session-status-color[data-status-color='hue-6'] { --status-fg: var(--cru-color-term-magenta); }
+.session-status-color[data-status-color='hue-7'] { --status-fg: var(--cru-color-term-bright-red); }
+
 /* ── Elevation follows the theme on its own now ─────────────────────────
  * This block used to re-assign `--tw-shadow` per utility under the light
  * selector. Tailwind does not emit `--shadow-*` as a custom property; it

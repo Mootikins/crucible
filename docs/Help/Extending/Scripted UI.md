@@ -104,6 +104,13 @@ time, so swapping the palette moves every group that references it.
 `link` is a base to override, not a rename: attributes set on the linking group
 beat the target, so you can say "like `Visual`, but red".
 
+Status slots also understand the named groups `ok`, `warn`, `danger`, `info`,
+and `hue-0` through `hue-7`. The TUI default maps them to its palette, and the
+bundled `ansi16` theme uses terminal color slots for emulators with their own
+palette. Existing themes, including `opencode`, remain available. A custom
+`cru.hl` definition for a status group takes precedence in the TUI; web status
+chips resolve the group name with CSS.
+
 ## Surface geometry
 
 > **Two meanings of "surface", and they are not interchangeable.** This section is

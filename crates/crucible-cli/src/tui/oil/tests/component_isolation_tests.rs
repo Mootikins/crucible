@@ -98,6 +98,36 @@ mod extract_ansi_fg_color_tests {
 mod status_bar_tests {
     use super::*;
 
+    #[test]
+    fn snapshot_named_status_colors() {
+        use crate::tui::oil::components::status_items::{render_bar, ItemContext};
+        use crucible_lua::statusline_items::StatusItem;
+
+        let bar = StatusBar::new();
+        let exprs = std::collections::BTreeMap::new();
+        let ctx = ItemContext {
+            data: &bar,
+            streaming: false,
+            exprs: &exprs,
+        };
+        let items = ["ok", "warn", "danger", "info", "hue-4"]
+            .into_iter()
+            .flat_map(|group| {
+                [
+                    StatusItem::Hl {
+                        group: group.into(),
+                        item: Box::new(StatusItem::Text(group.into())),
+                    },
+                    StatusItem::Text(" ".into()),
+                ]
+            })
+            .collect::<Vec<_>>();
+        assert_snapshot!(
+            "statusline_named_status_colors",
+            render_to_string(&render_bar(&items, &ctx), 80)
+        );
+    }
+
     fn render_bar(bar: &StatusBar, width: usize) -> String {
         render_to_plain_text(&bar.emergency_view(), width)
     }

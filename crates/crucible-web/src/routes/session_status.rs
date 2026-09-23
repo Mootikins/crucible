@@ -38,6 +38,8 @@ pub(super) struct SessionStatusSlot {
     /// option value — the daemon always writes this key, so it is required
     /// rather than optional.
     progress: serde_json::Value,
+    /// Named status group; the browser maps it through its own CSS theme.
+    color_group: String,
 }
 
 /// What `GET /api/session/{id}/status` answers.
@@ -50,7 +52,7 @@ pub(super) struct SessionStatusResponse {
 
 /// Proxy `session.status` verbatim.
 ///
-/// The daemon answers `{"status": [{key, plugin, text, level}, …]}`, sorted by
+/// The daemon answers `{"status": [{key, plugin, text, level, color_group}, …]}`, sorted by
 /// key. Nothing here reads a key: slots are keyed precisely so the chrome
 /// owner renders any plugin's state generically, and a match on a known key
 /// would be this crate learning what one particular plugin does. Every future
@@ -96,6 +98,7 @@ mod tests {
             serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
         assert_eq!(slots.status[0].key, "oci");
         assert_eq!(slots.status[1].plugin, "weather");
+        assert_eq!(json["status"][0]["color_group"], "hue-4");
     }
 
     /// The daemon's `progress` — a fraction, `"indeterminate"`, or `null` for

@@ -9,6 +9,7 @@
 //! keyed so the chrome owner renders any plugin's slots generically, without
 //! knowing what plugins exist.
 
+use crucible_core::status_color::{plugin_hue, StatusColorGroup};
 use mlua::{Lua, Table};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,6 +41,8 @@ pub struct StatusEntry {
     pub text: String,
     /// Severity, for the renderer to style. `info` unless stated.
     pub level: String,
+    /// Named color resolved by each client through its active status theme.
+    pub color_group: StatusColorGroup,
     /// Progress of the work this slot describes, if it is work at all.
     ///
     /// `None` is a state ("sandboxed: alpine"), not a stalled bar.
@@ -126,13 +129,13 @@ pub fn register_status_module(
 
     // One options TABLE, not a string: `session`, `key` and `text` are
     // required — the closure raises a named error for each — while `plugin`,
-    // `level` and `progress` have defaults. `progress` is `true` for
+    // `level`, `color` and `progress` have defaults. `progress` is `true` for
     // indeterminate or a fraction, so it is neither boolean nor number alone.
     let set_registry = registry.clone();
     ns.func(
         "set_status",
         "(status: { session: string, key: string, text: string, plugin: string?, \
-         level: string?, progress: (boolean | number)? }) -> ()",
+         level: string?, color: string?, progress: (boolean | number)? }) -> ()",
         move |_, opts: Table| {
             let session: String = opts.get("session").map_err(|_| {
                 mlua::Error::runtime(
@@ -147,6 +150,15 @@ pub fn register_status_module(
                 .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `text` is required"))?;
             let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
             let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
+            let color_group = match opts.get::<String>("color") {
+                Ok(name) => StatusColorGroup::from_name(&name),
+                Err(_) => match level.as_str() {
+                    "warn" | "warning" => StatusColorGroup::Warn,
+                    "error" | "danger" => StatusColorGroup::Danger,
+                    "ok" | "success" => StatusColorGroup::Ok,
+                    _ => plugin_hue(&plugin),
+                },
+            };
             // `progress = true` is indeterminate; a number is a fraction. Out of
             // range is clamped rather than refused: a plugin miscounting steps
             // should show a full bar, not fail the operation it is reporting on.
@@ -164,6 +176,7 @@ pub fn register_status_module(
                     plugin,
                     text,
                     level,
+                    color_group,
                     progress,
                 },
             );
@@ -195,12 +208,34 @@ pub fn register_status_module(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::status_color::{plugin_hue, StatusColorGroup};
+
+    #[test]
+    fn plugin_status_uses_named_color_groups() {
+        let reg = StatusRegistry::new();
+        let lua = lua_with_status(reg.clone());
+        lua.load(
+            r#"cru.plugin.set_status{ session="s1", key="a", plugin="goal", text="running" }"#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(reg.get("s1")[0].1.color_group, plugin_hue("goal"));
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="a", plugin="goal", text="running", color="warn" }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(reg.get("s1")[0].1.color_group, StatusColorGroup::Warn);
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="a", plugin="goal", text="running", color="unknown" }"#)
+            .exec()
+            .unwrap();
+        assert_eq!(reg.get("s1")[0].1.color_group, StatusColorGroup::Info);
+    }
 
     fn entry(text: &str) -> StatusEntry {
         StatusEntry {
             plugin: "oci".to_string(),
             text: text.to_string(),
             level: "info".to_string(),
+            color_group: plugin_hue("oci"),
             progress: None,
         }
     }

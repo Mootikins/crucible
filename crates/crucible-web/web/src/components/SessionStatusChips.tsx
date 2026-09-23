@@ -11,14 +11,14 @@ import type { ModeDescriptor } from '@/lib/types';
  * mode does.
  *
  * The plugin half deliberately knows nothing about any particular plugin. A
- * slot arrives as `{key, plugin, text, level}`; this renders `text`, attributes
- * it to `plugin`, and picks a tone from `level`. There is no branch on `key`
+ * slot arrives with a named color group; this renders `text`, attributes it
+ * to `plugin`, and lets CSS resolve the group. There is no branch on `key`
  * and no list of known plugins — a plugin shipped tomorrow gets a chip here
  * for free, which is the whole point of the channel. Adding an
  * `if (key === …)` would quietly revoke that.
  *
- * `level` is matched loosely with a fallback because it is the plugin's word,
- * not an enum this file owns.
+ * A pre-color-group daemon has only `level`; keep its semantic fallback until
+ * the daemon and web bundle have both been updated.
  *
  * A slot's `progress` is a fraction, the literal string `"indeterminate"`, or
  * `null` when the slot describes a state rather than work — `null` must stay
@@ -36,12 +36,12 @@ function progressSuffix(progress: unknown): string | null {
   return null;
 }
 
-const TONES: Record<string, string> = {
-  warn: 'border-attention/40 bg-attention/10 text-attention',
-  warning: 'border-attention/40 bg-attention/10 text-attention',
-  error: 'border-error/40 bg-error/10 text-error',
+const legacyGroup = (level: string): string => {
+  if (level === 'warn' || level === 'warning') return 'warn';
+  if (level === 'error' || level === 'danger') return 'danger';
+  if (level === 'ok' || level === 'success') return 'ok';
+  return 'info';
 };
-const DEFAULT_TONE = 'border-hairline bg-surface-elevated text-muted';
 
 export const SessionStatusChips: Component = () => {
   const { currentSession } = useSessionSafe();
@@ -86,9 +86,8 @@ export const SessionStatusChips: Component = () => {
         <For each={slots()}>
           {(slot) => (
             <span
-              class={`inline-flex items-center px-2 py-0.5 rounded-md border text-floor ${
-                TONES[slot.level] ?? DEFAULT_TONE
-              }`}
+              class="session-status-color inline-flex items-center px-2 py-0.5 rounded-md border text-floor"
+              data-status-color={slot.color_group ?? legacyGroup(slot.level)}
               title={`${slot.text} — ${slot.plugin}`}
               data-testid={`session-status-${slot.key}`}
             >

@@ -139,11 +139,25 @@ describe('SessionStatusChips', () => {
     render(() => <SessionStatusChips />);
     await waitFor(() => expect(screen.getByTestId('session-status-d')).toBeInTheDocument());
 
-    const cls = (key: string) => screen.getByTestId(`session-status-${key}`).className;
-    expect(cls('a')).not.toBe(cls('b'));
-    expect(cls('b')).not.toBe(cls('c'));
+    const group = (key: string) => screen.getByTestId(`session-status-${key}`).getAttribute('data-status-color');
+    expect(group('a')).toBe('info');
+    expect(group('b')).toBe('warn');
+    expect(group('c')).toBe('danger');
+    expect(group('d')).toBe('info');
     // An unknown level renders — quietly, like info — rather than vanishing.
     expect(screen.getByTestId('session-status-d').textContent).toContain('nautical');
+  });
+
+  it('uses the named status color group supplied by the daemon', async () => {
+    setCurrentSession(baseSession());
+    serve({
+      [STATUS]: () => ({
+        status: [{ key: 'colored', plugin: 'p', text: 'working', level: 'info', color_group: 'hue-4' }],
+      }),
+    });
+    render(() => <SessionStatusChips />);
+    const chip = await waitFor(() => screen.getByTestId('session-status-colored'));
+    expect(chip).toHaveAttribute('data-status-color', 'hue-4');
   });
 
   it('renders nothing when the session published no slots', async () => {

@@ -273,7 +273,16 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
             // type the renderer draws with — so every attribute a group can
             // carry (fg, bg, bold, dim, italic, underline) reaches the
             // fragment without a field-by-field rebuild that could drop one.
-            let style = theme::groups::get(group).unwrap_or(inherited);
+            // A named status group with no `cru.hl` definition falls back to
+            // the status palette, so the TUI and the web agree on its color.
+            let fallback = crucible_core::status_color::StatusColorGroup::ALL
+                .iter()
+                .copied()
+                .find(|named| named.name() == group.as_str())
+                .map_or(inherited, |named| {
+                    Style::new().fg(theme::status_color::color(named, theme::active()))
+                });
+            let style = theme::groups::get(group).unwrap_or(fallback);
             eval(item, ctx, style)
         }
 
@@ -351,6 +360,29 @@ mod tests {
             background_tasks: 0,
             proposals: 0,
         }
+    }
+
+    #[test]
+    fn named_status_group_colors_the_statusline_fragment() {
+        let data = data();
+        let exprs = BTreeMap::new();
+        let ctx = ItemContext {
+            data: &data,
+            streaming: false,
+            exprs: &exprs,
+        };
+        let item = StatusItem::Hl {
+            group: "warn".into(),
+            item: Box::new(StatusItem::Text("needs input".into())),
+        };
+        let fragments = eval(&item, &ctx, Style::default());
+        assert_eq!(
+            fragments[0].style.fg,
+            Some(theme::status_color::color(
+                crucible_core::status_color::StatusColorGroup::Warn,
+                theme::active(),
+            ))
+        );
     }
 
     #[test]

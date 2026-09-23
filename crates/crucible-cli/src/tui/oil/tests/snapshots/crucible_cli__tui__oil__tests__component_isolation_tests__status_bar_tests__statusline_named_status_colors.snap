@@ -1,0 +1,6 @@
+---
+source: crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs
+assertion_line: 119
+expression: "render_to_string(&render_bar(&items, &ctx), 80)"
+---
+[38;2;158;206;106mok[0m [38;2;224;175;104mwarn[0m [38;2;247;118;142mdanger[0m [38;2;0;206;209minfo[0m [38;2;107;191;187mhue-4[0m

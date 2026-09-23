@@ -1725,7 +1725,7 @@ export interface paths {
         };
         /**
          * Proxy `session.status` verbatim.
-         * @description The daemon answers `{"status": [{key, plugin, text, level}, …]}`, sorted by
+         * @description The daemon answers `{"status": [{key, plugin, text, level, color_group}, …]}`, sorted by
          *     key. Nothing here reads a key: slots are keyed precisely so the chrome
          *     owner renders any plugin's state generically, and a match on a known key
          *     would be this crate learning what one particular plugin does. Every future
@@ -4467,6 +4467,8 @@ export interface components {
          *     avoid.
          */
         SessionStatusSlot: {
+            /** @description Named status group; the browser maps it through its own CSS theme. */
+            color_group: string;
             /** @description What the slot is about. The plugin chooses it. */
             key: string;
             /** @description How loud the line is, such as `info` or `warn`. */
