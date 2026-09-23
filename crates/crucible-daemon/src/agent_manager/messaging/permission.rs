@@ -686,13 +686,6 @@ impl AgentManager {
         Some(current)
     }
 
-    /// Run the permission gate.
-    ///
-    /// `Ok(Some(reason))` means the call was approved WITHOUT asking, and by
-    /// which layer; `Ok(None)` means the user was asked and said yes. The
-    /// caller carries the reason on the `tool_call` event — the decision is
-    /// made before that event is emitted, so an auto-approval marker can ride
-    /// along with the card rather than arriving after it and popping in.
     /// Evaluate a mode's own rule lists with the shared permission engine.
     ///
     /// Built per call rather than cached: a mode is redefinable at any time,
@@ -722,6 +715,13 @@ impl AgentManager {
         engine.evaluate(tool_name, &input, true)
     }
 
+    /// Run the permission gate.
+    ///
+    /// `Ok(Some(reason))` means the call was approved WITHOUT asking, and by
+    /// which layer; `Ok(None)` means the user was asked and said yes. The
+    /// caller carries the reason on the `tool_call` event — the decision is
+    /// made before that event is emitted, so an auto-approval marker can ride
+    /// along with the card rather than arriving after it and popping in.
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
@@ -1209,21 +1209,14 @@ impl AgentManager {
         Ok(())
     }
 
-    /// Ask this session's Lua permission hooks.
-    ///
-    /// The 1 s budget lives in `crucible_lua::handler_budget` now, enforced by
-    /// the VM's instruction hook from inside the running Lua. What was here
-    /// before was a stopwatch: it read `Instant::elapsed()` AFTER the
-    /// synchronous call returned and discarded a late answer. It interrupted
-    /// nothing — a hook running `while true do end` held this thread and never
-    /// returned, so the elapsed check was never reached and the whole
-    /// permission request hung. The deadline is a strict upgrade at the same
-    /// 1 s: it stops the hook mid-execution and this returns `Prompt`, which
-    /// is what the stopwatch meant to do.
-    /// The `cru.permissions.on_request` hooks, in priority order.
+    /// Ask this session's `cru.permissions.on_request` hooks, in priority
+    /// order.
     ///
     /// One registry, on the one VM that runs Lua files. `None` is a manager
     /// with no daemon VM bound — every hook-free test — and means Prompt.
+    ///
+    /// `crucible_lua::handler_budget` gives the hooks 1 s. The VM stops a hook
+    /// that runs longer, and this then returns `Prompt`.
     pub(super) fn run_permission_hooks(
         registry: Option<&super::super::DaemonPermissions>,
         tool_name: &str,
