@@ -205,14 +205,6 @@ impl AgentManager {
             }
         }
 
-        // The ACP permission handler of a cached handle reads this for each
-        // call, so the handle keeps nothing of the turn that built it.
-        self.slot(session_id)
-            .set_turn_gate(crate::agent_manager::slot::TurnGate {
-                is_interactive,
-                permission_override,
-            });
-
         // Where the agent's tools act. A session with no workspace still
         // anchors somewhere concrete; see `scope::session_tool_root`.
         let tool_root = crate::agent_manager::scope::session_tool_root(
@@ -523,6 +515,14 @@ impl AgentManager {
             self.mode_writes(&session_mode)
                 .effective_for(&agent_config.agent_type),
         );
+        // The ACP permission handler of a cached handle reads this for each
+        // call, so the handle keeps nothing of the turn that built it.
+        self.slot(session_id)
+            .set_turn_gate(crate::agent_manager::slot::TurnGate {
+                is_interactive,
+                permission_override,
+                mode: session_mode.clone(),
+            });
         // The turn proposal ends with the turn, on every exit path below.
         let proposals = self.proposals.clone();
         let proposal_session = session.id.clone();
@@ -575,16 +575,9 @@ impl AgentManager {
             attachment_message,
             session_mode,
             is_interactive,
-            // Compile the global [permissions] config once per turn. Unlike
-            // the ACP gate there is no per-agent profile config for internal
-            // agents (cards carry tool_policy instead), so this is global-only.
-            permission_engine: self.permission_config.as_ref().map(|config| {
-                Arc::new(
-                    crucible_core::config::components::permissions::PermissionEngine::new(Some(
-                        config,
-                    )),
-                )
-            }),
+            // The same rules the ACP gate reads: the agent profile's, else
+            // the global config.
+            permission_engine: Arc::new(self.session_permission_engine(session_id)),
             context_attach: self.context_attach(),
         };
 
@@ -1059,16 +1052,11 @@ impl AgentManager {
             "Creating new agent"
         );
 
-        let agent_permissions = resolved_config
-            .agent_name
-            .as_deref()
-            .and_then(|name| self.agent_profile_permissions(name));
-
         let acp_permission_handler = if resolved_config.agent_type == "acp" {
             Some(self.build_acp_permission_handler(
                 session_id,
                 event_tx,
-                agent_permissions,
+                workspace,
                 resolved_config.tool_policy.clone(),
             ))
         } else {

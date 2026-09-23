@@ -6,15 +6,14 @@
 //! daemon-global config there hands a session the operator locked down the
 //! permissive global rules instead.
 
-use super::{messaging, AgentManager};
-use crucible_core::config::components::permissions::PermissionConfig;
+use super::AgentManager;
+use crucible_core::config::components::permissions::{PermissionConfig, PermissionEngine};
 use tracing::warn;
 
 impl AgentManager {
     /// The `[permissions]` block of the agent profile `name`, if it has one.
     ///
-    /// One lookup for both callers: this module and the agent dispatch path in
-    /// `messaging::send`. A profile that does not resolve contributes no
+    /// One lookup for every caller. A profile that does not resolve contributes no
     /// permissions, which is safe because the same profile fails the launch —
     /// no turn ever runs under it.
     pub(crate) fn agent_profile_permissions(&self, name: &str) -> Option<PermissionConfig> {
@@ -53,10 +52,14 @@ impl AgentManager {
             .and_then(|session| session.agent)
             .and_then(|agent| agent.agent_name)
             .and_then(|name| self.agent_profile_permissions(&name));
-        messaging::permission::resolve_effective_permission_config(
-            None,
-            agent_permissions,
-            self.permission_config.clone(),
-        )
+        agent_permissions.or_else(|| self.permission_config.clone())
+    }
+
+    /// The engine of [`Self::session_permission_config`]. The tool gate of
+    /// every agent kind reads it, so a profile's rules bind an internal
+    /// agent as they bind an ACP agent.
+    /// With no config at all, the engine still holds the hardcoded denies.
+    pub(crate) fn session_permission_engine(&self, session_id: &str) -> PermissionEngine {
+        PermissionEngine::new(self.session_permission_config(session_id).as_ref())
     }
 }

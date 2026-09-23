@@ -4,8 +4,8 @@ use crucible_core::types::CanonicalToolCall;
 
 /// The one tool policy, driven through the daemon's own turn loop.
 ///
-/// The unit tests of `decide_tool_gate` pin the decision. These pin that the
-/// daemon's tool path acts on it — a call that `decide_tool_gate` refuses
+/// The unit tests of `decide_permission` pin the decision. These pin that the
+/// daemon's tool path acts on it — a call that `decide_permission` refuses
 /// must never dispatch, and a call it approves must carry the marker that
 /// says which layer granted it.
 mod the_tool_gate_in_a_turn {
@@ -208,9 +208,16 @@ mod is_safe_tests {
     }
 }
 
+/// The phrase that a deny message uses for what a call acts on.
 mod brief_resource_description_tests {
     use super::*;
     use test_case::test_case;
+
+    fn brief(tool: &str, args: &serde_json::Value) -> String {
+        CanonicalToolCall::crucible_tool(tool, args)
+            .summary(50)
+            .unwrap_or_default()
+    }
 
     #[test_case(
         "write_file", serde_json::json!({"path": "/tmp/a.md"}), "/tmp/a.md";
@@ -239,17 +246,14 @@ mod brief_resource_description_tests {
         "returns_empty_when_there_is_nothing_to_show"
     )]
     fn brief_extracts_known_field(tool: &str, args: serde_json::Value, expected: &str) {
-        assert_eq!(
-            AgentManager::brief_resource_description(tool, &args),
-            expected
-        );
+        assert_eq!(brief(tool, &args), expected);
     }
 
     #[test]
     fn truncates_long_commands() {
         let long_cmd = "a".repeat(100);
         let args = serde_json::json!({"command": long_cmd});
-        let result = AgentManager::brief_resource_description("bash", &args);
+        let result = brief("bash", &args);
         assert!(result.ends_with('…'), "got: {result}");
         assert_eq!(result.chars().count(), 51, "50 chars plus the ellipsis");
     }
@@ -260,10 +264,7 @@ mod brief_resource_description_tests {
             "path": "/path/to/file",
             "name": "some name"
         });
-        assert_eq!(
-            AgentManager::brief_resource_description("write_file", &args),
-            "/path/to/file"
-        );
+        assert_eq!(brief("write_file", &args), "/path/to/file");
     }
 
     /// A shell call's command outranks a path argument — the command IS the
@@ -272,10 +273,7 @@ mod brief_resource_description_tests {
     #[test]
     fn a_shell_call_is_described_by_its_command() {
         let args = serde_json::json!({"command": "rm -rf build", "path": "/repo"});
-        assert_eq!(
-            AgentManager::brief_resource_description("bash", &args),
-            "rm -rf build"
-        );
+        assert_eq!(brief("bash", &args), "rm -rf build");
     }
 }
 
@@ -352,7 +350,7 @@ mod pattern_matching_tests {
         .expect("the grant is stored");
 
         // The next run: nothing in memory, both stores read from disk, the
-        // way `handle_permission_request` reads them.
+        // way `decide_permission` reads them.
         let store = PatternStore::load_sync_in(&whitelists_dir, project_path)
             .unwrap_or_default()
             .merge(&PatternStore::load_user_sync_in(&whitelists_dir).unwrap_or_default());
@@ -1404,20 +1402,10 @@ mod always_allow_covers_every_command_tool {
 
         // The prompt that the ACP gate puts to the user. The user answers
         // "always allow" with the pattern that the prompt suggests.
-        let asked = Arc::new(std::sync::Mutex::new(None));
-        let recorder = asked.clone();
-        let gate = crate::permission_bridge::DaemonPermissionGate::new(None, true)
-            .with_prompt_callback(Arc::new(move |request| {
-                *recorder.lock().unwrap() = Some(request);
-                Box::pin(async { crucible_core::interaction::PermResponse::allow() })
-            }));
-        gate.request_permission(acp(), None).await;
-        let pattern = asked
-            .lock()
-            .unwrap()
-            .take()
-            .expect("the gate asks the user")
-            .suggested_pattern();
+        let args = serde_json::json!({ "command": "cargo test" });
+        let pattern =
+            crate::agent_manager::messaging::permission::acp_prompt_request(&acp(), &args)
+                .suggested_pattern();
 
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("whitelists.d").join("user.toml");

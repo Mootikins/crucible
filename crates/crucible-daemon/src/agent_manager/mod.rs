@@ -9,7 +9,6 @@ use crate::delegation::DelegationService;
 use crate::event_emitter::emit_event;
 use crate::kiln_manager::KilnManager;
 use crate::multi_kiln_search::KilnSearchSource;
-use crate::permission_bridge::{DaemonPermissionGate, PermissionPromptCallback};
 use crate::protocol::SessionEventMessage;
 use crate::provider::model_listing;
 use crate::session_manager::{SessionError, SessionManager};
@@ -312,11 +311,9 @@ struct StreamContext {
     /// child sessions run non-interactive: a tool call that would prompt is
     /// denied immediately instead of hanging on a prompt nobody sees.
     is_interactive: bool,
-    /// The daemon's `[permissions]` config compiled for this turn. Internal
-    /// agents consult it before hooks/patterns/prompt: config deny is
-    /// absolute, config allow short-circuits the gate. `None` = no config.
-    permission_engine:
-        Option<Arc<crucible_core::config::components::permissions::PermissionEngine>>,
+    /// The session's `[permissions]` rules compiled for this turn: the agent
+    /// profile's, else the global config. The ACP gate reads the same rules.
+    permission_engine: Arc<crucible_core::config::components::permissions::PermissionEngine>,
     /// Mid-turn knowledge attachments queued by Lua handlers. Drained after
     /// each tool result and forwarded to the agent as `ContextAttach`, so the
     /// next LLM call in this turn sees what was retrieved.

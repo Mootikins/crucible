@@ -95,7 +95,7 @@ pub enum PermissionDecision {
     ///
     /// `rule_matched` distinguishes "an `ask` rule named this" from "no rule
     /// matched and the default is ask". Callers that can auto-approve — the
-    /// read-only exemption in `DaemonPermissionGate` and `DaemonToolsBridge`
+    /// read-only exemption in the daemon's one tool policy (`decide_permission`)
     /// — must not skip the first: an operator writing `ask = ["read_file:*"]`
     /// is asking about that tool specifically, and silently allowing it is
     /// the same defect as ignoring a `deny`.

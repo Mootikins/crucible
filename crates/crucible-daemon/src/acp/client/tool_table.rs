@@ -264,7 +264,13 @@ impl ToolCallTable {
         let entry = self.entry_mut(&request.tool_call_id.to_string());
         let mut joined = entry.raw.clone();
         joined.merge(frame);
-        let call = classify_acp(joined.clone(), keys);
+        let mut call = classify_acp(joined.clone(), keys);
+        // A call that nothing names has its kind as its name. The frames can
+        // name it when the request does not (old codex replaces `rawInput`
+        // in an MCP approval), and the more specific name wins.
+        if call.tool == call.kind && entry.call.tool != entry.call.kind {
+            call.tool = entry.call.tool.clone();
+        }
         if !entry.seen {
             entry.raw = joined;
             entry.call = call.clone();
@@ -725,6 +731,43 @@ mod tests {
 
         let other = table.permission_call(&update(json!({"toolCallId": "p2"})), &[]);
         assert!(other.diffs.is_empty(), "another id joins nothing");
+    }
+
+    /// The old codex adapter names its MCP call only in the `tool_call`. Its
+    /// approval request replaces `rawInput` and names nothing, so the request
+    /// alone is a call of the kind `mcp_tool`. The more specific name of the
+    /// earlier frame wins, so the prompt and the rules read `search_notes`.
+    #[test]
+    fn a_request_that_names_nothing_keeps_the_name_of_its_frame() {
+        let keys: Vec<AgentKeys> = serde_json::from_value(json!([
+            {"title": "Tool: ", "kind": "mcp_tool",
+             "args": ["/rawInput/arguments"], "tool": ["/rawInput/tool"]},
+            {"title": "Approve MCP tool call", "kind": "mcp_tool"},
+        ]))
+        .expect("the codex key table");
+        let mut table = ToolCallTable::default();
+        table.upsert_call(
+            call(json!({
+                "toolCallId": "call_mcp1",
+                "title": "Tool: crucible/search_notes",
+                "status": "in_progress",
+                "rawInput": {"server": "crucible", "tool": "search_notes",
+                             "arguments": {"query": "rust"}},
+            })),
+            &keys,
+        );
+
+        let asked = table.permission_call(
+            &update(json!({
+                "toolCallId": "call_mcp1",
+                "status": "pending",
+                "title": "Approve MCP tool call",
+                "rawInput": {"server_name": "crucible", "id": "mcp_tool_call_approval_call_mcp1"},
+            })),
+            &keys,
+        );
+        assert_eq!(asked.kind, "mcp_tool");
+        assert_eq!(asked.tool, "search_notes");
     }
 
     /// The Rust codex adapter asks before it sends the `tool_call`. The

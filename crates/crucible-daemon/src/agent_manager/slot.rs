@@ -112,6 +112,8 @@ pub(crate) struct SessionSlot {
 pub(crate) struct TurnGate {
     pub is_interactive: bool,
     pub permission_override: Option<crucible_core::config::components::permissions::PermissionMode>,
+    /// The session mode at the turn start, whose stance the gate reads.
+    pub mode: String,
 }
 
 /// Serializes injection acceptance with the next turn's assembly boundary.

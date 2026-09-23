@@ -93,8 +93,7 @@ execute.
 | `PermissionConfig` | `crucible-core/src/config/components/permissions/types.rs:63` | default, allow, deny, ask rule lists |
 | `PatternStore` | `crucible-core/src/config/patterns.rs:84` | Per-project allowlists under `whitelists.d/` |
 | `ShellPolicy` | `crucible-core/src/config/security.rs:54` | Prefix whitelist and blacklist, fail-closed |
-| `DaemonPermissionGate` | `crucible-daemon/src/permission_bridge.rs:19` | `PermissionGate` over `PermissionEngine` for ACP prompts |
-| `PermissionSerializer` | `crucible-daemon/src/agent_manager/messaging/permission.rs:76` | Serialises ACP permission prompts per session |
+| `PermissionContext` | `crucible-daemon/src/agent_manager/messaging/gate_decision.rs` | What `decide_permission` reads from the session of one call |
 | `IsolationRegistry` | `crucible-lua/src/isolation.rs:122` | session id to `IsolationClaim`; gates host tool execution |
 | `IsolationClaim` | `crucible-lua/src/isolation.rs:31` | plugin, exempt tool set, sandbox exec spec |
 | `SandboxExec` | `crucible-lua/src/isolation.rs:63` | prefix, env, suffix argv wrapper for a sandboxed child |
@@ -105,7 +104,10 @@ Free functions: `session_containment` (`agent_manager/scope.rs:74`),
 (`kiln_registry.rs:74`), `forbidden_root_reason` and `resolve_registration_root`
 (`project_manager.rs:45,68`; plan T3-C2 replaced the latter with
 `crucible_core::config::expand_tilde`), `execution_roots::{record,baseline,all}`,
-`decide_tool_gate` (`messaging/gate_decision.rs`).
+`decide_permission` (`messaging/gate_decision.rs`), the one tool policy for
+internal calls, ACP permission requests and unattended callers, and
+`prompt_user` (`messaging/permission.rs`), the one prompt, which holds the
+session's prompt lock so a session shows one prompt at a time.
 
 **Traits.** `PermissionGate` (`crucible-core/src/traits/permission_gate.rs:13`):
 1 required, 0 defaulted, 1 impl, no test double, used as

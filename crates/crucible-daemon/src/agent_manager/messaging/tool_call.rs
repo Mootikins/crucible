@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 
 use crate::agent_manager::vm_pass::run_handlers;
 
-use super::gate_decision::ToolGate;
+use super::gate_decision::Decision;
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
@@ -361,24 +361,11 @@ impl AgentManager {
         // Lua hooks, the mode stance — stays below interception, because
         // reordering it would change every plugin's contract. So does the
         // isolation gate, deliberately: there, a handler taking the call over
-        // *is* the sandbox.
-        //
-        // `decide_tool_gate` is asked with NO engine, so the rule that
-        // outranks interception is not written a second time here: with no
-        // rules to read, the only refusal that function can give is the card's
-        // own deny. The operator's rules are read below the loop, where a
-        // handler that rewrote the arguments has already run.
-        let card_policy = stream_ctx
-            .agent_stream_config
-            .tool_policy
-            .as_ref()
-            .and_then(|m| m.get(&tool_call.name))
-            .copied();
-        if let ToolGate::Refuse(reason) = super::gate_decision::decide_tool_gate(
-            card_policy,
-            None,
+        // *is* the sandbox. `decide_permission` below asks the card again,
+        // for the call that the handlers may have rewritten.
+        if let Some(reason) = super::gate_decision::card_refusal(
+            stream_ctx.agent_stream_config.tool_policy.as_ref(),
             &CanonicalToolCall::crucible_tool(&tool_call.name, &args),
-            &args,
         ) {
             return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason);
         }
@@ -508,44 +495,34 @@ impl AgentManager {
         // `tool_call` event is emitted below, so the marker ships with the
         // card instead of arriving as a follow-up and popping in.
         //
-        // `asked` records that the call reached the gate below, which is the
-        // only layer that can put the question to a person.
-        //
         // The canonical call is made here, after the handlers above may have
         // rewritten the arguments, so the gate decides the call that runs.
         let call = CanonicalToolCall::crucible_tool(&tool_call.name, &args);
-        let (auto_approved, asked) = match super::gate_decision::decide_tool_gate(
-            card_policy,
-            stream_ctx.permission_engine.as_deref(),
+        let request = || {
+            let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, &args);
+            PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs)
+        };
+        let auto_approved = match super::gate_decision::decide_permission(
+            &stream_ctx.permission_context(),
             &call,
             &args,
-        ) {
-            ToolGate::Refuse(reason) => {
+            request,
+        )
+        .await
+        {
+            Decision::Deny(reason) => {
                 return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
             }
-            ToolGate::Approve(marker) => (marker, false),
-            ToolGate::Ask => {
-                match Self::handle_permission_request(stream_ctx, tool_call, &call, &args).await {
-                    Ok(reason) => (reason, true),
-                    // Feed the SPECIFIC denial reason back to the model so it
-                    // can adapt (config rule vs shell policy vs
-                    // non-interactive).
-                    Err(reason) => {
-                        return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
-                    }
-                }
+            Decision::Allow(marker) => marker,
+            // The second unbounded wait, and the only other one. Re-baseline
+            // only when the gate put the question to a person: rebaselining
+            // after an automatic answer would discard whatever a plugin
+            // handler legitimately wrote above.
+            Decision::UserAllowed => {
+                stream_ctx.rebase_review_bracket(bracket).await;
+                None
             }
         };
-
-        // The second unbounded wait, and the only other one. Re-baseline only
-        // when the gate genuinely put the question to a person: `auto_approved`
-        // is `Some` exactly when config, the mode, or the card answered without
-        // asking, and `asked` is false when nothing was asked at all.
-        // Rebaselining unconditionally would discard whatever a plugin handler
-        // legitimately wrote above.
-        if asked && auto_approved.is_none() {
-            stream_ctx.rebase_review_bracket(bracket).await;
-        }
 
         let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
         let (mut description, mut source) = stream_ctx

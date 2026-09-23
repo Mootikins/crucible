@@ -47,7 +47,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G3 | scope | One project `PatternStore` for saved allows (3.2) | Three bash allowlists and two deny lists in one module (`patterns.rs:57`, `security.rs:56,163`, `hardcoded.rs:21`); the layers have different override semantics, so T3-C9 documented the order in a working note outside this kiln instead of a merge | both-acceptable | - |
 | G4 | scope | One `PermDecision` enum `AllowOnce`, `AllowSession`, `AllowProject`, `Deny` (3.15, D13) | Two `PermissionScope` enums with one name (`interaction/permission.rs:20` has `Once`, `Session`; `permissions/types.rs:5` has `Project`, `User`); the TUI maps one to the other by hand (`crucible-cli/src/tui/oil/chat_app/shell.rs:113-121`) | code-wrong | S |
 | G5 | scope | The Lua permission hook has a 1 s budget (9.4) | `execute_permission_hooks_with_timeout` has no timeout; it discards a late result (`messaging/permission.rs:1108`) | code-wrong | S |
-| G6 | scope | Permission requests are serialized per session (3.15) | `PermissionSerializer` serializes ACP prompts (`messaging/permission.rs:76`); the internal path is serial because tools dispatch one at a time (`messaging/tool_call.rs:647`) | both-acceptable | - |
+| G6 | scope | Permission requests are serialized per session (3.15) | `prompt_user` (`messaging/permission.rs`) holds the session's prompt lock for both paths | both-acceptable | - |
 | G7 | scope | No hand list beside `BuiltinTool` (9.1) | Six hand lists re-spell subsets: `is_core_tool_name` (`tool_dispatch.rs:181`), `KILN_BACKED_TOOLS` (`tools/mcp_server.rs:126`), `DISCOVERY_TOOL_NAMES` (`tool_dispatch.rs:30`), `PLAN_TOOL_NAMES` (`tools/tool_modes.rs:17`), `is_write_tool_name` (`provider/genai_handle.rs:103`), CLI `BUILTIN_TOOLS` (`crucible-cli/src/commands/tools.rs:34`) | code-wrong | M |
 | G8 | scope | `ToolSurface` is `Daemon`, `Mcp`, `Both`: which wire serves the tool (8.1) | `ToolSurface` is `Host`, `Daemon`, `Unknown`: what an isolated session may run (`crucible-core/src/traits/tools.rs:56`) | expectation-incomplete | - |
 | G9 | scope | MCP exposure derives from the enum (8.1, 6.4) | MCP exposure is the hand list `KILN_BACKED_TOOLS` (`tools/mcp_server.rs:126`) | code-wrong | S |
@@ -56,7 +56,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G12 | scope | The daemon `KilnRegistry` is the only door from a path to a kiln (4.2.1) | The CLI builds its own `KilnRegistry` over `crucible_home()` (`crucible-cli/src/kiln_attach.rs:112`); `KilnRegistryContext::for_daemon` reads `current_dir` and `home_dir` (`kiln_registry.rs:174`) | code-wrong | M |
 | G13 | scope | Containment never knows tool names (4.4) | File-tool name lists at `messaging/permission.rs:1073,1098` and `is_file_tool` (`permissions/engine.rs:193`) | code-wrong | S |
 | G14 | scope | Data-class trust is enforced on every delegation (4.14) | `enforce_child_isolation` skips silently when `session_lifecycle` is unbound (`delegation.rs:181`) | code-wrong | S |
-| G15 | scope | The gate order is one function with one test (4.11) | The order is statement order in `messaging/tool_call.rs`. `decide_tool_gate` (`gate_decision.rs`) now owns the card/rules/exemption half and both callers share it; the remaining gates are still statement order | code-wrong | S |
+| G15 | scope | The gate order is one function with one test (4.11) | The order is statement order in `messaging/tool_call.rs`. `decide_permission` (`gate_decision.rs`) now owns the whole permission chain and every caller shares it; the plan-mode bar, the active-tool set and the isolation gate are still statement order | code-wrong | S |
 | G16 | scope | `AppConfig` reaches every subsystem by value at bind (S41) | `execution_roots::baseline` reads env vars and `settings.json` from disk (`execution_roots.rs`); `kiln_registry.rs:323` cites it as precedent | code-wrong | M |
 | G17 | scope | The web layer holds no policy beyond SSRF (4.27, 6.2) | The web holds a credential-directory deny list (`crucible-web/src/routes/project.rs:28-76`) and enclosing-root resolution twice (`routes/canvas.rs:195`, `routes/kiln.rs:363-437`) | code-wrong | M |
 | G18 | scope | `PatternStore` I/O is not on the async gate path (4.12) | `load_sync` and `save_sync` block inside the async gate (`messaging/permission.rs:732,1094`) | code-wrong | S |
@@ -272,8 +272,8 @@ error and fix the test that relied on it.
 
 **G15.** Target: `fn admit(call) -> Admission` in `gate_decision.rs` that runs
 the seven gates in order and one test that permutes them. First step done:
-`decide_tool_gate` refuses a card `deny` itself, so no arm is `unreachable!`,
-and both the daemon's tool path and the ACP gate call it. Next step: fold the
+`decide_permission` runs the whole permission chain, and the daemon's tool
+path, the ACP permission handler and the unattended callers call it. Next step: fold the
 plan-mode bar, the active-tool set and the isolation gate into the same
 function.
 

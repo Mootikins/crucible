@@ -1,7 +1,5 @@
 use crate::tools::workspace::WorkspaceTools;
-use crucible_core::config::components::permissions::{
-    PermissionConfig, PermissionDecision, PermissionEngine,
-};
+use crucible_core::config::components::permissions::{PermissionConfig, PermissionEngine};
 use crucible_core::traits::tools::{ExecutionContext, ToolExecutor, ToolSurface};
 use crucible_lua::DaemonToolsApi;
 use std::future::Future;
@@ -28,10 +26,9 @@ pub struct DaemonToolsBridge {
     isolation: Option<crucible_lua::IsolationRegistry>,
     /// The operator's rules, applied to `cru.tools.call` before execution.
     ///
-    /// This path has no agent and no prompt, so it cannot reuse the gate in
-    /// `agent_manager/messaging/permission.rs` — but the rules are the same
-    /// rules, and skipping them entirely is what made any loaded plugin able
-    /// to run `bash` unprompted in any mode.
+    /// This path has no agent and no prompt, so the one tool policy decides
+    /// it with no prompt. Skipping the rules entirely is what made any loaded
+    /// plugin able to run `bash` unprompted in any mode.
     permissions: PermissionEngine,
     /// The registry behind `cru.tools.set_active` / `get_active`, with the
     /// sessions it is checked against.
@@ -173,50 +170,25 @@ pub(crate) fn isolated_session_refusal(
 
 /// `Some(reason)` if a caller with nobody to prompt must not run `name`.
 ///
-/// Same shape as the agent dispatch path, minus the prompt it cannot offer:
-/// an operator `deny` is absolute; an `allow` runs; anything the rules leave
-/// at `ask` falls back to the read-only exemption. Read-only tools go through,
-/// as they do for an agent, and a tool that can mutate needs an explicit
-/// `allow` — with nobody to ask, silently proceeding would hand the caller
-/// exactly what a user would have been prompted about.
+/// The one tool policy (`gate_decision::unattended_decision`) with no card,
+/// no saved patterns, no hooks, no mode and no prompt: an operator `deny` is
+/// absolute, an `allow` runs, a read-only tool runs, and a tool that can
+/// mutate needs an explicit `allow`.
 ///
 /// `caller` names the path in the refusal text, because there is more than one
 /// such path: `cru.tools.call` (a plugin, through [`DaemonToolsBridge`]) and a
-/// workflow note's `## Validation` command (`rpc/workflow_handlers.rs`). Both
-/// take attacker-supplied text with no user attached, so both get one gate
-/// rather than one each.
+/// workflow note's `## Validation` command (`rpc/workflow_handlers.rs`).
 pub(crate) fn unattended_refusal(
     permissions: &PermissionEngine,
     name: &str,
     args: &serde_json::Value,
     caller: &str,
 ) -> Option<String> {
-    // The rules read the canonical call, as on the agent path: a `bash` rule
-    // reads the command line of each shell tool, not the JSON envelope.
-    let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
-    // `is_interactive: true` keeps `Ask` distinguishable from `Deny`;
-    // this decides what an unmatched tool means, and it is not the same
-    // answer as an operator writing `deny`.
-    match permissions.evaluate_call(&call, args, true) {
-        PermissionDecision::Deny { reason } => return Some(reason),
-        PermissionDecision::Allow => return None,
-        // An `ask` rule names this tool on purpose. There is nobody to
-        // prompt on this path, so being asked about it means refuse —
-        // the read-only exemption below is for tools no rule decided.
-        PermissionDecision::Ask { rule_matched: true } => {
-            return Some(format!(
-                "{name} is covered by an `ask` rule and {caller} has no prompt to answer it"
-            ))
-        }
-        PermissionDecision::Ask { .. } => {}
+    use crate::agent_manager::messaging::gate_decision::{unattended_decision, Decision};
+    match unattended_decision(permissions, name, args) {
+        Decision::Deny(reason) => Some(format!("{caller} has no prompt: {reason}")),
+        Decision::Allow(_) | Decision::UserAllowed => None,
     }
-    if crate::agent_manager::is_safe(name) {
-        return None;
-    }
-    Some(format!(
-        "{name} can modify state and no allow rule covers it; \
-         {caller} has no prompt to fall back on"
-    ))
 }
 
 /// `Some(reason)` when `session` cannot carry an active tool set.

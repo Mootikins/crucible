@@ -1,11 +1,12 @@
 use super::super::*;
 use crucible_core::config::components::permissions::{
-    PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
+    PermissionDecision, PermissionEngine, PermissionMode,
 };
 use crucible_core::types::CanonicalToolCall;
 use crucible_lua::StageId;
 use std::ops::ControlFlow;
 
+use super::gate_decision::{decide_permission, PermissionContext, Prompt};
 use crate::agent_manager::vm_pass::run_handlers;
 
 /// Which of a [`PatternStore`]'s three rule tables owns a tool call.
@@ -57,13 +58,13 @@ fn pattern_kind(call: &CanonicalToolCall) -> PatternKind {
 /// whole turn.
 fn select_option(
     options: &[agent_client_protocol::schema::v1::PermissionOption],
-    response: &PermResponse,
+    allowed: bool,
 ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
     use agent_client_protocol::schema::v1::{
         PermissionOptionKind as Kind, RequestPermissionOutcome, SelectedPermissionOutcome,
     };
 
-    let acceptable: &[Kind] = if response.allowed {
+    let acceptable: &[Kind] = if allowed {
         &[Kind::AllowOnce]
     } else {
         &[Kind::RejectOnce, Kind::RejectAlways]
@@ -80,35 +81,78 @@ fn select_option(
         .unwrap_or(RequestPermissionOutcome::Cancelled)
 }
 
-/// Answer one `session/request_permission`.
+/// The prompt for an ACP call.
 ///
-/// A free function, not a closure body: this IS the ACP half of the tool
-/// policy, and a test drives it with the frames the real agents send.
+/// A command asks as a `Bash` request. The prompt then shows the command
+/// line, and "always allow" offers the command line as the pattern, which is
+/// the pattern that the saved-pattern check reads for a `command` call.
+pub(in crate::agent_manager) fn acp_prompt_request(
+    call: &CanonicalToolCall,
+    args: &serde_json::Value,
+) -> PermRequest {
+    let request = match (call.kind.as_str(), &call.command) {
+        ("command", Some(command)) => PermRequest::bash([command]),
+        _ => PermRequest::tool(&call.tool, args.clone()),
+    };
+    request.with_diffs(call.diffs.clone())
+}
+
+/// What the ACP permission handler of one session reads.
 ///
-/// `call` is the canonical call that the ACP client joined from the request
-/// and the earlier frames of its `toolCallId`. The card keys on its
-/// canonical `tool`: the name the agent sent, a Crucible tool without its
-/// MCP prefix, or the kind of a call that nothing names. The operator's rules
-/// read the whole call, as for Crucible's own tools. The diff of the prompt
-/// is the diff of the call.
-///
-/// The card policy goes INTO the gate rather than answering ahead of it. The
-/// two halves used to disagree about the same session's `tool_policy` — an
-/// ACP agent's card `allow` walked past an operator `deny` that the daemon's
-/// own agents obeyed.
-///
-/// A call the agent never asks about is the agent's own decision. It runs its
-/// own tools in its own process, so a refusal that arrives after the fact
-/// stops nothing; Crucible answers what it is asked, and nothing more.
-async fn decide_acp_permission(
-    gate: &DaemonPermissionGate,
-    tool_policy: Option<&crucible_core::agent::ToolPolicyMap>,
-    call: CanonicalToolCall,
-    options: &[agent_client_protocol::schema::v1::PermissionOption],
-) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
-    let card_policy = tool_policy.and_then(|map| map.get(&call.tool)).copied();
-    let response = gate.request_permission(call, card_policy).await;
-    select_option(options, &response)
+/// The handler lives as long as the cached agent handle. The turn state
+/// (interactivity, override, mode) comes from the session slot for each
+/// call, not from the turn that built the handle.
+struct AcpGate {
+    slot: Arc<crate::agent_manager::slot::SessionSlot>,
+    session_id: String,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    workspace: PathBuf,
+    whitelists_dir: Option<PathBuf>,
+    hooks: Option<DaemonPermissions>,
+    modes: crucible_lua::ModeRegistry,
+    engine: PermissionEngine,
+    tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
+}
+
+impl AcpGate {
+    /// Answer one `session/request_permission` with the one tool policy.
+    ///
+    /// `call` is the canonical call that the ACP client joined from the
+    /// request and the earlier frames of its `toolCallId`. A call the agent
+    /// never asks about is the agent's own decision: it runs its own tools,
+    /// so a refusal after the fact stops nothing.
+    ///
+    /// The answer is only an option of the agent. A deny reason reaches the
+    /// user, not the agent: the protocol has no field for it.
+    async fn decide(
+        &self,
+        call: CanonicalToolCall,
+        options: &[agent_client_protocol::schema::v1::PermissionOption],
+    ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
+        let turn = self.slot.turn_gate();
+        let no_mcp = std::collections::HashSet::new();
+        let ctx = PermissionContext {
+            session_id: &self.session_id,
+            tool_policy: self.tool_policy.as_ref(),
+            engine: &self.engine,
+            permission_override: turn.permission_override,
+            patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
+            hooks: self.hooks.as_ref(),
+            mode: &turn.mode,
+            modes: &self.modes,
+            mcp_read_only: &no_mcp,
+            prompt: turn.is_interactive.then_some(Prompt {
+                slot: &self.slot,
+                event_tx: &self.event_tx,
+            }),
+        };
+        let args = (call.raw.as_ref())
+            .and_then(|raw| raw.raw_input.clone())
+            .unwrap_or(serde_json::Value::Null);
+        let decision =
+            decide_permission(&ctx, &call, &args, || acp_prompt_request(&call, &args)).await;
+        select_option(options, decision.allowed())
+    }
 }
 
 /// Put one prompt to the user and wait for the answer.
@@ -155,42 +199,28 @@ pub(in crate::agent_manager) async fn prompt_user(
 }
 
 impl AgentManager {
-    /// The handler lives as long as the cached agent handle, so it reads
-    /// the interactivity and the override of the turn from the session slot
-    /// for each call, not from the turn that built the handle.
-    pub(super) fn build_acp_permission_handler(
+    /// The `session/request_permission` handler of an ACP session.
+    pub(in crate::agent_manager) fn build_acp_permission_handler(
         &self,
         session_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
-        agent_permissions: Option<PermissionConfig>,
+        workspace: &std::path::Path,
         tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
-        let slot = self.slot(session_id);
-        let session_id = session_id.to_string();
-        let event_tx = event_tx.clone();
-        let global_permissions = self.permission_config.clone();
-        let tool_policy = tool_policy.map(Arc::new);
-
+        let gate = Arc::new(AcpGate {
+            slot: self.slot(session_id),
+            session_id: session_id.to_string(),
+            event_tx: event_tx.clone(),
+            workspace: workspace.to_path_buf(),
+            whitelists_dir: self.whitelists_dir(),
+            hooks: self.daemon_permissions(),
+            modes: self.modes.clone(),
+            engine: self.session_permission_engine(session_id),
+            tool_policy,
+        });
         Arc::new(move |call, options| {
-            let turn = slot.turn_gate();
-            let config = resolve_effective_permission_config(
-                turn.permission_override,
-                agent_permissions.clone(),
-                global_permissions.clone(),
-            );
-            let (slot, session_id, event_tx) = (slot.clone(), session_id.clone(), event_tx.clone());
-            let ask: PermissionPromptCallback = Arc::new(move |request: PermRequest| {
-                let (slot, session_id, event_tx) =
-                    (slot.clone(), session_id.clone(), event_tx.clone());
-                Box::pin(async move { prompt_user(&slot, &session_id, &event_tx, request).await })
-            });
-            let gate =
-                DaemonPermissionGate::new(config, turn.is_interactive).with_prompt_callback(ask);
-            let tool_policy = tool_policy.clone();
-
-            Box::pin(async move {
-                decide_acp_permission(&gate, tool_policy.as_deref(), call, &options).await
-            })
+            let gate = gate.clone();
+            Box::pin(async move { gate.decide(call, &options).await })
         })
     }
 
@@ -489,234 +519,6 @@ impl AgentManager {
         engine.evaluate_call(call, args, true)
     }
 
-    /// Run the permission gate.
-    ///
-    /// `Ok(Some(reason))` means the call was approved WITHOUT asking, and by
-    /// which layer; `Ok(None)` means the user was asked and said yes. The
-    /// caller carries the reason on the `tool_call` event — the decision is
-    /// made before that event is emitted, so an auto-approval marker can ride
-    /// along with the card rather than arriving after it and popping in.
-    ///
-    /// `Err(reason)` is a denial. The caller emits its `tool_result`.
-    ///
-    /// `call` is the canonical form of `tool_call`. Every rule, saved
-    /// pattern and hook below reads it.
-    pub(super) async fn handle_permission_request(
-        stream_ctx: &StreamContext,
-        tool_call: &crucible_core::traits::chat::ChatToolCall,
-        call: &CanonicalToolCall,
-        args: &serde_json::Value,
-    ) -> Result<Option<String>, String> {
-        // Honor explicit --permissions override before running any hooks or prompt.
-        // `Allow` auto-approves; `Deny` auto-rejects;
-        // `Ask` and `None` fall through to the standard hook/prompt flow.
-        match stream_ctx.permission_override {
-            Some(PermissionMode::Allow) => {
-                tracing::debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    "permission override Allow: auto-approving tool call"
-                );
-                return Ok(Some("permission override".to_string()));
-            }
-            Some(PermissionMode::Deny) => {
-                return Err("Tool call denied by permission override".to_string());
-            }
-            Some(PermissionMode::Ask) | None => {}
-        }
-
-        // Global `[permissions]` config — previously enforced for ACP agents
-        // only. Config deny is absolute; config allow (incl. `default =
-        // "allow"`) short-circuits the gate. Ask (or no matching rule) falls
-        // through to PatternStore → Lua hooks → prompt. The engine is asked
-        // with `is_interactive: true` deliberately: its own ask→deny
-        // conversion would skip the fall-through layers, and the prompt
-        // branch below already handles non-interactive turns.
-        if let Some(engine) = &stream_ctx.permission_engine {
-            use crucible_core::config::components::permissions::PermissionDecision;
-            match engine.evaluate_call(call, args, true) {
-                PermissionDecision::Allow => {
-                    debug!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        "Permissions config allows tool, skipping prompt"
-                    );
-                    return Ok(Some("permissions config".to_string()));
-                }
-                PermissionDecision::Deny { reason } => {
-                    return Err(format!(
-                        "Tool '{}' denied by permissions config: {reason}",
-                        tool_call.name
-                    ));
-                }
-                PermissionDecision::Ask { .. } => {}
-            }
-        }
-
-        let project_path = stream_ctx.workspace_path.to_string_lossy();
-        // A grant at either persisted scope skips the prompt. Both stores
-        // live under the injected directory, so a test never reads a real one.
-        let pattern_store = match stream_ctx.whitelists_dir.as_deref() {
-            Some(dir) => PatternStore::load_sync_in(dir, &project_path)
-                .unwrap_or_default()
-                .merge(&PatternStore::load_user_sync_in(dir).unwrap_or_default()),
-            None => PatternStore::default(),
-        };
-        let pattern_matched = Self::check_pattern_match(call, &pattern_store);
-
-        if pattern_matched {
-            debug!(
-                session_id = %stream_ctx.session_id,
-                tool = %tool_call.name,
-                "Tool call matches whitelisted pattern, skipping permission prompt"
-            );
-            return Ok(Some("saved pattern".to_string()));
-        }
-
-        // The mode's declared stance. Consulted AFTER the hooks below, because
-        // a stance is static and a hook is a decision — `cru.modes.auto` says
-        // "allow by default", and a user hook that denies bash must still win.
-        let mode_permissions = stream_ctx
-            .agent_stream_config
-            .modes
-            .get(&stream_ctx.session_mode)
-            .map(|m| m.permissions);
-
-        let hook_result = Self::run_permission_hooks(
-            stream_ctx.agent_stream_config.daemon_permissions.as_ref(),
-            call,
-            args,
-            &stream_ctx.session_id,
-            &stream_ctx.session_mode,
-            &stream_ctx.agent_stream_config.mcp_read_only_tools,
-        );
-
-        match hook_result {
-            PermissionHookResult::Allow => {
-                debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    "Lua hook allowed tool, skipping permission prompt"
-                );
-                Ok(Some(if stream_ctx.session_mode == "auto" {
-                    "auto mode".to_string()
-                } else {
-                    "Lua permission hook".to_string()
-                }))
-            }
-            PermissionHookResult::Deny => {
-                debug!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %tool_call.name,
-                    "Lua hook denied tool"
-                );
-                let resource_desc = Self::brief_resource_description(&tool_call.name, args);
-                Err(format!(
-                    "Lua hook denied permission to {} {}",
-                    tool_call.name, resource_desc
-                ))
-            }
-            PermissionHookResult::Prompt => {
-                // No hook had an opinion: fall back to the mode's own rules,
-                // then its default stance.
-                //
-                // The rules use the `[permissions]` grammar and the SAME
-                // engine, so `bash:rg *` inherits its chained-command handling
-                // — a mode that permits `rg` does not thereby permit
-                // `rg foo && rm -rf /`. Writing a second matcher here would
-                // have been the easy way to lose that.
-                let mode_stance = match &mode_permissions {
-                    Some(p) if p.has_rules() => match Self::evaluate_mode_rules(p, call, args) {
-                        PermissionDecision::Allow => Some(crucible_lua::ModeStance::Allow),
-                        PermissionDecision::Deny { .. } => Some(crucible_lua::ModeStance::Deny),
-                        PermissionDecision::Ask { .. } => Some(crucible_lua::ModeStance::Ask),
-                    },
-                    Some(p) => Some(p.default),
-                    None => None,
-                };
-
-                match mode_stance {
-                    Some(crucible_lua::ModeStance::Allow) => {
-                        debug!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            mode = %stream_ctx.session_mode,
-                            "mode stance allows tool, skipping permission prompt"
-                        );
-                        return Ok(Some(format!("{} mode", stream_ctx.session_mode)));
-                    }
-                    Some(crucible_lua::ModeStance::Deny) => {
-                        return Err(format!(
-                            "Tool '{}' is not permitted in {} mode",
-                            tool_call.name, stream_ctx.session_mode
-                        ));
-                    }
-                    Some(crucible_lua::ModeStance::Ask) | None => {}
-                }
-
-                // Non-interactive turns (delegated child sessions, headless
-                // sends) have nobody to answer a prompt — deny immediately
-                // with an actionable message instead of hanging.
-                if !stream_ctx.is_interactive {
-                    return Err(format!(
-                        "Permission required for '{}' but this session runs non-interactively. \
-                         Allow it via a permission pattern, Lua permission hook, or permissions \
-                         config.",
-                        tool_call.name
-                    ));
-                }
-
-                let diffs = crate::tools::diff_synth::synthesize_diffs(&tool_call.name, args);
-                let request = PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
-                let response = prompt_user(
-                    &stream_ctx.slot,
-                    &stream_ctx.session_id,
-                    &stream_ctx.event_tx,
-                    request,
-                )
-                .await;
-
-                if response.allowed {
-                    let file = (stream_ctx.whitelists_dir.as_deref()).and_then(|dir| {
-                        PatternStore::store_file_in(dir, response.scope, &project_path)
-                    });
-                    if let Some((pattern, file)) = response.pattern.as_deref().zip(file) {
-                        if let Err(e) = Self::store_pattern_to(&file, call, pattern) {
-                            warn!(session_id = %stream_ctx.session_id, pattern, error = %e, "Failed to store pattern");
-                        }
-                    }
-                    // The user was asked and said yes: nothing was granted on
-                    // their behalf, so there is nothing to mark.
-                    return Ok(None);
-                }
-
-                let resource_desc = Self::brief_resource_description(&tool_call.name, args);
-                Err(match &response.reason {
-                    Some(reason) => format!(
-                        "User denied permission to {} {resource_desc}. Feedback: {reason}",
-                        tool_call.name
-                    ),
-                    None => format!(
-                        "User denied permission to {} {resource_desc}",
-                        tool_call.name
-                    ),
-                })
-            }
-        }
-    }
-
-    /// A short description of what a tool call is acting on, for deny
-    /// messages. Delegates to the shared projection so the phrase in an error
-    /// matches what the UIs show for the same call.
-    pub(in crate::agent_manager) fn brief_resource_description(
-        tool_name: &str,
-        args: &serde_json::Value,
-    ) -> String {
-        crucible_core::types::CanonicalToolCall::crucible_tool(tool_name, args)
-            .summary(50)
-            .unwrap_or_default()
-    }
-
     /// Does a stored grant already answer for this call?
     ///
     /// Routes through [`pattern_kind`], the same classifier
@@ -823,35 +625,26 @@ impl AgentManager {
     }
 }
 
-/// Resolve the permission config to apply for a turn given the CLI override,
-/// any agent-specific permissions, and the daemon's global permission config.
-///
-/// Priority: CLI override > agent-specific > global config.
-///
-/// For `Allow` and `Deny` overrides the user's intent is unconditional — the
-/// returned config has the requested default and *empty* allow/deny/ask rule
-/// lists, so base-config rules cannot re-introduce prompts or blocks. For
-/// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
-pub(in crate::agent_manager) fn resolve_effective_permission_config(
-    permission_override: Option<PermissionMode>,
-    agent_permissions: Option<PermissionConfig>,
-    global_permission_config: Option<PermissionConfig>,
-) -> Option<PermissionConfig> {
-    match permission_override {
-        Some(mode @ (PermissionMode::Allow | PermissionMode::Deny)) => Some(PermissionConfig {
-            default: mode,
-            allow: Vec::new(),
-            deny: Vec::new(),
-            ask: Vec::new(),
-        }),
-        Some(PermissionMode::Ask) => {
-            let mut config = agent_permissions
-                .or(global_permission_config)
-                .unwrap_or_default();
-            config.default = PermissionMode::Ask;
-            Some(config)
+impl StreamContext {
+    /// What the tool gate reads from this turn.
+    pub(super) fn permission_context(&self) -> PermissionContext<'_> {
+        let config = &self.agent_stream_config;
+        PermissionContext {
+            session_id: &self.session_id,
+            tool_policy: config.tool_policy.as_ref(),
+            engine: &self.permission_engine,
+            permission_override: self.permission_override,
+            patterns: (self.whitelists_dir.as_deref())
+                .map(|dir| (dir, self.workspace_path.as_path())),
+            hooks: config.daemon_permissions.as_ref(),
+            mode: &self.session_mode,
+            modes: &config.modes,
+            mcp_read_only: &config.mcp_read_only_tools,
+            prompt: self.is_interactive.then_some(Prompt {
+                slot: &self.slot,
+                event_tx: &self.event_tx,
+            }),
         }
-        None => agent_permissions.or(global_permission_config),
     }
 }
 
@@ -861,60 +654,6 @@ mod acp_permission_tests {
     use agent_client_protocol::schema::v1::{
         PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
     };
-    use crucible_core::types::{classify_acp, CanonicalToolCall};
-
-    /// The canonical call of an ACP frame that names no tool.
-    fn unnamed(kind: &str, title: &str) -> CanonicalToolCall {
-        classify_acp(
-            serde_json::from_value(serde_json::json!({
-                "kind": kind,
-                "title": title,
-                "locations": [{"path": "src/main.rs"}],
-            }))
-            .expect("a raw tool call"),
-            &[],
-        )
-    }
-
-    /// An operator's rule blocks an ACP call that names no tool. The rule
-    /// names the canonical kind, which is the name of such a call.
-    ///
-    /// Asserted through the gate rather than on the name alone, because a
-    /// name that is correct and that no rule is evaluated against is the
-    /// failure this guards.
-    #[tokio::test]
-    async fn an_operator_rule_blocks_an_acp_tool_call() {
-        let config = PermissionConfig {
-            default: PermissionMode::Allow,
-            deny: vec!["file_edit:*".to_string()],
-            ..Default::default()
-        };
-        let gate = DaemonPermissionGate::new(Some(config), true);
-
-        let call = unnamed("edit", "Edit src/main.rs");
-        assert_eq!(call.tool, "file_edit", "the prose title is never the name");
-        let response = gate.request_permission(call, None).await;
-
-        assert!(
-            !response.allowed,
-            "deny = [\"file_edit:*\"] must reach an ACP edit"
-        );
-    }
-
-    /// …and an ACP `kind` never buys the read-only exemption, because the
-    /// agent supplies it. Same reasoning `is_safe` gives for `readOnlyHint`.
-    #[tokio::test]
-    async fn a_read_kind_does_not_skip_the_prompt() {
-        let gate = DaemonPermissionGate::new(None, true);
-        let call = unnamed("read", "Read /etc/passwd");
-
-        let response = gate.request_permission(call, None).await;
-
-        assert!(
-            !response.allowed,
-            "an agent-supplied kind must not widen the gate"
-        );
-    }
 
     fn option(id: &str, kind: PermissionOptionKind) -> PermissionOption {
         PermissionOption::new(id.to_string(), id.to_string(), kind)
@@ -937,15 +676,10 @@ mod acp_permission_tests {
             option("always", PermissionOptionKind::AllowAlways),
             option("no", PermissionOptionKind::RejectOnce),
         ];
-        use crucible_core::interaction::PermissionScope;
-        for scope in [PermissionScope::Session, PermissionScope::Project] {
-            let response = PermResponse::allow_pattern("cargo test", scope);
-            assert_eq!(
-                selected(select_option(&options, &response)).as_deref(),
-                Some("once"),
-                "{scope:?}"
-            );
-        }
+        assert_eq!(
+            selected(select_option(&options, true)).as_deref(),
+            Some("once")
+        );
     }
 
     /// A one-time allow never takes `allow_always`. That option gives the
@@ -957,7 +691,7 @@ mod acp_permission_tests {
             option("no", PermissionOptionKind::RejectOnce),
         ];
         assert!(matches!(
-            select_option(&options, &PermResponse::allow()),
+            select_option(&options, true),
             RequestPermissionOutcome::Cancelled
         ));
     }
@@ -971,7 +705,7 @@ mod acp_permission_tests {
             option("never", PermissionOptionKind::RejectAlways),
         ];
         assert_eq!(
-            selected(select_option(&options, &PermResponse::deny())).as_deref(),
+            selected(select_option(&options, false)).as_deref(),
             Some("never")
         );
     }
@@ -980,7 +714,7 @@ mod acp_permission_tests {
     #[test]
     fn no_usable_option_is_cancelled() {
         assert!(matches!(
-            select_option(&[], &PermResponse::deny()),
+            select_option(&[], false),
             RequestPermissionOutcome::Cancelled
         ));
     }
@@ -995,8 +729,9 @@ mod acp_permission_tests {
 mod acp_tool_policy_tests {
     use super::*;
     use agent_client_protocol::schema::v1::{RequestPermissionOutcome, RequestPermissionRequest};
-    use crucible_core::agent::{ToolPolicy, ToolPolicyMap};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crucible_core::agent::ToolPolicy;
+    use crucible_core::config::components::permissions::PermissionConfig;
+    use crucible_core::types::{classify_acp, CanonicalToolCall};
 
     /// One decided permission request, and whether the user was asked.
     struct Asked {
@@ -1065,28 +800,112 @@ mod acp_tool_policy_tests {
         card: &[(&str, ToolPolicy)],
         config: Option<PermissionConfig>,
     ) -> Asked {
-        let prompts = Arc::new(AtomicUsize::new(0));
-        let counter = prompts.clone();
-        let callback: PermissionPromptCallback = Arc::new(move |_request| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { PermResponse::allow() })
-        });
-        let gate = DaemonPermissionGate::new(config, true).with_prompt_callback(callback);
-
-        let policy: ToolPolicyMap = card
-            .iter()
-            .map(|(name, policy)| ((*name).to_string(), *policy))
-            .collect();
         // The ACP client hands the permission path the canonical call.
         let call = crucible_core::types::classify_acp(
             crucible_core::types::RawToolCall::from(&request.tool_call),
             &[],
         );
-        let outcome = decide_acp_permission(&gate, Some(&policy), call, &request.options).await;
+        decide_call(call, card, config).await
+    }
+
+    /// Decide `call` through the ACP gate of an interactive session whose
+    /// user answers each prompt with allow.
+    async fn decide_call(
+        call: CanonicalToolCall,
+        card: &[(&str, ToolPolicy)],
+        config: Option<PermissionConfig>,
+    ) -> Asked {
+        let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
+        let slot = Arc::new(crate::agent_manager::slot::SessionSlot::default());
+        slot.set_turn_gate(crate::agent_manager::slot::TurnGate {
+            is_interactive: true,
+            ..Default::default()
+        });
+        let user = slot.clone();
+        let answers = tokio::spawn(async move {
+            let mut prompts = 0;
+            while let Ok(msg) = events.recv().await {
+                if let Some(id) = msg.data["request_id"].as_str() {
+                    prompts += 1;
+                    if let Some(pending) = user.take_permission(id) {
+                        let _ = pending.response_tx.send(PermResponse::allow());
+                    }
+                }
+            }
+            prompts
+        });
+        let gate = AcpGate {
+            slot,
+            session_id: "sess-1".to_string(),
+            event_tx,
+            workspace: PathBuf::new(),
+            whitelists_dir: None,
+            hooks: None,
+            modes: crucible_lua::ModeRegistry::new(),
+            engine: PermissionEngine::new(config.as_ref()),
+            tool_policy: Some(
+                card.iter()
+                    .map(|(name, policy)| ((*name).to_string(), *policy))
+                    .collect(),
+            ),
+        };
+        let options: Vec<agent_client_protocol::schema::v1::PermissionOption> =
+            serde_json::from_value(options()).expect("the options parse");
+        let outcome = gate.decide(call, &options).await;
+        // The gate holds the only sender, so the answering task ends.
+        drop(gate);
         Asked {
             outcome,
-            prompts: prompts.load(Ordering::SeqCst),
+            prompts: answers.await.expect("join"),
         }
+    }
+
+    /// The canonical call of an ACP frame that names no tool.
+    fn unnamed(kind: &str, title: &str) -> CanonicalToolCall {
+        classify_acp(
+            serde_json::from_value(serde_json::json!({
+                "kind": kind,
+                "title": title,
+                "locations": [{"path": "src/main.rs"}],
+            }))
+            .expect("a raw tool call"),
+            &[],
+        )
+    }
+
+    /// An operator's rule blocks an ACP call that names no tool. The rule
+    /// names the canonical kind, which is the name of such a call.
+    ///
+    /// Asserted through the gate rather than on the name alone, because a
+    /// name that is correct and that no rule is evaluated against is the
+    /// failure this guards.
+    #[tokio::test]
+    async fn an_operator_rule_blocks_an_acp_tool_call() {
+        let config = PermissionConfig {
+            default: PermissionMode::Allow,
+            deny: vec!["file_edit:*".to_string()],
+            ..Default::default()
+        };
+        let call = unnamed("edit", "Edit src/main.rs");
+        assert_eq!(call.tool, "file_edit", "the prose title is never the name");
+        let asked = decide_call(call, &[], Some(config)).await;
+
+        assert!(
+            !asked.allowed(),
+            "deny = [\"file_edit:*\"] must reach an ACP edit"
+        );
+    }
+
+    /// …and an ACP `kind` never buys the read-only exemption, because the
+    /// agent supplies it. Same reasoning `is_safe` gives for `readOnlyHint`.
+    #[tokio::test]
+    async fn a_read_kind_does_not_skip_the_prompt() {
+        let asked = decide_call(unnamed("read", "Read /etc/passwd"), &[], None).await;
+
+        assert_eq!(
+            asked.prompts, 1,
+            "an agent-supplied kind must not widen the gate"
+        );
     }
 
     /// A card `deny` refuses a Crucible MCP tool, and asks nobody.
@@ -1317,8 +1136,9 @@ mod acp_permission_handler_tests {
         am.slot(SESSION).set_turn_gate(TurnGate {
             is_interactive: true,
             permission_override: None,
+            ..Default::default()
         });
-        am.build_acp_permission_handler(SESSION, event_tx, None, tool_policy)
+        am.build_acp_permission_handler(SESSION, event_tx, std::path::Path::new("/w"), tool_policy)
     }
 
     /// Read events until the prompt arrives. Return its request id.
@@ -1395,6 +1215,75 @@ mod acp_permission_handler_tests {
         }
     }
 
+    /// A card `bash` entry keys the same way as an operator `bash` rule: it
+    /// applies to each `command` call, also one that the agent does not name.
+    #[tokio::test]
+    async fn a_card_bash_deny_refuses_an_unnamed_acp_command() {
+        let am = create_test_agent_manager(temp_session_manager());
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let card = ToolPolicyMap::from([("bash".to_string(), ToolPolicy::Deny)]);
+        let handle = handler(&am, &event_tx, Some(card));
+
+        let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
+            .await
+            .expect("a card deny answers without a prompt");
+
+        assert_eq!(selected(&outcome).as_deref(), Some("reject_once"));
+        assert!(event_rx.try_recv().is_err(), "a card deny asks nobody");
+    }
+
+    /// A grant that the user saved answers an ACP request, as it answers a
+    /// call of Crucible's own shell.
+    #[tokio::test]
+    async fn a_saved_pattern_answers_an_acp_request() {
+        let config_home = tempfile::TempDir::new().unwrap();
+        let am = Arc::new(AgentManager::new(
+            crate::agent_manager::AgentManagerParams {
+                kiln_manager: Arc::new(crate::kiln_manager::KilnManager::new()),
+                session_manager: temp_session_manager(),
+                background_manager: Arc::new(crate::background_manager::BackgroundJobManager::new(
+                    broadcast::channel(16).0,
+                )),
+                mcp_gateway: None,
+                llm_config: None,
+                acp_config: None,
+                context_config: None,
+                permission_config: None,
+                plugin_loader: None,
+                card_roots: crate::agent_cards::CardRoots {
+                    config_home: Some(config_home.path().to_path_buf()),
+                    agent_directories: Vec::new(),
+                },
+                review_snapshot_root: crate::test_support::scratch_snapshot_root(),
+            },
+        ));
+        let dir = am
+            .whitelists_dir()
+            .expect("a config home gives a whitelist");
+        let file = PatternStore::store_file_in(
+            &dir,
+            crucible_core::interaction::PermissionScope::User,
+            "",
+        )
+        .expect("a user grant has a file");
+        let bash = serde_json::json!({"command": "cargo test"});
+        AgentManager::store_pattern_to(
+            &file,
+            &CanonicalToolCall::crucible_tool("bash", &bash),
+            "cargo test",
+        )
+        .expect("the grant is stored");
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let handle = handler(&am, &event_tx, None);
+
+        let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
+            .await
+            .expect("a saved grant answers without a prompt");
+
+        assert_eq!(selected(&outcome).as_deref(), Some("allow_once"));
+        assert!(event_rx.try_recv().is_err(), "a saved grant asks nobody");
+    }
+
     /// A cached handle keeps no interactivity of the turn that built it. A
     /// later turn that nobody can answer (a workflow step) is not asked.
     #[tokio::test]
@@ -1405,6 +1294,7 @@ mod acp_permission_handler_tests {
         am.slot(SESSION).set_turn_gate(TurnGate {
             is_interactive: false,
             permission_override: None,
+            ..Default::default()
         });
 
         let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
@@ -1430,6 +1320,7 @@ mod acp_permission_handler_tests {
             am.slot(SESSION).set_turn_gate(TurnGate {
                 is_interactive: true,
                 permission_override: Some(mode),
+                ..Default::default()
             });
             let outcome = tokio::time::timeout(Duration::from_secs(5), ask(&handle))
                 .await

@@ -60,7 +60,6 @@ pub mod mcp_server;
 pub mod multi_kiln_search;
 pub mod notifications;
 pub mod observe;
-pub mod permission_bridge;
 pub mod pipeline;
 pub mod plugin_ops;
 pub mod plugin_tools;
@@ -125,7 +124,6 @@ pub use observe::{
     load_events, parse_session_log, render_to_markdown, wire_to_log_event, LogEvent, RenderOptions,
     SessionId, SessionIdError, SessionLogLine, SessionType, TokenUsage,
 };
-pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};
 pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use recording::{RecordedEvent, RecordingFooter, RecordingHeader};

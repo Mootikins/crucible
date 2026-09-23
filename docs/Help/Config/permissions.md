@@ -82,17 +82,17 @@ rule reads the canonical tool name. See "What each rule reads" under Rule Format
 
 ### Resolution Order
 
-When a session starts, the permission config is resolved in this priority order:
+A session uses one permission config:
 
-1. **`--permissions` CLI flag** — overrides the `default` mode for that invocation only
-2. **Agent-specific `acp.agents.<name>.permissions`** — if present, used in full
-3. **Global `permissions`** — fallback when agent has no specific config
+1. **Agent-specific `acp.agents.<name>.permissions`** — if the session's agent names a
+   profile with this block, it is used in full. This applies to Crucible's own agents
+   and to external ACP agents.
+2. **Global `permissions`** — the fallback when the profile has no block of its own.
 
-Note: `--permissions ask` keeps the resolved config's rule lists and only resets the
-default. `--permissions allow` and `--permissions deny` are **unconditional** — the
-config is replaced with the requested default and *empty* rule lists, so an explicit
-`deny` rule does not fire under `--permissions allow` (and an `allow` rule cannot
-rescue a tool under `--permissions deny`).
+The `--permissions` CLI flag does not change the config. It is one layer of the order
+in [[Help/Concepts/Permission Precedence]]: a `deny` rule and a hardcoded denial still
+refuse a call under `--permissions allow`, and an `allow` rule cannot rescue a call
+under `--permissions deny`. `--permissions ask` changes nothing.
 
 ## Per-Session Override (CLI)
 
@@ -202,9 +202,8 @@ glob pattern.
 The evaluation order is: hardcoded denials → deny rules → ask rules → allow rules → default.
 
 Within a config, `deny` beats `ask` and `allow`: a call matching both a deny and an
-allow rule is denied. The one thing that outranks a written `deny` is the
-`--permissions allow` override, which discards the rule lists entirely (see the note
-under Resolution Order).
+allow rule is denied. Nothing outranks a written `deny`, the `--permissions allow`
+override included.
 
 ```lua
 cru.config.set({

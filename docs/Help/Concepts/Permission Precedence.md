@@ -11,10 +11,16 @@ tags:
 
 # Permission Precedence
 
-Five different things can decide whether a tool call runs: a CLI flag, the
-`permissions` config, a saved "allow for this project" pattern, a Lua hook,
-and the session's mode. They are consulted in a fixed order, and the first one
-with an opinion wins.
+Several things can decide whether a tool call runs: the agent card, the
+`permissions` config, a CLI flag, a saved "allow for this project" pattern, a
+Lua hook, and the session's mode. They are consulted in a fixed order, and the
+first one with an opinion wins.
+
+One function decides every tool call, whatever its source: the calls of
+Crucible's own agents, the permission requests of an external ACP agent, a
+plugin's `cru.tools.call`, and a workflow validation command. A source differs
+only in the layers it cannot use. `cru.tools.call` and a workflow validation
+command have no card, no saved patterns, no hooks, no mode and no prompt.
 
 This page states that order once. The layers themselves are documented
 separately — [[Help/Config/permissions]], [[Help/Extending/Event Hooks]],
@@ -48,44 +54,71 @@ defence and it is the weakest one.
 
 ## The order
 
-Every tool call the agent makes walks this list top to bottom. The first layer
-that says **allow** or **deny** ends it; a layer with nothing to say falls
-through to the next.
-
-Two trust boundaries run *before* this list is consulted at all — an agent
-card's tool policy and a plugin's isolation claim. See "Above the chain" below.
+Every tool call walks this list top to bottom. The first layer that says
+**allow** or **deny** ends it; a layer with nothing to say falls through to the
+next.
 
 | # | Layer | Set by |
 |---|-------|--------|
-| 1 | CLI `--permissions` override | the flag you launched with |
-| 2 | `permissions` config | `init.lua` (global or kiln) |
-| 3 | Saved patterns | answering "allow for this project" at a prompt |
-| 4 | Lua permission hooks | `cru.permissions.on_request` |
-| 5 | Mode rules, then mode stance | `cru.modes.<name>.permissions` |
-| 6 | Non-interactive sessions: ask becomes deny | how the session was started |
-| 7 | Prompt the user | — |
+| 1 | Agent card `deny` | the session's agent card |
+| 2 | `permissions` config `deny` | `init.lua` (global or kiln), or the agent profile |
+| 3 | Agent card `allow` | the session's agent card |
+| 4 | CLI `--permissions` override | the flag you launched with |
+| 5 | Read-only exemption | the daemon's built-in list |
+| 6 | `permissions` config `allow` | `init.lua` (global or kiln), or the agent profile |
+| 7 | Saved patterns | answering "allow for this project" at a prompt |
+| 8 | Lua permission hooks | `cru.permissions.on_request` |
+| 9 | Mode rules, then mode stance | `cru.modes.<name>.permissions` |
+| 10 | Non-interactive sessions: ask becomes deny | how the session was started |
+| 11 | Prompt the user | — |
 
-The implementation is `handle_permission_request` in
-`crates/crucible-daemon/src/agent_manager/messaging/permission.rs`; it is the
-source of truth if this page ever drifts from it.
+The implementation is `decide_permission` in
+`crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`; it is
+the source of truth if this page ever drifts from it.
 
-### 1 — CLI override
+### 1 and 3 — Agent card
 
-`--permissions allow` or `--permissions deny` short-circuits everything. It runs
-before any hook, so a hook cannot rescue a call the flag denied, and cannot
-block one it allowed. `ask` and no flag fall through.
+An agent card can declare a per-tool policy — `deny`, `ask`, or `allow` — see
+[[Help/Extending/Agent Cards]]. A card entry keys the same way as a
+`permissions` rule: a `bash` entry applies to every shell command, whichever
+tool or agent runs it, and any other entry applies to the tool of that name.
+When two entries apply, the strictest one wins.
 
-### 2 — `permissions` config
+- **`deny`** refuses the call. Denied tools are also excluded from the tool
+  definitions the model sees.
+- **`allow`** runs the call with no prompt, after layer 2. A card from an
+  untrusted kiln therefore cannot walk past a configured deny. The call is
+  marked auto-approved ("agent card policy").
+- **`ask`** takes the read-only exemption (layer 5) away.
 
-Config **deny is absolute** — nothing below can override it. Config **allow**
-short-circuits the gate, including `default = "allow"`. Only `ask`, or no
+### 2 and 6 — `permissions` config
+
+Config **deny is absolute** — nothing below can override it, the CLI flag
+included. The hardcoded denies are part of this layer. Config **allow**
+(including `default = "allow"`) runs the call at layer 6. Only `ask`, or no
 matching rule, falls through.
 
-This is why an agent card granting `bash: allow` cannot sidestep a configured
-deny: the card is consulted earlier, but a card-allowed tool still has its
-config deny checked.
+A session whose agent names an agent profile with its own `[permissions]` block
+uses that block instead of the global config. This applies to Crucible's own
+agents and to external ACP agents.
 
-### 3 — Saved patterns
+### 4 — CLI override
+
+`--permissions allow` or `--permissions deny` decides every call that layers 1
+to 3 did not decide. It runs before any hook, so a hook cannot rescue a call the
+flag denied, and cannot block one it allowed. `ask` and no flag fall through.
+The permission handler of an ACP agent reads the flag of the current turn for
+each request.
+
+### 5 — Read-only exemption
+
+A tool on the daemon's built-in read-only list runs with no prompt, unless the
+card says `ask` for it or an `ask` rule names it. An MCP server's `readOnlyHint`
+is deliberately not consulted here: a third-party server must not be able to
+annotate its way past a mode's `default = "deny"`. The kind of an ACP call is
+not consulted either, because the agent supplies it.
+
+### 7 — Saved patterns
 
 When you answer a prompt with "allow for this project", the pattern is written
 to the project's store and matched here on subsequent calls. Saved patterns are
@@ -93,10 +126,10 @@ per-project, not per-session, and survive restarts.
 
 A pattern for a shell call is its command line, whichever shell tool made the call.
 A pattern for an edit is a path, and it permits an edit only when it matches each path
-of the edit. A pattern for any other call is its canonical tool name. An external ACP
-agent's session does not read or write saved patterns yet.
+of the edit. A pattern for any other call is its canonical tool name. The same patterns
+answer the permission requests of an external ACP agent.
 
-### 4 — Lua permission hooks
+### 8 — Lua permission hooks
 
 Hooks run in registration order and the first non-`nil` verdict wins. There
 is no priority option: the shipped `runtime/defaults/init.luau` loads first,
@@ -131,7 +164,7 @@ so a read-only tool is not lumped in with the ones that write.
 of every other hook type in Crucible, which fails open — a permission hook that
 crashes must not become an approval.
 
-### 5 — Mode rules, then mode stance
+### 9 — Mode rules, then mode stance
 
 A mode can state a stance, a set of rules, or both:
 
@@ -156,7 +189,7 @@ Modes come after hooks deliberately. A stance is a static declaration; a hook is
 a decision. `cru.modes.auto` saying "allow by default" must not override a hook
 that denies `bash`.
 
-### 6 — Non-interactive sessions
+### 10 — Non-interactive sessions
 
 A delegated child session or a headless send has nobody to answer a prompt.
 Rather than hang, anything that reached this point is denied with a message
@@ -165,20 +198,26 @@ naming the three ways to permit it.
 This step is easy to forget and it changes behaviour: the same tool call that
 *asks* in your terminal *denies* inside a delegation. See [[Help/Concepts/Delegation]].
 
-### 7 — Prompt
+### 11 — Prompt
 
 Whatever is left reaches you, with a diff preview where one can be synthesised.
+A session shows one prompt at a time. A cancel of the turn answers the waiting
+prompt with a denial.
+
+An ACP agent receives only one of its own options: `allow_once` for an allow,
+and `reject_once` (or `reject_always`) for a denial. The reason of a denial
+reaches you, not the agent, because the protocol has no field for it.
 
 ## What a `bash:` rule covers
 
 A `bash:` rule's glob is matched against a command *string*, and one string can
-run several commands. Layer 2 and layer 5 therefore do not match the rule
+run several commands. The config layers (2 and 6) and layer 9 therefore do not match the rule
 against the whole line: they split it into statements first and evaluate each
 one, so an `allow` rule only ever speaks for the command it names.
 
 This section is the guarantee, stated once. It applies wherever the engine
 runs — `permissions`, a mode's `permissions` block, and the saved patterns of
-layer 3.
+layer 7.
 
 **The line is split on** `&&`, `||`, `;`, `|`, a bare `&`, and a newline —
 outside quotes, and honouring backslash escapes. Every statement is checked
@@ -216,7 +255,7 @@ split further than it goes:
   above was considered and rejected — it hides no second command, and firing on
   every `> /dev/null` would make prompting the normal case. Allow-list only
   commands you would trust with a filesystem write, and reach for a Lua hook
-  (layer 4) when you need the argument-level decision.
+  (layer 8) when you need the argument-level decision.
 - **The allowed command's own power is yours to judge.** `bash:git *` permits
   `git config`, aliases, and hooks; most useful binaries are a write primitive
   or an execution primitive given the right flags.
@@ -247,42 +286,16 @@ the source of truth if this section drifts.
 
 ## Above the chain
 
-Two trust boundaries run before the chain is consulted. Neither is a layer in
-it: they decide whether the chain runs at all, and no layer can override them.
+Two checks run before the chain for Crucible's own agents. They decide whether
+the chain runs at all, and no layer can override them.
 
-### The agent-card gate decision
+### The agent-card deny
 
-An agent card can declare a per-tool policy — `deny`, `ask`, or `allow` — see
-[[Help/Extending/Agent Cards]].
-
-- **`deny` refuses outright, before everything** — including the
-  `pre_tool_call` hook loop. Checked that early deliberately: a hook that
-  handles a call returns before any gate, so a later check would let a plugin
-  see the arguments of, rewrite, or fabricate a result for a tool the session
-  policy refuses. Denied tools are also excluded from the tool definitions the
-  model sees; this is defense in depth.
-- **`ask` forces the chain**, even for a tool the daemon classifies as
-  read-only.
-- **`allow` skips the chain** — the saved patterns, the Lua hooks, the mode
-  rules and the mode stance are never consulted. The one thing still checked is
-  layer 2's deny: `permissions` deny rules are evaluated even for
-  card-allowed tools, so a card shipped by an untrusted kiln cannot sidestep a
-  configured deny. A card-allowed call is marked auto-approved ("agent card
-  policy") on its tool-call event.
-- **No policy** — the chain runs unless the tool is on the daemon's built-in
-  read-only list AND no `ask` rule names it. An `ask` rule you wrote about that
-  tool takes the read-only exemption away, because you asked to be asked. An
-  MCP server's `readOnlyHint` is deliberately not consulted for this decision:
-  a third-party server must not be able to annotate its way past a mode's
-  `default = "deny"`.
-
-The decision is `decide_tool_gate` in
-`crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`. It is
-the one decision for every agent kind: the daemon's own tool path and the ACP
-permission gate both call it, so a card entry and a `[permissions]` rule mean
-the same thing whoever calls the tool. The card's `deny` half is ALSO enforced
-earlier, in `tool_call.rs`, so that a `pre_tool_call` handler cannot answer for
-a tool the card refuses.
+A card `deny` is ALSO checked before the `pre_tool_call` hook loop. A hook that
+handles a call returns before any gate, so a later check would let a plugin
+see the arguments of, rewrite, or fabricate a result for a tool the session
+policy refuses. The chain asks the card again, for the call that the hooks
+may have rewritten.
 
 ### The plugin isolation gate
 
@@ -311,9 +324,10 @@ claim is released at session end.
 ### Order within one call
 
 Card `deny` → `pre_tool_call` handlers (a handled call bypasses everything
-below) → isolation gate → the gate decision (card `allow`/`ask`, else the
-read-only list) → config deny check when the chain is skipped → the
-seven-layer chain.
+below) → isolation gate → the eleven-layer chain.
+
+An ACP agent runs its own tools. Only its permission requests reach the chain,
+and a call it does not ask about is its own decision.
 
 ## Underneath all of it
 
