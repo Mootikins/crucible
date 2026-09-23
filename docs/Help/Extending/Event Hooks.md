@@ -82,7 +82,7 @@ because a selection is a decision, not a patch.
 ## Event Types
 
 The complete set, and it is closed: `cru.on` raises on a name that is not
-here. Two Rust enums hold it — `StageId` for the fourteen turn-loop stages,
+here. Two Rust enums hold it — `StageId` for the thirteen turn-loop stages,
 `EventName` for the ten daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
 `the_documented_table_lists_every_hook` fails if this table and those enums
@@ -97,7 +97,6 @@ disagree.
 | `transform_context` | every turn, over the assembled context |
 | `precognition_select` | over candidate kiln notes, to choose which survive |
 | `precognition_format` | over the surviving notes, to render the context block |
-| `review_comment_format` | over the body of one rendered review-comment block |
 | `turn:complete` | once the whole turn has finished |
 | `tool:before_execute` | immediately before execution, after permission |
 | `tool:display_start` | to customise how a running tool card renders |
@@ -494,55 +493,6 @@ these notes have already been chosen and there is nothing to address them by.
 Does **not** fire when the search returned nothing — the daemon short-circuits
 before invoking it. To inject something on the empty case, use
 `transform_context`, which fires every turn.
-
-### `review_comment_format`
-
-Fires once for each review comment a chat message attaches, after the daemon
-has rendered its `<context kind="review-comment">` block.
-
-**Rust owns the default template.** The daemon resolves the reference the
-client sent: it reads the base and the current text of the file, checks
-admission, projects the stored line range onto the current text and cuts the
-hunk. Then it renders the block. This hook rewrites that rendered text; it
-does not replace the resolution, and no client and no plugin builds the block
-itself.
-
-A handler returns a new **body** — the text between the two tags. The host
-puts the reply back between the same `<context kind="review-comment"
-id="...">` and `</context>`, and escapes it on the way, so no handler can
-close the block or open a second one. Return `nil` to keep the text Rust
-built. The first handler that returns a string wins.
-
-```lua
-cru.on("review_comment_format", function(ctx, event)
-  return string.format("%s %s\n%s", event.file, event.range, event.comment)
-end)
-```
-
-Event fields:
-- `event.kind` — always `review-comment`
-- `event.id` — the id of the stored comment
-- `event.file` — the path of the file, relative to its root
-- `event.root` — the root of the file, only when it is not the workspace of
-  the session
-- `event.range` — the range as a person reads it, such as `L12 to L13
-  (before)`
-- `event.section` — what the diffset compares, as a phrase for the agent
-- `event.outdated` — `true` when the current text no longer holds the quoted
-  text
-- `event.comment` — the text the user wrote
-- `event.diff` — the unified hunk at the range; absent when the block is
-  outdated
-- `event.quoted` — the quoted text, which an outdated block carries in place
-  of the hunk
-- `event.body` — the body Rust built, so a handler can add to it rather than
-  replace it
-
-Every text field is escaped already. The shipped defaults register nothing
-here, and a handler that raises leaves the Rust text in place.
-
-The daemon stores the block it sent with the turn, so a later change to your
-handler rewrites the next message and never the history.
 
 ### `search:rerank`
 

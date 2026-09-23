@@ -225,14 +225,6 @@ pub enum StageId {
     PrecognitionSelect,
     /// How the retrieved notes are rendered into the prompt.
     PrecognitionFormat,
-    /// Over the body of one rendered review-comment context block.
-    ///
-    /// Rust owns the default template and the `<context>` envelope. A
-    /// handler here replaces the BODY only, and the host escapes what it
-    /// returns, so no handler can close the block or open a second one.
-    /// The shipped defaults register nothing here, so the Rust text stands
-    /// until an operator asks for another one.
-    ReviewCommentFormat,
     /// The turn finished.
     TurnComplete,
     /// Immediately before execution, after admission.
@@ -274,7 +266,6 @@ impl StageId {
         Self::TransformContext,
         Self::PrecognitionSelect,
         Self::PrecognitionFormat,
-        Self::ReviewCommentFormat,
         Self::TurnComplete,
         Self::ToolBeforeExecute,
         Self::ToolDisplayStart,
@@ -300,7 +291,6 @@ impl StageId {
             Self::TransformContext => "transform_context",
             Self::PrecognitionSelect => "precognition_select",
             Self::PrecognitionFormat => "precognition_format",
-            Self::ReviewCommentFormat => "review_comment_format",
             Self::TurnComplete => "turn:complete",
             Self::ToolBeforeExecute => "tool:before_execute",
             Self::ToolDisplayStart => "tool:display_start",
@@ -332,7 +322,6 @@ impl StageId {
             | Self::TransformContext
             | Self::PrecognitionSelect
             | Self::PrecognitionFormat
-            | Self::ReviewCommentFormat
             | Self::TurnComplete
             | Self::ToolBeforeExecute
             | Self::ToolDisplayStart
@@ -376,7 +365,6 @@ impl StageId {
             | Self::TransformContext
             | Self::PrecognitionSelect
             | Self::PrecognitionFormat
-            | Self::ReviewCommentFormat
             | Self::TurnComplete
             | Self::ToolBeforeExecute
             | Self::ToolDisplayStart
@@ -486,7 +474,6 @@ impl HookName {
                 | StageId::TransformContext
                 | StageId::PrecognitionSelect
                 | StageId::PrecognitionFormat
-                | StageId::ReviewCommentFormat
                 | StageId::TurnComplete
                 | StageId::ToolBeforeExecute
                 | StageId::ToolDisplayStart

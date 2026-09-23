@@ -101,7 +101,6 @@ pub(crate) async fn handle_session_send_message(
             workspace.as_deref(),
             &comments,
             content,
-            am.plugin_handlers().as_ref(),
         )
         .await
         {

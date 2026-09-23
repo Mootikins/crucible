@@ -993,35 +993,3 @@ async fn the_shipped_bash_formatter_declines_without_a_command_argument() {
 
     assert_eq!(result, "raw");
 }
-
-/// Rust owns the template of a review-comment context block, and the
-/// `review_comment_format` stage rewrites the rendered text only. So the
-/// shipped defaults must register NO handler for it.
-///
-/// A shipped handler would be a second copy of the template. It would win
-/// over the Rust one on every daemon, the Rust one would go dead, and its
-/// own tests would still pass — which is what happened to the Rust
-/// precognition formatter that `precognition_format` covers.
-///
-/// Asked of the registry of a booted VM, not of the text of the file: the
-/// question is what the daemon runs, and a grep answers a different one.
-#[tokio::test]
-async fn the_shipped_defaults_register_no_review_comment_format_handler() {
-    let (loader, ..) = session_with_lua("").await;
-    let names: Vec<String> = loader
-        .plugin_handlers()
-        .all()
-        .iter()
-        .map(|handler| handler.name.to_string())
-        .collect();
-
-    assert!(
-        names.contains(&"precognition_format".to_string()),
-        "the shipped defaults must be in force, or this test proves nothing: {names:?}"
-    );
-    assert!(
-        !names.contains(&"review_comment_format".to_string()),
-        "Rust owns the review-comment template; the shipped defaults must not \
-         hold a second copy of it: {names:?}"
-    );
-}
