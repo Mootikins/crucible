@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { readState } from './_state';
 import { busEmit } from '../helpers/bus';
+import { pinEditorSettings } from '../helpers/settings';
 
 /**
  * WS-322 — two writers on one line, settled in the conflict view.
@@ -44,19 +45,9 @@ const BASE = '# Conflict\n\nthe shared line\na line between them\na line only I 
  * a leg that drives the saves itself would race its own timer and could not say
  * which save produced the answer it reads. Vim off on both shells: the desktop
  * ships vim on and the phone ships it off, and one leg cannot type two ways.
- * `version: 2` is load-bearing — `loadSettings` migrates a stored 0 from
- * version 1 back to the default.
  */
 async function pinSettings(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'crucible:settings',
-      JSON.stringify({
-        version: 2,
-        editor: { autosaveSeconds: 0, vimMode: false, vimModeCompact: false },
-      }),
-    );
-  });
+  await pinEditorSettings(page, { autosaveSeconds: 0, vimMode: false, vimModeCompact: false });
 }
 
 /**

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { readState } from './_state';
 import { appReady } from '../helpers/nav';
 import { busEmit } from '../helpers/bus';
+import { pinEditorSettings } from '../helpers/settings';
 
 /**
  * Live tier — real `cru web` + daemon + TempDir kiln. Exercises the kiln/notes
@@ -541,6 +542,10 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     const notePath = path.join(kilnDir, 'Watched.md');
     writeFileSync(notePath, '# Watched\n\nthe first text\n');
 
+    // The edit must stay unsent. Autosave would send it two idle seconds after
+    // the last keystroke, and the daemon merges that save into the other
+    // writer's text — before the read below, when the watcher is slow.
+    await pinEditorSettings(page, { autosaveSeconds: 0 });
     await page.goto(baseURL);
     await appReady(page);
 
