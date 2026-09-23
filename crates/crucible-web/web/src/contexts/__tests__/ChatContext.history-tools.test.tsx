@@ -33,6 +33,14 @@ const TURN_WITH_ANSWERED_TOOL = [
   { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: 'note saved' }, timestamp: new Date(T0 + 2000).toISOString(), seq: 3 },
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 4 },
 ];
+// The same turn, with a failed tool. The daemon persists the failure in the
+// `data.result` envelope as `{"error": …}`, and success as `{"result": …}`.
+const TURN_WITH_FAILED_TOOL = [
+  TURN_WITH_DANGLING_TOOL[0],
+  TURN_WITH_DANGLING_TOOL[1],
+  { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: { error: 'disk full' } }, timestamp: new Date(T0 + 2000).toISOString(), seq: 3 },
+  { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 4 },
+];
 // An ACP turn whose agent announced the tool WITHOUT arguments and supplied
 // them in a follow-up frame. The update is part of the record now; a reload
 // must show the arguments the agent actually ran with, not the `{}` the
@@ -41,7 +49,7 @@ const TURN_WITH_LATE_ARGS = [
   TURN_WITH_DANGLING_TOOL[0],
   TURN_WITH_DANGLING_TOOL[1],
   { type: 'event', session_id: 's1', event: 'tool_call_args_update', data: { call_id: 'call-1', args: { command: 'ls crates' } }, timestamp: new Date(T0 + 1500).toISOString(), seq: 3 },
-  { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: 'out' }, timestamp: new Date(T0 + 2000).toISOString(), seq: 4 },
+  { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: { result: 'out' } }, timestamp: new Date(T0 + 2000).toISOString(), seq: 4 },
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 5 },
 ];
 
@@ -94,11 +102,21 @@ describe('ChatContext reloads the state a tool was left in', () => {
     expect(tool?.toolCall?.result).toBe('note saved');
   });
 
+  it('renders a failed tool as the error the live transcript shows', async () => {
+    held = TURN_WITH_FAILED_TOOL;
+    const ctx = mountProvider();
+    await waitFor(() => expect(ctx.messages().length).toBe(3));
+    const tool = ctx.messages().find((m) => m.role === 'tool');
+    expect(tool?.toolCall?.status).toBe('error');
+    expect(tool?.toolCall?.result).toBe('disk full');
+  });
+
   it('replays the late args an ACP agent supplied after announcing the call', async () => {
     held = TURN_WITH_LATE_ARGS;
     const ctx = mountProvider();
     await waitFor(() => expect(ctx.messages().length).toBe(3));
     const tool = ctx.messages().find((m) => m.role === 'tool');
     expect(tool?.toolCall?.args).toBe(JSON.stringify({ command: 'ls crates' }));
+    expect(tool?.toolCall?.result).toBe('out');
   });
 });

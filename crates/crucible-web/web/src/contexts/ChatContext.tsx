@@ -317,10 +317,23 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
         const callId = String(data.call_id ?? '');
         const target = findToolMessage(callId);
         if (target?.toolCall) {
-          const raw = evt.event === 'tool_result_error' ? data.error : data.result;
+          // Decode the `{"result": …}` or `{"error": …}` envelope as the live
+          // path does (`ToolResultBody` in `crucible-web/src/events.rs`).
+          const body = (
+            data.result !== null && typeof data.result === 'object' ? data.result : {}
+          ) as Record<string, unknown>;
+          const failed = evt.event === 'tool_result_error' || typeof body.error === 'string';
+          const raw =
+            evt.event === 'tool_result_error'
+              ? data.error
+              : failed
+                ? body.error
+                : 'result' in body
+                  ? body.result
+                  : data.result;
           target.toolCall = {
             ...target.toolCall,
-            status: evt.event === 'tool_result_error' ? 'error' : 'complete',
+            status: failed ? 'error' : 'complete',
             result:
               raw === undefined
                 ? target.toolCall.result
