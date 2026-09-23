@@ -141,15 +141,6 @@ impl PermissionSerializer {
     }
 }
 
-/// The tools whose permission patterns match on a path, not on the tool name.
-const FILE_TOOLS: &[&str] = &[
-    "write_file",
-    "edit_file",
-    "create_note",
-    "update_note",
-    "delete_note",
-];
-
 /// Which of a [`PatternStore`]'s three rule tables owns a tool call.
 ///
 /// A closed set: the store has these three tables and no fourth, so the
@@ -190,7 +181,7 @@ fn pattern_kind(tool_name: &str, args: &serde_json::Value) -> PatternKind {
     // Not a command: a path tool matches on its path, anything else on its
     // name. Both are decided by the name alone.
     let by_name = || {
-        if FILE_TOOLS.contains(&tool_name) {
+        if CanonicalToolCall::FILE_EDIT_TOOL_NAMES.contains(&tool_name) {
             PatternKind::File
         } else {
             PatternKind::Tool

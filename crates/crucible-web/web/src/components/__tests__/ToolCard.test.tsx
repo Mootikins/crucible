@@ -591,7 +591,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'semantic_search',
           args: JSON.stringify({ query: 'wikilinks' }),
-          display: { kind: 'query', tool: 'semantic_search', query: 'wikilinks', primary: 'wikilinks' },
+          display: { kind: 'search', tool: 'semantic_search', query: 'wikilinks', primary: 'wikilinks' },
         })}
       />
     ));

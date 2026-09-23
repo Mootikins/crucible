@@ -243,7 +243,8 @@ export interface ToolCallDisplay {
 
 /** The canonical tool call. Mirrors `crucible_core::types::CanonicalToolCall`. */
 interface CanonicalToolCall {
-  /** An open kind name, for example `command` or `path`. */
+  /** An open kind name: `command`, `file_edit`, `file_read`, `mcp_tool`,
+   * `fetch`, `search`, the fallback `tool`, or a name that a plugin adds. */
   kind: string;
   tool: string;
   command?: string;
@@ -251,9 +252,21 @@ interface CanonicalToolCall {
   url?: string;
   query?: string;
   agent?: string;
-  /** The ACP wire form, for display and debugging only. */
-  raw?: unknown;
+  /** The fields of an ACP call, for display and debugging only. */
+  raw?: RawToolCall;
   primary?: string;
+}
+
+/** The fields of an ACP tool call. Mirrors `crucible_core::types::RawToolCall`. */
+interface RawToolCall {
+  title?: string;
+  name?: string;
+  kind?: string;
+  rawInput?: unknown;
+  locations?: Array<{ path: string; line?: number }>;
+  content?: unknown[];
+  /** The ACP `_meta` object, as opaque JSON. */
+  _meta?: unknown;
 }
 
 /** Subagent event (background task). Client-local: the store collapses the

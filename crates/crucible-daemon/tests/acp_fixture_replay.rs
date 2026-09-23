@@ -784,3 +784,474 @@ fn each_tool_frame_decodes_as_its_sdk_type() {
         }
     }
 }
+
+/// The key table of each agent in the tool_frames fixtures. Step 3 of the
+/// pipeline loads these tables from Lua. Here they show what the data form
+/// can say about each agent.
+fn fixture_key_table(agent: &str) -> Vec<crucible_core::types::AgentKeys> {
+    use agent_client_protocol::schema::v1::ToolKind;
+    use crucible_core::types::AgentKeys;
+    let keys = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+    let on_title = |title: &str, kind: &str| AgentKeys {
+        title: Some(title.into()),
+        kind: Some(kind.into()),
+        ..AgentKeys::default()
+    };
+    match agent {
+        "codex-rust" => vec![
+            AgentKeys {
+                tool: keys(&["/rawInput/tool"]),
+                query: keys(&["/rawInput/arguments/query"]),
+                ..on_title("Tool: ", "mcp_tool")
+            },
+            on_title("Approve MCP tool call", "mcp_tool"),
+            on_title("Searching for:", "search"),
+            AgentKeys {
+                url: keys(&["/rawInput/action/url"]),
+                ..on_title("Opening:", "fetch")
+            },
+        ],
+        "codex-ts" => vec![
+            AgentKeys {
+                title: Some("mcp.".into()),
+                query: keys(&["/rawInput/arguments/query"]),
+                ..AgentKeys::default()
+            },
+            on_title("Web search:", "search"),
+            AgentKeys {
+                url: keys(&["/rawInput/action/url"]),
+                ..on_title("Open page:", "fetch")
+            },
+        ],
+        "gemini" => vec![AgentKeys {
+            acp_kind: Some(ToolKind::Execute),
+            command: keys(&["/title"]),
+            ..AgentKeys::default()
+        }],
+        "antigravity" => vec![
+            AgentKeys {
+                command: keys(&["CommandLine", "command_line"]),
+                paths: keys(&["TargetFile", "absolute_path"]),
+                url: keys(&["Url"]),
+                ..AgentKeys::default()
+            },
+            AgentKeys {
+                acp_kind: Some(ToolKind::Other),
+                kind: Some("mcp_tool".into()),
+                tool: keys(&["/title"]),
+                ..AgentKeys::default()
+            },
+        ],
+        _ => Vec::new(),
+    }
+}
+
+/// Classify each frame in one tool_frames fixture. Each item is the line
+/// number and the typed fields of the canonical call, without `raw` and
+/// `primary`.
+fn classify_fixture(agent: &str) -> Vec<(usize, serde_json::Value)> {
+    use agent_client_protocol::schema::v1::{
+        RequestPermissionRequest, SessionNotification, SessionUpdate,
+    };
+    use crucible_core::types::{classify_acp, RawToolCall};
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/acp/tool_frames")
+        .join(format!("{agent}.jsonl"));
+    let table = fixture_key_table(agent);
+    let text = std::fs::read_to_string(&path).expect("the fixture reads");
+    text.lines()
+        .enumerate()
+        .skip(1)
+        .map(|(n, line)| {
+            let record: serde_json::Value = serde_json::from_str(line).unwrap();
+            let params = record["frame"]["params"].clone();
+            let raw = match record["frame"]["method"].as_str() {
+                Some("session/update") => {
+                    match serde_json::from_value::<SessionNotification>(params)
+                        .unwrap()
+                        .update
+                    {
+                        SessionUpdate::ToolCall(c) => RawToolCall::from(&c),
+                        SessionUpdate::ToolCallUpdate(u) => RawToolCall::from(&u),
+                        other => panic!("not a tool frame: {other:?}"),
+                    }
+                }
+                _ => RawToolCall::from(
+                    &serde_json::from_value::<RequestPermissionRequest>(params)
+                        .unwrap()
+                        .tool_call,
+                ),
+            };
+            let mut v = serde_json::to_value(classify_acp(raw, &table)).unwrap();
+            let fields = v.as_object_mut().unwrap();
+            fields.remove("raw");
+            fields.remove("primary");
+            (n + 1, v)
+        })
+        .collect()
+}
+
+/// The canonical call that the default matcher gives for each frame, with
+/// the key table of the agent. A line of a status-only update gives the
+/// fallback `tool`, because the frame names nothing. Step 4 merges updates
+/// into one call, so these rows show one frame each.
+const EXPECTED_CLASSES: &[(&str, usize, &str)] = &[
+    ("claude", 2, r#"{"kind":"command","tool":"Bash"}"#),
+    (
+        "claude",
+        3,
+        r#"{"kind":"command","tool":"","command":"ls src"}"#,
+    ),
+    (
+        "claude",
+        4,
+        r#"{"kind":"command","tool":"","command":"ls src"}"#,
+    ),
+    (
+        "claude",
+        5,
+        r#"{"kind":"command","tool":"Bash","command":"ls src"}"#,
+    ),
+    ("claude", 6, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 7, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 8, r#"{"kind":"file_edit","tool":"Edit"}"#),
+    (
+        "claude",
+        9,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+    ),
+    (
+        "claude",
+        10,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+    ),
+    (
+        "claude",
+        11,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+    ),
+    (
+        "claude",
+        12,
+        r#"{"kind":"file_edit","tool":"Edit","paths":["/home/user/proj/src/lib.rs"]}"#,
+    ),
+    ("claude", 13, r#"{"kind":"tool","tool":""}"#),
+    (
+        "claude",
+        14,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/src/lib.rs"]}"#,
+    ),
+    ("claude", 15, r#"{"kind":"file_read","tool":"Read"}"#),
+    (
+        "claude",
+        16,
+        r#"{"kind":"file_read","tool":"","paths":["/etc/hosts"]}"#,
+    ),
+    (
+        "claude",
+        17,
+        r#"{"kind":"file_read","tool":"Read","paths":["/etc/hosts"]}"#,
+    ),
+    ("claude", 18, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 19, r#"{"kind":"tool","tool":""}"#),
+    (
+        "claude",
+        20,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+    ),
+    (
+        "claude",
+        21,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+    ),
+    (
+        "claude",
+        22,
+        r#"{"kind":"mcp_tool","tool":"mcp__srv__tool"}"#,
+    ),
+    ("claude", 23, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 24, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 25, r#"{"kind":"fetch","tool":"WebSearch"}"#),
+    (
+        "claude",
+        26,
+        r#"{"kind":"search","tool":"","query":"acp spec"}"#,
+    ),
+    (
+        "claude",
+        27,
+        r#"{"kind":"search","tool":"WebSearch","query":"acp spec"}"#,
+    ),
+    ("claude", 28, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 29, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 30, r#"{"kind":"fetch","tool":"WebFetch"}"#),
+    (
+        "claude",
+        31,
+        r#"{"kind":"fetch","tool":"","url":"https://example.com"}"#,
+    ),
+    (
+        "claude",
+        32,
+        r#"{"kind":"fetch","tool":"","url":"https://example.com"}"#,
+    ),
+    (
+        "claude",
+        33,
+        r#"{"kind":"fetch","tool":"WebFetch","url":"https://example.com"}"#,
+    ),
+    ("claude", 34, r#"{"kind":"tool","tool":""}"#),
+    ("claude", 35, r#"{"kind":"tool","tool":""}"#),
+    (
+        "codex-rust",
+        2,
+        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+    ),
+    (
+        "codex-rust",
+        3,
+        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+    ),
+    ("codex-rust", 4, r#"{"kind":"tool","tool":""}"#),
+    (
+        "codex-rust",
+        5,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    (
+        "codex-rust",
+        6,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    (
+        "codex-rust",
+        7,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    (
+        "codex-rust",
+        8,
+        r#"{"kind":"file_read","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    ("codex-rust", 9, r#"{"kind":"tool","tool":""}"#),
+    (
+        "codex-rust",
+        10,
+        r#"{"kind":"mcp_tool","tool":"search_notes","query":"rust"}"#,
+    ),
+    ("codex-rust", 11, r#"{"kind":"mcp_tool","tool":""}"#),
+    ("codex-rust", 12, r#"{"kind":"tool","tool":""}"#),
+    ("codex-rust", 13, r#"{"kind":"fetch","tool":""}"#),
+    (
+        "codex-rust",
+        14,
+        r#"{"kind":"search","tool":"","query":"rust acp"}"#,
+    ),
+    ("codex-rust", 15, r#"{"kind":"tool","tool":""}"#),
+    ("codex-rust", 16, r#"{"kind":"fetch","tool":""}"#),
+    (
+        "codex-rust",
+        17,
+        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
+    ),
+    ("codex-rust", 18, r#"{"kind":"tool","tool":""}"#),
+    (
+        "codex-ts",
+        2,
+        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+    ),
+    (
+        "codex-ts",
+        3,
+        r#"{"kind":"command","tool":"","command":"cargo test"}"#,
+    ),
+    ("codex-ts", 4, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 5, r#"{"kind":"tool","tool":"exec_command"}"#),
+    (
+        "codex-ts",
+        6,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    (
+        "codex-ts",
+        7,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    ("codex-ts", 8, r#"{"kind":"tool","tool":""}"#),
+    (
+        "codex-ts",
+        9,
+        r#"{"kind":"file_read","tool":"exec_command","paths":["/home/user/project/src/lib.rs"]}"#,
+    ),
+    ("codex-ts", 10, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 11, r#"{"kind":"tool","tool":"exec_command"}"#),
+    (
+        "codex-ts",
+        12,
+        r#"{"kind":"mcp_tool","tool":"search_notes","query":"rust"}"#,
+    ),
+    ("codex-ts", 13, r#"{"kind":"command","tool":""}"#),
+    ("codex-ts", 14, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 15, r#"{"kind":"tool","tool":""}"#),
+    ("codex-ts", 16, r#"{"kind":"search","tool":""}"#),
+    (
+        "codex-ts",
+        17,
+        r#"{"kind":"search","tool":"","query":"rust acp"}"#,
+    ),
+    ("codex-ts", 18, r#"{"kind":"search","tool":""}"#),
+    (
+        "codex-ts",
+        19,
+        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com","query":"https://agentclientprotocol.com"}"#,
+    ),
+    (
+        "gemini",
+        2,
+        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+    ),
+    (
+        "gemini",
+        3,
+        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+    ),
+    (
+        "gemini",
+        4,
+        r#"{"kind":"command","tool":"","command":"ls -la src"}"#,
+    ),
+    (
+        "gemini",
+        5,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+    ),
+    (
+        "gemini",
+        6,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+    ),
+    (
+        "gemini",
+        7,
+        r#"{"kind":"file_edit","tool":"","paths":["/home/user/proj/config.py"]}"#,
+    ),
+    (
+        "gemini",
+        8,
+        r#"{"kind":"file_read","tool":"","paths":["/home/user/proj/src/main.rs"]}"#,
+    ),
+    (
+        "gemini",
+        9,
+        r#"{"kind":"file_read","tool":"","paths":["/home/user/proj/src/main.rs"]}"#,
+    ),
+    ("gemini", 10, r#"{"kind":"tool","tool":""}"#),
+    ("gemini", 11, r#"{"kind":"tool","tool":""}"#),
+    ("gemini", 12, r#"{"kind":"tool","tool":""}"#),
+    ("gemini", 13, r#"{"kind":"search","tool":""}"#),
+    ("gemini", 14, r#"{"kind":"search","tool":""}"#),
+    ("gemini", 15, r#"{"kind":"fetch","tool":""}"#),
+    ("gemini", 16, r#"{"kind":"fetch","tool":""}"#),
+    ("gemini", 17, r#"{"kind":"fetch","tool":""}"#),
+    (
+        "antigravity",
+        2,
+        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+    ),
+    (
+        "antigravity",
+        3,
+        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+    ),
+    (
+        "antigravity",
+        4,
+        r#"{"kind":"command","tool":"","command":"cargo test -p app"}"#,
+    ),
+    ("antigravity", 5, r#"{"kind":"tool","tool":""}"#),
+    (
+        "antigravity",
+        6,
+        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+    ),
+    (
+        "antigravity",
+        7,
+        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+    ),
+    (
+        "antigravity",
+        8,
+        r#"{"kind":"file_edit","tool":"","paths":["/work/app/src/lib.rs"]}"#,
+    ),
+    ("antigravity", 9, r#"{"kind":"tool","tool":""}"#),
+    (
+        "antigravity",
+        10,
+        r#"{"kind":"file_read","tool":"","paths":["/work/app/src/main.rs"]}"#,
+    ),
+    ("antigravity", 11, r#"{"kind":"tool","tool":""}"#),
+    (
+        "antigravity",
+        12,
+        r#"{"kind":"mcp_tool","tool":"github_get_issue"}"#,
+    ),
+    (
+        "antigravity",
+        13,
+        r#"{"kind":"mcp_tool","tool":"github_get_issue"}"#,
+    ),
+    (
+        "antigravity",
+        14,
+        r#"{"kind":"mcp_tool","tool":"github_get_issue"}"#,
+    ),
+    ("antigravity", 15, r#"{"kind":"tool","tool":""}"#),
+    (
+        "antigravity",
+        16,
+        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+    ),
+    (
+        "antigravity",
+        17,
+        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+    ),
+    (
+        "antigravity",
+        18,
+        r#"{"kind":"search","tool":"","query":"acp tool call schema"}"#,
+    ),
+    ("antigravity", 19, r#"{"kind":"tool","tool":""}"#),
+    (
+        "antigravity",
+        20,
+        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+    ),
+    (
+        "antigravity",
+        21,
+        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+    ),
+    (
+        "antigravity",
+        22,
+        r#"{"kind":"fetch","tool":"","url":"https://agentclientprotocol.com/protocol/tool-calls"}"#,
+    ),
+    ("antigravity", 23, r#"{"kind":"tool","tool":""}"#),
+];
+
+#[test]
+fn each_tool_frame_gives_its_canonical_call() {
+    let mut want = EXPECTED_CLASSES.iter();
+    for agent in ["claude", "codex-rust", "codex-ts", "gemini", "antigravity"] {
+        for (line, got) in classify_fixture(agent) {
+            let (a, l, fields) = want.next().expect("a row for each frame");
+            assert_eq!((*a, *l), (agent, line), "the table follows the fixtures");
+            let fields: serde_json::Value = serde_json::from_str(fields).unwrap();
+            assert_eq!(got, fields, "{agent}.jsonl:{line}");
+        }
+    }
+    assert!(want.next().is_none(), "each row names a frame");
+}

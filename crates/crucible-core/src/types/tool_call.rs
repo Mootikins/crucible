@@ -7,9 +7,10 @@
 //!
 //! This type is data, not a rendering. Each UI decides how to draw it.
 
-use agent_client_protocol_schema::v1::ToolCall as AcpToolCall;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use super::tool_match::RawToolCall;
 
 /// Argument keys that name a filesystem target, in priority order.
 /// `filePath` is here because agents are inconsistent about casing and the
@@ -23,7 +24,9 @@ const QUERY_KEYS: &[&str] = &["pattern", "query"];
 /// One tool call, classified.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CanonicalToolCall {
-    /// The open kind name, for example `command` or `path`.
+    /// The open kind name. The default matcher and [`Self::crucible_tool`]
+    /// give `command`, `file_edit`, `file_read`, `mcp_tool`, `fetch`,
+    /// `search`, or the fallback `tool`.
     pub kind: String,
     /// The canonical tool name. A display object from before this field has
     /// no name, so the default keeps an old transcript readable.
@@ -42,10 +45,10 @@ pub struct CanonicalToolCall {
     /// The ACP agent that made the call. `None` for Crucible's own tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
-    /// The wire form of an ACP call, for display and debugging. No policy
+    /// The fields of an ACP call, for matchers and display. No policy
     /// reads it. `None` for Crucible's own tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw: Option<AcpToolCall>,
+    pub raw: Option<RawToolCall>,
     /// The argument that a UI shows on one line. A Lua display hook can
     /// replace it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,11 +76,22 @@ impl CanonicalToolCall {
         "terminal",
     ];
 
+    /// Crucible's tools that change a file or a note. A path argument makes
+    /// a call to one of them `file_edit`, and a call to another tool
+    /// `file_read`. The permission gate reads this list too.
+    pub const FILE_EDIT_TOOL_NAMES: &'static [&'static str] = &[
+        "write_file",
+        "edit_file",
+        "create_note",
+        "update_note",
+        "delete_note",
+    ];
+
     /// Classify a call to one of Crucible's own tools.
     ///
     /// `args` is the raw argument object. A non-object (a bare string, or
-    /// nothing) yields `other` with the string as `primary` where that makes
-    /// sense — some agents pass a single positional argument.
+    /// nothing) yields the fallback `tool` with the string as `primary` where
+    /// that makes sense — some agents pass a single positional argument.
     pub fn crucible_tool(tool_name: &str, args: &Value) -> Self {
         let call = |kind: &str, primary: Option<String>| Self {
             kind: kind.to_string(),
@@ -100,34 +114,39 @@ impl CanonicalToolCall {
 
         let Some(map) = args.as_object() else {
             return call(
-                "other",
+                "tool",
                 args.as_str().filter(|s| !s.is_empty()).map(str::to_string),
             );
         };
 
         if let Some(path) = first_string(map, PATH_KEYS) {
+            let kind = if Self::FILE_EDIT_TOOL_NAMES.contains(&tool_name) {
+                "file_edit"
+            } else {
+                "file_read"
+            };
             return Self {
                 paths: vec![path.clone()],
-                ..call("path", Some(path))
+                ..call(kind, Some(path))
             };
         }
         if let Some(query) = first_string(map, QUERY_KEYS) {
             return Self {
                 query: Some(query.clone()),
-                ..call("query", Some(query))
+                ..call("search", Some(query))
             };
         }
         if let Some(url) = first_string(map, &["url"]) {
             return Self {
                 url: Some(url.clone()),
-                ..call("query", Some(url))
+                ..call("fetch", Some(url))
             };
         }
 
         // Nothing recognised: any non-empty value beats showing the caller a
         // bare tool name with no context. Scalars are stringified — a call
         // whose only argument is `{"count": 42}` should still say "42".
-        call("other", map.values().find_map(scalar_to_string))
+        call("tool", map.values().find_map(scalar_to_string))
     }
 
     /// A one-line form, truncated on character boundaries.
@@ -227,7 +246,7 @@ mod tests {
     #[test]
     fn paths_outrank_queries() {
         let d = of("grep", &json!({"pattern": "foo", "path": "src/lib.rs"}));
-        assert_eq!(d.kind, "path");
+        assert_eq!(d.kind, "file_read");
         assert_eq!(d.paths, ["src/lib.rs"]);
         assert_eq!(d.query, None);
         assert_eq!(d.primary.as_deref(), Some("src/lib.rs"));
@@ -236,7 +255,7 @@ mod tests {
     #[test]
     fn a_query_is_recognised_when_no_path_is_present() {
         let d = of("semantic_search", &json!({"query": "wikilinks"}));
-        assert_eq!(d.kind, "query");
+        assert_eq!(d.kind, "search");
         assert_eq!(d.query.as_deref(), Some("wikilinks"));
         assert_eq!(d.primary.as_deref(), Some("wikilinks"));
     }
@@ -245,7 +264,7 @@ mod tests {
     #[test]
     fn a_url_is_recognised_when_no_query_is_present() {
         let d = of("fetch", &json!({"url": "https://a.test"}));
-        assert_eq!(d.kind, "query");
+        assert_eq!(d.kind, "fetch");
         assert_eq!(d.url.as_deref(), Some("https://a.test"));
         assert_eq!(d.primary.as_deref(), Some("https://a.test"));
 
@@ -257,14 +276,14 @@ mod tests {
     #[test]
     fn an_unrecognised_shape_still_offers_a_string() {
         let d = of("mystery", &json!({"whatever": "something"}));
-        assert_eq!(d.kind, "other");
+        assert_eq!(d.kind, "tool");
         assert_eq!(d.primary.as_deref(), Some("something"));
     }
 
     #[test]
     fn empty_strings_do_not_count_as_a_primary() {
         let d = of("write_file", &json!({"path": "", "query": ""}));
-        assert_eq!(d.kind, "other");
+        assert_eq!(d.kind, "tool");
         assert_eq!(d.primary, None);
         assert!(d.paths.is_empty());
     }
@@ -274,8 +293,23 @@ mod tests {
     #[test]
     fn camel_case_file_path_is_recognised() {
         let d = of("Read", &json!({"filePath": "/home/u/x.rs"}));
-        assert_eq!(d.kind, "path");
+        assert_eq!(d.kind, "file_read");
         assert_eq!(d.primary.as_deref(), Some("/home/u/x.rs"));
+    }
+
+    /// A path makes a Crucible tool `file_edit` only when the tool changes
+    /// files, so a rule for `file_edit` matches the same calls as the
+    /// permission gate's file rules.
+    #[test]
+    fn a_path_is_an_edit_only_for_a_tool_that_changes_files() {
+        for name in CanonicalToolCall::FILE_EDIT_TOOL_NAMES {
+            assert_eq!(
+                of(name, &json!({"path": "a.md"})).kind,
+                "file_edit",
+                "{name}"
+            );
+        }
+        assert_eq!(of("read_file", &json!({"path": "a.md"})).kind, "file_read");
     }
 
     #[test]
@@ -346,7 +380,7 @@ mod tests {
         let d = of("noop", &json!({}));
         assert_eq!(
             serde_json::to_value(&d).unwrap(),
-            json!({"kind": "other", "tool": "noop"})
+            json!({"kind": "tool", "tool": "noop"})
         );
     }
 

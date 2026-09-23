@@ -870,12 +870,12 @@ describe('event matrix — covers every ChatEvent variant', () => {
       id: 'call-1',
       title: 'Edit',
       arguments: { file_path: 'a.rs' },
-      display: { kind: 'path', primary: 'a.rs' },
+      display: { kind: 'file_edit', tool: 'Edit', paths: ['a.rs'], primary: 'a.rs' },
       auto_approved: 'auto mode',
       diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
     });
     const tool = h.tools()[0];
-    expect(tool.display).toEqual({ kind: 'path', primary: 'a.rs' });
+    expect(tool.display).toEqual({ kind: 'file_edit', tool: 'Edit', paths: ['a.rs'], primary: 'a.rs' });
     expect(tool.autoApproved).toBe('auto mode');
     expect(tool.diffs).toEqual([{ path: 'a.rs', old_content: 'x', new_content: 'y' }]);
   });

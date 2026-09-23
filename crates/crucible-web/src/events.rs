@@ -577,7 +577,7 @@ mod tests {
                 assert_eq!(
                     display,
                     Some(serde_json::json!({
-                        "kind": "path", "tool": "read_file", "paths": ["foo.rs"], "primary": "foo.rs"
+                        "kind": "file_read", "tool": "read_file", "paths": ["foo.rs"], "primary": "foo.rs"
                     }))
                 );
                 assert_eq!(auto_approved, None);
@@ -598,7 +598,7 @@ mod tests {
             "Edit",
             serde_json::json!({ "file_path": "a.rs", "old_string": "x", "new_string": "y" }),
         );
-        event.data["display"] = serde_json::json!({ "kind": "path", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" });
+        event.data["display"] = serde_json::json!({ "kind": "file_edit", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" });
         event.data["auto_approved"] = serde_json::json!("auto mode");
         event.data["diffs"] = serde_json::json!([
             { "path": "a.rs", "old_content": "x", "new_content": "y" }
@@ -616,7 +616,7 @@ mod tests {
                 assert_eq!(
                     display,
                     Some(
-                        serde_json::json!({ "kind": "path", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" })
+                        serde_json::json!({ "kind": "file_edit", "tool": "Edit", "paths": ["a.rs"], "primary": "a.rs" })
                     )
                 );
                 assert_eq!(auto_approved, Some("auto mode".to_string()));

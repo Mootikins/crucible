@@ -453,7 +453,7 @@ fn golden_tool_call_minimal() {
             "call_id": "c-1",
             "tool": "read_file",
             "args": {"path": "/tmp/x"},
-            "display": {"kind": "path", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x"},
+            "display": {"kind": "file_read", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x"},
         })
     );
 }
@@ -466,7 +466,7 @@ fn golden_tool_call_maximal() {
     let m = SessionEventMessage::tool_call_with_metadata(
         "s1",
         "c-1",
-        "edit",
+        "edit_file",
         serde_json::json!({"path": "src/a.rs"}),
         Some("edits a file".into()),
         Some("builtin".into()),
@@ -478,12 +478,12 @@ fn golden_tool_call_maximal() {
         wire(&m, "tool_call"),
         serde_json::json!({
             "call_id": "c-1",
-            "tool": "edit",
+            "tool": "edit_file",
             "args": {"path": "src/a.rs"},
             "description": "edits a file",
             "source": "builtin",
             "lua_primary_arg": "src/a.rs (lua)",
-            "display": {"kind": "path", "tool": "edit", "paths": ["src/a.rs"], "primary": "src/a.rs (lua)"},
+            "display": {"kind": "file_edit", "tool": "edit_file", "paths": ["src/a.rs"], "primary": "src/a.rs (lua)"},
             "auto_approved": "mode:auto",
             "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
         })

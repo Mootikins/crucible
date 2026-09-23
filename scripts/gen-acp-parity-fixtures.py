@@ -60,8 +60,8 @@ ARGS_ACP = {
 }
 
 
-def display(tool):
-    return {"kind": "path", "tool": tool, "paths": ["greeting.rs"], "primary": "greeting.rs"}
+def display(tool, kind):
+    return {"kind": kind, "tool": tool, "paths": ["greeting.rs"], "primary": "greeting.rs"}
 
 
 PREAMBLE = "I'll fix the greeting."
@@ -140,7 +140,7 @@ internal = common_head + [
             # Registry description: `tool_call.rs` looks this up for Core tools.
             "description": "Edit file by replacing text. old_string must match exactly.",
             "source": "Core",
-            "display": display("edit_file"),
+            "display": display("edit_file", "file_edit"),
             # Synthesized up-front by `tools::diff_synth` and carried on the card.
             "diffs": DIFFS,
         },
@@ -174,7 +174,7 @@ delegated = common_head + [
             "tool": "Edit File",
             "args": ARGS_ACP,
             "source": "Acp:claude",
-            "display": display("Edit File"),
+            "display": display("Edit File", "file_read"),
         },
     ),
     # The late diff: Claude Code attaches `ToolCallContent::Diff` in a follow-up
@@ -248,7 +248,7 @@ read_internal = (
                 "args": READ_ARGS,
                 "description": "Read file contents. Returns content with line numbers.",
                 "source": "Core",
-                "display": display("read_file"),
+                "display": display("read_file", "file_read"),
             },
         ),
         (
@@ -279,7 +279,7 @@ read_delegated = (
                 "tool": "Read File",
                 "args": READ_ARGS_ACP,
                 "source": "Acp:claude",
-                "display": display("Read File"),
+                "display": display("Read File", "file_read"),
             },
         ),
         (
