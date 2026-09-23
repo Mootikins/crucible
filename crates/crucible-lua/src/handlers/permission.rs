@@ -30,8 +30,10 @@ pub enum PermissionHookResult {
 /// A permission request passed to Lua hooks
 #[derive(Debug, Clone)]
 pub struct PermissionRequest {
-    /// Tool name (e.g., "write", "bash")
-    pub tool_name: String,
+    /// The canonical call. The hook reads its tool name, kind, command line,
+    /// paths, URL, query and agent, so one hook decides a Crucible tool and
+    /// the tool of each ACP agent.
+    pub call: crucible_core::types::CanonicalToolCall,
     /// Tool arguments as JSON
     pub args: JsonValue,
     /// File path if applicable
@@ -144,9 +146,22 @@ pub(crate) fn build_request_table(
     lua: &Lua,
     request: &crate::PermissionRequest,
 ) -> LuaResult<Table> {
+    let call = &request.call;
     let request_table = lua.create_table()?;
-    request_table.set("tool_name", request.tool_name.as_str())?;
+    request_table.set("tool_name", call.tool.as_str())?;
     request_table.set("args", lua.to_value(&request.args)?)?;
+    request_table.set("kind", call.kind.as_str())?;
+    request_table.set("paths", lua.to_value(&call.paths)?)?;
+    for (key, value) in [
+        ("command", &call.command),
+        ("url", &call.url),
+        ("query", &call.query),
+        ("agent", &call.agent),
+    ] {
+        if let Some(value) = value {
+            request_table.set(key, value.as_str())?;
+        }
+    }
     if let Some(ref path) = request.file_path {
         request_table.set("file_path", path.as_str())?;
     }
@@ -203,7 +218,7 @@ pub fn execute_permission_hooks(
     // which is why `runtime/defaults/init.luau` answers `nil` for every mode
     // but `plan`, leaving the decision to whatever registered after it. The
     // pattern filters on the tool name, as `cru.on`'s does.
-    let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.tool_name), firing);
+    let hooks = registry.for_hook(PERMISSION_REQUEST_HOOK, Some(&request.call.tool), firing);
     if hooks.is_empty() {
         return Ok(PermissionHookResult::Prompt);
     }
@@ -278,7 +293,15 @@ mod payload_contract {
         // Every optional field populated, so the table carries its whole
         // surface rather than the subset a particular request happens to fill.
         let request = crate::PermissionRequest {
-            tool_name: "bash".to_string(),
+            call: crucible_core::types::CanonicalToolCall {
+                url: Some("https://a.test".to_string()),
+                query: Some("q".to_string()),
+                agent: Some("codex".to_string()),
+                ..crucible_core::types::CanonicalToolCall::crucible_tool(
+                    "bash",
+                    &serde_json::json!({ "command": "ls" }),
+                )
+            },
             args: serde_json::json!({ "command": "ls" }),
             file_path: Some("/tmp/x".to_string()),
             mode: Some("plan".to_string()),

@@ -49,7 +49,10 @@ fn test_permission_hook_returns_allow() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({"command": "npm install"}),
         file_path: None,
         mode: None,
@@ -87,7 +90,10 @@ fn test_permission_hook_returns_deny() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "delete".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "delete",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({"path": "/important/file"}),
         file_path: Some("/important/file".to_string()),
         mode: None,
@@ -122,7 +128,10 @@ fn test_permission_hook_returns_nil_for_prompt() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "write".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "write",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({"path": "test.txt"}),
         file_path: Some("test.txt".to_string()),
         mode: None,
@@ -146,7 +155,10 @@ fn test_permission_hook_no_hooks_returns_prompt() {
     let registry = LuaScriptHandlerRegistry::new();
 
     let request = PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({}),
         file_path: None,
         mode: None,
@@ -184,7 +196,10 @@ fn test_permission_hook_receives_args() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({"command": "npm install express"}),
         file_path: None,
         mode: None,
@@ -222,7 +237,10 @@ fn test_permission_hook_receives_file_path() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "write".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "write",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({"path": "src/foo.test.ts"}),
         file_path: Some("src/foo.test.ts".to_string()),
         mode: None,
@@ -260,7 +278,10 @@ fn test_permission_hook_first_decision_wins() {
     .unwrap();
 
     let request = PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({}),
         file_path: None,
         mode: None,
@@ -295,7 +316,10 @@ fn a_pattern_scopes_a_hook_to_matching_tools() {
     .unwrap();
 
     let req = |tool: &str| PermissionRequest {
-        tool_name: tool.to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            tool,
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({}),
         file_path: None,
         mode: None,
@@ -345,7 +369,10 @@ fn a_pattern_uses_the_same_glob_syntax_as_crucible_on() {
     .unwrap();
 
     let req = |tool: &str| PermissionRequest {
-        tool_name: tool.to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            tool,
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({}),
         file_path: None,
         mode: None,

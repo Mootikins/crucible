@@ -416,6 +416,12 @@ pub(crate) fn host_global_names() -> Vec<&'static str> {
 pub(crate) const PERMISSION_REQUEST: &str = "{ \
     tool_name: string, \
     args: any, \
+    kind: string, \
+    command: string?, \
+    paths: { string }, \
+    url: string?, \
+    query: string?, \
+    agent: string?, \
     file_path: string?, \
     mode: string?, \
     is_safe: boolean \

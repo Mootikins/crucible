@@ -2,6 +2,7 @@ use super::super::*;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
 };
+use crucible_core::types::CanonicalToolCall;
 use crucible_lua::StageId;
 use std::future::Future;
 use std::ops::ControlFlow;
@@ -57,7 +58,7 @@ impl PermissionSerializer {
 enum PatternKind {
     /// A bash rule, matched against the shell command line carried here.
     Bash(String),
-    /// A file rule, matched against a path taken from the arguments.
+    /// A file rule, matched against each path of the call.
     File,
     /// A tool rule, matched against the tool name.
     Tool,
@@ -70,46 +71,18 @@ enum PatternKind {
 /// about what a call is, the click writes a rule that can never match and the
 /// user is prompted again for ever, with no way to see why.
 ///
-/// They did disagree. [`PermRequest::suggested_pattern`] asks
-/// [`CanonicalToolCall`], which calls `shell`, `Bash` and `myserver__bash` shell
-/// tools, so it offered a command line; the routing here compared the name to
-/// the literal `"bash"`, so every other command tool filed that command line
-/// as a tool-name rule. `CanonicalToolCall` is the single source of truth for
-/// what a command is, and both halves now read it. Never restate its list here —
-/// a second list is exactly what drifted.
-///
-/// The projection reads the arguments, not the name alone, which is what
-/// keeps the two halves aligned in the awkward case too: a `shell` call with
-/// no `command` argument is not a command to `suggested_pattern` either, so
-/// both file it as a tool rule.
-fn pattern_kind(tool_name: &str, args: &serde_json::Value) -> PatternKind {
-    use crucible_core::types::CanonicalToolCall;
-
-    // Not a command: a path tool matches on its path, anything else on its
-    // name. Both are decided by the name alone.
-    let by_name = || {
-        if CanonicalToolCall::FILE_EDIT_TOOL_NAMES.contains(&tool_name) {
-            PatternKind::File
-        } else {
-            PatternKind::Tool
-        }
-    };
-
-    CanonicalToolCall::crucible_tool(tool_name, args)
-        .command
-        .map_or_else(by_name, PatternKind::Bash)
-}
-
-/// The text the permission engine matches its rules against: the shell
-/// command for `bash`, the full JSON arguments for every other tool.
-pub(super) fn engine_input(tool_name: &str, args: &serde_json::Value) -> String {
-    if tool_name == "bash" {
-        args.get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
-    } else {
-        args.to_string()
+/// Both halves read the canonical call, which Crucible's own tools and the
+/// ACP boundary both produce. A `command` call with a command line is a bash
+/// grant, whichever tool made it, so one grant for `cargo test` covers the
+/// same command from each shell tool. A `file_edit` call with
+/// paths is a file grant. Any other call is a grant for its canonical tool
+/// name. [`PermRequest::suggested_pattern`] offers the same thing: the
+/// command line for a command, and the tool name for another tool.
+fn pattern_kind(call: &CanonicalToolCall) -> PatternKind {
+    match (call.kind.as_str(), &call.command) {
+        ("command", Some(command)) => PatternKind::Bash(command.clone()),
+        ("file_edit", _) if !call.paths.is_empty() => PatternKind::File,
+        _ => PatternKind::Tool,
     }
 }
 
@@ -154,10 +127,11 @@ fn select_option(
 /// policy, and a test drives it with the frames the real agents send.
 ///
 /// `call` is the canonical call that the ACP client joined from the request
-/// and the earlier frames of its `toolCallId`. The policy keys on its
+/// and the earlier frames of its `toolCallId`. The card keys on its
 /// canonical `tool`: the name the agent sent, a Crucible tool without its
-/// MCP prefix, or the kind of a call that nothing names. The diff of the
-/// prompt is the diff of the call.
+/// MCP prefix, or the kind of a call that nothing names. The operator's rules
+/// read the whole call, as for Crucible's own tools. The diff of the prompt
+/// is the diff of the call.
 ///
 /// The card policy goes INTO the gate rather than answering ahead of it. The
 /// two halves used to disagree about the same session's `tool_policy` — an
@@ -170,17 +144,11 @@ fn select_option(
 async fn decide_acp_permission(
     gate: &DaemonPermissionGate,
     tool_policy: Option<&crucible_core::agent::ToolPolicyMap>,
-    call: crucible_core::types::CanonicalToolCall,
+    call: CanonicalToolCall,
     options: &[agent_client_protocol::schema::v1::PermissionOption],
 ) -> agent_client_protocol::schema::v1::RequestPermissionOutcome {
     let card_policy = tool_policy.and_then(|map| map.get(&call.tool)).copied();
-    let args = call
-        .raw
-        .and_then(|raw| raw.raw_input)
-        .unwrap_or(serde_json::Value::Null);
-    let permission = PermRequest::tool(call.tool, args).with_diffs(call.diffs);
-
-    let response = gate.request_permission(permission, card_policy).await;
+    let response = gate.request_permission(call, card_policy).await;
     select_option(options, &response)
 }
 
@@ -559,7 +527,7 @@ impl AgentManager {
     /// profile, cache on the mode's identity, not on the session.
     pub(in crate::agent_manager) fn evaluate_mode_rules(
         permissions: &crucible_lua::ModePermissions,
-        tool_name: &str,
+        call: &CanonicalToolCall,
         args: &serde_json::Value,
     ) -> PermissionDecision {
         use crucible_core::config::components::permissions::PermissionConfig;
@@ -574,11 +542,10 @@ impl AgentManager {
             ask: permissions.ask.clone(),
         };
         let engine = PermissionEngine::new(Some(&config));
-        let input = engine_input(tool_name, args);
         // `is_interactive: true` deliberately: the non-interactive ask→deny
         // conversion is the caller's job below, and doing it here would skip
         // the prompt path entirely.
-        engine.evaluate(tool_name, &input, true)
+        engine.evaluate_call(call, args, true)
     }
 
     /// Run the permission gate.
@@ -588,9 +555,13 @@ impl AgentManager {
     /// caller carries the reason on the `tool_call` event — the decision is
     /// made before that event is emitted, so an auto-approval marker can ride
     /// along with the card rather than arriving after it and popping in.
+    ///
+    /// `call` is the canonical form of `tool_call`. Every rule, saved
+    /// pattern and hook below reads it.
     pub(super) async fn handle_permission_request(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
+        call: &CanonicalToolCall,
         call_id: &str,
         args: &serde_json::Value,
     ) -> Result<Option<String>, String> {
@@ -636,8 +607,7 @@ impl AgentManager {
         // branch below already handles non-interactive turns.
         if let Some(engine) = &stream_ctx.permission_engine {
             use crucible_core::config::components::permissions::PermissionDecision;
-            let rule_input = engine_input(&tool_call.name, args);
-            match engine.evaluate(&tool_call.name, &rule_input, true) {
+            match engine.evaluate_call(call, args, true) {
                 PermissionDecision::Allow => {
                     debug!(
                         session_id = %stream_ctx.session_id,
@@ -681,7 +651,7 @@ impl AgentManager {
                 .merge(&PatternStore::load_user_sync_in(dir).unwrap_or_default()),
             None => PatternStore::default(),
         };
-        let pattern_matched = Self::check_pattern_match(&tool_call.name, args, &pattern_store);
+        let pattern_matched = Self::check_pattern_match(call, &pattern_store);
 
         if pattern_matched {
             debug!(
@@ -703,7 +673,7 @@ impl AgentManager {
 
         let hook_result = Self::run_permission_hooks(
             stream_ctx.agent_stream_config.daemon_permissions.as_ref(),
-            &tool_call.name,
+            call,
             args,
             &stream_ctx.session_id,
             &stream_ctx.session_mode,
@@ -762,13 +732,11 @@ impl AgentManager {
                 // `rg foo && rm -rf /`. Writing a second matcher here would
                 // have been the easy way to lose that.
                 let mode_stance = match &mode_permissions {
-                    Some(p) if p.has_rules() => {
-                        match Self::evaluate_mode_rules(p, &tool_call.name, args) {
-                            PermissionDecision::Allow => Some(crucible_lua::ModeStance::Allow),
-                            PermissionDecision::Deny { .. } => Some(crucible_lua::ModeStance::Deny),
-                            PermissionDecision::Ask { .. } => Some(crucible_lua::ModeStance::Ask),
-                        }
-                    }
+                    Some(p) if p.has_rules() => match Self::evaluate_mode_rules(p, call, args) {
+                        PermissionDecision::Allow => Some(crucible_lua::ModeStance::Allow),
+                        PermissionDecision::Deny { .. } => Some(crucible_lua::ModeStance::Deny),
+                        PermissionDecision::Ask { .. } => Some(crucible_lua::ModeStance::Ask),
+                    },
                     Some(p) => Some(p.default),
                     None => None,
                 };
@@ -909,12 +877,8 @@ impl AgentManager {
                                             )
                                         })
                                     {
-                                        if let Err(e) = Self::store_pattern_to(
-                                            &file,
-                                            &tool_call.name,
-                                            args,
-                                            pattern,
-                                        ) {
+                                        if let Err(e) = Self::store_pattern_to(&file, call, pattern)
+                                        {
                                             warn!(
                                                 session_id = %stream_ctx.session_id,
                                                 tool = %tool_call.name,
@@ -1016,33 +980,22 @@ impl AgentManager {
         clippy::match_wildcard_for_single_variants
     )]
     pub(in crate::agent_manager) fn check_pattern_match(
-        tool_name: &str,
-        args: &serde_json::Value,
+        call: &CanonicalToolCall,
         pattern_store: &PatternStore,
     ) -> bool {
-        match pattern_kind(tool_name, args) {
+        match pattern_kind(call) {
             PatternKind::Bash(command) => pattern_store.matches_bash(&command),
-            PatternKind::File => {
-                let path = args
-                    .get("path")
-                    .or_else(|| args.get("file"))
-                    .or_else(|| args.get("name"))
-                    .and_then(|v| v.as_str());
-                if let Some(path) = path {
-                    pattern_store.matches_file(path)
-                } else {
-                    false
-                }
-            }
-            PatternKind::Tool => pattern_store.matches_tool(tool_name),
+            // A grant for one path must not permit an edit of another.
+            PatternKind::File => call.paths.iter().all(|p| pattern_store.matches_file(p)),
+            PatternKind::Tool => pattern_store.matches_tool(&call.tool),
         }
     }
 
     /// Add `pattern` to the store at `file`, which a `Project` or `User`
     /// grant resolves through [`PatternStore::store_file_in`].
     ///
-    /// `args` are the arguments of the call the user answered about. They are
-    /// what [`pattern_kind`] reads, so the table this writes into is the table
+    /// `call` is the call the user answered about. It is what
+    /// [`pattern_kind`] reads, so the table this writes into is the table
     /// [`Self::check_pattern_match`] will read on the next identical call.
     ///
     /// The daemon is the only writer of a store file, so one process-wide
@@ -1054,8 +1007,7 @@ impl AgentManager {
     )]
     pub(in crate::agent_manager) fn store_pattern_to(
         file: &std::path::Path,
-        tool_name: &str,
-        args: &serde_json::Value,
+        call: &CanonicalToolCall,
         pattern: &str,
     ) -> Result<(), crucible_core::config::PatternError> {
         static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1065,7 +1017,7 @@ impl AgentManager {
 
         let mut store = PatternStore::load_file(file).unwrap_or_default();
 
-        match pattern_kind(tool_name, args) {
+        match pattern_kind(call) {
             PatternKind::Bash(_) => store.add_bash_pattern(pattern)?,
             PatternKind::File => store.add_file_pattern(pattern)?,
             PatternKind::Tool => store.add_tool_pattern(pattern)?,
@@ -1083,9 +1035,9 @@ impl AgentManager {
     ///
     /// `crucible_lua::handler_budget` gives the hooks 1 s. The VM stops a hook
     /// that runs longer, and this then returns `Prompt`.
-    pub(super) fn run_permission_hooks(
+    pub(in crate::agent_manager) fn run_permission_hooks(
         registry: Option<&super::super::DaemonPermissions>,
-        tool_name: &str,
+        call: &CanonicalToolCall,
         args: &serde_json::Value,
         session_id: &str,
         session_mode: &str,
@@ -1094,6 +1046,7 @@ impl AgentManager {
         let Some((hooks, lua)) = registry else {
             return PermissionHookResult::Prompt;
         };
+        let tool_name = call.tool.as_str();
 
         let file_path = args
             .get("path")
@@ -1102,7 +1055,7 @@ impl AgentManager {
             .map(String::from);
 
         let request = PermissionRequest {
-            tool_name: tool_name.to_string(),
+            call: call.clone(),
             args: args.clone(),
             file_path,
             mode: Some(session_mode.to_string()),
@@ -1270,7 +1223,6 @@ mod acp_permission_tests {
     use agent_client_protocol::schema::v1::{
         PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
     };
-    use crucible_core::interaction::PermRequest;
     use crucible_core::types::{classify_acp, CanonicalToolCall};
 
     /// The canonical call of an ACP frame that names no tool.
@@ -1303,12 +1255,7 @@ mod acp_permission_tests {
 
         let call = unnamed("edit", "Edit src/main.rs");
         assert_eq!(call.tool, "file_edit", "the prose title is never the name");
-        let response = gate
-            .request_permission(
-                PermRequest::tool(call.tool, serde_json::json!({"path": "src/main.rs"})),
-                None,
-            )
-            .await;
+        let response = gate.request_permission(call, None).await;
 
         assert!(
             !response.allowed,
@@ -1323,9 +1270,7 @@ mod acp_permission_tests {
         let gate = DaemonPermissionGate::new(None, true);
         let call = unnamed("read", "Read /etc/passwd");
 
-        let response = gate
-            .request_permission(PermRequest::tool(call.tool, serde_json::json!({})), None)
-            .await;
+        let response = gate.request_permission(call, None).await;
 
         assert!(
             !response.allowed,
@@ -1574,6 +1519,43 @@ mod acp_tool_policy_tests {
             !asked.allowed(),
             "a card allow must not beat an operator deny"
         );
+    }
+
+    /// What codex-acp (TypeScript) sends for a shell command: `kind:
+    /// "execute"`, no name, and the command line in `rawInput.command`.
+    /// The shape is the `shell` case of `tool_frames/codex-ts.jsonl`.
+    fn codex_command_request() -> RequestPermissionRequest {
+        serde_json::from_value(serde_json::json!({
+            "sessionId": "sess-1",
+            "toolCall": {
+                "toolCallId": "call_shell1",
+                "kind": "execute",
+                "status": "pending",
+                "title": "Run command",
+                "rawInput": { "command": "cargo test", "cwd": "/home/user/project" },
+            },
+            "options": options(),
+        }))
+        .expect("the codex-acp frame parses")
+    }
+
+    /// An operator `bash` rule refuses a command that the agent does not
+    /// name. The rule matches the command line of each `command` call, so
+    /// the operator writes one rule for Crucible's shell and for the shell
+    /// of each agent.
+    #[tokio::test]
+    async fn an_operator_bash_rule_refuses_an_unnamed_acp_command() {
+        let config = PermissionConfig {
+            default: PermissionMode::Allow,
+            deny: vec!["bash:cargo *".to_string()],
+            ..Default::default()
+        };
+        let asked = decide(codex_command_request(), &[], Some(config)).await;
+        assert!(
+            !asked.allowed(),
+            "`deny = [\"bash:cargo *\"]` must refuse the agent's `cargo test`"
+        );
+        assert_eq!(asked.prompts, 0, "an operator deny asks nobody");
     }
 
     /// A codex MCP approval carries `kind: "execute"` and no name of its own.

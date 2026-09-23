@@ -219,7 +219,7 @@ mod permission_override_tests {
     #[tokio::test]
     async fn gate_with_allow_override_approves_tool_blocked_by_base_ask_rule() {
         use crate::permission_bridge::DaemonPermissionGate;
-        use crucible_core::interaction::PermRequest;
+        use crucible_core::types::CanonicalToolCall;
 
         let base = base_config_with_ask_rule();
         let effective =
@@ -227,7 +227,10 @@ mod permission_override_tests {
         let gate = DaemonPermissionGate::new(effective, false);
 
         let response = gate
-            .request_permission(PermRequest::tool("Task", serde_json::json!({})), None)
+            .request_permission(
+                CanonicalToolCall::crucible_tool("Task", &serde_json::json!({})),
+                None,
+            )
             .await;
         assert!(
             response.allowed,
@@ -238,7 +241,7 @@ mod permission_override_tests {
     #[tokio::test]
     async fn gate_with_deny_override_blocks_tool_allowed_by_base_allow_rule() {
         use crate::permission_bridge::DaemonPermissionGate;
-        use crucible_core::interaction::PermRequest;
+        use crucible_core::types::CanonicalToolCall;
 
         let base = PermissionConfig {
             default: PermissionMode::Allow,
@@ -251,7 +254,10 @@ mod permission_override_tests {
         let gate = DaemonPermissionGate::new(effective, false);
 
         let response = gate
-            .request_permission(PermRequest::tool("Task", serde_json::json!({})), None)
+            .request_permission(
+                CanonicalToolCall::crucible_tool("Task", &serde_json::json!({})),
+                None,
+            )
             .await;
         assert!(
             !response.allowed,

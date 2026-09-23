@@ -135,10 +135,11 @@ impl CrucibleAcpClient {
             .on_receive_request(
                 {
                     let shared = Arc::clone(&shared);
+                    let agent_name = agent_name.clone();
                     async move |request: RequestPermissionRequest,
                                 responder,
                                 cx: ConnectionTo<Agent>| {
-                        let (call, cancel) = {
+                        let (mut call, cancel) = {
                             let mut shared = lock(&shared);
                             let Shared { turn, keys, .. } = &mut *shared;
                             match turn {
@@ -159,6 +160,7 @@ impl CrucibleAcpClient {
                                 ),
                             }
                         };
+                        call.agent = Some(agent_name.clone());
                         let options = request.options;
                         let permission = permission.clone();
                         // The dispatch loop waits for a handler. A user who

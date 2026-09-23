@@ -4,7 +4,8 @@ use crucible_core::agent::ToolPolicy;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine,
 };
-use crucible_core::interaction::{PermAction, PermRequest, PermResponse};
+use crucible_core::interaction::{PermRequest, PermResponse};
+use crucible_core::types::CanonicalToolCall;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -34,15 +35,19 @@ impl DaemonPermissionGate {
         self.prompt_callback = Some(callback);
         self
     }
+}
 
-    fn to_engine_input(request: &PermRequest) -> (&str, String) {
-        match &request.action {
-            PermAction::Tool { name, args } => (name.as_str(), args.to_string()),
-            PermAction::Bash { tokens } => ("bash", tokens.join(" ")),
-            PermAction::Read { segments } => ("read", segments.join("/")),
-            PermAction::Write { segments } => ("write", segments.join("/")),
-        }
-    }
+/// The prompt for an ACP call.
+///
+/// A command asks as a `Bash` request. The prompt then shows the command
+/// line, and "always allow" offers the command line as the pattern, which is
+/// the pattern that the saved-pattern check reads for a `command` call.
+fn prompt_request(call: CanonicalToolCall, args: serde_json::Value) -> PermRequest {
+    let request = match (call.kind.as_str(), call.command) {
+        ("command", Some(command)) => PermRequest::bash([command]),
+        _ => PermRequest::tool(call.tool, args),
+    };
+    request.with_diffs(call.diffs)
 }
 
 impl Default for DaemonPermissionGate {
@@ -54,20 +59,27 @@ impl Default for DaemonPermissionGate {
 impl DaemonPermissionGate {
     /// Decide one permission request for an agent action.
     ///
+    /// `call` is the canonical call. The rules read its arguments from the
+    /// raw input of the ACP call.
+    ///
     /// `card_policy` is what the session's agent card says about this tool,
     /// when it says anything. The ACP path passes it here rather than
     /// answering ahead of the gate, so an agent that runs its own tools and
     /// an agent the daemon dispatches for get the same answer.
     pub async fn request_permission(
         &self,
-        request: PermRequest,
+        call: CanonicalToolCall,
         card_policy: Option<ToolPolicy>,
     ) -> PermResponse {
-        let (tool_name, input) = Self::to_engine_input(&request);
+        let args = call
+            .raw
+            .as_ref()
+            .and_then(|raw| raw.raw_input.clone())
+            .unwrap_or(serde_json::Value::Null);
 
         // The one tool policy: the card, the operator's rules and the
         // read-only exemption, decided in the one place both agent kinds read.
-        match decide_tool_gate(card_policy, Some(&self.engine), tool_name, &input) {
+        match decide_tool_gate(card_policy, Some(&self.engine), &call, &args) {
             ToolGate::Refuse(reason) => return PermResponse::deny_with_reason(reason),
             ToolGate::Approve(_) => return PermResponse::allow(),
             ToolGate::Ask => {}
@@ -84,11 +96,11 @@ impl DaemonPermissionGate {
         // which is a statement about there being nobody to prompt, not about
         // what the rules say. Letting it answer for both collapses "the
         // operator denied this" into "we could not ask".
-        match self.engine.evaluate(tool_name, &input, true) {
+        match self.engine.evaluate_call(&call, &args, true) {
             PermissionDecision::Allow => PermResponse::allow(),
             PermissionDecision::Deny { reason } => PermResponse::deny_with_reason(reason),
             PermissionDecision::Ask { .. } => match &self.prompt_callback {
-                Some(callback) if self.is_interactive => callback(request).await,
+                Some(callback) if self.is_interactive => callback(prompt_request(call, args)).await,
                 _ => PermResponse::deny_with_reason(
                     "Permission requires user confirmation but no interactive bridge is configured",
                 ),
@@ -116,7 +128,8 @@ mod tests {
             ..Default::default()
         };
         let gate = DaemonPermissionGate::new(Some(config), true);
-        let request = PermRequest::tool("read_file", json!({"path": "/etc/passwd"}));
+        let request =
+            CanonicalToolCall::crucible_tool("read_file", &json!({"path": "/etc/passwd"}));
         let response = gate.request_permission(request, None).await;
         assert!(
             !response.allowed,
@@ -137,7 +150,10 @@ mod tests {
         };
         let gate = DaemonPermissionGate::new(Some(config), true);
         let response = gate
-            .request_permission(PermRequest::tool("read_file", json!({"path": "x"})), None)
+            .request_permission(
+                CanonicalToolCall::crucible_tool("read_file", &json!({"path": "x"})),
+                None,
+            )
             .await;
         assert!(!response.allowed, "default deny is not a suggestion");
     }
@@ -147,7 +163,7 @@ mod tests {
     #[tokio::test]
     async fn a_hardcoded_deny_outranks_everything() {
         let gate = DaemonPermissionGate::new(None, true);
-        let request = PermRequest::bash(["rm", "-rf", "/"]);
+        let request = CanonicalToolCall::crucible_tool("bash", &json!({"command": "rm -rf /"}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed, "rm -rf / is denied unconditionally");
     }
@@ -155,7 +171,8 @@ mod tests {
     #[tokio::test]
     async fn safe_tool_is_allowed() {
         let gate = DaemonPermissionGate::new(None, true);
-        let request = PermRequest::tool("read_file", json!({"path": "/tmp/test.txt"}));
+        let request =
+            CanonicalToolCall::crucible_tool("read_file", &json!({"path": "/tmp/test.txt"}));
         let response = gate.request_permission(request, None).await;
         assert!(response.allowed);
     }
@@ -163,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn interactive_default_ask_without_prompt_callback_denies() {
         let gate = DaemonPermissionGate::new(None, true);
-        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
@@ -171,7 +188,7 @@ mod tests {
     #[tokio::test]
     async fn non_interactive_ask_becomes_deny() {
         let gate = DaemonPermissionGate::new(None, false);
-        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
@@ -185,7 +202,7 @@ mod tests {
             Box::pin(async { PermResponse::allow() })
         });
         let gate = DaemonPermissionGate::new(None, false).with_prompt_callback(callback);
-        let request = PermRequest::tool("dangerous_tool", serde_json::json!({}));
+        let request = CanonicalToolCall::crucible_tool("dangerous_tool", &serde_json::json!({}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed, "should be denied");
         assert!(
@@ -197,7 +214,8 @@ mod tests {
     #[tokio::test]
     async fn bash_command_not_safe() {
         let gate = DaemonPermissionGate::new(None, false);
-        let request = PermRequest::bash(["rm", "-rf", "/tmp/test"]);
+        let request =
+            CanonicalToolCall::crucible_tool("bash", &json!({"command": "rm -rf /tmp/test"}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
@@ -205,7 +223,7 @@ mod tests {
     #[tokio::test]
     async fn read_action_defaults_to_ask_then_deny_without_prompt_callback() {
         let gate = DaemonPermissionGate::new(None, true);
-        let request = PermRequest::read(["src", "main.rs"]);
+        let request = CanonicalToolCall::crucible_tool("read", &json!({"path": "src/main.rs"}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
@@ -213,7 +231,7 @@ mod tests {
     #[tokio::test]
     async fn write_action_defaults_to_ask_then_deny_without_prompt_callback() {
         let gate = DaemonPermissionGate::new(None, true);
-        let request = PermRequest::write(["src", "main.rs"]);
+        let request = CanonicalToolCall::crucible_tool("write", &json!({"path": "src/main.rs"}));
         let response = gate.request_permission(request, None).await;
         assert!(!response.allowed);
     }
@@ -232,7 +250,7 @@ mod tests {
             ..Default::default()
         };
         let gate = DaemonPermissionGate::new(Some(config), false);
-        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
         let response = gate.request_permission(request, None).await;
         assert!(
             response.allowed,
@@ -248,7 +266,7 @@ mod tests {
             ..Default::default()
         };
         let gate = DaemonPermissionGate::new(Some(config), false);
-        let request = PermRequest::tool("dangerous_tool", json!({}));
+        let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
         let response = gate.request_permission(request, None).await;
         assert!(
             !response.allowed,

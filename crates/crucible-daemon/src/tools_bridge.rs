@@ -191,20 +191,13 @@ pub(crate) fn unattended_refusal(
     args: &serde_json::Value,
     caller: &str,
 ) -> Option<String> {
-    // `bash` is gated on the command itself — the hardcoded denies and
-    // the rule patterns both match against it, not the JSON envelope.
-    let input = if name == "bash" {
-        args.get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string()
-    } else {
-        args.to_string()
-    };
+    // The rules read the canonical call, as on the agent path: a `bash` rule
+    // reads the command line of each shell tool, not the JSON envelope.
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
     // `is_interactive: true` keeps `Ask` distinguishable from `Deny`;
     // this decides what an unmatched tool means, and it is not the same
     // answer as an operator writing `deny`.
-    match permissions.evaluate(name, &input, true) {
+    match permissions.evaluate_call(&call, args, true) {
         PermissionDecision::Deny { reason } => return Some(reason),
         PermissionDecision::Allow => return None,
         // An `ask` rule names this tool on purpose. There is nobody to

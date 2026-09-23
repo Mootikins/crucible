@@ -76,12 +76,9 @@ cru.config.set({
 })
 ```
 
-**These profiles gate by the tool name the agent sends, not by command or path.** An
-external agent names the tool when it asks for permission — see "External ACP agents"
-under Rule Format below for the name to write. Command- and path-level patterns
-(`bash:rm *`, `read_file:*`) never match on this path, because the input is the raw
-JSON arguments; a per-agent deny written that way is silently inert. Gate by tool name
-(`deny = ["Bash:*"]`) or rely on the interactive prompt.
+**These profiles use the same rules as Crucible's own tools.** A `bash` rule reads the
+command line of each shell call of the agent, a file rule reads the paths, and any other
+rule reads the canonical tool name. See "What each rule reads" under Rule Format below.
 
 ### Resolution Order
 
@@ -125,42 +122,49 @@ Valid values: `allow`, `deny`, `ask`.
 
 ## Rule Format
 
-Rules follow the pattern `tool:pattern`. The `tool` part must match the tool's name
-**exactly** (or be `*`); the `pattern` part is a glob. What that name is — and what the
-glob is matched against — depends on which path enforces the rule.
+Rules follow the pattern `key:pattern`. The `pattern` part is a glob. The key decides
+what the rule reads.
 
-**Internal sessions, Lua `cru.tools.call`, and a workflow's `## Validation`
-commands** (which are checked as `bash`) check the tool's own name, as `cru tools`
-lists it: `read_file`, `write_file`, `edit_file`, `bash`, MCP gateway tools under their
-prefixed names (`gh_search_code`), and so on.
+Crucible makes one canonical call from each tool call: from Crucible's own tools, and
+from the permission request of an external ACP agent together with the earlier frames of
+the same `toolCallId`. The call has a kind (`command`, `file_edit`, `file_read`,
+`mcp_tool`, `fetch`, `search` or `tool`), a canonical tool name and typed fields. Every
+path reads this call: internal sessions, external ACP agents, Lua `cru.tools.call` and a
+workflow's `## Validation` commands. So one rule decides a tool whether an external agent
+or Crucible's own agent calls it.
 
-- For `bash`, the pattern matches the **command string** (`cargo test --all`). Chained
-  commands (`git log; curl …`) are split and each piece must pass.
-- For every other tool, the pattern matches the **raw JSON arguments** of the call —
-  e.g. `{"path":"src/main.rs"}` — not a bare path. In practice that makes `*` (match any
-  invocation of this tool) the reliable pattern, and path-shaped patterns unreliable.
+### What each rule reads
 
-**External ACP agents** (sessions gated by `acp.agents.<name>.permissions`, or by the
-global config as their fallback) are checked under **the canonical tool name** of the
-call. Crucible makes one canonical call from the permission request and the earlier
-frames of the same `toolCallId`. One rule decides a tool whether an external agent or
-Crucible's own agent calls it. Three cases, in this order:
+- **`bash`** reads the **command line** of each `command` call, whichever tool made it:
+  Crucible's `bash`, Claude's `Bash`, codex's `exec_command`, or a shell call that the
+  agent does not name. Chained commands (`git log; curl …`) are split and each piece must
+  pass. A `command` call whose command line is unknown is checked as an empty command
+  line, so `bash:*` still matches it.
+- **`read`** reads each **path** of a `file_read` call. **`edit`**, **`write`** and
+  **`delete`** read each path of a `file_edit` call. A `read` rule never reads an edit.
+  An `allow` rule allows a call only when it matches each path of the call.
+- **Any other key** is a **canonical tool name**, and the pattern matches the raw JSON
+  arguments of the call — for example `{"path":"src/main.rs"}`. In practice that makes
+  `*` the reliable pattern for such a rule.
 
-1. **A Crucible tool.** The agent's MCP client adds a prefix to it —
+The canonical tool name is:
+
+1. **A Crucible tool.** The name as `cru tools` lists it: `read_file`, `edit_file`,
+   MCP gateway tools under their prefixed names (`gh_search_code`), and so on. An
+   external agent's MCP client adds a prefix to a Crucible tool —
    `mcp__crucible__read_note`, or `mcp.crucible.read_note` — and Crucible strips that
    prefix. Write the internal name: `read_note:*`.
 2. **Another MCP server's tool, or the agent's own tool.** The whole name stands, so
    write it as the agent sends it: `mcp__github__create_pr:*`, `Bash:*` for `claude`,
    `exec_command:*` for `codex`. Run the agent once and read the tool name off the
    permission prompt if you are unsure.
-3. **A call the agent does not name.** Only then does the canonical *kind* stand in as
-   the name — `command`, `file_edit`, `file_read`, `mcp_tool`, `fetch`, `search`, or
-   `tool` (a call that Crucible cannot classify). The agent's key table in
-   [[Help/Config/acp]] can give such a call a name.
+3. **A call the agent does not name.** The kind is the name: `command`, `file_edit`,
+   `file_read`, `mcp_tool`, `fetch`, `search`, or `tool` (a call that Crucible cannot
+   classify). The agent's key table in [[Help/Config/acp]] can give such a call a name.
 
-The input is the raw JSON arguments even for a shell tool, so this path gates by tool
-name (`read_note:*`, `Bash:*`) but **not** by command or path — `bash:cargo *` and
-`read_file:*` never match here. A per-agent `deny = ["bash:rm *"]` is silently inert.
+When rules of different keys match one call, the strongest answer wins: `deny`, then
+`ask`, then `allow`. So `deny = ["bash:rm *"]` refuses `rm` even when
+`allow = ["Bash:*"]` allows Claude's shell tool.
 
 **A call the agent never asks about is the agent's decision.** An external agent runs
 its own tools in its own process and asks only about the calls its own policy does not
@@ -169,32 +173,26 @@ an agent can reach at all, use the session's isolation and kiln trust, not these
 
 | Rule | Matches |
 |------|---------|
-| `bash:cargo *` | Any `cargo` command — internal/Lua path only |
-| `bash:git *` | Any `git` subcommand — internal/Lua path only |
+| `bash:cargo *` | Any `cargo` command, from Crucible's shell or from the shell of an external agent |
+| `bash:git *` | Any `git` subcommand, from any shell |
+| `bash:*` | Each shell call |
+| `edit:src/**` | Each edit of a file under `src/`: `edit_file`, `write_file`, `Edit`, or an edit that the agent does not name |
+| `read:docs/**` | Each read of a file under `docs/` |
 | `read_file:*` | Any `read_file` call by an internal agent or Lua |
-| `write_file:*` | Any `write_file` call by an internal agent or Lua |
-| `edit_file:*` | Any `edit_file` call by an internal agent or Lua |
 | `gh_search_code:*` | The MCP gateway tool of that (prefixed) name |
 | `read_note:*` | Crucible's `read_note`, called by an internal agent OR through an external agent's MCP client |
 | `Bash:*` | The `Bash` tool of an external agent that sends that name |
-| `read:*` | A read-kind call an external ACP agent did not name |
-| `bash:*` | Any `bash` call (internal) or an unnamed execute-kind call (ACP) |
+| `file_edit:*` | An edit that an external ACP agent did not name |
 | `plugin:<server>:<pattern>` | Parsed but matches nothing on today's call paths — see below |
 | `*:*` | Any tool (use carefully) |
-
-Path-shaped patterns like `write:src/**` belong to a structured request vocabulary the
-daemon's permission gate understands (a `read`/`write` grant on a bare path), but no
-current code path submits requests in that shape — today `read:*`/`write:*` fire only
-as ACP kind rules for a call the agent did not name, matching JSON input, where only
-`*` is dependable.
 
 The three-part forms `mcp:<server>:<pattern>` and `plugin:<server>:<pattern>` parse and
 compile: the server name is compared exactly, and the pattern is globbed against the
 part of the checked input after its first `:`. But such a rule only fires when a
 permission check arrives with the tool named literally `mcp` or `plugin` and an input of
-the shape `<server>:<tool>` — and no current call path submits that shape. Tool calls
-are checked under the tool's own name (or its ACP kind name) with JSON arguments as
-input, so a `plugin:…` rule matches nothing today; to gate a plugin-provided tool, write
+the shape `<server>:<tool>` — and no current call path submits that shape. A rule that
+names a tool reads the canonical tool name with JSON arguments as input, so a
+`plugin:…` rule matches nothing today; to gate a plugin-provided tool, write
 a rule against the tool's own name as `cru tools` lists it, like any other tool. For any
 other three-part rule (`bash:git status:*`), everything after the first colon is the
 glob pattern.

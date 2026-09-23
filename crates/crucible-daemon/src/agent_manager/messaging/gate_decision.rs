@@ -9,13 +9,15 @@
 //! - an ACP agent, which executes its own tools and asks with
 //!   `session/request_permission` (`permission_bridge::DaemonPermissionGate`).
 //!
-//! Both key on the tool name, and an ACP agent sends that name on the wire,
-//! so an operator writes ONE rule and one card entry for a tool no matter
-//! which agent calls it. There is no translation table and no second gate.
+//! Both give it the canonical call, so an operator writes ONE rule and one
+//! card entry for a tool no matter which agent calls it. A `bash` rule reads
+//! the command line of each `command` call, a file rule the paths, and any
+//! other rule the canonical tool name. There is no second gate.
 
 use crate::agent_manager::is_safe;
 use crucible_core::agent::ToolPolicy;
 use crucible_core::config::components::permissions::{PermissionDecision, PermissionEngine};
+use crucible_core::types::CanonicalToolCall;
 
 /// What the daemon decides about one tool call before anybody is asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,9 +37,9 @@ pub(crate) enum ToolGate {
 
 /// Decide one tool call.
 ///
-/// `engine_input` is the text the rules match against, which each caller
-/// derives from its own request shape: the command line for `bash`, the
-/// arguments for every other tool.
+/// `call` is the canonical call and `args` its JSON arguments. The rules
+/// read them through [`PermissionEngine::evaluate_call`]. The card and the
+/// read-only exemption read only the canonical tool name.
 ///
 /// The order below is the policy, and each step states what it outranks:
 ///
@@ -57,16 +59,17 @@ pub(crate) enum ToolGate {
 pub(crate) fn decide_tool_gate(
     card_policy: Option<ToolPolicy>,
     engine: Option<&PermissionEngine>,
-    tool_name: &str,
-    engine_input: &str,
+    call: &CanonicalToolCall,
+    args: &serde_json::Value,
 ) -> ToolGate {
+    let tool_name = call.tool.as_str();
     if card_policy == Some(ToolPolicy::Deny) {
         return ToolGate::Refuse(format!(
             "Tool '{tool_name}' is denied by this agent's card tool policy"
         ));
     }
 
-    let rule = engine.map(|engine| engine.evaluate(tool_name, engine_input, true));
+    let rule = engine.map(|engine| engine.evaluate_call(call, args, true));
 
     if needs_the_gate(card_policy, tool_name, rule.as_ref()) {
         return ToolGate::Ask;
@@ -130,6 +133,17 @@ mod tests {
         PermissionEngine::new(Some(&config))
     }
 
+    /// Decide a call of the Crucible tool `tool` with no arguments.
+    fn gate(
+        card_policy: Option<ToolPolicy>,
+        engine: Option<&PermissionEngine>,
+        tool: &str,
+    ) -> ToolGate {
+        let args = serde_json::json!({});
+        let call = crucible_core::types::CanonicalToolCall::crucible_tool(tool, &args);
+        decide_tool_gate(card_policy, engine, &call, &args)
+    }
+
     /// The trust boundary, asserted at the point it is decided.
     ///
     /// Asserting `is_safe` alone is not enough — it proves the function is
@@ -142,19 +156,19 @@ mod tests {
         // `gh_create_pr` is in no built-in safe list, so the only thing that
         // could make this `Approve` is trusting the upstream's annotation.
         assert_eq!(
-            decide_tool_gate(None, None, "gh_create_pr", "{}"),
+            gate(None, None, "gh_create_pr"),
             ToolGate::Ask,
             "a tool a third party annotated read-only must still reach the mode \
              stance, the mode rules and the Lua hooks"
         );
         assert_eq!(
-            decide_tool_gate(None, None, "read_file", "{}"),
+            gate(None, None, "read_file"),
             ToolGate::Approve(None),
             "a genuinely built-in read-only tool still skips the gate, and it \
              was granted nothing, so it carries no marker"
         );
         assert_eq!(
-            decide_tool_gate(None, None, "bash", ""),
+            gate(None, None, "bash"),
             ToolGate::Ask,
             "and a built-in mutating tool always gates"
         );
@@ -172,12 +186,12 @@ mod tests {
     #[test]
     fn a_declared_policy_decides_before_the_built_in_safe_list() {
         assert_eq!(
-            decide_tool_gate(Some(ToolPolicy::Allow), None, "bash", ""),
+            gate(Some(ToolPolicy::Allow), None, "bash"),
             ToolGate::Approve(Some("agent card policy".to_string())),
             "a declared allow runs a tool the safe list would have gated"
         );
         assert_eq!(
-            decide_tool_gate(Some(ToolPolicy::Ask), None, "read_file", "{}"),
+            gate(Some(ToolPolicy::Ask), None, "read_file"),
             ToolGate::Ask,
             "a declared ask gates a tool the safe list would have skipped"
         );
@@ -186,7 +200,7 @@ mod tests {
     /// A card `deny` refuses before any rule is even read.
     #[test]
     fn a_card_deny_refuses_without_asking() {
-        let refusal = decide_tool_gate(Some(ToolPolicy::Deny), None, "read_note", "{}");
+        let refusal = gate(Some(ToolPolicy::Deny), None, "read_note");
         assert!(
             matches!(&refusal, ToolGate::Refuse(reason) if reason.contains("card tool policy")),
             "a card deny must refuse, not gate: {refusal:?}"
@@ -204,12 +218,7 @@ mod tests {
             deny: vec!["read_note:*".to_string()],
             ..Default::default()
         };
-        let refusal = decide_tool_gate(
-            Some(ToolPolicy::Allow),
-            Some(&engine(config)),
-            "read_note",
-            "{}",
-        );
+        let refusal = gate(Some(ToolPolicy::Allow), Some(&engine(config)), "read_note");
         assert!(
             matches!(&refusal, ToolGate::Refuse(reason) if reason.contains("permissions config")),
             "an operator deny must outrank a card allow: {refusal:?}"
@@ -226,7 +235,7 @@ mod tests {
             deny: vec!["read_note:*".to_string()],
             ..Default::default()
         };
-        let refusal = decide_tool_gate(None, Some(&engine(config)), "read_note", "{}");
+        let refusal = gate(None, Some(&engine(config)), "read_note");
         assert!(
             matches!(&refusal, ToolGate::Refuse(reason) if reason.contains("permissions config")),
             "an explicit deny must hold even for a read-only tool: {refusal:?}"
@@ -244,7 +253,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            decide_tool_gate(None, Some(&engine(named)), "read_note", "{}"),
+            gate(None, Some(&engine(named)), "read_note"),
             ToolGate::Ask,
             "an operator who wrote `ask` about this tool must be asked"
         );
@@ -255,7 +264,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            decide_tool_gate(None, Some(&engine(elsewhere)), "read_note", "{}"),
+            gate(None, Some(&engine(elsewhere)), "read_note"),
             ToolGate::Approve(None),
             "a rule about another tool must not gate this one"
         );

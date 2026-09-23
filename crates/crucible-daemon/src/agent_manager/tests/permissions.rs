@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{kiln_name, temp_session_manager};
+use crucible_core::types::CanonicalToolCall;
 
 /// The one tool policy, driven through the daemon's own turn loop.
 ///
@@ -281,8 +282,12 @@ mod pattern_matching_tests {
         // What the daemon does with it, on the run that asked.
         let file = PatternStore::store_file_in(&whitelists_dir, response.scope, project_path)
             .expect("a persisted scope has a store file");
-        AgentManager::store_pattern_to(&file, tool_name, &args, &pattern)
-            .expect("the grant is stored");
+        AgentManager::store_pattern_to(
+            &file,
+            &CanonicalToolCall::crucible_tool(tool_name, &args),
+            &pattern,
+        )
+        .expect("the grant is stored");
 
         // The next run: nothing in memory, both stores read from disk, the
         // way `handle_permission_request` reads them.
@@ -291,7 +296,10 @@ mod pattern_matching_tests {
             .merge(&PatternStore::load_user_sync_in(&whitelists_dir).unwrap_or_default());
 
         assert!(
-            AgentManager::check_pattern_match(tool_name, &args, &store),
+            AgentManager::check_pattern_match(
+                &CanonicalToolCall::crucible_tool(tool_name, &args),
+                &store
+            ),
             "the grant of {pattern:?} must still skip the prompt after a restart",
         );
     }
@@ -322,22 +330,31 @@ mod pattern_matching_tests {
         let pattern = response.pattern.clone().expect("the modal sends a pattern");
         let file = PatternStore::store_file_in(&whitelists_dir, response.scope, project_path)
             .expect("a persisted scope has a store file");
-        AgentManager::store_pattern_to(&file, "bash", &approved, &pattern)
-            .expect("the grant is stored");
+        AgentManager::store_pattern_to(
+            &file,
+            &CanonicalToolCall::crucible_tool("bash", &approved),
+            &pattern,
+        )
+        .expect("the grant is stored");
 
         let store = PatternStore::load_sync_in(&whitelists_dir, project_path)
             .unwrap_or_default()
             .merge(&PatternStore::load_user_sync_in(&whitelists_dir).unwrap_or_default());
 
         assert!(
-            AgentManager::check_pattern_match("bash", &approved, &store),
+            AgentManager::check_pattern_match(
+                &CanonicalToolCall::crucible_tool("bash", &approved),
+                &store
+            ),
             "the grant of {pattern:?} must skip the prompt for the approved command",
         );
         assert!(
             !AgentManager::check_pattern_match(
-                "bash",
-                &serde_json::json!({ "command": escalation }),
-                &store,
+                &CanonicalToolCall::crucible_tool(
+                    "bash",
+                    &serde_json::json!({ "command": escalation })
+                ),
+                &store
             ),
             "the grant of {pattern:?} must still prompt for {escalation:?}",
         );
@@ -408,7 +425,10 @@ mod pattern_matching_tests {
             }
         }
         assert_eq!(
-            AgentManager::check_pattern_match(tool, &args, &store),
+            AgentManager::check_pattern_match(
+                &CanonicalToolCall::crucible_tool(tool, &args),
+                &store
+            ),
             expected,
         );
     }
@@ -421,18 +441,15 @@ mod pattern_matching_tests {
         let args = serde_json::json!({"name": "notes/my-note.md"});
 
         assert!(AgentManager::check_pattern_match(
-            "create_note",
-            &args,
+            &CanonicalToolCall::crucible_tool("create_note", &args),
             &store
         ));
         assert!(AgentManager::check_pattern_match(
-            "update_note",
-            &args,
+            &CanonicalToolCall::crucible_tool("update_note", &args),
             &store
         ));
         assert!(AgentManager::check_pattern_match(
-            "delete_note",
-            &args,
+            &CanonicalToolCall::crucible_tool("delete_note", &args),
             &store
         ));
     }
@@ -443,18 +460,19 @@ mod pattern_matching_tests {
 
         let bash_args = serde_json::json!({"command": "npm install"});
         assert!(!AgentManager::check_pattern_match(
-            "bash", &bash_args, &store
+            &CanonicalToolCall::crucible_tool("bash", &bash_args),
+            &store
         ));
 
         let file_args = serde_json::json!({"path": "src/lib.rs"});
         assert!(!AgentManager::check_pattern_match(
-            "write", &file_args, &store
+            &CanonicalToolCall::crucible_tool("write", &file_args),
+            &store
         ));
 
         let tool_args = serde_json::json!({});
         assert!(!AgentManager::check_pattern_match(
-            "custom_tool",
-            &tool_args,
+            &CanonicalToolCall::crucible_tool("custom_tool", &tool_args),
             &store
         ));
     }
@@ -476,8 +494,10 @@ mod pattern_matching_tests {
 
         AgentManager::store_pattern_to(
             &file,
-            "bash",
-            &serde_json::json!({"command": "cargo build"}),
+            &CanonicalToolCall::crucible_tool(
+                "bash",
+                &serde_json::json!({"command": "cargo build"}),
+            ),
             "cargo build",
         )
         .unwrap();
@@ -525,8 +545,10 @@ mod pattern_matching_tests {
                         // round trip, so the rule carries an argument.
                         AgentManager::store_pattern_to(
                             &file,
-                            "bash",
-                            &serde_json::json!({"command": "tool run now"}),
+                            &CanonicalToolCall::crucible_tool(
+                                "bash",
+                                &serde_json::json!({"command": "tool run now"}),
+                            ),
                             &format!("tool{round}_{i} run *"),
                         )
                     })
@@ -562,7 +584,11 @@ mod pattern_matching_tests {
         let tmp = TempDir::new().unwrap();
         let file = PatternStore::project_file_in(&tmp.path().join("whitelists.d"), "/project");
 
-        let result = AgentManager::store_pattern_to(&file, kind, &args, pattern);
+        let result = AgentManager::store_pattern_to(
+            &file,
+            &CanonicalToolCall::crucible_tool(kind, &args),
+            pattern,
+        );
 
         if should_succeed {
             result.unwrap();
@@ -1293,6 +1319,63 @@ mod always_allow_covers_every_command_tool {
         ]
     }
 
+    /// A grant that the user gives for an agent's command permits the next
+    /// call of that command, from the agent and from Crucible's `bash`.
+    #[tokio::test]
+    async fn a_grant_for_an_acp_command_permits_the_same_command_from_both_agents() {
+        // The `shell` case of `tool_frames/codex-ts.jsonl`: no name.
+        let acp = || {
+            crucible_core::types::classify_acp(
+                serde_json::from_value(serde_json::json!({
+                    "toolCallId": "call_shell1",
+                    "kind": "execute",
+                    "title": "Run command",
+                    "rawInput": { "command": "cargo test", "cwd": "/home/user/project" },
+                }))
+                .expect("a raw tool call"),
+                &[],
+            )
+        };
+        let bash = |command: &str| {
+            CanonicalToolCall::crucible_tool("bash", &serde_json::json!({ "command": command }))
+        };
+
+        // The prompt that the ACP gate puts to the user. The user answers
+        // "always allow" with the pattern that the prompt suggests.
+        let asked = Arc::new(std::sync::Mutex::new(None));
+        let recorder = asked.clone();
+        let gate = crate::permission_bridge::DaemonPermissionGate::new(None, true)
+            .with_prompt_callback(Arc::new(move |request| {
+                *recorder.lock().unwrap() = Some(request);
+                Box::pin(async { crucible_core::interaction::PermResponse::allow() })
+            }));
+        gate.request_permission(acp(), None).await;
+        let pattern = asked
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the gate asks the user")
+            .suggested_pattern();
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("whitelists.d").join("user.toml");
+        AgentManager::store_pattern_to(&file, &acp(), &pattern).expect("the grant is stored");
+        let store = PatternStore::load_file(&file).expect("the store reloads");
+
+        assert!(
+            AgentManager::check_pattern_match(&acp(), &store),
+            "the grant {pattern:?} must permit the next ACP call"
+        );
+        assert!(
+            AgentManager::check_pattern_match(&bash("cargo test"), &store),
+            "the grant {pattern:?} must permit the same command from Crucible's bash"
+        );
+        assert!(
+            !AgentManager::check_pattern_match(&bash("rm -rf /home/user/project"), &store),
+            "the grant {pattern:?} must not permit another command"
+        );
+    }
+
     #[test]
     fn a_grant_permits_the_same_call_again() {
         let args = serde_json::json!({"command": "ls -la"});
@@ -1309,13 +1392,20 @@ mod always_allow_covers_every_command_tool {
                 let pattern = PermRequest::tool(name.clone(), args.clone()).suggested_pattern();
                 let tmp = TempDir::new().unwrap();
                 let file = tmp.path().join("whitelists.d").join("user.toml");
-                AgentManager::store_pattern_to(&file, &name, &args, &pattern)
-                    .expect("the grant is stored");
+                AgentManager::store_pattern_to(
+                    &file,
+                    &CanonicalToolCall::crucible_tool(&name, &args),
+                    &pattern,
+                )
+                .expect("the grant is stored");
 
                 // The next identical call, reading the store back from disk.
                 let store = PatternStore::load_file(&file).expect("the store reloads");
                 assert!(
-                    AgentManager::check_pattern_match(&name, &args, &store),
+                    AgentManager::check_pattern_match(
+                        &CanonicalToolCall::crucible_tool(&name, &args),
+                        &store
+                    ),
                     "allowlisting {name} as {pattern:?} must permit the same call again",
                 );
 
@@ -1323,9 +1413,11 @@ mod always_allow_covers_every_command_tool {
                 // through the same tool still prompts.
                 assert!(
                     !AgentManager::check_pattern_match(
-                        &name,
-                        &serde_json::json!({"command": "rm -rf /home/user/project"}),
-                        &store,
+                        &CanonicalToolCall::crucible_tool(
+                            &name,
+                            &serde_json::json!({"command": "rm -rf /home/user/project"})
+                        ),
+                        &store
                     ),
                     "allowlisting {name} as {pattern:?} must not permit another command",
                 );

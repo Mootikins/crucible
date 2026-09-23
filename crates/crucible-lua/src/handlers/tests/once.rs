@@ -47,7 +47,10 @@ fn event(name: &str) -> crucible_core::events::SessionEvent {
 
 fn bash_request() -> PermissionRequest {
     PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::Value::Null,
+        ),
         args: serde_json::json!({ "command": "ls" }),
         file_path: None,
         mode: None,

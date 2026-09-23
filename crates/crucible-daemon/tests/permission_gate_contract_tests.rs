@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
-use crucible_core::interaction::{PermRequest, PermissionScope};
+use crucible_core::interaction::PermissionScope;
+use crucible_core::types::CanonicalToolCall;
 use crucible_daemon::DaemonPermissionGate;
 use serde_json::json;
 
 #[tokio::test]
 async fn contract_safe_actions_are_allowed_without_prompting() {
     let gate = DaemonPermissionGate::new(None, true);
-    let request = PermRequest::tool("read_file", json!({"path": "README.md"}));
+    let request = CanonicalToolCall::crucible_tool("read_file", &json!({"path": "README.md"}));
 
     let response = gate.request_permission(request, None).await;
 
@@ -18,7 +19,7 @@ async fn contract_safe_actions_are_allowed_without_prompting() {
 #[tokio::test]
 async fn contract_unsafe_actions_are_denied_without_interactive_callback() {
     let gate = DaemonPermissionGate::new(None, true);
-    let request = PermRequest::tool("dangerous_tool", json!({}));
+    let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
 
     let response = gate.request_permission(request, None).await;
 
@@ -38,7 +39,8 @@ async fn contract_prompt_callback_decision_is_respected() {
             )
         })
     }));
-    let request = PermRequest::tool("dangerous_tool", json!({"target": "workspace"}));
+    let request =
+        CanonicalToolCall::crucible_tool("dangerous_tool", &json!({"target": "workspace"}));
 
     let response = gate.request_permission(request, None).await;
 
@@ -56,7 +58,7 @@ async fn contract_non_interactive_skips_callback_returns_deny() {
         Box::pin(async { crucible_core::interaction::PermResponse::allow() })
     }));
 
-    let request = PermRequest::tool("dangerous_tool", json!({}));
+    let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
     let response = gate.request_permission(request, None).await;
 
     assert!(!response.allowed, "non-interactive should deny ask tools");
@@ -74,7 +76,7 @@ async fn contract_permission_override_allow_bypasses_ask() {
     };
 
     let gate = DaemonPermissionGate::new(Some(config), false);
-    let request = PermRequest::tool("dangerous_tool", json!({}));
+    let request = CanonicalToolCall::crucible_tool("dangerous_tool", &json!({}));
     let response = gate.request_permission(request, None).await;
 
     assert!(response.allowed, "allow override should permit the tool");
@@ -89,7 +91,8 @@ async fn contract_permission_override_deny_blocks_even_safe_patterns() {
     };
 
     let gate = DaemonPermissionGate::new(Some(config), true);
-    let request = PermRequest::tool("dangerous_tool", json!({"target": "workspace"}));
+    let request =
+        CanonicalToolCall::crucible_tool("dangerous_tool", &json!({"target": "workspace"}));
     let response = gate.request_permission(request, None).await;
 
     assert!(!response.allowed, "deny override should block the tool");
@@ -98,7 +101,7 @@ async fn contract_permission_override_deny_blocks_even_safe_patterns() {
 #[tokio::test]
 async fn contract_non_interactive_safe_actions_still_allowed() {
     let gate = DaemonPermissionGate::new(None, false);
-    let request = PermRequest::tool("read_file", json!({"path": "README.md"}));
+    let request = CanonicalToolCall::crucible_tool("read_file", &json!({"path": "README.md"}));
     let response = gate.request_permission(request, None).await;
 
     assert!(
@@ -121,7 +124,10 @@ async fn agent_specific_permissions_override_global() {
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
     let response = gate
-        .request_permission(PermRequest::tool("some_tool", json!({})), None)
+        .request_permission(
+            CanonicalToolCall::crucible_tool("some_tool", &json!({})),
+            None,
+        )
         .await;
     assert!(
         response.allowed,
@@ -138,7 +144,10 @@ async fn agent_without_permissions_falls_back_to_global() {
 
     let gate = DaemonPermissionGate::new(Some(global), false);
     let response = gate
-        .request_permission(PermRequest::tool("some_tool", json!({})), None)
+        .request_permission(
+            CanonicalToolCall::crucible_tool("some_tool", &json!({})),
+            None,
+        )
         .await;
     assert!(response.allowed, "global allow config should permit tool");
 }
@@ -157,7 +166,10 @@ async fn cli_permissions_override_agent_specific_default() {
 
     let gate = DaemonPermissionGate::new(Some(override_config), false);
     let response = gate
-        .request_permission(PermRequest::tool("some_tool", json!({})), None)
+        .request_permission(
+            CanonicalToolCall::crucible_tool("some_tool", &json!({})),
+            None,
+        )
         .await;
     assert!(
         !response.allowed,
@@ -175,7 +187,10 @@ async fn agent_deny_rules_enforced_even_with_allow_default() {
 
     let gate = DaemonPermissionGate::new(Some(agent_config), false);
     let response = gate
-        .request_permission(PermRequest::bash(["rm", "-rf", "/tmp"]), None)
+        .request_permission(
+            CanonicalToolCall::crucible_tool("bash", &json!({"command": "rm -rf /tmp"})),
+            None,
+        )
         .await;
     assert!(
         !response.allowed,

@@ -149,6 +149,18 @@ async fn an_unnamed_approval_takes_the_tool_of_its_tool_call() {
     );
 }
 
+/// A permission request carries the agent profile that made the call, so
+/// the prompt and a Lua hook can name the agent.
+#[tokio::test]
+async fn a_permission_request_names_its_agent() {
+    let call = asked_in_a_turn(vec![codex_tool_call(), codex_permission_request("call-1")]).await;
+    assert_eq!(
+        call.agent.as_deref(),
+        Some("raw"),
+        "the call must name the agent profile of the connection"
+    );
+}
+
 /// A different id joins nothing. The request keeps the fallback name rather
 /// than the tool of some other call.
 #[tokio::test]

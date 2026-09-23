@@ -91,6 +91,11 @@ When you answer a prompt with "allow for this project", the pattern is written
 to the project's store and matched here on subsequent calls. Saved patterns are
 per-project, not per-session, and survive restarts.
 
+A pattern for a shell call is its command line, whichever shell tool made the call.
+A pattern for an edit is a path, and it permits an edit only when it matches each path
+of the edit. A pattern for any other call is its canonical tool name. An external ACP
+agent's session does not read or write saved patterns yet.
+
 ### 4 — Lua permission hooks
 
 Hooks run in registration order and the first non-`nil` verdict wins. There

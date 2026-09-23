@@ -1,6 +1,6 @@
 use super::super::*;
 use crucible_core::types::acp::FileDiff;
-use crucible_core::types::ToolSource;
+use crucible_core::types::{CanonicalToolCall, ToolSource};
 use crucible_lua::StageId;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
 use std::ops::ControlFlow;
@@ -364,9 +364,12 @@ impl AgentManager {
             .as_ref()
             .and_then(|m| m.get(&tool_call.name))
             .copied();
-        if let ToolGate::Refuse(reason) =
-            super::gate_decision::decide_tool_gate(card_policy, None, &tool_call.name, "")
-        {
+        if let ToolGate::Refuse(reason) = super::gate_decision::decide_tool_gate(
+            card_policy,
+            None,
+            &CanonicalToolCall::crucible_tool(&tool_call.name, &args),
+            &args,
+        ) {
             return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason);
         }
 
@@ -501,18 +504,23 @@ impl AgentManager {
         //
         // `asked` records that the call reached the gate below, which is the
         // only layer that can put the question to a person.
+        //
+        // The canonical call is made here, after the handlers above may have
+        // rewritten the arguments, so the gate decides the call that runs.
+        let call = CanonicalToolCall::crucible_tool(&tool_call.name, &args);
         let (auto_approved, asked) = match super::gate_decision::decide_tool_gate(
             card_policy,
             stream_ctx.permission_engine.as_deref(),
-            &tool_call.name,
-            &super::permission::engine_input(&tool_call.name, &args),
+            &call,
+            &args,
         ) {
             ToolGate::Refuse(reason) => {
                 return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason)
             }
             ToolGate::Approve(marker) => (marker, false),
             ToolGate::Ask => {
-                match Self::handle_permission_request(stream_ctx, tool_call, &call_id, &args).await
+                match Self::handle_permission_request(stream_ctx, tool_call, &call, &call_id, &args)
+                    .await
                 {
                     Ok(reason) => (reason, true),
                     Err(deny_reason) => {
@@ -583,10 +591,7 @@ impl AgentManager {
                 description,
                 source,
                 lua_primary_arg,
-                Some(crucible_core::types::CanonicalToolCall {
-                    diffs,
-                    ..crucible_core::types::CanonicalToolCall::crucible_tool(&tool_call.name, &args)
-                }),
+                Some(CanonicalToolCall { diffs, ..call }),
                 auto_approved.clone(),
             ),
         ) {

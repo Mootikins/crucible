@@ -928,9 +928,28 @@ end)
 > `cancel` instead.
 
 Request fields:
-- `request.tool_name` — tool being requested
+- `request.tool_name` — the canonical tool name
 - `request.args` — tool arguments
+- `request.kind` — the kind of the call: `command`, `file_edit`, `file_read`,
+  `mcp_tool`, `fetch`, `search` or `tool`. Crucible's own tools and the tools of an
+  external agent get the same kinds, so one hook decides both.
+- `request.command` — the command line of a `command` call
+- `request.paths` — the file paths of the call (a list, empty if there are none)
+- `request.url`, `request.query` — the URL of a `fetch` call, the query of a `search` call
+- `request.agent` — the profile name of the external agent that made the call
 - `request.file_path` — path (if the tool touches a file)
+- `request.mode` — the session mode
+- `request.is_safe` — whether the daemon classifies the tool as read-only
+
+To refuse `rm` from any shell:
+
+```lua
+cru.permissions.on_request(function(request)
+  if request.kind == "command" and (request.command or ""):match("^rm ") then
+    return { deny = true }
+  end
+end)
+```
 
 Return:
 - `{ allow = true }` — grant without prompting

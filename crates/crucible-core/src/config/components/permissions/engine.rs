@@ -4,6 +4,7 @@ use super::normalize::{
     normalize_path_for_matching, resolve_command_word, split_command_line, UnmodellableConstruct,
 };
 use super::types::{PermissionConfig, PermissionDecision, PermissionMode};
+use crate::types::CanonicalToolCall;
 
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -24,23 +25,66 @@ impl PermissionEngine {
         let decision = if tool == "bash" {
             self.evaluate_bash(input)
         } else {
-            self.evaluate_single(tool, input)
+            self.evaluate_single(&[tool], input)
         };
+        self.finish(decision, is_interactive)
+    }
 
+    /// Decide one tool call.
+    ///
+    /// The key of a rule decides what the rule reads. A `bash` rule reads
+    /// the command line of each `command` call, whichever tool made it. A
+    /// file rule reads each path of a call of its file kind: `read` reads a
+    /// `file_read` call, and `edit`, `write` and `delete` read a `file_edit`
+    /// call. Any other rule reads the canonical tool name, with the JSON
+    /// `args` as its input. So one rule decides Crucible's own shell and the
+    /// shell of each ACP agent.
+    ///
+    /// The strongest answer wins: `deny`, then `ask`, then `allow`. A file
+    /// rule allows only when it allows each path.
+    pub fn evaluate_call(
+        &self,
+        call: &CanonicalToolCall,
+        args: &serde_json::Value,
+        is_interactive: bool,
+    ) -> PermissionDecision {
+        let command = (call.kind == "command")
+            .then(|| self.evaluate_bash(call.command.as_deref().unwrap_or_default()));
+        let keys = file_rule_keys(&call.kind);
+        let paths = (!keys.is_empty() && !call.paths.is_empty())
+            .then(|| every_input(call.paths.iter().map(|p| self.evaluate_single(keys, p))));
+        let named = (call.tool != "bash" && !is_file_tool(&call.tool))
+            .then(|| self.evaluate_single(&[&call.tool], &args.to_string()));
+        self.finish(
+            strongest([command, paths, named].into_iter().flatten().flatten()),
+            is_interactive,
+        )
+    }
+
+    /// The decision of the rules, or the default when no rule decides.
+    ///
+    /// Nobody can answer an `ask` in a non-interactive session, so it
+    /// becomes a `deny` there.
+    fn finish(
+        &self,
+        decision: Option<PermissionDecision>,
+        is_interactive: bool,
+    ) -> PermissionDecision {
+        let decision = decision.unwrap_or_else(|| self.default_decision());
         if !is_interactive && matches!(decision, PermissionDecision::Ask { .. }) {
             return PermissionDecision::Deny {
                 reason: "Non-interactive mode: ask rules become deny".to_string(),
             };
         }
-
         decision
     }
 
-    fn evaluate_bash(&self, input: &str) -> PermissionDecision {
+    /// The rules for a command line. `None` when no rule decides.
+    fn evaluate_bash(&self, input: &str) -> Option<PermissionDecision> {
         let split = split_command_line(input);
 
         if split.segments.is_empty() {
-            return self.evaluate_single("bash", input);
+            return self.evaluate_single(&["bash"], input);
         }
 
         let mut has_ask_match = false;
@@ -57,15 +101,15 @@ impl PermissionEngine {
             if let Some(reason) = is_hardcoded_denied("bash", command)
                 .or_else(|| is_hardcoded_denied("bash", &resolved.resolved))
             {
-                return PermissionDecision::Deny {
+                return Some(PermissionDecision::Deny {
                     reason: format!("Hardcoded deny: {reason}"),
-                };
+                });
             }
 
             if self.any_match_restrictive(&self.compiled.deny, command, &resolved.resolved) {
-                return PermissionDecision::Deny {
+                return Some(PermissionDecision::Deny {
                     reason: "Matched deny rule".to_string(),
-                };
+                });
             }
 
             if self.any_match_restrictive(&self.compiled.ask, command, &resolved.resolved) {
@@ -80,7 +124,7 @@ impl PermissionEngine {
         }
 
         if has_ask_match {
-            return PermissionDecision::Ask { rule_matched: true };
+            return Some(PermissionDecision::Ask { rule_matched: true });
         }
 
         // Placed after the deny and ask checks so it can only ever tighten: an explicit
@@ -88,38 +132,35 @@ impl PermissionEngine {
         // the leading command's `allow` glob deciding a line the splitter could not read —
         // `git log $(curl evil)` used to come back `Allow` on the strength of `bash:git *`.
         if let Some(construct) = split.unmodellable.or(indirect) {
-            return self.unmodellable_decision(construct);
+            return Some(self.unmodellable_decision(construct));
         }
 
-        if all_allow_match {
-            return PermissionDecision::Allow;
-        }
-
-        self.default_decision()
+        all_allow_match.then_some(PermissionDecision::Allow)
     }
 
-    fn evaluate_single(&self, tool: &str, input: &str) -> PermissionDecision {
-        if let Some(reason) = is_hardcoded_denied(tool, input) {
-            return PermissionDecision::Deny {
+    /// The rules for `input` under any of the rule keys `keys`. `None` when
+    /// no rule decides.
+    fn evaluate_single(&self, keys: &[&str], input: &str) -> Option<PermissionDecision> {
+        if let Some(reason) = keys.iter().find_map(|key| is_hardcoded_denied(key, input)) {
+            return Some(PermissionDecision::Deny {
                 reason: format!("Hardcoded deny: {reason}"),
-            };
+            });
         }
+        let any = |matchers: &[PermissionMatcher]| {
+            keys.iter().any(|key| self.any_match(matchers, key, input))
+        };
 
-        if self.any_match(&self.compiled.deny, tool, input) {
-            return PermissionDecision::Deny {
+        if any(&self.compiled.deny) {
+            return Some(PermissionDecision::Deny {
                 reason: "Matched deny rule".to_string(),
-            };
+            });
         }
 
-        if self.any_match(&self.compiled.ask, tool, input) {
-            return PermissionDecision::Ask { rule_matched: true };
+        if any(&self.compiled.ask) {
+            return Some(PermissionDecision::Ask { rule_matched: true });
         }
 
-        if self.any_match(&self.compiled.allow, tool, input) {
-            return PermissionDecision::Allow;
-        }
-
-        self.default_decision()
+        any(&self.compiled.allow).then_some(PermissionDecision::Allow)
     }
 
     /// `any_match` for the lists that refuse or prompt, widened to the resolved command.
@@ -192,6 +233,52 @@ impl PermissionEngine {
 
 fn is_file_tool(tool: &str) -> bool {
     matches!(tool, "read" | "edit" | "write" | "delete")
+}
+
+/// The file rules that read the paths of a call of `kind`. A `read` rule
+/// never reads an edit, so an operator who allows reads allows no edit.
+fn file_rule_keys(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "file_read" => &["read"],
+        "file_edit" => &["edit", "write", "delete"],
+        _ => &[],
+    }
+}
+
+/// The strongest decision: `deny`, then an `ask` that a rule named, then
+/// another `ask`, then `allow`.
+fn strongest(
+    decisions: impl IntoIterator<Item = PermissionDecision>,
+) -> Option<PermissionDecision> {
+    decisions.into_iter().max_by_key(|decision| match decision {
+        PermissionDecision::Allow => 0,
+        PermissionDecision::Ask {
+            rule_matched: false,
+        } => 1,
+        PermissionDecision::Ask { rule_matched: true } => 2,
+        PermissionDecision::Deny { .. } => 3,
+    })
+}
+
+/// The decision for several inputs, as for the statements of a command
+/// line: a `deny` or an `ask` for any input, and an `allow` only when each
+/// input has one.
+fn every_input(
+    decisions: impl Iterator<Item = Option<PermissionDecision>>,
+) -> Option<PermissionDecision> {
+    let decisions: Vec<_> = decisions.collect();
+    if decisions
+        .iter()
+        .all(|decision| decision == &Some(PermissionDecision::Allow))
+    {
+        return Some(PermissionDecision::Allow);
+    }
+    strongest(
+        decisions
+            .into_iter()
+            .flatten()
+            .filter(|decision| decision != &PermissionDecision::Allow),
+    )
 }
 
 fn matches_bash_with_optional_args(matcher: &PermissionMatcher, tool: &str, input: &str) -> bool {

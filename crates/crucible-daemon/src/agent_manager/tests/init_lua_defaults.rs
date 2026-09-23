@@ -88,7 +88,7 @@ fn run_permission_hooks(
         !hooks
             .runtime_handlers_for(
                 "permission:request",
-                Some(&request.tool_name),
+                Some(&request.call.tool),
                 crucible_lua::Firing::Sessionless
             )
             .is_empty(),
@@ -100,7 +100,10 @@ fn run_permission_hooks(
 
 fn tool_request(mode: &str) -> PermissionRequest {
     PermissionRequest {
-        tool_name: "bash".to_string(),
+        call: crucible_core::types::CanonicalToolCall::crucible_tool(
+            "bash",
+            &serde_json::json!({ "command": "rm -rf build" }),
+        ),
         args: serde_json::json!({ "command": "rm -rf build" }),
         file_path: None,
         mode: Some(mode.to_string()),
@@ -155,7 +158,10 @@ async fn plan_mode_does_not_deny_a_read_only_tool() {
     let (vm, _am, _sm, _id) = session_with_lua("").await;
 
     let mut request = tool_request("plan");
-    request.tool_name = "read_file".to_string();
+    request.call = crucible_core::types::CanonicalToolCall::crucible_tool(
+        "read_file",
+        &serde_json::Value::Null,
+    );
     request.is_safe = true;
 
     let result = run_permission_hooks(&vm, &request);
@@ -165,6 +171,35 @@ async fn plan_mode_does_not_deny_a_read_only_tool() {
         PermissionHookResult::Prompt,
         "plan mode forbids mutation, not reading"
     );
+}
+
+/// A permission hook reads the kind and the command line of the call, so
+/// one hook decides the shell of each agent.
+#[tokio::test]
+async fn a_permission_hook_sees_the_kind_and_the_command() {
+    let (vm, _am, _sm, id) = session_with_lua(
+        r#"
+        cru.permissions.on_request(function(request)
+          if request.kind == "command" and request.command == "cargo test" then
+            return { allow = true }
+          end
+          return nil
+        end)
+        "#,
+    )
+    .await;
+
+    let args = serde_json::json!({ "command": "cargo test" });
+    let result = AgentManager::run_permission_hooks(
+        Some(&vm.permission_registry()),
+        &crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args),
+        &args,
+        &id,
+        "ask",
+        &std::collections::HashSet::new(),
+    );
+
+    assert_eq!(result, PermissionHookResult::Allow);
 }
 
 /// A hook that cannot see the mode is the failure this plumbing exists to
@@ -682,10 +717,11 @@ fn a_mode_can_permit_bash_for_specific_commands_only(command: &str, expected: Pe
         ask: Vec::new(),
     };
 
+    let args = serde_json::json!({ "command": command });
     let decision = AgentManager::evaluate_mode_rules(
         &permissions,
-        "bash",
-        &serde_json::json!({ "command": command }),
+        &crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args),
+        &args,
     );
 
     // Deny carries a reason string that varies by rule; compare the variant.

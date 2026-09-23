@@ -665,3 +665,123 @@ fn a_different_program_that_deletes_is_not_covered_by_a_rule_naming_rm(input: &s
         PermissionDecision::Allow
     ));
 }
+
+/// The canonical call of an ACP call with `kind`, `paths` and `tool`.
+fn acp_call(kind: &str, tool: &str, paths: &[&str]) -> crate::types::CanonicalToolCall {
+    crate::types::CanonicalToolCall {
+        kind: kind.to_string(),
+        paths: paths.iter().map(|p| (*p).to_string()).collect(),
+        ..crate::types::CanonicalToolCall::crucible_tool(tool, &serde_json::Value::Null)
+    }
+}
+
+/// A file rule reads the paths of each call of its file kind, whichever
+/// tool made it: Crucible's `edit_file`, or an edit that an agent names
+/// `Edit` or does not name.
+#[test]
+fn a_file_rule_reads_the_paths_of_each_edit() {
+    let config = config_with_rules(PermissionMode::Allow, &[], &["edit:secrets/**"], &[]);
+    let engine = PermissionEngine::new(Some(&config));
+    let args = serde_json::json!({ "path": "secrets/key.pem" });
+
+    for call in [
+        crate::types::CanonicalToolCall::crucible_tool("edit_file", &args),
+        acp_call("file_edit", "Edit", &["secrets/key.pem"]),
+        acp_call("file_edit", "file_edit", &["src/lib.rs", "secrets/key.pem"]),
+    ] {
+        assert!(
+            matches!(
+                engine.evaluate_call(&call, &args, true),
+                PermissionDecision::Deny { .. }
+            ),
+            "`deny = [\"edit:secrets/**\"]` must refuse {call:?}"
+        );
+    }
+    assert_eq!(
+        engine.evaluate_call(&acp_call("file_edit", "Edit", &["src/lib.rs"]), &args, true),
+        PermissionDecision::Allow,
+        "a path outside the rule is not refused"
+    );
+}
+
+/// A `read` rule never reads an edit. An operator who allows reads of a
+/// directory allows no edit there.
+#[test]
+fn a_read_rule_does_not_allow_an_edit() {
+    let config = config_with_rules(PermissionMode::Ask, &["read:src/**"], &[], &[]);
+    let engine = PermissionEngine::new(Some(&config));
+    let args = serde_json::Value::Null;
+
+    assert_eq!(
+        engine.evaluate_call(&acp_call("file_read", "Read", &["src/lib.rs"]), &args, true),
+        PermissionDecision::Allow
+    );
+    assert_eq!(
+        engine.evaluate_call(&acp_call("file_edit", "Edit", &["src/lib.rs"]), &args, true),
+        PermissionDecision::Ask {
+            rule_matched: false
+        }
+    );
+}
+
+/// A file rule allows a call only when it allows each path of the call.
+#[test]
+fn a_file_allow_needs_each_path() {
+    let config = config_with_rules(PermissionMode::Ask, &["edit:src/**"], &[], &[]);
+    let engine = PermissionEngine::new(Some(&config));
+    let call = acp_call("file_edit", "file_edit", &["src/lib.rs", "/etc/passwd"]);
+
+    assert_eq!(
+        engine.evaluate_call(&call, &serde_json::Value::Null, true),
+        PermissionDecision::Ask {
+            rule_matched: false
+        },
+        "an allow for `src/` must not allow an edit of `/etc/passwd` beside it"
+    );
+}
+
+/// A rule that names a tool reads the canonical tool name, and a `bash`
+/// rule reads the command line. Both decide one agent command, and the
+/// stronger answer wins.
+#[test]
+fn a_name_rule_and_a_bash_rule_both_read_a_command() {
+    let args = serde_json::json!({ "command": "rm -rf build" });
+    let call = crate::types::CanonicalToolCall {
+        kind: "command".to_string(),
+        command: Some("rm -rf build".to_string()),
+        ..crate::types::CanonicalToolCall::crucible_tool("Bash", &args)
+    };
+
+    let named = config_with_rules(PermissionMode::Ask, &["Bash:*"], &[], &[]);
+    assert_eq!(
+        PermissionEngine::new(Some(&named)).evaluate_call(&call, &args, true),
+        PermissionDecision::Allow,
+        "`Bash:*` names the agent's tool"
+    );
+
+    let both = config_with_rules(PermissionMode::Ask, &["Bash:*"], &["bash:rm *"], &[]);
+    assert!(
+        matches!(
+            PermissionEngine::new(Some(&both)).evaluate_call(&call, &args, true),
+            PermissionDecision::Deny { .. }
+        ),
+        "a `bash` deny outranks an allow of the tool name"
+    );
+}
+
+/// A `bash` rule reads only the command line. It never reads the JSON
+/// arguments of the `bash` tool, where `*command*` matches the key name.
+#[test]
+fn a_bash_rule_never_reads_the_json_arguments() {
+    let config = config_with_rules(PermissionMode::Ask, &["bash:*command*"], &[], &[]);
+    let engine = PermissionEngine::new(Some(&config));
+    let args = serde_json::json!({ "command": "rm -rf build" });
+    let call = crate::types::CanonicalToolCall::crucible_tool("bash", &args);
+
+    assert_eq!(
+        engine.evaluate_call(&call, &args, true),
+        PermissionDecision::Ask {
+            rule_matched: false
+        }
+    );
+}
