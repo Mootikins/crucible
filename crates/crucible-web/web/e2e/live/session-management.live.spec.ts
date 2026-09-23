@@ -60,8 +60,10 @@ test.describe('live session management', () => {
     // browser read the daemon's own list.
     await expect(page.getByTestId(`session-item-${first}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId(`session-item-${second}`)).toBeVisible();
-    await expect(page.getByTestId('session-list').getByText('Live session one')).toBeVisible();
-    await expect(page.getByTestId('session-list').getByText('Live session two')).toBeVisible();
+    // Each row by its id, which is new on each try. A retry runs against the
+    // same daemon, so the titles of an earlier try are still in the list.
+    await expect(page.getByTestId(`session-item-${first}`)).toContainText('Live session one');
+    await expect(page.getByTestId(`session-item-${second}`)).toContainText('Live session two');
 
     await api.dispose();
   });
