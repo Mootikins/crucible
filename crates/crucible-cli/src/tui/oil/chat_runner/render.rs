@@ -50,6 +50,9 @@ impl OilChatRunner {
     pub(super) fn render_app_frame(&mut self, app: &mut OilChatApp) -> Result<()> {
         // The one place the TUI reads the wall clock for a frame.
         app.set_frame_time(std::time::Instant::now());
+        if self.fullscreen.is_some() {
+            return self.render_fullscreen_frame(app);
+        }
         if app.has_fullscreen_modal() {
             // A full-screen modal (shell, or a plugin surface) owns the whole
             // terminal, so it takes the fullscreen path rather than the inline
@@ -65,6 +68,35 @@ impl OilChatRunner {
             // Normal rendering through the shared FrameRenderer trait
             render_frame(app, &mut self.terminal, &self.focus);
         }
+        Ok(())
+    }
+
+    /// One frame of the full-screen mode: build the whole screen, then write
+    /// the rows that changed.
+    fn render_fullscreen_frame(&mut self, app: &mut OilChatApp) -> Result<()> {
+        let shell_open = app.has_shell_modal();
+        if shell_open != self.shell_was_open {
+            self.shell_was_open = shell_open;
+            if shell_open {
+                // The modal switched screens on its own; nothing we drew is
+                // still there.
+                self.terminal.force_full_redraw()?;
+            } else {
+                self.terminal.reenter_alternate_screen()?;
+            }
+        }
+        if app.take_needs_full_redraw() {
+            self.terminal.force_full_redraw()?;
+        }
+        app.expire_toasts();
+        app.split_slow_tools();
+        let terminal_size = self.terminal.size();
+        let ctx = ViewContext::with_terminal_size(&self.focus, theme::active(), terminal_size);
+        let Some(view) = self.fullscreen.as_mut() else {
+            return Ok(());
+        };
+        let frame = view.frame(app, &ctx);
+        self.terminal.present(&frame.grid, frame.cursor)?;
         Ok(())
     }
 }

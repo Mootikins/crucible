@@ -92,8 +92,12 @@ impl OilChatRunner {
         // move the prompt as soon as the second one lands.
         self.terminal
             .set_min_viewport_rows(app.min_viewport_rows(&ctx));
-        let tree = app.view(&ctx);
-        self.terminal.render(&tree, "")?;
+        if self.fullscreen.is_some() {
+            self.render_app_frame(&mut app)?;
+        } else {
+            let tree = app.view(&ctx);
+            self.terminal.render(&tree, "")?;
+        }
 
         let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
         let mut background_tasks: Vec<JoinHandle<()>> = Vec::new();
@@ -569,6 +573,7 @@ impl OilChatRunner {
         match ct_event {
             CtEvent::Key(key) => Ok(Event::Key(key)),
             CtEvent::Paste(text) => Ok(Event::Paste(text)),
+            CtEvent::Mouse(mouse) => Ok(Event::Mouse(mouse)),
             CtEvent::Resize(w, h) => {
                 self.terminal.handle_resize()?;
                 Ok(Event::Resize {

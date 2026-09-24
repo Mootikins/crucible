@@ -22,6 +22,7 @@ pub mod component;
 pub mod components;
 pub mod config;
 pub mod containers;
+pub mod fullscreen;
 mod event;
 pub mod local_replay;
 pub mod markdown;

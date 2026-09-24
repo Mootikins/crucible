@@ -295,6 +295,9 @@ impl OilChatApp {
             // The kept transcript rows are keyed by width, so the next frame
             // lays them out again without a reset here.
             Event::Resize { .. } => Action::Continue,
+            // The full-screen view takes mouse reports before the app sees
+            // them; the chat itself has no mouse behavior.
+            Event::Mouse(_) => Action::Continue,
         }
     }
 
@@ -909,10 +912,8 @@ impl OilChatApp {
         }
     }
 
-    /// Test-only since the runner asks [`Self::has_fullscreen_modal`] instead.
-    /// Kept because a test asserting "the *shell* modal is open" should not have
-    /// to settle for "something is".
-    #[cfg(test)]
+    /// Whether the shell modal is open. The full-screen mode asks, because
+    /// the modal switches screens on its own.
     pub(crate) fn has_shell_modal(&self) -> bool {
         self.shell_modal.is_some()
     }

@@ -31,6 +31,7 @@ pub mod proptest_strategies;
 pub mod render;
 pub(crate) mod render_helpers;
 pub mod runtime;
+pub mod screen;
 pub mod style;
 pub mod taffy_layout;
 pub mod template;
@@ -65,14 +66,15 @@ pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, Graduation, RenderedOverlay};
 pub use popup_node::popup_item;
 pub use render::{
-    render_to_plain_text, render_to_rows, render_to_string, render_tree, render_with_cursor,
-    CursorInfo, RenderResult, NATURAL_HEIGHT,
+    render_to_plain_text, render_to_rows, render_to_string, render_tree, render_tree_to_grid,
+    render_with_cursor, CursorInfo, GridRender, RenderResult, NATURAL_HEIGHT,
 };
 pub use runtime::FrameRenderer;
 #[cfg(any(test, feature = "test-utils"))]
 pub use runtime::TestRuntime;
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
-pub use terminal::Terminal;
+pub use screen::{PresentStats, ScreenDiff};
+pub use terminal::{ScreenMode, Terminal};
 
 pub mod utils;
 

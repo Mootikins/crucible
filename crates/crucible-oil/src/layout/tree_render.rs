@@ -31,20 +31,32 @@ use crate::popup_node::PopupItemNode;
 ///    (styled cells preserved)
 /// 4. Returns the string + cursor information
 pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
+    let (grid, cursor_position) = render_layout_tree_to_grid(tree);
+    if grid.width() == 0 || grid.height() == 0 {
+        return (String::new(), CursorInfo::default());
+    }
+    let content = grid.to_string_compact();
+    let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
+    (content, cursor_info)
+}
+
+/// Render a LayoutTree into a cell grid, and give the absolute cursor cell.
+///
+/// The full-screen mode keeps the grid: it inverts selected cells and diffs
+/// rows, and a compact string cannot do either.
+pub fn render_layout_tree_to_grid(tree: &LayoutTree) -> (CellGrid, Option<(u16, u16)>) {
     let width = tree.root.rect.width as usize;
     // Include root margin in grid height (rect.y accounts for top margin)
     let height = (tree.root.rect.y + tree.root.rect.height) as usize;
 
     if width == 0 || height == 0 {
-        return (String::new(), CursorInfo::default());
+        return (CellGrid::new(width, 0), None);
     }
 
     let mut grid = CellGrid::new(width, height);
     let mut cursor_position = None;
     render_box(&tree.root, &mut grid, &mut cursor_position);
-    let content = grid.to_string_compact();
-    let cursor_info = cursor_info_from_position(cursor_position, content.lines().count());
-    (content, cursor_info)
+    (grid, cursor_position)
 }
 
 /// Render a LayoutTree to its rows, each as [`render_layout_tree`] emits it.

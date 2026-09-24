@@ -2,6 +2,7 @@ use crate::node::Node;
 use crate::output::OutputBuffer;
 use crate::planning::{FramePlanner, FrameSnapshot};
 use crate::render::CursorInfo;
+use crate::screen::{PresentStats, ScreenDiff, DISABLE_MOUSE_CAPTURE, ENABLE_MOUSE_CAPTURE};
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveToColumn, MoveUp, SetCursorStyle, Show},
     event::{
@@ -9,9 +10,22 @@ use crossterm::{
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute, terminal,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout, Write};
 use std::time::Duration;
+
+/// Where the terminal draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScreenMode {
+    /// The main screen. The terminal owns the scroll and keeps the
+    /// transcript in its own scrollback. This is the default.
+    #[default]
+    Inline,
+    /// The alternate screen. The app owns every row, the scroll, selection
+    /// and copy. `mouse_capture` starts mouse reporting on entry.
+    Fullscreen { mouse_capture: bool },
+}
 
 pub struct Terminal<W: Write = Stdout> {
     width: u16,
@@ -23,6 +37,10 @@ pub struct Terminal<W: Write = Stdout> {
     last_cursor: Option<CursorInfo>,
     cursor_style: SetCursorStyle,
     last_snapshot: Option<FrameSnapshot>,
+    mode: ScreenMode,
+    /// Rows the alternate screen shows, for the full-screen row diff.
+    screen: ScreenDiff,
+    mouse_captured: bool,
 }
 
 // --- Real terminal (Stdout) only ---
@@ -44,11 +62,20 @@ impl Terminal<Stdout> {
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
+            mode: ScreenMode::Inline,
+            screen: ScreenDiff::new(),
+            mouse_captured: false,
         }
     }
 
     pub fn enter(&mut self) -> io::Result<()> {
         terminal::enable_raw_mode()?;
+        // The kitty keyboard flags are a stack per screen, so the flags go
+        // on after the switch, onto the alternate screen's own stack.
+        if let ScreenMode::Fullscreen { mouse_capture } = self.mode {
+            execute!(self.output.writer(), EnterAlternateScreen)?;
+            self.set_mouse_capture(mouse_capture)?;
+        }
         let w = self.output.writer();
 
         if execute!(
@@ -77,14 +104,21 @@ impl Terminal<Stdout> {
     pub fn exit(&mut self) -> io::Result<()> {
         let kb_enhanced = self.keyboard_enhanced;
 
-        // Move cursor to bottom of viewport so content above is preserved
-        self.cleanup_viewport()?;
+        let fullscreen = self.is_fullscreen();
+        if !fullscreen {
+            // Move cursor to bottom of viewport so content above is preserved
+            self.cleanup_viewport()?;
+        }
 
         let w = self.output.writer();
         let _ = execute!(w, SetCursorStyle::DefaultUserShape);
         execute!(w, Show)?;
         if kb_enhanced {
             let _ = execute!(w, PopKeyboardEnhancementFlags);
+        }
+        if fullscreen {
+            self.set_mouse_capture(false)?;
+            execute!(self.output.writer(), LeaveAlternateScreen)?;
         }
         if self.bracketed_paste {
             let w = self.output.writer();
@@ -104,6 +138,13 @@ impl Terminal<Stdout> {
         self.height = height;
         self.output.set_size(width as usize, height as usize);
         self.planner.set_size(width, height);
+
+        // The alternate screen has no scrollback to purge: the app reflows
+        // its own transcript, and the next frame writes every row.
+        if self.is_fullscreen() {
+            self.screen.invalidate();
+            return Ok(());
+        }
 
         // A width change alters every wrap, so the transcript must be printed
         // again at the new width. No escape sequence can rewrap a row the
@@ -149,6 +190,9 @@ impl Terminal<Vec<u8>> {
             last_cursor: None,
             cursor_style: SetCursorStyle::SteadyBlock,
             last_snapshot: None,
+            mode: ScreenMode::Inline,
+            screen: ScreenDiff::new(),
+            mouse_captured: false,
         }
     }
 
@@ -163,6 +207,10 @@ impl Terminal<Vec<u8>> {
         self.height = height;
         self.output.set_size(width as usize, height as usize);
         self.planner.set_size(width, height);
+        if self.is_fullscreen() {
+            self.screen.invalidate();
+            return;
+        }
         // Mirror handle_resize. clear() returns io::Result but a Vec<u8>
         // writer cannot fail; in any case, a swallowed error during test-
         // only resize would only show as a missing escape sequence, which
@@ -183,6 +231,80 @@ impl<W: Write> Terminal<W> {
 
     pub fn size(&self) -> (u16, u16) {
         (self.width, self.height)
+    }
+
+    /// Choose the screen before [`Terminal::enter`]. The default is
+    /// [`ScreenMode::Inline`].
+    pub fn with_mode(mut self, mode: ScreenMode) -> Self {
+        self.set_mode(mode);
+        self
+    }
+
+    /// Choose the screen before [`Terminal::enter`].
+    pub fn set_mode(&mut self, mode: ScreenMode) {
+        self.mode = mode;
+    }
+
+    pub fn mode(&self) -> ScreenMode {
+        self.mode
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        matches!(self.mode, ScreenMode::Fullscreen { .. })
+    }
+
+    /// Turn mouse reporting on or off. With reporting off, the terminal's
+    /// own selection works again, but the app sees no wheel and no drag.
+    pub fn set_mouse_capture(&mut self, on: bool) -> io::Result<()> {
+        if on == self.mouse_captured {
+            return Ok(());
+        }
+        let sequence = if on {
+            ENABLE_MOUSE_CAPTURE
+        } else {
+            DISABLE_MOUSE_CAPTURE
+        };
+        let w = self.output.writer();
+        w.write_all(sequence.as_bytes())?;
+        w.flush()?;
+        self.mouse_captured = on;
+        Ok(())
+    }
+
+    pub fn mouse_captured(&self) -> bool {
+        self.mouse_captured
+    }
+
+    /// Write one full-screen frame as a row diff against the last one.
+    pub fn present(
+        &mut self,
+        grid: &crate::cell_grid::CellGrid,
+        cursor: Option<(u16, u16)>,
+    ) -> io::Result<PresentStats> {
+        self.screen.present(self.output.writer(), grid, cursor)
+    }
+
+    /// Write `lines` to the main screen, where they go into the terminal's
+    /// own scrollback, then come back to the alternate screen.
+    ///
+    /// This is the "dump to scrollback" of the full-screen mode. The next
+    /// frame writes every row, because the alternate screen may not keep its
+    /// content across the switch.
+    pub fn print_to_main_screen(&mut self, lines: &[String]) -> io::Result<()> {
+        let fullscreen = self.is_fullscreen();
+        let w = self.output.writer();
+        if fullscreen {
+            execute!(w, LeaveAlternateScreen)?;
+        }
+        for line in lines {
+            write!(w, "{line}\x1b[0m\r\n")?;
+        }
+        if fullscreen {
+            execute!(w, EnterAlternateScreen)?;
+        }
+        w.flush()?;
+        self.screen.invalidate();
+        Ok(())
     }
 
     /// Reserve `rows` for every frame, so a bottom-anchored overlay draws
@@ -311,6 +433,15 @@ impl<W: Write> Terminal<W> {
 
     pub fn force_full_redraw(&mut self) -> io::Result<()> {
         self.output.force_redraw();
+        self.screen.invalidate();
+        Ok(())
+    }
+
+    /// Switch to the alternate screen again after something else left it,
+    /// such as the shell modal. The next frame writes every row.
+    pub fn reenter_alternate_screen(&mut self) -> io::Result<()> {
+        execute!(self.output.writer(), EnterAlternateScreen, Hide)?;
+        self.screen.invalidate();
         Ok(())
     }
 
@@ -513,6 +644,69 @@ mod tests {
             "cleanup_viewport should clear below cursor.\nOutput bytes: {:?}",
             output
         );
+    }
+
+    fn fullscreen_headless(width: u16, height: u16) -> Terminal<Vec<u8>> {
+        Terminal::headless(width, height).with_mode(ScreenMode::Fullscreen {
+            mouse_capture: true,
+        })
+    }
+
+    #[test]
+    fn a_fullscreen_resize_neither_purges_nor_clears() {
+        // The alternate screen has no scrollback, and the next frame writes
+        // every row, so a clear would only add a blank flash.
+        let mut term = fullscreen_headless(20, 4);
+        let mut grid = crate::cell_grid::CellGrid::new(20, 4);
+        grid.blit_line("row", 0, 0);
+        term.present(&grid, None).unwrap();
+        let _ = term.take_bytes();
+
+        term.set_size(10, 4);
+        assert!(term.take_bytes().is_empty(), "a resize writes nothing");
+
+        let grid = crate::cell_grid::CellGrid::new(10, 4);
+        let stats = term.present(&grid, None).unwrap();
+        assert_eq!(stats.rows_written, 4, "the frame after a resize writes every row");
+    }
+
+    #[test]
+    fn print_to_main_screen_leaves_and_reenters_the_alternate_screen() {
+        let mut term = fullscreen_headless(20, 4);
+        let mut parser = vt100::Parser::new(4, 20, 100);
+        parser.process(b"\x1b[?1049h");
+        let mut grid = crate::cell_grid::CellGrid::new(20, 4);
+        grid.blit_line("frame", 0, 0);
+        term.present(&grid, None).unwrap();
+
+        term.print_to_main_screen(&["kept one".into(), "kept two".into()])
+            .unwrap();
+        parser.process(&term.take_bytes());
+
+        assert!(parser.screen().alternate_screen(), "back on the alternate screen");
+        parser.process(b"\x1b[?1049l");
+        let main = parser.screen().contents();
+        assert!(main.contains("kept one") && main.contains("kept two"), "{main:?}");
+
+        let stats = term.present(&grid, None).unwrap();
+        assert_eq!(stats.rows_written, 4, "the next frame repaints the whole screen");
+    }
+
+    #[test]
+    fn mouse_capture_toggles_once_per_change() {
+        let mut term = fullscreen_headless(20, 4);
+        term.set_mouse_capture(true).unwrap();
+        term.set_mouse_capture(true).unwrap();
+        assert_eq!(
+            String::from_utf8(term.take_bytes()).unwrap(),
+            crate::screen::ENABLE_MOUSE_CAPTURE
+        );
+        term.set_mouse_capture(false).unwrap();
+        assert_eq!(
+            String::from_utf8(term.take_bytes()).unwrap(),
+            crate::screen::DISABLE_MOUSE_CAPTURE
+        );
+        assert!(!term.mouse_captured());
     }
 
     #[test]

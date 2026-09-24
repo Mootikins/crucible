@@ -99,6 +99,12 @@ pub struct OilChatRunner {
     pub(super) replay_auto_exit: Option<u64>,
     pub(super) replay_remaining_completes: usize,
     pub(super) is_replay: bool,
+    /// The full-screen view, when `--fullscreen` chose that mode.
+    pub(super) fullscreen: Option<crate::tui::oil::fullscreen::FullscreenView>,
+    /// Whether the shell modal was open at the last frame. The modal leaves
+    /// the alternate screen when it closes, so the full-screen mode enters
+    /// it again.
+    pub(super) shell_was_open: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,7 +158,21 @@ impl OilChatRunner {
             replay_auto_exit: None,
             replay_remaining_completes: 0,
             is_replay: false,
+            fullscreen: None,
+            shell_was_open: false,
         }
+    }
+
+    /// Draw on the alternate screen instead of the main screen.
+    pub fn with_fullscreen(mut self, on: bool) -> Self {
+        if on {
+            self.terminal
+                .set_mode(crucible_oil::terminal::ScreenMode::Fullscreen {
+                    mouse_capture: true,
+                });
+            self.fullscreen = Some(crate::tui::oil::fullscreen::FullscreenView::new());
+        }
+        self
     }
 
     pub fn with_context_limit(mut self, limit: usize) -> Self {

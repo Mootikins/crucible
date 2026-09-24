@@ -187,6 +187,73 @@ impl CellGrid {
             })
             .collect()
     }
+
+    /// Draw every verbatim row into its cells, so that [`CellGrid::row`]
+    /// reads its content. The full-screen mode reads cells; the native mode
+    /// copies verbatim rows as they are.
+    pub fn draw_verbatim_rows(&mut self) {
+        for y in 0..self.height {
+            if self.rows[y].verbatim.is_some() {
+                self.cells_mut(y);
+            }
+        }
+    }
+
+    /// The cells of row `y`: empty outside the grid, and empty for a row
+    /// that nothing drew into, which reads as spaces. A verbatim row has
+    /// cells only after [`CellGrid::draw_verbatim_rows`].
+    pub fn row(&self, y: usize) -> &[StyledCell] {
+        self.rows.get(y).map_or(&[], |row| row.cells.as_slice())
+    }
+
+    /// Row `y` as the bytes that paint it over any old content in place.
+    ///
+    /// Trailing unstyled padding is dropped. When the row ends before the
+    /// last column, an erase to the end of the line follows, so a longer old
+    /// row cannot leave a tail. A full row gets no erase: the cursor waits in
+    /// the last column, and an erase there would delete the last cell.
+    pub fn row_ansi(&self, y: usize) -> String {
+        let row = self.row(y);
+        let content_end = row
+            .iter()
+            .rposition(|c| c.ch != ' ' || !c.style.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let mut out = cells_to_string(&row[..content_end]);
+        if content_end < self.width {
+            out.push_str("\x1b[K");
+        }
+        out
+    }
+
+    /// Copy row `src_y` of `src` into row `dst_y`. Cells past either width
+    /// are dropped or stay blank.
+    pub fn copy_row_from(&mut self, dst_y: usize, src: &CellGrid, src_y: usize) {
+        if dst_y >= self.height {
+            return;
+        }
+        let src_row = src.row(src_y);
+        let dst = self.cells_mut(dst_y);
+        for (x, cell) in dst.iter_mut().enumerate() {
+            *cell = src_row.get(x).cloned().unwrap_or_else(StyledCell::space);
+        }
+    }
+
+    /// Draw row `src_y` of `src` over row `dst_y`, keeping the old cell
+    /// wherever the source cell is transparent. This is how an overlay lands
+    /// on the full-screen frame.
+    pub fn overlay_row_from(&mut self, dst_y: usize, src: &CellGrid, src_y: usize) {
+        let src_row = src.row(src_y);
+        if dst_y >= self.height || src_row.is_empty() {
+            return;
+        }
+        let dst = self.cells_mut(dst_y);
+        for (x, cell) in src_row.iter().enumerate() {
+            if x < dst.len() && !cell.is_transparent() {
+                dst[x] = cell.clone();
+            }
+        }
+    }
 }
 
 fn push_row_compact(row: &Row, out: &mut String) {

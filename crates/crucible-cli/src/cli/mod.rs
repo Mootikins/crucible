@@ -175,6 +175,11 @@ pub enum Commands {
         /// Auto-exit after replay completes. Optional value is delay in milliseconds (default: 2000).
         #[arg(long, value_name = "DELAY_MS", num_args = 0..=1, default_missing_value = "2000")]
         replay_auto_exit: Option<u64>,
+
+        /// Draw the TUI on the alternate screen (prototype). The TUI then owns
+        /// scrolling, selection and copy, and prints the transcript on exit.
+        #[arg(long)]
+        fullscreen: bool,
     },
 
     /// Start MCP server exposing Crucible tools for external AI agents

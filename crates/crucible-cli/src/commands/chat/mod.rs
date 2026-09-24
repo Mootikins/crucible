@@ -36,6 +36,8 @@ pub struct ChatParams {
     pub resume_session_id: Option<String>,
     pub set_overrides: Vec<String>,
     pub mode: ChatMode,
+    /// Draw the TUI on the alternate screen (prototype, `--fullscreen`).
+    pub fullscreen: bool,
 }
 
 impl ChatParams {
@@ -54,6 +56,7 @@ impl ChatParams {
             resume_session_id: None,
             set_overrides: vec![],
             mode: ChatMode::Interactive { record: None },
+            fullscreen: false,
         }
     }
 }
@@ -130,7 +133,14 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
         if params.agent_name.is_some() || params.agent_card.is_some() {
             anyhow::bail!("--replay cannot be combined with --agent");
         }
-        return run_replay(path.clone(), *speed, *auto_exit, &params.config).await;
+        return run_replay(
+            path.clone(),
+            *speed,
+            *auto_exit,
+            &params.config,
+            params.fullscreen,
+        )
+        .await;
     }
 
     info!("Starting chat command");
@@ -223,6 +233,7 @@ async fn run_replay(
     speed: f64,
     auto_exit: Option<u64>,
     config: &CliConfig,
+    fullscreen: bool,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::OilChatRunner;
@@ -243,7 +254,8 @@ async fn run_replay(
         .with_show_diffs(config.chat.show_diffs)
         .with_replay_path(Some(path))
         .with_replay_speed(speed)
-        .with_replay_auto_exit(auto_exit);
+        .with_replay_auto_exit(auto_exit)
+        .with_fullscreen(fullscreen);
 
     let factory = |_selection: crate::tui::AgentSelection| async move {
         // Unreachable: replay short-circuits before the factory is called.
@@ -436,6 +448,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         resume_session_id,
         set_overrides,
         mode: _,
+        fullscreen,
     } = params;
     let initial_mode = initial_mode(read_only);
     info!("Initial mode: {}", initial_mode);
@@ -487,7 +500,8 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         .with_show_thinking(config.chat.show_thinking)
         .with_show_diffs(config.chat.show_diffs)
         .with_agent_name(agent_name)
-        .with_initial_sets(parsed_set_overrides);
+        .with_initial_sets(parsed_set_overrides)
+        .with_fullscreen(fullscreen);
 
     info!(
         "Starting oil chat with model: {} (display: {})",
@@ -723,6 +737,8 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
         resume_session_id,
         set_overrides,
         mode: _,
+        // A oneshot run draws no TUI.
+        fullscreen: _,
     } = params;
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();

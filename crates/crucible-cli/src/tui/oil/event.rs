@@ -3,6 +3,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[derive(Debug, Clone)]
 pub enum Event {
     Key(KeyEvent),
+    /// A mouse report. Only the full-screen mode turns reporting on.
+    Mouse(crossterm::event::MouseEvent),
     Paste(String),
     Resize { width: u16, height: u16 },
     Tick,

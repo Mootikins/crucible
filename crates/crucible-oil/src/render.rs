@@ -9,7 +9,8 @@
 //! test rendering — they are byte-identical for the same tree+dims.
 
 use crate::ansi::strip_ansi;
-use crate::layout::{render_layout_tree, render_layout_tree_rows};
+use crate::cell_grid::CellGrid;
+use crate::layout::{render_layout_tree, render_layout_tree_rows, render_layout_tree_to_grid};
 use crate::node::Node;
 use crate::taffy_layout::{build_layout_tree_with_engine, LayoutEngine};
 
@@ -108,6 +109,39 @@ pub fn render_to_rows(node: &Node, width: u16) -> Vec<String> {
     let tree =
         build_layout_tree_with_engine(&mut LayoutEngine::new(), &column, width, NATURAL_HEIGHT_CAP);
     render_layout_tree_rows(&tree)
+}
+
+/// A node tree rendered into cells, for the full-screen mode.
+pub struct GridRender {
+    pub grid: CellGrid,
+    /// The focused input's cell as `(column, row)`, if the tree has one.
+    pub cursor: Option<(u16, u16)>,
+}
+
+/// Render `node` into a cell grid at `width` columns.
+///
+/// `height` works as in [`render_tree`]. The full-screen mode needs the
+/// cells, not a compact string: it copies rows into the screen, inverts
+/// selected cells and diffs rows. A raw node is blitted as one line, so an
+/// image escape does not reach the full-screen mode.
+pub fn render_tree_to_grid(node: &Node, width: u16, height: u16) -> GridRender {
+    if width == 0 {
+        return GridRender {
+            grid: CellGrid::new(0, 0),
+            cursor: None,
+        };
+    }
+    let layout_height = if height == NATURAL_HEIGHT {
+        NATURAL_HEIGHT_CAP
+    } else {
+        height
+    };
+    let mut engine = LayoutEngine::new();
+    let layout_tree = build_layout_tree_with_engine(&mut engine, node, width, layout_height);
+    let (mut grid, cursor) = render_layout_tree_to_grid(&layout_tree);
+    // The full-screen mode reads cells, so kept rows must be drawn into them.
+    grid.draw_verbatim_rows();
+    GridRender { grid, cursor }
 }
 
 /// Render a node tree to an ANSI string at its natural height.
