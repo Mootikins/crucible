@@ -1,18 +1,25 @@
 //! Event queue for managing file events with backpressure handling.
 
-use crate::watch::{error::Result, events::FileEvent};
+use crate::watch::{
+    error::Result,
+    events::{FileEvent, FileEventKind},
+};
 use std::collections::VecDeque;
 use tracing::debug;
 
 /// Bounded event queue with backpressure handling.
 ///
 /// When the queue is full, it automatically drops the oldest event to make room
-/// for new events (DropOldest strategy).
+/// for new events (DropOldest strategy). A drop is not silent: the next drain
+/// ends with one [`FileEventKind::Rescan`], so a consumer that mirrors the
+/// watched tree reads it again instead of keeping a stale copy.
 pub struct EventQueue {
     /// Internal queue storage
     queue: VecDeque<FileEvent>,
     /// Maximum capacity
     capacity: usize,
+    /// Whether an event was dropped since the last drain.
+    dropped: bool,
 }
 
 impl EventQueue {
@@ -21,6 +28,7 @@ impl EventQueue {
         Self {
             queue: VecDeque::with_capacity(capacity),
             capacity,
+            dropped: false,
         }
     }
 
@@ -43,6 +51,7 @@ impl EventQueue {
                 removed.kind
             );
             self.queue.push_back(event);
+            self.dropped = true;
             Ok(())
         } else {
             // Queue is empty but capacity is 0, drop new event
@@ -52,7 +61,14 @@ impl EventQueue {
 
     /// Drain all events from the queue.
     pub fn drain_all(&mut self) -> Vec<FileEvent> {
-        self.queue.drain(..).collect()
+        let mut events: Vec<FileEvent> = self.queue.drain(..).collect();
+        if std::mem::take(&mut self.dropped) {
+            events.push(FileEvent::new(
+                FileEventKind::Rescan,
+                std::path::PathBuf::new(),
+            ));
+        }
+        events
     }
 
     /// Get the current number of events in the queue.
@@ -77,7 +93,14 @@ mod tests {
             queue.push(event.clone()).await.unwrap();
         }
         assert_eq!(queue.len(), 2);
-        assert_eq!(queue.drain_all(), events[1..]);
+        let drained = queue.drain_all();
+        assert_eq!(drained[..2], events[1..]);
+        assert_eq!(
+            drained.last().map(|event| &event.kind),
+            Some(&FileEventKind::Rescan),
+            "a drain after a drop ends with a rescan, so the loss is not silent"
+        );
+        assert_eq!(drained.len(), 3);
         assert_eq!(queue.len(), 0);
         assert!(queue.drain_all().is_empty());
         queue.push(events[0].clone()).await.unwrap();

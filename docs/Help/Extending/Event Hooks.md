@@ -192,7 +192,7 @@ plugin reload clears those.
 
 | Event | Why |
 |---|---|
-| `FileChanged`, `FileDeleted`, `FileMoved` | the file watcher fires them with no turn running |
+| `FileChanged`, `FileDeleted`, `FileMoved` | the file watcher or the kiln index owner fires them with no turn running |
 | `note:created`, `note:modified`, `note:deleted`, `note:renamed` | the note pipeline, over a kiln's own files |
 | `webhook:received` | a signed delivery from outside |
 | `index:blocks` | the note pipeline again |

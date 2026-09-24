@@ -422,7 +422,13 @@ them (`crucible-core/src/storage/note_store.rs:455,487`). `SqlitePool` is
 synchronous; every async entry point clones the pool into `spawn_blocking`.
 `KilnManager` broadcasts `SessionEventMessage` (async). The watch pipeline is
 backend, unbounded mpsc, processor task (`manager.rs:442`), `Debouncer`,
-`EventQueue`, `HandlerRegistry`, one `tokio::spawn` per handler per event.
+`EventQueue`, `HandlerRegistry`, one `tokio::spawn` per handler per event. The
+kiln's `DaemonEventBridge` queues each change for the index owner
+(`kiln_manager/index.rs`, `run_index_jobs`) before it broadcasts it.
+`file_write::write_locked` queues each daemon write there too
+(`kiln_manager::landed`), and the bridge drops the watcher's echo of it. A lost
+watcher event (`EventQueue` overflow, kernel rescan flag) becomes one
+`FileEventKind::Rescan`, and the owner reindexes the kiln.
 Two debounce layers sit in series: `notify_debouncer_full` at a fixed 100 ms
 (`notify_backend.rs:60`) and `Debouncer` at `WatchManagerConfig.debounce_delay`,
 plus a 50 ms flush tick (`manager.rs:445`). `precognition/` computes the
@@ -599,8 +605,7 @@ synchronous except `EventEmitter::emit`.
   `unsafe impl Send/Sync` at `ring.rs:408-409` is redundant.
 - `EventEmitter` has one production impl and two defaulted methods nobody
   calls. `EventError` (five variants) is never constructed;
-  `EmitOutcome.cancelled/.errors` are never set, so
-  `watch/handlers/indexing.rs:255-263` is dead.
+  `EmitOutcome.cancelled/.errors` are never set.
 - Parallel enums across the two vocabularies, before plan T3-B7:
   `InternalSessionEvent::PostLlmCall` equalled `TurnPayload::PostLlmCall`
   field for field; `SessionEvent::SessionEnded` equalled `TurnPayload::Ended`;

@@ -4,7 +4,7 @@ mod external_change;
 mod indexing;
 
 pub use external_change::ExternalChangeHandler;
-pub use indexing::IndexingHandler;
+pub use indexing::{IndexingHandler, WATCH_RESCAN_EVENT};
 
 use crate::watch::{error::Result, events::FileEvent, traits::EventHandler};
 use crucible_core::events::{EventEmitter, SessionEvent};

@@ -30,6 +30,7 @@ impl EventUtils {
             crate::watch::events::FileEventKind::Batch(_) => {
                 format!("batch:{}", event.path.display())
             }
+            crate::watch::events::FileEventKind::Rescan => "rescan".to_string(),
             crate::watch::events::FileEventKind::Unknown(_) => {
                 format!("unknown:{}", event.path.display())
             }

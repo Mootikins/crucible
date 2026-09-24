@@ -52,6 +52,12 @@ impl ExternalChangeHandler {
                 // handler exists to prevent, so observe it and let the
                 // composed diff decide whether anything actually moved.
                 FileEventKind::Unknown(_) => self.observe(&event.path),
+                // The watcher lost events and cannot name their paths. Log it:
+                // a write in this window may go unannounced until the next
+                // change of the same file.
+                FileEventKind::Rescan => {
+                    tracing::warn!("the review watcher lost events; some writes may go unannounced")
+                }
             }
         }
     }

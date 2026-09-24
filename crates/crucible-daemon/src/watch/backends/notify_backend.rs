@@ -6,6 +6,7 @@ use crate::watch::{
     traits::{WatchConfig, WatchHandle},
 };
 
+use notify::event::{ModifyKind, RenameMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
@@ -105,6 +106,33 @@ impl NotifyWatcher {
 
     /// Convert notify event to our file event format.
     fn convert_notify_event(event: DebouncedEvent) -> Result<FileEvent> {
+        // The kernel queue overflowed, so events are gone. The debouncer
+        // rescans its own cache; a consumer must read its tree again too.
+        if event.event.need_rescan() {
+            return Ok(FileEvent::new(FileEventKind::Rescan, PathBuf::new()));
+        }
+        // A rename is one event with both paths. Read as two `Modified`
+        // events, it indexed the new path and left the old one as a ghost.
+        // Half a rename is a file that left the tree or entered it.
+        if let EventKind::Modify(ModifyKind::Name(mode)) = event.event.kind {
+            let metadata = EventMetadata::new("notify".to_string(), "default".to_string());
+            let paths = &event.event.paths;
+            let renamed = match (mode, paths.as_slice()) {
+                (RenameMode::Both, [from, to]) => Some((
+                    FileEventKind::Moved {
+                        from: from.clone(),
+                        to: to.clone(),
+                    },
+                    from.clone(),
+                )),
+                (RenameMode::From, [from]) => Some((FileEventKind::Deleted, from.clone())),
+                (RenameMode::To, [to]) => Some((FileEventKind::Created, to.clone())),
+                _ => None,
+            };
+            if let Some((kind, path)) = renamed {
+                return Ok(FileEvent::with_metadata(kind, path, metadata));
+            }
+        }
         let kind = match event.event.kind {
             EventKind::Create(_) => FileEventKind::Created,
             EventKind::Modify(_) => FileEventKind::Modified,
@@ -314,6 +342,34 @@ mod tests {
         assert!(
             late.is_ok(),
             "event did not arrive after the debounce delay"
+        );
+    }
+
+    /// A rename inside the watched tree is one move, not two changes. As two
+    /// `Modified` events it indexed the new path and kept the old one.
+    #[tokio::test]
+    async fn a_rename_is_reported_as_one_move() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join("alpha.md"), "x").unwrap();
+        let Some((_watcher, _handles, mut rx)) =
+            watch_dirs(&[("a", &dir)], DebounceConfig::new(100)).await
+        else {
+            return;
+        };
+
+        std::fs::rename(root.join("alpha.md"), root.join("omega.md")).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("a report of the rename")
+            .expect("the channel is open");
+        assert_eq!(
+            event.kind,
+            FileEventKind::Moved {
+                from: root.join("alpha.md"),
+                to: root.join("omega.md"),
+            }
         );
     }
 }

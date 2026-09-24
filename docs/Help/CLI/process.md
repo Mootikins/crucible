@@ -113,7 +113,11 @@ call the daemon while a kiln still opens.
 
 The index is derived data, and it stays in the kiln. The daemon reads it again
 at the next start. A restart does not re-parse or re-embed an unchanged note.
-Only `cru process`, `--watch` and the daemon's file watcher write to the index.
+Only `cru process`, `--watch` and the daemon's index owner write to the index.
+The index owner reads one ordered queue. The file watcher and each daemon write
+(the note tools, `fs.write`, a proposal accept) feed it, so a note that the
+daemon writes is indexed at once. A folder that moves takes its notes with it
+in the index.
 
 To measure the incremental path, run `cru process` twice. The second run
 reports every file as skipped. Over the 184 notes in `docs/`, the second run

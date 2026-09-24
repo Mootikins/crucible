@@ -3,8 +3,9 @@
 //!
 //! The daemon's broadcast bus drops the oldest events for a receiver that
 //! falls behind. That is correct for a client, which can read the state again,
-//! and wrong for an owner of stored state: the session log cannot read a lost
-//! event again. Its writer reads a queue of this kind instead.
+//! and wrong for an owner of stored state: the session log and the kiln index
+//! cannot read a lost change again. Each of those owners reads a queue of
+//! this kind instead.
 //!
 //! The queue is unbounded. Its senders include synchronous code (the event
 //! emit path, Lua callbacks), which cannot wait for capacity, and a runtime
@@ -57,6 +58,11 @@ impl<T> Clone for Sender<T> {
 }
 
 impl<T> Sender<T> {
+    /// Queue `item`. Returns false when the consumer stopped.
+    pub(crate) fn send(&self, item: T) -> bool {
+        self.send_then(|| (item, ()), |()| ()).0
+    }
+
     /// Make an item with `make`, queue it, and run `then` with the rest of
     /// what `make` gave, all before a concurrent sender can queue.
     ///
@@ -165,15 +171,11 @@ impl<T> Drop for Entry<T> {
 mod tests {
     use super::*;
 
-    fn send<T>(tx: &Sender<T>, item: T) -> bool {
-        tx.send_then(|| (item, ()), |()| ()).0
-    }
-
     #[tokio::test]
     async fn a_wait_returns_only_after_the_items_before_it_are_finished() {
         let (tx, mut rx) = channel();
-        assert!(send(&tx, 1));
-        assert!(send(&tx, 2));
+        assert!(tx.send(1));
+        assert!(tx.send(2));
         let waiter = tx.waiter();
         let mut wait = Box::pin(waiter.wait());
 
@@ -197,9 +199,9 @@ mod tests {
     #[tokio::test]
     async fn a_wait_does_not_wait_for_a_stopped_consumer() {
         let (tx, rx) = channel::<u8>();
-        assert!(send(&tx, 1));
+        assert!(tx.send(1));
         drop(rx);
-        assert!(!send(&tx, 2), "a stopped consumer takes no item");
+        assert!(!tx.send(2), "a stopped consumer takes no item");
         tx.waiter().wait().await;
     }
 }

@@ -115,7 +115,7 @@ pub use daemon_plugins::{
     BootstrapOutcome, DaemonPluginLoader,
 };
 pub use delegation::{DelegationRequest, DelegationService, DelegationSpawned, DelegationSpawner};
-pub use file_watch_bridge::{create_event_bridge, DaemonEventBridge};
+pub use file_watch_bridge::DaemonEventBridge;
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, ShutdownSignals};
 pub use mcp_host::InProcessMcpHost;

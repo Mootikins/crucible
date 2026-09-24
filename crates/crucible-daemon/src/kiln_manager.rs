@@ -23,6 +23,9 @@ use crate::embedding::get_or_create_embedding_provider;
 use crate::file_watch_bridge::create_event_bridge;
 use crate::protocol::SessionEventMessage;
 
+mod index;
+pub(crate) use index::{landed, ChangeOrigin, IndexJob, IndexQueue, Landed};
+
 use crucible_core::config::EmbeddingProviderConfig;
 
 /// Canonicalize a path, falling back to the path as-given if it cannot be
@@ -376,6 +379,12 @@ pub struct KilnManager {
     /// the correct fail-closed answer and is what every test-only
     /// `KilnManager::new()` gets.
     kiln_registry: Option<Arc<crate::kiln_registry::KilnRegistry>>,
+    /// The queue into this manager's index owner (see [`index`]). `None`
+    /// for a manager without a bus, which has no watcher and no owner.
+    index: Option<Arc<IndexQueue>>,
+    /// The owner's end of [`Self::index`], until the daemon takes it.
+    index_jobs: std::sync::Mutex<Option<crate::lossless_queue::Receiver<IndexJob>>>,
+    index_waiter: crate::lossless_queue::Waiter,
 }
 
 impl KilnManager {
@@ -388,6 +397,9 @@ impl KilnManager {
             max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
             index_stage: Arc::default(),
             kiln_registry: None,
+            index: None,
+            index_jobs: std::sync::Mutex::new(None),
+            index_waiter: crate::lossless_queue::Waiter::default(),
         }
     }
 
@@ -396,6 +408,8 @@ impl KilnManager {
         enrichment_config: Option<EmbeddingProviderConfig>,
         max_precognition_chars: usize,
     ) -> Self {
+        let (jobs, index_jobs) = crate::lossless_queue::channel();
+        let index_waiter = jobs.waiter();
         Self {
             connections: RwLock::new(HashMap::new()),
             opening: Mutex::new(HashMap::new()),
@@ -404,6 +418,9 @@ impl KilnManager {
             max_precognition_chars,
             index_stage: Arc::default(),
             kiln_registry: None,
+            index: Some(IndexQueue::new(jobs)),
+            index_jobs: std::sync::Mutex::new(Some(index_jobs)),
+            index_waiter,
         }
     }
 
@@ -967,53 +984,115 @@ impl KilnManager {
         }
     }
 
+    /// Drop `file_path` from the index and announce it, even when the index
+    /// held no row for it (see [`Self::drop_note`]).
     pub async fn handle_file_deleted(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
-        use crucible_core::events::SessionEvent;
+        self.drop_note(kiln_path, file_path, true).await
+    }
 
+    /// Drop `file_path`'s row, its text row and (by cascade) its block rows.
+    /// Returns whether a row existed.
+    ///
+    /// `announce_absent` also announces a delete that found nothing. The
+    /// reconciliation sweep wants that: it asks about paths it is unsure of,
+    /// and a handler that mirrors the index wants to know the index no longer
+    /// holds the note either way. The index owner does not: the watcher
+    /// reports the old path of a rename that the daemon already reindexed.
+    async fn drop_note(
+        &self,
+        kiln_path: &Path,
+        file_path: &Path,
+        announce_absent: bool,
+    ) -> Result<bool> {
         if !is_indexable_kiln_file(file_path) {
             return Ok(false);
         }
+        let Some(relative_path) = normalize_note_path(file_path, kiln_path) else {
+            return Ok(false);
+        };
+        let event = self.remove_note_rows(kiln_path, &relative_path).await?;
+        let existed = matches!(
+            &event,
+            crucible_core::events::SessionEvent::Internal(inner)
+                if matches!(inner.as_ref(), InternalSessionEvent::NoteDeleted { existed: true, .. })
+        );
+        if existed || announce_absent {
+            self.announce(std::slice::from_ref(&event));
+        }
+        Ok(existed)
+    }
 
+    /// Delete the index rows of the kiln-relative `relative_path`: the note
+    /// row, and the text row, which a stale entry would keep answering a
+    /// search with a note that opens nothing. The block rows and the
+    /// embedding go with the note row. The one place both rows are removed,
+    /// so `note.delete`, a file delete and the reconciliation sweep agree.
+    async fn remove_note_rows(
+        &self,
+        kiln_path: &Path,
+        relative_path: &str,
+    ) -> Result<crucible_core::events::SessionEvent> {
         self.open(kiln_path).await?;
-
         let canonical = canonical_or_self(kiln_path);
-
         let mut conns = self.connections.write().await;
         let conn = conns
             .get_mut(&canonical)
             .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
-
         conn.last_access = Instant::now();
 
-        let relative_path = match normalize_note_path(file_path, kiln_path) {
-            Some(p) => p,
-            None => return Ok(false),
-        };
-        let event = conn.handle.as_note_store().delete(&relative_path).await?;
-
-        // Drop the note from the text index too: a stale row there returns a
-        // hit the user can click on and open nothing. (The embedding needs no
-        // separate cleanup — it lives on the deleted `notes` row.)
-        if let Err(e) = conn.handle.text.remove(&relative_path).await {
+        let event = conn.handle.as_note_store().delete(relative_path).await?;
+        if let Err(e) = conn.handle.text.remove(relative_path).await {
             tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from text index");
         }
+        Ok(event)
+    }
 
-        // A delete that found nothing still carries `existed: false`; announce
-        // it anyway. The reconciliation sweep asks about paths it is unsure of,
-        // and a handler that mirrors the index wants to know the index no longer
-        // holds the note either way.
+    /// `note.delete`: drop the rows of `relative_path` and announce it.
+    pub(crate) async fn delete_note_rows(
+        &self,
+        kiln_path: &Path,
+        relative_path: &str,
+    ) -> Result<()> {
+        let event = self.remove_note_rows(kiln_path, relative_path).await?;
         self.announce(std::slice::from_ref(&event));
+        Ok(())
+    }
 
-        match event {
-            SessionEvent::Internal(inner) => {
-                if let InternalSessionEvent::NoteDeleted { existed, .. } = inner.as_ref() {
-                    Ok(*existed)
-                } else {
-                    Ok(false)
-                }
-            }
-            _ => Ok(false),
-        }
+    /// `note.upsert`: store a caller's note row, then its block rows (after
+    /// `index:blocks`) and its text row, as the pipeline does for a file.
+    /// Without the last two, a note written this way was missing from every
+    /// text search and from block retrieval.
+    pub(crate) async fn upsert_note_record(
+        &self,
+        kiln_path: &Path,
+        record: NoteRecord,
+    ) -> Result<usize> {
+        self.open(kiln_path).await?;
+        let canonical = canonical_or_self(kiln_path);
+        let mut conns = self.connections.write().await;
+        let conn = conns
+            .get_mut(&canonical)
+            .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
+        conn.last_access = Instant::now();
+
+        // The path comes from the caller. Only a plain relative path whose
+        // file resolves inside the kiln may supply the text, or `note.upsert`
+        // would copy any readable file into the search index.
+        let file = Path::new(&record.path)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+            .then(|| canonical.join(&record.path))
+            .filter(|file| {
+                file.canonicalize()
+                    .is_ok_and(|resolved| resolved.starts_with(&canonical))
+            });
+        let events = conn.handle.as_note_store().upsert(record.clone()).await?;
+        conn.pipeline
+            .write_rows_for_record(&record, file.as_deref())
+            .await;
+        drop(conns);
+        self.announce(&events);
+        Ok(events.len())
     }
 
     /// Process multiple files through the kiln's pipeline
@@ -1170,10 +1249,24 @@ impl KilnManager {
         opened
     }
 
-    async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
+    /// The emitter the watcher of `kiln_path` reports to: the index owner
+    /// first, then the bus. `None` for a manager without a bus.
+    pub(crate) fn watcher_bridge(
+        &self,
+        kiln_path: &Path,
+    ) -> Option<
+        Arc<dyn crucible_core::events::EventEmitter<Event = crucible_core::events::SessionEvent>>,
+    > {
         let event_tx = self.event_tx.as_ref()?;
+        Some(create_event_bridge(
+            event_tx.clone(),
+            self.index.clone(),
+            kiln_path,
+        ))
+    }
 
-        let bridge = create_event_bridge(event_tx.clone());
+    async fn start_watch_manager(&self, kiln_path: &Path) -> Option<WatchManager> {
+        let bridge = self.watcher_bridge(kiln_path)?;
         let config = WatchManagerConfig {
             enable_default_handlers: true,
             queue_capacity: 1000,

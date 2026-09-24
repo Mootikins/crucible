@@ -31,7 +31,7 @@ pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use external_changes::{
     CaptureWindow, ExternalChange, ExternalChangeTracker, ExternalChangeWatch, Ownership,
 };
-pub use handlers::{ExternalChangeHandler, HandlerRegistry, IndexingHandler};
+pub use handlers::{ExternalChangeHandler, HandlerRegistry, IndexingHandler, WATCH_RESCAN_EVENT};
 pub use manager::{WatchManager, WatchManagerConfig};
 
 pub use traits::{DebounceConfig, EventHandler, WatchConfig, WatchHandle};

@@ -285,53 +285,16 @@ impl NotePipeline {
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| format!("Phase 4: Failed to store note for '{}'", path.display()))?;
 
-        // Rewrite this note's block rows. After the upsert, because the rows
-        // reference `notes(path)`. A failure here costs block-granularity
-        // retrieval for one note, not the indexing pass.
-        if let Some(blocks) = self.block_store.as_ref() {
-            let mut records = Self::block_records(&enriched, &path_str);
-            if let Some(vm) = self.index_stage.as_ref().and_then(|stage| stage.get()) {
-                let description = enriched
-                    .parsed
-                    .frontmatter
-                    .as_ref()
-                    .and_then(|f| f.get_string("description"));
-                crate::retrieval_stage::index_blocks(
-                    vm,
-                    self.kiln_name.as_ref(),
-                    &path_str,
-                    &enriched.parsed.title(),
-                    description.as_deref(),
-                    &mut records,
-                )
-                .await;
-            }
-            if let Err(e) = blocks.replace_note_blocks(&path_str, records).await {
-                tracing::error!(
-                    path = %path_str,
-                    ?e,
-                    "block rows not written; precognition will fall back to whole notes for this one"
-                );
-            }
-        }
-
-        // Mirror the note into the FTS5 index. The full file body goes in,
-        // not `content.plain_text` — that is capped at 1000 characters for
-        // previews, so indexing it would make search silently blind past the
-        // first page of every note.
-        if let Some(text_index) = self.text_index.as_ref() {
+        // After the upsert, because the block rows reference `notes(path)`.
+        self.write_block_rows(&path_str, Some(&enriched)).await;
+        // The full file body goes in, not `content.plain_text` — that is
+        // capped at 1000 characters for previews, so indexing it would make
+        // search silently blind past the first page of every note.
+        if self.text_index.is_some() {
             match tokio::fs::read_to_string(path).await {
                 Ok(body) => {
-                    if let Err(e) = text_index
-                        .index(&path_str, &enriched.parsed.title(), &body)
+                    self.write_text_row(&path_str, &enriched.parsed.title(), &body)
                         .await
-                    {
-                        tracing::error!(
-                            path = %path_str,
-                            ?e,
-                            "text index write failed; metadata persisted but `cru search` will miss this note"
-                        );
-                    }
                 }
                 Err(e) => tracing::warn!(
                     path = %path_str,
@@ -361,6 +324,104 @@ impl NotePipeline {
             ),
             events,
         ))
+    }
+
+    /// Rewrite the block rows of `path_str` from `enriched`, and fire
+    /// `index:blocks` on them first. `None` clears the rows. A failure here
+    /// costs block-granularity retrieval for one note, not the indexing pass.
+    async fn write_block_rows(
+        &self,
+        path_str: &str,
+        enriched: Option<&crucible_core::enrichment::EnrichedNote>,
+    ) {
+        let Some(blocks) = self.block_store.as_ref() else {
+            return;
+        };
+        let mut records = enriched
+            .map(|enriched| Self::block_records(enriched, path_str))
+            .unwrap_or_default();
+        if let (Some(enriched), Some(vm)) = (
+            enriched,
+            self.index_stage.as_ref().and_then(|stage| stage.get()),
+        ) {
+            let description = enriched
+                .parsed
+                .frontmatter
+                .as_ref()
+                .and_then(|f| f.get_string("description"));
+            crate::retrieval_stage::index_blocks(
+                vm,
+                self.kiln_name.as_ref(),
+                path_str,
+                &enriched.parsed.title(),
+                description.as_deref(),
+                &mut records,
+            )
+            .await;
+        }
+        if let Err(e) = blocks.replace_note_blocks(path_str, records).await {
+            tracing::error!(
+                path = %path_str,
+                ?e,
+                "block rows not written; precognition will fall back to whole notes for this one"
+            );
+        }
+    }
+
+    /// Mirror a note into the FTS5 index.
+    async fn write_text_row(&self, path_str: &str, title: &str, body: &str) {
+        let Some(text_index) = self.text_index.as_ref() else {
+            return;
+        };
+        if let Err(e) = text_index.index(path_str, title, body).await {
+            tracing::error!(
+                path = %path_str,
+                ?e,
+                "text index write failed; metadata persisted but `cru search` will miss this note"
+            );
+        }
+    }
+
+    /// Write the block rows and the text row of a note row that a caller
+    /// stored itself, as `note.upsert` does.
+    ///
+    /// The row and the file can disagree, so the rows come from the file when
+    /// there is one, with the row's title. A markdown file gets its blocks
+    /// (without vectors: the record holds the note's own vector) and fires
+    /// `index:blocks`. A row with no file (`None`, or a path with nothing on
+    /// disk) gets a text row of its title and no block rows, so a search can
+    /// still find it and no stale block survives.
+    pub async fn write_rows_for_record(&self, record: &NoteRecord, file: Option<&Path>) {
+        let body = match file {
+            Some(file) => tokio::fs::read_to_string(file).await.ok(),
+            None => None,
+        };
+        let markdown = file.filter(|file| {
+            !crucible_core::kiln::is_canvas_file(file)
+                && !crucible_core::kiln::is_plain_text_file(file)
+        });
+        let enriched = match (&body, markdown) {
+            (Some(_), Some(file)) => match self.parser.parse_file(file).await {
+                Ok(parsed) => Some(crucible_core::enrichment::EnrichedNote::new(
+                    parsed,
+                    Vec::new(),
+                    None,
+                    crucible_core::enrichment::EnrichmentMetadata::default(),
+                )),
+                Err(e) => {
+                    tracing::warn!(path = %record.path, ?e, "could not parse the note for its block rows");
+                    None
+                }
+            },
+            _ => None,
+        };
+        self.write_block_rows(&record.path, enriched.as_ref()).await;
+        self.write_text_row(
+            &record.path,
+            &record.title,
+            body.as_deref().unwrap_or_default(),
+        )
+        .await;
     }
 
     /// Index a `.canvas` document.

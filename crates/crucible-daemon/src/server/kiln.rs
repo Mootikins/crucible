@@ -904,28 +904,17 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
     note.properties
         .insert("scope".to_string(), declared_scope.to_property_value());
 
-    let handle = match km.get_or_open(Path::new(kiln_path)).await {
-        Ok(c) => c,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    let note_store = handle.as_note_store();
-    match note_store.upsert(note).await {
-        Ok(events) => {
-            // Announce, do not just count. This handler writes through
-            // `NoteStore` directly rather than through the pipeline, so it is
-            // the only thing holding these events — reporting `events_count`
-            // and dropping them is how an RPC-written note fired no
-            // `note:created` while a watcher-written one did.
-            km.announce(&events);
-            Response::success(
-                req.id,
-                serde_json::json!({
-                    "status": "ok",
-                    "events_count": events.len()
-                }),
-            )
-        }
+    // The manager writes the row, its block rows and its text row, and
+    // announces the events. It used to write only the row, so a note written
+    // here was missing from every text search.
+    match km.upsert_note_record(Path::new(kiln_path), note).await {
+        Ok(events_count) => Response::success(
+            req.id,
+            serde_json::json!({
+                "status": "ok",
+                "events_count": events_count
+            }),
+        ),
         Err(e) => internal_error(req.id, e),
     }
 }
@@ -974,15 +963,10 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
         Err(e) => return internal_error(req.id, e),
     }
 
-    match note_store.delete(path).await {
-        // The embedding lives on the deleted `notes` row, so there is no
-        // separate vector index to clean up.
-        Ok(event) => {
-            // Same reason as `handle_note_upsert`: this path holds the only
-            // copy of the event, so binding it to `_` dropped it.
-            km.announce(std::slice::from_ref(&event));
-            Response::success(req.id, serde_json::json!({"status": "ok"}))
-        }
+    // The manager drops the text row with the note row. The note row alone
+    // left the note in every text search.
+    match km.delete_note_rows(Path::new(kiln_path), path).await {
+        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
         Err(e) => internal_error(req.id, e),
     }
 }

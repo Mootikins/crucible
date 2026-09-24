@@ -821,106 +821,18 @@ impl Server {
             }
         });
 
-        // Spawn file reprocessing task: watches for file_changed events and re-runs pipeline
-        let km_reprocess = self.kiln_manager.clone();
-        // The loop itself is not work — it parks on `recv` for the daemon's
-        // whole life, and a guard held here would make the daemon immortal.
-        // Each reprocess pass takes its own guard below.
-        let reprocess_activity = self.activity.clone();
-        let mut reprocess_rx = self.rpc_context.event_tx.subscribe();
-        let reprocess_cancel = CancellationToken::new();
-        let reprocess_cancel_clone = reprocess_cancel.clone();
-
-        let reprocess_task = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = reprocess_cancel_clone.cancelled() => break,
-                    result = reprocess_rx.recv() => {
-                        match result {
-                            Ok(event)
-                                if event.session_id == "system"
-                                    && event.event == "file_changed" =>
-                            {
-                                let Some(path_str) =
-                                    event.data.get("path").and_then(|v| v.as_str())
-                                else {
-                                    continue;
-                                };
-                                let file_path = PathBuf::from(path_str);
-
-                                let Some(kiln_path) =
-                                    km_reprocess.find_kiln_for_path(&file_path).await
-                                else {
-                                    debug!(path = %path_str, "File changed but no matching open kiln");
-                                    continue;
-                                };
-
-                                let _working = reprocess_activity.start(WorkKind::Maintenance);
-                                match km_reprocess.process_file(&kiln_path, &file_path).await {
-                                    Ok(true) => {
-                                        info!(path = %path_str, "Reprocessed changed file");
-                                    }
-                                    Ok(false) => {
-                                        debug!(path = %path_str, "File unchanged, skipped");
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            path = %path_str,
-                                            error = %e,
-                                            "Failed to reprocess file"
-                                        );
-                                    }
-                                }
-                            }
-                            Ok(event)
-                                if event.session_id == "system"
-                                    && event.event == "file_deleted" =>
-                            {
-                                let Some(path_str) =
-                                    event.data.get("path").and_then(|v| v.as_str())
-                                else {
-                                    continue;
-                                };
-
-                                let file_path = PathBuf::from(path_str);
-                                let Some(kiln_path) =
-                                    km_reprocess.find_kiln_for_path(&file_path).await
-                                else {
-                                    debug!(path = %path_str, "File deleted but no matching open kiln");
-                                    continue;
-                                };
-
-                                let _working = reprocess_activity.start(WorkKind::Maintenance);
-                                match km_reprocess
-                                    .handle_file_deleted(&kiln_path, &file_path)
-                                    .await
-                                {
-                                    Ok(true) => {
-                                        info!(path = %path_str, "Removed deleted file from note store");
-                                    }
-                                    Ok(false) => {
-                                        debug!(path = %path_str, "Deleted file ignored or not found in note store");
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            path = %path_str,
-                                            error = %e,
-                                            "Failed to handle deleted file"
-                                        );
-                                    }
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Reprocess task lagged, dropped {} events", n);
-                            }
-                            Err(broadcast::error::RecvError::Closed) => break,
-                        }
-                    }
-                }
-            }
-        });
+        // The kiln index owner. It reads an ordered queue that drops nothing,
+        // fed by the kiln watchers and by every daemon write
+        // (`kiln_manager/index.rs`), not the client bus.
+        let index_cancel = CancellationToken::new();
+        let index_task = match self.kiln_manager.take_index_jobs() {
+            Some(jobs) => tokio::spawn(self.kiln_manager.clone().run_index_jobs(
+                jobs,
+                self.activity.clone(),
+                index_cancel.clone(),
+            )),
+            None => tokio::spawn(async {}),
+        };
 
         let sweep_session_manager = self.session_manager.clone();
         let sweep_subscription_manager = self.rpc_context.subscriptions.clone();
@@ -1228,7 +1140,7 @@ impl Server {
         // joins wait in parallel and their waits do not add up.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
         persist_cancel.cancel();
-        reprocess_cancel.cancel();
+        index_cancel.cancel();
         sweep_cancel.cancel();
         title_cancel.cancel();
         // The notifier parks on `rx.recv()`, and the tracker's sender outlives
@@ -1238,7 +1150,7 @@ impl Server {
         reconnect_cancel.cancel();
 
         let mut tasks = vec![
-            ("reprocess", reprocess_task),
+            ("index", index_task),
             ("auto-archive sweep", archive_sweep_task),
             ("auto-title", auto_title_task),
         ];

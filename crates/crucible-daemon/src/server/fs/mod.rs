@@ -363,8 +363,11 @@ pub(crate) enum FsMoveError {
 /// canonicalize-and-contain treatment on their PARENT dirs (never the leaf,
 /// so a symlink moves as a link, not its target). Overwrites are rejected.
 ///
-/// Kiln index consistency: the open kiln's watch pipeline observes the rename
-/// and re-indexes; this handler only touches the filesystem.
+/// Kiln index consistency: a note or canvas takes the link-aware rename
+/// below, which reindexes inline. Any other move in a kiln, a folder in
+/// particular, goes to the kiln's index owner, which moves the rows of every
+/// note under it. The watcher cannot do that: it reports a folder move as one
+/// event for the folder and nothing for the notes in it.
 pub(crate) async fn handle_fs_move(
     req: Request,
     pm: &Arc<ProjectManager>,
@@ -414,14 +417,19 @@ pub(crate) async fn handle_fs_move(
     }
 
     match move_within(&base, from_rel, to_rel) {
-        Ok(()) => reply(
-            req.id,
-            FsMoveReply {
-                moved: true,
-                rewritten_sources: None,
-                skipped: None,
-            },
-        ),
+        Ok((from, to)) => {
+            if kind == "kiln" {
+                km.folder_moved(&from, &to);
+            }
+            reply(
+                req.id,
+                FsMoveReply {
+                    moved: true,
+                    rewritten_sources: None,
+                    skipped: None,
+                },
+            )
+        }
         Err(FsMoveError::Io(e)) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
@@ -490,7 +498,12 @@ fn split_contained(
     Ok(parent.join(name))
 }
 
-pub(crate) fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(), FsMoveError> {
+/// Move `from_rel` to `to_rel` inside `base`. Returns the two paths as moved.
+pub(crate) fn move_within(
+    base: &Path,
+    from_rel: &str,
+    to_rel: &str,
+) -> Result<(PathBuf, PathBuf), FsMoveError> {
     let from = split_contained(base, from_rel, || FsMoveError::SourceMissing)?;
     if from.symlink_metadata().is_err() {
         return Err(FsMoveError::SourceMissing);
@@ -503,7 +516,7 @@ pub(crate) fn move_within(base: &Path, from_rel: &str, to_rel: &str) -> Result<(
         return Err(FsMoveError::IntoSelf);
     }
     std::fs::rename(&from, &dest)?;
-    Ok(())
+    Ok((from, dest))
 }
 
 // ── fs.mkdir / fs.trash ────────────────────────────────────────────────────

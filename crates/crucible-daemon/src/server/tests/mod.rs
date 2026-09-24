@@ -18,6 +18,7 @@ mod events;
 mod graph;
 mod idle_shutdown;
 mod isolation_param;
+mod kiln_index;
 mod kiln_scope_validation;
 mod lifecycle;
 mod models_settings;

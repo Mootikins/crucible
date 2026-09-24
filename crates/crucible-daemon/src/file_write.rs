@@ -256,10 +256,21 @@ pub async fn write_many_for_roots(
 async fn restore(paths: &[PathBuf], kept: &[Option<Vec<u8>>]) {
     for (path, bytes) in paths.iter().zip(kept) {
         let result = match bytes {
-            Some(bytes) => tokio::fs::write(path, bytes).await,
+            Some(bytes) => tokio::fs::write(path, bytes).await.map(|()| {
+                let hash = disk_hash(&String::from_utf8_lossy(bytes));
+                crate::kiln_manager::landed(
+                    path,
+                    crate::kiln_manager::Landed::Written {
+                        hash: &hash,
+                        created: false,
+                    },
+                );
+            }),
             None => match tokio::fs::remove_file(path).await {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                other => other,
+                other => other.map(|()| {
+                    crate::kiln_manager::landed(path, crate::kiln_manager::Landed::Removed)
+                }),
             },
         };
         if let Err(e) = result {
@@ -283,6 +294,7 @@ pub(crate) async fn write_locked(
         Err(e) => return Err(e),
     };
     let current_hash = original.as_deref().map(disk_hash).unwrap_or_default();
+    let created = original.is_none();
     if let ExpectedBase::Text { text, hash } = &base {
         if &disk_hash(text) != hash {
             return Ok(failure("invalid", "base_text does not hash to base_hash"));
@@ -354,7 +366,17 @@ pub(crate) async fn write_locked(
         tokio::fs::create_dir_all(parent).await?;
     }
     tokio::fs::write(path, &content).await?;
-    answer["content_hash"] = json!(disk_hash(&content));
+    let content_hash = disk_hash(&content);
+    // Under the caller's lock, so the index owner gets the writes of one file
+    // in the order they landed, without the watcher's echo.
+    crate::kiln_manager::landed(
+        path,
+        crate::kiln_manager::Landed::Written {
+            hash: &content_hash,
+            created,
+        },
+    );
+    answer["content_hash"] = json!(content_hash);
     Ok(answer)
 }
 

@@ -79,6 +79,10 @@ pub enum FileEventKind {
     },
     /// Multiple events occurred (used for batched operations).
     Batch(Vec<FileEvent>),
+    /// The watcher lost events: the kernel queue overflowed, or a burst was
+    /// larger than the event queue. The state of the watched tree is unknown,
+    /// so a consumer that mirrors it must read it again.
+    Rescan,
     /// Unknown event type.
     Unknown(String),
 }
@@ -92,6 +96,7 @@ impl FileEventKind {
             Self::Deleted => "deleted",
             Self::Moved { .. } => "moved",
             Self::Batch(_) => "batch",
+            Self::Rescan => "rescan",
             Self::Unknown(_) => "unknown",
         }
     }
@@ -209,6 +214,20 @@ impl EventFilter {
 
     /// Check if an event passes this filter.
     pub fn matches(&self, event: &FileEvent) -> bool {
+        match &event.kind {
+            // A lost event can be of any kind, so no filter may drop the
+            // signal that events were lost.
+            FileEventKind::Rescan => return true,
+            // A moved directory carries each file under it, and it has no
+            // extension of its own. Only the directory filters apply to it.
+            FileEventKind::Moved { from, to } if to.is_dir() => {
+                return !self
+                    .exclude_dirs
+                    .iter()
+                    .any(|d| from.starts_with(d) || to.starts_with(d));
+            }
+            _ => {}
+        }
         // Check extension filters
         if let Some(ext) = event.extension() {
             if !self.extensions.is_empty() && !self.extensions.contains(&ext) {
@@ -311,6 +330,7 @@ mod tests {
             "moved"
         );
         assert_eq!(FileEventKind::Batch(vec![]).as_str(), "batch");
+        assert_eq!(FileEventKind::Rescan.as_str(), "rescan");
         assert_eq!(FileEventKind::Unknown("x".into()).as_str(), "unknown");
     }
 

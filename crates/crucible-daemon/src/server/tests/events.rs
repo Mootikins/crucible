@@ -1,20 +1,25 @@
 use super::*;
 
+/// The watcher's report of a deleted note removes its row. Each report
+/// enters as the watcher sends it, through the kiln's bridge, which queues it
+/// for the index owner; the client bus is not on that path.
 #[tokio::test]
 async fn test_file_deleted_event_removes_note_from_store() {
+    use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::NoteRecord;
-    use std::time::Duration;
 
     let server = TestServer::start().await;
     let kiln_path = server.kiln_path.clone();
     std::fs::create_dir_all(kiln_path.join("notes")).unwrap();
 
     let km = server.kiln_manager.clone();
-    let event_tx = server.event_tx.clone();
-
     let handle = km.get_or_open(&kiln_path).await.unwrap();
     let note_store = handle.as_note_store();
+    let bridge = km
+        .watcher_bridge(&kiln_path)
+        .expect("the daemon's manager has a bus");
+    let scope = crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new());
 
     let deleted_note_path = "notes/deleted.md";
     let keep_note_path = "notes/keep.md";
@@ -31,78 +36,43 @@ async fn test_file_deleted_event_removes_note_from_store() {
         .upsert(NoteRecord::new(keep_note_path, BlockHash::zero()).with_title("Keep"))
         .await
         .unwrap();
-
     assert!(note_store
-        .get(
-            deleted_note_path,
-            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
-        )
+        .get(deleted_note_path, &scope)
         .await
         .unwrap()
         .is_some());
     assert!(note_store
-        .get(
-            keep_note_path,
-            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
-        )
+        .get(keep_note_path, &scope)
         .await
         .unwrap()
         .is_some());
 
-    event_tx
-        .send(SessionEventMessage::new(
-            "system",
-            "file_deleted",
-            json!({ "path": kiln_path.join(deleted_note_path).to_string_lossy() }),
-        ))
-        .unwrap();
+    for rel in [deleted_note_path, "notes/ignore.txt", "notes/missing.md"] {
+        bridge
+            .emit(SessionEvent::internal(InternalSessionEvent::FileDeleted {
+                path: kiln_path.join(rel),
+            }))
+            .await
+            .expect("emit");
+    }
+    km.settle_index().await;
 
-    let removed = tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if note_store
-                .get(
-                    deleted_note_path,
-                    &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
-                )
-                .await
-                .unwrap()
-                .is_none()
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await;
     assert!(
-        removed.is_ok(),
+        note_store
+            .get(deleted_note_path, &scope)
+            .await
+            .unwrap()
+            .is_none(),
         "deleted note should be removed after event"
     );
-
-    event_tx
-        .send(SessionEventMessage::new(
-            "system",
-            "file_deleted",
-            json!({ "path": kiln_path.join("notes/ignore.txt").to_string_lossy() }),
-        ))
-        .unwrap();
-    event_tx
-        .send(SessionEventMessage::new(
-            "system",
-            "file_deleted",
-            json!({ "path": kiln_path.join("notes/missing.md").to_string_lossy() }),
-        ))
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(note_store
-        .get(
-            keep_note_path,
-            &crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new())
-        )
-        .await
-        .unwrap()
-        .is_some());
+    assert!(
+        note_store
+            .get(keep_note_path, &scope)
+            .await
+            .unwrap()
+            .is_some(),
+        "a report for another path must not remove this note"
+    );
 
     server.shutdown().await;
 }
