@@ -620,7 +620,7 @@ mod tests {
     /// default is fifteen minutes. `timeout_ms` alone does not show that: the
     /// client multiplies it by ten in `prompt`. So this runs a turn to its
     /// deadline with the config `build_client_config` made. The agent reads
-    /// the prompt and never answers it.
+    /// the prompt and never answers it, also not the cancel.
     #[tokio::test(start_paused = true)]
     async fn the_streaming_timeout_is_the_deadline_of_a_whole_turn() {
         use crate::acp::client::CrucibleAcpClient;
@@ -679,7 +679,12 @@ mod tests {
                 matches!(result, Err(ClientError::Timeout(_))),
                 "expected the turn deadline, got {result:?}"
             );
-            assert_eq!(start.elapsed(), deadline);
+            // The agent never ends the turn, so the client waits the grace
+            // for it after the deadline.
+            assert_eq!(
+                start.elapsed(),
+                deadline + crate::acp::client::streaming::CANCELLED_TURN_GRACE
+            );
         }
     }
 }

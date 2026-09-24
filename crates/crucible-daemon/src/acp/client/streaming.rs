@@ -158,7 +158,7 @@ impl Drop for TurnSlot<'_> {
 /// agent answers in well under a second. An agent that does not answer in
 /// this time makes the new turn fail, not wait for the whole stream timeout.
 /// The goodbye at drop waits the same time for the last turn.
-const CANCELLED_TURN_GRACE: Duration = Duration::from_secs(30);
+pub(crate) const CANCELLED_TURN_GRACE: Duration = Duration::from_secs(30);
 
 impl CrucibleAcpClient {
     /// Wait until the running turn ends, for [`CANCELLED_TURN_GRACE`] at most.
@@ -172,7 +172,8 @@ impl CrucibleAcpClient {
     /// then sends `session/cancel` once, answers a pending permission request
     /// with `cancelled`, and waits for the agent to end the turn. The turn
     /// has a deadline of ten times `timeout_ms` (30 s without it). At the
-    /// deadline the client sends `session/cancel` and returns a timeout.
+    /// deadline the client sends `session/cancel`, waits for the agent to end
+    /// the turn as for a cancel, and returns a timeout.
     ///
     /// The SDK dispatches every update that comes before the response before
     /// it gives the response. The notification handler applies each update
@@ -231,6 +232,10 @@ impl CrucibleAcpClient {
                 () = &mut deadline => {
                     cancel.cancel();
                     self.send_cancel(&session_id);
+                    // The agent still runs the turn. As a dropped turn does,
+                    // keep the gate until it ends, so that its late frames do
+                    // not go into the next turn.
+                    let _ = tokio::time::timeout(CANCELLED_TURN_GRACE, &mut response).await;
                     return Err(ClientError::Timeout(format!(
                         "Streaming operation timed out after {limit:?}"
                     )));

@@ -83,6 +83,67 @@ async fn test_error_streaming_timeout_when_agent_stalls_after_first_chunk() {
     );
 }
 
+/// A timed-out turn keeps the turn gate while the agent still runs it, as a
+/// dropped turn does. Thus a late frame of that turn does not reach the next
+/// turn.
+#[tokio::test]
+async fn a_late_frame_of_a_timed_out_turn_does_not_reach_the_next_turn() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    tokio::time::pause();
+
+    // The first turn streams a "." each 10 ms and ignores the cancel. A turn
+    // after a cancel does not hold: it asks a question that nobody answers,
+    // so it stays open.
+    let script = MockScript {
+        turn: vec![
+            Step::Hold {
+                tick_ms: Some(10),
+                ignore_cancel: true,
+            },
+            Step::Permission(serde_json::json!({
+                "toolCall": { "toolCallId": "call-1", "title": "Run" },
+                "options": [{ "optionId": "allow", "name": "Allow", "kind": "allow_once" }],
+            })),
+        ],
+        ..MockScript::default()
+    };
+    let unanswered: crucible_daemon::acp::client::PermissionRequestHandler =
+        Arc::new(|_, _| Box::pin(std::future::pending()));
+    let (client, _agent) = connect(script, Some(50), Some(unanswered)).await;
+    let client = Arc::new(client);
+    let first_turn = tokio::spawn({
+        let client = client.clone();
+        async move { prompt_with(&client, make_prompt_request("s", "one"), |_| true).await }
+    });
+    // Past the deadline of 500 ms: the first turn timed out.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let second = Arc::new(AtomicUsize::new(0));
+    let second_turn = tokio::spawn({
+        let (client, frames) = (client.clone(), second.clone());
+        let on_chunk = move |event| {
+            if matches!(event, crucible_core::turn::TurnEvent::TextDelta(_)) {
+                frames.fetch_add(1, Ordering::SeqCst);
+            }
+            true
+        };
+        async move { prompt_with(&client, make_prompt_request("s", "two"), on_chunk).await }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(
+        second.load(Ordering::SeqCst),
+        0,
+        "a late frame reached the next turn"
+    );
+    assert!(
+        !first_turn.is_finished(),
+        "the timed-out turn keeps the gate while the agent runs it"
+    );
+    second_turn.abort();
+    first_turn.abort();
+}
+
 #[tokio::test]
 async fn test_error_agent_crash_mid_stream_returns_connection_error() {
     let script = MockScript {

@@ -116,7 +116,7 @@ pub enum Step {
     /// Hold the turn until `session/cancel`, then end it with `cancelled`.
     /// Only a turn that starts before the first cancel holds. `tick_ms`
     /// streams a "." chunk per tick while it holds. `ignore_cancel` keeps
-    /// the turn open after the cancel.
+    /// the turn open, and its ticks, after the cancel.
     Hold {
         #[serde(default)]
         tick_ms: Option<u64>,
@@ -551,6 +551,8 @@ impl Turn {
                         continue;
                     }
                     if !self.hold(tick_ms, cancels_at_start).await || ignore_cancel {
+                        // No count is above `u32::MAX`, so the ticks go on.
+                        self.hold(tick_ms, u32::MAX).await;
                         std::future::pending::<()>().await;
                     }
                     return Some(StopReason::Cancelled);

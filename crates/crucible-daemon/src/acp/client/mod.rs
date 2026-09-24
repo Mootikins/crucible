@@ -29,7 +29,7 @@ use crucible_core::types::{AgentKeys, CanonicalToolCall};
 mod connection;
 mod recording;
 pub mod replay;
-mod streaming;
+pub(crate) mod streaming;
 mod tool_table;
 mod tools;
 mod types;
