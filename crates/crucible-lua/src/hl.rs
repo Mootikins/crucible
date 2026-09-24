@@ -17,7 +17,7 @@
 //! themes portable: swap the palette and every group that references it follows.
 
 use crate::theme::ThemeConfig;
-use crucible_oil::style::{AdaptiveColor, Color};
+use crucible_oil::style::{AdaptiveColor, Color, Style};
 use std::collections::HashMap;
 
 /// Maximum `link` hops before we call it a cycle.
@@ -77,26 +77,21 @@ pub struct HlGroup {
     pub link: Option<String>,
 }
 
-/// A group with every reference resolved against a concrete theme.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ResolvedHl {
-    pub fg: Option<Color>,
-    pub bg: Option<Color>,
-    pub bold: bool,
-    pub dim: bool,
-    pub italic: bool,
-    pub underline: bool,
-}
-
 /// The highlight-group table.
 pub type HlRegistry = HashMap<String, HlGroup>;
 
 /// Resolve a group by name, following `link` hops.
 ///
+/// Returns the same [`crucible_oil::style::Style`] the renderer draws with —
+/// not a lookalike subset of it — so a consumer copying `fg`/`bg`/`bold`/…
+/// field by field cannot silently drop an attribute the renderer knows about
+/// but this module forgot to enumerate. `reverse` stays unset here: no
+/// highlight-group attribute maps to it today.
+///
 /// Attributes closer to the requested group win, so a group can link for its
 /// base and override one attribute. Returns `None` for an unknown group.
-pub fn resolve(name: &str, registry: &HlRegistry, theme: &ThemeConfig) -> Option<ResolvedHl> {
-    let mut out = ResolvedHl::default();
+pub fn resolve(name: &str, registry: &HlRegistry, theme: &ThemeConfig) -> Option<Style> {
+    let mut out = Style::default();
     let mut seen_fg = false;
     let mut seen_bg = false;
     let mut current = name;

@@ -9,7 +9,8 @@
 //! component having to know the theme exists.
 
 use super::slot::RenderSlot;
-use crucible_lua::hl::{HlRegistry, ResolvedHl};
+use crucible_lua::hl::HlRegistry;
+use crucible_oil::style::Style;
 
 static GROUPS: RenderSlot<HlRegistry> = RenderSlot::new();
 
@@ -30,7 +31,7 @@ pub fn active() -> &'static HlRegistry {
 ///
 /// `None` means "not themed" — the caller keeps its built-in style. This is the
 /// difference between a surface a theme chose not to touch and one it broke.
-pub fn get(name: &str) -> Option<ResolvedHl> {
+pub fn get(name: &str) -> Option<Style> {
     crucible_lua::hl::resolve(name, active(), super::active())
 }
 

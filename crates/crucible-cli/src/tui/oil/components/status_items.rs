@@ -269,22 +269,11 @@ fn eval(item: &StatusItem, ctx: &ItemContext<'_>, inherited: Style) -> Vec<Fragm
         }
 
         StatusItem::Hl { group, item } => {
-            let style = theme::groups::get(group).map_or(inherited, |hl| {
-                let mut s = Style::new();
-                if let Some(fg) = hl.fg {
-                    s = s.fg(fg);
-                }
-                if let Some(bg) = hl.bg {
-                    s = s.bg(bg);
-                }
-                if hl.bold {
-                    s = s.bold();
-                }
-                if hl.dim {
-                    s = s.dim();
-                }
-                s
-            });
+            // `theme::groups::get` already resolves to a `Style` — the same
+            // type the renderer draws with — so every attribute a group can
+            // carry (fg, bg, bold, dim, italic, underline) reaches the
+            // fragment without a field-by-field rebuild that could drop one.
+            let style = theme::groups::get(group).unwrap_or(inherited);
             eval(item, ctx, style)
         }
 
@@ -633,5 +622,45 @@ mod tests {
         assert!(out.contains("ASK"), "got {out:?}");
         assert!(out.contains("claude-opus-5"), "got {out:?}");
         assert!(out.contains("50% ctx"), "got {out:?}");
+    }
+
+    /// A highlight group carries italic and underline the same way it carries
+    /// bold and dim. Plain-text rendering cannot see attributes, so this reads
+    /// the resolved `Style` on the fragment directly.
+    #[test]
+    fn a_highlight_group_applies_italic_and_underline() {
+        use crate::tui::oil::theme::groups;
+        use crucible_lua::hl::{HlGroup, HlRegistry};
+
+        let mut registry = HlRegistry::new();
+        registry.insert(
+            "Emph".to_string(),
+            HlGroup {
+                italic: true,
+                underline: true,
+                ..Default::default()
+            },
+        );
+        groups::set(registry);
+
+        let exprs = BTreeMap::new();
+        let d = data();
+        let ctx = ItemContext {
+            data: &d,
+            streaming: false,
+            exprs: &exprs,
+        };
+        let item = StatusItem::Hl {
+            group: "Emph".into(),
+            item: Box::new(StatusItem::Text("x".into())),
+        };
+
+        let frags = eval(&item, &ctx, Style::default());
+        let style = frags.first().expect("the text produces one fragment").style;
+        assert!(style.italic, "italic must survive the highlight group");
+        assert!(
+            style.underline,
+            "underline must survive the highlight group"
+        );
     }
 }
