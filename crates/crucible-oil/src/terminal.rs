@@ -271,6 +271,14 @@ impl<W: Write> Terminal<W> {
         Ok(())
     }
 
+    /// Write `bytes` to the terminal as they are, between frames. The copy
+    /// path sends OSC 52 this way.
+    pub fn write_raw(&mut self, bytes: &str) -> io::Result<()> {
+        let w = self.output.writer();
+        w.write_all(bytes.as_bytes())?;
+        w.flush()
+    }
+
     pub fn mouse_captured(&self) -> bool {
         self.mouse_captured
     }

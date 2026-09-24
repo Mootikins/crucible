@@ -105,6 +105,7 @@ pub struct OilChatRunner {
     /// the alternate screen when it closes, so the full-screen mode enters
     /// it again.
     pub(super) shell_was_open: bool,
+    pub(super) copier: crate::tui::oil::fullscreen::clipboard::Copier,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +161,7 @@ impl OilChatRunner {
             is_replay: false,
             fullscreen: None,
             shell_was_open: false,
+            copier: Default::default(),
         }
     }
 

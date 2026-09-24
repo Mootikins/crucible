@@ -1276,8 +1276,10 @@ version = "0.31.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
+ "arboard",
  "assert_cmd",
  "async-trait",
+ "base64 0.22.1",
  "blake3",
  "chrono",
  "clap",

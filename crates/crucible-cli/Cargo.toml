@@ -114,6 +114,9 @@ shellexpand = "3.1"
 
 # Unicode width for proper character display width calculation
 unicode-width = "0.2"
+# Full-screen copy: OSC 52 payloads and the native clipboard
+base64 = { workspace = true }
+arboard = { version = "3.6", default-features = false }
 # Grapheme and word boundaries for full-screen selection
 unicode-segmentation = "1.13"
 

@@ -457,7 +457,11 @@ impl OilChatRunner {
             use crate::tui::oil::fullscreen::ViewAction;
             match view.handle_event(&ev, params.app) {
                 ViewAction::Ignored => {}
-                ViewAction::Handled | ViewAction::Copy(_) => return Ok(false),
+                ViewAction::Handled => return Ok(false),
+                ViewAction::Copy(text) => {
+                    self.copy_text(params.app, &text);
+                    return Ok(false);
+                }
             }
         }
 
@@ -520,6 +524,19 @@ impl OilChatRunner {
                 Ok(EventLoopSelectOutcome::Quit)
             }
         }
+    }
+
+    /// Copy `text` through the full-screen copy chain and say how in a toast.
+    fn copy_text(&mut self, app: &mut OilChatApp, text: &str) {
+        use crate::tui::oil::fullscreen::clipboard::CopyEnv;
+        let terminal = &mut self.terminal;
+        let report = self.copier.copy(text, CopyEnv::detect(), |sequence| {
+            terminal.write_raw(sequence).map_err(|e| e.to_string())
+        });
+        tracing::debug!(?report, "full-screen copy");
+        app.add_notification(crucible_core::types::Notification::toast(
+            report.summary(text.chars().count()),
+        ));
     }
 
     fn handle_interaction_event(

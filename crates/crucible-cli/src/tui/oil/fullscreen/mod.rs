@@ -12,6 +12,7 @@
 //! comes from [`transcript::Transcript`], which keeps the rows of every
 //! finished node, and [`scroll::Scroll`] picks the rows on screen.
 
+pub mod clipboard;
 pub mod fixtures;
 pub mod scroll;
 pub mod selection;
