@@ -507,3 +507,93 @@ async fn a_pause_during_a_turn_does_not_let_that_turn_run_on_the_host() {
         "the refused pause must keep the isolation claim"
     );
 }
+
+/// A send to a paused session must not run a turn outside the sandbox.
+///
+/// The pause ran the end hooks, which released the isolation claim. A send
+/// used to take a paused session as it was: no start hook ran, so no plugin
+/// claimed it again, and the tool call of the turn ran on the host. A send now
+/// resumes the session through the start checks that every revive runs.
+#[tokio::test]
+async fn a_send_to_a_paused_isolated_session_gets_the_isolation_claim_back() {
+    let rig = Rig::new().await;
+    let workspace = TempDir::new().unwrap();
+    rig.daemon
+        .ctx
+        .sessions
+        .modify_session(&rig.id, |s| {
+            s.workspace = Some(workspace.path().to_path_buf());
+            true
+        })
+        .await
+        .unwrap();
+    let paused = rig
+        .daemon
+        .rpc("session.pause", json!({ "session_id": rig.id }))
+        .await;
+    assert!(paused.error.is_none(), "pause: {:?}", paused.error);
+    assert!(
+        !rig.daemon.claimed(&rig.id).await,
+        "precondition: the pause released the claim"
+    );
+
+    rig.daemon.ctx.agents.install_agent_for_test(
+        rig.id.clone(),
+        Arc::new(Mutex::new(Box::new(super::StreamingMockAgent {
+            events: vec![script::tool_call(
+                "call-1",
+                "write_file",
+                json!({ "path": "escaped.txt", "content": "on the host" }),
+            )],
+        }) as _)),
+    );
+    let sent = rig
+        .daemon
+        .ctx
+        .agents
+        .send_message_notified(
+            &rig.id,
+            "write the file".to_string(),
+            &rig.daemon.ctx.event_tx,
+            false,
+            Some(crucible_core::config::components::permissions::PermissionMode::Allow),
+        )
+        .await;
+    let ran = sent.is_ok();
+    if let Ok((_, done)) = sent {
+        let _ = tokio::time::timeout(Duration::from_secs(10), done).await;
+    }
+    assert!(
+        !workspace.path().join("escaped.txt").exists(),
+        "a send to a paused isolated session wrote the file on the host"
+    );
+    if ran {
+        assert!(
+            rig.daemon.claimed(&rig.id).await,
+            "a send to a paused session ran its turn with no isolation claim"
+        );
+    }
+}
+
+/// The RPC resume of a paused session runs the same start checks, so the
+/// isolation claim that the pause released comes back.
+#[tokio::test]
+async fn an_rpc_resume_of_a_paused_session_gets_the_isolation_claim_back() {
+    let rig = Rig::new().await;
+    let paused = rig
+        .daemon
+        .rpc("session.pause", json!({ "session_id": rig.id }))
+        .await;
+    assert!(paused.error.is_none(), "pause: {:?}", paused.error);
+    assert!(!rig.daemon.claimed(&rig.id).await, "precondition: no claim");
+
+    let resumed = rig
+        .daemon
+        .rpc("session.resume", json!({ "session_id": rig.id }))
+        .await;
+    assert!(resumed.error.is_none(), "resume: {:?}", resumed.error);
+    assert!(
+        rig.daemon.claimed(&rig.id).await,
+        "session.resume made a paused session live with no isolation claim"
+    );
+}

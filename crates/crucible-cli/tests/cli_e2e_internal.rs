@@ -229,6 +229,15 @@ fn session_internal_lifecycle_with_real_daemon() {
         .success()
         .stdout(predicate::str::contains("Paused session"));
 
+    daemon
+        .command()
+        .args(["session", "resume", &session_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Resumed session"));
+
+    // After the resume: a send to a paused session resumes it through the
+    // start checks, so a send there would leave nothing for `resume` to do.
     let mut send_cmd = daemon.command();
     send_cmd
         .args(["session", "send", &session_id, "hello from cli e2e"])
@@ -239,13 +248,6 @@ fn session_internal_lifecycle_with_real_daemon() {
         !send_stderr.contains("panicked"),
         "session send should fail gracefully when it fails"
     );
-
-    daemon
-        .command()
-        .args(["session", "resume", &session_id])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Resumed session"));
 
     daemon
         .command()

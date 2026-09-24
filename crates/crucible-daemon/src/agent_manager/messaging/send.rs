@@ -599,8 +599,9 @@ impl AgentManager {
     }
 
     /// Return the live session for `session_id`, reviving it from storage if it
-    /// is no longer resident in memory (ended or evicted). This is what makes
-    /// ended sessions transparently resumable on send. Storage is one flat root,
+    /// is no longer resident in memory (ended or evicted), and resuming it if
+    /// it is paused. This is what makes ended and paused sessions
+    /// transparently resumable on send. Every revive runs the start checks. Storage is one flat root,
     /// so reviving needs nothing but the id — no session→kiln index, no probing
     /// open kilns for the one that happens to hold it.
     async fn get_or_revive_session(
@@ -620,12 +621,25 @@ impl AgentManager {
             // Route it through the same always-resumable path as a non-resident
             // one, so sending to an ended session flips it back to Active instead
             // of streaming a turn into something `session.list` calls finished.
-            if session.state != crucible_core::session::SessionState::Ended {
-                return Ok(session);
+            match session.state {
+                crucible_core::session::SessionState::Ended => {
+                    self.session_manager
+                        .resume_session_from_storage(&validated)
+                        .await?
+                }
+                // Paused: the pause ran the end hooks, which released the
+                // isolation claim. Taken as it is, the turn would run with no
+                // claim, and its tools on the host. So a send resumes it, and
+                // the start checks below run, as `session.resume` runs them.
+                crucible_core::session::SessionState::Paused => {
+                    self.session_manager.resume_session(session_id).await?;
+                    self.session_manager
+                        .get_session(session_id)
+                        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?
+                }
+                crucible_core::session::SessionState::Active
+                | crucible_core::session::SessionState::Compacting => return Ok(session),
             }
-            self.session_manager
-                .resume_session_from_storage(&validated)
-                .await?
         } else {
             match self
                 .session_manager
