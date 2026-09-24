@@ -111,6 +111,15 @@ pub enum Stopped {
 /// Why a stop did not change the session.
 #[derive(Debug, thiserror::Error)]
 pub enum StopError {
+    /// A turn runs in the session, and the cause keeps the conversation, so
+    /// the stop cannot cancel the turn. The end hooks release the isolation
+    /// claim, and the isolation gate reads only the claim: a pause during a
+    /// turn would let the rest of that turn run its tools on the host.
+    #[error(
+        "session {0} has a turn that runs. Its isolation claim must stay until the turn \
+         is over. Cancel the turn, or wait for it to finish, then pause the session"
+    )]
+    TurnRunning(String),
     /// The session manager refused the state change, or storage failed.
     #[error(transparent)]
     Session(#[from] SessionError),
@@ -409,6 +418,9 @@ impl SessionLifecycle {
             return self.stop(session_id, cause).await.map(|_| ());
         }
         self.check_stoppable(session_id, cause)?;
+        if cause.keeps_conversation() && self.agents().is_some_and(|a| a.turn_running(session_id)) {
+            return Err(StopError::TurnRunning(session_id.to_string()));
+        }
         let lifecycle = Arc::clone(self);
         let session_id = session_id.to_string();
         tokio::spawn(async move {
@@ -453,6 +465,32 @@ impl SessionLifecycle {
     ) -> Result<Stopped, StopError> {
         self.check_stoppable(session_id, cause)?;
         let agents = self.agents();
+        // Step 0, the turn. The end stage releases the isolation claim, and
+        // the isolation gate reads only the claim, so no turn may run from
+        // here on. A pause keeps the conversation, so it cannot cancel the
+        // turn: it is refused while one runs. Every other stop cancels the
+        // turn first. The hold keeps a new turn from starting in the gap.
+        let _turn_hold = match &agents {
+            Some(agents) if cause.keeps_conversation() => Some(
+                agents
+                    .hold_turn_slot(session_id)
+                    .ok_or_else(|| StopError::TurnRunning(session_id.to_string()))?,
+            ),
+            Some(agents) => {
+                if agents.turn_running(session_id) {
+                    agents.cancel(session_id).await;
+                }
+                let hold = agents.hold_turn_slot(session_id);
+                if hold.is_none() {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        "a turn outlived its cancel; the session stops beside it"
+                    );
+                }
+                hold
+            }
+            None => None,
+        };
         // The session goes out of service only when it was in service.
         let in_service = self
             .sessions
@@ -466,7 +504,7 @@ impl SessionLifecycle {
         let mut loader = guard.as_mut().and_then(|g| g.as_mut());
 
         if let Some(loader) = loader.as_deref_mut() {
-            self.run_end_stage(loader, session_id).await;
+            self.run_end_stage(loader, session_id, cause).await;
         }
         if !cause.keeps_conversation() {
             if let Some(agents) = &agents {
@@ -529,7 +567,12 @@ impl SessionLifecycle {
     /// Unlike the start path this never propagates: refusing to *end* a session
     /// strands the user with something they cannot clean up, which is the
     /// opposite of the start-hook tradeoff.
-    async fn run_end_stage(&self, loader: &mut DaemonPluginLoader, session_id: &str) {
+    async fn run_end_stage(
+        &self,
+        loader: &mut DaemonPluginLoader,
+        session_id: &str,
+        cause: StopCause,
+    ) {
         // Only fire for a session the manager still knows — this rejects
         // made-up ids and sessions already torn down and removed.
         let Some(daemon_session) = self.sessions.get_session(session_id) else {
@@ -555,7 +598,10 @@ impl SessionLifecycle {
         // reused, and a stale claim is indistinguishable from a live one.
         loader.isolation().release(session_id);
         loader.status().release(session_id);
-        let mut session = crucible_lua::Session::new(session_id.to_string());
+        // The cause goes to the hooks: a plugin that reviews a finished
+        // session (reflection) must not run on a pause.
+        let mut session =
+            crucible_lua::Session::new(session_id.to_string()).with_end_reason(cause.reason());
         if let Some(workspace) = &daemon_session.workspace {
             session = session.with_workspace(workspace.to_string_lossy());
         }

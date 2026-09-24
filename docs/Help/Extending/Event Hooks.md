@@ -835,13 +835,31 @@ session refusal stays with the plugin loader, where isolation claims live.
 
 ### `cru.on_session_end(fn, opts?)`
 
-Fires when a session ends. Use for cleanup (stopping containers, closing files).
+Fires when a session stops. Use for cleanup (stopping containers, closing files).
 
 ```lua
 cru.on_session_end(function(session)
   cleanup(session.id)
 end)
 ```
+
+Every stop runs these hooks: a pause, an end, an archive, a delete, the
+auto-archive sweep, a refused start and the end of a delegated child. The
+hooks run once for each start. `session.end_reason` names the cause, with the
+values of the `session:ended` event: `paused`, `ended`, `archived`,
+`auto_archived`, `deleted`, `refused` or `child_done`. A session can come back
+after a pause, so a hook that reviews a finished session skips `paused`:
+
+```lua
+cru.on_session_end(function(session)
+  if session.end_reason == "paused" then return end
+  review(session.id)
+end)
+```
+
+A pause is refused while a turn runs in the session. The hooks release the
+isolation claim, and the rest of that turn would run its tools on the host.
+Other stops cancel the turn before the hooks run.
 
 The options table takes `session` and `key`, so a plugin activated for one
 session can tear down for that session alone:

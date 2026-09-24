@@ -118,6 +118,22 @@ pub enum AgentError {
     SessionRefused(String),
 }
 
+/// The one-turn slot of a session, held by a stop. Drop releases it.
+pub(crate) struct TurnSlotHold {
+    request_state: Arc<DashMap<String, RequestState>>,
+    session_id: String,
+}
+
+impl Drop for TurnSlotHold {
+    fn drop(&mut self) {
+        // Only the hold's own entry: `cleanup_session` can remove it first,
+        // and a turn that claimed the slot after that has a cancel sender.
+        self.request_state.remove_if(&self.session_id, |_, state| {
+            state.cancel_tx.is_none() && state.task_handle.is_none() && state._work.is_none()
+        });
+    }
+}
+
 struct RequestState {
     cancel_tx: Option<oneshot::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
@@ -1603,6 +1619,34 @@ impl AgentManager {
         agent: &SessionAgent,
     ) -> crucible_core::config::TrustLevel {
         resolve_provider_trust(agent, self.llm_config().as_deref())
+    }
+
+    /// Whether a turn holds the one-turn slot of the session.
+    pub(crate) fn turn_running(&self, session_id: &str) -> bool {
+        self.request_state.contains_key(session_id)
+    }
+
+    /// Hold the one-turn slot of the session while the session stops, so no
+    /// turn starts between the check and the release of the isolation claim.
+    ///
+    /// `None` when a turn holds the slot. A send that arrives during the hold
+    /// gets `ConcurrentRequest`, as it does beside a turn.
+    pub(crate) fn hold_turn_slot(&self, session_id: &str) -> Option<TurnSlotHold> {
+        use dashmap::mapref::entry::Entry;
+        match self.request_state.entry(session_id.to_string()) {
+            Entry::Occupied(_) => None,
+            Entry::Vacant(e) => {
+                e.insert(RequestState {
+                    cancel_tx: None,
+                    task_handle: None,
+                    _work: None,
+                });
+                Some(TurnSlotHold {
+                    request_state: Arc::clone(&self.request_state),
+                    session_id: session_id.to_string(),
+                })
+            }
+        }
     }
 
     pub fn cleanup_session(&self, session_id: &str) {

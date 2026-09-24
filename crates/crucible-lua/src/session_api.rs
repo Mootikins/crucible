@@ -177,6 +177,11 @@ pub struct Session {
     /// API. Lua sees `nil` when the caller said nothing, which is distinct from
     /// `false` ("no container even if the project has one").
     isolation: Option<serde_json::Value>,
+    /// Why the session stops, on the handle that the end hooks receive:
+    /// `paused`, `ended`, `archived`, `auto_archived`, `deleted`, `refused` or
+    /// `child_done`. `nil` everywhere else. A hook that reviews a finished
+    /// session reads it to skip a pause.
+    end_reason: Option<String>,
     /// The daemon's own response object for this session (`create`/`get`/
     /// `list` results). Property reads that name no fixed field and no live
     /// knob fall back to it, so `session.state` and friends keep working on
@@ -192,6 +197,7 @@ impl Session {
             id,
             workspace: None,
             isolation: None,
+            end_reason: None,
             record: None,
         }
     }
@@ -209,6 +215,13 @@ impl Session {
     #[must_use]
     pub fn with_isolation(mut self, isolation: serde_json::Value) -> Self {
         self.isolation = Some(isolation);
+        self
+    }
+
+    /// Attach why the session stops (the `end_reason` field).
+    #[must_use]
+    pub fn with_end_reason(mut self, reason: impl Into<String>) -> Self {
+        self.end_reason = Some(reason.into());
         self
     }
 
@@ -351,6 +364,10 @@ impl UserData for Session {
                     Some(v) => lua.to_value(v),
                     None => Ok(Value::Nil),
                 },
+                "end_reason" => match &this.end_reason {
+                    Some(reason) => lua.create_string(reason).map(Value::String),
+                    None => Ok(Value::Nil),
+                },
                 // The plugin that created the session, from the record. Nil
                 // for a session that no plugin created, not an unknown
                 // property: the reflection pass reads it on every session.
@@ -404,7 +421,7 @@ impl UserData for Session {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (String, Value)| match key.as_str() {
-                "id" | "workspace" | "isolation" => {
+                "id" | "workspace" | "isolation" | "end_reason" => {
                     Err(mlua::Error::runtime(format!("{} is read-only", key)))
                 }
                 "model" => {

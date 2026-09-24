@@ -302,7 +302,9 @@ each stop of a session releases one with the end hooks. One owner in the daemon
 stops a session, so every stop runs the end hooks: `session.pause`,
 `session.end`, `session.archive`, `session.delete`, the auto-archive sweep, a
 refused start, the end of a delegated child, and the Lua `pause` and
-`end_session`. So every path
+`end_session`. The isolation gate reads only the claim, so no turn may run
+after the end hooks. A pause is refused while a turn runs, and every other stop
+cancels the turn before the end hooks run. So every path
 that makes a stored session live again fires the start hooks again, and the
 plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and

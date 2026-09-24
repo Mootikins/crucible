@@ -590,6 +590,32 @@ describe("reflection", function()
     end)
   end)
 
+  describe("on_session_end", function()
+    -- The stub records each task that the handler starts, and runs none.
+    local spawned = 0
+    local real_spawn = cru.timer.spawn
+    local timer = cru.timer :: any
+    before_each(function()
+      spawned = 0
+      timer.spawn = function(_fn: any)
+        spawned += 1
+      end
+    end)
+    after_each(function()
+      timer.spawn = real_spawn
+    end)
+
+    it("starts no pass when the session only pauses", function()
+      plugin.on_session_end({ id = "s1", end_reason = "paused" })
+      expect.equal(0, spawned)
+    end)
+
+    it("starts a pass when the session ends", function()
+      plugin.on_session_end({ id = "s1", end_reason = "ended" })
+      expect.equal(1, spawned)
+    end)
+  end)
+
   describe("setup", function()
     it("accepts a config table", function()
       plugin.setup({ model = "test-model", min_turns = 1 })

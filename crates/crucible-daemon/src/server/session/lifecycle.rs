@@ -36,6 +36,7 @@ fn unexpected_stop(req_id: Option<RequestId>, operation: &str, stopped: Stopped)
 /// The answer to a refused stop.
 fn stop_error(req_id: Option<RequestId>, operation: &str, err: StopError) -> Response {
     match err {
+        StopError::TurnRunning(_) => Response::error(req_id, INVALID_PARAMS, err.to_string()),
         StopError::Session(e) => invalid_state_error(req_id, operation, e),
     }
 }

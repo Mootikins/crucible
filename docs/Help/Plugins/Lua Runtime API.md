@@ -657,6 +657,10 @@ and they release the isolation claim and the container that the start hooks
 made. The session keeps its conversation and its context attachments, so a
 resume continues it. The daemon sends `session:ended` with the reason `paused`.
 
+A pause is refused with `(nil, err)` while a turn runs in the session. The end
+hooks release the isolation claim, so the rest of that turn would run its
+tools on the host. Cancel the turn, or wait for it, then pause.
+
 ### cru.session.resume(session_id)
 
 Resume a paused session. Returns `(true, nil)` on success.

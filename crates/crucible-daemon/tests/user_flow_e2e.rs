@@ -256,10 +256,22 @@ async fn test_complete_user_flow() {
     while event_rx.try_recv().is_ok() {}
 
     // ── Step 6: Pause session ─────────────────────────────────────────────
-    let pause_result = client
-        .session_pause(&session_id)
-        .await
-        .expect("session.pause failed");
+    // A pause is refused while the turn from step 5 still runs: its end hooks
+    // would release the isolation claim under that turn. The refusal names the
+    // turn, so wait until the turn is over.
+    let pause_result = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            match client.session_pause(&session_id).await {
+                Err(e) if e.to_string().contains("has a turn that runs") => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                other => return other,
+            }
+        }
+    })
+    .await
+    .expect("the turn from step 5 never finished")
+    .expect("session.pause failed");
     assert_state(&pause_result, "paused", "After pause");
 
     // Double-check via session.get

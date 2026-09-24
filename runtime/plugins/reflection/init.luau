@@ -499,6 +499,31 @@ function M.take_review_request(session_id: string): boolean
     return requested
 end
 
+--- The `on_session_end` handler. A pause runs the end hooks too, because it
+--- releases the container, but the session goes on after a resume, so a
+--- pause starts no pass. The daemon names the cause in `session.end_reason`.
+function M.on_session_end(session: any): ()
+    if session.end_reason == "paused" then
+        return
+    end
+    -- The pass creates its own session, and the daemon runs the start hooks
+    -- of that session. This hook holds the plugin runtime, and a create from
+    -- here is refused. So the pass runs in a task, which gets the plugin
+    -- runtime when this hook returns.
+    cru.timer.spawn(function()
+        -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type of
+        -- what the function returns. The inner function drops the summary
+        -- and returns nil, which gives `err` a slot the error message fits.
+        local ok, err = pcall(function()
+            M.run(session)
+            return nil
+        end)
+        if not ok then
+            cru.log("error", "reflection: handler error: " .. tostring(err))
+        end
+    end)
+end
+
 --- The pass that the on_session_end handler starts in a task. Reviews the
 --- finished session; the reviewer writes whatever notes it earned with the
 --- note tools, in its own session, so each note goes into a proposal that a
@@ -633,25 +658,7 @@ local function register_handlers()
     events:unregister_owner("reflection")
     events:on(M.REQUEST_EVENT, M.request_review, "reflection")
 
-    cru.on_session_end(function(session)
-        -- The pass creates its own session, and the daemon runs the start
-        -- hooks of that session. This hook holds the plugin runtime, and a
-        -- create from here is refused. So the pass runs in a task, which
-        -- gets the plugin runtime when this hook returns.
-        cru.timer.spawn(function()
-            -- Luau types `pcall` as `(boolean, R...)`, so `err` takes the type
-            -- of what the function returns. The inner function drops the
-            -- summary and returns nil, which gives `err` a slot the error
-            -- message fits.
-            local ok, err = pcall(function()
-                M.run(session)
-                return nil
-            end)
-            if not ok then
-                cru.log("error", "reflection: handler error: " .. tostring(err))
-            end
-        end)
-    end)
+    cru.on_session_end(M.on_session_end)
 end
 
 local plugin = {
@@ -659,6 +666,7 @@ local plugin = {
     -- plugin calls `review` and `load_hunks`, so the two passes share one
     -- lifecycle.
     run = M.run,
+    on_session_end = M.on_session_end,
     review = M.review,
     request_review = M.request_review,
     REQUEST_EVENT = M.REQUEST_EVENT,

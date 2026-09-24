@@ -12,10 +12,14 @@
 //! what is left behind.
 
 use super::revive_isolation::{sandbox_plugin_with, Daemon};
+use super::script;
 use crucible_core::protocol::SessionEventMessage;
+use crucible_core::turn::{StopReason, TurnEvent};
 use serde_json::json;
+use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 
 /// A plugin that isolates each session that asks for it, counts its end hooks,
 /// and activates one handler for each session, as a workflow plugin does.
@@ -29,6 +33,8 @@ end, { required = true })
 cru.on_session_end(function(session)
   _G.ended = _G.ended or {}
   _G.ended[session.id] = (_G.ended[session.id] or 0) + 1
+  _G.end_reasons = _G.end_reasons or {}
+  _G.end_reasons[session.id] = session.end_reason
 end)
 return { name = "sandbox", version = "0.1.0", description = "test stop steps" }
 "#;
@@ -131,6 +137,17 @@ impl Rig {
             self.end_hook_runs(),
             1,
             "{door}: the plugin end hooks must run once"
+        );
+        let end_reason: Option<String> = self
+            .daemon
+            .lua()
+            .load(format!(r#"return (_G.end_reasons or {{}})["{}"]"#, self.id))
+            .eval()
+            .unwrap();
+        assert_eq!(
+            end_reason.as_deref(),
+            Some(reason),
+            "{door}: the end hooks must read the cause as session.end_reason"
         );
         assert_eq!(
             self.scoped_handlers().await,
@@ -332,4 +349,161 @@ end)
     assert_eq!(reason.as_deref(), Some("ended"));
     let ctx_session: Option<String> = lua.globals().get("scoped_ctx").unwrap();
     assert_eq!(ctx_session.as_deref(), Some(rig.id.as_str()));
+}
+
+/// An agent that stops in the middle of its turn until the test lets it go,
+/// then calls one host tool and waits for the result.
+struct GatedToolAgent {
+    reached: Arc<tokio::sync::Notify>,
+    gate: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for GatedToolAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<futures::stream::BoxStream<'a, TurnEvent>, crucible_core::turn::AgentError> {
+        let reached = Arc::clone(&self.reached);
+        let gate = Arc::clone(&self.gate);
+        let mut inbound = ctx.inbound;
+        Ok(Box::pin(async_stream::stream! {
+            yield script::text("working");
+            reached.notify_one();
+            gate.notified().await;
+            yield script::tool_call(
+                "call-1",
+                "write_file",
+                json!({ "path": "escaped.txt", "content": "on the host" }),
+            );
+            yield TurnEvent::ToolBatchEnd;
+            if let Some(rx) = inbound.as_mut() {
+                while let Some(event) = rx.recv().await {
+                    if matches!(event, TurnEvent::ToolResult { .. }) {
+                        break;
+                    }
+                }
+            }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        }))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+crucible_core::impl_unsupported_session_knobs!(GatedToolAgent);
+
+#[async_trait::async_trait]
+impl crucible_core::traits::chat::AgentHandle for GatedToolAgent {
+    async fn send_message_fire_and_forget(
+        &mut self,
+        _: String,
+    ) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "ask"
+    }
+    async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+}
+
+/// A pause while a turn runs must not open the sandbox under that turn.
+///
+/// The pause runs the end hooks, and the end hooks release the isolation
+/// claim. The isolation gate reads only the claim. Before the fix, a pause in
+/// the middle of a turn released the claim, and the next tool call of that
+/// turn ran on the host. Now the pause is refused while a turn runs, with an
+/// error that says so, and the claim stays until the turn is over.
+#[tokio::test]
+async fn a_pause_during_a_turn_does_not_let_that_turn_run_on_the_host() {
+    let rig = Rig::new().await;
+    let workspace = TempDir::new().unwrap();
+    rig.daemon
+        .ctx
+        .sessions
+        .modify_session(&rig.id, |s| {
+            s.workspace = Some(workspace.path().to_path_buf());
+            true
+        })
+        .await
+        .unwrap();
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    rig.daemon.ctx.agents.install_agent_for_test(
+        rig.id.clone(),
+        Arc::new(Mutex::new(Box::new(GatedToolAgent {
+            reached: Arc::clone(&reached),
+            gate: Arc::clone(&gate),
+        }) as _)),
+    );
+    let mut events = rig.daemon.ctx.event_tx.subscribe();
+    // Allow, so a tool call that the isolation gate lets through runs.
+    let (_, done) = rig
+        .daemon
+        .ctx
+        .agents
+        .send_message_notified(
+            &rig.id,
+            "write the file".to_string(),
+            &rig.daemon.ctx.event_tx,
+            false,
+            Some(crucible_core::config::components::permissions::PermissionMode::Allow),
+        )
+        .await
+        .expect("the turn starts");
+    tokio::time::timeout(Duration::from_secs(10), reached.notified())
+        .await
+        .expect("the turn reached its gate");
+
+    let paused = rig
+        .daemon
+        .rpc("session.pause", json!({ "session_id": rig.id }))
+        .await;
+
+    gate.notify_one();
+    let result = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = events.recv().await.expect("the bus stays open");
+            if msg.session_id == rig.id && msg.event == "tool_result" {
+                return msg.data;
+            }
+        }
+    })
+    .await
+    .expect("the tool call reported a result");
+    let _ = tokio::time::timeout(Duration::from_secs(10), done).await;
+
+    let text = result.to_string();
+    assert!(
+        !workspace.path().join("escaped.txt").exists(),
+        "the tool call wrote the file on the host: {text}"
+    );
+    assert!(
+        text.contains("isolated"),
+        "a tool call after a pause in the same turn ran outside the sandbox: {text}"
+    );
+    let err = paused
+        .error
+        .expect("a pause while a turn runs must be refused, not open the sandbox");
+    assert!(
+        err.message.contains("turn"),
+        "the refusal must say that a turn runs: {}",
+        err.message
+    );
+    assert!(
+        rig.daemon.claimed(&rig.id).await,
+        "the refused pause must keep the isolation claim"
+    );
 }

@@ -253,8 +253,11 @@ session-state `tokio::Mutex` is held for session-VM handler passes and released
 before plugin-VM passes (`messaging/permission.rs:1130-1138`). The auto-archive
 sweep runs every 30 min with a 72 h default (`server/mod.rs:664-667`).
 
-Every stop goes through `SessionLifecycle::stop`. Under the plugin-loader
-mutex it runs the end stage (claim, status slots, `on_session_end` hooks,
+Every stop goes through `SessionLifecycle::stop`. First it deals with the
+turn: a pause is refused while one runs (`StopError::TurnRunning`), and the
+other causes cancel it. It holds the one-turn slot until the stop is done, so
+no turn starts after the claim goes. Under the plugin-loader mutex it runs the
+end stage, with the cause as `session.end_reason` (claim, status slots, `on_session_end` hooks,
 once for each start), releases the context attachment, changes the state,
 runs `cleanup_session`, and sweeps the session-scoped handlers and statusline
 values. Then it sends one `session:ended {session_id, reason}` to the system
