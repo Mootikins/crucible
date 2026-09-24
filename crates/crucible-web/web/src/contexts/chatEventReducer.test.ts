@@ -904,6 +904,19 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.tools()[0].args).toBe(JSON.stringify({ file_path: 'b.rs' }));
   });
 
+  // Rule 7: an ACP agent asks after it announced the call, so the layer that
+  // allowed the call arrives in an update.
+  it('session_event tool_call_update: carries the layer that allowed the call onto the card', () => {
+    const h = createHarness();
+    h.reducer({ type: 'tool_call', id: 'call-9', title: 'Edit' });
+    h.reducer({
+      type: 'session_event',
+      event: 'tool_call_update',
+      data: { call_id: 'call-9', auto_approved: 'permissions config' },
+    });
+    expect(h.tools()[0].autoApproved).toBe('permissions config');
+  });
+
   it('session_event tool_call_update: empty or missing args and no display leave the card alone', () => {
     const h = createHarness();
     const display = {

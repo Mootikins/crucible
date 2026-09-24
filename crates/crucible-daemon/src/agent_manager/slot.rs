@@ -78,6 +78,9 @@ pub(crate) struct SessionSlot {
     /// the handler lives as long as the cached agent handle and a later turn
     /// can differ. `None` outside a turn: the turn end clears it.
     turn_gate: Mutex<Option<TurnGate>>,
+    /// Why the gate refused an ACP call, by `toolCallId`, until the agent
+    /// reports the call. The turn end clears it.
+    denials: Mutex<HashMap<String, String>>,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -427,6 +430,23 @@ impl SessionSlot {
     /// The turn is over. A permission request now belongs to no turn.
     pub(crate) fn clear_turn_gate(&self) {
         *self.lock_turn_gate() = None;
+        self.lock_denials().clear();
+    }
+
+    /// Keep why the gate refused the ACP call `call_id`.
+    pub(crate) fn note_denial(&self, call_id: &str, reason: String) {
+        self.lock_denials().insert(call_id.to_string(), reason);
+    }
+
+    /// Why the gate refused the ACP call `call_id`, if it did.
+    pub(crate) fn take_denial(&self, call_id: &str) -> Option<String> {
+        self.lock_denials().remove(call_id)
+    }
+
+    fn lock_denials(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+        self.denials
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// How the turn that runs now may decide a permission.

@@ -213,8 +213,10 @@ prompt with no answer: Crucible refuses its own tool call, and an ACP agent
 receives `cancelled`, not a reject, because nobody refused the call.
 
 An ACP agent receives only one of its own options: `allow_once` for an allow,
-and `reject_once` (or `reject_always`) for a denial. The reason of a denial
-reaches you, not the agent, because the protocol has no field for it.
+and `reject_once` (or `reject_always`) for a denial. The protocol has no field
+for a reason, so the reason reaches you and not the agent: the card of a refused
+call shows the reason of the gate as its error, and the card of a call that a
+layer allowed with no prompt shows the auto marker with that layer.
 
 ## What a `bash:` rule covers
 

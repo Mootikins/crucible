@@ -180,6 +180,7 @@ fn a_tool_card_that_runs_gets_output_and_finishes_matches_a_fresh_layout() {
         args: None,
         diffs: Some(vec![edit_diff()]),
         line: None,
+        auto_approved: None,
     });
     let after = twin.frame(&mut app);
     assert!(

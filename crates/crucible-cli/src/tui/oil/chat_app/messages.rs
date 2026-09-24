@@ -99,6 +99,8 @@ pub enum ChatAppMsg {
         diffs: Option<Vec<FileDiff>>,
         /// The line of the new render. `None` keeps the line of the card.
         line: Option<String>,
+        /// Which layer granted the call without asking.
+        auto_approved: Option<String>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {

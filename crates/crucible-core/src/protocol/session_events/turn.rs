@@ -150,6 +150,10 @@ pub enum TurnPayload {
         args: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         display: Option<Box<CanonicalToolCall>>,
+        /// Which layer granted the call without asking. An ACP agent asks
+        /// after it announced the call, so the marker comes in an update.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auto_approved: Option<String>,
     },
     /// `terminate` is serialized even when `false` — an existing subscriber
     /// reads `data.terminate` unconditionally. Do NOT add

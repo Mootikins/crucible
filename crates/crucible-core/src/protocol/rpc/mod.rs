@@ -260,6 +260,7 @@ impl SessionEventMessage {
         session_id: impl Into<String>,
         call_id: impl Into<String>,
         mut call: crate::types::CanonicalToolCall,
+        auto_approved: Option<String>,
     ) -> Self {
         let args = call
             .raw
@@ -275,6 +276,7 @@ impl SessionEventMessage {
                 call_id: call_id.into(),
                 args,
                 display: Some(Box::new(call)),
+                auto_approved,
             },
         )
     }

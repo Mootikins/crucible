@@ -125,8 +125,10 @@ impl AcpGate {
     /// never asks about is the agent's own decision: it runs its own tools,
     /// so a refusal after the fact stops nothing.
     ///
-    /// The answer is only an option of the agent. A deny reason reaches the
-    /// user, not the agent: the protocol has no field for it.
+    /// The answer is only an option of the agent: the protocol has no field
+    /// for a reason. So the user gets what the agent cannot carry. The layer
+    /// that allowed the call goes on the card, as it does for Crucible's own
+    /// tools, and the reason of a denial becomes the error of the call.
     async fn decide(
         &self,
         mut call: CanonicalToolCall,
@@ -168,6 +170,24 @@ impl AcpGate {
         };
         let decision =
             decide_permission(&ctx, &call, &args, || acp_prompt_request(&call, &args)).await;
+        let id = (call.raw.as_ref()).and_then(|raw| raw.tool_call_id.clone());
+        match (&decision, id) {
+            (super::gate_decision::Decision::Allow(Some(layer)), Some(id)) => {
+                emit_event(
+                    &self.event_tx,
+                    SessionEventMessage::tool_call_update(
+                        &self.session_id,
+                        id,
+                        call,
+                        Some(layer.clone()),
+                    ),
+                );
+            }
+            (super::gate_decision::Decision::Deny(reason), Some(id)) => {
+                self.slot.note_denial(&id, reason.clone());
+            }
+            _ => {}
+        }
         match decision {
             // The turn ended before the user answered. A reject would say
             // that the user refused the call.
@@ -1481,6 +1501,11 @@ mod acp_permission_handler_tests {
         let outcome = ask(&handle).await;
 
         assert_eq!(selected(&outcome).as_deref(), Some("allow_once"));
+        // The card of the call names the layer that allowed it (rule 7).
+        let update = event_rx.try_recv().expect("the card gets the layer");
+        assert_eq!(update.event, "tool_call_update");
+        assert_eq!(update.data["call_id"], "call-1");
+        assert_eq!(update.data["auto_approved"], "agent card policy");
         assert!(
             event_rx.try_recv().is_err(),
             "a declared Allow must not prompt the user"
@@ -1501,6 +1526,14 @@ mod acp_permission_handler_tests {
         assert!(
             event_rx.try_recv().is_err(),
             "a declared Deny must not prompt the user"
+        );
+        // The agent gets no reason. The result of the call will carry it.
+        let reason = am.slot(SESSION).take_denial("call-1");
+        assert!(
+            reason
+                .as_deref()
+                .is_some_and(|r| r.contains("card tool policy")),
+            "{reason:?}"
         );
     }
 
@@ -1595,6 +1628,8 @@ mod acp_permission_handler_tests {
             .expect("a saved grant answers without a prompt");
 
         assert_eq!(selected(&outcome).as_deref(), Some("allow_once"));
+        let update = event_rx.try_recv().expect("the card gets the layer");
+        assert_eq!(update.data["auto_approved"], "saved pattern");
         assert!(event_rx.try_recv().is_err(), "a saved grant asks nobody");
     }
 

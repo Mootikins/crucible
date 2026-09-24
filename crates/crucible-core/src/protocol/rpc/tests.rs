@@ -529,7 +529,7 @@ fn golden_tool_call_update() {
         },
         &[],
     );
-    let m = SessionEventMessage::tool_call_update("s1", "c-1", call);
+    let m = SessionEventMessage::tool_call_update("s1", "c-1", call, None);
     assert_eq!(
         wire(&m, "tool_call_update"),
         serde_json::json!({
@@ -563,6 +563,7 @@ fn an_old_args_update_line_loads_as_a_tool_call_update() {
             call_id,
             args,
             display,
+            ..
         }) => {
             assert_eq!(call_id, "c-1");
             assert_eq!(args, serde_json::json!({"a": 1}));

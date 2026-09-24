@@ -202,6 +202,7 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
         args: None,
         diffs: Some(diffs.clone()),
         line: None,
+        auto_approved: None,
     });
 
     let nodes = app.container_list.nodes();
@@ -231,6 +232,7 @@ fn tool_call_update_for_unknown_call_id_is_a_noop() {
         args: None,
         diffs: Some(diffs),
         line: None,
+        auto_approved: None,
     });
     assert_eq!(
         app.container_list.len(),

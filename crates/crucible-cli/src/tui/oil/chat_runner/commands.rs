@@ -213,6 +213,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             call_id,
             args,
             display,
+            auto_approved,
         } => {
             let Some(call_id) = non_empty(call_id) else {
                 return Vec::new();
@@ -224,7 +225,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 .filter(|a| !a.is_empty());
             let line = display.as_deref().and_then(render_line);
             let diffs = display.map(|d| d.diffs);
-            if args.is_none() && diffs.is_none() {
+            if args.is_none() && diffs.is_none() && auto_approved.is_none() {
                 return Vec::new();
             }
             vec![ChatAppMsg::ToolCallUpdate {
@@ -232,6 +233,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 args,
                 diffs,
                 line,
+                auto_approved,
             }]
         }
         TurnPayload::ToolResult {

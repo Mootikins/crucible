@@ -334,6 +334,36 @@ async fn owns_history_tool_only_turn_is_not_reported_as_an_empty_response() {
     );
 }
 
+/// An ACP agent gets only a reject option, so it reports a refused call with
+/// its own text. The result that the user sees (the card, the transcript)
+/// carries the reason of the gate instead (rule 7).
+#[tokio::test]
+async fn a_refused_acp_call_shows_the_reason_of_the_gate() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_agent(Box::new(OwnsToolsMockAgent {
+        events: vec![
+            script::tool_call("call1", "Write", serde_json::json!({"path": "a.txt"})),
+            crucible_core::turn::TurnEvent::ToolResult {
+                id: "call1".to_string(),
+                name: "Write".to_string(),
+                result: serde_json::Value::Null,
+                error: Some("The user rejected this tool call".to_string()),
+            },
+            crucible_core::turn::TurnEvent::ToolBatchEnd,
+            script::done(),
+        ],
+    }));
+    let reason = "Tool 'Write' denied by permissions config: write";
+    h.agent_manager
+        .slot(&h.session_id)
+        .note_denial("call1", reason.to_string());
+
+    h.send("write a.txt").await;
+
+    let result = h.wait_for("tool_result").await;
+    assert_eq!(result.data["result"]["error"], reason, "{:?}", result.data);
+}
+
 /// A `tool_result` handler must fire for tool calls an ACP-style agent ran
 /// itself, not just for ones the daemon dispatched. The pass-through arm used
 /// to emit straight to subscribers, so a redactor scrubbed the transcript for

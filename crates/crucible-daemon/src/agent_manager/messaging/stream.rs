@@ -596,6 +596,10 @@ impl AgentManager {
                     // it already, so the hooks shape what subscribers, the
                     // transcript and the tree get, not what the model saw.
                     let args = agent_tool_args.remove(&id).unwrap_or_default();
+                    // The agent got only a reject option. The reason of the
+                    // gate says why, where the agent can only say "rejected".
+                    let denial = stream_ctx.slot.take_denial(&id);
+                    let error = error.map(|e| denial.unwrap_or(e));
                     let text = match result {
                         serde_json::Value::String(text) => text,
                         other => other.to_string(),
@@ -646,7 +650,12 @@ impl AgentManager {
                     .await;
                     if !emit_event(
                         &stream_ctx.event_tx,
-                        SessionEventMessage::tool_call_update(&stream_ctx.session_id, &id, *call),
+                        SessionEventMessage::tool_call_update(
+                            &stream_ctx.session_id,
+                            &id,
+                            *call,
+                            None,
+                        ),
                     ) {
                         warn!(
                             session_id = %stream_ctx.session_id,

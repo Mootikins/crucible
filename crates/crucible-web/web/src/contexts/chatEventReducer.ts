@@ -83,7 +83,7 @@ function upsertSubagentEvent(
  */
 export function mergeToolCallUpdate(
   tool: ToolCallDisplay,
-  data: { args?: unknown; display?: unknown },
+  data: { args?: unknown; display?: unknown; auto_approved?: unknown },
 ): ToolCallDisplay {
   const args = data.args;
   const hasArgs =
@@ -96,6 +96,9 @@ export function mergeToolCallUpdate(
     ...tool,
     ...(hasArgs ? { args: JSON.stringify(args) } : {}),
     ...(display ? { display } : {}),
+    // An ACP agent asks after it announced the call, so the layer that
+    // granted it arrives in an update.
+    ...(typeof data.auto_approved === 'string' ? { autoApproved: data.auto_approved } : {}),
   };
 }
 
@@ -589,7 +592,9 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // An empty object or null as `args` carries nothing worth disturbing
         // the existing card for, so it keeps the args it has.
         if (event.event === 'tool_call_update') {
-          const data = event.data as { call_id?: unknown; args?: unknown; display?: unknown } | null;
+          const data = event.data as
+            | { call_id?: unknown; args?: unknown; display?: unknown; auto_approved?: unknown }
+            | null;
           const callId = typeof data?.call_id === 'string' ? data.call_id : undefined;
           if (callId && data) {
             deps.updateToolMessage(callId, (tool) => mergeToolCallUpdate(tool, data));

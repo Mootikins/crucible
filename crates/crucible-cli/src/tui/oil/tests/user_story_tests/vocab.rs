@@ -91,6 +91,7 @@ pub(crate) fn attach_late_diff(
             new_content.to_string(),
         )]),
         line: None,
+        auto_approved: None,
     });
 }
 

@@ -293,6 +293,7 @@ fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
             args,
             diffs,
             line,
+            ..
         } => {
             assert_eq!(call_id, "tc-late-1");
             assert_eq!(line.as_deref(), Some("src/late.rs"), "the new render line");

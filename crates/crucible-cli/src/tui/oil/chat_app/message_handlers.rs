@@ -88,8 +88,12 @@ impl OilChatApp {
                 args,
                 diffs,
                 line,
+                auto_approved,
             } => {
                 self.container_list.update_tool_by_call_id(&call_id, |t| {
+                    if auto_approved.is_some() {
+                        t.auto_approved = auto_approved;
+                    }
                     if let Some(args) = args {
                         t.set_args(&args);
                     }
