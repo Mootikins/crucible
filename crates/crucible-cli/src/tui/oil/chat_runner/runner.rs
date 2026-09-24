@@ -202,7 +202,7 @@ impl OilChatRunner {
             Self::abort_background_tasks(&mut background_tasks);
 
             // Always restore terminal before propagating errors
-            let _ = self.terminal.exit();
+            self.exit_terminal();
             event_loop_result?;
             return Ok(());
         }
@@ -285,7 +285,7 @@ impl OilChatRunner {
         let session_id = agent.session_id().map(|s| s.to_string());
 
         // Always restore terminal before propagating errors
-        let _ = self.terminal.exit();
+        self.exit_terminal();
         event_loop_result?;
 
         // Print resume hint after terminal is restored to main screen
@@ -462,6 +462,25 @@ impl OilChatRunner {
                     self.copy_text(params.app, &text);
                     return Ok(false);
                 }
+                ViewAction::Dump(rows) => {
+                    self.terminal.print_to_main_screen(&rows)?;
+                    params.app.add_notification(crucible_core::types::Notification::toast(
+                        format!("Printed {} rows to the terminal scrollback", rows.len()),
+                    ));
+                    return Ok(false);
+                }
+                ViewAction::ToggleMouse => {
+                    let on = !self.terminal.mouse_captured();
+                    self.terminal.set_mouse_capture(on)?;
+                    params.app.add_notification(crucible_core::types::Notification::toast(
+                        if on {
+                            "Mouse on: the TUI scrolls and selects (F2 for the terminal's selection)"
+                        } else {
+                            "Mouse off: the terminal selects (F2 to give the mouse back)"
+                        },
+                    ));
+                    return Ok(false);
+                }
             }
         }
 
@@ -523,6 +542,26 @@ impl OilChatRunner {
                 tracing::warn!("EventStream returned None - stream ended");
                 Ok(EventLoopSelectOutcome::Quit)
             }
+        }
+    }
+
+    /// Restore the terminal. The full-screen mode then prints the transcript
+    /// that it has not printed yet to the main screen, so the session stays
+    /// in the terminal's scrollback after the exit.
+    fn exit_terminal(&mut self) {
+        let rows = self
+            .fullscreen
+            .as_mut()
+            .map(|view| view.take_dump(true))
+            .unwrap_or_default();
+        let _ = self.terminal.exit();
+        if !rows.is_empty() {
+            use std::io::Write;
+            let mut out = std::io::stdout().lock();
+            for row in rows {
+                let _ = writeln!(out, "{row}\x1b[0m");
+            }
+            let _ = out.flush();
         }
     }
 

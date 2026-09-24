@@ -52,7 +52,17 @@ pub enum ViewAction {
     Handled,
     /// A selection ended; copy this text.
     Copy(String),
+    /// Print these rows to the main screen, into the terminal's scrollback.
+    Dump(Vec<String>),
+    /// Turn mouse reporting on or off, so the terminal's own selection
+    /// works again.
+    ToggleMouse,
 }
+
+/// Prints the transcript into the terminal's scrollback.
+pub const DUMP_KEY: KeyCode = KeyCode::F(3);
+/// Turns mouse reporting on and off.
+pub const MOUSE_KEY: KeyCode = KeyCode::F(2);
 
 /// Counts presses on one cell in quick succession.
 #[derive(Debug, Default)]
@@ -91,6 +101,9 @@ pub struct FullscreenView {
     /// from a rounded row walks the reader away.
     anchor: Option<transcript::Anchor>,
     selection: Option<Selection>,
+    /// Transcript entries already printed to the main screen, so neither the
+    /// dump key nor the exit prints one twice.
+    dumped: usize,
     /// Whether the left button is down after a press in the transcript.
     dragging: bool,
     /// Whether the pointer moved since the press.
@@ -223,6 +236,25 @@ impl FullscreenView {
         }
     }
 
+    /// The rows not yet printed to the main screen, and mark them printed.
+    ///
+    /// Only finished entries print, unless `unfinished` is set: a node that
+    /// still changes has no final rows yet. The exit sets it, because nothing
+    /// changes after the exit. Rows keep the width of the last frame.
+    pub fn take_dump(&mut self, unfinished: bool) -> Vec<String> {
+        let end = if unfinished {
+            self.transcript.entry_count()
+        } else {
+            self.transcript.finished_prefix()
+        };
+        if end <= self.dumped {
+            return Vec::new();
+        }
+        let rows = self.transcript.styled_rows(self.dumped..end);
+        self.dumped = end;
+        rows
+    }
+
     /// Take a scroll key or a mouse report. Everything else goes to the app.
     pub fn handle_event(&mut self, event: &Event, app: &OilChatApp) -> ViewAction {
         // A modal or a permission prompt owns the keys, PageUp included.
@@ -243,6 +275,8 @@ impl FullscreenView {
                 self.selection = None;
                 self.dragging = false;
             }
+            DUMP_KEY => return ViewAction::Dump(self.take_dump(false)),
+            MOUSE_KEY => return ViewAction::ToggleMouse,
             KeyCode::PageUp => self.scroll_by(-page),
             KeyCode::PageDown => self.scroll_by(page),
             _ => return ViewAction::Ignored,

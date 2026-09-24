@@ -316,3 +316,59 @@ fn a_double_and_a_triple_click_copy_a_word_and_a_line() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn the_dump_key_prints_finished_entries_once() {
+    let mut app = fixtures::app_with_exchanges(2);
+    app.on_message(ChatAppMsg::UserMessage("q".into()));
+    app.on_message(ChatAppMsg::TextDelta("still streaming".into()));
+    let mut view = FullscreenView::new();
+    frame_at(&mut view, &app, 80, 30);
+
+    let ViewAction::Dump(rows) = view.handle_event(&key(DUMP_KEY), &app) else {
+        panic!("the dump key dumps");
+    };
+    let text: Vec<String> = rows.iter().map(|r| crucible_oil::ansi::strip_ansi(r)).collect();
+    assert!(text.iter().any(|r| r.contains("Answer 1")), "{text:#?}");
+    assert!(!text.iter().any(|r| r.contains("still streaming")), "an unfinished node waits");
+
+    let ViewAction::Dump(again) = view.handle_event(&key(DUMP_KEY), &app) else {
+        panic!();
+    };
+    assert!(again.is_empty(), "nothing is printed twice");
+
+    // The exit prints the rest, the streaming answer included.
+    let rest: Vec<String> = view
+        .take_dump(true)
+        .iter()
+        .map(|r| crucible_oil::ansi::strip_ansi(r))
+        .collect();
+    assert!(rest.iter().any(|r| r.contains("still streaming")), "{rest:#?}");
+    assert!(!rest.iter().any(|r| r.contains("Answer 1")));
+    assert_eq!(rest[0], "", "a blank row separates it from the dumped part");
+}
+
+#[test]
+fn the_exit_dump_reproduces_the_transcript_rows() {
+    let app = fixtures::app_with_exchanges(3);
+    let mut view = FullscreenView::new();
+    frame_at(&mut view, &app, 90, 30);
+    let rows = view.take_dump(true);
+    assert_eq!(rows.len(), view.transcript().len());
+    let mut parser = vt100::Parser::new(rows.len() as u16 + 1, 90, 0);
+    for row in &rows {
+        parser.process(format!("{row}\x1b[0m\r\n").as_bytes());
+    }
+    let shown: Vec<String> = parser.screen().rows(0, 90).map(|r| r.trim_end().to_string()).collect();
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(shown[i], crucible_oil::ansi::strip_ansi(row).trim_end(), "row {i}");
+    }
+}
+
+#[test]
+fn the_mouse_key_asks_to_toggle_capture() {
+    let app = fixtures::app_with_exchanges(1);
+    let mut view = FullscreenView::new();
+    frame_at(&mut view, &app, 80, 30);
+    assert_eq!(view.handle_event(&key(MOUSE_KEY), &app), ViewAction::ToggleMouse);
+}
