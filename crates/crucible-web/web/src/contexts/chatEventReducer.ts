@@ -77,6 +77,9 @@ function upsertSubagentEvent(
  * Apply one `tool_call_update` to a card: new args when the update has
  * any, and the new canonical call when the update has one. The history
  * loader applies the same rule, so a reloaded card equals the live one.
+ * A canonical call with no render carries only the diffs of an old
+ * transcript, which the daemon migrated: the card keeps its call and takes
+ * the diffs.
  */
 export function mergeToolCallUpdate(
   tool: ToolCallDisplay,
@@ -87,10 +90,12 @@ export function mergeToolCallUpdate(
     args !== undefined
     && args !== null
     && !(typeof args === 'object' && Object.keys(args).length === 0);
+  const next = data.display as ToolCallDisplay['display'];
+  const display = next && !next.render && tool.display ? { ...tool.display, diffs: next.diffs } : next;
   return {
     ...tool,
     ...(hasArgs ? { args: JSON.stringify(args) } : {}),
-    ...(data.display ? { display: data.display as ToolCallDisplay['display'] } : {}),
+    ...(display ? { display } : {}),
   };
 }
 

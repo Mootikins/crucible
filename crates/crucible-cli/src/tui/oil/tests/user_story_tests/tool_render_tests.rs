@@ -5,6 +5,8 @@ use serde_json::json;
 
 use super::support::StoryRuntime;
 use super::vocab::{relay_session_event, send_user_message};
+use crate::tui::oil::chat_app::ChatAppMsg;
+use crate::tui::oil::chat_runner::session_event_to_chat_msgs;
 
 /// A plugin kind: the card shows the canonical tool and the render line, and
 /// not a value that the TUI took from the arguments.
@@ -87,4 +89,41 @@ fn the_permission_modal_shows_the_agent_the_wire_name_and_the_layer() {
         frame.contains("agent claude · wire name Edit · asked by ask mode"),
         "{frame}"
     );
+}
+
+/// A transcript from before the render still shows each card line and each
+/// diff, and each failed turn shows its error one time. The events go
+/// through the migration of the daemon history, as on a resume.
+#[test]
+fn an_old_transcript_shows_its_lines_and_diffs() {
+    let path = crate::tui::oil::tests::helpers::fixture_path("old_wire_session.jsonl");
+    let text = std::fs::read_to_string(path).expect("the fixture reads");
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("a JSON line"))
+        .collect();
+    let msgs: Vec<ChatAppMsg> = crucible_core::protocol::session_events::migrate_history(lines)
+        .iter()
+        .flat_map(|e| session_event_to_chat_msgs(e["event"].as_str().unwrap_or(""), &e["data"]))
+        .collect();
+    let errors: Vec<&ChatAppMsg> = msgs
+        .iter()
+        .filter(|m| matches!(m, ChatAppMsg::Error(_)))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        2,
+        "one error for each failed turn: {errors:?}"
+    );
+
+    let mut story = StoryRuntime::new(100, 60);
+    for msg in msgs {
+        story.send(msg);
+    }
+    let frame = story.fresh_screen();
+    assert!(frame.contains("lib.rs (from Lua)"), "{frame}");
+    assert!(frame.contains("src/main.rs"), "{frame}");
+    for diff in ["+b", "+y"] {
+        assert!(frame.contains(diff), "the diff {diff} shows: {frame}");
+    }
 }

@@ -563,7 +563,9 @@ impl SessionManager {
 
     /// Load events from storage with pagination.
     ///
-    /// Returns events in chronological order (oldest first).
+    /// Returns events in chronological order (oldest first), in their
+    /// current form. The TUI and the web read the history from here, so
+    /// neither keeps a copy of the old event forms.
     pub async fn load_session_events(
         &self,
         session_id: &SessionId,
@@ -571,7 +573,10 @@ impl SessionManager {
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         self.settle_history().await;
-        self.storage.load_events(session_id, limit, offset).await
+        let events = self.storage.load_events(session_id, limit, offset).await?;
+        Ok(crucible_core::protocol::session_events::migrate_history(
+            events,
+        ))
     }
 
     /// Count total events for a session.

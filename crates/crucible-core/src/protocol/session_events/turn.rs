@@ -140,12 +140,9 @@ pub enum TurnPayload {
     /// A new canonical form of a tool call that a prior `tool_call` already
     /// announced. An ACP agent can send the arguments or the diff of a call
     /// in a later frame. Subscribers replace `args` and `display` of the
-    /// entry with `call_id`.
-    ///
-    /// A transcript from before this event has `tool_call_args_update` lines,
-    /// with `args` and no `display`. The alias reads them, so a resumed
-    /// card keeps its arguments.
-    #[serde(alias = "tool_call_args_update")]
+    /// entry with `call_id`. A `display` with no render carries only the
+    /// diffs of an old transcript (see [`super::migrate`]), so the card keeps
+    /// its line.
     ToolCallUpdate {
         #[serde(default)]
         call_id: String,

@@ -135,8 +135,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-306: The card and the prompt draw the render of the daemon
 **As a user**, a tool card shows the canonical tool name and the one line that the daemon rendered for the call, for my own tools, for ACP agents and for a kind that a plugin adds. The permission prompt also shows the agent, the tool name on the wire and the layer that asked.
-**Acceptance:** the TUI never rebuilds a call from its arguments; a `tool_call_update` replaces the line; a recording from before the render shows no line.
-**Tests:** T1 `chat_runner/tests/translate.rs` (the update carries the new line) and `components/tool_render_tests.rs::the_card_shows_the_render_line_on_one_row`; T2 `user_story_tests/tool_render_tests.rs`.
+**Acceptance:** the TUI never rebuilds a call from its arguments; a `tool_call_update` replaces the line; a recording from before the render shows its old primary argument as the line, and its late diffs on the card (the migration in `session_events::migrate`, which the daemon's history loader also runs for the web); a recording with no primary shows no line.
+**Tests:** T1 `chat_runner/tests/translate.rs` (the update carries the new line) and `components/tool_render_tests.rs::the_card_shows_the_render_line_on_one_row`; T2 `user_story_tests/tool_render_tests.rs`, including `an_old_transcript_shows_its_lines_and_diffs`.
 
 ### US-307: Delegated (ACP) presentation parity
 **As a user**, when I delegate to an external agent (`cru chat -a claude`), the turn looks exactly like one the internal agent ran — except that tool cards for tools *that agent* ran say which agent ran them, so I can tell them apart from tools Crucible ran under my own permission gate.

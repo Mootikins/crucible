@@ -48,16 +48,24 @@ const TURN_WITH_FAILED_TOOL = [
 const TURN_WITH_LATE_ARGS = [
   TURN_WITH_DANGLING_TOOL[0],
   TURN_WITH_DANGLING_TOOL[1],
-  { type: 'event', session_id: 's1', event: 'tool_call_args_update', data: { call_id: 'call-1', args: { command: 'ls crates' } }, timestamp: new Date(T0 + 1500).toISOString(), seq: 3 },
+  { type: 'event', session_id: 's1', event: 'tool_call_update', data: { call_id: 'call-1', args: { command: 'ls crates' } }, timestamp: new Date(T0 + 1500).toISOString(), seq: 3 },
   { type: 'event', session_id: 's1', event: 'tool_result', data: { call_id: 'call-1', result: { result: 'out' } }, timestamp: new Date(T0 + 2000).toISOString(), seq: 4 },
   { type: 'event', session_id: 's1', event: 'message_complete', data: { full_response: 'Done.', message_id: 'turn-1' }, timestamp: new Date(T0 + 76_000).toISOString(), seq: 5 },
 ];
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ChatProvider, useChat } from '../ChatContext';
 import type { ChatContextValue } from '@/lib/types/context';
 import { resetTranscriptsForTests } from '../transcriptStore';
 import { createTestQueryEnv, type TestQueryEnv } from '@/test-utils/query';
 import { installFakeEventSource } from '@/test-utils/sse';
+
+// An old transcript, as the daemon's history loader answers it. The daemon
+// test `an_old_transcript_loads_in_its_current_form` makes this file from
+// `old_wire_session.jsonl` and fails when its output changes.
+const OLD_TRANSCRIPT: unknown[] = JSON.parse(readFileSync(
+  resolve(process.cwd(), '../../../assets/fixtures/old_wire_session.migrated.json'), 'utf8'));
 
 let env: TestQueryEnv;
 
@@ -118,5 +126,17 @@ describe('ChatContext reloads the state a tool was left in', () => {
     const tool = ctx.messages().find((m) => m.role === 'tool');
     expect(tool?.toolCall?.args).toBe(JSON.stringify({ command: 'ls crates' }));
     expect(tool?.toolCall?.result).toBe('out');
+  });
+
+  it('shows the card line and the diffs of an old transcript', async () => {
+    held = OLD_TRANSCRIPT;
+    const ctx = mountProvider();
+    await waitFor(() => expect(ctx.messages().filter((m) => m.role === 'tool').length).toBe(2));
+    const [edit, acp] = ctx.messages().filter((m) => m.role === 'tool').map((m) => m.toolCall);
+    expect(edit?.display?.render?.line).toBe('lib.rs (from Lua)');
+    expect(edit?.display?.diffs?.[0]?.new_content).toBe('b\n');
+    expect(acp?.display?.render?.line).toBe('src/main.rs');
+    expect(acp?.display?.diffs?.[0]?.new_content).toBe('y\n');
+    expect(acp?.args).toBe(JSON.stringify({ file_path: 'src/main.rs' }));
   });
 });

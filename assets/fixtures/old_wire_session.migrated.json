@@ -1,0 +1,180 @@
+[
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "user_message",
+    "data": {
+      "message_id": "m1",
+      "content": "edit the library"
+    },
+    "timestamp": "2026-09-01T10:00:00Z",
+    "seq": 1
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_call",
+    "data": {
+      "call_id": "c1",
+      "tool": "edit_file",
+      "args": {
+        "path": "src/lib.rs",
+        "old_string": "a",
+        "new_string": "b"
+      },
+      "display": {
+        "kind": "path",
+        "diffs": [
+          {
+            "path": "src/lib.rs",
+            "old_content": "a\n",
+            "new_content": "b\n"
+          }
+        ],
+        "render": {
+          "line": "lib.rs (from Lua)"
+        }
+      }
+    },
+    "timestamp": "2026-09-01T10:00:01Z",
+    "seq": 2
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_result",
+    "data": {
+      "call_id": "c1",
+      "tool": "edit_file",
+      "result": {
+        "result": "ok"
+      },
+      "terminate": false
+    },
+    "timestamp": "2026-09-01T10:00:02Z",
+    "seq": 3
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "message_complete",
+    "data": {
+      "message_id": "m1",
+      "full_response": "Done."
+    },
+    "timestamp": "2026-09-01T10:00:03Z",
+    "seq": 4
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "user_message",
+    "data": {
+      "message_id": "m2",
+      "content": "fix main"
+    },
+    "timestamp": "2026-09-01T10:01:00Z",
+    "seq": 5
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_call",
+    "data": {
+      "call_id": "c2",
+      "tool": "Edit",
+      "args": {},
+      "source": "Acp:claude",
+      "display": {
+        "kind": "other",
+        "render": {
+          "line": "src/main.rs"
+        }
+      }
+    },
+    "timestamp": "2026-09-01T10:01:01Z",
+    "seq": 6
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_call_update",
+    "data": {
+      "call_id": "c2",
+      "args": {
+        "file_path": "src/main.rs"
+      }
+    },
+    "timestamp": "2026-09-01T10:01:02Z",
+    "seq": 7
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_call_update",
+    "data": {
+      "call_id": "c2",
+      "display": {
+        "kind": "tool",
+        "tool": "",
+        "diffs": [
+          {
+            "path": "src/main.rs",
+            "old_content": "x\n",
+            "new_content": "y\n"
+          }
+        ]
+      }
+    },
+    "timestamp": "2026-09-01T10:01:03Z",
+    "seq": 8
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "tool_result",
+    "data": {
+      "call_id": "c2",
+      "tool": "Edit",
+      "result": {
+        "result": "edited"
+      },
+      "terminate": false
+    },
+    "timestamp": "2026-09-01T10:01:04Z",
+    "seq": 9
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "turn_finished",
+    "data": {
+      "status": "failed",
+      "error": "agent turn error: LLM timeout"
+    },
+    "timestamp": "2026-09-01T10:01:05Z",
+    "seq": 10
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "user_message",
+    "data": {
+      "message_id": "m3",
+      "content": "try again"
+    },
+    "timestamp": "2026-09-01T10:02:00Z",
+    "seq": 11
+  },
+  {
+    "type": "event",
+    "session_id": "chat-old-wire",
+    "event": "turn_finished",
+    "data": {
+      "status": "failed",
+      "error": "agent turn error: stopped"
+    },
+    "timestamp": "2026-09-01T10:02:02Z",
+    "seq": 13
+  }
+]

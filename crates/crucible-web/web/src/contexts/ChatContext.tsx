@@ -303,12 +303,12 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
             ...(typeof data.auto_approved === 'string' ? { autoApproved: data.auto_approved } : {}),
           },
         });
-      } else if (evt.event === 'tool_call_update' || evt.event === 'tool_call_args_update') {
+      } else if (evt.event === 'tool_call_update') {
         // Late ACP changes, persisted: an agent sends the arguments or the
         // diff of a call in a later frame. Merge into the existing entry
         // exactly as the live reducer does, so a reloaded card carries what
-        // the agent actually ran. A transcript from before `tool_call_update`
-        // has `tool_call_args_update` lines with args only.
+        // the agent actually ran. The daemon sends the events of an old
+        // transcript in their current form.
         const target = findToolMessage(String(data.call_id ?? ''));
         if (target?.toolCall) {
           target.toolCall = mergeToolCallUpdate(target.toolCall, data);

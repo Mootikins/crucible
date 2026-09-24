@@ -8,6 +8,34 @@ use super::*;
 use crate::test_support::temp_session_storage;
 use tempfile::TempDir;
 
+/// The history that the TUI and the web read has each old event in its
+/// current form. The web test `ChatContext.history-tools.test.tsx` reads
+/// the same golden file as the answer of the history route, so this test
+/// and that test together cover the path from the log to the web card.
+#[tokio::test]
+async fn an_old_transcript_loads_in_its_current_form() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures");
+    let manager = temp_session_manager();
+    let session = manager
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+    let old = std::fs::read_to_string(fixtures.join("old_wire_session.jsonl")).unwrap();
+    for line in old.lines() {
+        manager.storage.append_event(&session, line).await.unwrap();
+    }
+
+    let history = manager
+        .load_session_events(&session.id, None, None)
+        .await
+        .unwrap();
+
+    let golden = std::fs::read_to_string(fixtures.join("old_wire_session.migrated.json"))
+        .unwrap_or_default();
+    let got = serde_json::to_string_pretty(&history).unwrap();
+    assert_eq!(got.trim(), golden.trim(), "the golden file is:\n{got}");
+}
+
 #[tokio::test]
 async fn title_sweep_titles_untitled_sessions_with_content() {
     let _tmp = TempDir::new().unwrap();
