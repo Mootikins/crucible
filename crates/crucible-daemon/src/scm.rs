@@ -326,7 +326,7 @@ pub(crate) async fn run_git(
     args: &[&str],
     opts: GitOpts<'_>,
 ) -> Result<String, GitError> {
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::from(crucible_core::git::command());
     cmd.args(args).current_dir(dir);
     if let Some(index) = opts.index_file {
         cmd.env("GIT_INDEX_FILE", index);

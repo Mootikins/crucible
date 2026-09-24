@@ -365,7 +365,7 @@ impl AgentHandle for MockSubagentHandle {
 /// Shared because test modules each grew their own copy with slightly
 /// different failure messages and one of them silently discarded stderr.
 pub async fn git(dir: &std::path::Path, args: &[&str]) -> String {
-    let out = tokio::process::Command::new("git")
+    let out = tokio::process::Command::from(crucible_core::git::command())
         .args(args)
         .current_dir(dir)
         .output()

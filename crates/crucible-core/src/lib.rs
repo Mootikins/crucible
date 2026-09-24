@@ -13,6 +13,7 @@ pub mod events;
 pub mod file_write;
 pub mod fs;
 pub mod fuzzy;
+pub mod git;
 pub mod http;
 pub mod interaction;
 pub mod kiln;

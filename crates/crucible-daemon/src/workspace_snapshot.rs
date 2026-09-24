@@ -480,7 +480,7 @@ mod tests {
         let present = |name: String| {
             let d = dir.path().to_path_buf();
             async move {
-                tokio::process::Command::new("git")
+                tokio::process::Command::from(crucible_core::git::command())
                     .args(["rev-parse", "--verify", "--quiet", &name])
                     .current_dir(&d)
                     .output()
@@ -654,5 +654,86 @@ mod tests {
         let dir = tempdir().unwrap();
         let snap = WorkspaceSnapshot::default();
         snap.restore(dir.path()).await.unwrap();
+    }
+
+    /// The variable that tells [`the_child_half_of_the_git_env_test`] where
+    /// its own repository goes. Its absence makes the child half a no-op.
+    const CHILD_REPO_VAR: &str = "CRUCIBLE_TEST_GIT_ENV_CHILD_REPO";
+
+    /// Every file below `dir`, with its content.
+    fn tree_state(
+        dir: &std::path::Path,
+    ) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+        walkdir::WalkDir::new(dir)
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|e| e.file_type().is_file())
+            .map(|e| (e.path().to_path_buf(), fs::read(e.path()).unwrap()))
+            .collect()
+    }
+
+    /// A process that runs inside `git rebase --exec` or a git hook inherits
+    /// `GIT_DIR` and `GIT_WORK_TREE`. Git obeys them over the current
+    /// directory. When a fixture repository or a snapshot obeyed them, the
+    /// tests wrote config, commits and `refs/crucible/*` refs into the
+    /// checkout that ran them. The variables go to a child process only, so
+    /// this process keeps its own environment.
+    #[test]
+    fn git_work_on_an_explicit_directory_ignores_an_inherited_repository() {
+        let sandbox = tempdir().unwrap();
+        let status = crucible_core::git::command()
+            .args(["init", "-q"])
+            .current_dir(sandbox.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git init of the sandbox failed");
+        let before = tree_state(sandbox.path());
+
+        let own = tempdir().unwrap();
+        let child_name = module_path!()
+            .split_once("::")
+            .map(|(_, rest)| format!("{rest}::the_child_half_of_the_git_env_test"))
+            .unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &child_name, "--nocapture"])
+            .env("GIT_DIR", sandbox.path().join(".git"))
+            .env("GIT_WORK_TREE", sandbox.path())
+            .env(CHILD_REPO_VAR, own.path())
+            .output()
+            .unwrap();
+        assert_eq!(
+            tree_state(sandbox.path()),
+            before,
+            "git in the child wrote into the inherited GIT_DIR repository"
+        );
+        assert!(
+            out.status.success(),
+            "the child half failed:\n{}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("1 passed"),
+            "the child half did not run:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(
+            own.path().join(".git").is_dir(),
+            "the child did not make its own repository"
+        );
+    }
+
+    /// The child half of the test above. Without [`CHILD_REPO_VAR`] it does
+    /// nothing, so the normal run of the suite passes it at once.
+    #[tokio::test]
+    async fn the_child_half_of_the_git_env_test() {
+        let Some(dir) = std::env::var_os(CHILD_REPO_VAR) else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        init_repo(&dir, &[("a.txt", "committed")]).await;
+        fs::write(dir.join("a.txt"), b"uncommitted").unwrap();
+        let snap = WorkspaceSnapshot::create(&dir, "sess", 1).await;
+        assert!(snap.tree_id.is_some(), "the snapshot captured no tree");
     }
 }

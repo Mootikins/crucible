@@ -773,7 +773,7 @@ mod shipped_plugin_tests {
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let root = tmp.path();
         let git = |args: &[&str]| {
-            let status = std::process::Command::new("git")
+            let status = crucible_core::git::command()
                 .arg("-C")
                 .arg(root)
                 .args(args)

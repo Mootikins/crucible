@@ -198,7 +198,7 @@ pub(super) async fn blob(
     path: &str,
 ) -> ReviewResult<Option<String>> {
     let spec = format!("{}:{}", tree_sha(root, tree)?, path);
-    let out = Command::new("git")
+    let out = Command::from(crucible_core::git::command())
         .args(["cat-file", "blob", &spec])
         .current_dir(root)
         .output()
@@ -331,7 +331,7 @@ async fn git(root: &Path, args: &[&str]) -> ReviewResult<String> {
 async fn git_stdin(root: &Path, args: &[&str], input: &str) -> ReviewResult<String> {
     use tokio::io::AsyncWriteExt;
 
-    let mut child = Command::new("git")
+    let mut child = Command::from(crucible_core::git::command())
         .args(args)
         .current_dir(root)
         .stdin(std::process::Stdio::piped())

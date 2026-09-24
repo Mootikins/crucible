@@ -8,12 +8,11 @@
 mod cli_e2e_helpers;
 
 use std::path::Path;
-use std::process::Command;
 
 use cli_e2e_helpers::TestDaemon;
 
 fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
+    let status = crucible_core::git::command()
         .current_dir(dir)
         .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
         .args(args)

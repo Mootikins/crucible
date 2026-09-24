@@ -47,7 +47,7 @@ pub async fn execute(args: UpdateArgs) -> Result<()> {
         }
 
         println!("Updating '{}'...", name);
-        let output = tokio::process::Command::new("git")
+        let output = tokio::process::Command::from(crucible_core::git::command())
             .args(["pull", "--ff-only"])
             .current_dir(&dest)
             .output()

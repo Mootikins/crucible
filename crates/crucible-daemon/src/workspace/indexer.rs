@@ -8,7 +8,6 @@
 //! The CLI copies remain until Task 1.3 deletes them.
 
 use std::path::Path;
-use std::process::Command;
 
 use walkdir::WalkDir;
 
@@ -20,7 +19,7 @@ use walkdir::WalkDir;
 pub fn index_workspace_files(root: &Path) -> Vec<String> {
     const MAX_ENTRIES: usize = 2000;
     // Try git ls-files to respect gitignore
-    if let Ok(output) = Command::new("git")
+    if let Ok(output) = crucible_core::git::command()
         .arg("-C")
         .arg(root)
         .args(["ls-files", "--cached", "--others", "--exclude-standard"])
