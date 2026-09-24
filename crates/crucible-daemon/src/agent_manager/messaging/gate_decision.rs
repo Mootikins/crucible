@@ -216,13 +216,17 @@ enum Unprompted {
 /// 2. An operator `deny` refuses, also for a card `allow`: an untrusted kiln
 ///    must not ship a card that walks past a configured deny.
 /// 3. A card `allow` runs the call.
-/// 4. The `--permissions` override `allow` or `deny` decides.
+/// 4. The `--permissions` override `allow` or `deny` decides. In a plugin
+///    turn whose plugin value is not `inherit`, `allow` does not decide.
 /// 5. A read-only tool runs, unless a card `ask` or an operator `ask` rule
 ///    names it.
 /// 6. An operator `allow` runs the call.
 /// 7. A saved pattern or a grant for this session runs the call.
 /// 8. A Lua `permission:request` hook decides; if none does, the mode rules
 ///    and the mode stance decide.
+///    In a plugin turn the plugin value makes this stricter: `ask` asks
+///    (or refuses with nobody to ask), and `stop` refuses. A hook `deny`
+///    still refuses.
 /// 9. The caller asks the user, or refuses the call when nobody can answer.
 ///
 /// The engine is asked as interactive. It folds `ask` into `deny` when
@@ -302,16 +306,20 @@ fn decide_unprompted(
         PermissionHookResult::Prompt => mode_stance(ctx, call, args),
     };
     // A plugin turn takes the stricter of the stance and the plugin value.
+    // With nobody to ask, `ask` refuses, and the reason names the plugin.
     if !matches!(stance, Some(Unprompted::Deny(_))) {
-        match ctx.plugin_approval {
-            PluginApproval::Inherit => {}
-            PluginApproval::Ask => {
-                return Unprompted::Ask(format!("plugin {}", ctx.plugin.unwrap_or("plugin")))
-            }
-            PluginApproval::Stop => {
+        let plugin = ctx.plugin.unwrap_or("plugin");
+        match (ctx.plugin_approval, ctx.prompt) {
+            (PluginApproval::Inherit, _) => {}
+            (PluginApproval::Ask, Some(_)) => return Unprompted::Ask(format!("plugin {plugin}")),
+            (PluginApproval::Ask, None) => {
                 return Unprompted::Deny(format!(
-                    "Plugin '{}' is stopped from requesting tool permission",
-                    ctx.plugin.unwrap_or("plugin")
+                    "Plugin '{plugin}' must ask before '{tool}', but nobody can answer in this turn"
+                ))
+            }
+            (PluginApproval::Stop, _) => {
+                return Unprompted::Deny(format!(
+                    "Plugin '{plugin}' is stopped from requesting tool permission"
                 ))
             }
         }
@@ -586,5 +594,89 @@ mod tests {
             &decide_with(None, Some(&deny), Some(PermissionMode::Allow), "Task"),
             "permissions config"
         ));
+    }
+
+    /// Decide a `bash` call in a turn of the plugin `goal`, whose value is
+    /// `approval`. `prompt`: a person can answer a prompt.
+    fn plugin_turn(
+        approval: PluginApproval,
+        permission_override: Option<PermissionMode>,
+        prompt: bool,
+    ) -> Unprompted {
+        let args = serde_json::json!({ "command": "ls" });
+        let call = CanonicalToolCall::crucible_tool("bash", &args);
+        let modes = ModeRegistry::new();
+        let no_mcp = HashSet::new();
+        let engine = PermissionEngine::new(None);
+        let slot = SessionSlot::default();
+        let (event_tx, _events) = broadcast::channel(1);
+        let ctx = PermissionContext {
+            session_id: "s",
+            tool_policy: None,
+            engine: &engine,
+            permission_override,
+            plugin: Some("goal"),
+            plugin_approval: approval,
+            patterns: None,
+            slot: None,
+            hooks: None,
+            mode: "",
+            modes: &modes,
+            mcp_read_only: &no_mcp,
+            prompt: prompt.then_some(Prompt {
+                slot: &slot,
+                event_tx: &event_tx,
+            }),
+        };
+        decide_unprompted(&ctx, &call, &args)
+    }
+
+    fn names_goal(decision: &Unprompted) -> (&'static str, bool) {
+        match decision {
+            Unprompted::Allow(_) => ("allow", false),
+            Unprompted::Ask(layer) => ("ask", layer.contains("goal")),
+            Unprompted::Deny(reason) => ("deny", reason.contains("goal")),
+        }
+    }
+
+    /// `ask` prompts when a person can answer. With nobody to ask it
+    /// refuses, and the reason names the plugin. The override `allow` does
+    /// not skip the plugin value; the override `deny` still refuses.
+    #[test]
+    fn a_plugin_ask_prompts_or_refuses_with_its_name() {
+        use PluginApproval::Ask;
+        assert_eq!(names_goal(&plugin_turn(Ask, None, true)), ("ask", true));
+        assert_eq!(names_goal(&plugin_turn(Ask, None, false)), ("deny", true));
+        let allow = Some(PermissionMode::Allow);
+        assert_eq!(names_goal(&plugin_turn(Ask, allow, true)), ("ask", true));
+        assert_eq!(names_goal(&plugin_turn(Ask, allow, false)), ("deny", true));
+        let deny = plugin_turn(Ask, Some(PermissionMode::Deny), true);
+        assert!(matches!(deny, Unprompted::Deny(r) if r.contains("permission override")));
+    }
+
+    /// `stop` refuses each call that needs a prompt, with or without a
+    /// person, and also under the override `allow`.
+    #[test]
+    fn a_plugin_stop_refuses_with_its_name() {
+        use PluginApproval::Stop;
+        for (permission_override, prompt) in [
+            (None, true),
+            (None, false),
+            (Some(PermissionMode::Allow), true),
+        ] {
+            let decision = plugin_turn(Stop, permission_override, prompt);
+            assert_eq!(names_goal(&decision), ("deny", true));
+        }
+        let deny = plugin_turn(Stop, Some(PermissionMode::Deny), true);
+        assert!(matches!(deny, Unprompted::Deny(r) if r.contains("permission override")));
+    }
+
+    /// `inherit` changes nothing: the override `allow` runs the call.
+    #[test]
+    fn a_plugin_inherit_keeps_the_session_decision() {
+        let decision = plugin_turn(PluginApproval::Inherit, Some(PermissionMode::Allow), false);
+        assert!(
+            matches!(decision, Unprompted::Allow(Some(layer)) if layer == "permission override")
+        );
     }
 }

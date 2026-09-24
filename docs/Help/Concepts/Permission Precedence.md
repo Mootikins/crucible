@@ -215,7 +215,8 @@ that denies `bash`.
 
 Each plugin starts with `inherit`, which uses the preceding decision. `ask`
 turns a Lua hook or mode allowance into a prompt; an explicit mode denial still
-denies. `stop` denies calls that reach this layer, with a reason naming the
+denies. In a turn that nobody can answer, `ask` denies, with a reason naming
+the plugin. `stop` denies calls that reach this layer, with a reason naming the
 plugin. Configured rules, agent-card decisions, read-only exemptions and saved
 grants retain their precedence. A `--permissions allow` override falls through
 for plugin calls when their approval is `ask` or `stop`.
