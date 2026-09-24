@@ -151,6 +151,18 @@ pub struct OilChatApp {
 
 // ─── View, update, message ───────────────────────────────────────────────────
 
+/// The parts of the view around the transcript.
+pub(crate) struct Chrome {
+    /// Status regions above the transcript.
+    pub top: Vec<Node>,
+    /// The prompt, or the modal or drawer that replaces it.
+    pub footer: Node,
+    /// Status regions below the footer.
+    pub bottom: Vec<Node>,
+    /// The completion popup. It draws over the rows above the prompt.
+    pub overlay: Node,
+}
+
 /// How long a tool may run before it leaves the transcript as two immutable
 /// nodes.
 ///
@@ -192,36 +204,77 @@ impl OilChatApp {
         ctx: &ViewContext<'_>,
         kept: Option<&mut crate::tui::oil::transcript_rows::TranscriptRows>,
     ) -> Node {
+        if let Some(modal) = self.modal_view(ctx) {
+            return modal;
+        }
+
+        let ctx = &self.frame_context(ctx);
+        let chrome = self.chrome(ctx);
+        let transcript = match kept {
+            Some(kept) => kept.frame_nodes(&self.container_list, ctx),
+            None => self.transcript_nodes(ctx),
+        };
+        col(chrome
+            .top
+            .into_iter()
+            .chain([
+                // Transcript area. Every node is in every frame; the terminal
+                // scrolls rows off the top and keeps them in its scrollback.
+                flex(1, slot("content", [col(transcript).gap(Gap::row(1))])),
+                chrome.footer,
+            ])
+            .chain(chrome.bottom)
+            .chain([chrome.overlay]))
+        .gap(Gap::row(1))
+    }
+
+    /// The full-screen modal, if one is open. It replaces the whole view.
+    pub(crate) fn modal_view(&self, ctx: &ViewContext<'_>) -> Option<Node> {
         self.terminal_size.set(ctx.terminal_size);
-
+        let (w, h) = ctx.terminal_size;
+        let (w, h) = (w as usize, h as usize);
         if let Some(ref modal) = self.shell_modal {
-            let (w, h) = ctx.terminal_size;
-            return modal.view(w as usize, h as usize);
+            return Some(modal.view(w, h));
         }
-
         if let Some(ref modal) = self.surface_modal {
-            let (w, h) = ctx.terminal_size;
-            return modal.view(w as usize, h as usize);
+            return Some(modal.view(w, h));
         }
-
         if let Some(ref modal) = self.diff_modal {
-            let (w, h) = ctx.terminal_size;
-            return modal.view(w as usize, h as usize);
+            return Some(modal.view(w, h));
         }
-
         if let Some(ref modal) = self.proposals_modal {
-            let (w, h) = ctx.terminal_size;
-            return modal.view(w as usize, h as usize);
+            return Some(modal.view(w, h));
         }
+        None
+    }
 
-        let ctx = &ViewContext {
+    /// `ctx` with this app's frame clock and display flags.
+    pub(crate) fn frame_context<'a>(&self, ctx: &ViewContext<'a>) -> ViewContext<'a> {
+        self.terminal_size.set(ctx.terminal_size);
+        ViewContext {
             frame_time: self.frame_time,
             spinner_frame: self.spinner_frame(),
             show_thinking: self.show_thinking,
             show_diffs: self.show_diffs,
             ..*ctx
-        };
+        }
+    }
 
+    /// Every transcript node laid out from source. `ctx` comes from
+    /// [`Self::frame_context`].
+    fn transcript_nodes(&self, ctx: &ViewContext<'_>) -> Vec<Node> {
+        let nodes = self.container_list.nodes();
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(i, node)| node.render(i.checked_sub(1).map(|p| &nodes[p]), ctx))
+            .collect()
+    }
+
+    /// Everything around the transcript. `ctx` comes from
+    /// [`Self::frame_context`]. The native view stacks these around the
+    /// transcript; the full-screen view places them at the screen edges.
+    pub(crate) fn chrome(&self, ctx: &ViewContext<'_>) -> Chrome {
         // `top` and `bottom` frame the whole app, so they render regardless of
         // which footer surface is up — a modal or the messages drawer replaces
         // the command panel, not the window chrome around it.
@@ -229,49 +282,29 @@ impl OilChatApp {
         let status = self.build_status_component();
         // Neither region may hold the input — `Layout::from_wire` strips a stray
         // one — so an empty node here is unreachable, not a fallback.
-        let top_bars = status.render_region(Region::Top, || Node::Empty);
-        let bottom_bars = status.render_region(Region::Bottom, || Node::Empty);
-
-        let transcript = match kept {
-            Some(kept) => kept.frame_nodes(&self.container_list, ctx),
-            None => {
-                let nodes = self.container_list.nodes();
-                nodes
-                    .iter()
-                    .enumerate()
-                    .map(|(i, node)| node.render(i.checked_sub(1).map(|p| &nodes[p]), ctx))
-                    .collect()
-            }
-        };
-
-        col(top_bars
-            .into_iter()
-            .chain([
-                // Transcript area. Every node is in every frame; the terminal
-                // scrolls rows off the top and keeps them in its scrollback.
-                flex(1, slot("content", [col(transcript).gap(Gap::row(1))])),
-                // Pinned footer
-                slot(
-                    "footer",
-                    [col(
-                        match (&self.interaction_modal, self.notification_area.is_visible()) {
-                            (Some(modal), _) => vec![modal.view(
-                                ctx.terminal_size.0 as usize,
-                                self.permission.permission_queue.len(),
-                            )],
-                            (_, true) => vec![self.render_messages_drawer(ctx)],
-                            _ => vec![self.build_command_panel(ctx).view(ctx)],
-                        },
-                    )
-                    .gap(Gap::row(1))],
-                ),
-            ])
-            .chain(bottom_bars)
-            .chain([
-                // Overlay
-                self.popup_overlay_view(ctx),
-            ]))
-        .gap(Gap::row(1))
+        let top = status.render_region(Region::Top, || Node::Empty);
+        let bottom = status.render_region(Region::Bottom, || Node::Empty);
+        // Pinned footer
+        let footer = slot(
+            "footer",
+            [col(
+                match (&self.interaction_modal, self.notification_area.is_visible()) {
+                    (Some(modal), _) => vec![modal.view(
+                        ctx.terminal_size.0 as usize,
+                        self.permission.permission_queue.len(),
+                    )],
+                    (_, true) => vec![self.render_messages_drawer(ctx)],
+                    _ => vec![self.build_command_panel(ctx).view(ctx)],
+                },
+            )
+            .gap(Gap::row(1))],
+        );
+        Chrome {
+            top,
+            footer,
+            bottom,
+            overlay: self.popup_overlay_view(ctx),
+        }
     }
 
     /// Apply one terminal event.
@@ -695,7 +728,7 @@ impl OilChatApp {
         self.precognition.precognition = val;
     }
 
-    #[cfg(test)]
+    /// The transcript nodes. The full-screen view lays them out itself.
     pub(crate) fn container_list(&self) -> &crate::tui::oil::containers::ContainerList {
         &self.container_list
     }
@@ -958,7 +991,7 @@ impl OilChatApp {
         self.interaction_modal = None;
     }
 
-    #[cfg(test)]
+    /// Whether a permission or question prompt is open. It owns the keys.
     pub(crate) fn interaction_visible(&self) -> bool {
         self.interaction_modal.is_some()
     }

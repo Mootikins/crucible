@@ -452,6 +452,15 @@ impl OilChatRunner {
             return Ok(false);
         };
 
+        // The full-screen view takes its scroll keys and the mouse first.
+        if let Some(view) = self.fullscreen.as_mut() {
+            use crate::tui::oil::fullscreen::ViewAction;
+            match view.handle_event(&ev, params.app) {
+                ViewAction::Ignored => {}
+                ViewAction::Handled => return Ok(false),
+            }
+        }
+
         let action = params.app.update(ev.clone());
         tracing::trace!(?ev, ?action, "processed event");
 

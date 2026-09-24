@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 const WIDTH: u16 = 200;
 const HEIGHT: u16 = 60;
 /// Exchanges that give a transcript of about 5,000 rows at 200 columns.
-const EXCHANGES: usize = 100;
+const EXCHANGES: usize = 115;
 const FRAMES: usize = 300;
 
 struct Sample {
@@ -96,5 +96,31 @@ fn frame_time_while_streaming_5k_rows() {
     let mut app = fixtures::app_with_exchanges(EXCHANGES);
     let mut view = FullscreenView::new();
     let samples = stream_frames(&mut app, &mut view);
+    println!("transcript rows: {}", view.transcript().len());
     report("stream 200x60", &samples);
+}
+
+/// A full relayout: the first frame, and every frame after a width change.
+#[test]
+#[ignore = "measurement: run with an optimized build, see the module doc"]
+fn frame_time_of_a_full_relayout_5k_rows() {
+    let app = fixtures::app_with_exchanges(EXCHANGES);
+    let focus = FocusContext::new();
+    let mut view = FullscreenView::new();
+    let mut samples = Vec::new();
+    for (i, width) in [200u16, 199, 160, 120, 200].into_iter().cycle().take(20).enumerate() {
+        let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, HEIGHT));
+        let start = Instant::now();
+        let frame = view.frame(&app, &ctx);
+        let time = start.elapsed();
+        if i == 0 {
+            println!("transcript rows at {width}: {}", view.transcript().len());
+        }
+        samples.push(Sample {
+            time,
+            bytes: 0,
+            rows: frame.grid.height(),
+        });
+    }
+    report("relayout on width change", &samples);
 }
