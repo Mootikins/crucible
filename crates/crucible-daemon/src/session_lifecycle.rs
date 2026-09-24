@@ -39,14 +39,17 @@ pub struct SessionLifecycle {
     sessions: Arc<SessionManager>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     agents: OnceLock<Weak<AgentManager>>,
-    /// Sessions whose plugin `on_session_end` hooks have already been claimed.
+    /// Sessions whose plugin `on_session_end` hooks have already been claimed
+    /// since their start hooks last fired.
     ///
     /// `get_session` is a check, not a claim: the session is not removed until
     /// the end handler runs, so two concurrent teardowns both see it and both
-    /// fire. `insert` returns false for the loser. Grows by one id per ended
-    /// session for the daemon's lifetime — bounded and tiny, and it must
-    /// outlive the session entry itself, which is what makes it a valid
-    /// duplicate guard.
+    /// fire. `insert` returns false for the loser. It must outlive the session
+    /// entry itself, which is what makes it a valid duplicate guard.
+    ///
+    /// The start hooks remove the id. Each firing of the start hooks is paired
+    /// with one firing of the end hooks: a session that ends, revives and ends
+    /// again claimed isolation twice, and the second end must release it too.
     plugin_end_claimed: DashSet<String>,
 }
 
@@ -331,6 +334,12 @@ impl SessionLifecycle {
 
     async fn fire_session_start(&self, session_id: &str) -> anyhow::Result<()> {
         let mut guard = self.plugin_loader.lock().await;
+        // A start opens a new pair, so the next end runs the end hooks again.
+        // Without this, the first end's mark stays, and a revived session
+        // keeps its claim and its container when it ends a second time.
+        // Under the loader lock, so an end that waits for the lock runs after
+        // this start, and releases what this start claims.
+        self.plugin_end_claimed.remove(session_id);
         let Some(loader) = guard.as_mut() else {
             return Ok(());
         };

@@ -574,3 +574,59 @@ async fn a_session_that_was_never_isolated_revives_without_the_plugin() {
         resp.error
     );
 }
+
+/// Each firing of the start hooks is paired with one firing of the end hooks.
+///
+/// An end releases the claim and the container. A revive fires the start
+/// hooks again, and the plugin claims again. Before the fix the once-only end
+/// marker stayed set after the first end, so the second end ran no end hooks:
+/// the session kept its claim, and the plugin kept its container.
+#[tokio::test]
+async fn a_revived_session_releases_its_claim_again_when_it_ends_again() {
+    const COUNTS_ENDS: &str = r#"
+cru.on_session_end(function(_session)
+  _G.ends = (_G.ends or 0) + 1
+end)
+"#;
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+    let plugins = sandbox_plugin(data_home.path());
+    let daemon = Daemon::boot(
+        data_home.path(),
+        kiln.path(),
+        Some(&plugins),
+        Some(COUNTS_ENDS),
+    )
+    .await;
+    let id = daemon.isolated_session().await;
+
+    let ended = daemon.rpc("session.end", json!({ "session_id": id })).await;
+    assert!(ended.error.is_none(), "first end: {:?}", ended.error);
+    assert!(
+        !daemon.claimed(&id).await,
+        "precondition: the first end released the claim"
+    );
+
+    daemon.inject_agent(&id);
+    let sent = daemon
+        .rpc(
+            "session.send_message",
+            json!({ "session_id": id, "content": "back again" }),
+        )
+        .await;
+    assert!(sent.error.is_none(), "revive: {:?}", sent.error);
+    assert!(
+        daemon.claimed(&id).await,
+        "precondition: the revive claimed isolation again"
+    );
+
+    let ended = daemon.rpc("session.end", json!({ "session_id": id })).await;
+    assert!(ended.error.is_none(), "second end: {:?}", ended.error);
+    assert!(
+        !daemon.claimed(&id).await,
+        "session {id} ended a second time and kept its isolation claim: the end \
+         hooks did not run, so the plugin keeps its container"
+    );
+    let ends: i64 = daemon.lua().globals().get("ends").unwrap();
+    assert_eq!(ends, 2, "each start is paired with one end");
+}

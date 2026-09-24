@@ -304,6 +304,10 @@ plugin claims the persisted value again. These paths are a message to an ended
 or stored session, `session.resume`, `session.resume_from_storage` and
 `cru.session.resume`.
 
+Each firing of the start hooks is paired with one firing of the end hooks. So a
+session that ends, comes back and ends again runs the end hooks two times. The
+second end releases the claim and the container that the second start made.
+
 When a plugin claims isolation for a session for the first time, the daemon
 stores that fact with the session. The record names the plugin. It also says
 whether the session asked for the isolation or the plugin configuration gave
