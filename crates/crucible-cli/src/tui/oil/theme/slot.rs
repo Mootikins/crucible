@@ -5,7 +5,18 @@
 //! borrows from it for free. See `global` for why an install leaks the
 //! previous value instead of reference-counting it.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
+
+/// Counts installs into every slot. A renderer that keeps styled output
+/// compares it to know that any slot changed since.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// A number that changes whenever the theme, the highlight groups, the
+/// geometry or the bars change.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Acquire)
+}
 
 pub struct RenderSlot<T: 'static> {
     active: RwLock<Option<&'static T>>,
@@ -32,6 +43,7 @@ impl<T: 'static> RenderSlot<T> {
         if let Ok(mut guard) = self.active.write() {
             *guard = Some(leaked);
         }
+        GENERATION.fetch_add(1, Ordering::AcqRel);
     }
 
     /// The installed value, or `fallback` when none was installed.

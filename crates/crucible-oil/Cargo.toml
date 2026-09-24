@@ -14,7 +14,8 @@ test-utils = ["dep:proptest"]
 
 [dependencies]
 crossterm = { workspace = true }
-serde = { workspace = true, optional = true }
+# `rc` serializes the shared rows of a `RowsNode`.
+serde = { workspace = true, optional = true, features = ["rc"] }
 unicode-width = "0.2"
 taffy = "0.12"
 textwrap = "0.16.2"

@@ -8,6 +8,7 @@
 
 use crucible_oil::node::{col, row, styled, Node};
 use crucible_oil::style::{Gap, Style};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
@@ -272,6 +273,11 @@ impl ChatNode {
 /// from these nodes at the new width.
 pub struct ContainerList {
     nodes: Vec<ChatNode>,
+    /// One per node. A node gets a new revision on each change, so a renderer
+    /// that kept the rows of a node knows when they are stale. A revision is
+    /// never given twice, so a node that takes the place of another after
+    /// [`ContainerList::clear`] never matches the old rows.
+    revisions: Vec<u64>,
     turn_active: bool,
     /// Tools that outran the split threshold, keyed by `CachedToolCall::id`.
     ///
@@ -285,6 +291,7 @@ impl ContainerList {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
+            revisions: Vec::new(),
             turn_active: false,
             background: Vec::new(),
         }
@@ -300,12 +307,36 @@ impl ContainerList {
 
     pub fn clear(&mut self) {
         self.nodes.clear();
+        self.revisions.clear();
         self.background.clear();
         self.turn_active = false;
     }
 
     pub fn nodes(&self) -> &[ChatNode] {
         &self.nodes
+    }
+
+    /// The revision of each node, in the order of [`ContainerList::nodes`].
+    pub(crate) fn revisions(&self) -> &[u64] {
+        &self.revisions
+    }
+
+    /// Append `node` with a new revision.
+    fn push(&mut self, node: ChatNode) {
+        self.nodes.push(node);
+        self.revisions.push(next_revision());
+    }
+
+    /// The last node, for a change: it gets a new revision.
+    fn last_mut(&mut self) -> Option<&mut ChatNode> {
+        *self.revisions.last_mut()? = next_revision();
+        self.nodes.last_mut()
+    }
+
+    /// Each node with its revision. A caller that changes a node must give
+    /// it a new revision with [`next_revision`].
+    fn entries_mut(&mut self) -> impl DoubleEndedIterator<Item = (&mut ChatNode, &mut u64)> {
+        self.nodes.iter_mut().zip(self.revisions.iter_mut())
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -315,13 +346,13 @@ impl ContainerList {
     // ─── Mutations ──────────────────────────────────────────────────────
 
     pub fn add_user_message(&mut self, content: String) {
-        self.nodes.push(ChatNode::UserMessage { text: content });
+        self.push(ChatNode::UserMessage { text: content });
     }
 
     /// Ensure there's an AssistantResponse at the end. Creates one if needed.
     pub fn start_assistant_response(&mut self) {
         if !matches!(self.nodes.last(), Some(ChatNode::AssistantResponse { .. })) {
-            self.nodes.push(ChatNode::AssistantResponse {
+            self.push(ChatNode::AssistantResponse {
                 text: String::new(),
                 thinking: Vec::new(),
                 complete: false,
@@ -332,7 +363,7 @@ impl ContainerList {
     /// Append text to the current AssistantResponse. Creates one if needed.
     pub fn append_text(&mut self, delta: &str) {
         self.start_assistant_response();
-        if let Some(ChatNode::AssistantResponse { text, .. }) = self.nodes.last_mut() {
+        if let Some(ChatNode::AssistantResponse { text, .. }) = self.last_mut() {
             text.push_str(delta);
         }
     }
@@ -345,7 +376,7 @@ impl ContainerList {
     /// once the AR is complete or another node lands after it.
     pub fn append_thinking(&mut self, delta: &str) {
         self.start_assistant_response();
-        if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.nodes.last_mut() {
+        if let Some(ChatNode::AssistantResponse { thinking, .. }) = self.last_mut() {
             if thinking.is_empty() {
                 thinking.push(ThinkingComponent::new(String::new()));
             }
@@ -363,7 +394,7 @@ impl ContainerList {
         );
 
         // First, mark any trailing AssistantResponse as complete
-        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
+        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.last_mut() {
             if !*complete {
                 tracing::debug!("marking trailing AR complete before tool");
                 *complete = true;
@@ -371,12 +402,12 @@ impl ContainerList {
         }
 
         // Group into existing ToolGroup or create new one
-        if let Some(ChatNode::ToolGroup { tools }) = self.nodes.last_mut() {
+        if let Some(ChatNode::ToolGroup { tools }) = self.last_mut() {
             tracing::debug!("appending to existing ToolGroup");
             tools.push(tool);
         } else {
             tracing::debug!("creating new ToolGroup");
-            self.nodes.push(ChatNode::ToolGroup { tools: vec![tool] });
+            self.push(ChatNode::ToolGroup { tools: vec![tool] });
         }
     }
 
@@ -401,7 +432,8 @@ impl ContainerList {
     /// Returns whether anything froze, so the caller can request a frame.
     pub fn split_slow_tools(&mut self, now: Instant, threshold: Duration) -> bool {
         let mut froze = false;
-        for node in self.nodes.iter_mut() {
+        let mut background = Vec::new();
+        for (node, revision) in self.entries_mut() {
             let ChatNode::ToolGroup { tools } = node else {
                 continue;
             };
@@ -412,10 +444,12 @@ impl ContainerList {
                     continue;
                 }
                 tool.backgrounded = true;
-                self.background.push(tool.clone());
+                *revision = next_revision();
+                background.push(tool.clone());
                 froze = true;
             }
         }
+        self.background.extend(background);
         froze
     }
 
@@ -475,8 +509,7 @@ impl ContainerList {
         let mut tool = self.background.remove(position);
         tool.complete = true;
         let ran_for = tool.elapsed_at(now);
-        self.nodes
-            .push(ChatNode::BackgroundToolFinished { tool, ran_for });
+        self.push(ChatNode::BackgroundToolFinished { tool, ran_for });
         true
     }
 
@@ -495,7 +528,7 @@ impl ContainerList {
         f: impl FnOnce(&mut CachedToolCall),
     ) {
         // Search backwards for a ToolGroup containing this tool
-        for node in self.nodes.iter_mut().rev() {
+        for (node, revision) in self.entries_mut().rev() {
             if let ChatNode::ToolGroup { tools } = node {
                 // Match by call_id first, then by name
                 // A frozen card never changes again. Its live copy is in
@@ -512,6 +545,7 @@ impl ContainerList {
                         .find(|t| !t.backgrounded && t.name.as_ref() == name)
                 };
                 if let Some(tool) = found {
+                    *revision = next_revision();
                     f(tool);
                     return;
                 }
@@ -528,13 +562,14 @@ impl ContainerList {
     /// requiring the tool name). Used for ACP `tool_call_diff_update`
     /// events that key only on call_id.
     pub fn update_tool_by_call_id(&mut self, call_id: &str, f: impl FnOnce(&mut CachedToolCall)) {
-        for node in self.nodes.iter_mut().rev() {
+        for (node, revision) in self.entries_mut().rev() {
             if let ChatNode::ToolGroup { tools } = node {
                 if let Some(tool) = tools
                     .iter_mut()
                     .rev()
                     .find(|t| !t.backgrounded && t.call_id.as_deref() == Some(call_id))
                 {
+                    *revision = next_revision();
                     f(tool);
                     return;
                 }
@@ -547,13 +582,14 @@ impl ContainerList {
     }
 
     pub fn add_agent_task(&mut self, agent: CachedSubagent) {
-        self.nodes.push(ChatNode::SubagentTask { agent });
+        self.push(ChatNode::SubagentTask { agent });
     }
 
     pub fn update_agent_task(&mut self, agent_id: &str, f: impl FnOnce(&mut CachedSubagent)) {
-        for node in self.nodes.iter_mut().rev() {
+        for (node, revision) in self.entries_mut().rev() {
             if let ChatNode::SubagentTask { agent } = node {
                 if agent.id.as_ref() == agent_id {
+                    *revision = next_revision();
                     f(agent);
                     return;
                 }
@@ -563,18 +599,18 @@ impl ContainerList {
     }
 
     pub fn add_shell_execution(&mut self, shell: CachedShellExecution) {
-        self.nodes.push(ChatNode::ShellExecution { shell });
+        self.push(ChatNode::ShellExecution { shell });
     }
 
     pub fn add_system_message(&mut self, content: String) {
-        self.nodes.push(ChatNode::SystemMessage { text: content });
+        self.push(ChatNode::SystemMessage { text: content });
     }
 
     /// Mark the turn as complete: sets turn_active = false and marks
     /// the trailing AssistantResponse as Complete.
     pub fn complete_response(&mut self) {
         self.turn_active = false;
-        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.nodes.last_mut() {
+        if let Some(ChatNode::AssistantResponse { complete, .. }) = self.last_mut() {
             *complete = true;
         }
     }
@@ -582,9 +618,12 @@ impl ContainerList {
     /// Cancel streaming: marks all streaming nodes as complete.
     pub fn cancel_streaming(&mut self) {
         self.turn_active = false;
-        for node in &mut self.nodes {
+        for (node, revision) in self.entries_mut() {
             if let ChatNode::AssistantResponse { complete, .. } = node {
-                *complete = true;
+                if !*complete {
+                    *complete = true;
+                    *revision = next_revision();
+                }
             }
         }
     }
@@ -592,6 +631,13 @@ impl ContainerList {
     pub fn mark_turn_active(&mut self) {
         self.turn_active = true;
     }
+}
+
+/// A revision that no node had before. Process-wide, so two lists never
+/// share one either.
+fn next_revision() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl Default for ContainerList {

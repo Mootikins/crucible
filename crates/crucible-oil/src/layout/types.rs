@@ -200,6 +200,10 @@ pub enum LayoutContent {
         display_width: u16,
         display_height: u16,
     },
+
+    /// Finished rows from an earlier render, one per string. See
+    /// [`crate::node::RowsNode`].
+    Rows { rows: std::sync::Arc<[String]> },
 }
 
 #[cfg(test)]

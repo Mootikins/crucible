@@ -40,7 +40,9 @@ pub fn render_frame(app: &mut OilChatApp, renderer: &mut impl FrameRenderer, foc
     // No graduation: the renderer emits the whole transcript and the terminal
     // owns the scroll. A row that scrolls off the top stays in the terminal's
     // scrollback, and a resize reprints the transcript from these same nodes.
-    let tree = app.view(&ctx);
+    // The frame reuses the rows of finished nodes; `ctx` has the renderer's
+    // width, which those rows need.
+    let tree = app.frame_view(&ctx);
     renderer.render_frame(&tree, None);
 }
 

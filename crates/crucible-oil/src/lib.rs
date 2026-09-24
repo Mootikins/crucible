@@ -55,18 +55,18 @@ pub use layout::Rect;
 pub use layout::{build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree};
 pub use node::{
     action, badge, bullet_list, col, divider, fixed, flex, fragment, horizontal_rule, if_else,
-    key_value, maybe, numbered_list, overlay_from_bottom, popup, progress_bar, raw, row, show,
-    spacer, spinner, styled, text, text_input, when, ActionNode, BoxNode, Direction, InputNode,
-    Node, OverlayNode, PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, TextNode,
-    DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
+    key_value, maybe, numbered_list, overlay_from_bottom, popup, progress_bar, raw, row, rows,
+    show, spacer, spinner, styled, text, text_input, when, ActionNode, BoxNode, Direction,
+    InputNode, Node, OverlayNode, PopupItemNode, PopupNode, RawNode, RowsNode, Size, SpinnerNode,
+    TextNode, DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
 };
 pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, Graduation, RenderedOverlay};
 pub use popup_node::popup_item;
 pub use render::{
-    render_to_plain_text, render_to_string, render_tree, render_with_cursor, CursorInfo,
-    RenderResult, NATURAL_HEIGHT,
+    render_to_plain_text, render_to_rows, render_to_string, render_tree, render_with_cursor,
+    CursorInfo, RenderResult, NATURAL_HEIGHT,
 };
 pub use runtime::FrameRenderer;
 #[cfg(any(test, feature = "test-utils"))]

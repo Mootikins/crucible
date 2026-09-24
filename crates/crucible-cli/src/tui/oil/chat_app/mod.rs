@@ -120,6 +120,9 @@ pub struct OilChatApp {
     precognition: PrecognitionState,
     /// Current terminal size (width, height) — updated in view()
     terminal_size: Cell<(u16, u16)>,
+    /// The kept rows of finished transcript nodes. Only
+    /// [`OilChatApp::frame_view`] reads and fills it.
+    transcript_rows: crate::tui::oil::transcript_rows::TranscriptRows,
 
     /// Permission request state
     permission: PermissionState,
@@ -159,8 +162,36 @@ pub(crate) const BACKGROUND_TOOL_SPLIT_THRESHOLD: std::time::Duration =
     std::time::Duration::from_millis(500);
 
 impl OilChatApp {
-    /// Build the frame for the current state.
+    /// Build the frame for the current state, with every transcript node
+    /// laid out from source.
     pub fn view(&self, ctx: &ViewContext<'_>) -> Node {
+        self.compose(ctx, None)
+    }
+
+    /// Build the same frame as [`OilChatApp::view`], with the kept rows of
+    /// the finished transcript nodes. See `transcript_rows`.
+    ///
+    /// `ctx.terminal_size.0` must be the width that the frame is laid out
+    /// at, because the kept rows have that width.
+    pub fn frame_view(&mut self, ctx: &ViewContext<'_>) -> Node {
+        let mut kept = std::mem::take(&mut self.transcript_rows);
+        let tree = self.compose(ctx, Some(&mut kept));
+        self.transcript_rows = kept;
+        tree
+    }
+
+    /// How many transcript node layouts [`OilChatApp::frame_view`] did.
+    #[cfg(test)]
+    pub(crate) fn transcript_layouts(&self) -> u64 {
+        self.transcript_rows.layouts()
+    }
+
+    /// The frame, with the transcript from `kept` when there is one.
+    fn compose(
+        &self,
+        ctx: &ViewContext<'_>,
+        kept: Option<&mut crate::tui::oil::transcript_rows::TranscriptRows>,
+    ) -> Node {
         self.terminal_size.set(ctx.terminal_size);
 
         if let Some(ref modal) = self.shell_modal {
@@ -201,25 +232,24 @@ impl OilChatApp {
         let top_bars = status.render_region(Region::Top, || Node::Empty);
         let bottom_bars = status.render_region(Region::Bottom, || Node::Empty);
 
+        let transcript = match kept {
+            Some(kept) => kept.frame_nodes(&self.container_list, ctx),
+            None => {
+                let nodes = self.container_list.nodes();
+                nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, node)| node.render(i.checked_sub(1).map(|p| &nodes[p]), ctx))
+                    .collect()
+            }
+        };
+
         col(top_bars
             .into_iter()
             .chain([
-                // Transcript area. Every node renders every frame; the terminal
+                // Transcript area. Every node is in every frame; the terminal
                 // scrolls rows off the top and keeps them in its scrollback.
-                flex(
-                    1,
-                    slot(
-                        "content",
-                        [col({
-                            let nodes = self.container_list.nodes();
-                            nodes.iter().enumerate().map(|(i, node)| {
-                                let prev = if i > 0 { Some(&nodes[i - 1]) } else { None };
-                                node.render(prev, ctx)
-                            })
-                        })
-                        .gap(Gap::row(1))],
-                    ),
-                ),
+                flex(1, slot("content", [col(transcript).gap(Gap::row(1))])),
                 // Pinned footer
                 slot(
                     "footer",
@@ -262,8 +292,8 @@ impl OilChatApp {
             }
             // Dimensions and previous-frame invalidation are handled by
             // Terminal::handle_resize before this event reaches the app.
-            // The app holds no width-dependent cached state — every render
-            // wraps from source — so there's nothing else to invalidate.
+            // The kept transcript rows are keyed by width, so the next frame
+            // lays them out again without a reset here.
             Event::Resize { .. } => Action::Continue,
         }
     }

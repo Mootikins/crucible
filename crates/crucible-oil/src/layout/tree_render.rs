@@ -47,6 +47,18 @@ pub fn render_layout_tree(tree: &LayoutTree) -> (String, CursorInfo) {
     (content, cursor_info)
 }
 
+/// Render a LayoutTree to its rows, each as [`render_layout_tree`] emits it.
+pub fn render_layout_tree_rows(tree: &LayoutTree) -> Vec<String> {
+    let width = tree.root.rect.width as usize;
+    let height = (tree.root.rect.y + tree.root.rect.height) as usize;
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    let mut grid = CellGrid::new(width, height);
+    render_box(&tree.root, &mut grid, &mut None);
+    grid.rows_compact()
+}
+
 fn cursor_info_from_position(
     cursor_position: Option<(u16, u16)>,
     rendered_line_count: usize,
@@ -158,6 +170,12 @@ fn render_box(
 
         LayoutContent::Raw { content, .. } => {
             grid.blit_line(content, x, y);
+        }
+
+        LayoutContent::Rows { rows } => {
+            for index in 0..rows.len().min(height) {
+                grid.put_row(rows, index, x, y + index);
+            }
         }
     }
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use unicode_width::UnicodeWidthChar;
 
 use crate::ansi::extract_bg;
@@ -26,20 +28,31 @@ impl StyledCell {
     }
 }
 
+/// One row of the grid.
+///
+/// A long transcript has thousands of rows, and most of them are either
+/// copied whole from an earlier frame or never drawn into. So a row gets its
+/// cells only when something draws into it.
+#[derive(Debug, Clone, Default)]
+struct Row {
+    /// Empty until something draws into the row. An empty row reads as spaces.
+    cells: Vec<StyledCell>,
+    /// A finished row that [`CellGrid::put_row`] placed, as `rows[index]`.
+    /// It is the row's output as long as nothing draws over it.
+    verbatim: Option<(Arc<[String]>, usize)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CellGrid {
-    cells: Vec<Vec<StyledCell>>,
+    rows: Vec<Row>,
     width: usize,
     height: usize,
 }
 
 impl CellGrid {
     pub fn new(width: usize, height: usize) -> Self {
-        let cells = (0..height)
-            .map(|_| (0..width).map(|_| StyledCell::space()).collect())
-            .collect();
         Self {
-            cells,
+            rows: vec![Row::default(); height],
             width,
             height,
         }
@@ -55,120 +68,53 @@ impl CellGrid {
 
     #[cfg(test)]
     pub fn get(&self, x: usize, y: usize) -> Option<&StyledCell> {
-        self.cells.get(y).and_then(|row| row.get(x))
+        static SPACE: StyledCell = StyledCell {
+            ch: ' ',
+            style: String::new(),
+        };
+        let row = self.rows.get(y)?;
+        if x >= self.width {
+            return None;
+        }
+        Some(row.cells.get(x).unwrap_or(&SPACE))
+    }
+
+    /// The cells of row `y`, made on the first draw. A verbatim row is drawn
+    /// into its cells first, so a later draw composes over it.
+    fn cells_mut(&mut self, y: usize) -> &mut [StyledCell] {
+        let width = self.width;
+        let row = &mut self.rows[y];
+        if row.cells.is_empty() {
+            row.cells = vec![StyledCell::space(); width];
+            if let Some((rows, index)) = row.verbatim.take() {
+                blit_into(&mut row.cells, &rows[index], 0);
+            }
+        }
+        &mut row.cells
     }
 
     pub fn blit_line(&mut self, line: &str, x: usize, y: usize) {
-        if y >= self.height {
+        if y >= self.height || x >= self.width {
             return;
         }
+        blit_into(self.cells_mut(y), line, x);
+    }
 
-        let mut col = x;
-        let mut current_style = String::new();
-        let mut chars = line.chars().peekable();
-
-        while let Some(c) = chars.next() {
-            if col >= self.width {
-                break;
-            }
-
-            if c == '\x1b' {
-                match chars.peek() {
-                    Some(&'[') => {
-                        let mut escape = String::from("\x1b[");
-                        chars.next();
-                        while let Some(&next) = chars.peek() {
-                            escape.push(chars.next().unwrap());
-                            if next.is_ascii_alphabetic() {
-                                break;
-                            }
-                        }
-                        if escape.contains('m') {
-                            if escape == "\x1b[0m" || escape == "\x1b[m" {
-                                current_style.clear();
-                            } else {
-                                current_style.push_str(&escape);
-                            }
-                        }
-                    }
-                    // OSC / APC / DCS: skip entirely without interpreting as visible chars.
-                    // Bounded to 256 characters — a malformed unterminated sequence in
-                    // user content must not consume the rest of the line.
-                    //
-                    // NOTE: the parallel skip in `ansi::strip_ansi` / `visible_width`
-                    // is unbounded today (see `ansi.rs::skip_until_st_or_bel`). For
-                    // legitimate well-terminated escapes the two agree by reaching the
-                    // terminator first; for malformed input this asymmetry would only
-                    // matter if width and blit ran on the same malformed payload, which
-                    // no current path does. Stage B (render path unification) is the
-                    // right place to converge them.
-                    Some(&']') | Some(&'_') | Some(&'P') => {
-                        chars.next();
-                        let mut consumed = 0usize;
-                        let mut terminated = false;
-                        while let Some(sc) = chars.next() {
-                            consumed += 1;
-                            if sc == '\x07' {
-                                terminated = true;
-                                break;
-                            }
-                            if sc == '\x1b' && chars.peek() == Some(&'\\') {
-                                chars.next();
-                                terminated = true;
-                                break;
-                            }
-                            if consumed >= 256 {
-                                break;
-                            }
-                        }
-                        if !terminated {
-                            tracing::debug!(
-                                consumed,
-                                "dropped malformed OSC/APC/DCS escape (no terminator within 256 characters)"
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-            } else {
-                let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
-                if col + char_width <= self.width {
-                    // Style composition: if the new write doesn't set its
-                    // own bg, inherit whatever bg was on the cell already.
-                    // This lets a parent Box's `style.bg` survive children
-                    // that only paint fg, mirroring CSS layering. Pair
-                    // with `tree_render::render_box_content`'s bg-fill.
-                    //
-                    // Asymmetric guarantee: this composes by *cell state*,
-                    // not by tree ancestry. If a sibling Box-with-bg paints
-                    // a region, then a *later* sibling (no bg) writes text
-                    // over the same cells, the second sibling's text picks
-                    // up the first sibling's bg. Tree layouts that don't
-                    // overlap siblings (Crucible's norm) see only the
-                    // intended parent→child inheritance.
-                    let final_style = if extract_bg(&current_style).is_none() {
-                        match extract_bg(&self.cells[y][col].style) {
-                            Some(prior_bg) => {
-                                if current_style.is_empty() {
-                                    prior_bg
-                                } else {
-                                    format!("{}{}", prior_bg, current_style)
-                                }
-                            }
-                            None => current_style.clone(),
-                        }
-                    } else {
-                        current_style.clone()
-                    };
-                    self.cells[y][col] = StyledCell::new(c, final_style);
-                    for i in 1..char_width {
-                        if col + i < self.width {
-                            self.cells[y][col + i] = StyledCell::new('\0', String::new());
-                        }
-                    }
-                    col += char_width;
-                }
-            }
+    /// Place `rows[index]` as row `y`: a finished row as
+    /// [`CellGrid::to_string_compact`] emits it, rendered earlier at the
+    /// width of this grid.
+    ///
+    /// A row that nothing drew into keeps the string as its output, so a
+    /// frame copies it instead of drawing its cells again. Otherwise the
+    /// string is drawn over the cells, as [`CellGrid::blit_line`] does.
+    pub fn put_row(&mut self, rows: &Arc<[String]>, index: usize, x: usize, y: usize) {
+        let Some(row) = self.rows.get_mut(y) else {
+            return;
+        };
+        if x == 0 && row.cells.is_empty() && row.verbatim.is_none() {
+            row.verbatim = Some((Arc::clone(rows), index));
+        } else {
+            self.blit_line(&rows[index], x, y);
         }
     }
 
@@ -184,16 +130,28 @@ impl CellGrid {
 
     #[cfg(test)]
     pub fn to_lines(&self) -> Vec<String> {
-        self.cells.iter().map(|row| cells_to_string(row)).collect()
+        (0..self.height)
+            .map(|y| {
+                let row = &self.rows[y];
+                match &row.verbatim {
+                    Some((rows, index)) => rows[*index].clone(),
+                    None if row.cells.is_empty() => " ".repeat(self.width),
+                    None => cells_to_string(&row.cells),
+                }
+            })
+            .collect()
     }
 
     /// Find the last row with non-space (or styled) content, returning count of content rows.
     ///
     /// Returns 0 for an entirely blank grid.
     pub fn content_height(&self) -> usize {
-        self.cells
+        self.rows
             .iter()
-            .rposition(|row| row.iter().any(|c| c.ch != ' ' || !c.style.is_empty()))
+            .rposition(|row| match &row.verbatim {
+                Some((rows, index)) => !rows[*index].is_empty(),
+                None => row.cells.iter().any(|c| c.ch != ' ' || !c.style.is_empty()),
+            })
             .map(|i| i + 1)
             .unwrap_or(0)
     }
@@ -207,11 +165,147 @@ impl CellGrid {
     /// unified cursor-info `row_from_end` math (`tree_render.rs`) relies on
     /// this and would silently desync if a caller picked the wrong API.
     pub fn to_string_compact(&self) -> String {
-        self.cells
+        let mut out = String::new();
+        for (y, row) in self.rows.iter().enumerate() {
+            if y > 0 {
+                out.push_str("\r\n");
+            }
+            push_row_compact(row, &mut out);
+        }
+        out
+    }
+
+    /// Each row as [`CellGrid::to_string_compact`] emits it, without the
+    /// line breaks between them.
+    pub fn rows_compact(&self) -> Vec<String> {
+        self.rows
             .iter()
-            .map(|row| cells_to_string_compact(row))
-            .collect::<Vec<_>>()
-            .join("\r\n")
+            .map(|row| {
+                let mut out = String::new();
+                push_row_compact(row, &mut out);
+                out
+            })
+            .collect()
+    }
+}
+
+fn push_row_compact(row: &Row, out: &mut String) {
+    match &row.verbatim {
+        Some((rows, index)) => out.push_str(&rows[*index]),
+        None => out.push_str(&cells_to_string_compact(&row.cells)),
+    }
+}
+
+/// Draw `line` into `cells` from column `x`, reading SGR escapes as the
+/// style of the cells after them.
+fn blit_into(cells: &mut [StyledCell], line: &str, x: usize) {
+    let width = cells.len();
+    let mut col = x;
+    let mut current_style = String::new();
+    let mut chars = line.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if col >= width {
+            break;
+        }
+
+        if c == '\x1b' {
+            match chars.peek() {
+                Some(&'[') => {
+                    let mut escape = String::from("\x1b[");
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        escape.push(chars.next().unwrap());
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                    if escape.contains('m') {
+                        if escape == "\x1b[0m" || escape == "\x1b[m" {
+                            current_style.clear();
+                        } else {
+                            current_style.push_str(&escape);
+                        }
+                    }
+                }
+                // OSC / APC / DCS: skip entirely without interpreting as visible chars.
+                // Bounded to 256 characters — a malformed unterminated sequence in
+                // user content must not consume the rest of the line.
+                //
+                // NOTE: the parallel skip in `ansi::strip_ansi` / `visible_width`
+                // is unbounded today (see `ansi.rs::skip_until_st_or_bel`). For
+                // legitimate well-terminated escapes the two agree by reaching the
+                // terminator first; for malformed input this asymmetry would only
+                // matter if width and blit ran on the same malformed payload, which
+                // no current path does. Stage B (render path unification) is the
+                // right place to converge them.
+                Some(&']') | Some(&'_') | Some(&'P') => {
+                    chars.next();
+                    let mut consumed = 0usize;
+                    let mut terminated = false;
+                    while let Some(sc) = chars.next() {
+                        consumed += 1;
+                        if sc == '\x07' {
+                            terminated = true;
+                            break;
+                        }
+                        if sc == '\x1b' && chars.peek() == Some(&'\\') {
+                            chars.next();
+                            terminated = true;
+                            break;
+                        }
+                        if consumed >= 256 {
+                            break;
+                        }
+                    }
+                    if !terminated {
+                        tracing::debug!(
+                            consumed,
+                            "dropped malformed OSC/APC/DCS escape (no terminator within 256 characters)"
+                        );
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            let char_width = UnicodeWidthChar::width(c).unwrap_or(1);
+            if col + char_width <= width {
+                // Style composition: if the new write doesn't set its
+                // own bg, inherit whatever bg was on the cell already.
+                // This lets a parent Box's `style.bg` survive children
+                // that only paint fg, mirroring CSS layering. Pair
+                // with `tree_render::render_box_content`'s bg-fill.
+                //
+                // Asymmetric guarantee: this composes by *cell state*,
+                // not by tree ancestry. If a sibling Box-with-bg paints
+                // a region, then a *later* sibling (no bg) writes text
+                // over the same cells, the second sibling's text picks
+                // up the first sibling's bg. Tree layouts that don't
+                // overlap siblings (Crucible's norm) see only the
+                // intended parent→child inheritance.
+                let final_style = if extract_bg(&current_style).is_none() {
+                    match extract_bg(&cells[col].style) {
+                        Some(prior_bg) => {
+                            if current_style.is_empty() {
+                                prior_bg
+                            } else {
+                                format!("{}{}", prior_bg, current_style)
+                            }
+                        }
+                        None => current_style.clone(),
+                    }
+                } else {
+                    current_style.clone()
+                };
+                cells[col] = StyledCell::new(c, final_style);
+                for i in 1..char_width {
+                    if col + i < width {
+                        cells[col + i] = StyledCell::new('\0', String::new());
+                    }
+                }
+                col += char_width;
+            }
+        }
     }
 }
 

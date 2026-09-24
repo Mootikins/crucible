@@ -1,6 +1,8 @@
+mod frame_time_bench;
 mod generators;
 pub(crate) mod helpers;
 mod layout_test_helpers;
+mod transcript_fixtures;
 pub(crate) mod vt100_runtime;
 mod vt100_runtime_tests;
 
@@ -24,6 +26,7 @@ mod e2e_debug_test;
 mod fixture_replay_tests;
 mod graduation_tests;
 mod inter_frame_invariant_tests;
+mod layout_cache_tests;
 mod message_routing_tests;
 mod permission_invariant_tests;
 mod rendering_regression_tests;

@@ -30,6 +30,7 @@ mod render_state;
 #[cfg(any(test, feature = "test-utils"))]
 mod test_harness;
 pub mod theme;
+mod transcript_rows;
 pub mod utils;
 mod viewport_cache;
 

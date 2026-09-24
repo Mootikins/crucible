@@ -130,6 +130,8 @@ impl LayoutEngine {
             Node::Raw(raw) => {
                 self.new_leaf_size(raw.display_width as f32, raw.display_height as f32)
             }
+
+            Node::Rows(rows) => self.new_leaf_size(available_width, rows.rows.len() as f32),
         };
 
         node_id
@@ -452,6 +454,13 @@ impl LayoutEngine {
                     content: raw.content.clone(),
                     display_width: raw.display_width,
                     display_height: raw.display_height,
+                },
+            ),
+
+            Node::Rows(rows) => LayoutBox::new(
+                rect,
+                LayoutContent::Rows {
+                    rows: rows.rows.clone(),
                 },
             ),
         }

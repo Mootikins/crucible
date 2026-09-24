@@ -49,6 +49,7 @@ impl Default for OilChatApp {
             show_diffs: true,
             precognition: PrecognitionState::default(),
             terminal_size: Cell::new((80, 24)),
+            transcript_rows: Default::default(),
             permission: PermissionState::default(),
             message_queue: MessageQueueState::default(),
             pending_delegate_supersessions: std::collections::HashSet::new(),

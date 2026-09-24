@@ -45,6 +45,8 @@ pub enum Node {
     Action(ActionNode),
     /// Raw escape sequence passthrough (for protocol-specific content like images)
     Raw(RawNode),
+    /// Rows that an earlier render produced. See [`RowsNode`].
+    Rows(RowsNode),
 }
 
 /// See [`Node::Action`].
@@ -83,6 +85,19 @@ pub struct RawNode {
     pub display_width: u16,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "crate::is_default"))]
     pub display_height: u16,
+}
+
+/// Rows that [`crate::render::render_to_rows`] produced, put back in a tree.
+///
+/// A caller keeps the rows of content that no longer changes, so a later
+/// frame does not build and lay out that content again. The node takes one
+/// row per string and the full width. Each string must come from a render at
+/// the width that the node gets now; the renderer copies it to the output
+/// as it is.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct RowsNode {
+    pub rows: std::sync::Arc<[String]>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -312,6 +327,11 @@ pub fn raw(content: impl Into<String>, display_width: u16, display_height: u16) 
         display_width,
         display_height,
     })
+}
+
+/// Put rows from [`crate::render::render_to_rows`] back in a tree.
+pub fn rows(rows: impl Into<std::sync::Arc<[String]>>) -> Node {
+    Node::Rows(RowsNode { rows: rows.into() })
 }
 
 pub fn spacer() -> Node {

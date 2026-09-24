@@ -151,6 +151,8 @@ fn format_box_info(box_node: &LayoutBox) -> String {
         } => {
             format!("Raw {}x{}", display_width, display_height)
         }
+
+        LayoutContent::Rows { rows } => format!("Rows {}", rows.len()),
     };
 
     let key_str = box_node

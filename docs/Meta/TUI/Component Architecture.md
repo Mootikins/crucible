@@ -48,6 +48,28 @@ State Change → Node Tree → Layout (taffy) → Render (buffer) → Terminal O
 4. **Render**: Nodes render to terminal buffer with styles
 5. **Output**: Diff algorithm writes minimal changes to terminal
 
+### Kept Rows of Finished Messages
+
+The native mode prints the whole transcript on each frame. To keep a long
+session fast, `render_frame` calls `OilChatApp::frame_view`, not `view`.
+`frame_view` gives each finished message the rows of an earlier layout
+(`transcript_rows.rs`, oil `Node::Rows`). Thus a frame lays out only the
+messages that can still change. `view` lays out every message from source,
+and the tests use it as the reference.
+
+The key of the kept rows has these parts:
+
+- The revision of the message. `ContainerList` gives a message a new
+  revision on each change.
+- The width.
+- The style generation, which changes on each install of a theme, highlight
+  groups, geometry or bars.
+- The display settings `show_thinking` and `show_diffs`.
+
+A message that is not finished is never kept, because it can read the frame
+clock or the spinner frame. `layout_cache_tests.rs` compares each cached
+frame with a fresh frame, byte for byte.
+
 ## Components
 
 Components are modules in `crates/crucible-cli/src/tui/oil/components/`:

@@ -21,7 +21,7 @@ use super::vt100_runtime::Vt100TestRuntime;
 /// `chat_runner` feeds from the daemon. Re-implementing its turn state here
 /// would leave these snapshots pinning a fiction: they would keep passing while
 /// the shipped rule regressed.
-fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
+pub(super) fn parse_fixture(path: &Path) -> Vec<crate::tui::oil::chat_app::ChatAppMsg> {
     let content = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read fixture {}: {e}", path.display()));
 

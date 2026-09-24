@@ -9,7 +9,7 @@
 //! test rendering — they are byte-identical for the same tree+dims.
 
 use crate::ansi::strip_ansi;
-use crate::layout::render_layout_tree;
+use crate::layout::{render_layout_tree, render_layout_tree_rows};
 use crate::node::Node;
 use crate::taffy_layout::{build_layout_tree_with_engine, LayoutEngine};
 
@@ -88,6 +88,26 @@ pub(crate) fn render_tree_with_engine(
         content,
         cursor: cursor_info,
     }
+}
+
+/// Render `node` as a child of a column `width` cells wide, one string per
+/// row, trailing blank rows included.
+///
+/// A caller keeps the rows of content that no longer changes, and puts them
+/// back in a later column with [`crate::node::rows`]. That column renders the
+/// same output as it does with the node, without laying the node out again.
+/// The node is laid out as a child, not as the root, because a root drops
+/// its vertical margins. Keep a [`Node::Empty`] as it is: it takes no place
+/// in the column, but a rows node takes one even with no rows, and the
+/// column puts its gap around it.
+pub fn render_to_rows(node: &Node, width: u16) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let column = crate::node::col([node.clone()]);
+    let tree =
+        build_layout_tree_with_engine(&mut LayoutEngine::new(), &column, width, NATURAL_HEIGHT_CAP);
+    render_layout_tree_rows(&tree)
 }
 
 /// Render a node tree to an ANSI string at its natural height.
@@ -540,5 +560,54 @@ mod tests {
         // Raw node escapes are written verbatim, followed by space padding to width.
         assert!(result.content.starts_with("[img]"));
         assert_eq!(result.content.len(), 12);
+    }
+
+    /// Nodes of each shape that the kept rows must reproduce: styled text,
+    /// a background box, a border, wide characters, and trailing blank rows.
+    fn row_samples() -> Vec<Node> {
+        vec![
+            text("plain"),
+            styled("red and bold", Style::new().fg(Color::Red).bold()),
+            col([text(
+                "a long line that wraps at the width of the frame ".repeat(3),
+            )]),
+            col([text("on a background")])
+                .with_style(Style::new().bg(Color::Blue))
+                .with_padding(Padding::all(1)),
+            col([text("in a border")]).with_border(Border::Rounded),
+            text("wide: \u{65e5}\u{672c}\u{8a9e} end"),
+            col([text("above a blank row"), text("")]),
+            raw("\x1b]1337;File=inline=1:abc\x07", 4, 1),
+            col([text("between margins")]).with_margin(Padding::xy(1, 2)),
+            col([text("one"), text("two")]).gap(Gap::row(1)),
+        ]
+    }
+
+    /// The property that lets a caller keep rows: a tree that holds the
+    /// kept rows renders the same bytes as the tree that holds the node.
+    #[test]
+    fn kept_rows_render_the_same_frame_as_their_node() {
+        for node in row_samples() {
+            let kept = rows(render_to_rows(&node, 30));
+            let frame = |middle: Node| {
+                col([text("header"), middle, styled("footer", Style::new().dim())]).gap(Gap::row(1))
+            };
+            assert_eq!(
+                render_tree(&frame(kept), 30, NATURAL_HEIGHT).content,
+                render_tree(&frame(node.clone()), 30, NATURAL_HEIGHT).content,
+                "{node:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_draw_over_kept_rows_composes_with_them() {
+        let kept = rows(vec!["abcdef".to_string()]);
+        let tree = col([kept, overlay_from_bottom(text("XY"), 0)]);
+        let direct = col([text("abcdef"), overlay_from_bottom(text("XY"), 0)]);
+        assert_eq!(
+            render_tree(&tree, 10, NATURAL_HEIGHT).content,
+            render_tree(&direct, 10, NATURAL_HEIGHT).content,
+        );
     }
 }

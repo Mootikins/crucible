@@ -38,6 +38,7 @@ impl LayoutBox {
             LayoutContent::Empty => None,
             LayoutContent::Popup { .. } => None,
             LayoutContent::Raw { .. } => None,
+            LayoutContent::Rows { rows } => Some(crate::ansi::strip_ansi(&rows.join("\n"))),
         }
     }
 }
