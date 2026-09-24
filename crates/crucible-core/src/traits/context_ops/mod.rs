@@ -15,6 +15,29 @@
 use crate::traits::llm::{MessageRole, ToolCall};
 use serde::{Deserialize, Serialize};
 
+/// Break each `<system-message` and `</system-message` tag in `text`, in any case.
+///
+/// The `<` becomes `&lt;`. Thus the text of a comment or of a file cannot
+/// close the block or open a false one. Other text does not change, so code
+/// with `<` and `>` stays as it is.
+pub fn escape(text: &str) -> String {
+    const TAG: &str = "system-message";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let name = after.strip_prefix('/').unwrap_or(after);
+        let is_tag = name
+            .get(..TAG.len())
+            .is_some_and(|n| n.eq_ignore_ascii_case(TAG));
+        out.push_str(if is_tag { "&lt;" } else { "<" });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Metadata associated with a context message
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageMetadata {
@@ -104,7 +127,7 @@ impl ContextMessage {
             "<system-message kind=\"{}\" source=\"{}\">\n{}\n</system-message>",
             xml_attribute(kind),
             xml_attribute(source),
-            content.as_ref()
+            escape(content.as_ref())
         ));
         message.metadata.kind = Some(kind.to_owned());
         message.metadata.source = Some(source.to_owned());

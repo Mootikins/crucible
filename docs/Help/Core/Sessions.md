@@ -69,7 +69,9 @@ plugin cannot inject a `user` message: a person writes those.
 A `system` injection reaches the model in one
 `<system-message kind="context" source="…">` element. `source` is the name of
 the plugin, or `rpc` for an RPC client. The log keeps the kind and the source,
-so a resume, an undo and a fork give the same element back.
+so a resume, an undo and a fork give the same element back. The daemon breaks each
+`<system-message` tag in the text, so an injected text cannot close the
+element or open a false one.
 Acceptance persists immediately, but does not send a message or start a turn.
 The next turn incorporates the context once; an in-flight turn is unchanged.
 The same ordering survives resume, including context accepted before a restart

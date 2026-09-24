@@ -706,11 +706,6 @@ impl AgentManager {
             // One block holds both injections, so it keeps the tag of each.
             (Some(review), Some(mut files)) => {
                 files.content = format!("{review}\n\n{}", files.content);
-                // The combined block has two envelopes. Clearing the single
-                // attachment kind keeps the context tagger from stripping the
-                // review envelope while it wraps this new system message.
-                files.metadata.kind = None;
-                files.metadata.source = None;
                 Some(files.with_tag(crate::diff::context::KIND))
             }
         };

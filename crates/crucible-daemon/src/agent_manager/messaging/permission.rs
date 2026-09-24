@@ -580,7 +580,6 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
-        let prior = messages.clone();
         let mut current = messages;
 
         // Built-in producer: prepend the pre-computed Precognition
@@ -609,6 +608,9 @@ impl AgentManager {
             with_precog.extend(current);
             current = with_precog;
         }
+        // The blocks so far are the daemon's own. Only a block that a
+        // handler adds gets the envelope of handler context.
+        let prior = current.clone();
 
         // Lua runtime handlers can replace the message array entirely by
         // returning `{ messages = ... }`. Session-scoped handlers first,

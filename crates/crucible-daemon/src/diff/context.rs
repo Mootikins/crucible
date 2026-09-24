@@ -30,6 +30,7 @@ use std::path::Path;
 
 use crucible_core::diff::DiffFileText;
 use crucible_core::session::{Comment, CommentAuthor, CommentSide, LineRange};
+use crucible_core::traits::context_ops::escape;
 use similar::TextDiff;
 
 /// The `kind` of the block, and the prefix of its `id`.
@@ -146,29 +147,6 @@ fn push_indented(out: &mut String, text: &str) {
         out.push_str(&escape(line));
         out.push('\n');
     }
-}
-
-/// Break each `<system-message` and `</system-message` tag in `text`, in any case.
-///
-/// The `<` becomes `&lt;`. Thus the text of a comment or of a file cannot
-/// close the block or open a false one. Other text does not change, so code
-/// with `<` and `>` stays as it is.
-pub fn escape(text: &str) -> String {
-    const TAG: &str = "system-message";
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find('<') {
-        out.push_str(&rest[..at]);
-        let after = &rest[at + 1..];
-        let name = after.strip_prefix('/').unwrap_or(after);
-        let is_tag = name
-            .get(..TAG.len())
-            .is_some_and(|n| n.eq_ignore_ascii_case(TAG));
-        out.push_str(if is_tag { "&lt;" } else { "<" });
-        rest = after;
-    }
-    out.push_str(rest);
-    out
 }
 
 /// One row of a line diff: its number on each side where it has one.
