@@ -1046,7 +1046,9 @@ async fn a_lua_hook_decides_an_acp_request() {
     )
     .await;
     let (event_tx, mut event_rx) = broadcast::channel(16);
-    let handle = am.build_acp_permission_handler(&id, &event_tx, std::path::Path::new("/w"), None);
+    let handle = am
+        .build_acp_permissions(&id, &event_tx, std::path::Path::new("/w"), None)
+        .handler();
     let command = crucible_core::types::classify_acp(
         serde_json::from_value(serde_json::json!({
             "kind": "execute", "title": "Run", "rawInput": {"command": "cargo test"},

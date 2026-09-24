@@ -25,6 +25,7 @@ pub async fn start_host(
         std::sync::Arc::new(MockEmbeddingProvider::new()) as std::sync::Arc<dyn EmbeddingProvider>,
         delegation,
         crucible_daemon::tools::containment::RootSet::Ambient,
+        None,
     )
     .await
     .unwrap_or_else(|err| {

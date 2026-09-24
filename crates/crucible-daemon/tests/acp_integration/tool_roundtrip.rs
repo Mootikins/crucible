@@ -256,6 +256,7 @@ async fn test_acp_tool_result_from_the_real_mcp_host_reaches_tool_end() {
         embedding_provider,
         None,
         crucible_daemon::tools::containment::RootSet::Ambient,
+        None,
     )
     .await
     .expect("the in-process MCP host binds to localhost");

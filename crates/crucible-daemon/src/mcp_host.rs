@@ -94,6 +94,9 @@ impl InProcessMcpHost {
     /// kiln tools to an EXTERNAL agent process over HTTP — the caller has to
     /// answer "contained by what" before the surface exists, and
     /// `RootSet::Ambient` is a legitimate answer only outside a session.
+    /// `call_gate` is required for the same reason: it decides each call
+    /// with the permission gate of the session, and `None` is a legitimate
+    /// answer only outside a session.
     pub async fn start(
         kiln_path: PathBuf,
         workspace_path: PathBuf,
@@ -101,6 +104,7 @@ impl InProcessMcpHost {
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
         containment: crate::tools::containment::RootSet,
+        call_gate: Option<crate::tools::mcp_server::McpCallGate>,
     ) -> AcpResult<Self> {
         use rmcp::transport::streamable_http_server::{
             session::local::LocalSessionManager, tower::StreamableHttpService,
@@ -132,7 +136,8 @@ impl InProcessMcpHost {
             embedding_provider,
             delegation_context,
             containment,
-        );
+        )
+        .with_call_gate(call_gate);
 
         let service = StreamableHttpService::new(
             move || Ok(mcp_server.clone()),
@@ -339,6 +344,7 @@ mod tests {
             embedding_provider,
             None,
             crate::tools::containment::RootSet::Ambient,
+            None,
         )
         .await
         {
@@ -385,6 +391,7 @@ mod tests {
             embedding_provider,
             None,
             crate::tools::containment::RootSet::Ambient,
+            None,
         )
         .await
         {
@@ -478,6 +485,7 @@ mod tests {
             Arc::new(MockEmbeddingProvider::new()),
             None,
             crate::tools::containment::RootSet::scoped([kiln.path().to_path_buf()], [denied]),
+            None,
         )
         .await
         .unwrap_or_else(|err| {

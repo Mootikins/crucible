@@ -264,12 +264,10 @@ async fn a_permission_request_after_the_turn_is_cancelled() {
         .unwrap();
     assert_eq!(done.await.unwrap().status, TurnStatus::Completed);
 
-    let handle = h.agent_manager.build_acp_permission_handler(
-        &h.session_id,
-        &h.event_tx,
-        std::path::Path::new("/w"),
-        None,
-    );
+    let handle = h
+        .agent_manager
+        .build_acp_permissions(&h.session_id, &h.event_tx, std::path::Path::new("/w"), None)
+        .handler();
     let call = crucible_core::types::CanonicalToolCall::crucible_tool(
         "bash",
         &serde_json::json!({ "command": "rm -rf x" }),

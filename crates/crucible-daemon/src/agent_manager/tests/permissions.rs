@@ -1203,12 +1203,9 @@ mod session_permission_config_tests {
                 ..Default::default()
             });
         let (event_tx, _events) = broadcast::channel(16);
-        let handle = manager.build_acp_permission_handler(
-            &session_id,
-            &event_tx,
-            std::path::Path::new("/w"),
-            None,
-        );
+        let handle = manager
+            .build_acp_permissions(&session_id, &event_tx, std::path::Path::new("/w"), None)
+            .handler();
         let ask = || {
             let call = crucible_core::types::classify_acp(
                 serde_json::from_value(serde_json::json!({

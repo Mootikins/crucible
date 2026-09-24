@@ -58,11 +58,33 @@ async fn agent_calls(
         log: Some(log.clone()),
         ..MockScript::default()
     };
-    let session = mock_session(&[("kiln", kiln), ("other-kiln", other)], None, script).await;
+    let mut session = mock_session(&[("kiln", kiln), ("other-kiln", other)], None, script).await;
+
+    // The permission gate asks about a call that can write. The user allows
+    // it, so what refuses the call is the containment under test.
+    let manager = session.agent_manager.clone();
+    let session_id = session.session_id.to_string();
+    let mut events = std::mem::replace(&mut session.events, session.event_tx.subscribe());
+    let user = tokio::spawn(async move {
+        while let Ok(event) = events.recv().await {
+            if event.event == "interaction_requested" {
+                let id = event.data["request_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let _ = manager.respond_to_permission(
+                    &session_id,
+                    &id,
+                    crucible_core::interaction::PermResponse::allow(),
+                );
+            }
+        }
+    });
 
     // The mock logs the MCP reply before it answers the prompt, so a
     // completed turn means the log holds the reply.
     let outcome = session.turn("read it", TURN_TIMEOUT).await;
+    user.abort();
     assert_eq!(outcome.final_text.trim(), ANSWER, "the agent's answer");
 
     let results = logged(&log, "mcp/result");

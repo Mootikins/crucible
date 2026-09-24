@@ -53,7 +53,22 @@ pub struct CrucibleMcpServer {
     kiln_path: PathBuf,
     delegation_context: Option<DelegationContext>,
     tool_router: ToolRouter<Self>,
+    /// The permission gate of the session that the calls run for. `None`:
+    /// no session decides the calls (`cru mcp`).
+    call_gate: Option<McpCallGate>,
 }
+
+/// Decide one call to a tool of this server, by its tool name and its JSON
+/// arguments, before the call runs. `Err` holds why the call is refused.
+///
+/// The ACP gate of the session gives it: an ACP agent calls Crucible's tools
+/// through this server, and the daemon decides each call with the one tool
+/// policy, as it decides a call of its own agent.
+pub type McpCallGate = Arc<
+    dyn Fn(String, serde_json::Value) -> futures::future::BoxFuture<'static, Result<(), String>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Clone)]
 pub struct DelegationContext {
@@ -186,7 +201,15 @@ impl CrucibleMcpServer {
             kiln_path: kiln_path_buf,
             delegation_context,
             tool_router: Self::tool_router(),
+            call_gate: None,
         }
+    }
+
+    /// Decide each tool call with `gate` before it runs.
+    #[must_use]
+    pub fn with_call_gate(mut self, gate: Option<McpCallGate>) -> Self {
+        self.call_gate = gate;
+        self
     }
 
     /// Attach the session's search fan-out set (primary + connected kilns)
@@ -682,6 +705,29 @@ impl CrucibleMcpServer {
 
 #[tool_handler]
 impl ServerHandler for CrucibleMcpServer {
+    /// Ask the call gate, then run the call. A refusal is a tool result with
+    /// `isError`, so the agent reads why, as the model of an internal agent
+    /// does.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        if let Some(gate) = &self.call_gate {
+            let args = request
+                .arguments
+                .clone()
+                .map_or(serde_json::Value::Null, serde_json::Value::Object);
+            if let Err(reason) = gate(request.name.to_string(), args).await {
+                return Ok(CallToolResult::error(vec![
+                    rmcp::model::ContentBlock::text(reason),
+                ]));
+            }
+        }
+        let call = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(call).await
+    }
+
     fn get_info(&self) -> rmcp::model::ServerInfo {
         let tool_count = self.tool_count();
         make_server_info(&format!(

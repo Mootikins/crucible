@@ -248,14 +248,30 @@ pub async fn mock_session(
     workspace: Option<&Path>,
     script: super::mock_agent::MockScript,
 ) -> MockSession {
+    mock_session_with(kilns, workspace, script, None, None).await
+}
+
+/// [`mock_session`] with the agent card `tool_policy` and the operator
+/// `[permissions]` rules `permissions`.
+#[allow(dead_code)]
+pub async fn mock_session_with(
+    kilns: &[(&str, &Path)],
+    workspace: Option<&Path>,
+    script: super::mock_agent::MockScript,
+    tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
+    permissions: Option<crucible_core::config::components::permissions::PermissionConfig>,
+) -> MockSession {
     let session_manager = crucible_daemon::test_support::temp_session_manager_with_kilns(kilns);
     let (event_tx, events) = broadcast::channel(256);
     let profile = mock_profile(BTreeMap::from([script.env()]));
-    let agent_manager = Arc::new(crucible_daemon::AgentManager::new(acp_manager_params(
-        session_manager.clone(),
-        BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
-        &event_tx,
-    )));
+    let agent_manager = Arc::new(crucible_daemon::AgentManager::new(AgentManagerParams {
+        permission_config: permissions,
+        ..acp_manager_params(
+            session_manager.clone(),
+            BTreeMap::from([(MOCK_PROFILE.to_string(), profile)]),
+            &event_tx,
+        )
+    }));
     let session = session_manager
         .create_session(
             crucible_core::session::SessionType::Chat,
@@ -266,7 +282,13 @@ pub async fn mock_session(
         .await
         .expect("session");
     agent_manager
-        .configure_agent(&session.id, profile_session_agent(MOCK_PROFILE))
+        .configure_agent(
+            &session.id,
+            SessionAgent {
+                tool_policy,
+                ..profile_session_agent(MOCK_PROFILE)
+            },
+        )
         .await
         .expect("configure the agent");
     MockSession {

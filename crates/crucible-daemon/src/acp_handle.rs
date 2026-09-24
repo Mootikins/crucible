@@ -21,7 +21,7 @@ use translate::{acp_prompt_text, turn_error, turn_stop_reason};
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
-use crate::acp::client::{CrucibleAcpClient, PermissionRequestHandler};
+use crate::acp::client::CrucibleAcpClient;
 use crate::acp::session::ModelChoice;
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
@@ -89,7 +89,10 @@ pub struct AcpAgentHandleParams<'a> {
     /// Where agent cards come from, for the `delegate_session` tool text.
     pub card_roots: &'a crate::agent_cards::CardRoots,
     pub acp_config: Option<&'a AcpConfig>,
-    pub permission_handler: Option<PermissionRequestHandler>,
+    /// The permission gate of the session: the answer to the agent's
+    /// `session/request_permission`, and the gate of each call to the
+    /// in-process MCP server.
+    pub permission_handler: Option<crate::agent_manager::AcpPermissions>,
     /// How to run the agent inside a plugin's sandbox, from the session's
     /// isolation claim. `None` when nothing claimed the session.
     pub sandbox_exec: Option<crucible_lua::SandboxExec>,
@@ -193,6 +196,7 @@ impl AcpAgentHandle {
                 embed,
                 delegation_context,
                 containment,
+                permission_handler.as_ref().map(|p| p.mcp_gate()),
             )
             .await
             {
@@ -225,7 +229,7 @@ impl AcpAgentHandle {
         let connect = |mcp_url: Option<String>| {
             let client_config = client_config.clone();
             let agent_name = agent_name.clone();
-            let permission_handler = permission_handler.clone();
+            let permission_handler = permission_handler.as_ref().map(|p| p.handler());
             async move {
                 let mut client =
                     CrucibleAcpClient::spawn(client_config, agent_name, permission_handler).await?;
@@ -252,6 +256,16 @@ impl AcpAgentHandle {
             }
             Err(e) => return Err(AcpHandleError::Connection(e.to_string())),
         };
+
+        // The agent takes the HTTP server only when it supports HTTP MCP.
+        // Then the server decides each call to a Crucible tool, and the
+        // handler does not ask a second time about the same call. The stdio
+        // server has no gate, so with it the handler still asks.
+        if let (Some(_), Some(permissions)) = (&mcp_host, &permission_handler) {
+            if client.agent_supports_http_mcp() {
+                permissions.mcp_server_decides();
+            }
+        }
 
         let session_id = session.id().to_string();
         info!(session_id = %session_id, "ACP agent connected");

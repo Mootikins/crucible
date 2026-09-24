@@ -4,7 +4,6 @@
 //! This is a simplified version of the CLI's agent factory since
 //! `SessionAgent` contains fully-resolved configuration.
 
-use crate::acp::client::PermissionRequestHandler;
 use crate::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::provider::adapter_mapping::ChatClient;
@@ -67,7 +66,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// Where agent cards come from, for the `delegate_session` tool text.
     pub card_roots: &'a crate::agent_cards::CardRoots,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
-    pub acp_permission_handler: Option<PermissionRequestHandler>,
+    /// The permission gate of an ACP session: the answer to the agent's
+    /// questions and the gate of the in-process MCP server.
+    pub acp_permission_handler: Option<crate::agent_manager::AcpPermissions>,
     pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
     /// `[context]` from the daemon's config, deciding which project rules
     /// files are loaded into the prompt. `None` uses the defaults.

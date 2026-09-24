@@ -1737,6 +1737,7 @@ pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
+pub use messaging::permission::AcpPermissions;
 pub use vm_pass::PluginHandlers;
 
 #[cfg(test)]

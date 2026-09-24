@@ -26,6 +26,15 @@ name a Crucible mode with another rule (Claude calls a mode `auto`). Thus no
 mode stance and no `plan` rule decides an ACP request, and a hook sees an empty
 `request.mode`.
 
+An ACP agent calls Crucible's own tools (`read_note`, `create_note`, …) through
+the MCP server that the daemon runs for the session. The daemon decides each such
+call before it runs, with the tool's own name, as it decides a call of its own
+agent. The agent does not have to ask, and a refusal reaches the agent as the
+error of the call. When the agent asks about such a call first, the daemon
+allows the question and decides the call itself, so you see one prompt. An agent
+that cannot take the HTTP MCP server gets the stdio server `cru mcp`, which runs
+in another process with no gate; then only the agent's questions reach the gate.
+
 This page states that order once. The layers themselves are documented
 separately — [[Help/Config/permissions]], [[Help/Extending/Event Hooks]],
 [[Help/TUI/Modes]], [[Help/Extending/Agent Cards]].

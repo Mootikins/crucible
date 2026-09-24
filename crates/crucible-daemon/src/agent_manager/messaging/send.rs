@@ -1059,7 +1059,7 @@ impl AgentManager {
         );
 
         let acp_permission_handler = if resolved_config.agent_type == "acp" {
-            Some(self.build_acp_permission_handler(
+            Some(self.build_acp_permissions(
                 session_id,
                 event_tx,
                 workspace,

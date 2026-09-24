@@ -6,8 +6,10 @@ use crucible_core::types::CanonicalToolCall;
 use crucible_lua::StageId;
 use std::ops::ControlFlow;
 
-use super::gate_decision::{decide_permission, PermissionContext, Prompt};
+use super::gate_decision::{decide_permission, Decision, PermissionContext, Prompt};
+use crate::agent_manager::slot::TurnGate;
 use crate::agent_manager::vm_pass::run_handlers;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Which of a [`PatternStore`]'s three rule tables owns a tool call.
 ///
@@ -86,6 +88,47 @@ fn select_option(
         .unwrap_or(RequestPermissionOutcome::Cancelled)
 }
 
+/// The permission gate of one ACP session, in its two parts.
+///
+/// The agent runs its own tools and asks about some of them with
+/// `session/request_permission`: [`Self::handler`] answers. The agent calls
+/// Crucible's tools through the in-process MCP server, which runs them in
+/// the daemon: [`Self::mcp_gate`] decides each such call before it runs.
+/// Both parts decide with `decide_permission` and share the prompt of the
+/// session.
+#[derive(Clone)]
+pub struct AcpPermissions {
+    gate: Arc<AcpGate>,
+}
+
+impl AcpPermissions {
+    /// The answer to the agent's `session/request_permission`.
+    pub fn handler(&self) -> crate::acp::client::PermissionRequestHandler {
+        let gate = self.gate.clone();
+        Arc::new(move |call, options| {
+            let gate = gate.clone();
+            Box::pin(async move { gate.decide(call, &options).await })
+        })
+    }
+
+    /// The gate of the in-process MCP server: each call of a Crucible tool
+    /// passes it before it runs.
+    pub fn mcp_gate(&self) -> crate::tools::mcp_server::McpCallGate {
+        let gate = self.gate.clone();
+        Arc::new(move |tool, args| {
+            let gate = gate.clone();
+            Box::pin(async move { gate.decide_crucible_call(&tool, args).await })
+        })
+    }
+
+    /// Record that the agent takes the in-process MCP server with
+    /// [`Self::mcp_gate`]. The server then decides each call to it, and the
+    /// handler does not ask a second time about the same call.
+    pub fn mcp_server_decides(&self) {
+        self.gate.mcp_server_decides.store(true, Ordering::SeqCst);
+    }
+}
+
 /// What the ACP permission handler of one session reads.
 ///
 /// The handler lives as long as the cached agent handle. The turn state
@@ -101,9 +144,76 @@ struct AcpGate {
     /// Read at each call, as the internal path reads it for each turn.
     rules: crate::agent_manager::session_permissions::SessionRules,
     tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
+    /// True when the agent takes the in-process MCP server with the gate.
+    mcp_server_decides: AtomicBool,
+    /// The mode of an ACP session is the agent's own mode. Its id can name a
+    /// Crucible mode (`auto`, `plan`) with another rule, so no Crucible mode
+    /// stance applies.
+    no_modes: crucible_lua::ModeRegistry,
+    no_mcp: std::collections::HashSet<String>,
 }
 
 impl AcpGate {
+    /// What one decision reads, for the turn `turn`.
+    fn context<'a>(
+        &'a self,
+        turn: &TurnGate,
+        engine: &'a PermissionEngine,
+    ) -> PermissionContext<'a> {
+        PermissionContext {
+            session_id: &self.session_id,
+            tool_policy: self.tool_policy.as_ref(),
+            engine,
+            permission_override: turn.permission_override,
+            patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
+            slot: Some(&self.slot),
+            hooks: self.hooks.as_ref(),
+            mode: "",
+            modes: &self.no_modes,
+            mcp_read_only: &self.no_mcp,
+            prompt: turn.is_interactive.then_some(Prompt {
+                slot: &self.slot,
+                event_tx: &self.event_tx,
+            }),
+        }
+    }
+
+    /// Decide one call of the Crucible tool `tool` that the agent makes
+    /// through the in-process MCP server. `Err` holds why it is refused;
+    /// the agent reads it as the result of the call.
+    ///
+    /// The call is Crucible's own tool, so it is decided as a call of the
+    /// daemon's own agent: the same canonical call, the same diffs.
+    async fn decide_crucible_call(
+        &self,
+        tool: &str,
+        args: serde_json::Value,
+    ) -> Result<(), String> {
+        let Some(turn) = self.slot.turn_gate() else {
+            return Err(format!(
+                "Tool '{tool}' is refused: no turn of this session runs, so nobody can decide the call"
+            ));
+        };
+        let mut call = CanonicalToolCall {
+            diffs: crate::tools::diff_synth::synthesize_diffs(tool, &args),
+            ..CanonicalToolCall::crucible_tool(tool, &args)
+        };
+        super::tool_hooks::render_call(
+            self.hooks.as_ref(),
+            &self.session_id,
+            &mut call,
+            &args,
+            turn.origin,
+        )
+        .await;
+        let engine = self.rules.engine(&self.session_id);
+        match decide_permission(&self.context(&turn, &engine), &call, &args).await {
+            Decision::Allow(_) | Decision::UserAllowed => Ok(()),
+            Decision::Deny(reason) => Err(reason),
+            Decision::NoAnswer => Err("The permission prompt ended with no answer".to_string()),
+        }
+    }
+
     /// Answer one `session/request_permission` with the one tool policy.
     ///
     /// `call` is the canonical call that the ACP client joined from the
@@ -124,6 +234,17 @@ impl AcpGate {
         let Some(turn) = self.slot.turn_gate() else {
             return agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled;
         };
+        // The agent asks before it calls Crucible's MCP server. The server
+        // decides that call on its real name when the agent makes it, so a
+        // prompt here is a second prompt for one call. An agent that sends a
+        // false name skips only this question: the agent may make any call
+        // without a question, and the server still decides a call to it.
+        if self.mcp_server_decides.load(Ordering::SeqCst)
+            && call.raw.is_some()
+            && call.runs_in_crucible()
+        {
+            return select_option(options, true);
+        }
         let args = (call.raw.as_ref())
             .and_then(|raw| raw.raw_input.clone())
             .unwrap_or(serde_json::Value::Null);
@@ -135,28 +256,8 @@ impl AcpGate {
             turn.origin,
         )
         .await;
-        let no_mcp = std::collections::HashSet::new();
         let engine = self.rules.engine(&self.session_id);
-        let ctx = PermissionContext {
-            session_id: &self.session_id,
-            tool_policy: self.tool_policy.as_ref(),
-            engine: &engine,
-            permission_override: turn.permission_override,
-            patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
-            slot: Some(&self.slot),
-            hooks: self.hooks.as_ref(),
-            // The mode of an ACP session is the agent's own mode. Its id can
-            // name a Crucible mode (`auto`, `plan`) with another rule, so no
-            // Crucible mode stance applies.
-            mode: "",
-            modes: &crucible_lua::ModeRegistry::new(),
-            mcp_read_only: &no_mcp,
-            prompt: turn.is_interactive.then_some(Prompt {
-                slot: &self.slot,
-                event_tx: &self.event_tx,
-            }),
-        };
-        let decision = decide_permission(&ctx, &call, &args).await;
+        let decision = decide_permission(&self.context(&turn, &engine), &call, &args).await;
         let id = (call.raw.as_ref()).and_then(|raw| raw.tool_call_id.clone());
         match (&decision, id) {
             (super::gate_decision::Decision::Allow(Some(layer)), Some(id)) => {
@@ -270,28 +371,29 @@ impl Drop for OpenPrompt<'_> {
 }
 
 impl AgentManager {
-    /// The `session/request_permission` handler of an ACP session.
-    pub(in crate::agent_manager) fn build_acp_permission_handler(
+    /// The permission gate of an ACP session.
+    pub(in crate::agent_manager) fn build_acp_permissions(
         &self,
         session_id: &str,
         event_tx: &broadcast::Sender<SessionEventMessage>,
         workspace: &std::path::Path,
         tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
-    ) -> crate::acp::client::PermissionRequestHandler {
-        let gate = Arc::new(AcpGate {
-            slot: self.slot(session_id),
-            session_id: session_id.to_string(),
-            event_tx: event_tx.clone(),
-            workspace: workspace.to_path_buf(),
-            whitelists_dir: self.whitelists_dir(),
-            hooks: self.plugin_handlers(),
-            rules: self.session_rules(),
-            tool_policy,
-        });
-        Arc::new(move |call, options| {
-            let gate = gate.clone();
-            Box::pin(async move { gate.decide(call, &options).await })
-        })
+    ) -> AcpPermissions {
+        AcpPermissions {
+            gate: Arc::new(AcpGate {
+                slot: self.slot(session_id),
+                session_id: session_id.to_string(),
+                event_tx: event_tx.clone(),
+                workspace: workspace.to_path_buf(),
+                whitelists_dir: self.whitelists_dir(),
+                hooks: self.plugin_handlers(),
+                rules: self.session_rules(),
+                tool_policy,
+                mcp_server_decides: AtomicBool::new(false),
+                no_modes: crucible_lua::ModeRegistry::new(),
+                no_mcp: std::collections::HashSet::new(),
+            }),
+        }
     }
 
     /// Run one registry's `pre_llm_call` handlers over the prompt, chained.
@@ -951,6 +1053,9 @@ mod acp_tool_policy_tests {
             whitelists_dir: None,
             hooks,
             rules: crate::agent_manager::session_permissions::SessionRules::global(config),
+            mcp_server_decides: AtomicBool::new(false),
+            no_modes: crucible_lua::ModeRegistry::new(),
+            no_mcp: std::collections::HashSet::new(),
             tool_policy: Some(
                 card.iter()
                     .map(|(name, policy)| ((*name).to_string(), *policy))
@@ -1021,6 +1126,9 @@ mod acp_tool_policy_tests {
             hooks: None,
             rules: crate::agent_manager::session_permissions::SessionRules::global(None),
             tool_policy: None,
+            mcp_server_decides: AtomicBool::new(false),
+            no_modes: crucible_lua::ModeRegistry::new(),
+            no_mcp: std::collections::HashSet::new(),
         };
         let options: Vec<agent_client_protocol::schema::v1::PermissionOption> =
             serde_json::from_value(options()).expect("the options parse");
@@ -1592,7 +1700,8 @@ mod acp_permission_handler_tests {
             permission_override: None,
             ..Default::default()
         });
-        am.build_acp_permission_handler(SESSION, event_tx, std::path::Path::new("/w"), tool_policy)
+        am.build_acp_permissions(SESSION, event_tx, std::path::Path::new("/w"), tool_policy)
+            .handler()
     }
 
     /// Read events until the prompt arrives. Return its request id.
