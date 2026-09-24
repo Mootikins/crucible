@@ -192,11 +192,10 @@ fn without_the_provenance_badge(frame: &str) -> String {
 ///   `ChatAppMsg::ToolCall`. So the asymmetry costs no pixels *today*; wire
 ///   the daemon's description through for one arm only and this test fails,
 ///   which is the point of leaving it in the fixtures.
-/// - `lua_primary_arg` / `auto_approved` — absent from both, because neither
-///   is a property of the *behaviour*. A registry tool with no Lua display
-///   plugin emits no hint, and an interactively approved call earns no
-///   `[auto]` marker. Baking either into the internal side alone would assert
-///   a difference this pair does not describe.
+/// - `auto_approved` — absent from both, because it is not a property of the
+///   *behaviour*. An interactively approved call earns no `[auto]` marker.
+///   Baking it into the internal side alone would assert a difference this
+///   pair does not describe.
 #[test]
 fn acp_and_internal_agents_render_identical_frames() {
     let mut internal = StoryRuntime::new(80, 24);
@@ -545,19 +544,21 @@ fn an_internal_permission_modal_names_the_real_tool() {
 
 #[test]
 fn an_acp_shell_permission_modal_shows_the_command_not_the_derived_name() {
-    // The divergence's boundary: for `ToolKind::Execute` the modal renders the
-    // command line and drops the tool name entirely (a `CanonicalToolCall` with
-    // a `command` in `render_perm_interaction`), so the coarse `bash` never reaches the
-    // screen and this path costs nothing. Pinned so a change that started
-    // printing the derived name — `bash (command="…")` — shows up as a
-    // *behaviour* change rather than as cosmetics.
+    // The divergence's boundary: for a `command` call the modal renders the
+    // command line of the call that the daemon sent and drops the tool name
+    // entirely, so the coarse `bash` never reaches the screen. Pinned so a
+    // change that started printing the derived name — `bash (command="…")` —
+    // shows up as a *behaviour* change rather than as cosmetics.
     let mut story = StoryRuntime::new(80, 30);
     send_user_message(&mut story, "clean up");
-    let _ = open_tool_permission(
-        &mut story,
-        "req-1",
-        "bash",
-        json!({"command": "rm -rf build"}),
+    let args = json!({"command": "rm -rf build"});
+    let mut request = crucible_core::interaction::PermRequest::tool("bash", args.clone());
+    request.call = Some(Box::new(
+        crucible_core::types::CanonicalToolCall::crucible_tool("bash", &args),
+    ));
+    let _ = story.app().open_interaction(
+        "req-1".to_string(),
+        crucible_core::interaction::InteractionRequest::Permission(request),
     );
 
     let frame = story.fresh_screen();

@@ -64,7 +64,7 @@ pub(crate) fn announce_tool_call(
         call_id: Some(format!("{name}-1")),
         description: None,
         source: source.map(str::to_string),
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -90,6 +90,7 @@ pub(crate) fn attach_late_diff(
             Some(old_content.to_string()),
             new_content.to_string(),
         )]),
+        line: None,
     });
 }
 

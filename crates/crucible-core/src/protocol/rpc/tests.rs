@@ -304,7 +304,6 @@ fn tool_call_with_diffs_roundtrip() {
         args.clone(),
         None,
         None,
-        None,
         Some(crate::types::CanonicalToolCall {
             diffs: diffs.clone(),
             ..crate::types::CanonicalToolCall::crucible_tool("edit", &args)
@@ -465,7 +464,7 @@ fn golden_tool_call_minimal() {
             "tool": "read_file",
             "args": {"path": "/tmp/x"},
             "display": {
-                "kind": "file_read", "tool": "read_file", "paths": ["/tmp/x"], "primary": "/tmp/x",
+                "kind": "file_read", "tool": "read_file", "paths": ["/tmp/x"],
                 "render": {"line": "/tmp/x", "fields": [
                     {"label": "kind", "value": "file_read"},
                     {"label": "tool", "value": "read_file"},
@@ -476,8 +475,7 @@ fn golden_tool_call_minimal() {
     );
 }
 
-/// Maximal `tool_call`: every optional argument populated. `lua_primary_arg`
-/// also overrides `display.primary`.
+/// Maximal `tool_call`: every optional argument populated.
 #[test]
 fn golden_tool_call_maximal() {
     use crate::types::acp::FileDiff;
@@ -488,7 +486,6 @@ fn golden_tool_call_maximal() {
         serde_json::json!({"path": "src/a.rs"}),
         Some("edits a file".into()),
         Some("builtin".into()),
-        Some("src/a.rs (lua)".into()),
         Some(crate::types::CanonicalToolCall {
             diffs: vec![FileDiff::new("src/a.rs", "new\n")],
             ..crate::types::CanonicalToolCall::crucible_tool(
@@ -506,11 +503,9 @@ fn golden_tool_call_maximal() {
             "args": {"path": "src/a.rs"},
             "description": "edits a file",
             "source": "builtin",
-            "lua_primary_arg": "src/a.rs (lua)",
             "display": {
                 "kind": "file_edit", "tool": "edit_file", "paths": ["src/a.rs"],
                 "diffs": [{"path": "src/a.rs", "old_content": null, "new_content": "new\n"}],
-                "primary": "src/a.rs (lua)",
                 "render": {"line": "src/a.rs", "fields": [
                     {"label": "kind", "value": "file_edit"},
                     {"label": "tool", "value": "edit_file"},
@@ -543,7 +538,6 @@ fn golden_tool_call_update() {
             "display": {
                 "kind": "tool", "tool": "Edit", "paths": ["src/a.rs"],
                 "raw": {"name": "Edit", "rawInput": {"file_path": "src/a.rs"}},
-                "primary": "src/a.rs",
                 "render": {"line": "src/a.rs", "fields": [
                     {"label": "kind", "value": "tool"},
                     {"label": "tool", "value": "Edit"},

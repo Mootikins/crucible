@@ -14,6 +14,7 @@ use crucible_core::interaction::{
 };
 use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
 use crucible_core::turn::{StopReason as CoreStopReason, TurnStatus};
+use crucible_core::types::CanonicalToolCall;
 use crucible_daemon::SessionEvent;
 
 /// Permission option IDs advertised to the host. Matching them back in
@@ -171,9 +172,14 @@ fn classify_tool_call(event: &SessionEvent) -> TurnStep {
         .unwrap_or_default()
         .to_string();
     let args = event.data.get("args").cloned();
+    // The daemon sends the canonical call with its render. An event with
+    // no call is `Other`: the name alone does not say the kind.
+    let call = (event.data.get("display"))
+        .and_then(|d| serde_json::from_value::<CanonicalToolCall>(d.clone()).ok());
+    let (title, kind) = describe(tool, call.as_ref());
 
-    let mut tc = ToolCall::new(call_id, humanize_title(tool))
-        .kind(tool_kind(tool))
+    let mut tc = ToolCall::new(call_id, title)
+        .kind(kind)
         .status(ToolCallStatus::InProgress);
     if let Some(args) = args {
         tc = tc.raw_input(args);
@@ -238,27 +244,31 @@ fn summarize_result(result: &serde_json::Value) -> String {
     }
 }
 
-/// Coarse tool-kind classification by name, for host icon/UI selection.
-pub fn tool_kind(name: &str) -> ToolKind {
-    let n = name.to_ascii_lowercase();
-    let has = |needles: &[&str]| needles.iter().any(|w| n.contains(w));
-    if has(&["delete", "remove", "rm_", "unlink"]) {
-        ToolKind::Delete
-    } else if has(&[
-        "write", "edit", "create", "patch", "apply", "insert", "replace",
-    ]) {
-        ToolKind::Edit
-    } else if has(&["read", "cat", "open", "view", "get_note", "show"]) {
-        ToolKind::Read
-    } else if has(&["search", "grep", "find", "query", "vector", "recall"]) {
-        ToolKind::Search
-    } else if has(&["bash", "shell", "exec", "run", "command"]) {
-        ToolKind::Execute
-    } else if has(&["fetch", "http", "curl", "download", "web"]) {
-        ToolKind::Fetch
+/// The ACP title and kind of a call: the canonical tool and the render
+/// line, and the ACP kind of the canonical kind. A kind that ACP does not
+/// name, and a call with no canonical form, is `Other`.
+fn describe(name: &str, call: Option<&CanonicalToolCall>) -> (String, ToolKind) {
+    let Some(call) = call else {
+        return (humanize_title(name), ToolKind::Other);
+    };
+    let tool = humanize_title(if call.tool.is_empty() {
+        name
     } else {
-        ToolKind::Other
-    }
+        &call.tool
+    });
+    let title = match call.render.as_ref().and_then(|r| r.line.as_deref()) {
+        Some(line) => format!("{tool}: {line}"),
+        None => tool,
+    };
+    let kind = match call.kind.as_str() {
+        "command" => ToolKind::Execute,
+        "file_edit" => ToolKind::Edit,
+        "file_read" => ToolKind::Read,
+        "fetch" => ToolKind::Fetch,
+        "search" => ToolKind::Search,
+        _ => ToolKind::Other,
+    };
+    (title, kind)
 }
 
 fn humanize_title(name: &str) -> String {
@@ -306,7 +316,7 @@ pub fn interaction_tool_call(request_id: &str, request: &InteractionRequest) -> 
                 PermAction::Write { segments } => {
                     (format!("Write {}", segments.join("/")), ToolKind::Edit)
                 }
-                PermAction::Tool { name, .. } => (humanize_title(name), tool_kind(name)),
+                PermAction::Tool { name, .. } => describe(name, perm.call.as_deref()),
             }
         }
         other => (format!("Approve {}", other.kind()), ToolKind::Other),
@@ -385,14 +395,21 @@ mod tests {
     fn tool_call_becomes_in_progress_tool_call() {
         let step = classify_event(&event(
             "tool_call",
-            json!({"call_id": "tc1", "tool": "search_notes", "args": {"q": "rust"}}),
+            json!({
+                "call_id": "tc1", "tool": "search_notes", "args": {"q": "rust"},
+                "display": {
+                    "kind": "search", "tool": "search_notes", "query": "rust",
+                    "render": { "line": "rust" },
+                },
+            }),
         ));
         match step {
             TurnStep::Update(u) => match *u {
                 SessionUpdate::ToolCall(tc) => {
                     assert_eq!(tc.tool_call_id.0.as_ref(), "tc1");
                     assert_eq!(tc.status, ToolCallStatus::InProgress);
-                    assert_eq!(tc.kind, ToolKind::Search);
+                    assert_eq!(tc.kind, ToolKind::Search, "the canonical kind");
+                    assert_eq!(tc.title, "search notes: rust");
                     assert_eq!(tc.raw_input, Some(json!({"q": "rust"})));
                 }
                 other => panic!("expected tool call, got {other:?}"),
@@ -660,15 +677,20 @@ mod tests {
         assert!(matches!(resp, InteractionResponse::Cancelled));
     }
 
+    /// The name alone does not give a kind: `cru acp` guesses nothing.
     #[test]
-    fn tool_kind_classifies_common_names() {
-        assert_eq!(tool_kind("read_file"), ToolKind::Read);
-        assert_eq!(tool_kind("write_file"), ToolKind::Edit);
-        assert_eq!(tool_kind("bash"), ToolKind::Execute);
-        assert_eq!(tool_kind("search_vectors"), ToolKind::Search);
-        assert_eq!(tool_kind("delete_note"), ToolKind::Delete);
-        assert_eq!(tool_kind("http_fetch"), ToolKind::Fetch);
-        assert_eq!(tool_kind("mystery_tool"), ToolKind::Other);
+    fn a_tool_call_with_no_canonical_call_is_other() {
+        let step = classify_event(&event(
+            "tool_call",
+            json!({"call_id": "tc1", "tool": "read_file", "args": {}}),
+        ));
+        let TurnStep::Update(u) = step else {
+            panic!("expected update");
+        };
+        let SessionUpdate::ToolCall(tc) = *u else {
+            panic!("expected tool call");
+        };
+        assert_eq!(tc.kind, ToolKind::Other);
     }
 
     #[test]

@@ -451,7 +451,7 @@ fn running_tool_call() -> ChatAppMsg {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     }

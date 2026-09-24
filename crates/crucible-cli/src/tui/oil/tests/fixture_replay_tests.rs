@@ -225,7 +225,7 @@ fn styled_snapshot_tool_call() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -269,7 +269,7 @@ fn styled_snapshot_tool_call_with_body() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("cat src/main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

@@ -50,12 +50,10 @@ impl CachedToolCall {
         }
 
         let display_name = self.display_name();
-        let auto_primary = format_primary_arg_for(&self.name, &self.args);
-        let primary_arg: &str = self
-            .lua_primary_arg
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(&auto_primary);
+        // One row: the line of the render collapses to one line.
+        let line = self.line.as_deref().unwrap_or_default();
+        let one_line = line.replace('\n', " ").replace('\r', "");
+        let primary_arg: &str = &one_line;
         let result_str = self.result();
 
         let inner = if let Some(ref error) = self.error {
@@ -525,28 +523,6 @@ pub fn format_tool_args(args: &str) -> String {
     } else {
         format!("{}…", truncate_to_chars(&oneline, 57, false))
     }
-}
-
-/// Extracts the primary argument from a JSON arg blob and normalizes it to a
-/// single line. Does NOT truncate — callers fit it to available width via
-/// [`fit_arg_to_width`].
-/// The argument worth showing on a tool's status row.
-///
-/// Delegates to the shared projection so the TUI, the web and the daemon's
-/// deny messages all name the same argument. Newlines collapse because this
-/// is one row: `CanonicalToolCall::summary` keeps the first line, and the full text
-/// is in the expanded view.
-pub fn format_primary_arg_for(tool_name: &str, args: &str) -> String {
-    if args.is_empty() || args == "{}" {
-        return String::new();
-    }
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) else {
-        return String::new();
-    };
-    crucible_core::types::CanonicalToolCall::crucible_tool(tool_name, &parsed)
-        .primary
-        .map(|p| p.replace('\n', " ").replace('\r', ""))
-        .unwrap_or_default()
 }
 
 /// Truncates `arg` to fit within `available` visible columns, appending "…"

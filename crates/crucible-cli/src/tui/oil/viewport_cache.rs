@@ -63,8 +63,8 @@ pub struct CachedToolCall {
     pub description: Option<Arc<str>>,
     /// Optional source provenance for display (e.g., "[Crucible]" badge).
     pub source: Option<ToolSourceDisplay>,
-    /// Optional primary argument from Lua tool display hook.
-    pub lua_primary_arg: Option<Arc<str>>,
+    /// The line of the render that the daemon sent: what the call does.
+    pub line: Option<Arc<str>>,
     /// File diffs surfaced by the agent (e.g. ACP `ToolCallContent::Diff`).
     /// Empty for tools that don't produce diffs or for backends that don't
     /// surface them yet. Rendered between header and result on completion.
@@ -95,7 +95,7 @@ impl CachedToolCall {
             superseded: false,
             description: None,
             source: None,
-            lua_primary_arg: None,
+            line: None,
             diffs: Vec::new(),
             auto_approved: None,
             backgrounded: false,

@@ -360,7 +360,7 @@ fn vt100_spinner_no_leak_tick_per_event() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -379,7 +379,7 @@ fn vt100_spinner_no_leak_tick_per_event() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("README.md".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -464,7 +464,7 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("rm -rf /tmp/test".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -685,7 +685,7 @@ fn reproduce_permission_modal_spinner_leak() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -723,7 +723,7 @@ fn reproduce_permission_modal_spinner_leak() {
         call_id: Some("c3".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("find . -maxdepth 2 -name README*".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -755,7 +755,7 @@ fn reproduce_permission_modal_spinner_leak() {
         call_id: Some("c4".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls -la crates/".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

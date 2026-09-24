@@ -39,7 +39,6 @@ async fn lua_display_start_hook_returns_label_and_detail() {
         Some(ToolDisplayStartHints {
             label: Some("Custom semantic_search".to_string()),
             detail: Some("seen:s-test".to_string()),
-            primary_arg: None,
             max_lines: None,
         })
     );

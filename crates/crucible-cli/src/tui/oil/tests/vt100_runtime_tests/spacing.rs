@@ -118,7 +118,7 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("a.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -135,7 +135,7 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
         call_id: Some("c2".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("b.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

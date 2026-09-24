@@ -242,6 +242,31 @@ describe('PermissionInteraction', () => {
     expect(screen.queryByText('Tool', { exact: true })).not.toBeInTheDocument();
   });
 
+  it('shows the agent, the wire name and the layer that asked', () => {
+    // An ACP command asks as a bash request; the call keeps the raw name.
+    const request: InteractionOf<'permission'> = {
+      kind: 'permission',
+      id: 'perm-about',
+      action_type: 'bash',
+      tokens: ['cargo test'],
+      call: {
+        kind: 'command',
+        tool: 'command',
+        command: 'cargo test',
+        agent: 'codex',
+        raw: { name: 'exec_command' },
+        render: { line: 'cargo test' },
+      },
+      layer: 'ask mode',
+    };
+
+    render(() => <PermissionInteraction request={request} onRespond={mockOnRespond} />);
+
+    expect(screen.getByTestId('perm-about')).toHaveTextContent(
+      'agent codex · wire name exec_command · asked by ask mode',
+    );
+  });
+
   it('keeps the verb chip for non-tool permissions', () => {
     const request: InteractionOf<'permission'> = {
       kind: 'permission',

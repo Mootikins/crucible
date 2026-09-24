@@ -443,7 +443,6 @@ impl AgentManager {
                         args.clone(),
                         None,
                         None,
-                        None,
                         Some(call),
                         None,
                     ),
@@ -551,8 +550,6 @@ impl AgentManager {
             })
             .unwrap_or((None, None));
 
-        let mut lua_primary_arg: Option<String> = None;
-
         let hook_event = ToolDisplayStartEvent {
             name: tool_call.name.clone(),
             args: args_str.clone(),
@@ -563,9 +560,6 @@ impl AgentManager {
             }
             if let Some(detail) = hints.detail {
                 source = Some(detail);
-            }
-            if let Some(pa) = hints.primary_arg {
-                lua_primary_arg = Some(pa);
             }
         }
 
@@ -578,7 +572,6 @@ impl AgentManager {
                 args.clone(),
                 description,
                 source,
-                lua_primary_arg,
                 Some(call),
                 auto_approved.clone(),
             ),

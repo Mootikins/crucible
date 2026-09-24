@@ -176,13 +176,16 @@ impl InteractionModal {
             PermAction::Write { segments } => ("WRITE", format!("/{}", segments.join("/")), true),
             PermAction::Tool { name, args } => {
                 // A shell call reads as a command, not as `(command="…")` with
-                // escaped newlines. Same projection the web renders from and
-                // the daemon words its deny messages with, so all three agree
-                // on what a call is about.
-                let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, args);
-                match (&call.command, self.full_commands) {
+                // escaped newlines. The daemon sent the call with its render,
+                // so the web and the deny messages show the same line.
+                let call = perm_request.call.as_deref();
+                match (call.and_then(|c| c.command.as_ref()), self.full_commands) {
                     (Some(command), true) => ("BASH", command.clone(), false),
-                    (Some(_), false) => ("BASH", call.summary(60).unwrap_or_default(), false),
+                    (Some(_), false) => (
+                        "BASH",
+                        call.and_then(|c| c.summary(60)).unwrap_or_default(),
+                        false,
+                    ),
                     (None, true) => (
                         "TOOL",
                         format!("{} {}", name, prettify_tool_args_full(args)),
@@ -247,6 +250,30 @@ impl InteractionModal {
             );
             let width = UnicodeWidthStr::width(truncated.as_ref());
             lines.push(pad_line(&truncated, width));
+        }
+
+        // Everything else that is known: the agent, the tool name on the
+        // wire and the layer that asked.
+        let call = perm_request.call.as_deref();
+        let about: Vec<String> = [
+            call.and_then(|c| c.agent.clone())
+                .map(|a| format!("agent {a}")),
+            call.and_then(|c| c.raw.as_ref()?.name.clone())
+                .map(|n| format!("wire name {n}")),
+            perm_request.layer.clone().map(|l| format!("asked by {l}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if !about.is_empty() {
+            let text = format!("  {}", about.join(" · "));
+            let pad = " ".repeat(term_width.saturating_sub(UnicodeWidthStr::width(text.as_str())));
+            lines.push(styled(
+                format!("{text}{pad}"),
+                Style::new()
+                    .bg(panel_bg)
+                    .fg(t.resolve_color(t.colors.text_dim)),
+            ));
         }
 
         lines.push(styled(" ".repeat(term_width), Style::new().bg(panel_bg)));

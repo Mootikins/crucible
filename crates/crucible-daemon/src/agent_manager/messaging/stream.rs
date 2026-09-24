@@ -417,7 +417,6 @@ impl AgentManager {
                                             agent: agent.clone(),
                                         })
                                     }),
-                                None,
                                 Some(call),
                                 // The ACP agent ran its own gate in its own
                                 // process; we granted nothing here.

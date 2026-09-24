@@ -109,8 +109,8 @@ pub enum TurnPayload {
     /// Field order is load-bearing: `serde_json` is built with
     /// `preserve_order`, so the declaration order here is the key order on the
     /// wire and in `session.jsonl`. It reproduces the insertion order of the
-    /// `json!` block this variant replaced — `display` after `lua_primary_arg`,
-    /// not next to `args`.
+    /// `json!` block this variant replaced — `display` after `source`, not
+    /// next to `args`.
     ToolCall {
         #[serde(default)]
         call_id: String,
@@ -122,12 +122,8 @@ pub enum TurnPayload {
         description: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        lua_primary_arg: Option<String>,
-        /// The canonical tool call, computed by
-        /// `SessionEventMessage::tool_call_with_metadata` so the TUI and the web
-        /// render the same answer instead of each keeping its own key-priority
-        /// list. A Lua display hook's `lua_primary_arg` overrides its `primary`.
+        /// The canonical tool call with its render, so the TUI and the web
+        /// draw the same table instead of each rebuilding the call.
         ///
         /// Every producer in this workspace sets it. `None` means the event came
         /// from something else — a recording made before the field existed (only

@@ -69,7 +69,6 @@ def display(tool, kind, diffs=None, raw=None, args=None):
         out["diffs"] = diffs
     if raw:
         out["raw"] = raw
-    out["primary"] = "greeting.rs"
     fields = [{"label": "kind", "value": kind}, {"label": "tool", "value": tool}]
     for key, label in (("name", "name"), ("kind", "acp kind"), ("content", "content")):
         if raw and key in raw:

@@ -21,16 +21,12 @@ pub struct ToolDisplayStartEvent {
 pub struct ToolDisplayStartHints {
     pub label: Option<String>,
     pub detail: Option<String>,
-    pub primary_arg: Option<String>,
     pub max_lines: Option<usize>,
 }
 
 impl ToolDisplayStartHints {
     fn is_empty(&self) -> bool {
-        self.label.is_none()
-            && self.detail.is_none()
-            && self.primary_arg.is_none()
-            && self.max_lines.is_none()
+        self.label.is_none() && self.detail.is_none() && self.max_lines.is_none()
     }
 }
 
@@ -185,10 +181,6 @@ fn parse_display_start_hints(payload: &JsonValue) -> ToolDisplayStartHints {
             .map(ToString::to_string),
         detail: payload
             .get("detail")
-            .and_then(JsonValue::as_str)
-            .map(ToString::to_string),
-        primary_arg: payload
-            .get("primary_arg")
             .and_then(JsonValue::as_str)
             .map(ToString::to_string),
         max_lines: payload

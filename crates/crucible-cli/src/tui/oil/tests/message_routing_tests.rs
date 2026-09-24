@@ -165,7 +165,7 @@ fn tool_call_creates_tool_group() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("main.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -187,7 +187,7 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
         call_id: Some("late-1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("src/late.rs".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -201,6 +201,7 @@ fn tool_call_update_replaces_empty_diffs_with_late_content() {
         call_id: "late-1".into(),
         args: None,
         diffs: Some(diffs.clone()),
+        line: None,
     });
 
     let nodes = app.container_list.nodes();
@@ -229,6 +230,7 @@ fn tool_call_update_for_unknown_call_id_is_a_noop() {
         call_id: "ghost".into(),
         args: None,
         diffs: Some(diffs),
+        line: None,
     });
     assert_eq!(
         app.container_list.len(),
@@ -246,7 +248,7 @@ fn tool_result_error_sets_error_on_tool() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     });

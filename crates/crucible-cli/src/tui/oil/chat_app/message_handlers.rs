@@ -55,7 +55,7 @@ impl OilChatApp {
                 call_id,
                 description,
                 source,
-                lua_primary_arg,
+                line,
                 diffs,
                 auto_approved,
             } => {
@@ -76,7 +76,7 @@ impl OilChatApp {
                     superseded: false,
                     description: description.map(|d| Arc::from(d.as_str())),
                     source: source.as_deref().and_then(parse_tool_source),
-                    lua_primary_arg: lua_primary_arg.map(|a| Arc::from(a.as_str())),
+                    line: line.map(|l| Arc::from(l.as_str())),
                     diffs,
                     auto_approved,
                     backgrounded: false,
@@ -87,10 +87,14 @@ impl OilChatApp {
                 call_id,
                 args,
                 diffs,
+                line,
             } => {
                 self.container_list.update_tool_by_call_id(&call_id, |t| {
                     if let Some(args) = args {
                         t.set_args(&args);
+                    }
+                    if let Some(line) = line {
+                        t.line = Some(Arc::from(line.as_str()));
                     }
                     if let Some(diffs) = diffs {
                         t.set_diffs(diffs);

@@ -73,8 +73,8 @@ pub enum ChatAppMsg {
         description: Option<String>,
         /// Source provenance string (e.g. "Core", "Crucible", "Mcp:github").
         source: Option<String>,
-        /// Primary argument from Lua tool display hook.
-        lua_primary_arg: Option<String>,
+        /// The line of the render that the daemon sent with the call.
+        line: Option<String>,
         /// File modification previews when the daemon can derive them
         /// (ACP `ToolCallContent::Diff` or args-based synthesis). Empty
         /// when the tool does not produce diffs or the daemon hasn't
@@ -97,6 +97,8 @@ pub enum ChatAppMsg {
         /// The diffs of the new canonical call. `None` when the update has
         /// no canonical call: a transcript line from before the field.
         diffs: Option<Vec<FileDiff>>,
+        /// The line of the new render. `None` keeps the line of the card.
+        line: Option<String>,
     },
     /// **Event** (daemon → TUI): Streaming delta of tool result output.
     ToolResultDelta {

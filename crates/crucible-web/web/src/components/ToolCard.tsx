@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createMemo, createEffect } from 'solid-js';
+import { Component, For, Show, createSignal, createMemo, createEffect } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
@@ -109,8 +109,13 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   const toolName = createMemo(() => display()?.tool || props.toolCall.name);
 
   const bashCommand = createMemo(() =>
-    display()?.kind === 'command' ? (display()!.primary ?? null) : null,
+    display()?.kind === 'command' ? (display()!.command ?? null) : null,
   );
+
+  // The facts that the render function gave. The fallback render of the
+  // daemon lists every field of the call, `rawInput` too, so the card shows
+  // them in place of the arguments.
+  const fields = createMemo(() => display()?.render?.fields ?? []);
 
   const formattedArgs = createMemo(() => {
     const args = props.toolCall.args;
@@ -134,7 +139,7 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   // One-line header summary so a collapsed row still says what the tool did.
   // Same source as the Command block below, so the two can no longer disagree
   // about which argument matters.
-  const argSummary = createMemo(() => display()?.primary?.split('\n')[0] ?? null);
+  const argSummary = createMemo(() => display()?.render?.line?.split('\n')[0] ?? null);
 
   // The call's proposed edits ride in the canonical call. The card renders
   // them; it does not derive a diff from the tool name and arguments.
@@ -245,9 +250,27 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             </div>
           </Show>
 
+          <Show when={fields().length > 0}>
+            <div class="px-3 py-2 bg-surface-base" data-testid="render-fields">
+              <For each={fields()}>
+                {(field) => (
+                  <div class="text-xs font-mono whitespace-pre-wrap break-words">
+                    <span class="text-muted">{field.label}: </span>
+                    <span class="text-shell-body">
+                      {typeof field.value === 'string'
+                        ? field.value
+                        : JSON.stringify(deepPrettyPrintJson(field.value), null, 2)}
+                    </span>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
           {/* Args section — suppressed when a diff renders, since the diff header
-              shows the file path and the diff body shows the old/new content. */}
-          <Show when={formattedArgs() && diffs().length === 0}>
+              shows the file path and the diff body shows the old/new content,
+              and when the render fields show them. */}
+          <Show when={formattedArgs() && diffs().length === 0 && fields().length === 0}>
             <div
               class={`px-3 py-2 bg-surface-base ${bashCommand() ? 'border-t border-hairline' : ''}`}
             >

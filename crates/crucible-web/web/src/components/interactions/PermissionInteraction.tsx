@@ -79,6 +79,15 @@ export const PermissionInteraction: Component<Props> = (props) => {
   // path out of `tokens[0]`, guess the new content out of `tool_args` field
   // names, and fetch the old content itself; all three guesses are gone.
   const requestDiffs = () => props.request.diffs ?? [];
+
+  // Everything else that is known: the agent, the tool name on the wire and
+  // the layer that asked. The web shows the raw name only here.
+  const about = () =>
+    [
+      props.request.call?.agent && `agent ${props.request.call.agent}`,
+      props.request.call?.raw?.name && `wire name ${props.request.call.raw.name}`,
+      props.request.layer && `asked by ${props.request.layer}`,
+    ].filter(Boolean);
   const hasDiff = () => requestDiffs().length > 0;
 
   const handleAllow = () => {
@@ -114,6 +123,12 @@ export const PermissionInteraction: Component<Props> = (props) => {
           Permission Required
         </span>
       </div>
+
+      <Show when={about().length > 0}>
+        <div class="text-floor text-muted mb-2" data-testid="perm-about">
+          {about().join(' · ')}
+        </div>
+      </Show>
 
       {/* Full tool arguments — everything being approved must be visible */}
       <Show when={toolArgPairs(props.request).length > 0}>

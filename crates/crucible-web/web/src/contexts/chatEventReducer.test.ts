@@ -870,7 +870,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
       tool: 'Edit',
       paths: ['a.rs'],
       diffs: [{ path: 'a.rs', old_content: 'x', new_content: 'y' }],
-      primary: 'a.rs',
+      render: { line: 'a.rs' },
     };
     h.reducer({
       type: 'tool_call',

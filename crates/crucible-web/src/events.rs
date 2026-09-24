@@ -508,8 +508,12 @@ pub(crate) fn normalize_interaction(data: &serde_json::Value) -> serde_json::Val
                 }
             }
         }
-        if let Some(diffs) = request.get("diffs") {
-            out["diffs"] = diffs.clone();
+        // The diffs, the call with its render, and the layer that asked go
+        // to the browser whole.
+        for key in ["diffs", "call", "layer"] {
+            if let Some(value) = request.get(key) {
+                out[key] = value.clone();
+            }
         }
         return out;
     }
@@ -586,7 +590,7 @@ mod tests {
         let display = serde_json::json!({
             "kind": "file_edit", "tool": "Edit", "paths": ["a.rs"],
             "diffs": [{ "path": "a.rs", "old_content": "x", "new_content": "y" }],
-            "primary": "a.rs"
+            "render": { "line": "a.rs" }
         });
         event.data["display"] = display.clone();
         event.data["auto_approved"] = serde_json::json!("auto mode");
@@ -870,6 +874,34 @@ mod tests {
                 assert_eq!(request["id"], "perm-1");
                 assert_eq!(request["action_type"], "bash");
                 assert_eq!(request["tokens"], serde_json::json!(["cargo", "test"]));
+            }
+            other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    /// The prompt shows everything that is known, so the call with its
+    /// render and the layer that asked reach the browser.
+    #[test]
+    fn a_permission_carries_the_call_and_the_layer() {
+        use crucible_core::interaction::{InteractionRequest, PermRequest};
+        use crucible_core::types::CanonicalToolCall;
+
+        let args = serde_json::json!({ "command": "cargo test" });
+        let request = InteractionRequest::Permission(PermRequest {
+            call: Some(Box::new(CanonicalToolCall {
+                agent: Some("codex".to_string()),
+                ..CanonicalToolCall::crucible_tool("bash", &args)
+            })),
+            layer: Some("ask mode".to_string()),
+            ..PermRequest::bash(["cargo test"])
+        });
+        let event = SessionEventMessage::interaction_requested("s1", "perm-3", &request);
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::InteractionRequested { request, .. } => {
+                assert_eq!(request["call"]["agent"], "codex");
+                assert_eq!(request["call"]["command"], "cargo test");
+                assert_eq!(request["layer"], "ask mode");
             }
             other => panic!("expected InteractionRequested, got {other:?}"),
         }

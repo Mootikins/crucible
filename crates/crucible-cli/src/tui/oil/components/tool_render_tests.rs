@@ -10,8 +10,20 @@ use crucible_oil::render::render_to_plain_text;
 use std::sync::Arc;
 use test_case::test_case;
 
-fn test_tool(name: &str, args: &str, complete: bool) -> CachedToolCall {
+/// A card with the line that the daemon sends when no Lua render runs: the
+/// line of the Rust fallback over the arguments.
+fn new_tool(name: &str, args: &str) -> CachedToolCall {
     let mut tool = CachedToolCall::new("tool-1", name, args);
+    let args: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+    let call = crucible_core::types::CanonicalToolCall::crucible_tool(name, &args);
+    tool.line = crucible_core::types::ToolRender::fallback(&call, &args)
+        .line
+        .map(Into::into);
+    tool
+}
+
+fn test_tool(name: &str, args: &str, complete: bool) -> CachedToolCall {
+    let mut tool = new_tool(name, args);
     if complete {
         tool.mark_complete();
     }
@@ -19,7 +31,7 @@ fn test_tool(name: &str, args: &str, complete: bool) -> CachedToolCall {
 }
 
 fn test_tool_with_output(name: &str, args: &str, output: &str, complete: bool) -> CachedToolCall {
-    let mut tool = CachedToolCall::new("tool-1", name, args);
+    let mut tool = new_tool(name, args);
     tool.append_output(output);
     if complete {
         tool.mark_complete();
@@ -715,28 +727,20 @@ fn short_error_fully_visible_at_wide_terminal() {
     );
 }
 
-#[test_case("read_file", "", "" ; "empty string")]
-#[test_case("read_file", "{}", "" ; "empty object")]
-#[test_case("read_file", r#"{"path": "src/lib.rs"}"#, "src/lib.rs" ; "path key")]
-#[test_case("Read", r#"{"filePath": "/home/user/test.rs"}"#, "/home/user/test.rs" ; "camelCase file path")]
-#[test_case("bash", r#"{"command": "ls -la", "timeout": 5000}"#, "ls -la" ; "command key")]
-#[test_case("semantic_search", r#"{"query": "auth patterns", "limit": 10}"#, "auth patterns" ; "query key")]
-#[test_case("read_file", r#"{"limit": 10, "path": "src/main.rs"}"#, "src/main.rs" ; "priority key over first key")]
-#[test_case("clone", r#"{"repo": "crucible"}"#, "crucible" ; "fallback to first value")]
-#[test_case("counter", r#"{"count": 42}"#, "42" ; "non-string value")]
-fn format_primary_arg_extracts_expected(tool: &str, args: &str, expected: &str) {
-    assert_eq!(format_primary_arg_for(tool, args), expected);
-}
-
+/// The card shows the line of the render that the daemon sent, on one row.
+/// It does not read the arguments: a card with no line shows no line.
 #[test]
-fn format_primary_arg_returns_full_value_no_truncation() {
-    // Truncation is the renderer's job (width-aware); format_primary_arg
-    // just normalizes to a single line.
-    let long_path = "a".repeat(60);
-    let args = format!(r#"{{"path": "{}"}}"#, long_path);
-    let result = format_primary_arg_for("read_file", &args);
-    assert_eq!(result, long_path);
-    assert!(!result.contains("…"));
+fn the_card_shows_the_render_line_on_one_row() {
+    let mut tool = CachedToolCall::new("t1", "bash", r#"{"command": "not shown"}"#);
+    let plain = render_to_plain_text(&tool.render_compact(80), 80);
+    assert!(
+        !plain.contains("not shown"),
+        "the card rebuilt the call: {plain}"
+    );
+
+    tool.line = Some("cd /tmp\ngrep foo".into());
+    let plain = render_to_plain_text(&tool.render_compact(80), 80);
+    assert!(plain.contains("cd /tmp grep foo"), "{plain}");
 }
 
 #[test]

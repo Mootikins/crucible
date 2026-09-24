@@ -819,8 +819,8 @@ fn key_table(
 }
 
 /// Classify each frame in one tool_frames fixture. Each item is the line
-/// number and the typed fields of the canonical call, without `raw`,
-/// `primary` and `diffs`.
+/// number and the typed fields of the canonical call, without `raw`
+/// and `diffs`.
 fn classify_fixture(
     agent: &str,
     table: &[crucible_core::types::AgentKeys],
@@ -860,7 +860,6 @@ fn classify_fixture(
             let mut v = serde_json::to_value(classify_acp(raw, table)).unwrap();
             let fields = v.as_object_mut().unwrap();
             fields.remove("raw");
-            fields.remove("primary");
             fields.remove("diffs");
             (n + 1, v)
         })

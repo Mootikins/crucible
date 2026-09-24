@@ -213,9 +213,7 @@ impl SessionEventMessage {
         tool: impl Into<String>,
         args: Value,
     ) -> Self {
-        Self::tool_call_with_metadata(
-            session_id, call_id, tool, args, None, None, None, None, None,
-        )
+        Self::tool_call_with_metadata(session_id, call_id, tool, args, None, None, None, None)
     }
 
     /// A `tool_call` event. `call` is the canonical call when the agent
@@ -229,18 +227,12 @@ impl SessionEventMessage {
         args: Value,
         description: Option<String>,
         source: Option<String>,
-        lua_primary_arg: Option<String>,
         call: Option<crate::types::CanonicalToolCall>,
         auto_approved: Option<String>,
     ) -> Self {
         let tool_name = tool.into();
-        // A Lua display hook's `lua_primary_arg` overrides `primary`: a
-        // plugin knows its own tool better than a heuristic.
         let mut display = call
             .unwrap_or_else(|| crate::types::CanonicalToolCall::crucible_tool(&tool_name, &args));
-        if let Some(pa) = lua_primary_arg.clone() {
-            display.primary = Some(pa);
-        }
         // A caller with no Lua render still sends a render, so a client
         // never has to rebuild the call.
         if display.render.is_none() {
@@ -254,7 +246,6 @@ impl SessionEventMessage {
                 args,
                 description,
                 source,
-                lua_primary_arg,
                 display: Some(Box::new(display)),
                 auto_approved,
             },

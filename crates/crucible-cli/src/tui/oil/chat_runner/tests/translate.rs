@@ -279,7 +279,10 @@ fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
     let data = json!({
         "call_id": "tc-late-1",
         "args": {"file_path": "src/late.rs"},
-        "display": { "kind": "file_edit", "tool": "Edit", "diffs": diffs_in },
+        "display": {
+            "kind": "file_edit", "tool": "Edit", "diffs": diffs_in,
+            "render": { "line": "src/late.rs" },
+        },
     });
 
     let msgs = session_event_to_chat_msgs("tool_call_update", &data);
@@ -289,8 +292,10 @@ fn translate_tool_call_update_emits_chat_msg_with_args_and_diffs() {
             call_id,
             args,
             diffs,
+            line,
         } => {
             assert_eq!(call_id, "tc-late-1");
+            assert_eq!(line.as_deref(), Some("src/late.rs"), "the new render line");
             assert_eq!(args.as_deref(), Some(r#"{"file_path":"src/late.rs"}"#));
             assert_eq!(
                 diffs.as_ref(),
@@ -398,6 +403,7 @@ fn an_old_args_update_line_still_fills_the_card() {
             call_id,
             args,
             diffs,
+            ..
         } => {
             assert_eq!(call_id, "tc-late-args");
             assert_eq!(args.as_deref(), Some(r#"{"path":"Concepts/Target.md"}"#));

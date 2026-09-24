@@ -46,7 +46,7 @@ fn e2e_full_conversation_render() {
         call_id: Some("call-1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -77,7 +77,7 @@ fn e2e_full_conversation_render() {
         call_id: Some("call-2".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("README*".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -145,7 +145,7 @@ fn debug_continuation_flag() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -194,7 +194,7 @@ fn debug_continuation_rendering() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -251,7 +251,7 @@ fn debug_full_view_rendering() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: None,
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -421,7 +421,7 @@ fn e2e_multi_turn_graduation() {
         call_id: Some("t1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -551,7 +551,7 @@ fn e2e_tool_multiline_output() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("ls -la".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -600,7 +600,7 @@ fn e2e_tool_error_rendering() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("fail".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -724,7 +724,7 @@ fn e2e_rapid_tool_calls_group() {
             call_id: Some(call_id.clone()),
             description: None,
             source: None,
-            lua_primary_arg: None,
+            line: None,
             diffs: Vec::new(),
             auto_approved: None,
         });
@@ -886,7 +886,7 @@ fn e2e_cancel_during_tool_execution() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("sleep 100".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });
@@ -1277,7 +1277,7 @@ fn all_container_types_render_at_all_widths() {
         call_id: Some("c1".into()),
         description: None,
         source: None,
-        lua_primary_arg: None,
+        line: Some("echo hello".into()),
         diffs: Vec::new(),
         auto_approved: None,
     });

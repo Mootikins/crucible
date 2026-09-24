@@ -107,7 +107,7 @@ describe('ToolCard — collapsed header', () => {
       <ToolCard
         toolCall={makeTool({
           name: 'Run cargo test',
-          display: { kind: 'command', tool: 'Bash', command: 'cargo test', primary: 'cargo test' },
+          display: { kind: 'command', tool: 'Bash', command: 'cargo test', render: { line: 'cargo test' } },
         })}
       />
     ));
@@ -238,7 +238,7 @@ describe('ToolCard — bash command rendering', () => {
     makeTool({
       name: 'bash',
       args: JSON.stringify({ command, ...extra }),
-      display: { kind: 'command', tool: 'bash', command, primary: command },
+      display: { kind: 'command', tool: 'bash', command, render: { line: command } },
     });
 
   it('renders a bash command as a shell line, not JSON', () => {
@@ -588,7 +588,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'run_task',
           args: JSON.stringify({ command: 'build', path: '/repo' }),
-          display: { kind: 'command', tool: 'run_task', primary: 'make build' },
+          display: { kind: 'command', tool: 'run_task', command: 'make build', render: { line: 'make build' } },
         })}
       />
     ));
@@ -604,7 +604,7 @@ describe('ToolCard — daemon-provided display projection', () => {
         toolCall={makeTool({
           name: 'semantic_search',
           args: JSON.stringify({ query: 'wikilinks' }),
-          display: { kind: 'search', tool: 'semantic_search', query: 'wikilinks', primary: 'wikilinks' },
+          display: { kind: 'search', tool: 'semantic_search', query: 'wikilinks', render: { line: 'wikilinks' } },
         })}
       />
     ));
@@ -621,7 +621,7 @@ describe('ToolCard — daemon-provided display projection', () => {
             kind: 'command',
             tool: 'bash',
             command: 'cd /tmp\ngrep -r foo .',
-            primary: 'cd /tmp\ngrep -r foo .',
+            render: { line: 'cd /tmp\ngrep -r foo .' },
           },
         })}
       />
@@ -630,6 +630,43 @@ describe('ToolCard — daemon-provided display projection', () => {
     const header = container.querySelector('button');
     expect(header?.textContent).toContain('cd /tmp');
     expect(header?.textContent).not.toContain('grep -r foo');
+  });
+});
+
+describe('ToolCard — the render table', () => {
+  // The daemon renders the call once; the card draws the table and does not
+  // read the arguments to find a line.
+  it('shows the render line and the render fields, not the arguments', () => {
+    const { container } = render(() => (
+      <ToolCard
+        toolCall={makeTool({
+          name: 'spawn_agent',
+          args: JSON.stringify({ prompt: 'from the arguments' }),
+          display: {
+            kind: 'delegate',
+            tool: 'Task',
+            render: {
+              line: 'fix the parser bug',
+              fields: [
+                { label: 'agent', value: 'claude' },
+                { label: 'rawInput', value: { prompt: 'from the arguments' } },
+              ],
+            },
+          },
+        })}
+      />
+    ));
+    const header = container.querySelector('button');
+    expect(header?.textContent).toContain('Task');
+    expect(header?.textContent).toContain('fix the parser bug');
+    expect(header?.textContent).not.toContain('from the arguments');
+
+    fireEvent.click(screen.getByText('Task'));
+    const fields = screen.getByTestId('render-fields');
+    expect(fields.textContent).toContain('agent: claude');
+    expect(fields.textContent).toContain('rawInput:');
+    // The fields show the input, so the Arguments block does not repeat it.
+    expect(screen.queryByTestId('tool-args')).not.toBeInTheDocument();
   });
 });
 

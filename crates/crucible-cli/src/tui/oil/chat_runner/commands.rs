@@ -158,6 +158,12 @@ fn non_empty(s: String) -> Option<String> {
     Some(s).filter(|s| !s.is_empty())
 }
 
+/// The line of the render that the daemon sent with a call. A recording from
+/// before the render has none, and the card shows no line.
+fn render_line(call: &crucible_core::types::CanonicalToolCall) -> Option<String> {
+    call.render.as_ref()?.line.clone().and_then(non_empty)
+}
+
 fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
     match turn {
         TurnPayload::UserMessage { content, .. } => non_empty(content)
@@ -174,7 +180,6 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             tool,
             args,
             source,
-            lua_primary_arg,
             auto_approved,
             display,
             ..
@@ -199,7 +204,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 // consistency.
                 description: None,
                 source,
-                lua_primary_arg,
+                line: display.as_deref().and_then(render_line),
                 diffs: display.map(|d| d.diffs).unwrap_or_default(),
                 auto_approved,
             }]
@@ -217,6 +222,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
             let args = (!args.is_null() && args != serde_json::json!({}))
                 .then(|| serde_json::to_string(&args).unwrap_or_default())
                 .filter(|a| !a.is_empty());
+            let line = display.as_deref().and_then(render_line);
             let diffs = display.map(|d| d.diffs);
             if args.is_none() && diffs.is_none() {
                 return Vec::new();
@@ -225,6 +231,7 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
                 call_id,
                 args,
                 diffs,
+                line,
             }]
         }
         TurnPayload::ToolResult {

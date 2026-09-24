@@ -186,7 +186,6 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         diffs: Vec::new(),
         agent: None,
         raw: None,
-        primary: None,
         render: None,
     };
 
@@ -277,13 +276,6 @@ pub fn classify_acp(raw: RawToolCall, table: &[AgentKeys]) -> CanonicalToolCall 
         .or(mcp_name)
         .or_else(|| raw.name.clone())
         .unwrap_or_else(|| call.kind.clone());
-    call.primary = call
-        .command
-        .clone()
-        .or_else(|| call.paths.first().cloned())
-        .or_else(|| call.url.clone())
-        .or_else(|| call.query.clone())
-        .or_else(|| raw.title.clone());
     call.raw = Some(raw);
     call
 }
@@ -525,7 +517,6 @@ mod tests {
         let c = classify_acp(raw(json!({"title": "Something"})), &[]);
         assert_eq!(c.kind, "tool");
         assert_eq!(c.tool, "tool", "a call with no name is named by its kind");
-        assert_eq!(c.primary.as_deref(), Some("Something"));
     }
 
     #[test]

@@ -257,7 +257,17 @@ interface CanonicalToolCall {
   agent?: string;
   /** The fields of an ACP call, for display and debugging only. */
   raw?: RawToolCall;
-  primary?: string;
+  /** What the render function of the kind says. Mirrors
+   * `crucible_core::types::ToolRender`. Absent in a recording from before it. */
+  render?: ToolRender;
+}
+
+/** Display data for one tool call: meaning, not markup. Each client draws it. */
+interface ToolRender {
+  /** The one line that says what the call does. */
+  line?: string;
+  /** The other facts of the call, in order. */
+  fields?: Array<{ label: string; value: unknown }>;
 }
 
 /** The fields of an ACP tool call. Mirrors `crucible_core::types::RawToolCall`. */
@@ -491,6 +501,10 @@ interface PermRequest {
    * re-derive a diff from `tool_args` field names.
    */
   diffs?: Array<{ path: string; old_content: string | null; new_content: string }>;
+  /** The canonical call, with its render, its agent and its raw tool name. */
+  call?: CanonicalToolCall;
+  /** The permission layer that asked, for example `ask mode`. */
+  layer?: string;
 }
 
 /** The seven request bodies, exactly as the Rust enum serializes them. */
