@@ -195,22 +195,26 @@ struct SessionListResponse {
 ///
 /// Not a session: the daemon answers the line it matched on, so a caller that
 /// wants the session reads `session_id` and asks for it.
+///
+/// `pub(super)`: `session_commands::execute_command`'s `/search` also reads
+/// this shape, to print one line per match rather than the raw `session.search`
+/// JSON it used to forward untouched.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionSearchMatch {
-    session_id: String,
+pub(super) struct SessionSearchMatch {
+    pub(super) session_id: String,
     /// The 1-based line of the transcript. `0` marks a title match on a
     /// session whose transcript has not reached disk yet.
-    line: u64,
+    pub(super) line: u64,
     /// The matched line, truncated to 100 characters.
-    context: String,
+    pub(super) context: String,
 }
 
 /// What `GET /api/sessions/search` answers.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-struct SessionSearchResponse {
-    matches: Vec<SessionSearchMatch>,
+pub(super) struct SessionSearchResponse {
+    pub(super) matches: Vec<SessionSearchMatch>,
     /// How many matches the reply carries.
-    total: usize,
+    pub(super) total: usize,
     /// Why the search looked at nothing, when it looked at nothing.
     ///
     /// The daemon writes it for a search with no kiln scope
@@ -218,7 +222,7 @@ struct SessionSearchResponse {
     /// the one case where an empty result is not a statement about the
     /// corpus, so the sentence has to reach the caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
+    pub(super) note: Option<String>,
 }
 
 /// One persisted session event, as `session.resume_from_storage` replays it.

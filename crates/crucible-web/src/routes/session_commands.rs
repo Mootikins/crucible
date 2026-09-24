@@ -185,31 +185,35 @@ pub(super) async fn execute_command(
                 .session_search(args, &session_scope_kilns(&session), Some(10))
                 .await
                 .daemon_err()?;
+            // `{matches, total}` of transcript lines, not of sessions — a
+            // match never carries a `title` (`server/session/list.rs:277`).
+            let found: super::session::SessionSearchResponse =
+                super::session::daemon_shape(results, "session.search")?;
 
-            let result_text = if let Some(sessions) = results.as_array() {
-                if sessions.is_empty() {
-                    format!("No results found for '{}'", args)
-                } else {
-                    let mut lines = vec![format!(
-                        "Search results for '{}' ({} found):",
-                        args,
-                        sessions.len()
-                    )];
-                    for (i, item) in sessions.iter().enumerate() {
-                        let title = item
-                            .get("title")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Untitled");
-                        let id_val = item
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        lines.push(format!("  {}. {} ({})", i + 1, title, id_val));
-                    }
-                    lines.join("\n")
+            let result_text = if found.matches.is_empty() {
+                match found.note {
+                    // An unscoped search looked at nothing; say so rather
+                    // than reporting "no results" about a corpus it never read.
+                    Some(note) => format!("No results found for '{}': {}", args, note),
+                    None => format!("No results found for '{}'", args),
                 }
             } else {
-                format!("Search results for '{}':\n{}", args, results)
+                let mut lines = vec![format!(
+                    "Search results for '{}' ({} found):",
+                    args, found.total
+                )];
+                for (i, m) in found.matches.iter().enumerate() {
+                    // Line 0 marks a title match on a session whose
+                    // transcript has not reached disk yet; there is no line
+                    // number worth printing for it.
+                    let location = if m.line == 0 {
+                        m.session_id.clone()
+                    } else {
+                        format!("{} (line {})", m.session_id, m.line)
+                    };
+                    lines.push(format!("  {}. {} — {}", i + 1, location, m.context));
+                }
+                lines.join("\n")
             };
 
             Ok(Json(CommandResponse {
@@ -278,6 +282,43 @@ pub(super) async fn execute_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::request_json;
+
+    /// `/search` used to call `.as_array()` on the daemon's `{matches, total}`
+    /// object — always `None`, since the reply is an object, not an array —
+    /// and fall through to printing the whole object as raw JSON. It also
+    /// read a `title` key no match carries. Two matches must read back as two
+    /// human lines, not a JSON blob.
+    #[tokio::test]
+    async fn a_search_reply_with_two_matches_prints_two_readable_lines() {
+        let (status, json) = request_json(
+            "POST",
+            "/api/session/test-session-001/command",
+            Some(serde_json::json!({ "command": "/search two hits" })),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "{json}");
+
+        let reply: CommandResponse =
+            serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
+        assert_eq!(reply.response_type, "success");
+        assert!(
+            !reply.result.trim_start().starts_with('{'),
+            "the result must be readable lines, not the raw `{{matches, total}}` object: {}",
+            reply.result
+        );
+        let lines: Vec<&str> = reply.result.lines().collect();
+        assert_eq!(
+            lines.len(),
+            3,
+            "a header line plus one line per match: {}",
+            reply.result
+        );
+        assert!(lines[1].contains("s1"), "{}", reply.result);
+        assert!(lines[1].contains("Test Session one"), "{}", reply.result);
+        assert!(lines[2].contains("s2"), "{}", reply.result);
+        assert!(lines[2].contains("Test Session two"), "{}", reply.result);
+    }
 
     /// Search scope is kiln-set overlap, so `/search` has to hand the daemon
     /// every kiln the session reaches. Sending only the first tested a

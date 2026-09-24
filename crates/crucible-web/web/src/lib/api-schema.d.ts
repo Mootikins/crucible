@@ -4347,6 +4347,10 @@ export interface components {
          *
          *     Not a session: the daemon answers the line it matched on, so a caller that
          *     wants the session reads `session_id` and asks for it.
+         *
+         *     `pub(super)`: `session_commands::execute_command`'s `/search` also reads
+         *     this shape, to print one line per match rather than the raw `session.search`
+         *     JSON it used to forward untouched.
          */
         SessionSearchMatch: {
             /** @description The matched line, truncated to 100 characters. */

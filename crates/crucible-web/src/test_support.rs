@@ -895,7 +895,22 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 .and_then(|p| p.get("kilns"))
                 .and_then(|v| v.as_array())
                 .is_some_and(|kilns| !kilns.is_empty());
-            if scoped {
+            let query = msg
+                .get("params")
+                .and_then(|p| p.get("query"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if scoped && query == "two hits" {
+                // A query naming its own fixture, so the one-match case above
+                // stays untouched for every other test that scopes a search.
+                json!({
+                    "matches": [
+                        {"session_id": "s1", "line": 12, "context": "Test Session one"},
+                        {"session_id": "s2", "line": 0, "context": "[active] Test Session two"}
+                    ],
+                    "total": 2
+                })
+            } else if scoped {
                 json!({
                     "matches": [{"session_id": "s1", "line": 12, "context": "Test Session"}],
                     "total": 1

@@ -9126,7 +9126,7 @@
       },
       "SessionSearchMatch": {
         "type": "object",
-        "description": "One transcript line that matched a session search.\n\nNot a session: the daemon answers the line it matched on, so a caller that\nwants the session reads `session_id` and asks for it.",
+        "description": "One transcript line that matched a session search.\n\nNot a session: the daemon answers the line it matched on, so a caller that\nwants the session reads `session_id` and asks for it.\n\n`pub(super)`: `session_commands::execute_command`'s `/search` also reads\nthis shape, to print one line per match rather than the raw `session.search`\nJSON it used to forward untouched.",
         "required": [
           "session_id",
           "line",
