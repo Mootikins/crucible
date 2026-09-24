@@ -22,6 +22,27 @@ is a Keep a Changelog category.
 - **An unknown ACP agent name is an error, not a command.** The launcher used
   to run the name itself, so a misspelled profile started a missing binary and
   the failure named nothing.
+- **The daemon no longer sends the `ended` session event.** `turn_finished`
+  holds the same facts: its `status` is `completed`, `cancelled`,
+  `handler_cancelled`, `timed_out` or `failed`, and its `error` says why. A
+  client that read `ended` must read `turn_finished`.
+- **A `turn:complete` handler starts a new turn.** An `inject` no longer
+  continues the finished turn. The payload loses `continuation_depth` and
+  `is_continuation`. The `user_message` of the new turn carries
+  `origin: "plugin"`.
+- **The display hooks `tool:display_start` and `tool:display_complete` are
+  removed.** `tool:render` is the only display hook. It runs for each call,
+  each permission prompt and each result. For a result, the call has `result`
+  and `error`, and the render can return `summary`. A registration of an old
+  hook now fails with an unknown-name error.
+- **A permission rule reads the canonical call.** A `bash` rule reads the
+  command line of each `command` call, whatever tool made it. A `read:` rule
+  reads only a `file_read` call: `read_file`, `read_note`, `read_metadata`,
+  `glob` and `grep`. A plugin or MCP tool with a path argument is no longer a
+  read.
+- **The `title` of an ACP agent key table entry is a regular expression**
+  (Rust regex syntax, not a Lua pattern). A bad expression fails the config
+  load. A group named `tool` gives the tool name.
 
 ### Fixed
 
@@ -38,6 +59,11 @@ is a Keep a Changelog category.
   refuse with the reason. Copying the id is not an option: both sessions
   would resume one agent history.
 
+- **A turn that a handler cancelled shows why.** The TUI and the web show the
+  `error` of a `handler_cancelled` turn, for example the reason of the ACP loop
+  guard. The loop guard also reads the title and the locations of an ACP call,
+  so the different commands of an agent that sends no tool name are not one
+  call repeated.
 - **A session's `env_overrides` now beats the profile's `env`.** The profile
   environment was merged twice — once onto the session and once at launch —
   and the launch copy put the config value back, so a `session.create`
@@ -46,6 +72,11 @@ is a Keep a Changelog category.
 
 ### Added
 
+- **The render of each tool call.** The daemon renders each tool call through
+  the `tool:render` stage: a `line`, a list of `fields` and, for a result, a
+  `summary`. The TUI card, the web card, both permission prompts and `cru acp`
+  draw this table. No client takes an icon, a label or a summary from the tool
+  name.
 - **Antigravity is a built-in ACP agent** (`cru chat --acp antigravity`). The
   command and the arguments come from the ACP registry entry `antigravity-acp`
   and Crucible passes them unchanged, as Zed and acpx do. On Linux that
