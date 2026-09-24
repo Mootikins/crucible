@@ -11,26 +11,6 @@ use crucible_core::config::components::permissions::{PermissionConfig, Permissio
 use tracing::warn;
 
 impl AgentManager {
-    /// The `[permissions]` block of the agent profile `name`, if it has one.
-    ///
-    /// One lookup for every caller. A profile that does not resolve contributes no
-    /// permissions, which is safe because the same profile fails the launch —
-    /// no turn ever runs under it.
-    pub(crate) fn agent_profile_permissions(&self, name: &str) -> Option<PermissionConfig> {
-        let config = self.acp_config.as_ref()?;
-        match crate::acp::discovery::profile(name, config) {
-            Ok(resolved) => resolved?.permissions,
-            Err(error) => {
-                warn!(
-                    agent = %name,
-                    %error,
-                    "agent profile does not resolve; applying the global permission rules"
-                );
-                None
-            }
-        }
-    }
-
     /// The `[permissions]` rules that apply to `session_id`.
     ///
     /// Resolved the same way and in the same order as the agent dispatch path:
@@ -46,13 +26,12 @@ impl AgentManager {
     /// a gate is as strict as the config says, and no stricter; the limitation
     /// is documented for operators in `docs/Help/Workflows/Index.md`.
     pub(crate) fn session_permission_config(&self, session_id: &str) -> Option<PermissionConfig> {
-        let agent_permissions = self
-            .session_manager
-            .get_session(session_id)
-            .and_then(|session| session.agent)
-            .and_then(|agent| agent.agent_name)
-            .and_then(|name| self.agent_profile_permissions(&name));
-        agent_permissions.or_else(|| self.permission_config.clone())
+        session_config(
+            &self.session_manager,
+            self.acp_config.as_ref(),
+            self.permission_config.as_ref(),
+            session_id,
+        )
     }
 
     /// The engine of [`Self::session_permission_config`]. The tool gate of
@@ -62,4 +41,87 @@ impl AgentManager {
     pub(crate) fn session_permission_engine(&self, session_id: &str) -> PermissionEngine {
         PermissionEngine::new(self.session_permission_config(session_id).as_ref())
     }
+
+    /// The inputs of [`Self::session_permission_engine`], for a holder that
+    /// outlives one turn: the ACP gate of a cached agent handle.
+    pub(crate) fn session_rules(&self) -> SessionRules {
+        SessionRules {
+            session_manager: self.session_manager.clone(),
+            acp_config: self.acp_config.clone(),
+            permission_config: self.permission_config.clone(),
+        }
+    }
+}
+
+/// What resolves the `[permissions]` rules of a session.
+///
+/// The ACP gate lives as long as its agent handle. It reads the rules from
+/// this at each call, not once when the handle is built, so it applies the
+/// rules that apply to the session now.
+#[derive(Clone)]
+pub(crate) struct SessionRules {
+    session_manager: std::sync::Arc<crate::session_manager::SessionManager>,
+    acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
+    permission_config: Option<PermissionConfig>,
+}
+
+impl SessionRules {
+    /// The rules `config` for each session, with no agent profiles.
+    #[cfg(test)]
+    pub(crate) fn global(config: Option<PermissionConfig>) -> Self {
+        Self {
+            session_manager: crate::test_support::temp_session_manager(),
+            acp_config: None,
+            permission_config: config,
+        }
+    }
+
+    /// The engine of the rules that apply to `session_id` now.
+    pub(crate) fn engine(&self, session_id: &str) -> PermissionEngine {
+        PermissionEngine::new(
+            session_config(
+                &self.session_manager,
+                self.acp_config.as_ref(),
+                self.permission_config.as_ref(),
+                session_id,
+            )
+            .as_ref(),
+        )
+    }
+}
+
+/// The `[permissions]` block of the agent profile `name`, if it has one.
+///
+/// One lookup for every caller. A profile that does not resolve contributes no
+/// permissions, which is safe because the same profile fails the launch —
+/// no turn ever runs under it.
+fn profile_permissions(
+    acp_config: Option<&crucible_core::config::components::acp::AcpConfig>,
+    name: &str,
+) -> Option<PermissionConfig> {
+    match crate::acp::discovery::profile(name, acp_config?) {
+        Ok(resolved) => resolved?.permissions,
+        Err(error) => {
+            warn!(
+                agent = %name,
+                %error,
+                "agent profile does not resolve; applying the global permission rules"
+            );
+            None
+        }
+    }
+}
+
+fn session_config(
+    session_manager: &crate::session_manager::SessionManager,
+    acp_config: Option<&crucible_core::config::components::acp::AcpConfig>,
+    global: Option<&PermissionConfig>,
+    session_id: &str,
+) -> Option<PermissionConfig> {
+    session_manager
+        .get_session(session_id)
+        .and_then(|session| session.agent)
+        .and_then(|agent| agent.agent_name)
+        .and_then(|name| profile_permissions(acp_config, &name))
+        .or_else(|| global.cloned())
 }

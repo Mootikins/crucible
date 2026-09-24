@@ -1149,6 +1149,70 @@ mod session_permission_config_tests {
 
         assert_eq!(resolved.default, PermissionMode::Allow);
     }
+
+    /// The ACP gate reads the session's rules at each call, as the internal
+    /// path reads them for each turn. A cached agent handle must not keep
+    /// the rules of the moment that built it.
+    #[tokio::test]
+    async fn the_acp_gate_reads_the_session_rules_at_each_call() {
+        use agent_client_protocol::schema::v1::{
+            PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+        };
+        let session_manager = temp_session_manager();
+        let manager = manager_with_strict_profile(session_manager.clone());
+        let session_id = session_naming_profile(&session_manager, None);
+        manager
+            .slot(&session_id)
+            .set_turn_gate(crate::agent_manager::slot::TurnGate {
+                is_interactive: false,
+                ..Default::default()
+            });
+        let (event_tx, _events) = broadcast::channel(16);
+        let handle = manager.build_acp_permission_handler(
+            &session_id,
+            &event_tx,
+            std::path::Path::new("/w"),
+            None,
+        );
+        let ask = || {
+            let call = crucible_core::types::classify_acp(
+                serde_json::from_value(serde_json::json!({
+                    "toolCallId": "call-1",
+                    "kind": "execute",
+                    "rawInput": { "command": "cargo test" },
+                }))
+                .expect("a raw tool call"),
+                &[],
+            );
+            handle(
+                call,
+                vec![
+                    PermissionOption::new("allow_once", "Allow", PermissionOptionKind::AllowOnce),
+                    PermissionOption::new("reject_once", "No", PermissionOptionKind::RejectOnce),
+                ],
+            )
+        };
+        let selected = |outcome: RequestPermissionOutcome| match outcome {
+            RequestPermissionOutcome::Selected(s) => Some(s.option_id.to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            selected(ask().await).as_deref(),
+            Some("allow_once"),
+            "the global rules allow each call"
+        );
+
+        // The session now names the strict profile.
+        let mut session = session_manager.get_session(&session_id).unwrap();
+        session.agent.as_mut().unwrap().agent_name = Some("my-claude".to_string());
+        session_manager.register_transient(session);
+
+        assert_eq!(
+            selected(ask().await).as_deref(),
+            Some("reject_once"),
+            "the profile of the session denies each call"
+        );
+    }
 }
 
 /// A reply is routed by which registry holds its id, not by its own shape.

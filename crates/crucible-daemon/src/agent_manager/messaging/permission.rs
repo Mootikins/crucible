@@ -114,7 +114,8 @@ struct AcpGate {
     workspace: PathBuf,
     whitelists_dir: Option<PathBuf>,
     hooks: Option<PluginHandlers>,
-    engine: PermissionEngine,
+    /// Read at each call, as the internal path reads it for each turn.
+    rules: crate::agent_manager::session_permissions::SessionRules,
     tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
 }
 
@@ -151,10 +152,11 @@ impl AcpGate {
         )
         .await;
         let no_mcp = std::collections::HashSet::new();
+        let engine = self.rules.engine(&self.session_id);
         let ctx = PermissionContext {
             session_id: &self.session_id,
             tool_policy: self.tool_policy.as_ref(),
-            engine: &self.engine,
+            engine: &engine,
             permission_override: turn.permission_override,
             patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
             hooks: self.hooks.as_ref(),
@@ -299,7 +301,7 @@ impl AgentManager {
             workspace: workspace.to_path_buf(),
             whitelists_dir: self.whitelists_dir(),
             hooks: self.plugin_handlers(),
-            engine: self.session_permission_engine(session_id),
+            rules: self.session_rules(),
             tool_policy,
         });
         Arc::new(move |call, options| {
@@ -950,7 +952,7 @@ mod acp_tool_policy_tests {
             workspace: PathBuf::new(),
             whitelists_dir: None,
             hooks,
-            engine: PermissionEngine::new(config.as_ref()),
+            rules: crate::agent_manager::session_permissions::SessionRules::global(config),
             tool_policy: Some(
                 card.iter()
                     .map(|(name, policy)| ((*name).to_string(), *policy))
@@ -1011,7 +1013,7 @@ mod acp_tool_policy_tests {
             workspace: PathBuf::from("/w"),
             whitelists_dir: Some(whitelists.path().to_path_buf()),
             hooks: None,
-            engine: PermissionEngine::new(None),
+            rules: crate::agent_manager::session_permissions::SessionRules::global(None),
             tool_policy: None,
         };
         let options: Vec<agent_client_protocol::schema::v1::PermissionOption> =
