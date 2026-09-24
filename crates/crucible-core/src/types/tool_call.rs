@@ -175,8 +175,8 @@ impl CanonicalToolCall {
     ];
 
     /// Crucible's tools that change a file or a note. A path argument makes
-    /// a call to one of them `file_edit`, and a call to another tool
-    /// `file_read`. The permission gate reads this list too.
+    /// a call to one of them `file_edit`. The permission gate reads this
+    /// list too.
     pub const FILE_EDIT_TOOL_NAMES: &'static [&'static str] = &[
         "write_file",
         "edit_file",
@@ -184,6 +184,13 @@ impl CanonicalToolCall {
         "update_note",
         "delete_note",
     ];
+
+    /// Crucible's tools that only read a file or a note. A path argument
+    /// makes a call to one of them `file_read`. A path argument of another
+    /// tool gives kind `tool`, because a plugin tool with a path can delete
+    /// or rename, and a `read` rule must not allow it.
+    pub const FILE_READ_TOOL_NAMES: &'static [&'static str] =
+        &["read_file", "read_note", "read_metadata", "glob", "grep"];
 
     /// Classify a call to one of Crucible's own tools.
     ///
@@ -218,8 +225,10 @@ impl CanonicalToolCall {
         if let Some(path) = first_string(map, PATH_KEYS) {
             let kind = if Self::FILE_EDIT_TOOL_NAMES.contains(&tool_name) {
                 "file_edit"
-            } else {
+            } else if Self::FILE_READ_TOOL_NAMES.contains(&tool_name) {
                 "file_read"
+            } else {
+                "tool"
             };
             return Self {
                 paths: vec![path],
@@ -413,7 +422,7 @@ mod tests {
     /// accepted camelCase, so dropping it would blank those status rows.
     #[test]
     fn camel_case_file_path_is_recognised() {
-        let d = of("Read", &json!({"filePath": "/home/u/x.rs"}));
+        let d = of("read_file", &json!({"filePath": "/home/u/x.rs"}));
         assert_eq!(d.kind, "file_read");
         assert_eq!(d.paths, ["/home/u/x.rs"]);
     }
@@ -430,7 +439,17 @@ mod tests {
                 "{name}"
             );
         }
-        assert_eq!(of("read_file", &json!({"path": "a.md"})).kind, "file_read");
+        for name in CanonicalToolCall::FILE_READ_TOOL_NAMES {
+            assert_eq!(
+                of(name, &json!({"path": "a.md"})).kind,
+                "file_read",
+                "{name}"
+            );
+        }
+        // A tool that Crucible does not know can delete or rename.
+        let unknown = of("delete_file", &json!({"path": "a.md"}));
+        assert_eq!(unknown.kind, "tool");
+        assert_eq!(unknown.paths, ["a.md"]);
     }
 
     /// A nested object on a one-line status row is noise, not information.

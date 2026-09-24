@@ -1069,6 +1069,23 @@ mod acp_tool_policy_tests {
         );
         assert!(asked.allowed(), "and the user's answer is honoured");
     }
+
+    /// A `read` rule allows only a tool that Crucible knows reads. A plugin
+    /// or MCP gateway tool with a `path` argument can delete or rename, so
+    /// the user is asked.
+    #[tokio::test]
+    async fn a_read_rule_does_not_allow_an_unknown_tool_with_a_path() {
+        let reads = || PermissionConfig {
+            allow: vec!["read:*".to_string()],
+            ..Default::default()
+        };
+        let args = serde_json::json!({"path": "notes/a.md"});
+        for (tool, prompts) in [("delete_file", 1), ("rename_note", 1), ("read_file", 0)] {
+            let call = CanonicalToolCall::crucible_tool(tool, &args);
+            let asked = decide_call(call, &[], Some(reads())).await;
+            assert_eq!(asked.prompts, prompts, "{tool}");
+        }
+    }
 }
 
 /// Tests that call the real handler that `build_acp_permission_handler`

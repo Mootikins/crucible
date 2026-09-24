@@ -142,7 +142,10 @@ or Crucible's own agent calls it.
   line, so `bash:*` still matches it.
 - **`read`** reads each **path** of a `file_read` call. **`edit`**, **`write`** and
   **`delete`** read each path of a `file_edit` call. A `read` rule never reads an edit.
-  An `allow` rule allows a call only when it matches each path of the call.
+  An `allow` rule allows a call only when it matches each path of the call. Of
+  Crucible's tools, only `read_file`, `read_note`, `read_metadata`, `glob` and `grep`
+  make a `file_read` call. A plugin or MCP gateway tool with a `path` argument is kind
+  `tool`, so `allow = ["read:*"]` does not allow it.
 - **Any other key** is a **canonical tool name**, and the pattern matches the raw JSON
   arguments of the call — for example `{"path":"src/main.rs"}`. In practice that makes
   `*` the reliable pattern for such a rule.
