@@ -474,21 +474,19 @@ impl KilnManager {
         roots
     }
 
-    /// The admissible kiln root that contains `path`, opened.
+    /// The innermost admissible kiln root that contains `path`, opened.
     ///
     /// One call for the admission and the open, so a caller cannot do the
     /// first and forget the second. `None` is a denial: no kiln contains the
     /// path, and the caller must refuse rather than fall back to a wider root.
     pub async fn admit_kiln_root(&self, path: &Path) -> Option<PathBuf> {
-        let canonical = canonical_or_self(path);
-        let root = self
-            .admissible_kiln_roots()
-            .await
-            .into_iter()
-            .find(|root| {
-                let resolved = canonical_or_self(root);
-                canonical.starts_with(root) || canonical.starts_with(&resolved)
-            })?;
+        // The innermost kiln, as `fs.write` admits it, so that the kiln this
+        // opens is the kiln that the write lands in.
+        let (_, root) = crate::file_write::innermost_root(
+            &canonical_or_self(path),
+            self.admissible_kiln_roots().await,
+            |root| root.as_path(),
+        )?;
         // Opened on first use: a lazy entry, or one a restart left closed, is
         // a kiln whose watcher and index have to exist before the request that
         // admitted it lands.

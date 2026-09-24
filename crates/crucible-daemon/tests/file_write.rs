@@ -1,8 +1,13 @@
-use crucible_core::file_write::{ExpectedBase, FileChange, FileWriteRequest};
+use crucible_core::config::ProjectFileAccess;
+use crucible_core::file_write::{
+    ExpectedBase, FileChange, FileEncoding, FileReadRequest, FileWriteRequest,
+};
 use crucible_core::note_edit::disk_hash;
-use crucible_daemon::file_write::{write_for_roots, write_many_for_roots, CheckedPut};
+use crucible_daemon::file_write::{
+    read_for_roots, write_for_roots, write_many_for_roots, CheckedPut,
+};
 use crucible_daemon::{DaemonClient, Server};
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[tokio::test]
 async fn retrying_an_unacknowledged_write_after_restart_preserves_the_other_writer() {
@@ -334,4 +339,230 @@ async fn fs_write_fields_map_to_the_same_answers() {
     drop(client);
     let _ = shutdown.send(());
     task.await.unwrap().unwrap();
+}
+
+/// Nested kilns: the innermost kiln that holds a path is its root, in each
+/// order of the roots. A link in the inner kiln that points into the outer
+/// kiln leaves its root, so the daemon refuses the write.
+#[cfg(unix)]
+#[tokio::test]
+async fn the_innermost_kiln_contains_a_path_in_each_root_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let outer = dir.path().join("outer");
+    let inner = outer.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    let secret = outer.join("secret.md");
+    std::fs::write(&secret, "secret").unwrap();
+    let link = inner.join("link.md");
+    std::os::unix::fs::symlink(&secret, &link).unwrap();
+    for roots in [
+        vec![outer.clone(), inner.clone()],
+        vec![inner.clone(), outer.clone()],
+    ] {
+        let answer = write_for_roots(
+            FileWriteRequest {
+                path: link.to_string_lossy().into_owned(),
+                change: FileChange::Put {
+                    content: "overwritten".into(),
+                    base_hash: None,
+                    base_text: None,
+                },
+            },
+            &roots,
+            &[],
+        )
+        .await;
+        assert_eq!(answer["failure"], "invalid", "roots {roots:?}: {answer}");
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "secret");
+    }
+}
+
+fn read(path: &std::path::Path, encoding: FileEncoding) -> FileReadRequest {
+    FileReadRequest {
+        path: path.to_string_lossy().into_owned(),
+        encoding,
+    }
+}
+
+fn put_request(path: &std::path::Path, content: &str) -> FileWriteRequest {
+    FileWriteRequest {
+        path: path.to_string_lossy().into_owned(),
+        change: FileChange::Put {
+            content: content.into(),
+            base_hash: None,
+            base_text: None,
+        },
+    }
+}
+
+/// A read chooses its root by the same rule as a write: the innermost kiln,
+/// in each order of the roots. The answer names that root, so a client uses
+/// it as it is.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_read_names_the_innermost_kiln_and_refuses_a_link_out_of_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let outer = dir.path().join("outer");
+    let inner = outer.join("inner");
+    std::fs::create_dir_all(&inner).unwrap();
+    std::fs::write(outer.join("secret.md"), "secret").unwrap();
+    std::fs::write(inner.join("note.md"), "note").unwrap();
+    std::os::unix::fs::symlink(outer.join("secret.md"), inner.join("link.md")).unwrap();
+    for roots in [
+        vec![outer.clone(), inner.clone()],
+        vec![inner.clone(), outer.clone()],
+    ] {
+        let answer = read_for_roots(
+            read(&inner.join("note.md"), FileEncoding::Text),
+            &roots,
+            &[],
+        )
+        .await;
+        assert_eq!(answer["ok"], true, "{answer}");
+        assert_eq!(
+            answer["root"],
+            json!(inner.canonicalize().unwrap()),
+            "{answer}"
+        );
+        assert_eq!(answer["content"]["text"], "note");
+        let answer = read_for_roots(
+            read(&inner.join("link.md"), FileEncoding::Text),
+            &roots,
+            &[],
+        )
+        .await;
+        assert_eq!(answer["failure"], "invalid", "roots {roots:?}: {answer}");
+    }
+}
+
+/// A kiln inside a project wins over the project, so the project policy does
+/// not reach the kiln. A project's own files obey its policy.
+#[tokio::test]
+async fn a_read_obeys_the_kiln_first_rule_and_the_project_policy() {
+    let project = tempfile::tempdir().unwrap();
+    let kiln = project.path().join("docs");
+    std::fs::create_dir(&kiln).unwrap();
+    std::fs::write(kiln.join("note.md"), "n").unwrap();
+    std::fs::write(project.path().join("README.md"), "r").unwrap();
+    let off = [(project.path().to_path_buf(), ProjectFileAccess::Off)];
+
+    let answer = read_for_roots(
+        read(&kiln.join("note.md"), FileEncoding::Text),
+        std::slice::from_ref(&kiln),
+        &off,
+    )
+    .await;
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(answer["access"], "read-write", "{answer}");
+
+    let readme = project.path().join("README.md");
+    for (policy, expected) in [
+        (ProjectFileAccess::ReadWrite, Some("read-write")),
+        (ProjectFileAccess::ReadOnly, Some("read-only")),
+        (ProjectFileAccess::Off, None),
+    ] {
+        let projects = [(project.path().to_path_buf(), policy)];
+        let answer = read_for_roots(read(&readme, FileEncoding::Text), &[], &projects).await;
+        match expected {
+            Some(access) => {
+                assert_eq!(answer["access"], access, "{answer}");
+                assert_eq!(answer["content"]["text"], "r", "{answer}");
+            }
+            None => assert_eq!(answer["failure"], "not_found", "{answer}"),
+        }
+    }
+}
+
+/// A path in no root, a traversal sequence, a NUL and a relative path are
+/// refused before any read.
+#[tokio::test]
+async fn a_read_refuses_a_path_in_no_root_and_a_malformed_path() {
+    let kiln = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "s").unwrap();
+    let roots = kiln_roots(kiln.path());
+
+    let answer = read_for_roots(
+        read(&outside.path().join("secret.md"), FileEncoding::Text),
+        &roots,
+        &[],
+    )
+    .await;
+    assert_eq!(answer["failure"], "not_found", "{answer}");
+    for raw in [
+        format!("{}/../secret.md", kiln.path().display()),
+        format!("{}/a\0b", kiln.path().display()),
+        "notes/daily.md".to_string(),
+    ] {
+        let request = FileReadRequest {
+            path: raw.clone(),
+            encoding: FileEncoding::Text,
+        };
+        let answer = read_for_roots(request, &roots, &[]).await;
+        assert_eq!(answer["failure"], "invalid", "{raw:?}: {answer}");
+    }
+}
+
+/// A directory link out of the kiln carries neither a read nor a new file
+/// out of it, and a planted link as the final component carries no write.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_link_out_of_the_kiln_carries_no_read_and_no_write() {
+    let kiln = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().join("secret.md");
+    std::fs::write(&secret, "secret").unwrap();
+    std::os::unix::fs::symlink(outside.path(), kiln.path().join("escape")).unwrap();
+    std::os::unix::fs::symlink(&secret, kiln.path().join("evil.md")).unwrap();
+    let roots = kiln_roots(kiln.path());
+
+    let through_dir = kiln.path().join("escape/secret.md");
+    let answer = read_for_roots(read(&through_dir, FileEncoding::Base64), &roots, &[]).await;
+    assert_eq!(answer["failure"], "invalid", "{answer}");
+    let new_file = kiln.path().join("escape/new.md");
+    let answer = write_for_roots(put_request(&new_file, "x"), &roots, &[]).await;
+    assert_eq!(answer["failure"], "invalid", "{answer}");
+    assert!(!outside.path().join("new.md").exists());
+    let answer = write_for_roots(put_request(&kiln.path().join("evil.md"), "x"), &roots, &[]).await;
+    assert_eq!(answer["failure"], "invalid", "{answer}");
+    assert_eq!(std::fs::read_to_string(&secret).unwrap(), "secret");
+}
+
+/// Text carries its hash, bytes travel as base64, a file that is not UTF-8
+/// refuses a text read, and a missing file or a directory has no content.
+#[tokio::test]
+async fn a_read_answers_the_content_in_the_requested_encoding() {
+    use base64::Engine as _;
+    let kiln = tempfile::tempdir().unwrap();
+    let roots = kiln_roots(kiln.path());
+    let png = kiln.path().join("shot.png");
+    let bytes = b"\x89PNG\r\n\x1a\n";
+    std::fs::write(&png, bytes).unwrap();
+    std::fs::write(kiln.path().join("note.md"), "wörld ✅\n").unwrap();
+
+    let answer = read_for_roots(
+        read(&kiln.path().join("note.md"), FileEncoding::Text),
+        &roots,
+        &[],
+    )
+    .await;
+    assert_eq!(answer["content"]["text"], "wörld ✅\n", "{answer}");
+    assert_eq!(answer["content"]["content_hash"], disk_hash("wörld ✅\n"));
+
+    let answer = read_for_roots(read(&png, FileEncoding::Text), &roots, &[]).await;
+    assert_eq!(answer["failure"], "unsupported", "{answer}");
+    let answer = read_for_roots(read(&png, FileEncoding::Base64), &roots, &[]).await;
+    let data = answer["content"]["data"].as_str().expect("base64 data");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .unwrap(),
+        bytes
+    );
+
+    for absent in [kiln.path().join("nope.md"), kiln.path().to_path_buf()] {
+        let answer = read_for_roots(read(&absent, FileEncoding::Text), &roots, &[]).await;
+        assert_eq!(answer["ok"], true, "{answer}");
+        assert_eq!(answer["content"], Value::Null, "{answer}");
+    }
 }

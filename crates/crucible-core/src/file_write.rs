@@ -1,6 +1,8 @@
-//! Commands for the daemon-owned text write path.
+//! Commands for the daemon-owned file read and text write paths.
+use crate::config::ProjectFileAccess;
 use crate::note_edit::AnchoredEdit;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// An absolute file path and the change to apply under its write lock.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +28,53 @@ pub enum FileChange {
         #[serde(default)]
         base_hash: Option<String>,
     },
+}
+
+/// An absolute file path for `fs.read`, and the form of the answer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileReadRequest {
+    pub path: String,
+    #[serde(default)]
+    pub encoding: FileEncoding,
+}
+
+/// How `fs.read` carries the bytes of a file.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileEncoding {
+    /// UTF-8 text. The daemon refuses a file that is not UTF-8.
+    #[default]
+    Text,
+    /// Any bytes, in standard base64.
+    Base64,
+}
+
+/// What `fs.read` answers when the daemon admits the path.
+///
+/// The daemon owns the rule that selects `root`: the innermost kiln that holds
+/// the path, else the innermost registered project or session folder. A
+/// client uses `root` as it is and does not decide containment again.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileReadReply {
+    /// The canonical root that holds the path.
+    pub root: PathBuf,
+    /// What the root lets a client do. A kiln is always read-write.
+    pub access: ProjectFileAccess,
+    /// The path, with its symlinks resolved inside `root`.
+    pub path: PathBuf,
+    /// The file. `None` when no regular file is at `path`: the path does not
+    /// exist, or it is a directory.
+    pub content: Option<FileContent>,
+}
+
+/// The bytes of a file, in the encoding that the request named.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "encoding", rename_all = "snake_case")]
+pub enum FileContent {
+    /// UTF-8 text, and the hash that a later `fs.write` names as its base.
+    Text { text: String, content_hash: String },
+    /// Any bytes, in standard base64.
+    Base64 { data: String },
 }
 
 /// The disk state that a write expects to find before it writes.

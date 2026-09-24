@@ -214,6 +214,7 @@ rpc_methods! {
     ProposalReject = "proposal.reject",
     ProposalDismiss = "proposal.dismiss",
     ProposalResolve = "proposal.resolve",
+    FsRead = "fs.read",
     FsWrite = "fs.write",
     FsMove = "fs.move",
     FsMkdir = "fs.mkdir",
@@ -1108,6 +1109,15 @@ impl RpcDispatcher {
                     req.clone(),
                     self.ctx.agents.proposals(),
                     &self.ctx.kiln
+                )
+            ),
+            RpcMethod::FsRead => forward!(
+                id,
+                crate::file_write::handle_read(
+                    req.clone(),
+                    &self.ctx.kiln,
+                    &self.ctx.project_manager,
+                    &self.ctx.sessions
                 )
             ),
             RpcMethod::FsWrite => forward!(

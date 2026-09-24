@@ -1,6 +1,11 @@
-//! The write critical section shared by browser RPC and agent note tools.
+//! The file read and the write critical section shared by browser RPC and
+//! agent note tools. One enclosing-root rule admits both.
+use base64::Engine as _;
 use crucible_core::config::{read_project_config, ProjectFileAccess};
-use crucible_core::file_write::{ExpectedBase, FileChange, FileWriteRequest};
+use crucible_core::file_write::{
+    ExpectedBase, FileChange, FileContent, FileEncoding, FileReadReply, FileReadRequest,
+    FileWriteRequest,
+};
 use crucible_core::note_edit::{apply_anchored_edits, disk_hash, AnchoredEdit, EditOutcome};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -42,6 +47,79 @@ pub(crate) enum LockedChange {
     Patch(Vec<AnchoredEdit>),
 }
 
+/// The innermost of `roots` that holds `path`, as its canonical form and its
+/// item. A root matches in its given form or in its canonical form, because
+/// clients send either. Roots can nest (a kiln inside a kiln), and the
+/// innermost root is the narrower claim, so it wins in each order of `roots`.
+pub(crate) fn innermost_root<T>(
+    path: &Path,
+    roots: impl IntoIterator<Item = T>,
+    dir: impl Fn(&T) -> &Path,
+) -> Option<(PathBuf, T)> {
+    roots
+        .into_iter()
+        .filter_map(|item| {
+            let root = dir(&item);
+            let canonical = root.canonicalize().ok()?;
+            (path.starts_with(root) || path.starts_with(&canonical)).then_some((canonical, item))
+        })
+        .max_by_key(|(canonical, _)| canonical.components().count())
+}
+
+/// Find the root that holds `raw`, and what that root lets a caller do.
+///
+/// This is the one enclosing-root rule for every file RPC. A kiln wins over a
+/// project, so a kiln inside a project stays read-write. Inside each kind, the
+/// innermost root wins.
+fn enclosing_root(
+    raw: &str,
+    kilns: &[PathBuf],
+    projects: &[(PathBuf, ProjectFileAccess)],
+) -> Result<(PathBuf, ProjectFileAccess), Value> {
+    let path = Path::new(raw);
+    if !path.is_absolute() || raw.contains("..") || raw.contains('\0') {
+        return Err(failure("invalid", "Invalid path: traversal not allowed"));
+    }
+    innermost_root(path, kilns, |kiln| kiln.as_path())
+        .map(|(root, _)| (root, ProjectFileAccess::ReadWrite))
+        .or_else(|| {
+            innermost_root(path, projects, |(project, _)| project.as_path())
+                .map(|(root, (_, policy))| (root, *policy))
+        })
+        .ok_or_else(|| {
+            failure(
+                "not_found",
+                "File not within any open kiln or registered project",
+            )
+        })
+}
+
+/// The nearest ancestor of `path` that exists, `path` included.
+fn nearest_existing(path: &Path) -> Option<&Path> {
+    path.ancestors()
+        .find(|ancestor| ancestor.symlink_metadata().is_ok())
+}
+
+/// Resolve the nearest existing ancestor of `path`, including the final
+/// component when it exists, and check that the result stays in `root`. The
+/// answer is the target path in that resolved form, so that a symlink cannot
+/// take a read or a write out of its root.
+fn contain(path: &Path, root: &Path) -> Result<PathBuf, Value> {
+    let Some(ancestor) = nearest_existing(path) else {
+        return Err(failure("invalid", "Path has no parent"));
+    };
+    let canonical = match ancestor.canonicalize() {
+        Ok(p) if p.starts_with(root) => p,
+        _ => return Err(failure("invalid", "Path escapes kiln directory")),
+    };
+    let suffix = path.strip_prefix(ancestor).expect("ancestor of target");
+    Ok(if suffix.as_os_str().is_empty() {
+        canonical
+    } else {
+        canonical.join(suffix)
+    })
+}
+
 /// Check that `raw` is inside a writable root. Return the target path with its
 /// nearest existing ancestor resolved, so that the lock key and the write agree.
 fn admit(
@@ -49,30 +127,7 @@ fn admit(
     kilns: &[PathBuf],
     projects: &[(PathBuf, ProjectFileAccess)],
 ) -> Result<PathBuf, Value> {
-    let path = PathBuf::from(raw);
-    if !path.is_absolute() || raw.contains("..") || raw.contains('\0') {
-        return Err(failure("invalid", "Invalid path: traversal not allowed"));
-    }
-    let contains = |root: &PathBuf| {
-        root.canonicalize()
-            .ok()
-            .filter(|canonical| path.starts_with(root) || path.starts_with(canonical))
-    };
-    let root = kilns
-        .iter()
-        .find_map(contains)
-        .map(|p| (p, ProjectFileAccess::ReadWrite))
-        .or_else(|| {
-            projects
-                .iter()
-                .find_map(|(p, policy)| contains(p).map(|p| (p, *policy)))
-        });
-    let Some((root, policy)) = root else {
-        return Err(failure(
-            "not_found",
-            "File not within any open kiln or registered project",
-        ));
-    };
+    let (root, policy) = enclosing_root(raw, kilns, projects)?;
     if !policy.can_write() {
         return Err(failure(
             if policy.can_read() {
@@ -83,25 +138,7 @@ fn admit(
             "Project files are read-only",
         ));
     }
-    // Resolve the nearest existing ancestor before creating directories, including
-    // the final component when it exists, to contain symlinks.
-    let mut ancestor = path.as_path();
-    while ancestor.symlink_metadata().is_err() {
-        let Some(parent) = ancestor.parent() else {
-            return Err(failure("invalid", "Path has no parent"));
-        };
-        ancestor = parent;
-    }
-    let canonical = match ancestor.canonicalize() {
-        Ok(p) if p.starts_with(&root) => p,
-        _ => return Err(failure("invalid", "Path escapes kiln directory")),
-    };
-    let suffix = path.strip_prefix(ancestor).expect("ancestor of target");
-    Ok(if suffix.as_os_str().is_empty() {
-        canonical
-    } else {
-        canonical.join(suffix)
-    })
+    contain(Path::new(raw), &root)
 }
 
 fn io_failure(e: std::io::Error) -> Value {
@@ -321,29 +358,30 @@ pub(crate) async fn write_locked(
     Ok(answer)
 }
 
-pub(crate) async fn handle(
-    req: crate::protocol::Request,
+/// The roots that can hold `path`: the admissible kilns, the registered
+/// projects with their policies, and the folder of the session that owns
+/// `path`.
+///
+/// Registered kilns, not merely open ones. A restart closes every kiln, and a
+/// request admitted against the open set alone answered 404 for a kiln that
+/// the user can see in `kiln.list`.
+async fn roots_for(
+    path: &Path,
     km: &crate::kiln_manager::KilnManager,
     pm: &crate::project_manager::ProjectManager,
     sessions: &crate::session_manager::SessionManager,
-) -> crate::protocol::Response {
-    let params = match crate::rpc_helpers::typed_params::<FileWriteRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    // A project-less session's own workspace folder is writable like a
+) -> (Vec<PathBuf>, Vec<(PathBuf, ProjectFileAccess)>) {
+    // A project-less session's own workspace folder is a root like a
     // project: it is where that session's work goes. Read-write, because no
-    // `.crucible/project.toml` can exist there to say otherwise.
-    let session_folder = sessions
-        .session_workspace_containing(std::path::Path::new(&params.path))
-        .await
-        .map(|folder| (folder, ProjectFileAccess::ReadWrite));
-    // Registered, not merely open. A restart closes every kiln, and a write
-    // admitted against the open set alone answered 404 for a kiln the user
-    // can see in `kiln.list`. `admit_kiln_root` also OPENS the one this write
-    // lands in, so the bytes it is about to add are watched and indexed.
+    // `.crucible/project.toml` can exist there to say otherwise. The folder
+    // is looked up from the nearest existing ancestor, so that a new file in
+    // the folder has a root too.
+    let session_folder = match nearest_existing(path) {
+        Some(existing) => sessions.session_workspace_containing(existing).await,
+        None => None,
+    }
+    .map(|folder| (folder, ProjectFileAccess::ReadWrite));
     let kilns = km.admissible_kiln_roots().await;
-    let _opened = km.admit_kiln_root(std::path::Path::new(&params.path)).await;
     let projects = pm
         .list()
         .into_iter()
@@ -355,5 +393,110 @@ pub(crate) async fn handle(
         })
         .chain(session_folder)
         .collect::<Vec<_>>();
+    (kilns, projects)
+}
+
+pub(crate) async fn handle(
+    req: crate::protocol::Request,
+    km: &crate::kiln_manager::KilnManager,
+    pm: &crate::project_manager::ProjectManager,
+    sessions: &crate::session_manager::SessionManager,
+) -> crate::protocol::Response {
+    let params = match crate::rpc_helpers::typed_params::<FileWriteRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let path = Path::new(&params.path);
+    let (kilns, projects) = roots_for(path, km, pm, sessions).await;
+    // `admit_kiln_root` OPENS the kiln this write lands in, so the bytes it is
+    // about to add are watched and indexed.
+    let _opened = km.admit_kiln_root(path).await;
     crate::protocol::Response::success(req.id, write_for_roots(params, &kilns, &projects).await)
+}
+
+/// The largest file that `fs.read` answers. The bytes travel in one JSON-RPC
+/// line, and base64 makes them a third larger.
+const MAX_READ_SIZE: u64 = 64 * 1024 * 1024;
+
+/// Read the file at `path` in `encoding`. `None` when no regular file is there.
+async fn read_content(path: &Path, encoding: FileEncoding) -> Result<Option<FileContent>, Value> {
+    match tokio::fs::metadata(path).await {
+        Ok(meta) if !meta.is_file() => return Ok(None),
+        Ok(meta) if meta.len() > MAX_READ_SIZE => {
+            return Err(failure("invalid", "File too large to read"))
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_failure(e)),
+    }
+    let bytes = tokio::fs::read(path).await.map_err(io_failure)?;
+    Ok(Some(match encoding {
+        FileEncoding::Text => {
+            let text = String::from_utf8(bytes)
+                .map_err(|_| failure("unsupported", "File is not UTF-8 text"))?;
+            FileContent::Text {
+                content_hash: disk_hash(&text),
+                text,
+            }
+        }
+        FileEncoding::Base64 => FileContent::Base64 {
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        },
+    }))
+}
+
+/// Read one file through the same enclosing-root rule as the writes. HTTP
+/// contract fixtures can supply isolated roots while they exercise the
+/// production reader.
+///
+/// A root whose policy refuses reads answers `not_found`, as a path in no
+/// root does.
+pub async fn read_for_roots(
+    req: FileReadRequest,
+    kilns: &[PathBuf],
+    projects: &[(PathBuf, ProjectFileAccess)],
+) -> Value {
+    let (root, access) = match enclosing_root(&req.path, kilns, projects) {
+        Ok(found) => found,
+        Err(refused) => return refused,
+    };
+    if !access.can_read() {
+        return failure("not_found", "Project files are not served");
+    }
+    let path = match contain(Path::new(&req.path), &root) {
+        Ok(path) => path,
+        Err(refused) => return refused,
+    };
+    let content = match read_content(&path, req.encoding).await {
+        Ok(content) => content,
+        Err(refused) => return refused,
+    };
+    let reply = FileReadReply {
+        root,
+        access,
+        path,
+        content,
+    };
+    match serde_json::to_value(reply) {
+        Ok(mut answer) => {
+            answer["ok"] = json!(true);
+            answer
+        }
+        Err(e) => failure("io", e),
+    }
+}
+
+/// Handle `fs.read`.
+pub(crate) async fn handle_read(
+    req: crate::protocol::Request,
+    km: &crate::kiln_manager::KilnManager,
+    pm: &crate::project_manager::ProjectManager,
+    sessions: &crate::session_manager::SessionManager,
+) -> crate::protocol::Response {
+    let params = match crate::rpc_helpers::typed_params::<FileReadRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (kilns, projects) = roots_for(Path::new(&params.path), km, pm, sessions).await;
+    crate::protocol::Response::success(req.id, read_for_roots(params, &kilns, &projects).await)
 }

@@ -42,6 +42,16 @@ impl DaemonClient {
         self.call("fs.write", serde_json::to_value(request)?).await
     }
 
+    /// Read one file through the daemon's enclosing-root rule. The answer is
+    /// a [`crucible_core::file_write::FileReadReply`] with `"ok": true`, or a
+    /// refusal with `"ok": false` and a `failure` kind, as `fs.write` answers.
+    pub async fn fs_read(
+        &self,
+        request: &crucible_core::file_write::FileReadRequest,
+    ) -> Result<serde_json::Value> {
+        self.call("fs.read", serde_json::to_value(request)?).await
+    }
+
     // =========================================================================
     // Kiln RPC Methods
     // =========================================================================
