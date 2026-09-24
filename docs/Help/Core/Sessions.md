@@ -86,8 +86,9 @@ review rejection use this daemon primitive; it needs no separate TUI/web setting
 can start one turn with `prompt`. A plugin clear during a turn waits for the
 end of that turn. The new turn keeps the interactivity and the permission
 override of that turn, so a clear cannot widen what the session allows. A
-plugin clear outside a turn starts a non-interactive turn with no override,
-as a plugin's own send does.
+plugin clear outside a turn starts an interactive turn in the session's stored
+mode, as a plugin's own send does. The plugin's approval applies, and a prompt
+waits until a user answers or cancels.
 
 ## Session Storage
 

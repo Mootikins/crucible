@@ -40,8 +40,8 @@ impl AgentManager {
     /// Clear context in this session. With a prompt, the marker and the new
     /// turn share one request claim, so another sender cannot slip between.
     ///
-    /// A plugin clear outside a turn has no turn to copy. Its turn runs
-    /// non-interactive with no override, as a plugin's own send does.
+    /// A plugin clear outside a turn has no turn to copy. Its turn takes the
+    /// session's stored mode and asks the user, as a plugin's own send does.
     pub fn clear_session<'a>(
         self: &'a Arc<Self>,
         session_id: &'a str,
@@ -49,11 +49,10 @@ impl AgentManager {
         plugin: Option<String>,
         event_tx: &'a broadcast::Sender<SessionEventMessage>,
     ) -> futures::future::BoxFuture<'a, Result<Option<String>, AgentError>> {
-        let origin = plugin.map_or(TurnOrigin::User, TurnOrigin::Plugin);
         let gate = crate::agent_manager::slot::TurnGate {
-            is_interactive: origin == TurnOrigin::User,
+            is_interactive: true,
             permission_override: None,
-            origin,
+            origin: plugin.map_or(TurnOrigin::User, TurnOrigin::Plugin),
         };
         self.clear_with_gate(session_id, prompt, gate, event_tx)
     }
@@ -209,8 +208,9 @@ impl AgentManager {
         .await
     }
 
-    /// Send `content` as a turn of the plugin `plugin`. No person stands
-    /// behind it, so it runs non-interactive with no override.
+    /// Send `content` as a turn of the plugin `plugin`, when no turn runs.
+    /// It takes the session's stored mode and the plugin's approval, and a
+    /// prompt waits for the user (decision 12).
     pub async fn send_plugin_message(
         self: &Arc<Self>,
         session_id: &str,
@@ -226,7 +226,7 @@ impl AgentManager {
                 clear_before: false,
                 review_context: None,
                 event_tx,
-                is_interactive: false,
+                is_interactive: true,
                 permission_override: None,
                 completion_tx: None,
             },

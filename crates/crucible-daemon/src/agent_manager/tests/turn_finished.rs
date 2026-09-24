@@ -627,6 +627,41 @@ async fn a_plugin_send_starts_a_plugin_turn() {
     assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1);
 }
 
+/// A plugin turn that starts when no turn runs (a timer, a clear outside a
+/// turn) takes the session's stored mode and asks the user: it is
+/// interactive, and its prompt waits for an answer (decision 12).
+#[tokio::test]
+async fn a_plugin_turn_outside_a_turn_asks_the_user() {
+    for clear in [false, true] {
+        let mut h = ReactorTestHarness::new().await;
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", "gh_create_pr", serde_json::json!({})),
+            script::done(),
+        ]);
+        let (sid, alpha) = (h.session_id.clone(), Some("alpha".to_string()));
+        if clear {
+            let prompt = Some("timer".to_string());
+            h.agent_manager
+                .clear_session(&sid, prompt, alpha, &h.event_tx)
+                .await
+                .unwrap();
+        } else {
+            let am = &h.agent_manager;
+            am.send_plugin_message(&sid, "timer".into(), "alpha".into(), &h.event_tx)
+                .await
+                .unwrap();
+        }
+        let first = h
+            .wait_for_first_of(&["interaction_requested", "tool_result"])
+            .await;
+        assert_eq!(
+            first.event, "interaction_requested",
+            "clear={clear}: {}",
+            first.data
+        );
+    }
+}
+
 /// A plugin cannot write a user message into the context. A person writes
 /// those.
 #[tokio::test]
