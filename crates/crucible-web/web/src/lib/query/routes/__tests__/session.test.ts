@@ -153,6 +153,15 @@ describe('the session event route', () => {
     expect(invalidated).toEqual([]);
   });
 
+  it('keeps the origin of an echoed plugin turn, so a rebind shows the plugin', () => {
+    env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
+    const data = { message_id: 'msg-1', content: 'go on', origin: { kind: 'plugin', name: 'goal' } };
+    openStream().emit('session_event', { type: 'session_event', event: 'user_message', data });
+
+    const held = env.client.getQueryData<SessionHistoryResponse>(keys.sessionHistory(SESSION));
+    expect(held?.history[0]?.data).toEqual(data);
+  });
+
   it('adds the echoed user message once, whatever the number of echoes', () => {
     env.client.setQueryData(keys.sessionHistory(SESSION), history([]));
     const source = openStream();

@@ -59,7 +59,7 @@ export function resetReviewInvalidationForTests(): void {
 type HistoryEvent = SessionHistoryResponse['history'][number];
 
 /** The payload of `session_event`, which carries no type of its own. */
-type SessionEventData = { message_id?: string; content?: string } | null;
+type SessionEventData = { message_id?: string; content?: string; origin?: unknown } | null;
 
 /** One recorded event's payload. `data` is `unknown` on the wire, so a read
  * of it narrows here rather than trusting a field. */
@@ -90,7 +90,7 @@ function appendUserMessage(client: QueryClient, sessionId: string, data: Session
       type: 'event',
       session_id: sessionId,
       event: 'user_message',
-      data: { message_id: messageId, content },
+      data: { message_id: messageId, content, origin: data?.origin },
       timestamp: new Date().toISOString(),
     };
     return {

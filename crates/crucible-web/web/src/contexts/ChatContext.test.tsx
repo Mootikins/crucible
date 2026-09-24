@@ -12,7 +12,8 @@ import type { Session } from '@/lib/types';
 
 // The turn helpers now live in `lib/turn.ts`; the deterministic ids they
 // are mocked for live there too.
-vi.mock('@/lib/turn', () => ({
+vi.mock('@/lib/turn', async (original) => ({
+  ...await original<object>(),
   // Monotonic — sendMessage mints two temp ids back-to-back, and a
   // Date.now()-based id would collide within one millisecond.
   generateMessageId: (() => {
@@ -629,7 +630,7 @@ describe('isLoadingHistory', () => {
     historyAnswer = () => ({
       session_id: ID,
       history: [{ type: 'event', session_id: ID, event: 'user_message', data: {
-        message_id: 'plugin-turn', content: 'continue with details', origin: 'plugin', plugin: 'alpha',
+        message_id: 'plugin-turn', content: 'continue with details', origin: { kind: 'plugin', name: 'alpha' },
       } }],
       total_events: 1,
     });

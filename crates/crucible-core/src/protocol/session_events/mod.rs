@@ -363,6 +363,7 @@ impl_from_group! {
 /// - `tool_call_diff_update`: a `tool_call_update` with only diffs. Its
 ///   display has no render, so a client keeps the line of the card.
 /// - `ended`: the `turn_finished` that it stood for.
+/// - `user_message` with a flat `origin` and `plugin`: the nested origin.
 pub fn migrate(event: &str, data: &Value) -> Option<(&'static str, Value)> {
     let text = |key: &str| data.get(key).and_then(Value::as_str).unwrap_or_default();
     match event {
@@ -385,6 +386,15 @@ pub fn migrate(event: &str, data: &Value) -> Option<(&'static str, Value)> {
                 None => serde_json::json!({ "status": "completed" }),
             };
             Some(("turn_finished", finished))
+        }
+        "user_message" if data.get("origin").is_some_and(Value::is_string) => {
+            let mut data = data.as_object()?.clone();
+            let mut origin = serde_json::json!({ "kind": data.remove("origin") });
+            if let Some(name) = data.remove("plugin") {
+                origin["name"] = name;
+            }
+            data.insert("origin".into(), origin);
+            Some(("user_message", Value::Object(data)))
         }
         _ => None,
     }

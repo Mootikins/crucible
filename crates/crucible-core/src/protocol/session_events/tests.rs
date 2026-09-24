@@ -473,11 +473,39 @@ fn only_a_plugin_turn_names_its_origin_on_the_wire() {
         serde_json::json!({
             "message_id": "m-2",
             "content": "keep going",
-            "origin": "plugin",
-            "plugin": "alpha",
+            "origin": { "kind": "plugin", "name": "alpha" },
         })
     );
     assert!(plugin.payload().unwrap().is_persisted());
+}
+
+/// The origin of a `user_message`, decoded from `data`.
+fn origin_of(data: serde_json::Value) -> Result<Option<crate::turn::TurnOrigin>, EventDecodeError> {
+    match SessionEventPayload::from_wire("user_message", &data)? {
+        SessionEventPayload::Turn(TurnPayload::UserMessage { origin, .. }) => Ok(origin),
+        other => panic!("not a user_message: {other:?}"),
+    }
+}
+
+/// A log from before the nested origin still names the plugin. An origin
+/// that names no plugin does not decode, so no client reads it as a person.
+#[test]
+fn an_old_flat_origin_decodes_as_the_nested_one() {
+    use crate::turn::TurnOrigin;
+    let flat = serde_json::json!({"message_id": "m", "content": "c", "origin": "plugin", "plugin": "goal"});
+    assert_eq!(
+        origin_of(flat).unwrap(),
+        Some(TurnOrigin::Plugin("goal".into()))
+    );
+    let user = serde_json::json!({"message_id": "m", "content": "c", "origin": "user"});
+    assert_eq!(origin_of(user).unwrap(), Some(TurnOrigin::User));
+    let nested = serde_json::json!({"message_id": "m", "content": "c", "origin": {"kind": "user"}});
+    assert_eq!(origin_of(nested).unwrap(), Some(TurnOrigin::User));
+    let nameless = serde_json::json!({"message_id": "m", "content": "c", "origin": "plugin"});
+    assert!(matches!(
+        origin_of(nameless),
+        Err(EventDecodeError::MalformedPayload { .. })
+    ));
 }
 
 /// A `session_initialized` whose model is empty must NOT be persisted: the setup

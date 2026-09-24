@@ -97,7 +97,8 @@ fn the_turn_a_handler_asks_for_renders_as_its_own_turn() {
             ("turn_finished", json!({"status": "completed"})),
             (
                 "user_message",
-                json!({"message_id": "m2", "content": "keep going", "origin": "plugin"}),
+                json!({"message_id": "m2", "content": "keep going",
+                    "origin": {"kind": "plugin", "name": "goal"}}),
             ),
             ("text_delta", json!({"content": "Second part."})),
             (

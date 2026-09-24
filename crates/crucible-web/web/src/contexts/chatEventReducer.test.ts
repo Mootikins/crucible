@@ -207,7 +207,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
   it('places a live plugin turn as a named system message', () => {
     const h = createHarness();
     h.reducer({ type: 'session_event', event: 'user_message', data: {
-      message_id: 'm-plugin', content: 'continue with details', origin: 'plugin', plugin: 'alpha',
+      message_id: 'm-plugin', content: 'continue with details', origin: { kind: 'plugin', name: 'alpha' },
     } });
     expect(h.state.messages).toMatchObject([{ id: 'm-plugin', role: 'system', plugin: 'alpha', content: 'continue with details' }]);
   });

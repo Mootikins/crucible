@@ -748,7 +748,8 @@ another turn.
 asks the daemon for a NEW turn, which starts once the finished turn releases
 its request slot. The new turn is a turn like any other — it takes admission,
 Precognition, persistence and undo — and its `user_message` event carries
-`origin: "plugin"` so a client and a replay can tell who asked for it. A user
+`origin: { kind = "plugin", name = "<plugin>" }`, so a client and a replay can
+tell who asked for it. A person's message has no `origin`. A user
 cancel clears a turn a handler asked for but that has not started yet.
 
 `cru acp` and `cru session send` answer when the turn THEY started is over.

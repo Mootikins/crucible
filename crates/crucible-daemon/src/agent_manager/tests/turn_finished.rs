@@ -225,7 +225,7 @@ async fn a_plugin_turn_reaches_the_agent_as_tagged_system_context() {
     events_until_turn_finished(&mut h.event_rx).await;
     let second = events_until_turn_finished(&mut h.event_rx).await;
     let opening = second.iter().find(|e| e.event == "user_message").unwrap();
-    assert_eq!(opening.data["plugin"], "alpha");
+    assert_eq!(origin_of(opening), TurnOrigin::Plugin("alpha".into()));
 
     let messages = received.lock().unwrap().clone().unwrap();
     let plugin = messages

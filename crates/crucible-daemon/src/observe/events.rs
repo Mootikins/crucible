@@ -4,6 +4,7 @@
 //! `crucible_core::events::SessionEvent`, the canonical event type.
 
 use chrono::{DateTime, Utc};
+use crucible_core::protocol::session_events::{SessionEventPayload, TurnPayload};
 use crucible_core::protocol::SessionEventMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -454,13 +455,17 @@ pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
     let text = |key: &str| data.get(key).and_then(Value::as_str).map(str::to_string);
 
     match msg.event.as_str() {
-        "user_message" => Some(LogEvent::User {
-            ts,
-            content: text("content")?,
-            plugin: text("plugin").or_else(|| {
-                (text("origin").as_deref() == Some("plugin")).then(|| "plugin".to_owned())
+        // Typed, so an old flat origin goes through the one migration.
+        "user_message" => match msg.payload() {
+            Ok(SessionEventPayload::Turn(TurnPayload::UserMessage {
+                content, origin, ..
+            })) => Some(LogEvent::User {
+                ts,
+                content: text("content").map(|_| content)?,
+                plugin: origin.and_then(|o| o.plugin().map(str::to_owned)),
             }),
-        }),
+            _ => None,
+        },
         "thinking" => Some(LogEvent::Thinking {
             ts,
             content: text("content")?,

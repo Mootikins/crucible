@@ -502,7 +502,7 @@ fn a_plugin_turn_is_a_labelled_system_row_in_the_tui() {
         "user_message",
         &serde_json::json!({
             "message_id": "m2", "content": "continue with the detailed plan",
-            "origin": "plugin", "plugin": "alpha"
+            "origin": {"kind": "plugin", "name": "alpha"}
         }),
     );
     assert!(

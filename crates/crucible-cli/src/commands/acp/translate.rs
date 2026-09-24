@@ -139,14 +139,21 @@ fn update(u: SessionUpdate) -> TurnStep {
 /// forwards them as `UserMessageChunk`. Terminal steps and interactions still
 /// classify as themselves so the replay caller can skip them: a finished turn
 /// answers nothing, and an answered permission request must not be re-asked.
+/// ACP has no system chunk, so a plugin turn carries the TUI's `↻` label.
 pub fn replay_step(event: &SessionEvent) -> TurnStep {
-    if event.event == "user_message" {
-        return match text(event) {
-            Some(content) => update(SessionUpdate::UserMessageChunk(chunk(content))),
-            None => TurnStep::Ignore,
-        };
+    match event.payload() {
+        Ok(SessionEventPayload::Turn(TurnPayload::UserMessage {
+            content, origin, ..
+        })) if !content.is_empty() => {
+            let content = match origin.as_ref().and_then(|o| o.plugin()) {
+                Some(plugin) => format!("↻ {plugin}\n{content}"),
+                None => content,
+            };
+            update(SessionUpdate::UserMessageChunk(chunk(content)))
+        }
+        _ if event.event == "user_message" => TurnStep::Ignore,
+        _ => classify_event(event),
     }
-    classify_event(event)
 }
 
 fn text(event: &SessionEvent) -> Option<String> {
@@ -583,7 +590,8 @@ mod tests {
 
         let plugin_turn = event(
             "user_message",
-            json!({"message_id": "m-3", "content": "keep going", "origin": "plugin"}),
+            json!({"message_id": "m-3", "content": "keep going",
+                "origin": {"kind": "plugin", "name": "goal"}}),
         );
         assert!(!opens_turn(&plugin_turn, "m-2"));
         assert!(opens_turn(&plugin_turn, "m-3"));
@@ -600,22 +608,33 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn replay_user_message_becomes_user_chunk() {
-        let step = replay_step(&event(
-            "user_message",
-            json!({"message_id": "m1", "content": "Fix the parser"}),
-        ));
-        match step {
+    /// The text of a replayed `user_message`.
+    fn replayed(data: serde_json::Value) -> String {
+        match replay_step(&event("user_message", data)) {
             TurnStep::Update(u) => match *u {
                 SessionUpdate::UserMessageChunk(c) => match c.content {
-                    ContentBlock::Text(t) => assert_eq!(t.text, "Fix the parser"),
+                    ContentBlock::Text(t) => t.text,
                     other => panic!("expected text block, got {other:?}"),
                 },
                 other => panic!("expected user message chunk, got {other:?}"),
             },
             other => panic!("expected update, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn replay_user_message_becomes_user_chunk() {
+        let data = json!({"message_id": "m1", "content": "Fix the parser"});
+        assert_eq!(replayed(data), "Fix the parser");
+    }
+
+    /// ACP has no system chunk, so the host gets the plugin turn with the
+    /// label that the TUI shows. It must not read as the person's words.
+    #[test]
+    fn replay_labels_a_plugin_turn_with_its_plugin() {
+        let data = json!({"message_id": "m1", "content": "keep going",
+            "origin": {"kind": "plugin", "name": "goal"}});
+        assert_eq!(replayed(data), "↻ goal\nkeep going");
     }
 
     #[test]

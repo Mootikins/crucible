@@ -36,10 +36,7 @@ pub async fn execute_tool_render(
     }
     let mut payload = serde_json::to_value(call).map_err(mlua::Error::external)?;
     payload["args"] = args.clone();
-    payload["origin"] = match origin {
-        TurnOrigin::User => serde_json::json!({ "kind": "user" }),
-        TurnOrigin::Plugin(name) => serde_json::json!({ "kind": "plugin", "name": name }),
-    };
+    payload["origin"] = serde_json::to_value(origin).map_err(mlua::Error::external)?;
     // A JSON null is a true value in Lua, so an absent error stays absent.
     if let Some((result, error)) = outcome {
         payload["result"] = result.into();

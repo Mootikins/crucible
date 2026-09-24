@@ -13,6 +13,15 @@
  * from the api module.
  */
 
+/**
+ * The plugin that asked for a turn, read from the `origin` of its
+ * `user_message`: `{kind: 'plugin', name}`. `undefined` means a person.
+ */
+export function originPlugin(origin: unknown): string | undefined {
+  const o = origin as { kind?: unknown; name?: unknown } | null | undefined;
+  return o?.kind === 'plugin' && typeof o.name === 'string' ? o.name : undefined;
+}
+
 /** Transcript id for the assistant response of a turn. The backend keys a
  * whole turn by one message_id (send response, user_message echo, and
  * message_complete all carry it); the user message takes the id itself and
