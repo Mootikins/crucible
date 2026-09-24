@@ -88,6 +88,7 @@ impl OilChatRunner {
         if app.take_needs_full_redraw() {
             self.terminal.force_full_redraw()?;
         }
+        self.terminal.sync_size()?;
         app.expire_toasts();
         app.split_slow_tools();
         let terminal_size = self.terminal.size();

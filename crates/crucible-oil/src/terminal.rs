@@ -165,6 +165,20 @@ impl Terminal<Stdout> {
         Ok(())
     }
 
+    /// Take a size change that has no resize event yet.
+    ///
+    /// In a burst of resizes the size changes before its event arrives. A
+    /// full-screen frame built at the old width writes rows that the
+    /// terminal wraps, and the last row scrolls the whole screen. Call this
+    /// before each full-screen frame; it returns whether the size changed.
+    pub fn sync_size(&mut self) -> io::Result<bool> {
+        if terminal::size()? == (self.width, self.height) {
+            return Ok(false);
+        }
+        self.handle_resize()?;
+        Ok(true)
+    }
+
     pub fn poll_event(&self, timeout: Duration) -> io::Result<Option<CtEvent>> {
         if event::poll(timeout)? {
             Ok(Some(event::read()?))

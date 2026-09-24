@@ -2,7 +2,9 @@
 //!
 //! `top` is the first buffer row on screen. While `follow` is on, the view
 //! stays at the bottom as rows arrive. A manual scroll up turns follow off; a
-//! scroll that reaches the bottom turns it on again.
+//! scroll that reaches the bottom turns it on again. Nothing else turns it
+//! on: a reflow or a shrink that shows the bottom keeps a reader's place for
+//! the next reflow.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scroll {
@@ -32,9 +34,8 @@ impl Scroll {
     /// Call this once per frame, after the buffer changed.
     pub fn fit(&mut self, total: usize, height: usize) {
         let bottom = total.saturating_sub(height);
-        if self.follow || self.top >= bottom {
+        if self.follow || self.top > bottom {
             self.top = bottom;
-            self.follow = true;
         }
     }
 
@@ -46,11 +47,11 @@ impl Scroll {
     }
 
     /// Put `row` at the top of the view, as a reflow does to keep the reader
-    /// at the same text. Follow turns off unless `row` is at the bottom.
+    /// at the same text. Follow stays off, even when the row is in the last
+    /// page, so the next reflow still knows the reader's place.
     pub fn set_top(&mut self, row: usize, total: usize, height: usize) {
-        let bottom = total.saturating_sub(height);
-        self.top = row.min(bottom);
-        self.follow = self.top >= bottom;
+        self.top = row.min(total.saturating_sub(height));
+        self.follow = false;
     }
 
     /// Go to the bottom and follow new rows.
@@ -106,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn a_short_buffer_always_follows() {
+    fn a_short_buffer_follows_after_any_scroll() {
         let mut scroll = Scroll::default();
         scroll.scroll_by(-3, 5, 10);
         assert_eq!(scroll.top(), 0);
@@ -114,12 +115,12 @@ mod tests {
     }
 
     #[test]
-    fn a_shrunk_buffer_pulls_the_reader_to_its_bottom() {
+    fn a_shrunk_buffer_pulls_the_reader_to_its_bottom_without_following() {
         let mut scroll = Scroll::default();
         scroll.fit(100, 10);
         scroll.scroll_by(-20, 100, 10);
         scroll.fit(50, 10);
         assert_eq!(scroll.top(), 40);
-        assert!(scroll.follows());
+        assert!(!scroll.follows(), "only a scroll turns follow on");
     }
 }

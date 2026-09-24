@@ -15,6 +15,12 @@ pub(super) fn frame_at(
     view.frame(app, &ctx)
 }
 
+pub(super) fn frame_at_ctx(width: u16, height: u16, f: impl FnOnce(&ViewContext<'_>) -> Frame) -> Frame {
+    let focus = FocusContext::new();
+    let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, height));
+    f(&ctx)
+}
+
 pub(super) fn screen_text(frame: &Frame) -> Vec<String> {
     (0..frame.grid.height())
         .map(|y| {
@@ -371,4 +377,24 @@ fn the_mouse_key_asks_to_toggle_capture() {
     let mut view = FullscreenView::new();
     frame_at(&mut view, &app, 80, 30);
     assert_eq!(view.handle_event(&key(MOUSE_KEY), &app), ViewAction::ToggleMouse);
+}
+
+/// Found in the demo: a wider reflow put the held row in the last page,
+/// which turned follow on and lost the place for every later resize.
+#[test]
+fn a_reflow_through_the_last_page_keeps_the_reader() {
+    let app = fixtures::app_with_exchanges(6);
+    let mut view = FullscreenView::new();
+    frame_at(&mut view, &app, 90, 40);
+    // Three rows up: a wider layout has fewer rows below, so the held row
+    // lands in the last page.
+    view.handle_event(&mouse(MouseEventKind::ScrollUp, 5, 5), &app);
+    frame_at(&mut view, &app, 90, 40);
+    let held = top_text(&view);
+
+    for width in [200, 60, 90] {
+        frame_at(&mut view, &app, width, 40);
+    }
+    assert!(!view.scroll().follows());
+    assert_eq!(top_text(&view), held);
 }

@@ -123,4 +123,58 @@ fn frame_time_of_a_full_relayout_5k_rows() {
         });
     }
     report("relayout on width change", &samples);
+
+    // Where a relayout goes: building the node trees (markdown included),
+    // then taffy layout plus the cell grid.
+    let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (WIDTH, HEIGHT));
+    let ctx = app.frame_context(&ctx);
+    let nodes = app.container_list().nodes();
+    let start = Instant::now();
+    let trees: Vec<_> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| node.render(i.checked_sub(1).map(|p| &nodes[p]), &ctx))
+        .collect();
+    let build = start.elapsed();
+    let start = Instant::now();
+    for tree in &trees {
+        crucible_oil::render::render_tree_to_grid(tree, WIDTH, crucible_oil::render::NATURAL_HEIGHT);
+    }
+    let layout = start.elapsed();
+    println!("relayout split: node trees {build:?}, taffy + grid {layout:?}");
+
+    // The exit dump of the whole transcript.
+    let start = Instant::now();
+    let rows = view.take_dump(true);
+    let bytes: usize = rows.iter().map(|r| r.len() + 6).sum();
+    println!("exit dump: {} rows, {bytes} bytes, {:?}", rows.len(), start.elapsed());
+}
+
+/// The plugin buffer: a frame over a 10,000-line source.
+#[test]
+#[ignore = "measurement: run with an optimized build, see the module doc"]
+fn frame_time_of_a_10k_line_plugin_buffer() {
+    use super::shell::{FullscreenShell, PluginBuffer};
+    let buffer = PluginBuffer::new("log", || 10_000, |i| format!("{i:05} a plugin buffer line"));
+    let mut shell = FullscreenShell::new(vec![], Some(buffer));
+    let focus = FocusContext::new();
+    let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (WIDTH, HEIGHT));
+    let mut diff = ScreenDiff::new();
+    let mut out = Vec::new();
+    let mut samples = Vec::new();
+    for _ in 0..FRAMES {
+        let start = Instant::now();
+        let frame = shell.frame(&ctx);
+        out.clear();
+        let stats = diff.present(&mut out, &frame.grid, frame.cursor).unwrap();
+        samples.push(Sample {
+            time: start.elapsed(),
+            bytes: stats.bytes,
+            rows: stats.rows_written,
+        });
+        shell.handle_event(&crate::tui::oil::event::Event::Key(
+            crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Up),
+        ));
+    }
+    report("plugin buffer scroll by one row", &samples);
 }

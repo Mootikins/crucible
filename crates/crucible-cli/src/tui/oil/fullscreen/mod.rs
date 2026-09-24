@@ -16,6 +16,7 @@ pub mod clipboard;
 pub mod fixtures;
 pub mod scroll;
 pub mod selection;
+pub mod shell;
 pub mod transcript;
 
 use crate::tui::oil::app::ViewContext;
@@ -186,7 +187,7 @@ impl FullscreenView {
     /// the reader back at the same text.
     fn sync_transcript(&mut self, app: &OilChatApp, ctx: &ViewContext<'_>) {
         let reflow = self.transcript.width() != ctx.terminal_size.0;
-        let anchor = if reflow && !self.scroll.follows() {
+        let anchor = if reflow && (self.anchor.is_some() || !self.scroll.follows()) {
             self.anchor
                 .or_else(|| self.transcript.anchor_at(self.scroll.top()))
         } else {
