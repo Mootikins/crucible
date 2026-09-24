@@ -86,7 +86,6 @@ pub(crate) fn wrap_and_style_padded_clamped(
     WrappedText { lines, gaps }
 }
 
-
 /// Selects the current spinner frame character from the given frames array.
 ///
 /// This helper is used by both `render.rs` (hand-written flex pipeline) and

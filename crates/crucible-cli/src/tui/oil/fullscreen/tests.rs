@@ -15,7 +15,11 @@ pub(super) fn frame_at(
     view.frame(app, &ctx)
 }
 
-pub(super) fn frame_at_ctx(width: u16, height: u16, f: impl FnOnce(&ViewContext<'_>) -> Frame) -> Frame {
+pub(super) fn frame_at_ctx(
+    width: u16,
+    height: u16,
+    f: impl FnOnce(&ViewContext<'_>) -> Frame,
+) -> Frame {
     let focus = FocusContext::new();
     let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, height));
     f(&ctx)
@@ -90,7 +94,10 @@ fn page_up_holds_the_reader_while_text_streams() {
     let mut view = FullscreenView::new();
     frame_at(&mut view, &app, 100, 30);
 
-    assert_eq!(view.handle_event(&key(KeyCode::PageUp), &app), ViewAction::Handled);
+    assert_eq!(
+        view.handle_event(&key(KeyCode::PageUp), &app),
+        ViewAction::Handled
+    );
     frame_at(&mut view, &app, 100, 30);
     let held = top_text(&view);
     assert!(!view.scroll().follows());
@@ -100,7 +107,11 @@ fn page_up_holds_the_reader_while_text_streams() {
         app.on_message(ChatAppMsg::TextDelta(delta));
         frame_at(&mut view, &app, 100, 30);
     }
-    assert_eq!(top_text(&view), held, "streamed rows must not move a reader");
+    assert_eq!(
+        top_text(&view),
+        held,
+        "streamed rows must not move a reader"
+    );
 }
 
 #[test]
@@ -147,15 +158,26 @@ fn a_resize_while_text_streams_keeps_the_reader_at_the_same_text() {
         // A drag of the window edge: many sizes, one after another.
         let width = [160, 140, 120, 100, 90, 120, 160][i % 7];
         let rows = screen_text(&frame_at(&mut view, &app, width, 40));
-        let first_words: String = held.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+        let first_words: String = held
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(
             rows.iter().any(|r| r.contains(&first_words)),
             "at width {width} the held text {first_words:?} left the screen: {rows:#?}"
         );
-        assert!(!view.scroll().follows(), "a resize must not jump to the bottom");
+        assert!(
+            !view.scroll().follows(),
+            "a resize must not jump to the bottom"
+        );
     }
     frame_at(&mut view, &app, 160, 40);
-    assert_eq!(top_text(&view), held, "back at the first width, the same top row");
+    assert_eq!(
+        top_text(&view),
+        held,
+        "back at the first width, the same top row"
+    );
 }
 
 #[test]
@@ -167,7 +189,10 @@ fn a_resize_at_the_bottom_stays_at_the_bottom() {
     app.on_message(ChatAppMsg::TextDelta("streaming tail".into()));
     let rows = screen_text(&frame_at(&mut view, &app, 90, 40));
     assert!(view.scroll().follows());
-    assert!(rows.iter().any(|r| r.contains("streaming tail")), "{rows:#?}");
+    assert!(
+        rows.iter().any(|r| r.contains("streaming tail")),
+        "{rows:#?}"
+    );
 }
 
 /// Pass criteria 4 and 5 through the real bytes: a streamed frame is one
@@ -226,11 +251,25 @@ fn find_on_screen(frame: &Frame, needle: &str) -> (u16, u16) {
     panic!("{needle:?} is not on screen: {:#?}", screen_text(frame));
 }
 
-fn drag_copy(view: &mut FullscreenView, app: &OilChatApp, from: (u16, u16), to: (u16, u16)) -> String {
+fn drag_copy(
+    view: &mut FullscreenView,
+    app: &OilChatApp,
+    from: (u16, u16),
+    to: (u16, u16),
+) -> String {
     use crossterm::event::MouseButton;
-    view.handle_event(&mouse(MouseEventKind::Down(MouseButton::Left), from.0, from.1), app);
-    view.handle_event(&mouse(MouseEventKind::Drag(MouseButton::Left), to.0, to.1), app);
-    match view.handle_event(&mouse(MouseEventKind::Up(MouseButton::Left), to.0, to.1), app) {
+    view.handle_event(
+        &mouse(MouseEventKind::Down(MouseButton::Left), from.0, from.1),
+        app,
+    );
+    view.handle_event(
+        &mouse(MouseEventKind::Drag(MouseButton::Left), to.0, to.1),
+        app,
+    );
+    match view.handle_event(
+        &mouse(MouseEventKind::Up(MouseButton::Left), to.0, to.1),
+        app,
+    ) {
         ViewAction::Copy(text) => text,
         other => panic!("a drag must copy, got {other:?}"),
     }
@@ -278,8 +317,12 @@ fn the_selection_is_drawn_inverted() {
     let (col, row) = find_on_screen(&frame, "select");
     drag_copy(&mut view, &app, (col, row), (col + 5, row));
     let frame = frame_at(&mut view, &app, 40, 20);
-    assert!(frame.grid.row(row as usize)[col as usize].style.contains("\x1b[7m"));
-    assert!(!frame.grid.row(row as usize)[col as usize + 7].style.contains("\x1b[7m"));
+    assert!(frame.grid.row(row as usize)[col as usize]
+        .style
+        .contains("\x1b[7m"));
+    assert!(!frame.grid.row(row as usize)[col as usize + 7]
+        .style
+        .contains("\x1b[7m"));
 }
 
 #[test]
@@ -311,7 +354,10 @@ fn a_double_and_a_triple_click_copy_a_word_and_a_line() {
     view.handle_event(&down, &app);
     view.handle_event(&up, &app);
     view.handle_event(&down, &app);
-    assert_eq!(view.handle_event(&up, &app), ViewAction::Copy("gamma".into()));
+    assert_eq!(
+        view.handle_event(&up, &app),
+        ViewAction::Copy("gamma".into())
+    );
     view.handle_event(&down, &app);
     match view.handle_event(&up, &app) {
         ViewAction::Copy(line) => assert!(
@@ -334,9 +380,15 @@ fn the_dump_key_prints_finished_entries_once() {
     let ViewAction::Dump(rows) = view.handle_event(&key(DUMP_KEY), &app) else {
         panic!("the dump key dumps");
     };
-    let text: Vec<String> = rows.iter().map(|r| crucible_oil::ansi::strip_ansi(r)).collect();
+    let text: Vec<String> = rows
+        .iter()
+        .map(|r| crucible_oil::ansi::strip_ansi(r))
+        .collect();
     assert!(text.iter().any(|r| r.contains("Answer 1")), "{text:#?}");
-    assert!(!text.iter().any(|r| r.contains("still streaming")), "an unfinished node waits");
+    assert!(
+        !text.iter().any(|r| r.contains("still streaming")),
+        "an unfinished node waits"
+    );
 
     let ViewAction::Dump(again) = view.handle_event(&key(DUMP_KEY), &app) else {
         panic!();
@@ -349,7 +401,10 @@ fn the_dump_key_prints_finished_entries_once() {
         .iter()
         .map(|r| crucible_oil::ansi::strip_ansi(r))
         .collect();
-    assert!(rest.iter().any(|r| r.contains("still streaming")), "{rest:#?}");
+    assert!(
+        rest.iter().any(|r| r.contains("still streaming")),
+        "{rest:#?}"
+    );
     assert!(!rest.iter().any(|r| r.contains("Answer 1")));
     assert_eq!(rest[0], "", "a blank row separates it from the dumped part");
 }
@@ -365,9 +420,17 @@ fn the_exit_dump_reproduces_the_transcript_rows() {
     for row in &rows {
         parser.process(format!("{row}\x1b[0m\r\n").as_bytes());
     }
-    let shown: Vec<String> = parser.screen().rows(0, 90).map(|r| r.trim_end().to_string()).collect();
+    let shown: Vec<String> = parser
+        .screen()
+        .rows(0, 90)
+        .map(|r| r.trim_end().to_string())
+        .collect();
     for (i, row) in rows.iter().enumerate() {
-        assert_eq!(shown[i], crucible_oil::ansi::strip_ansi(row).trim_end(), "row {i}");
+        assert_eq!(
+            shown[i],
+            crucible_oil::ansi::strip_ansi(row).trim_end(),
+            "row {i}"
+        );
     }
 }
 
@@ -376,7 +439,10 @@ fn the_mouse_key_asks_to_toggle_capture() {
     let app = fixtures::app_with_exchanges(1);
     let mut view = FullscreenView::new();
     frame_at(&mut view, &app, 80, 30);
-    assert_eq!(view.handle_event(&key(MOUSE_KEY), &app), ViewAction::ToggleMouse);
+    assert_eq!(
+        view.handle_event(&key(MOUSE_KEY), &app),
+        ViewAction::ToggleMouse
+    );
 }
 
 /// Found in the demo: a wider reflow put the held row in the last page,

@@ -122,9 +122,10 @@ pub fn copy_with(
     if text.is_empty() {
         return report;
     }
-    report
-        .attempts
-        .push((Backend::Osc52, osc52_sequence(text, env.tmux).and_then(|s| osc52(&s))));
+    report.attempts.push((
+        Backend::Osc52,
+        osc52_sequence(text, env.tmux).and_then(|s| osc52(&s)),
+    ));
     if !env.ssh {
         report.attempts.push((Backend::Native, native(text)));
     }
@@ -150,7 +151,13 @@ impl Copier {
         write_terminal: impl FnOnce(&str) -> Result<(), String>,
     ) -> CopyReport {
         let native = &mut self.native;
-        copy_with(text, env, write_terminal, |t| native_copy(native, t), tmux_copy)
+        copy_with(
+            text,
+            env,
+            write_terminal,
+            |t| native_copy(native, t),
+            tmux_copy,
+        )
     }
 }
 
@@ -195,7 +202,11 @@ mod tests {
         let calls = RefCell::new(Vec::new());
         let result = |name: &str, i: usize, arg: &str| {
             calls.borrow_mut().push(format!("{name}:{arg}"));
-            if ok[i] { Ok(()) } else { Err(format!("{name} failed")) }
+            if ok[i] {
+                Ok(())
+            } else {
+                Err(format!("{name} failed"))
+            }
         };
         let report = copy_with(
             text,
@@ -209,7 +220,10 @@ mod tests {
 
     #[test]
     fn osc52_encodes_the_text_in_base64() {
-        assert_eq!(osc52_sequence("hi 日本", false).unwrap(), "\x1b]52;c;aGkg5pel5pys\x1b\\");
+        assert_eq!(
+            osc52_sequence("hi 日本", false).unwrap(),
+            "\x1b]52;c;aGkg5pel5pys\x1b\\"
+        );
     }
 
     #[test]
@@ -234,7 +248,10 @@ mod tests {
 
     #[test]
     fn over_ssh_the_native_clipboard_is_skipped() {
-        let env = CopyEnv { ssh: true, tmux: false };
+        let env = CopyEnv {
+            ssh: true,
+            tmux: false,
+        };
         let (report, calls) = run("text", env, [true, true, true]);
         assert_eq!(calls.len(), 1);
         assert_eq!(report.attempts.len(), 1);
@@ -243,7 +260,10 @@ mod tests {
 
     #[test]
     fn inside_tmux_the_chain_ends_with_a_tmux_buffer() {
-        let env = CopyEnv { ssh: true, tmux: true };
+        let env = CopyEnv {
+            ssh: true,
+            tmux: true,
+        };
         let (_, calls) = run("text", env, [true, true, true]);
         assert!(calls[0].starts_with("osc52:\x1bPtmux;"));
         assert_eq!(calls[1], "tmux:text");

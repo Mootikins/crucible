@@ -6,7 +6,10 @@ pub enum Event {
     /// A mouse report. Only the full-screen mode turns reporting on.
     Mouse(crossterm::event::MouseEvent),
     Paste(String),
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
     Tick,
 }
 

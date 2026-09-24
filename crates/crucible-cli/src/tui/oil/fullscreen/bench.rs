@@ -108,7 +108,12 @@ fn frame_time_of_a_full_relayout_5k_rows() {
     let focus = FocusContext::new();
     let mut view = FullscreenView::new();
     let mut samples = Vec::new();
-    for (i, width) in [200u16, 199, 160, 120, 200].into_iter().cycle().take(20).enumerate() {
+    for (i, width) in [200u16, 199, 160, 120, 200]
+        .into_iter()
+        .cycle()
+        .take(20)
+        .enumerate()
+    {
         let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, HEIGHT));
         let start = Instant::now();
         let frame = view.frame(&app, &ctx);
@@ -138,7 +143,11 @@ fn frame_time_of_a_full_relayout_5k_rows() {
     let build = start.elapsed();
     let start = Instant::now();
     for tree in &trees {
-        crucible_oil::render::render_tree_to_grid(tree, WIDTH, crucible_oil::render::NATURAL_HEIGHT);
+        crucible_oil::render::render_tree_to_grid(
+            tree,
+            WIDTH,
+            crucible_oil::render::NATURAL_HEIGHT,
+        );
     }
     let layout = start.elapsed();
     println!("relayout split: node trees {build:?}, taffy + grid {layout:?}");
@@ -147,7 +156,11 @@ fn frame_time_of_a_full_relayout_5k_rows() {
     let start = Instant::now();
     let rows = view.take_dump(true);
     let bytes: usize = rows.iter().map(|r| r.len() + 6).sum();
-    println!("exit dump: {} rows, {bytes} bytes, {:?}", rows.len(), start.elapsed());
+    println!(
+        "exit dump: {} rows, {bytes} bytes, {:?}",
+        rows.len(),
+        start.elapsed()
+    );
 }
 
 /// The plugin buffer: a frame over a 10,000-line source.

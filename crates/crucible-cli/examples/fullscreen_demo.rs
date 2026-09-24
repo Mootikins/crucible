@@ -57,9 +57,14 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
     let buffer = PluginBuffer::new(
         "plugin log",
         || 10_000,
-        |i| format!("{i:05}  plugin buffer line with some text, 日本語 and \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"),
+        |i| {
+            format!("{i:05}  plugin buffer line with some text, 日本語 and \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}")
+        },
     );
-    let mut shell = FullscreenShell::new(vec![chat("session A", 60), chat("session B", 3)], Some(buffer));
+    let mut shell = FullscreenShell::new(
+        vec![chat("session A", 60), chat("session B", 3)],
+        Some(buffer),
+    );
     let focus = FocusContext::new();
     let mut copier = Copier::default();
     // Deltas still to stream, per chat pane.
@@ -95,7 +100,8 @@ fn run(terminal: &mut Terminal) -> std::io::Result<(Vec<String>, String)> {
         }
         let event = match event::read()? {
             CtEvent::Key(key)
-                if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                if key.code == KeyCode::Char('q')
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
                 break;
             }

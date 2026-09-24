@@ -689,7 +689,10 @@ mod tests {
 
         let grid = crate::cell_grid::CellGrid::new(10, 4);
         let stats = term.present(&grid, None).unwrap();
-        assert_eq!(stats.rows_written, 4, "the frame after a resize writes every row");
+        assert_eq!(
+            stats.rows_written, 4,
+            "the frame after a resize writes every row"
+        );
     }
 
     #[test]
@@ -705,13 +708,22 @@ mod tests {
             .unwrap();
         parser.process(&term.take_bytes());
 
-        assert!(parser.screen().alternate_screen(), "back on the alternate screen");
+        assert!(
+            parser.screen().alternate_screen(),
+            "back on the alternate screen"
+        );
         parser.process(b"\x1b[?1049l");
         let main = parser.screen().contents();
-        assert!(main.contains("kept one") && main.contains("kept two"), "{main:?}");
+        assert!(
+            main.contains("kept one") && main.contains("kept two"),
+            "{main:?}"
+        );
 
         let stats = term.present(&grid, None).unwrap();
-        assert_eq!(stats.rows_written, 4, "the next frame repaints the whole screen");
+        assert_eq!(
+            stats.rows_written, 4,
+            "the next frame repaints the whole screen"
+        );
     }
 
     #[test]

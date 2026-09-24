@@ -59,11 +59,8 @@ pub(super) fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext
                     body,
                 ]));
             } else {
-                ctx.blocks.push(row([
-                    text(&list_indent),
-                    text(&continuation_indent),
-                    body,
-                ]));
+                ctx.blocks
+                    .push(row([text(&list_indent), text(&continuation_indent), body]));
             }
         }
     }

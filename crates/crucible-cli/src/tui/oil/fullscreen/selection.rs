@@ -165,7 +165,10 @@ fn word_cols(grid: &CellGrid, col: usize) -> Range<usize> {
         return col..col;
     };
     let end = start + word.len();
-    let first = spans.iter().find(|(b, _)| *b >= start).map(|(_, s)| s.start);
+    let first = spans
+        .iter()
+        .find(|(b, _)| *b >= start)
+        .map(|(_, s)| s.start);
     let last = spans
         .iter()
         .rev()
@@ -212,8 +215,16 @@ pub fn selected_text<'a>(
     for r in span.start.row..=span.end.row {
         let row = rows(r);
         let grid = row_grid(row, width);
-        let mut from = if r == span.start.row { span.start.col } else { 0 };
-        let to = if r == span.end.row { span.end.col } else { width };
+        let mut from = if r == span.start.row {
+            span.start.col
+        } else {
+            0
+        };
+        let to = if r == span.end.row {
+            span.end.col
+        } else {
+            width
+        };
         if r > span.start.row {
             out.truncate(out.trim_end_matches(' ').len());
             match row.and_then(|row| row.join) {
@@ -345,7 +356,10 @@ mod tests {
         let rows = Rows::new(&[("one two three four", None)]);
         let mut sel = Selection::start(Point { row: 0, col: 5 }, Unit::Word, 30, |r| rows.get(r));
         sel.extend(Point { row: 0, col: 9 }, 30, |r| rows.get(r));
-        assert_eq!(selected_text(sel.bounds(), 30, |r| rows.get(r)), "two three");
+        assert_eq!(
+            selected_text(sel.bounds(), 30, |r| rows.get(r)),
+            "two three"
+        );
     }
 
     #[test]

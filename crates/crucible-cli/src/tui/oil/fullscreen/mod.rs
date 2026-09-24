@@ -224,10 +224,7 @@ impl FullscreenView {
             }
         }
         if !self.scroll.follows() && self.area.height > 0 {
-            let below = self
-                .transcript
-                .len()
-                .saturating_sub(top + self.area.height);
+            let below = self.transcript.len().saturating_sub(top + self.area.height);
             let label = format!(" \u{2193} {below} rows below \u{b7} PgDn ");
             let x = grid
                 .width()

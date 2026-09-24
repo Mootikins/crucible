@@ -110,7 +110,10 @@ pub enum ShellAction {
     /// The view of the active pane asked for this.
     View(ViewAction),
     /// The user sent this message in chat pane `pane`. The owner answers it.
-    Sent { pane: usize, message: String },
+    Sent {
+        pane: usize,
+        message: String,
+    },
     Quit,
 }
 
@@ -129,7 +132,11 @@ impl FullscreenShell {
             chats,
             buffer,
             note: String::new(),
-            active: if chats_empty { Pane::Buffer } else { Pane::Chat(0) },
+            active: if chats_empty {
+                Pane::Buffer
+            } else {
+                Pane::Chat(0)
+            },
         }
     }
 
@@ -370,7 +377,10 @@ mod tests {
         let mut shell = FullscreenShell::new(vec![], Some(fake_buffer(10_000, fetched.clone())));
         let rows = frame(&mut shell);
         assert_eq!(fetched.get(), 29, "one fetch per visible row");
-        assert!(rows[29].contains("log line 09999"), "it follows the end: {rows:#?}");
+        assert!(
+            rows[29].contains("log line 09999"),
+            "it follows the end: {rows:#?}"
+        );
         assert!(rows[0].contains("log 9972/10000"), "{:?}", rows[0]);
 
         shell.handle_event(&key(KeyCode::Home));
@@ -385,7 +395,11 @@ mod tests {
         let source = len.clone();
         let mut shell = FullscreenShell::new(
             vec![],
-            Some(PluginBuffer::new("tail", move || source.get(), |i| format!("row {i}"))),
+            Some(PluginBuffer::new(
+                "tail",
+                move || source.get(),
+                |i| format!("row {i}"),
+            )),
         );
         frame(&mut shell);
         len.set(150);

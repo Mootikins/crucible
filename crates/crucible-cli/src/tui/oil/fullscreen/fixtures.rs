@@ -38,7 +38,9 @@ pub fn assistant_text(i: usize) -> String {
         ));
     }
     s.push_str("```\n\n");
-    s.push_str("Wide text: 日本語のテキストと中文字符 and a family 👨\u{200d}👩\u{200d}👧 emoji.\n");
+    s.push_str(
+        "Wide text: 日本語のテキストと中文字符 and a family 👨\u{200d}👩\u{200d}👧 emoji.\n",
+    );
     s
 }
 

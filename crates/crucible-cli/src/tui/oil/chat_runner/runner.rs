@@ -464,9 +464,12 @@ impl OilChatRunner {
                 }
                 ViewAction::Dump(rows) => {
                     self.terminal.print_to_main_screen(&rows)?;
-                    params.app.add_notification(crucible_core::types::Notification::toast(
-                        format!("Printed {} rows to the terminal scrollback", rows.len()),
-                    ));
+                    params
+                        .app
+                        .add_notification(crucible_core::types::Notification::toast(format!(
+                            "Printed {} rows to the terminal scrollback",
+                            rows.len()
+                        )));
                     return Ok(false);
                 }
                 ViewAction::ToggleMouse => {

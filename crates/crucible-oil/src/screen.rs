@@ -168,7 +168,9 @@ mod tests {
         let stats = diff.present(&mut out, &frame, Some((2, 0))).unwrap();
 
         assert_eq!(stats.rows_written, 0);
-        assert!(String::from_utf8(out).unwrap().contains("\x1b[1;3H\x1b[?25h"));
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("\x1b[1;3H\x1b[?25h"));
     }
 
     #[test]
@@ -201,8 +203,10 @@ mod tests {
     fn every_frame_is_one_synchronized_update_without_a_screen_clear() {
         let mut diff = ScreenDiff::new();
         let mut out = Vec::new();
-        diff.present(&mut out, &grid(&["a", "b"], 10), None).unwrap();
-        diff.present(&mut out, &grid(&["a", "c"], 10), None).unwrap();
+        diff.present(&mut out, &grid(&["a", "b"], 10), None)
+            .unwrap();
+        diff.present(&mut out, &grid(&["a", "c"], 10), None)
+            .unwrap();
 
         let written = String::from_utf8(out).unwrap();
         assert_eq!(written.matches(BEGIN_SYNCHRONIZED_UPDATE).count(), 2);

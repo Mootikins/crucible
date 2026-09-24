@@ -72,8 +72,8 @@ pub use render::{
 pub use runtime::FrameRenderer;
 #[cfg(any(test, feature = "test-utils"))]
 pub use runtime::TestRuntime;
-pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use screen::{PresentStats, ScreenDiff};
+pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use terminal::{ScreenMode, Terminal};
 
 pub mod utils;

@@ -111,7 +111,10 @@ mod tests {
         let mut scroll = Scroll::default();
         scroll.scroll_by(-3, 5, 10);
         assert_eq!(scroll.top(), 0);
-        assert!(scroll.follows(), "a buffer shorter than the view is at its bottom");
+        assert!(
+            scroll.follows(),
+            "a buffer shorter than the view is at its bottom"
+        );
     }
 
     #[test]

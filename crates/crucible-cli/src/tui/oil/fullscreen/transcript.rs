@@ -189,11 +189,7 @@ impl Transcript {
             return self.total;
         };
         let rows = self.entries[anchor.entry].rows.len();
-        let row = if anchor.rows == 0 {
-            0
-        } else {
-            anchor.row * rows / anchor.rows
-        };
+        let row = (anchor.row * rows).checked_div(anchor.rows).unwrap_or(0);
         start + row.min(rows.saturating_sub(1))
     }
 
@@ -274,7 +270,11 @@ mod tests {
     use crucible_oil::ansi::strip_ansi;
     use crucible_oil::focus::FocusContext;
 
-    fn sync(transcript: &mut Transcript, app: &crate::tui::oil::OilChatApp, width: u16) -> SyncStats {
+    fn sync(
+        transcript: &mut Transcript,
+        app: &crate::tui::oil::OilChatApp,
+        width: u16,
+    ) -> SyncStats {
         let focus = FocusContext::new();
         let ctx = ViewContext::with_terminal_size(&focus, theme::active(), (width, 40));
         let ctx = app.frame_context(&ctx);
@@ -296,7 +296,13 @@ mod tests {
         assert_eq!(first.laid_out, 6);
 
         let second = sync(&mut transcript, &app, 100);
-        assert_eq!(second, SyncStats { laid_out: 0, reused: 6 });
+        assert_eq!(
+            second,
+            SyncStats {
+                laid_out: 0,
+                reused: 6
+            }
+        );
     }
 
     #[test]
