@@ -43,8 +43,8 @@ pub struct DaemonAgentHandle {
     pub(super) cached_model: Option<String>,
     pub(super) cached_context_strategy: Option<String>,
     pub(super) cached_precognition: Option<bool>,
-    pub(super) cached_plugin_approvals:
-        std::collections::BTreeMap<String, crucible_core::session::PluginApproval>,
+    /// Shared with the event router, which applies `plugin_approval_changed`.
+    pub(super) cached_plugin_approvals: convert::PluginApprovals,
     pub(super) cached_plugin_turn_limit: u32,
     /// The kiln NAME a `/clear` re-create should attach. Names, not paths:
     /// the daemon resolves them against its `[kilns]` registry.
@@ -64,6 +64,7 @@ impl DaemonAgentHandle {
         session_id_tx: tokio::sync::watch::Sender<String>,
         streaming_rx: mpsc::UnboundedReceiver<SessionEvent>,
         interaction_rx: mpsc::UnboundedReceiver<InteractionEvent>,
+        approvals: convert::PluginApprovals,
         event_router_task: JoinHandle<()>,
     ) -> Self {
         Self {
@@ -77,7 +78,7 @@ impl DaemonAgentHandle {
             cached_model: None,
             cached_context_strategy: None,
             cached_precognition: None,
-            cached_plugin_approvals: Default::default(),
+            cached_plugin_approvals: approvals,
             cached_plugin_turn_limit: 25,
             kiln: None,
             workspace: None,
@@ -109,17 +110,16 @@ impl DaemonAgentHandle {
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
         let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
 
-        let event_router_task = tokio::spawn(async move {
-            convert::event_router(
-                event_rx,
-                streaming_tx,
-                interaction_tx,
-                None,
-                session_id_rx,
-                pending,
-            )
-            .await;
-        });
+        let approvals = convert::PluginApprovals::default();
+        let event_router_task = tokio::spawn(convert::event_router(
+            event_rx,
+            streaming_tx,
+            interaction_tx,
+            None,
+            session_id_rx,
+            pending,
+            approvals.clone(),
+        ));
 
         Self::new_base(
             client,
@@ -127,6 +127,7 @@ impl DaemonAgentHandle {
             session_id_tx,
             streaming_rx,
             interaction_rx,
+            approvals,
             event_router_task,
         )
     }
@@ -175,17 +176,16 @@ impl DaemonAgentHandle {
         let (session_id_tx, session_id_rx) = tokio::sync::watch::channel(session_id.clone());
         let (raw_event_tx, raw_event_rx) = mpsc::unbounded_channel();
 
-        let event_router_task = tokio::spawn(async move {
-            convert::event_router(
-                event_rx,
-                streaming_tx,
-                interaction_tx,
-                Some(raw_event_tx),
-                session_id_rx,
-                pending,
-            )
-            .await;
-        });
+        let approvals = convert::PluginApprovals::default();
+        let event_router_task = tokio::spawn(convert::event_router(
+            event_rx,
+            streaming_tx,
+            interaction_tx,
+            Some(raw_event_tx),
+            session_id_rx,
+            pending,
+            approvals.clone(),
+        ));
 
         let mut handle = Self::new_base(
             client.clone(),
@@ -193,6 +193,7 @@ impl DaemonAgentHandle {
             session_id_tx,
             streaming_rx,
             interaction_rx,
+            approvals,
             event_router_task,
         );
         handle.raw_event_rx = Some(raw_event_rx);
@@ -253,7 +254,7 @@ impl DaemonAgentHandle {
             .ok()
             .flatten();
         self.cached_precognition = client.session_get_precognition(session_id).await.ok();
-        self.cached_plugin_approvals = client
+        *self.cached_plugin_approvals.lock() = client
             .session_list_plugin_approvals(session_id)
             .await
             .unwrap_or_default();
@@ -328,6 +329,7 @@ mod tests {
             None,
             session_id_rx,
             pending,
+            Default::default(),
         ));
         let recovered = interaction_rx.recv().await.unwrap();
         assert_eq!(recovered.request_id, "ask-id");

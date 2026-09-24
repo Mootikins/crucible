@@ -6,8 +6,11 @@
 
 use crucible_core::interaction::InteractionEvent;
 use crucible_core::protocol::session_events::{SessionEventPayload, ToolResultBody, TurnPayload};
+use crucible_core::session::PluginApproval;
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{StopReason, TurnEvent, TurnStatus};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 use crate::SessionEvent;
@@ -28,6 +31,7 @@ pub(super) async fn event_router(
     raw_event_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
     session_id_rx: tokio::sync::watch::Receiver<String>,
     pending: Vec<InteractionEvent>,
+    approvals: PluginApprovals,
 ) {
     let mut seen = std::collections::HashSet::new();
     for interaction in pending {
@@ -45,6 +49,9 @@ pub(super) async fn event_router(
                 "Filtering event from different session in router"
             );
             continue;
+        }
+        if event.event == "plugin_approval_changed" {
+            approvals.apply(&event.data);
         }
 
         // Routing is decided by the NAME, before the payload is decoded: an
@@ -86,6 +93,43 @@ pub(super) async fn event_router(
         }
     }
     tracing::debug!("Event router task ended");
+}
+
+/// The handle's copy of the session's plugin approvals. The router applies
+/// each `plugin_approval_changed`, so a change by the daemon (the loop limit)
+/// or by another client reads back without a new fetch.
+#[derive(Clone, Default)]
+pub(crate) struct PluginApprovals(Arc<Mutex<BTreeMap<String, PluginApproval>>>);
+
+impl PluginApprovals {
+    pub(super) fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, PluginApproval>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(super) fn get(&self, plugin: &str) -> PluginApproval {
+        self.lock().get(plugin).copied().unwrap_or_default()
+    }
+
+    pub(super) fn set(&self, plugin: &str, approval: PluginApproval) {
+        let mut approvals = self.lock();
+        if approval == PluginApproval::Inherit {
+            approvals.remove(plugin);
+        } else {
+            approvals.insert(plugin.to_owned(), approval);
+        }
+    }
+
+    /// Apply the `{plugin, approval}` data of `plugin_approval_changed`.
+    fn apply(&self, data: &serde_json::Value) {
+        let plugin = data["plugin"].as_str();
+        let approval = serde_json::from_value(data["approval"].clone());
+        match (plugin, approval) {
+            (Some(plugin), Ok(approval)) => self.set(plugin, approval),
+            _ => tracing::warn!(%data, "Malformed plugin_approval_changed"),
+        }
+    }
 }
 
 /// Token usage from a decoded `message_complete`.

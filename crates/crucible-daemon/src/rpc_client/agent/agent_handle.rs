@@ -177,20 +177,12 @@ impl SessionKnobs for DaemonAgentHandle {
             .session_set_plugin_approval(&self.session_id, plugin, approval)
             .await
             .chat_comm()?;
-        if approval == crucible_core::session::PluginApproval::Inherit {
-            self.cached_plugin_approvals.remove(plugin);
-        } else {
-            self.cached_plugin_approvals
-                .insert(plugin.to_owned(), approval);
-        }
+        self.cached_plugin_approvals.set(plugin, approval);
         Ok(())
     }
 
     fn get_plugin_approval(&self, plugin: &str) -> crucible_core::session::PluginApproval {
-        self.cached_plugin_approvals
-            .get(plugin)
-            .copied()
-            .unwrap_or_default()
+        self.cached_plugin_approvals.get(plugin)
     }
     async fn set_plugin_turn_limit(&mut self, limit: u32) -> ChatResult<()> {
         self.client

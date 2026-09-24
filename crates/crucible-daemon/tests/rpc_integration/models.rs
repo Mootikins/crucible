@@ -427,3 +427,53 @@ async fn test_daemon_agent_handle_set_mode_reaches_daemon() {
 
     server.shutdown().await;
 }
+
+/// The handle's approval cache follows `plugin_approval_changed`, so a change
+/// by the daemon (the loop limit) or by another client reads back at once.
+#[tokio::test]
+async fn plugin_approval_cache_follows_the_change_event() {
+    use crucible_core::session::PluginApproval;
+    use crucible_core::traits::chat::SessionKnobs;
+    use crucible_daemon::DaemonAgentHandle;
+
+    let server = TestServer::start().await.unwrap();
+    let client = DaemonClient::connect_to(&server.socket_path).await.unwrap();
+    let created = client
+        .session_create(crucible_daemon::rpc_client::SessionCreateParams {
+            session_type: "chat".into(),
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
+            workspace: None,
+            recording_mode: None,
+            recording_path: None,
+            agent_type: None,
+            isolation: None,
+        })
+        .await
+        .unwrap();
+    let id = created["session_id"].as_str().unwrap();
+    let (attached_client, events) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .unwrap();
+    let handle = DaemonAgentHandle::new_and_subscribe_with_raw_forwarding(
+        std::sync::Arc::new(attached_client),
+        id.to_owned(),
+        events,
+    )
+    .await
+    .unwrap();
+    assert_eq!(handle.get_plugin_approval("alpha"), PluginApproval::Inherit);
+
+    client
+        .session_set_plugin_approval(id, "alpha", PluginApproval::Ask)
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while handle.get_plugin_approval("alpha") != PluginApproval::Ask {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the cache must follow plugin_approval_changed"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    server.shutdown().await;
+}
