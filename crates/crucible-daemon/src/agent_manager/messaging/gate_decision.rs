@@ -25,7 +25,7 @@ use crucible_core::config::components::permissions::{
     PermissionDecision, PermissionEngine, PermissionMode,
 };
 use crucible_core::config::PatternStore;
-use crucible_core::interaction::PermRequest;
+use crucible_core::interaction::{PermRequest, PermissionScope};
 use crucible_core::types::CanonicalToolCall;
 use crucible_lua::{ModeRegistry, ModeStance, PermissionHookResult};
 use std::collections::HashSet;
@@ -43,6 +43,9 @@ pub(crate) struct PermissionContext<'a> {
     /// The `whitelists.d` directory and the project of the saved patterns.
     /// `None`: no saved patterns.
     pub patterns: Option<(&'a Path, &'a Path)>,
+    /// The session, for its "allow for this session" grants. `None`: no
+    /// session.
+    pub slot: Option<&'a SessionSlot>,
     pub hooks: Option<&'a PluginHandlers>,
     pub mode: &'a str,
     pub modes: &'a ModeRegistry,
@@ -147,13 +150,8 @@ pub(crate) async fn decide_permission(
     };
 
     if response.allowed {
-        let file = ctx.patterns.and_then(|(dir, project)| {
-            PatternStore::store_file_in(dir, response.scope, &project.to_string_lossy())
-        });
-        if let Some((pattern, file)) = response.pattern.as_deref().zip(file) {
-            if let Err(e) = AgentManager::store_pattern_to(&file, call, pattern) {
-                tracing::warn!(session_id = %ctx.session_id, pattern, error = %e, "Failed to store pattern");
-            }
+        if let Some(pattern) = response.pattern.as_deref() {
+            store_grant(ctx, prompt.slot, call, pattern, response.scope);
         }
         return Decision::UserAllowed;
     }
@@ -165,6 +163,36 @@ pub(crate) async fn decide_permission(
         ),
         None => format!("User denied permission to {} {target}", call.tool),
     })
+}
+
+/// Keep the grant `pattern` that the user gave for `call` at `scope`.
+///
+/// A session grant lives in the session slot. A project or user grant goes
+/// to its file in `whitelists.d`.
+fn store_grant(
+    ctx: &PermissionContext<'_>,
+    slot: &SessionSlot,
+    call: &CanonicalToolCall,
+    pattern: &str,
+    scope: PermissionScope,
+) {
+    let stored = match scope {
+        PermissionScope::Once => Ok(()),
+        PermissionScope::Session => {
+            slot.with_session_grants(|grants| AgentManager::add_pattern(grants, call, pattern))
+        }
+        PermissionScope::Project | PermissionScope::User => {
+            let file = ctx.patterns.and_then(|(dir, project)| {
+                PatternStore::store_file_in(dir, scope, &project.to_string_lossy())
+            });
+            file.map_or(Ok(()), |file| {
+                AgentManager::store_pattern_to(&file, call, pattern)
+            })
+        }
+    };
+    if let Err(e) = stored {
+        tracing::warn!(session_id = %ctx.session_id, pattern, error = %e, "Failed to store pattern");
+    }
 }
 
 /// What the layers before the prompt decide.
@@ -188,7 +216,7 @@ enum Unprompted {
 /// 5. A read-only tool runs, unless a card `ask` or an operator `ask` rule
 ///    names it.
 /// 6. An operator `allow` runs the call.
-/// 7. A saved pattern runs the call.
+/// 7. A saved pattern or a grant for this session runs the call.
 /// 8. A Lua `permission:request` hook decides; if none does, the mode rules
 ///    and the mode stance decide.
 /// 9. The caller asks the user, or refuses the call when nobody can answer.
@@ -238,6 +266,11 @@ fn decide_unprompted(
             .merge(&PatternStore::load_user_sync_in(dir).unwrap_or_default());
         if AgentManager::check_pattern_match(call, &store) {
             return allow("saved pattern");
+        }
+    }
+    if let Some(slot) = ctx.slot {
+        if slot.with_session_grants(|grants| AgentManager::check_pattern_match(call, grants)) {
+            return allow("session grant");
         }
     }
 
@@ -338,6 +371,7 @@ pub(crate) fn unattended_refusal(
         engine,
         permission_override: None,
         patterns: None,
+        slot: None,
         hooks: None,
         mode: "",
         modes: &modes,
@@ -385,6 +419,7 @@ mod tests {
             engine: engine.unwrap_or(&unconfigured),
             permission_override,
             patterns: None,
+            slot: None,
             hooks: None,
             mode: "",
             modes: &modes,

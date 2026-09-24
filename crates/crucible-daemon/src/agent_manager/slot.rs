@@ -81,6 +81,9 @@ pub(crate) struct SessionSlot {
     /// Why the gate refused an ACP call, by `toolCallId`, until the agent
     /// reports the call. The turn end clears it.
     denials: Mutex<HashMap<String, String>>,
+    /// The grants that the user gave with "allow for this session". They
+    /// live as long as the slot; no file holds them.
+    session_grants: Mutex<crucible_core::config::PatternStore>,
     /// Permission prompts this session is waiting on answers to.
     ///
     /// Mutated in place, never cloned out: `PendingPermission` holds a
@@ -447,6 +450,17 @@ impl SessionSlot {
         self.denials
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Change the session's own grants.
+    pub(crate) fn with_session_grants<T>(
+        &self,
+        f: impl FnOnce(&mut crucible_core::config::PatternStore) -> T,
+    ) -> T {
+        f(&mut self
+            .session_grants
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
     }
 
     /// How the turn that runs now may decide a permission.

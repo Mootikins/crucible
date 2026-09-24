@@ -70,7 +70,7 @@ next.
 | 4 | CLI `--permissions` override | the flag you launched with |
 | 5 | Read-only exemption | the daemon's built-in list |
 | 6 | `permissions` config `allow` | `init.lua` (global or kiln), or the agent profile |
-| 7 | Saved patterns | answering "allow for this project" at a prompt |
+| 7 | Saved patterns and session grants | answering "allow for this project" or "allow for this session" at a prompt |
 | 8 | Lua permission hooks | `cru.permissions.on_request` |
 | 9 | Mode rules, then mode stance | `cru.modes.<name>.permissions` |
 | 10 | Non-interactive sessions: ask becomes deny | how the session was started |
@@ -123,11 +123,16 @@ is deliberately not consulted here: a third-party server must not be able to
 annotate its way past a mode's `default = "deny"`. The kind of an ACP call is
 not consulted either, because the agent supplies it.
 
-### 7 — Saved patterns
+### 7 — Saved patterns and session grants
 
 When you answer a prompt with "allow for this project", the pattern is written
 to the project's store and matched here on subsequent calls. Saved patterns are
 per-project, not per-session, and survive restarts.
+
+When you answer with "allow for this session", the daemon keeps the pattern
+with the session and writes no file. The grant answers later calls of the same
+session. It ends when the daemon stops, or when the session ends or is archived. A call that a
+grant allows carries the marker `session grant`.
 
 A pattern for a shell call is its command line, whichever shell tool made the call.
 A pattern for an edit is a path, and it permits an edit only when it matches each path

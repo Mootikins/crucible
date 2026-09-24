@@ -143,6 +143,7 @@ impl AcpGate {
             engine: &engine,
             permission_override: turn.permission_override,
             patterns: (self.whitelists_dir.as_deref()).map(|dir| (dir, self.workspace.as_path())),
+            slot: Some(&self.slot),
             hooks: self.hooks.as_ref(),
             // The mode of an ACP session is the agent's own mode. Its id can
             // name a Crucible mode (`auto`, `plan`) with another rule, so no
@@ -633,20 +634,33 @@ impl AgentManager {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        let Some(kind) = pattern_kind(call) else {
+        if pattern_kind(call).is_none() {
             tracing::info!(tool = %call.tool, "No grant is stored for a command that Crucible cannot read");
             return Ok(());
-        };
-        let mut store = PatternStore::load_file(file).unwrap_or_default();
-
-        match kind {
-            PatternKind::Bash(_) => store.add_bash_pattern(pattern)?,
-            PatternKind::File => store.add_file_pattern(pattern)?,
-            PatternKind::Tool => store.add_tool_pattern(pattern)?,
         }
-
+        let mut store = PatternStore::load_file(file).unwrap_or_default();
+        Self::add_pattern(&mut store, call, pattern)?;
         store.save_file(file)?;
         Ok(())
+    }
+
+    /// Add `pattern` to `store`, in the table that [`pattern_kind`] gives
+    /// `call`. A call with no table gets no grant.
+    #[deny(
+        clippy::wildcard_enum_match_arm,
+        clippy::match_wildcard_for_single_variants
+    )]
+    pub(in crate::agent_manager) fn add_pattern(
+        store: &mut PatternStore,
+        call: &CanonicalToolCall,
+        pattern: &str,
+    ) -> Result<(), crucible_core::config::PatternError> {
+        match pattern_kind(call) {
+            Some(PatternKind::Bash(_)) => store.add_bash_pattern(pattern),
+            Some(PatternKind::File) => store.add_file_pattern(pattern),
+            Some(PatternKind::Tool) => store.add_tool_pattern(pattern),
+            None => Ok(()),
+        }
     }
 
     /// Ask this session's `cru.permissions.on_request` hooks, in priority
@@ -712,6 +726,7 @@ impl StreamContext {
             permission_override: self.permission_override,
             patterns: (self.whitelists_dir.as_deref())
                 .map(|dir| (dir, self.workspace_path.as_path())),
+            slot: Some(&self.slot),
             hooks: config.plugin_handlers.as_ref(),
             mode: &self.session_mode,
             modes: &config.modes,
@@ -957,7 +972,15 @@ mod acp_tool_policy_tests {
     /// prompt with "always allow" and the grant that the prompt suggests.
     /// Whether each call was put to the user.
     async fn asked_with_always_allow(calls: Vec<CanonicalToolCall>) -> Vec<bool> {
-        use crucible_core::interaction::{InteractionRequest, PermissionScope};
+        asked_with_grants(calls, crucible_core::interaction::PermissionScope::User).await
+    }
+
+    /// [`asked_with_always_allow`] with grants of `scope`.
+    async fn asked_with_grants(
+        calls: Vec<CanonicalToolCall>,
+        scope: crucible_core::interaction::PermissionScope,
+    ) -> Vec<bool> {
+        use crucible_core::interaction::InteractionRequest;
         use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
         let whitelists = tempfile::TempDir::new().unwrap();
         let (event_tx, mut events) = broadcast::channel::<SessionEventMessage>(16);
@@ -982,7 +1005,7 @@ mod acp_tool_policy_tests {
                 let answer = request
                     .suggested_pattern()
                     .map_or_else(PermResponse::allow, |p| {
-                        PermResponse::allow_pattern(p, PermissionScope::User)
+                        PermResponse::allow_pattern(p, scope)
                     });
                 if let Some(pending) = user.take_permission(id) {
                     let _ = pending.response_tx.send(answer);
@@ -1099,6 +1122,27 @@ mod acp_tool_policy_tests {
         for (what, calls, expected) in cases {
             assert_eq!(asked_with_always_allow(calls).await, expected, "{what}");
         }
+    }
+
+    /// "Allow for this session" answers the same call again in the session,
+    /// and no other call. Before, a session grant was stored nowhere, so the
+    /// user was asked again at the next identical call.
+    #[tokio::test]
+    async fn a_session_grant_answers_the_same_call_in_the_session() {
+        let named =
+            |name: &str| classify_acp(RawToolCall::from(&claude_request(name).tool_call), &[]);
+        assert_eq!(
+            asked_with_grants(
+                vec![
+                    named("mcp__github__create_pr"),
+                    named("mcp__github__create_pr"),
+                    named("mcp__github__delete_repo"),
+                ],
+                crucible_core::interaction::PermissionScope::Session,
+            )
+            .await,
+            [true, false, true]
+        );
     }
 
     /// The canonical call of an ACP frame that names no tool.

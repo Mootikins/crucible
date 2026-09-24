@@ -85,6 +85,41 @@ mod the_tool_gate_in_a_turn {
         h.wait_for("message_complete").await;
     }
 
+    /// "Allow for this session" on Crucible's own tool answers the same
+    /// call later in the session with no second prompt, and marks it.
+    #[tokio::test]
+    async fn a_session_grant_answers_the_next_identical_call_in_a_turn() {
+        use crucible_core::interaction::{PermResponse, PermissionScope};
+        let mut h = ReactorTestHarness::new().await;
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-1", "gh_create_pr", serde_json::json!({})),
+            script::tool_call("call-2", "gh_create_pr", serde_json::json!({})),
+            script::text("done"),
+            script::done(),
+        ]);
+        h.send("run tool").await;
+        let prompt = h.wait_for("interaction_requested").await;
+        let id = prompt.data["request_id"].as_str().unwrap().to_string();
+        h.agent_manager
+            .respond_to_permission(
+                &h.session_id,
+                &id,
+                PermResponse::allow_pattern("gh_create_pr", PermissionScope::Session),
+            )
+            .expect("the prompt waits");
+        let first = h.wait_for("tool_call").await;
+        assert_eq!(first.data["call_id"], "call-1");
+        let second = h
+            .wait_for_first_of(&["interaction_requested", "tool_call"])
+            .await;
+        assert_eq!(
+            second.event, "tool_call",
+            "the session grant must answer the second call"
+        );
+        assert_eq!(second.data["auto_approved"], "session grant");
+        h.wait_for("message_complete").await;
+    }
+
     /// A read-only tool nobody granted anything to carries no marker.
     ///
     /// Nothing was granted, because nothing was needed. A marker here would
