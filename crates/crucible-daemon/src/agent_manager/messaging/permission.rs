@@ -831,9 +831,17 @@ mod acp_tool_policy_tests {
     }
 
     impl Asked {
+        /// Whether the gate selected exactly `allow-once`. A prefix match
+        /// also took `allow-always`, which the gate must never send.
         fn allowed(&self) -> bool {
-            matches!(self.outcome, RequestPermissionOutcome::Selected(ref selected)
-                if selected.option_id.to_string().starts_with("allow"))
+            selected_id(&self.outcome).as_deref() == Some("allow-once")
+        }
+    }
+
+    fn selected_id(outcome: &RequestPermissionOutcome) -> Option<String> {
+        match outcome {
+            RequestPermissionOutcome::Selected(selected) => Some(selected.option_id.to_string()),
+            _ => None,
         }
     }
 
@@ -1010,10 +1018,51 @@ mod acp_tool_policy_tests {
         let mut asked = Vec::new();
         for call in calls {
             let before = prompts.load(SeqCst);
-            gate.decide(call, &options).await;
+            let outcome = gate.decide(call, &options).await;
+            // The user said "always allow", and a saved grant answers the
+            // later calls. Crucible keeps the grant, so the agent still gets
+            // `allow-once`: with `allow-always` it stops asking.
+            assert_eq!(selected_id(&outcome).as_deref(), Some("allow-once"));
             asked.push(prompts.load(SeqCst) > before);
         }
         asked
+    }
+
+    /// No layer that allows a call sends `allow-always`, also when the
+    /// agent offers it: a card, an operator rule, and a user who allowed
+    /// once. The saved pattern is checked in
+    /// `always_allow_answers_the_same_call_and_no_other`.
+    #[tokio::test]
+    async fn no_allowing_layer_sends_allow_always() {
+        let call = || {
+            classify_acp(
+                RawToolCall::from(&claude_request("mcp__github__create_pr").tool_call),
+                &[],
+            )
+        };
+        let rule = PermissionConfig {
+            allow: vec!["mcp__github__create_pr:*".to_string()],
+            ..Default::default()
+        };
+        for (layer, asked) in [
+            (
+                "card",
+                decide_call(
+                    call(),
+                    &[("mcp__github__create_pr", ToolPolicy::Allow)],
+                    None,
+                )
+                .await,
+            ),
+            ("rule", decide_call(call(), &[], Some(rule)).await),
+            ("user", decide_call(call(), &[], None).await),
+        ] {
+            assert_eq!(
+                selected_id(&asked.outcome).as_deref(),
+                Some("allow-once"),
+                "{layer}"
+            );
+        }
     }
 
     /// One "always allow" answers the same call next time, and never a
