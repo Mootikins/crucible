@@ -57,10 +57,10 @@ fn pattern_kind(call: &CanonicalToolCall) -> Option<PatternKind> {
 /// scope. An agent can store `allow_always` and stop asking about the tool
 /// (gemini-cli does), and then Crucible has no gate for its later calls.
 /// Crucible keeps the grant itself. A one-time allow never takes
-/// `allow_always`, because that grant is wider than the user chose. A denial
-/// takes `reject_always` when the agent offers no `reject_once`. `Cancelled`
-/// remains only for no usable option, because the agent then stops the
-/// whole turn.
+/// `allow_always`, because that grant is wider than the user chose. For the
+/// same reason a denial never takes `reject_always`: the agent stores it as
+/// a deny that nobody chose. With no option of the one kind, the outcome is
+/// `Cancelled`, and the agent stops the whole turn.
 fn select_option(
     options: &[agent_client_protocol::schema::v1::PermissionOption],
     allowed: bool,
@@ -69,15 +69,15 @@ fn select_option(
         PermissionOptionKind as Kind, RequestPermissionOutcome, SelectedPermissionOutcome,
     };
 
-    let acceptable: &[Kind] = if allowed {
-        &[Kind::AllowOnce]
+    let kind = if allowed {
+        Kind::AllowOnce
     } else {
-        &[Kind::RejectOnce, Kind::RejectAlways]
+        Kind::RejectOnce
     };
 
-    acceptable
+    options
         .iter()
-        .find_map(|kind| options.iter().find(|opt| opt.kind == *kind))
+        .find(|opt| opt.kind == kind)
         .map(|opt| {
             RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
                 opt.option_id.clone(),
@@ -787,18 +787,19 @@ mod acp_permission_tests {
         ));
     }
 
-    /// A denial takes `reject_always` when the agent offers no
-    /// `reject_once`. `Cancelled` stopped the whole turn instead of one call.
+    /// A denial never takes `reject_always`. The agent stores that option
+    /// as a deny rule that the user never chose, and then it stops asking
+    /// about the tool. With no `reject_once`, the outcome is `Cancelled`.
     #[test]
-    fn a_reject_once_decision_takes_reject_always_when_the_agent_offers_only_that() {
+    fn a_denial_never_takes_reject_always() {
         let options = [
             option("once", PermissionOptionKind::AllowOnce),
             option("never", PermissionOptionKind::RejectAlways),
         ];
-        assert_eq!(
-            selected(select_option(&options, false)).as_deref(),
-            Some("never")
-        );
+        assert!(matches!(
+            select_option(&options, false),
+            RequestPermissionOutcome::Cancelled
+        ));
     }
 
     /// With no option of a usable kind, the outcome is `Cancelled`.
