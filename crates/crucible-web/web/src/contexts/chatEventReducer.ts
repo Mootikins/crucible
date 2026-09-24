@@ -457,9 +457,10 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // The one event that ends the whole turn, for every status. A turn
         // that a cancel or a failure stopped sends no `message_complete`,
         // and this is what closes it — a cancel from ANOTHER client
-        // included. A failed turn also carries the reason in `error`.
-        if (event.status === 'failed' && event.error) {
-          showError(event.error, 'turn_failed');
+        // included. A failed turn and a turn that a handler cancelled (for
+        // example the loop guard) also carry the reason in `error`.
+        if ((event.status === 'failed' || event.status === 'handler_cancelled') && event.error) {
+          showError(event.error, `turn_${event.status}`);
         }
         closeTurn();
         break;

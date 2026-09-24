@@ -56,6 +56,30 @@ fn a_failed_turn_shows_its_error() {
     );
 }
 
+/// A turn that a handler cancelled says why, as a failed turn does. The loop
+/// guard of an ACP turn is one such handler.
+#[test]
+fn a_handler_cancelled_turn_shows_its_reason() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "hello");
+    relay_session_turn(
+        &mut story,
+        &[(
+            "turn_finished",
+            json!({
+                "status": "handler_cancelled",
+                "error": "Tool 'Read' is blocked for this stream after repeated failures.",
+            }),
+        )],
+    );
+
+    let frame = story.fresh_screen();
+    assert!(
+        frame.contains("Tool 'Read' is blocked"),
+        "the console must show why a handler cancelled the turn:\n{frame}"
+    );
+}
+
 /// The turn a `turn:complete` handler asks for reads as a turn of its own:
 /// its message and its reply both render, under the first turn's reply.
 #[test]

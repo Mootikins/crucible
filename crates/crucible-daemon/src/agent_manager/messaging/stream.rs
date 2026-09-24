@@ -66,7 +66,8 @@ fn response_tail(response: &str, limit: usize) -> (String, bool) {
 }
 
 /// The loop guard of one turn. Three failures in a row of one tool with the
-/// same arguments block that tool for the rest of the turn.
+/// same key block that tool for the rest of the turn. The key is the
+/// arguments, and for an ACP call also its title and its locations.
 #[derive(Default)]
 struct LoopGuard {
     last_failure: Option<(String, String)>,
@@ -81,14 +82,13 @@ impl LoopGuard {
             .then(|| format!("Tool '{tool}' is blocked for this stream after repeated failures."))
     }
 
-    fn record(&mut self, tool: &str, args: &serde_json::Value, failed: bool) {
+    fn record(&mut self, tool: &str, key: &serde_json::Value, failed: bool) {
         if !failed {
             self.last_failure = None;
             self.failures = 0;
             return;
         }
-        let args = serde_json::to_string(args).unwrap_or_else(|_| "null".to_string());
-        let key = (tool.to_string(), args);
+        let key = (tool.to_string(), key.to_string());
         if self.last_failure.as_ref() == Some(&key) {
             self.failures += 1;
         } else {
@@ -610,13 +610,20 @@ impl AgentManager {
                         serde_json::Value::String(text) => text,
                         other => other.to_string(),
                     };
+                    // An agent can send no tool name and put the command
+                    // only in the title (Gemini), so the title and the
+                    // locations tell its calls apart for the loop guard.
+                    let guard_key = serde_json::json!([
+                        &args,
+                        call.raw.as_ref().map(|raw| (&raw.title, &raw.locations)),
+                    ]);
                     let (text, error) = stream_ctx
                         .finish_tool_result(&id, call, &args, text, error, false)
                         .await;
                     if let Some(bracket) = agent_brackets.remove(&id) {
                         stream_ctx.close_review_bracket(bracket, &id).await;
                     }
-                    loop_guard.record(&name, &args, error.is_some());
+                    loop_guard.record(&name, &guard_key, error.is_some());
                     stream_ctx
                         .add_tool_node(crucible_core::turn::NodeContent::ToolResult {
                             id,

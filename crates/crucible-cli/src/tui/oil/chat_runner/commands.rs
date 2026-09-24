@@ -334,9 +334,9 @@ fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
         // `StreamCancelled`: that message also asks the daemon to cancel. A
         // turn that a cancel or a failure stopped sends no `message_complete`,
         // and this is what ends it — a cancel from ANOTHER client included.
-        // A failed turn also shows why it failed.
+        // A failed turn and a turn that a handler cancelled also show why.
         TurnPayload::TurnFinished { status, error, .. } => match (status, error) {
-            (TurnStatus::Failed, Some(error)) => {
+            (TurnStatus::Failed | TurnStatus::HandlerCancelled, Some(error)) => {
                 vec![ChatAppMsg::Error(error), ChatAppMsg::StreamComplete]
             }
             _ => vec![ChatAppMsg::StreamComplete],

@@ -962,6 +962,20 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.state.isStreaming).toBe(false);
   });
 
+  it('turn_finished: a turn that a handler cancelled shows its reason', () => {
+    const h = createHarness();
+    h.setUp.streamingMessage('asst-1');
+    h.reducer({
+      type: 'turn_finished',
+      status: 'handler_cancelled',
+      error: "Tool 'Read' is blocked for this stream after repeated failures.",
+    });
+    expect(h.state.error).toBe(
+      "Tool 'Read' is blocked for this stream after repeated failures. (turn_handler_cancelled)",
+    );
+    expect(h.state.isStreaming).toBe(false);
+  });
+
   it('turn_finished: sweeps thinking, dangling tools, and stream flags', () => {
     // A cancelled turn never sees message_complete. The `turn_finished` must
     // leave the same clean state a completion would: no bubble streaming

@@ -144,6 +144,46 @@ async fn the_loop_guard_cancels_an_agent_turn_that_repeats_a_failed_call() {
     );
 }
 
+/// An agent that sends no tool name and puts the command only in the title
+/// (Gemini). Three different commands that fail are not one call repeated,
+/// so the loop guard does not end the turn.
+#[tokio::test]
+async fn the_loop_guard_tells_calls_apart_by_their_title() {
+    let mut h = ReactorTestHarness::new().await;
+    let mut events = Vec::new();
+    for (id, title) in [
+        ("c1", "ls a"),
+        ("c2", "ls b"),
+        ("c3", "ls c"),
+        ("c4", "ls d"),
+    ] {
+        let call = crucible_core::types::classify_acp(
+            serde_json::from_value(serde_json::json!({ "title": title, "kind": "execute" }))
+                .unwrap(),
+            &[],
+        );
+        events.push(TurnEvent::ToolCall {
+            id: id.to_string(),
+            name: call.tool.clone(),
+            args: serde_json::Value::Null,
+            call: Some(Box::new(call.clone())),
+        });
+        events.push(failed(id, &call.tool));
+    }
+    events.push(script::text("the turn went on"));
+    events.push(script::done());
+    h.inject_agent(Box::new(OwnsToolsMockAgent { events }));
+
+    h.send("list").await;
+
+    let finished = h.wait_for("turn_finished").await;
+    assert_eq!(
+        finished.data["status"], "completed",
+        "got: {:?}",
+        finished.data
+    );
+}
+
 /// An agent that writes a file between its `ToolCall` and its `ToolResult`,
 /// as an ACP agent does.
 struct WritingAgent {
