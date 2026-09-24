@@ -76,6 +76,38 @@ fn a_tool_card_draws_the_fields_and_the_result_summary() {
     );
 }
 
+/// A slow call goes to the background. Its finish row still shows the
+/// summary of the result render.
+#[test]
+fn a_background_call_keeps_its_result_summary() {
+    let mut story = StoryRuntime::new(80, 24);
+    send_user_message(&mut story, "search it");
+    relay_session_event(
+        &mut story,
+        "tool_call",
+        json!({
+            "call_id": "c1", "tool": "web_search", "args": { "query": "rust" },
+            "display": { "kind": "search", "tool": "web_search", "render": { "line": "rust" } },
+        }),
+    );
+    story.advance(std::time::Duration::from_secs(1));
+    assert!(
+        story.app().split_slow_tools(),
+        "the call goes to the background"
+    );
+    relay_session_event(
+        &mut story,
+        "tool_result",
+        json!({
+            "call_id": "c1", "tool": "web_search",
+            "result": { "result": "one\ntwo", "render": { "line": "rust", "summary": "ddg · 2 results" } },
+        }),
+    );
+
+    let frame = story.fresh_screen();
+    assert!(frame.contains("ddg · 2 results"), "{frame}");
+}
+
 /// A later update of the call brings a new render, and the card takes its line.
 #[test]
 fn a_tool_call_update_replaces_the_line() {

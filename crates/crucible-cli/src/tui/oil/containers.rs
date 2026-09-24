@@ -125,10 +125,13 @@ impl ChatNode {
         let theme = ctx.theme;
         let dim = Style::new().fg(theme.resolve_color(theme.colors.text_dim));
         let muted = Style::new().fg(theme.resolve_color(theme.colors.text_muted));
-        let summary = if let Some(error) = tool.error.as_ref() {
-            format!(" failed after {:.1}s: {error}", ran_for.as_secs_f32())
-        } else {
-            format!(" finished after {:.1}s", ran_for.as_secs_f32())
+        let result = tool.render.as_ref().and_then(|r| r.summary.as_deref());
+        let summary = match (tool.error.as_ref(), result) {
+            (Some(error), _) => format!(" failed after {:.1}s: {error}", ran_for.as_secs_f32()),
+            (None, Some(result)) => {
+                format!(" finished after {:.1}s → {result}", ran_for.as_secs_f32())
+            }
+            (None, None) => format!(" finished after {:.1}s", ran_for.as_secs_f32()),
         };
         row([
             styled(" \u{25AA} ", dim),
@@ -562,6 +565,12 @@ impl ContainerList {
     /// requiring the tool name). Used for ACP `tool_call_update`
     /// events that key only on call_id.
     pub fn update_tool_by_call_id(&mut self, call_id: &str, f: impl FnOnce(&mut CachedToolCall)) {
+        // A split tool's live copy is off the transcript. Its finish row
+        // shows what this update carries, for example the result render.
+        let mut background = self.background.iter_mut().rev();
+        if let Some(tool) = background.find(|t| t.call_id.as_deref() == Some(call_id)) {
+            return f(tool);
+        }
         for (node, revision) in self.entries_mut().rev() {
             if let ChatNode::ToolGroup { tools } = node {
                 if let Some(tool) = tools
@@ -932,6 +941,31 @@ mod tests {
         assert_eq!(tools.len(), 1, "the group keeps its card");
         assert!(tools[0].backgrounded, "the card is frozen");
         assert_eq!(list.background_task_count(), 1);
+    }
+
+    /// The result render reaches a split tool by its call id, so the finish
+    /// row shows the summary of the result.
+    #[test]
+    fn a_split_tool_keeps_the_result_render_on_its_finish_row() {
+        let mut list = ContainerList::new();
+        list.mark_turn_active();
+        let mut call = CachedToolCall::new("t1", "bash", "{}");
+        call.call_id = Some("t1".into());
+        list.add_tool_call(call);
+        assert!(list.split_slow_tools(Instant::now(), Duration::ZERO));
+
+        let render = crucible_core::types::ToolRender {
+            summary: Some("3 files".into()),
+            ..Default::default()
+        };
+        list.update_tool_by_call_id("t1", |t| t.render = Some(std::sync::Arc::new(render)));
+        assert!(list.finish_background_tool("bash", Some("t1"), Instant::now()));
+
+        let Some(ChatNode::BackgroundToolFinished { tool, .. }) = list.nodes().last() else {
+            panic!("the finish row is last: {:?}", list.nodes());
+        };
+        let summary = tool.render.as_ref().and_then(|r| r.summary.as_deref());
+        assert_eq!(summary, Some("3 files"));
     }
 
     /// The bug this replaced: the freeze used to remove the card from its
