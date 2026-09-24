@@ -19,7 +19,23 @@ import type { ModeDescriptor } from '@/lib/types';
  *
  * `level` is matched loosely with a fallback because it is the plugin's word,
  * not an enum this file owns.
+ *
+ * A slot's `progress` is a fraction, the literal string `"indeterminate"`, or
+ * `null` when the slot describes a state rather than work — `null` must stay
+ * distinguishable from a bar pinned at zero, which would read as stalled.
+ * This renders a fraction as a percentage and leaves a state slot untouched;
+ * an indeterminate slot gets an ellipsis rather than a fabricated number.
  */
+function progressSuffix(progress: unknown): string | null {
+  if (typeof progress === 'number') {
+    return ` ${Math.round(progress * 100)}%`;
+  }
+  if (progress === 'indeterminate') {
+    return ' …';
+  }
+  return null;
+}
+
 const TONES: Record<string, string> = {
   warn: 'border-attention/40 bg-attention/10 text-attention',
   warning: 'border-attention/40 bg-attention/10 text-attention',
@@ -77,6 +93,7 @@ export const SessionStatusChips: Component = () => {
               data-testid={`session-status-${slot.key}`}
             >
               {slot.text}
+              {progressSuffix(slot.progress)}
             </span>
           )}
         </For>

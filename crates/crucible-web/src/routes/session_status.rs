@@ -27,6 +27,17 @@ pub(super) struct SessionStatusSlot {
     text: String,
     /// How loud the line is, such as `info` or `warn`.
     level: String,
+    /// Progress of the slot's work: a fraction (`0.0..=1.0`), the literal
+    /// string `"indeterminate"`, or `null` when the slot describes a state
+    /// rather than work (`crates/crucible-daemon/src/server/plugins.rs`).
+    ///
+    /// `null` must stay distinguishable from `0.0`: a bar pinned at zero
+    /// reads as stalled, which a state slot such as "sandboxed: alpine" is
+    /// not. Opaque `serde_json::Value` rather than a typed union, the same
+    /// choice `PluginOptionValueResponse::value` makes for a plugin's opaque
+    /// option value — the daemon always writes this key, so it is required
+    /// rather than optional.
+    progress: serde_json::Value,
 }
 
 /// What `GET /api/session/{id}/status` answers.
@@ -85,6 +96,35 @@ mod tests {
             serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
         assert_eq!(slots.status[0].key, "oci");
         assert_eq!(slots.status[1].plugin, "weather");
+    }
+
+    /// The daemon's `progress` — a fraction, `"indeterminate"`, or `null` for
+    /// a state slot — has to reach the browser. Before this, `SessionStatusSlot`
+    /// had no `progress` field, so serde silently dropped it: the daemon sent
+    /// it, and the reply never carried it.
+    #[tokio::test]
+    async fn a_slot_s_progress_reaches_the_reply() {
+        let (status, json) =
+            request_json("GET", "/api/session/test-session-001/status", None).await;
+        assert_eq!(status, axum::http::StatusCode::OK, "{json}");
+
+        let slots: SessionStatusResponse =
+            serde_json::from_value(json.clone()).expect("the reply reads back as its own struct");
+        assert_eq!(
+            slots.status[0].key, "oci",
+            "a state slot still carries the key, with no progress"
+        );
+        assert_eq!(
+            json["status"][0]["progress"],
+            serde_json::Value::Null,
+            "a state slot's progress is null, not absent"
+        );
+        assert_eq!(slots.status[1].key, "weather");
+        assert_eq!(
+            json["status"][1]["progress"],
+            serde_json::json!(0.6),
+            "a slot mid-work carries its fraction"
+        );
     }
 
     /// A session that published nothing answers an empty list, not an error

@@ -100,6 +100,29 @@ describe('SessionStatusChips', () => {
     expect(chip.getAttribute('title')).toContain('zarquon');
   });
 
+  it('shows a slot\'s progress', async () => {
+    // The daemon writes `progress` as a fraction, `"indeterminate"`, or
+    // `null` (a state, not stalled work). Before this, the web dropped the
+    // field entirely, so a chip could never say how far along its work was.
+    setCurrentSession(baseSession());
+    serve({
+      [STATUS]: () => ({
+        status: [
+          { key: 'pull', plugin: 'oci', text: 'pulling image', level: 'info', progress: 0.42 },
+          { key: 'oci', plugin: 'oci', text: 'sandboxed: alpine', level: 'info', progress: null },
+        ],
+      }),
+    });
+
+    render(() => <SessionStatusChips />);
+
+    const withProgress = await waitFor(() => screen.getByTestId('session-status-pull'));
+    expect(withProgress.textContent).toContain('42%');
+
+    const withoutProgress = screen.getByTestId('session-status-oci');
+    expect(withoutProgress.textContent).not.toContain('%');
+  });
+
   it('styles by level and falls back for a level it does not enumerate', async () => {
     setCurrentSession(baseSession());
     serve({

@@ -4397,6 +4397,19 @@ export interface components {
             level: string;
             /** @description Which plugin published the slot. */
             plugin: string;
+            /**
+             * @description Progress of the slot's work: a fraction (`0.0..=1.0`), the literal
+             *     string `"indeterminate"`, or `null` when the slot describes a state
+             *     rather than work (`crates/crucible-daemon/src/server/plugins.rs`).
+             *
+             *     `null` must stay distinguishable from `0.0`: a bar pinned at zero
+             *     reads as stalled, which a state slot such as "sandboxed: alpine" is
+             *     not. Opaque `serde_json::Value` rather than a typed union, the same
+             *     choice `PluginOptionValueResponse::value` makes for a plugin's opaque
+             *     option value — the daemon always writes this key, so it is required
+             *     rather than optional.
+             */
+            progress: unknown;
             /** @description The line to draw. */
             text: string;
         };

@@ -9199,7 +9199,8 @@
           "key",
           "plugin",
           "text",
-          "level"
+          "level",
+          "progress"
         ],
         "properties": {
           "key": {
@@ -9217,6 +9218,9 @@
           "level": {
             "type": "string",
             "description": "How loud the line is, such as `info` or `warn`."
+          },
+          "progress": {
+            "description": "Progress of the slot's work: a fraction (`0.0..=1.0`), the literal\nstring `\"indeterminate\"`, or `null` when the slot describes a state\nrather than work (`crates/crucible-daemon/src/server/plugins.rs`).\n\n`null` must stay distinguishable from `0.0`: a bar pinned at zero\nreads as stalled, which a state slot such as \"sandboxed: alpine\" is\nnot. Opaque `serde_json::Value` rather than a typed union, the same\nchoice `PluginOptionValueResponse::value` makes for a plugin's opaque\noption value — the daemon always writes this key, so it is required\nrather than optional."
           }
         }
       },

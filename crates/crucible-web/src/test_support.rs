@@ -787,6 +787,11 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         // channel is generic rather than oci-shaped. Session id
         // "quiet-session" has published nothing (the daemon answers an empty
         // array for an unknown session, never an error).
+        //
+        // `progress` is always written by the real daemon
+        // (`server/plugins.rs`), never omitted: `null` for a state slot,
+        // a fraction for one mid-work. "oci" mirrors the state case, "weather"
+        // the fraction case, matching how each is described above.
         "session.status" => {
             let session_id = msg
                 .get("params")
@@ -797,8 +802,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 json!({"status": []})
             } else {
                 json!({"status": [
-                    {"key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info"},
-                    {"key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn"},
+                    {"key": "oci", "plugin": "oci", "text": "sandboxed: alpine:latest", "level": "info", "progress": null},
+                    {"key": "weather", "plugin": "weather", "text": "storm warning", "level": "warn", "progress": 0.6},
                 ]})
             }
         }
